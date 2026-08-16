@@ -417,7 +417,7 @@ class SagalesTracker {
           const diffMin = Math.max(0, Math.round(diffMs / 60000));
           const delayMin = Math.round((match.arrival.delay || 0) / 60);
 
-          const clockStr = new Date(arrTime).toLocaleTimeString('ca-ES', { hour: '2-digit', minute: '2-digit', hour12: false });
+          const clockStr = timeUtils.formatTimeToTimezone(new Date(arrTime), this.agencyTimezone);
 
           departures.push({
             lineId: lineConfig.id,

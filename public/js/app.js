@@ -352,17 +352,21 @@ class TransitApp {
 
   renderEtaDisplay(next, etaBigEl, etaClockEl, etaPillEl, etaStatusText) {
     if (next) {
+      const clockTime = next.expectedIso
+        ? new Date(next.expectedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+        : (next.departureTime || '--:--');
+
       const isNextServ = next.isNextService || !next.isToday;
       if (isNextServ) {
-        if (etaBigEl) etaBigEl.textContent = `🌅 ${next.departureTime || '--:--'}`;
-        if (etaClockEl) etaClockEl.textContent = `1r servei de demà al matí`;
+        if (etaBigEl) etaBigEl.textContent = `🌅 ${clockTime}`;
+        if (etaClockEl) etaClockEl.textContent = `1r pas previst: ${clockTime}`;
         if (etaPillEl && etaStatusText) {
           etaPillEl.className = 'eta-status-pill scheduled';
           etaStatusText.textContent = '🌙 Represa al matí';
         }
       } else {
         if (etaBigEl) etaBigEl.textContent = next.formattedStatus || `${next.minutesAway} min`;
-        if (etaClockEl) etaClockEl.textContent = `Hora estimada: ${next.departureTime || '--:--'}`;
+        if (etaClockEl) etaClockEl.textContent = `Hora estimada: ${clockTime}`;
 
         if (etaPillEl && etaStatusText) {
           etaPillEl.className = 'eta-status-pill';
