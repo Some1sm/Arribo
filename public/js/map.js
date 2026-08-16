@@ -416,6 +416,27 @@ class C10Map {
     }
   }
 
+  // Draw or update the road polyline on map
+  renderPolyline(coords, color = '#009485') {
+    if (!this.map || !coords || coords.length < 2) return;
+    if (this.routePolyline) {
+      this.map.removeLayer(this.routePolyline);
+      this.routePolyline = null;
+    }
+    this.activePolylineCoords = coords;
+    this.routePolyline = L.polyline(coords, {
+      color: color || '#009485',
+      weight: 5,
+      opacity: 0.85,
+      lineCap: 'round',
+      lineJoin: 'round'
+    }).addTo(this.map);
+
+    try {
+      this.map.fitBounds(this.routePolyline.getBounds(), { padding: [30, 30], maxZoom: 15 });
+    } catch(e) {}
+  }
+
   // Update active bus markers and attach road subpaths
   // Update active bus markers and attach road subpaths
   updateBusMarkers(activeBuses, lineColor = '#009485', secondaryColor = '#38bdf8') {
