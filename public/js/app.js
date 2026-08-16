@@ -256,14 +256,24 @@ class C10App {
     if (this.currentDirection === dir) return;
     this.currentDirection = dir;
 
+    const corridorTitle = document.getElementById('corridor-title-text');
+    const zonePill1 = document.getElementById('zone-pill-1');
+    const zonePill2 = document.getElementById('zone-pill-2');
+
     if (dir === '1') {
       this.dirBtn1.classList.add('active');
       this.dirBtn0.classList.remove('active');
       this.targetDirectionSub.textContent = 'Sentit Mataró (Hospital / Pl. Itàlia)';
+      if (corridorTitle) corridorTitle.textContent = 'Seguiment en ruta pel Corredor N-II (Barcelona → Mataró)';
+      if (zonePill1) { zonePill1.textContent = 'Àrea AMB (Fins a Montgat)'; zonePill1.className = 'zone-tag amb'; }
+      if (zonePill2) { zonePill2.textContent = 'Zona Maresme (El Masnou - Mataró)'; zonePill2.className = 'zone-tag maresme'; }
     } else {
       this.dirBtn0.classList.add('active');
       this.dirBtn1.classList.remove('active');
       this.targetDirectionSub.textContent = 'Sentit Barcelona (Metro la Pau)';
+      if (corridorTitle) corridorTitle.textContent = 'Seguiment en ruta pel Corredor N-II (Mataró → Barcelona)';
+      if (zonePill1) { zonePill1.textContent = 'Zona Maresme (Mataró - El Masnou)'; zonePill1.className = 'zone-tag maresme'; }
+      if (zonePill2) { zonePill2.textContent = 'Àrea AMB (Montgat - Barcelona)'; zonePill2.className = 'zone-tag amb'; }
     }
 
     // Explicit direction switch: reset stops and fit bounds

@@ -257,7 +257,7 @@ class C10Map {
     });
   }
 
-  // Smooth client-side per-second interpolation across all stops
+  // Smooth client-side per-second interpolation along the active segment
   stepBusAnimation(nowSec) {
     for (const [tId, obj] of this.busMarkersMap.entries()) {
       const bus = obj.busData;
@@ -265,27 +265,23 @@ class C10Map {
 
       let lat = null;
       let lon = null;
-      let bearing = bus.bearing || 0;
 
-      if (bus.allStops && bus.allStops.length >= 2) {
-        for (let i = 0; i < bus.allStops.length - 1; i++) {
-          const s1 = bus.allStops[i];
-          const s2 = bus.allStops[i + 1];
-          if (nowSec >= s1.depSec && (nowSec < s2.arrSec || i === bus.allStops.length - 2)) {
-            const segDuration = Math.max(1, s2.arrSec - s1.depSec);
-            const progress = Math.max(0, Math.min(1, (nowSec - s1.depSec) / segDuration));
-            lat = s1.lat + progress * (s2.lat - s1.lat);
-            lon = s1.lon + progress * (s2.lon - s1.lon);
-            break;
-          }
-        }
+      // 1. If parked in terminal layover, stay at terminal
+      if (bus.isTerminalLayover) {
+        lat = bus.lat;
+        lon = bus.lon;
       }
-
-      if (lat === null && bus.fromCoords && bus.toCoords && bus.segStartSec && bus.segEndSec) {
+      // 2. Smoothly glide along the server-calculated active segment
+      else if (bus.fromCoords && bus.toCoords && bus.segStartSec && bus.segEndSec) {
         const duration = Math.max(1, bus.segEndSec - bus.segStartSec);
         const progress = Math.max(0, Math.min(1, (nowSec - bus.segStartSec) / duration));
         lat = bus.fromCoords.lat + progress * (bus.toCoords.lat - bus.fromCoords.lat);
         lon = bus.fromCoords.lon + progress * (bus.toCoords.lon - bus.fromCoords.lon);
+      }
+      // 3. Fallback to exact server telemetry GPS coordinates
+      else if (bus.lat && bus.lon) {
+        lat = bus.lat;
+        lon = bus.lon;
       }
 
       if (lat !== null && lon !== null) {
