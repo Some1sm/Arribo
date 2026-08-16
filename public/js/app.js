@@ -965,7 +965,7 @@ class TransitApp {
       const minsText = (dep.minutesAway !== undefined && dep.minutesAway >= 0 && dep.minutesAway <= 180)
         ? (dep.minutesAway === 0 ? 'Ara' : `${dep.minutesAway} min`)
         : (dep.isToday === false && dep.expectedIso 
-            ? new Date(dep.expectedIso).toLocaleDateString('ca-ES', { weekday: 'short', day: 'numeric' })
+            ? new Date(dep.expectedIso).toLocaleDateString(navigator.language || undefined, { weekday: 'short', day: 'numeric' })
             : `${clockTime}`);
 
       return `
@@ -1191,7 +1191,7 @@ class TransitApp {
           const minsText = (d.minutesAway !== undefined && d.minutesAway >= 0 && d.minutesAway <= 180)
             ? (d.minutesAway === 0 ? 'Imminent' : `${d.minutesAway} min`)
             : (d.isToday === false && d.expectedIso 
-                ? new Date(d.expectedIso).toLocaleDateString('ca-ES', { weekday: 'short', day: 'numeric' })
+                ? new Date(d.expectedIso).toLocaleDateString(navigator.language || undefined, { weekday: 'short', day: 'numeric' })
                 : `${estTime}`);
 
           return `

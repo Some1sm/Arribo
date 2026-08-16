@@ -1,4 +1,5 @@
 const https = require('https');
+const timeUtils = require('./timeUtils');
 
 class MataroSiriClient {
   constructor() {
@@ -210,7 +211,7 @@ class MataroSiriClient {
           const now = new Date();
           const diffMs = arrDate.getTime() - now.getTime();
           minutesAway = Math.max(0, Math.round(diffMs / 60000));
-          formattedTime = arrDate.toLocaleTimeString('es-ES', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit', hour12: false });
+          formattedTime = timeUtils.formatTimeToTimezone(arrDate, 'Europe/Madrid');
         }
 
         arrivals.push({

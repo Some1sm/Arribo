@@ -2,67 +2,18 @@ const fs = require('fs');
 const path = require('path');
 const mouteClient = require('./mouteClient');
 const geoUtils = require('./geoUtils');
+const timeUtils = require('./timeUtils');
 
 function timeToSec(timeStr) {
-  if (!timeStr) return 0;
-  const parts = timeStr.split(':').map(Number);
-  return (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
+  return timeUtils.timeToSec(timeStr);
 }
 
 function secToTime(totalSec) {
-  const h = Math.floor(totalSec / 3600) % 24;
-  const m = Math.floor((totalSec % 3600) / 60);
-  const s = Math.floor(totalSec % 60);
-  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  return timeUtils.secToTime(totalSec);
 }
 
-function getSpainTime(baseDate = new Date()) {
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Europe/Madrid',
-    year: 'numeric',
-    month: 'numeric',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: 'numeric',
-    second: 'numeric',
-    hour12: false
-  });
-  const parts = formatter.formatToParts(baseDate);
-  const m = {};
-  for (const p of parts) m[p.type] = p.value;
-
-  const year = parseInt(m.year, 10);
-  const month = parseInt(m.month, 10) - 1;
-  const day = parseInt(m.day, 10);
-  let hour = parseInt(m.hour, 10);
-  if (hour === 24) hour = 0;
-  const minute = parseInt(m.minute, 10);
-  const second = parseInt(m.second, 10);
-
-  const currentSec = hour * 3600 + minute * 60 + second;
-  const dateStr = `${year}${String(month + 1).padStart(2, '0')}${String(day).padStart(2, '0')}`;
-  const timeStr = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
-
-  const madridDayName = new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Madrid', weekday: 'short' }).format(baseDate);
-  const dayMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-  const dayOfWeek = dayMap[madridDayName] !== undefined ? dayMap[madridDayName] : baseDate.getDay();
-
-  return {
-    year,
-    month,
-    day,
-    hour,
-    minute,
-    second,
-    currentSec,
-    dateStr,
-    timeStr,
-    dayOfWeek
-  };
-}
-
-function formatDateToYYYYMMDD(date) {
-  return getSpainTime(date).dateStr;
+function formatDateToYYYYMMDD(date, tz = 'Europe/Madrid') {
+  return timeUtils.getNetworkTime(tz, date).dateStr;
 }
 
 function timeToMin(timeStr) {
@@ -73,6 +24,7 @@ function timeToMin(timeStr) {
 
 class CorridorTracker {
   constructor() {
+    this.agencyTimezone = 'Europe/Madrid';
     this.dataDir = path.join(__dirname, '..', 'data');
     this.calendarExceptions = new Map();
     this.calendarWeekly = [];
@@ -344,8 +296,8 @@ class CorridorTracker {
     const scheduleTrips = isDir1 ? this.fullSchedule.dir1 : this.fullSchedule.dir0;
     const stopsList = isDir1 ? this.stopsDir1 : this.stopsDir0;
     const now = new Date();
-    const spainNow = getSpainTime(now);
-    const currentSec = spainNow.currentSec;
+    const networkNow = timeUtils.getNetworkTime(this.agencyTimezone, now);
+    const currentSec = networkNow.currentSec;
     const todaysTrips = scheduleTrips.filter(trip => this.isServiceActiveOnDate(trip.serviceId, now));
 
     const sortides = data && data.sortides && data.sortides.sortida
@@ -361,22 +313,16 @@ class CorridorTracker {
         if (s.liniaId !== '02498') continue;
       }
 
-      const year = parseInt(s.any) || spainNow.year;
-      const month = (parseInt(s.mes) - 1) || spainNow.month;
-      const day = parseInt(s.dia) || spainNow.day;
+      const year = parseInt(s.any) || networkNow.year;
+      const month = (parseInt(s.mes) - 1) || networkNow.month;
+      const day = parseInt(s.dia) || networkNow.day;
       const hour = parseInt(s.hora) || 0;
       const minute = parseInt(s.minuts) || 0;
 
-      const depSec = hour * 3600 + minute * 60;
-      const isToday = (year === spainNow.year && month === spainNow.month && day === spainNow.day);
-      
-      let diffMinutes = 0;
-      if (isToday) {
-        diffMinutes = Math.round((depSec - currentSec) / 60);
-      } else {
-        const depTimestamp = new Date(Date.UTC(year, month, day, hour - 2, minute, 0)).getTime();
-        diffMinutes = Math.round((depTimestamp - now.getTime()) / 60000);
-      }
+      const depUtcDate = timeUtils.localTimeToUtcDate(year, month, day, hour, minute, 0, this.agencyTimezone);
+      const diffMs = depUtcDate.getTime() - now.getTime();
+      const diffMinutes = Math.round(diffMs / 60000);
+      const isToday = (year === networkNow.year && month === networkNow.month && day === networkNow.day);
 
       const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
       const isRealtime = Boolean(s.realtime);
@@ -388,7 +334,7 @@ class CorridorTracker {
         seenTodayTripKeys.add(`${delayInfo.scheduledTime}`);
       }
 
-      const depIso = new Date(now.getTime() + diffMinutes * 60000).toISOString();
+      const depIso = depUtcDate.toISOString();
 
       results.push({
         lineId: s.liniaId || '02498',
@@ -532,7 +478,7 @@ class CorridorTracker {
       // If Mou-te single-pole only returned opposite direction, generate from GTFS schedule for this direction
       const scheduleTrips = isDir1 ? this.fullSchedule.dir1 : this.fullSchedule.dir0;
       const now = new Date();
-      const spainNow = getSpainTime(now);
+      const networkNow = timeUtils.getNetworkTime(this.agencyTimezone, now);
       const todaysTrips = scheduleTrips.filter(trip => this.isServiceActiveOnDate(trip.serviceId, now));
 
       for (const trip of todaysTrips) {
@@ -540,12 +486,12 @@ class CorridorTracker {
         if (stopEntry) {
           const timeStr = (stopEntry.dep || stopEntry.arr || '').substring(0, 5);
           const [h, m] = timeStr.split(':').map(Number);
-          const depSec = h * 3600 + m * 60;
-          const diffSec = depSec - spainNow.currentSec;
-          const diffMin = Math.round(diffSec / 60);
+          const depUtcDate = timeUtils.localTimeToUtcDate(networkNow.year, networkNow.month, networkNow.day, h, m, 0, this.agencyTimezone);
+          const diffMs = depUtcDate.getTime() - now.getTime();
+          const diffMin = Math.round(diffMs / 60000);
 
           if (diffMin >= -5 && diffMin <= 120) {
-            const depIso = new Date(now.getTime() + diffSec * 1000).toISOString();
+            const depIso = depUtcDate.toISOString();
             departuresToUse.push({
               lineId: '02498',
               lineName: 'C-10',
@@ -756,8 +702,8 @@ class CorridorTracker {
     const stopsList = isDir1 ? this.stopsDir1 : this.stopsDir0;
 
     const now = new Date();
-    const spainNow = getSpainTime(now);
-    const currentSec = spainNow.currentSec;
+    const networkNow = timeUtils.getNetworkTime(this.agencyTimezone, now);
+    const currentSec = networkNow.currentSec;
 
     const todaysTrips = scheduleTrips.filter(trip => this.isServiceActiveOnDate(trip.serviceId, now));
     todaysTrips.sort((a, b) => timeToSec(a.stops[0].dep) - timeToSec(b.stops[0].dep));

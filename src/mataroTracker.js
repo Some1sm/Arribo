@@ -2,9 +2,11 @@ const fs = require('fs');
 const path = require('path');
 const siriClient = require('./mataroSiriClient');
 const geoUtils = require('./geoUtils');
+const timeUtils = require('./timeUtils');
 
 class MataroTracker {
   constructor() {
+    this.agencyTimezone = 'Europe/Madrid';
     this.linesData = [];
     this.routesData = {};
     this.allStopsMap = new Map();
@@ -549,7 +551,7 @@ class MataroTracker {
           // Include within the extended 120-minute window
           if (minutesAway >= 1 && minutesAway <= 120) {
             const arrDate = new Date(now + minutesAway * 60000);
-            const formattedTime = arrDate.toLocaleTimeString('es-ES', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit', hour12: false });
+            const formattedTime = timeUtils.formatTimeToTimezone(arrDate, this.agencyTimezone);
 
             estimatedArrivals.push({
               lineId: lId,
