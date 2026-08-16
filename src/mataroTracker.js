@@ -422,11 +422,192 @@ class MataroTracker {
     return { lat: last.lat, lon: last.lon, bearing: hist.bearing || 0 };
   }
 
-  // 3. Get Real-Time Departures for a stop
+  // Calculate distance in meters along polyline between two coordinates
+  calculatePolylineDistanceBetween(polyCoords, lat1, lon1, lat2, lon2) {
+    if (!polyCoords || polyCoords.length < 2) {
+      return geoUtils.calculateDistanceMeters(lat1, lon1, lat2, lon2);
+    }
+
+    const p1 = this.snapPointToPolyline(lat1, lon1, polyCoords);
+    const p2 = this.snapPointToPolyline(lat2, lon2, polyCoords);
+
+    let startIdx = Math.min(p1.index, p2.index);
+    let endIdx = Math.max(p1.index, p2.index);
+
+    let totalDist = 0;
+    for (let i = startIdx; i < endIdx && i < polyCoords.length - 1; i++) {
+      totalDist += geoUtils.calculateDistanceMeters(polyCoords[i].lat, polyCoords[i].lon, polyCoords[i + 1].lat, polyCoords[i + 1].lon);
+    }
+
+    return Math.max(50, totalDist);
+  }
+
+  // Calculate total distance of a route polyline
+  calculateRouteTotalDistance(polyCoords) {
+    if (!polyCoords || polyCoords.length < 2) return 5000;
+    let dist = 0;
+    for (let i = 0; i < polyCoords.length - 1; i++) {
+      dist += geoUtils.calculateDistanceMeters(polyCoords[i].lat, polyCoords[i].lon, polyCoords[i + 1].lat, polyCoords[i + 1].lon);
+    }
+    return dist;
+  }
+
+  // Estimate arrival ETA to stopId from active live vehicles along the route circuit
+  async estimateArrivalsForStop(stopId, lineId = '', existingArrivals = []) {
+    const sId = String(stopId);
+    const existingVehicleIds = new Set(existingArrivals.map(a => a.vehicleId).filter(Boolean));
+    const estimatedArrivals = [];
+
+    // Determine relevant lines serving this stop
+    let targetLineIds = [];
+    if (lineId) {
+      targetLineIds = [String(lineId)];
+    } else {
+      const stopInfo = this.allStopsMap.get(sId);
+      if (stopInfo && stopInfo.lineas && stopInfo.lineas.length > 0) {
+        targetLineIds = stopInfo.lineas.map(l => String(l.id));
+      }
+    }
+
+    if (targetLineIds.length === 0) {
+      targetLineIds = this.linesData.map(l => String(l.id));
+    }
+
+    const now = Date.now();
+
+    for (const lId of targetLineIds) {
+      const routes = this.routesData[lId] || [];
+      if (routes.length === 0) continue;
+
+      let liveVehicles = [];
+      try {
+        liveVehicles = await siriClient.getLiveVehicles(lId);
+      } catch (e) {
+        continue;
+      }
+      if (liveVehicles.length === 0) continue;
+
+      const lineInfo = this.linesData.find(l => String(l.id) === lId) || { name: `Línia ${lId}` };
+
+      // Find which routes contain this stop
+      routes.forEach((route, routeIdx) => {
+        const routeStops = route.stops || [];
+        const targetStopIdx = routeStops.findIndex(s => String(s.id) === sId);
+        if (targetStopIdx === -1) return; // This route direction does not visit this stop
+
+        const targetStopObj = routeStops[targetStopIdx];
+        const routePolyCoords = (route.coords || []).map(c => ({ lat: parseFloat(c.Latitude), lon: parseFloat(c.Longitude) }));
+
+        // Check each live vehicle on the line
+        liveVehicles.forEach(veh => {
+          if (existingVehicleIds.has(veh.vehicleId)) return; // Already reported by SIRI
+
+          const vehRouteIdx = this.matchVehicleToRouteIndex(veh, routes);
+          const isSameDirection = (vehRouteIdx === routeIdx);
+
+          let totalTravelSec = 0;
+
+          if (isSameDirection) {
+            // Vehicle is on the same route direction
+            const snapped = this.snapPointToPolyline(veh.lat, veh.lon, routePolyCoords);
+            const vehNearestStop = this.findNearestSegment(snapped.lat, snapped.lon, routeStops, routePolyCoords);
+            const vehStopIdx = Math.max(0, (vehNearestStop.fromSeq || 1) - 1);
+
+            if (vehStopIdx <= targetStopIdx) {
+              // Upstream: vehicle is approaching this stop directly on this run
+              const remainingStops = targetStopIdx - vehStopIdx;
+              const remainingMeters = this.calculatePolylineDistanceBetween(routePolyCoords, snapped.lat, snapped.lon, targetStopObj.latitude || veh.lat, targetStopObj.longitude || veh.lon);
+              const speedMps = Math.max(4.5, (veh.speedKmh || 22) / 3.6);
+              totalTravelSec = Math.round(remainingMeters / speedMps) + (remainingStops * 25);
+            } else {
+              // Downstream on loop: vehicle passed this stop, will loop through other direction & come back
+              const otherRoute = routes[1 - routeIdx] || routes[0];
+              const remainingOnCurrent = this.calculatePolylineDistanceBetween(routePolyCoords, snapped.lat, snapped.lon, routeStops[routeStops.length - 1]?.latitude || veh.lat, routeStops[routeStops.length - 1]?.longitude || veh.lon);
+              const otherDist = this.calculateRouteTotalDistance((otherRoute.coords || []).map(c => ({ lat: parseFloat(c.Latitude), lon: parseFloat(c.Longitude) })));
+              const nextRunDist = this.calculatePolylineDistanceBetween(routePolyCoords, routeStops[0]?.latitude || veh.lat, routeStops[0]?.longitude || veh.lon, targetStopObj.latitude || veh.lat, targetStopObj.longitude || veh.lon);
+
+              const totalMeters = remainingOnCurrent + otherDist + nextRunDist;
+              const speedMps = 20 / 3.6;
+              totalTravelSec = Math.round(totalMeters / speedMps) + (routeStops.length * 25) + 300; // 5 min layover
+            }
+          } else {
+            // Vehicle is on opposite direction
+            const oppRoute = routes[vehRouteIdx] || routes[0];
+            const oppPolyCoords = (oppRoute.coords || []).map(c => ({ lat: parseFloat(c.Latitude), lon: parseFloat(c.Longitude) }));
+            const oppStops = oppRoute.stops || [];
+            const snapped = this.snapPointToPolyline(veh.lat, veh.lon, oppPolyCoords);
+            const oppRemainingMeters = this.calculatePolylineDistanceBetween(oppPolyCoords, snapped.lat, snapped.lon, oppStops[oppStops.length - 1]?.latitude || veh.lat, oppStops[oppStops.length - 1]?.longitude || veh.lon);
+            const runDist = this.calculatePolylineDistanceBetween(routePolyCoords, routeStops[0]?.latitude || targetStopObj.latitude, routeStops[0]?.longitude || targetStopObj.longitude, targetStopObj.latitude, targetStopObj.longitude);
+
+            const totalMeters = oppRemainingMeters + runDist;
+            const speedMps = 20 / 3.6;
+            totalTravelSec = Math.round(totalMeters / speedMps) + (targetStopIdx * 25) + 240; // 4 min layover
+          }
+
+          const minutesAway = Math.max(1, Math.round(totalTravelSec / 60));
+
+          // Include within the extended 120-minute window
+          if (minutesAway >= 1 && minutesAway <= 120) {
+            const arrDate = new Date(now + minutesAway * 60000);
+            const formattedTime = arrDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+
+            estimatedArrivals.push({
+              lineId: lId,
+              lineName: lineInfo.name,
+              directionName: route.name,
+              destination: route.name,
+              vehicleId: veh.vehicleId,
+              distanceFromStop: `${Math.round(totalTravelSec * 5.5)}m`,
+              departureTime: formattedTime,
+              expectedIso: arrDate.toISOString(),
+              aimedIso: arrDate.toISOString(),
+              minutesAway,
+              formattedStatus: `${minutesAway} min`,
+              delayMins: veh.delayMins || 0,
+              delayBadgeText: `⚡ Estimació en circuit (Bus #${veh.vehicleId})`,
+              delayStatus: 'estimated',
+              isRealTime: false,
+              isEstimated: true,
+              busCoords: { lat: veh.lat, lon: veh.lon }
+            });
+
+            existingVehicleIds.add(veh.vehicleId);
+          }
+        });
+      });
+    }
+
+    return estimatedArrivals;
+  }
+
+  // 3. Get Real-Time & Estimated Departures for a stop (up to 120 mins)
   async getStopDepartures(stopId, lineId = '') {
     const sId = String(stopId);
     const stopInfo = this.allStopsMap.get(sId) || { id: sId, name: `Parada ${sId}` };
-    const liveArrivals = await siriClient.getStopArrivals(sId, lineId);
+    
+    // 1. Query Official Real-Time SIRI Departures
+    let liveArrivals = [];
+    try {
+      liveArrivals = await siriClient.getStopArrivals(sId, lineId);
+    } catch (e) {
+      console.warn(`[getStopDepartures] SIRI query error for stop ${sId}:`, e.message);
+    }
+
+    // 2. Query Circuit Position Estimations for Active Vehicles
+    let estimatedArrivals = [];
+    try {
+      estimatedArrivals = await this.estimateArrivalsForStop(sId, lineId, liveArrivals);
+    } catch (e) {
+      console.warn(`[getStopDepartures] Circuit estimation error for stop ${sId}:`, e.message);
+    }
+
+    // 3. Combine and deduplicate
+    const combined = [...liveArrivals, ...estimatedArrivals];
+    
+    // Filter to 120-minute window and sort chronologically
+    const finalDepartures = combined
+      .filter(d => d.minutesAway !== undefined && d.minutesAway <= 120)
+      .sort((a, b) => a.minutesAway - b.minutesAway);
 
     return {
       stop: {
@@ -436,8 +617,8 @@ class MataroTracker {
         lon: stopInfo.lon,
         zone: 'Mataró Urbà'
       },
-      departures: liveArrivals,
-      totalDepartures: liveArrivals.length
+      departures: finalDepartures,
+      totalDepartures: finalDepartures.length
     };
   }
 

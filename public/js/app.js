@@ -1057,15 +1057,18 @@ class TransitApp {
         }
 
         if (deps.length === 0) {
-          listEl.innerHTML = '<div style="color:var(--text-muted); font-size:0.85rem; padding:0.5rem;">Sense arribades previstes en els propers 60 min.</div>';
+          listEl.innerHTML = '<div style="color:var(--text-muted); font-size:0.85rem; padding:0.5rem;">Sense arribades previstes en els propers 120 min.</div>';
           return;
         }
 
-        listEl.innerHTML = deps.slice(0, 5).map(d => `
+        listEl.innerHTML = deps.slice(0, 6).map(d => `
           <div class="departure-item">
             <div class="dep-time-group">
               <span class="dep-clock">${d.departureTime}</span>
-              <span class="dep-dest">Cap a <strong>${d.destination || 'Destí'}</strong></span>
+              <span class="dep-dest">
+                ${d.lineId ? `<span class="line-badge-sm" style="font-size:0.68rem; padding:1px 5px; margin-right:4px; background:var(--c10-primary);">${d.lineId}</span>` : ''}
+                Cap a <strong>${d.destination || 'Destí'}</strong>
+              </span>
             </div>
             <div class="dep-status">
               <span class="dep-mins">${d.minutesAway === 0 ? 'Imminent' : `${d.minutesAway} min`}</span>
