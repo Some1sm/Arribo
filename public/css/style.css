@@ -607,41 +607,69 @@ body {
   width: fit-content;
 }
 
-.sched-delay-badge.delayed, .dep-delay-pill.delayed {
-  background: rgba(245, 158, 11, 0.15);
-  color: #fbbf24;
-  border: 1px solid rgba(245, 158, 11, 0.35);
+.dep-delay-pill,
+.sched-delay-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--radius-full);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  white-space: nowrap;
+  line-height: 1.2;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  transition: all var(--transition-fast);
 }
 
-.sched-delay-badge.on_time, .dep-delay-pill.on_time {
-  background: rgba(16, 185, 129, 0.15);
+.sched-delay-badge.on-time,
+.sched-delay-badge.on_time,
+.dep-delay-pill.on-time,
+.dep-delay-pill.on_time {
+  background: rgba(16, 185, 129, 0.18);
   color: #34d399;
-  border: 1px solid rgba(16, 185, 129, 0.35);
+  border: 1px solid rgba(16, 185, 129, 0.4);
 }
 
-.sched-delay-badge.early, .dep-delay-pill.early {
-  background: rgba(56, 189, 248, 0.15);
+.sched-delay-badge.estimated,
+.dep-delay-pill.estimated {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.sched-delay-badge.delayed,
+.dep-delay-pill.delayed {
+  background: rgba(239, 68, 68, 0.18);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.sched-delay-badge.early,
+.dep-delay-pill.early {
+  background: rgba(56, 189, 248, 0.18);
   color: #38bdf8;
-  border: 1px solid rgba(56, 189, 248, 0.35);
+  border: 1px solid rgba(56, 189, 248, 0.4);
 }
 
-.sched-delay-badge.scheduled, .dep-delay-pill.scheduled {
-  background: rgba(148, 163, 184, 0.12);
+.sched-delay-badge.scheduled,
+.dep-delay-pill.scheduled {
+  background: rgba(148, 163, 184, 0.14);
+  color: #cbd5e1;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.sched-delay-badge.passed,
+.dep-delay-pill.passed {
+  background: rgba(100, 116, 139, 0.15);
   color: #94a3b8;
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  border: 1px solid rgba(100, 116, 139, 0.3);
 }
 
 .dep-sched-tag {
   font-size: 0.72rem;
   color: var(--text-muted);
   font-family: var(--font-mono);
-}
-
-.dep-delay-pill {
-  font-size: 0.7rem;
-  font-weight: 700;
-  padding: 0.1rem 0.35rem;
-  border-radius: 3px;
 }
 
 /* Upcoming Departures Card */

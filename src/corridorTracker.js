@@ -16,11 +16,53 @@ function secToTime(totalSec) {
   return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
+function getSpainTime(baseDate = new Date()) {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Madrid',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric',
+    hour12: false
+  });
+  const parts = formatter.formatToParts(baseDate);
+  const m = {};
+  for (const p of parts) m[p.type] = p.value;
+
+  const year = parseInt(m.year, 10);
+  const month = parseInt(m.month, 10) - 1;
+  const day = parseInt(m.day, 10);
+  let hour = parseInt(m.hour, 10);
+  if (hour === 24) hour = 0;
+  const minute = parseInt(m.minute, 10);
+  const second = parseInt(m.second, 10);
+
+  const currentSec = hour * 3600 + minute * 60 + second;
+  const dateStr = `${year}${String(month + 1).padStart(2, '0')}${String(day).padStart(2, '0')}`;
+  const timeStr = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+
+  const madridDayName = new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Madrid', weekday: 'short' }).format(baseDate);
+  const dayMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  const dayOfWeek = dayMap[madridDayName] !== undefined ? dayMap[madridDayName] : baseDate.getDay();
+
+  return {
+    year,
+    month,
+    day,
+    hour,
+    minute,
+    second,
+    currentSec,
+    dateStr,
+    timeStr,
+    dayOfWeek
+  };
+}
+
 function formatDateToYYYYMMDD(date) {
-  const y = date.getFullYear();
-  const m = (date.getMonth() + 1).toString().padStart(2, '0');
-  const d = date.getDate().toString().padStart(2, '0');
-  return `${y}${m}${d}`;
+  return getSpainTime(date).dateStr;
 }
 
 function timeToMin(timeStr) {
@@ -302,7 +344,8 @@ class CorridorTracker {
     const scheduleTrips = isDir1 ? this.fullSchedule.dir1 : this.fullSchedule.dir0;
     const stopsList = isDir1 ? this.stopsDir1 : this.stopsDir0;
     const now = new Date();
-    const currentSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+    const spainNow = getSpainTime(now);
+    const currentSec = spainNow.currentSec;
     const todaysTrips = scheduleTrips.filter(trip => this.isServiceActiveOnDate(trip.serviceId, now));
 
     const sortides = data && data.sortides && data.sortides.sortida
@@ -318,16 +361,22 @@ class CorridorTracker {
         if (s.liniaId !== '02498') continue;
       }
 
-      const year = parseInt(s.any) || now.getFullYear();
-      const month = (parseInt(s.mes) - 1) || now.getMonth();
-      const day = parseInt(s.dia) || now.getDate();
+      const year = parseInt(s.any) || spainNow.year;
+      const month = (parseInt(s.mes) - 1) || spainNow.month;
+      const day = parseInt(s.dia) || spainNow.day;
       const hour = parseInt(s.hora) || 0;
       const minute = parseInt(s.minuts) || 0;
 
-      const depDate = new Date(year, month, day, hour, minute, 0);
-      const isToday = depDate.toDateString() === now.toDateString();
-      const diffMs = depDate.getTime() - now.getTime();
-      const diffMinutes = diffMs > 0 ? Math.floor(diffMs / (60 * 1000)) : Math.ceil(diffMs / (60 * 1000));
+      const depSec = hour * 3600 + minute * 60;
+      const isToday = (year === spainNow.year && month === spainNow.month && day === spainNow.day);
+      
+      let diffMinutes = 0;
+      if (isToday) {
+        diffMinutes = Math.round((depSec - currentSec) / 60);
+      } else {
+        const depTimestamp = new Date(Date.UTC(year, month, day, hour - 2, minute, 0)).getTime();
+        diffMinutes = Math.round((depTimestamp - now.getTime()) / 60000);
+      }
 
       const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
       const isRealtime = Boolean(s.realtime);
@@ -339,6 +388,8 @@ class CorridorTracker {
         seenTodayTripKeys.add(`${delayInfo.scheduledTime}`);
       }
 
+      const depIso = new Date(now.getTime() + diffMinutes * 60000).toISOString();
+
       results.push({
         lineId: s.liniaId || '02498',
         lineName: 'C-10',
@@ -346,7 +397,9 @@ class CorridorTracker {
         destination: s.direccio || (s.direccioId === 'R' ? 'Hospital de Mataró' : 'Barcelona'),
         directionId: s.direccioId,
         departureTime: timeStr,
-        departureDate: depDate.toISOString(),
+        departureDate: depIso,
+        expectedIso: depIso,
+        aimedIso: delayInfo.scheduledTime ? new Date(now.getTime() + (diffMinutes - (delayInfo.delayMinutes || 0)) * 60000).toISOString() : depIso,
         minutesAway: diffMinutes,
         isRealtime: isRealtime,
         isToday: isToday,
@@ -479,6 +532,7 @@ class CorridorTracker {
       // If Mou-te single-pole only returned opposite direction, generate from GTFS schedule for this direction
       const scheduleTrips = isDir1 ? this.fullSchedule.dir1 : this.fullSchedule.dir0;
       const now = new Date();
+      const spainNow = getSpainTime(now);
       const todaysTrips = scheduleTrips.filter(trip => this.isServiceActiveOnDate(trip.serviceId, now));
 
       for (const trip of todaysTrips) {
@@ -486,32 +540,35 @@ class CorridorTracker {
         if (stopEntry) {
           const timeStr = (stopEntry.dep || stopEntry.arr || '').substring(0, 5);
           const [h, m] = timeStr.split(':').map(Number);
-          const depDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0);
-          const diffMs = depDate.getTime() - now.getTime();
-          const diffMin = diffMs > 0 ? Math.floor(diffMs / 60000) : Math.ceil(diffMs / 60000);
+          const depSec = h * 3600 + m * 60;
+          const diffSec = depSec - spainNow.currentSec;
+          const diffMin = Math.round(diffSec / 60);
 
-          if (diffMin >= -5) {
+          if (diffMin >= -5 && diffMin <= 120) {
+            const depIso = new Date(now.getTime() + diffSec * 1000).toISOString();
             departuresToUse.push({
               lineId: '02498',
               lineName: 'C-10',
               destination: isDir1 ? 'Hospital de Mataró' : 'Barcelona (Metro la Pau)',
               directionId: isDir1 ? 'R' : 'A',
               departureTime: timeStr,
-              departureDate: depDate.toISOString(),
+              departureDate: depIso,
+              expectedIso: depIso,
+              aimedIso: depIso,
               minutesAway: diffMin,
               isRealtime: false,
               isToday: true,
               scheduledTime: timeStr,
               delayMinutes: 0,
               delayStatus: 'scheduled',
-              delayBadgeText: 'Programat',
+              delayBadgeText: 'Horari teòric',
               comparisonText: `Horari teòric: ${timeStr}`,
               formattedStatus: diffMin <= 0 ? 'Imminent' : `${diffMin} min`
             });
           }
         }
       }
-      departuresToUse.sort((a, b) => new Date(a.departureDate).getTime() - new Date(b.departureDate).getTime());
+      departuresToUse.sort((a, b) => a.minutesAway - b.minutesAway);
     }
 
     const nextBus = departuresToUse.find(d => d.minutesAway >= -2) || departuresToUse[0] || null;
@@ -699,7 +756,8 @@ class CorridorTracker {
     const stopsList = isDir1 ? this.stopsDir1 : this.stopsDir0;
 
     const now = new Date();
-    const currentSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+    const spainNow = getSpainTime(now);
+    const currentSec = spainNow.currentSec;
 
     const todaysTrips = scheduleTrips.filter(trip => this.isServiceActiveOnDate(trip.serviceId, now));
     todaysTrips.sort((a, b) => timeToSec(a.stops[0].dep) - timeToSec(b.stops[0].dep));
@@ -742,7 +800,7 @@ class CorridorTracker {
               departureTime: stopSchedTime || '--:--',
               scheduledTime: stopSchedTime || '--:--',
               delayMinutes: 0,
-              delayStatus: 'on_time',
+              delayStatus: 'passed',
               delayBadgeText: 'Passat ✓',
               isRealtime: true,
               isPassed: true,
@@ -756,23 +814,27 @@ class CorridorTracker {
               next = matchedDep;
             } else if (stopSchedTime) {
               const [h, m] = stopSchedTime.split(':').map(Number);
-              const depDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0);
-              const diffMs = depDate.getTime() - now.getTime();
-              const diffMin = diffMs > 0 ? Math.floor(diffMs / 60000) : Math.ceil(diffMs / 60000);
+              const schedSec = h * 3600 + m * 60;
+              const diffSec = schedSec - currentSec;
+              const diffMin = Math.max(1, Math.round(diffSec / 60));
+              const depIso = new Date(now.getTime() + diffSec * 1000).toISOString();
 
               next = {
                 lineId: '02498',
                 lineName: 'C-10',
                 destination: isDir1 ? 'Hospital de Mataró' : 'Barcelona (Metro la Pau)',
                 departureTime: stopSchedTime,
+                departureDate: depIso,
+                expectedIso: depIso,
+                aimedIso: depIso,
+                minutesAway: diffMin,
+                isRealtime: false,
+                isToday: true,
                 scheduledTime: stopSchedTime,
                 delayMinutes: 0,
                 delayStatus: 'scheduled',
-                delayBadgeText: 'Programat',
-                isRealtime: false,
-                isPassed: false,
-                minutesAway: diffMin,
-                formattedStatus: diffMin <= 0 ? 'Imminent' : `${diffMin} min`
+                delayBadgeText: 'Horari teòric',
+                formattedStatus: `${diffMin} min`
               };
             }
           }
@@ -782,21 +844,25 @@ class CorridorTracker {
           if (stopEntry) {
             const timeStr = (stopEntry.dep || stopEntry.arr || '').substring(0, 5);
             const [h, m] = timeStr.split(':').map(Number);
-            const depDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0);
-            const diffMs = depDate.getTime() - now.getTime();
-            const diffMin = diffMs > 0 ? Math.floor(diffMs / 60000) : Math.ceil(diffMs / 60000);
+            const schedSec = h * 3600 + m * 60;
+            const diffSec = schedSec - currentSec;
+            const diffMin = Math.max(1, Math.round(diffSec / 60));
+            const depIso = new Date(now.getTime() + diffSec * 1000).toISOString();
 
             next = {
               lineId: '02498',
               lineName: 'C-10',
               destination: isDir1 ? 'Hospital de Mataró' : 'Barcelona (Metro la Pau)',
               departureTime: timeStr,
+              departureDate: depIso,
+              expectedIso: depIso,
+              aimedIso: depIso,
               scheduledTime: timeStr,
               delayMinutes: 0,
               delayStatus: 'scheduled',
-              delayBadgeText: 'Programat',
+              delayBadgeText: 'Horari teòric',
               isRealtime: false,
-              isPassed: false,
+              isPassed: diffSec < -120,
               minutesAway: diffMin,
               formattedStatus: diffMin <= 0 ? 'Imminent' : `${diffMin} min`
             };

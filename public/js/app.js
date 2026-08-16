@@ -962,6 +962,12 @@ class TransitApp {
         ? new Date(dep.expectedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
         : (dep.departureTime || '--:--');
 
+      const minsText = (dep.minutesAway !== undefined && dep.minutesAway >= 0 && dep.minutesAway <= 180)
+        ? (dep.minutesAway === 0 ? 'Ara' : `${dep.minutesAway} min`)
+        : (dep.isToday === false && dep.expectedIso 
+            ? new Date(dep.expectedIso).toLocaleDateString('ca-ES', { weekday: 'short', day: 'numeric' })
+            : `${clockTime}`);
+
       return `
         <div class="departure-item ${idx === 0 ? 'highlight-next' : ''}">
           <div class="dep-time-group">
@@ -969,7 +975,7 @@ class TransitApp {
             <span class="dep-dest">Cap a <strong>${dep.destination || 'Destí'}</strong></span>
           </div>
           <div class="dep-status">
-            <span class="dep-mins">${dep.minutesAway === 0 ? 'Ara' : `${dep.minutesAway} min`}</span>
+            <span class="dep-mins">${minsText}</span>
             <span class="dep-delay-pill ${dep.delayStatus || 'on-time'}">
               ${dep.delayBadgeText || 'Puntual'}
             </span>
@@ -1182,6 +1188,12 @@ class TransitApp {
             ? `⚡ Estimat ${d.vehicleId ? `#${d.vehicleId}` : ''}`
             : (d.delayBadgeText || 'Puntual');
 
+          const minsText = (d.minutesAway !== undefined && d.minutesAway >= 0 && d.minutesAway <= 180)
+            ? (d.minutesAway === 0 ? 'Imminent' : `${d.minutesAway} min`)
+            : (d.isToday === false && d.expectedIso 
+                ? new Date(d.expectedIso).toLocaleDateString('ca-ES', { weekday: 'short', day: 'numeric' })
+                : `${estTime}`);
+
           return `
             <div class="departure-item ${idx === 0 ? 'highlight-next' : ''}">
               <div class="dep-time-group">
@@ -1204,7 +1216,7 @@ class TransitApp {
               </div>
 
               <div class="dep-status">
-                <span class="dep-mins">${d.minutesAway === 0 ? 'Imminent' : `${d.minutesAway} min`}</span>
+                <span class="dep-mins">${minsText}</span>
                 <span class="dep-delay-pill ${d.delayStatus || 'on-time'}" title="${d.delayBadgeText || pillLabel}">${pillLabel}</span>
               </div>
             </div>
