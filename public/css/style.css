@@ -1374,53 +1374,156 @@ body {
   color: var(--text-muted);
 }
 
-.line-pills-scroll {
+/* ======================================================== */
+/* LINE SELECTOR DROPDOWN & QUICK FILTER STYLES            */
+/* ======================================================== */
+
+.line-selector-controls-bar {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  overflow-x: auto;
-  padding-bottom: 4px;
-  scrollbar-width: thin;
+  gap: 1rem;
+  flex-wrap: wrap;
 }
 
-.line-pill-btn {
+.line-dropdown-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex: 1 1 320px;
   background: var(--bg-surface-elevated);
   border: 1px solid var(--border-subtle);
-  color: var(--text-secondary);
-  border-radius: var(--radius-full);
-  padding: 0.45rem 0.9rem;
-  font-size: 0.8rem;
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all var(--transition-fast);
-  flex-shrink: 0;
+  border-radius: var(--radius-md);
+  padding: 0.5rem 0.85rem;
+  transition: border-color var(--transition-fast);
 }
 
-.line-pill-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.2);
-}
-
-.line-pill-btn.active {
-  background: rgba(0, 148, 133, 0.2);
-  color: #fff;
+.line-dropdown-wrapper:focus-within {
   border-color: var(--c10-primary);
-  box-shadow: 0 0 12px rgba(0, 148, 133, 0.3);
+  box-shadow: 0 0 10px rgba(0, 148, 133, 0.25);
 }
 
-.line-pill-code {
+.line-select-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.line-badge-sm {
   font-family: var(--font-mono);
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   font-weight: 800;
-  padding: 2px 6px;
+  padding: 2px 7px;
   border-radius: 4px;
   color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
+
+.line-selector-dropdown {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  font-family: var(--font-sans);
+  font-size: 0.88rem;
+  font-weight: 600;
+  outline: none;
+  cursor: pointer;
+  width: 100%;
+}
+
+.line-selector-dropdown option {
+  background: #0f172a;
+  color: #ffffff;
+  padding: 0.5rem;
+}
+
+.line-selector-dropdown optgroup {
+  background: #0b1120;
+  color: var(--text-muted);
+  font-weight: 700;
+  font-size: 0.75rem;
+}
+
+.line-search-wrapper {
+  position: relative;
+  flex: 1 1 260px;
+}
+
+.line-search-input {
+  width: 100%;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.6rem 1rem 0.6rem 2.3rem;
+  font-size: 0.82rem;
+  color: #fff;
+  outline: none;
+  transition: all var(--transition-fast);
+}
+
+.line-search-input:focus {
+  border-color: var(--c10-primary);
+  box-shadow: 0 0 10px rgba(0, 148, 133, 0.25);
+  background: rgba(15, 23, 42, 0.9);
+}
+
+.line-filter-results-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: #0f172a;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  max-height: 280px;
+  overflow-y: auto;
+  z-index: 1000;
+  display: none;
+}
+
+.line-filter-results-dropdown.active {
+  display: block;
+}
+
+.line-filter-item {
+  padding: 0.65rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.line-filter-item:last-child {
+  border-bottom: none;
+}
+
+.line-filter-item:hover,
+.line-filter-item.selected {
+  background: rgba(0, 148, 133, 0.2);
+}
+
+.line-filter-left {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.line-filter-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #fff;
+}
+
 
 /* Dead-Zone Radar Pulse Animation */
 .telemetry-status-badge.estimated {
@@ -1656,18 +1759,21 @@ input, select {
     width: 100%;
   }
 
-  /* Line Selector Pills Scroll */
-  .line-pills-scroll {
-    -webkit-overflow-scrolling: touch;
-    scroll-snap-type: x proximity;
-    padding-bottom: 6px;
+  /* Line Selector Controls Bar on Mobile */
+  .line-selector-controls-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.6rem;
   }
 
-  .line-pill-btn {
-    padding: 0.4rem 0.75rem;
-    font-size: 0.75rem;
-    min-height: 38px;
-    scroll-snap-align: start;
+  .line-dropdown-wrapper {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .line-search-wrapper {
+    width: 100%;
+    min-width: 0;
   }
 
   /* Telemetry Cockpit on Mobile */

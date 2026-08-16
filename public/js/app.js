@@ -112,37 +112,108 @@ class TransitApp {
       const json = await res.json();
       if (json.success && json.lines) {
         this.availableLines = json.lines;
-        this.renderMataroLinePills();
+        this.populateMataroLineSelector();
       }
     } catch (e) {
       console.error('Error fetching lines:', e);
     }
   }
 
-  renderMataroLinePills() {
-    const container = document.getElementById('mataro-line-pills-container');
-    if (!container) return;
+  populateMataroLineSelector() {
+    const dropdown = document.getElementById('mataro-line-select-dropdown');
+    const activeBadge = document.getElementById('mataro-active-line-badge');
+    if (!dropdown) return;
 
     const mataroLines = this.availableLines.filter(l => l.id !== 'c10');
 
-    container.innerHTML = mataroLines.map(l => {
-      const isActive = String(l.id) === String(this.activeMataroLineId);
-      return `
-        <button type="button" class="line-pill-btn ${isActive ? 'active' : ''}" data-mataro-line="${l.id}" style="${isActive ? `border-color:${l.color}; background:rgba(${this.hexToRgb(l.color)}, 0.18);` : ''}">
-          <span class="line-pill-code" style="background:${l.color};">${l.code}</span>
-          <span>${l.name}</span>
-        </button>
-      `;
+    dropdown.innerHTML = mataroLines.map(l => {
+      const isSelected = String(l.id) === String(this.activeMataroLineId);
+      return `<option value="${l.id}" ${isSelected ? 'selected' : ''}>${l.code} — ${l.name}</option>`;
     }).join('');
+
+    const activeObj = mataroLines.find(l => String(l.id) === String(this.activeMataroLineId)) || mataroLines[0];
+    if (activeObj && activeBadge) {
+      activeBadge.textContent = activeObj.code;
+      activeBadge.style.background = activeObj.color;
+    }
   }
 
   switchMataroLine(lineId) {
     this.activeMataroLineId = String(lineId);
     this.mataroDirection = '0';
     window.history.replaceState(null, '', `#mataro-l${lineId}`);
-    this.renderMataroLinePills();
+    
+    // Update Dropdown & Badge
+    const dropdown = document.getElementById('mataro-line-select-dropdown');
+    const activeBadge = document.getElementById('mataro-active-line-badge');
+    if (dropdown) dropdown.value = String(lineId);
+
+    const activeObj = this.availableLines.find(l => String(l.id) === String(lineId));
+    if (activeObj && activeBadge) {
+      activeBadge.textContent = activeObj.code;
+      activeBadge.style.background = activeObj.color;
+    }
+
     this.updateHeaderBrand();
     this.refreshAllData(true);
+  }
+
+  setupLineSearchFilter() {
+    const input = document.getElementById('mataro-line-search-input');
+    const dropdown = document.getElementById('mataro-line-filter-dropdown');
+    if (!input || !dropdown) return;
+
+    input.addEventListener('input', () => {
+      const q = input.value.trim().toLowerCase();
+      if (!q) {
+        dropdown.classList.remove('active');
+        dropdown.innerHTML = '';
+        return;
+      }
+
+      const mataroLines = this.availableLines.filter(l => l.id !== 'c10');
+      const matches = mataroLines.filter(l => 
+        l.code.toLowerCase().includes(q) || 
+        l.name.toLowerCase().includes(q) ||
+        (l.id && String(l.id) === q.replace('l', ''))
+      );
+
+      if (matches.length === 0) {
+        dropdown.innerHTML = '<div style="padding:0.65rem 1rem; color:var(--text-muted); font-size:0.8rem;">Cap línia trobada.</div>';
+        dropdown.classList.add('active');
+        return;
+      }
+
+      dropdown.innerHTML = matches.map(l => `
+        <div class="line-filter-item" data-line-id="${l.id}">
+          <div class="line-filter-left">
+            <span class="line-badge-sm" style="background:${l.color};">${l.code}</span>
+            <span class="line-filter-name">${l.name}</span>
+          </div>
+          <span style="font-size:0.75rem; color:var(--c10-primary); font-weight:700;">Seleccionar ➔</span>
+        </div>
+      `).join('');
+
+      dropdown.classList.add('active');
+
+      dropdown.querySelectorAll('.line-filter-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+          e.preventDefault();
+          const lId = item.getAttribute('data-line-id');
+          if (lId) {
+            this.switchMataroLine(lId);
+            input.value = '';
+            dropdown.classList.remove('active');
+          }
+        });
+      });
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+        dropdown.classList.remove('active');
+      }
+    });
   }
 
   updateHeaderBrand() {
@@ -837,19 +908,12 @@ class TransitApp {
       });
     }
 
-    // Mataró Line Selector Pills delegation
-    const mataroPills = document.getElementById('mataro-line-pills-container');
-    if (mataroPills) {
-      mataroPills.addEventListener('click', (e) => {
-        const btn = e.target.closest('.line-pill-btn');
-        if (!btn) return;
-        e.preventDefault();
-        const lineId = btn.getAttribute('data-mataro-line');
-        if (lineId) {
-          this.switchMataroLine(lineId);
-        }
-      });
-    }
+    // Mataró Line Selector Dropdown change
+    document.getElementById('mataro-line-select-dropdown')?.addEventListener('change', (e) => {
+      if (e.target.value) {
+        this.switchMataroLine(e.target.value);
+      }
+    });
 
     // Corridor Steps Timeline delegation (Interurbà & Mataró)
     document.addEventListener('click', (e) => {
@@ -925,6 +989,7 @@ class TransitApp {
     });
 
     this.setupGlobalSearch();
+    this.setupLineSearchFilter();
   }
 
   setupMapResizeControls() {
