@@ -102,7 +102,7 @@ class MataroTracker {
     // Fetch Live Buses via SIRI
     const liveVehicles = await siriClient.getLiveVehicles(lId);
 
-    // Apply Dead-Zone Location Estimation
+    // Apply Road-Snapping and Dead-Zone Location Estimation
     const processedBuses = this.processBusesWithDeadReckoning(liveVehicles, selectedRoute, stops);
 
     return {
@@ -120,6 +120,50 @@ class MataroTracker {
     };
   }
 
+  // Snap a lat/lon point strictly to the closest street segment on polyline
+  snapPointToPolyline(lat, lon, polyCoords) {
+    if (!polyCoords || polyCoords.length === 0) return { lat, lon, index: 0 };
+    if (polyCoords.length === 1) return { lat: polyCoords[0].lat, lon: polyCoords[0].lon, index: 0 };
+
+    let minDistance = Infinity;
+    let bestPoint = { lat: polyCoords[0].lat, lon: polyCoords[0].lon, index: 0 };
+
+    for (let i = 0; i < polyCoords.length - 1; i++) {
+      const p1 = polyCoords[i];
+      const p2 = polyCoords[i + 1];
+
+      const x1 = p1.lon, y1 = p1.lat;
+      const x2 = p2.lon, y2 = p2.lat;
+      const px = lon, py = lat;
+
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const lenSq = dx * dx + dy * dy;
+
+      let t = 0;
+      if (lenSq > 0) {
+        t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lenSq));
+      }
+
+      const projX = x1 + t * dx;
+      const projY = y1 + t * dy;
+      const dist = geoUtils.calculateDistanceMeters(lat, lon, projY, projX);
+
+      if (dist < minDistance) {
+        minDistance = dist;
+        bestPoint = {
+          lat: projY,
+          lon: projX,
+          index: i,
+          bearing: geoUtils.calculateBearing(p1.lat, p1.lon, p2.lat, p2.lon),
+          dist
+        };
+      }
+    }
+
+    return bestPoint;
+  }
+
   // Dead-Zone Position Estimation (Dead-Reckoning along Polyline)
   processBusesWithDeadReckoning(liveBuses, route, stops) {
     const now = Date.now();
@@ -128,13 +172,19 @@ class MataroTracker {
 
     // 1. Process active live buses
     liveBuses.forEach(b => {
+      // Snap raw GPS strictly to road polyline
+      const snapped = this.snapPointToPolyline(b.lat, b.lon, polyCoords);
+      const roadLat = Math.round(snapped.lat * 1000000) / 1000000;
+      const roadLon = Math.round(snapped.lon * 1000000) / 1000000;
+      const roadBearing = snapped.bearing || b.bearing || 0;
+
       // Record to vehicle history
       this.vehicleHistory.set(b.vehicleId, {
         vehicleId: b.vehicleId,
         lineId: b.lineId,
-        lat: b.lat,
-        lon: b.lon,
-        bearing: b.bearing,
+        lat: roadLat,
+        lon: roadLon,
+        bearing: roadBearing,
         speedKmh: b.speedKmh,
         delayMins: b.delayMins,
         lastSeen: now,
@@ -144,16 +194,16 @@ class MataroTracker {
       });
 
       // Calculate progress and segment along stops
-      const segInfo = this.findNearestSegment(b.lat, b.lon, stops, polyCoords);
+      const segInfo = this.findNearestSegment(roadLat, roadLon, stops, polyCoords);
 
       result.push({
         tripId: `mataro_${b.vehicleId}`,
         vehicleId: b.vehicleId,
         lineId: b.lineId,
-        lat: b.lat,
-        lon: b.lon,
-        bearing: b.bearing,
-        compass: geoUtils.bearingToCompassName(b.bearing),
+        lat: roadLat,
+        lon: roadLon,
+        bearing: roadBearing,
+        compass: geoUtils.bearingToCompassName(roadBearing),
         speedKmh: b.speedKmh,
         delayMins: b.delayMins,
         delayFormatted: b.delayFormatted,
@@ -164,10 +214,10 @@ class MataroTracker {
         fromSeq: segInfo.fromSeq,
         toSeq: segInfo.toSeq,
         totalProgress: segInfo.totalProgress,
-        coordinatesFormatted: `${b.lat.toFixed(5)}° N, ${b.lon.toFixed(5)}° E`,
+        coordinatesFormatted: `${roadLat.toFixed(5)}° N, ${roadLon.toFixed(5)}° E`,
         secondsToNextStop: segInfo.secondsToNextStop,
         distanceToNextMeters: segInfo.distanceToNextMeters,
-        fromCoords: segInfo.fromCoords,
+        fromCoords: { lat: roadLat, lon: roadLon },
         toCoords: segInfo.toCoords,
         segStartSec: Math.floor(now / 1000) - 10,
         segEndSec: Math.floor(now / 1000) + Math.max(15, segInfo.secondsToNextStop),

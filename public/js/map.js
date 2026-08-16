@@ -1,11 +1,14 @@
 // Leaflet Map Module for Multi-Line Transit Platform (C-10 + Mataró Bus)
+// Features: Road-Snapping, Polyline Subpath Following, Bearing Rotation, and Glider Animations
+
 class C10Map {
   constructor(containerId) {
     this.containerId = containerId;
     this.map = null;
     this.stopMarkers = [];
-    this.busMarkersMap = new Map(); // tripId -> { marker, busData }
+    this.busMarkersMap = new Map(); // tripId -> { marker, busData, subpath, currentBearing }
     this.routePolyline = null;
+    this.activePolylineCoords = []; // Array of [lat, lon]
     this.lastStopsFingerprint = null;
     this.initMap();
   }
@@ -30,6 +33,141 @@ class C10Map {
     }).addTo(this.map);
   }
 
+  // Distance in meters between two lat/lon points
+  calculateDistanceMeters(lat1, lon1, lat2, lon2) {
+    const dLat = (lat2 - lat1) * 111320;
+    const dLon = (lon2 - lon1) * 111320 * Math.cos((lat1 * Math.PI) / 180);
+    return Math.sqrt(dLat * dLat + dLon * dLon);
+  }
+
+  // Bearing angle in degrees between two lat/lon points (0 = North, 90 = East)
+  calculateBearing(lat1, lon1, lat2, lon2) {
+    const y = Math.sin((lon2 - lon1) * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180);
+    const x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) -
+              Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos((lon2 - lon1) * Math.PI / 180);
+    const brng = Math.atan2(y, x) * 180 / Math.PI;
+    return Math.round((brng + 360) % 360);
+  }
+
+  // Snap any coordinate strictly to the closest point on the road polyline
+  snapToPolyline(lat, lon, polyline = this.activePolylineCoords) {
+    if (!polyline || polyline.length === 0) return { lat, lon, index: 0, bearing: 0 };
+    if (polyline.length === 1) return { lat: polyline[0][0], lon: polyline[0][1], index: 0, bearing: 0 };
+
+    let minDistance = Infinity;
+    let bestPoint = { lat: polyline[0][0], lon: polyline[0][1], index: 0, bearing: 0 };
+
+    for (let i = 0; i < polyline.length - 1; i++) {
+      const p1 = polyline[i];
+      const p2 = polyline[i + 1];
+
+      const x1 = p1[1], y1 = p1[0];
+      const x2 = p2[1], y2 = p2[0];
+      const px = lon, py = lat;
+
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const lenSq = dx * dx + dy * dy;
+
+      let t = 0;
+      if (lenSq > 0) {
+        t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lenSq));
+      }
+
+      const projX = x1 + t * dx;
+      const projY = y1 + t * dy;
+      const dist = this.calculateDistanceMeters(lat, lon, projY, projX);
+
+      if (dist < minDistance) {
+        minDistance = dist;
+        bestPoint = {
+          lat: projY,
+          lon: projX,
+          index: i,
+          t,
+          bearing: this.calculateBearing(p1[0], p1[1], p2[0], p2[1]),
+          distanceMeters: dist
+        };
+      }
+    }
+
+    return bestPoint;
+  }
+
+  // Extract the exact sequence of road vertices between point A and point B along the polyline
+  extractSubpath(polyline, startLat, startLon, endLat, endLon) {
+    if (!polyline || polyline.length < 2) return [[startLat, startLon], [endLat, endLon]];
+
+    const snapStart = this.snapToPolyline(startLat, startLon, polyline);
+    const snapEnd = this.snapToPolyline(endLat, endLon, polyline);
+
+    const subpath = [];
+    subpath.push([snapStart.lat, snapStart.lon]);
+
+    const fromIdx = snapStart.index;
+    const toIdx = snapEnd.index;
+
+    if (fromIdx <= toIdx) {
+      for (let i = fromIdx + 1; i <= toIdx; i++) {
+        subpath.push(polyline[i]);
+      }
+    } else {
+      for (let i = fromIdx; i >= toIdx + 1; i--) {
+        subpath.push(polyline[i]);
+      }
+    }
+
+    subpath.push([snapEnd.lat, snapEnd.lon]);
+    return subpath;
+  }
+
+  // Interpolate along the road subpath (following every street curve)
+  interpolateAlongSubpath(subpath, progress) {
+    if (!subpath || subpath.length === 0) return null;
+    if (subpath.length === 1 || progress <= 0) {
+      return { lat: subpath[0][0], lon: subpath[0][1], bearing: 0 };
+    }
+    if (progress >= 1) {
+      const last = subpath[subpath.length - 1];
+      const prev = subpath[subpath.length - 2] || last;
+      return { lat: last[0], lon: last[1], bearing: this.calculateBearing(prev[0], prev[1], last[0], last[1]) };
+    }
+
+    const segLengths = [];
+    let totalLength = 0;
+
+    for (let i = 0; i < subpath.length - 1; i++) {
+      const d = this.calculateDistanceMeters(subpath[i][0], subpath[i][1], subpath[i + 1][0], subpath[i + 1][1]);
+      segLengths.push(d);
+      totalLength += d;
+    }
+
+    if (totalLength === 0) {
+      return { lat: subpath[0][0], lon: subpath[0][1], bearing: 0 };
+    }
+
+    const targetDist = progress * totalLength;
+    let accumulated = 0;
+
+    for (let i = 0; i < segLengths.length; i++) {
+      const segLen = segLengths[i];
+      if (accumulated + segLen >= targetDist || i === segLengths.length - 1) {
+        const segProgress = segLen > 0 ? (targetDist - accumulated) / segLen : 0;
+        const p1 = subpath[i];
+        const p2 = subpath[i + 1];
+        const lat = p1[0] + segProgress * (p2[0] - p1[0]);
+        const lon = p1[1] + segProgress * (p2[1] - p1[1]);
+        const bearing = this.calculateBearing(p1[0], p1[1], p2[0], p2[1]);
+        return { lat, lon, bearing };
+      }
+      accumulated += segLen;
+    }
+
+    const last = subpath[subpath.length - 1];
+    return { lat: last[0], lon: last[1], bearing: 0 };
+  }
+
+  // Render stops and road polyline on map
   renderStops(stops, targetStopId = '', onStopClick = null, shouldFitBounds = false, lineColor = '#009485', customPolyline = null) {
     if (!this.map) return;
 
@@ -100,11 +238,11 @@ class C10Map {
         this.stopMarkers.push(marker);
       });
 
-      // Draw high resolution polyline or connect stops
-      const polylinePoints = (customPolyline && customPolyline.length > 1) ? customPolyline : latLngs;
+      // Save polyline coordinates
+      this.activePolylineCoords = (customPolyline && customPolyline.length > 1) ? customPolyline : latLngs;
 
-      if (polylinePoints.length > 1) {
-        this.routePolyline = L.polyline(polylinePoints, {
+      if (this.activePolylineCoords.length > 1) {
+        this.routePolyline = L.polyline(this.activePolylineCoords, {
           color: lineColor || '#009485',
           weight: 4,
           opacity: 0.85,
@@ -121,6 +259,7 @@ class C10Map {
     }
   }
 
+  // Update active bus markers and attach road subpaths
   updateBusMarkers(activeBuses, lineColor = '#009485') {
     if (!this.map) return;
 
@@ -137,10 +276,22 @@ class C10Map {
     activeBuses.forEach(bus => {
       if (!bus.lat || !bus.lon) return;
 
-      const bearingAngle = bus.bearing || 0;
+      // 1. Street-Snapping: Snap raw GPS strictly to the road polyline
+      let snapped = { lat: bus.lat, lon: bus.lon, bearing: bus.bearing || 0 };
+      if (this.activePolylineCoords && this.activePolylineCoords.length > 1) {
+        snapped = this.snapToPolyline(bus.lat, bus.lon, this.activePolylineCoords);
+      }
+
+      // 2. Extract road subpath between fromCoords and toCoords
+      let subpath = null;
+      if (bus.fromCoords && bus.toCoords && this.activePolylineCoords && this.activePolylineCoords.length > 1) {
+        subpath = this.extractSubpath(this.activePolylineCoords, bus.fromCoords.lat, bus.fromCoords.lon, bus.toCoords.lat, bus.toCoords.lon);
+      }
+
+      const bearingAngle = snapped.bearing || bus.bearing || 0;
       const compassLabel = bus.compass?.label || '';
       const speedText = bus.speedKmh ? `${bus.speedKmh} km/h` : (bus.isTerminalLayover ? '0 km/h (Aturat)' : '30-40 km/h');
-      const coordsText = bus.coordinatesFormatted || `${bus.lat.toFixed(5)}° N, ${bus.lon.toFixed(5)}° E`;
+      const coordsText = `${snapped.lat.toFixed(5)}° N, ${snapped.lon.toFixed(5)}° E`;
       const isEst = Boolean(bus.isEstimated);
 
       const popupHtml = bus.isTerminalLayover ? `
@@ -182,10 +333,12 @@ class C10Map {
       if (this.busMarkersMap.has(bus.tripId)) {
         const obj = this.busMarkersMap.get(bus.tripId);
         obj.busData = bus;
+        obj.subpath = subpath;
+        obj.currentBearing = bearingAngle;
         obj.marker.setPopupContent(popupHtml);
 
         if (bus.isTerminalLayover) {
-          obj.marker.setLatLng([bus.lat, bus.lon]);
+          obj.marker.setLatLng([snapped.lat, snapped.lon]);
         }
 
         const el = obj.marker.getElement();
@@ -235,7 +388,7 @@ class C10Map {
             align-items: center;
             justify-content: center;
             font-size: 16px;
-            transition: transform 0.4s ease;
+            transition: transform 0.2s ease;
             transform: rotate(${bearingAngle}deg);
             position: relative;
           ">
@@ -261,18 +414,23 @@ class C10Map {
           iconAnchor: [18, 18]
         });
 
-        const marker = L.marker([bus.lat, bus.lon], {
+        const marker = L.marker([snapped.lat, snapped.lon], {
           icon: busIcon,
           zIndexOffset: 2000
         }).addTo(this.map);
 
         marker.bindPopup(popupHtml);
-        this.busMarkersMap.set(bus.tripId, { marker, busData: bus });
+        this.busMarkersMap.set(bus.tripId, {
+          marker,
+          busData: bus,
+          subpath,
+          currentBearing: bearingAngle
+        });
       }
     });
   }
 
-  // Smooth continuous client-side gliding along the active segment
+  // Smooth continuous client-side gliding strictly along road subpath (never cuts through buildings)
   stepBusAnimation(nowSec) {
     for (const [tId, obj] of this.busMarkersMap.entries()) {
       const bus = obj.busData;
@@ -280,35 +438,55 @@ class C10Map {
 
       let lat = null;
       let lon = null;
+      let bearing = null;
 
-      // 1. If parked in terminal layover, stay at terminal
+      // 1. If parked in terminal layover, stay exactly at terminal
       if (bus.isTerminalLayover) {
         lat = bus.lat;
         lon = bus.lon;
+        bearing = bus.bearing || 0;
       }
-      // 2. Smoothly glide along the active road segment without jumping back
-      else if (bus.fromCoords && bus.toCoords && bus.segStartSec && bus.segEndSec) {
+      // 2. Road Subpath Follower: Glides along the exact road polyline segments (street curves)
+      else if (obj.subpath && obj.subpath.length > 1 && bus.segStartSec && bus.segEndSec) {
         const duration = Math.max(1, bus.segEndSec - bus.segStartSec);
         const rawProgress = (nowSec - bus.segStartSec) / duration;
-        const progress = Math.max(0, Math.min(0.98, rawProgress));
-        lat = bus.fromCoords.lat + progress * (bus.toCoords.lat - bus.fromCoords.lat);
-        lon = bus.fromCoords.lon + progress * (bus.toCoords.lon - bus.fromCoords.lon);
+        const progress = Math.max(0, Math.min(0.99, rawProgress));
+        
+        const pt = this.interpolateAlongSubpath(obj.subpath, progress);
+        if (pt) {
+          lat = pt.lat;
+          lon = pt.lon;
+          bearing = pt.bearing;
+        }
       }
-      // 3. Fallback to exact server telemetry GPS coordinates
+      // 3. Fallback: Snap current GPS coordinate to polyline
       else if (bus.lat && bus.lon) {
-        lat = bus.lat;
-        lon = bus.lon;
+        const snapped = this.snapToPolyline(bus.lat, bus.lon, this.activePolylineCoords);
+        lat = snapped.lat;
+        lon = snapped.lon;
+        bearing = snapped.bearing || bus.bearing || 0;
       }
 
       if (lat !== null && lon !== null) {
         const currentPos = obj.marker.getLatLng();
         if (currentPos && (Math.abs(currentPos.lat - lat) > 0.000001 || Math.abs(currentPos.lng - lon) > 0.000001)) {
-          // Smooth 50% LERP step to eliminate rubber-banding and micro-jitters
-          const smoothLat = currentPos.lat + (lat - currentPos.lat) * 0.5;
-          const smoothLon = currentPos.lng + (lon - currentPos.lng) * 0.5;
+          // Smooth 40% LERP step for continuous organic motion
+          const smoothLat = currentPos.lat + (lat - currentPos.lat) * 0.4;
+          const smoothLon = currentPos.lng + (lon - currentPos.lng) * 0.4;
           obj.marker.setLatLng([smoothLat, smoothLon]);
         } else if (!currentPos) {
           obj.marker.setLatLng([lat, lon]);
+        }
+
+        // Dynamically rotate bus pin to match the street direction
+        if (bearing !== null && !bus.isTerminalLayover) {
+          const el = obj.marker.getElement();
+          if (el) {
+            const pin = el.querySelector('.live-bus-pin');
+            if (pin) {
+              pin.style.transform = `rotate(${bearing}deg)`;
+            }
+          }
         }
       }
     }
