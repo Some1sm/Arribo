@@ -56,13 +56,26 @@
 
 ---
 
-## 🚀 Getting Started
+## 🌐 Free 1-Click Cloud Deployment
 
-### Prerequisites
-- Node.js (v18 or newer recommended)
-- npm
+Deploy this tracker for free and share the live URL with friends:
 
-### Installation
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FSome1sm%2FBadAMBBusTracker)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Some1sm/BadAMBBusTracker)
+
+### Option 1: Vercel (Recommended — 100% Free & Fast)
+1. Go to [Vercel.com](https://vercel.com) and log in with your GitHub account.
+2. Click **"Add New Project"** and import `Some1sm/BadAMBBusTracker`.
+3. Click **Deploy**. Vercel will instantly build and host your app with an `https://badambbustracker.vercel.app` URL!
+
+### Option 2: Render
+1. Go to [Render.com](https://render.com) and connect your GitHub repository.
+2. Choose **Web Service** (Free Plan) with Node.js runtime.
+3. Render will deploy your app on `https://badambbustracker.onrender.com`.
+
+---
+
+## 🚀 Getting Started Locally
 
 ```bash
 # 1. Clone the repository
@@ -72,10 +85,10 @@ cd BadAMBBusTracker
 # 2. Install dependencies
 npm install
 
-# 3. Run automated tests
+# 3. Run automated test suite
 npm test
 
-# 4. Start the server
+# 4. Start the local server
 npm start
 ```
 

@@ -83,10 +83,14 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-app.listen(PORT, () => {
-  console.log(`====================================================`);
-  console.log(`🚌 C-10 Real-Time Bus Tracker Server Running!`);
-  console.log(`📍 Target Stop: Plaça d'Itàlia (Mataró)`);
-  console.log(`🌐 Local URL: http://localhost:${PORT}`);
-  console.log(`====================================================`);
-});
+if (process.env.NODE_ENV !== 'test' && (!process.env.VERCEL || process.env.PORT)) {
+  app.listen(PORT, () => {
+    console.log(`====================================================`);
+    console.log(`🚌 C-10 Real-Time Bus Tracker Server Running!`);
+    console.log(`📍 Target Stop: Plaça d'Itàlia (Mataró)`);
+    console.log(`🌐 Local URL: http://localhost:${PORT}`);
+    console.log(`====================================================`);
+  });
+}
+
+module.exports = app;
