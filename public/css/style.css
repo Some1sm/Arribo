@@ -795,6 +795,9 @@ body {
   backdrop-filter: blur(10px);
   position: relative;
   overflow: hidden;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
 }
 
 .telemetry-card::before {
@@ -857,6 +860,7 @@ body {
   padding-bottom: 0.65rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   flex-wrap: wrap;
+  max-width: 100%;
 }
 
 .telemetry-vehicles-label {
@@ -872,6 +876,7 @@ body {
   align-items: center;
   gap: 0.45rem;
   flex-wrap: wrap;
+  max-width: 100%;
 }
 
 .telemetry-bus-chip {
@@ -887,6 +892,8 @@ body {
   align-items: center;
   gap: 0.4rem;
   transition: all var(--transition-fast);
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .telemetry-bus-chip:hover {
@@ -903,32 +910,39 @@ body {
 
 .telemetry-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 0.75rem 1.25rem;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .telemetry-item {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .telemetry-label {
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   font-weight: 600;
-}
-
-.telemetry-val {
-  font-size: 0.88rem;
-  color: #38bdf8;
-  font-family: var(--font-mono);
-  font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.telemetry-val {
+  font-size: 0.85rem;
+  color: #38bdf8;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.3;
 }
 
 .telemetry-progress-track {
@@ -1247,11 +1261,35 @@ body {
   inset: 0;
   background: rgba(0, 0, 0, 0.75);
   backdrop-filter: blur(8px);
-  z-index: 999;
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 99999 !important;
   display: none;
   align-items: center;
   justify-content: center;
-  padding: 1.5rem;
+  padding: 1.25rem;
+}
+
+/* Leaflet UI Overlap Protection vs Modals */
+.leaflet-pane,
+.leaflet-map-pane,
+.leaflet-tile-pane,
+.leaflet-overlay-pane,
+.leaflet-shadow-pane,
+.leaflet-marker-pane,
+.leaflet-tooltip-pane,
+.leaflet-popup-pane {
+  z-index: 10 !important;
+}
+
+.leaflet-top,
+.leaflet-bottom {
+  z-index: 20 !important;
+}
+
+.leaflet-control-zoom,
+.leaflet-control-attribution,
+.leaflet-control {
+  z-index: 30 !important;
 }
 
 .stop-modal-backdrop.active {
@@ -2389,30 +2427,52 @@ input, select {
 
   /* Telemetry Cockpit on Mobile */
   .telemetry-card {
-    padding: 1rem;
+    padding: 0.85rem;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
   }
 
   .telemetry-header {
-    flex-direction: column;
-    align-items: flex-start;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
     gap: 0.4rem;
   }
 
   .telemetry-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 0.6rem;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.55rem 0.75rem;
+    width: 100%;
+    box-sizing: border-box;
   }
 
-  .telemetry-item:last-child {
-    grid-column: span 2;
+  .telemetry-item {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  /* Full width on mobile for long tram routes, next stop & progress bar */
+  .telemetry-grid > .telemetry-item:nth-child(4),
+  .telemetry-grid > .telemetry-item:nth-child(5),
+  .telemetry-grid > .telemetry-item:nth-child(6),
+  .telemetry-grid > .telemetry-item:last-child {
+    grid-column: 1 / -1;
   }
 
   .telemetry-label {
-    font-size: 0.68rem;
+    font-size: 0.66rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .telemetry-val {
-    font-size: 0.85rem;
+    font-size: 0.82rem;
+    white-space: normal;
+    word-break: break-word;
+    line-height: 1.25;
   }
 
   /* Corridor Timeline on Mobile */
