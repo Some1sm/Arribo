@@ -2,6 +2,9 @@
 
 > Live tracking, real-time GPS telemetry, universal stop search, and dead-zone location estimator for interurban line **C-10 (Barcelona ⇄ Mataró per N-II)** and all 8 urban lines of **Mataró Bus (L1, L2, L3, L4, L5, L6, L7, L8)**.
 
+🌐 **Live Web App**: [https://bad-amb-bus-tracker.vercel.app/](https://bad-amb-bus-tracker.vercel.app/)
+
+[![Live Deployment](https://img.shields.io/badge/Live-bad--amb--bus--tracker.vercel.app-blueviolet?style=for-the-badge&logo=vercel)](https://bad-amb-bus-tracker.vercel.app/)
 [![Node.js](https://img.shields.io/badge/Node.js-v18+-green.svg)](https://nodejs.org/)
 [![Express](https://img.shields.io/badge/Express-4.19+-blue.svg)](https://expressjs.com/)
 [![Leaflet](https://img.shields.io/badge/Leaflet-1.9+-brightgreen.svg)](https://leafletjs.com/)
