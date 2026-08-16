@@ -216,20 +216,36 @@ class C10Map {
         const marker = L.marker(latLng, { icon: customIcon }).addTo(this.map);
 
         const popupContent = `
-          <div style="font-family: sans-serif; min-width: 190px; padding: 6px;">
-            <strong style="font-size: 13px; color: #0f172a; display:block; margin-bottom:2px;">${stop.name}</strong>
-            ${isTarget ? `<div style="color: ${lineColor}; font-weight: 700; font-size: 11px; margin-bottom: 4px;">⭐ PARADA PRINCIPAL</div>` : ''}
-            <div style="font-size: 11px; color: #64748b; margin-bottom: 6px;">
-              Seq: <strong>#${stop.seq || index + 1}</strong> • Zona: <strong>${stop.zone || (isMaresme ? 'Maresme' : 'AMB')}</strong>${stop.code ? ` • Codi: <strong>${stop.code}</strong>` : ''}
+          <div class="map-popup-card">
+            <div class="map-popup-header">
+              <div class="map-popup-title">
+                <span style="color:${lineColor};">📍</span>
+                <span>${stop.name}</span>
+              </div>
+              <span class="map-popup-badge live">#${stop.seq || index + 1}</span>
             </div>
-            <div style="display:flex; flex-direction:column; gap:4px;">
-              <button onclick="window.c10App.inspectStop('${stopIdentifier}', '${stop.name.replace(/'/g, "\\'")}')" style="width: 100%; background: ${lineColor}; color: #fff; border: none; padding: 5px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer;">Veure temps d'arribada</button>
-              ${!isTarget ? `<button onclick="window.c10App.setTargetStop('${stopIdentifier}')" style="width: 100%; background: #f1f5f9; color: #0f172a; border: 1px solid #cbd5e1; padding: 4px 8px; border-radius: 4px; font-size: 10.5px; font-weight: 600; cursor: pointer;">⭐ Fixar com a parada principal</button>` : ''}
+            
+            ${isTarget ? `<div style="color:${lineColor}; font-weight:800; font-size:0.75rem; margin-bottom:0.4rem;">⭐ PARADA PRINCIPAL</div>` : ''}
+
+            <div style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:0.65rem;">
+              <span>Zona: <strong>${stop.zone || (isMaresme ? 'Maresme' : 'AMB')}</strong></span>
+              ${stop.code ? ` • Codi: <strong style="color:#fff; font-family:var(--font-mono);">${stop.code}</strong>` : ''}
+            </div>
+
+            <div class="map-popup-actions">
+              <button type="button" class="btn-popup-primary" style="background:${lineColor};" onclick="window.c10App.inspectStop('${stopIdentifier}', '${stop.name.replace(/'/g, "\\'")}')">
+                <span>⏱️ Veure temps d'arribada</span>
+              </button>
+              ${!isTarget ? `
+                <button type="button" class="btn-popup-secondary" onclick="window.c10App.setTargetStop('${stopIdentifier}')">
+                  <span>⭐ Fixar com a principal</span>
+                </button>
+              ` : ''}
             </div>
           </div>
         `;
 
-        marker.bindPopup(popupContent);
+        marker.bindPopup(popupContent, { maxWidth: 280 });
 
         if (onStopClick) {
           marker.on('click', () => onStopClick(stop));
@@ -289,43 +305,79 @@ class C10Map {
       }
 
       const bearingAngle = snapped.bearing || bus.bearing || 0;
-      const compassLabel = bus.compass?.label || '';
+      const compassLabel = bus.compass?.label || 'N/A';
       const speedText = bus.speedKmh ? `${bus.speedKmh} km/h` : (bus.isTerminalLayover ? '0 km/h (Aturat)' : '30-40 km/h');
-      const coordsText = `${snapped.lat.toFixed(5)}° N, ${snapped.lon.toFixed(5)}° E`;
+      const coordsText = `${snapped.lat.toFixed(5)}°, ${snapped.lon.toFixed(5)}°`;
       const isEst = Boolean(bus.isEstimated);
 
       const popupHtml = bus.isTerminalLayover ? `
-        <div style="font-family: sans-serif; min-width: 220px; padding: 6px;">
-          <div style="display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid #e2e8f0; padding-bottom:4px; margin-bottom:6px;">
-            <strong style="color:#0f172a; font-size:13px;">🅿️ Bus en Regulació</strong>
-            <span style="background:#dbeafe; color:#1d4ed8; font-size:10px; font-weight:700; padding:1px 5px; border-radius:3px;">A CAPÇALERA</span>
+        <div class="map-popup-card">
+          <div class="map-popup-header">
+            <div class="map-popup-title">
+              <span>🅿️ Bus en Regulació</span>
+            </div>
+            <span class="map-popup-badge layover">Capçalera</span>
           </div>
-          <div style="font-size:12px; color:#2563eb; font-weight:700; margin-bottom:4px;">
-            📍 ${bus.fromStop}
+
+          <div class="map-popup-route" style="color:#60a5fa;">
+            <span>📍 ${bus.fromStop}</span>
           </div>
-          <div style="font-size:11px; color:#64748b; line-height:1.5;">
-            📍 Coord: <strong style="color:#0f172a;">${coordsText}</strong><br>
-            ⏱️ Estat: <strong>Aturat en espera</strong><br>
-            🔄 Vehicle: <strong>#${bus.vehicleId || 'Bus'}</strong>
+
+          <div class="map-popup-grid">
+            <div class="map-popup-item">
+              <span class="map-popup-item-label">Vehicle</span>
+              <span class="map-popup-item-val">#${bus.vehicleId || 'Bus'}</span>
+            </div>
+            <div class="map-popup-item">
+              <span class="map-popup-item-label">Estat</span>
+              <span class="map-popup-item-val">Aturat</span>
+            </div>
+          </div>
+
+          <div class="map-popup-coords-footer">
+            <span>📍 ${coordsText}</span>
+            <span>Regulació</span>
           </div>
         </div>
       ` : `
-        <div style="font-family: sans-serif; min-width: 210px; padding: 6px;">
-          <div style="display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid #e2e8f0; padding-bottom:4px; margin-bottom:6px;">
-            <strong style="color:#0f172a; font-size:13px;">🚌 Bus ${bus.vehicleId ? `#${bus.vehicleId}` : ''}</strong>
-            <span style="background:${isEst ? '#fef3c7' : '#dcfce7'}; color:${isEst ? '#b45309' : '#15803d'}; font-size:10px; font-weight:700; padding:1px 5px; border-radius:3px;">
-              ${isEst ? '⚡ ESTIMACIÓ ZONA' : '🟢 GPS DIRECTE'}
+        <div class="map-popup-card">
+          <div class="map-popup-header">
+            <div class="map-popup-title">
+              <span>🚌 Bus ${bus.vehicleId ? `#${bus.vehicleId}` : ''}</span>
+            </div>
+            <span class="map-popup-badge ${isEst ? 'estimated' : 'live'}">
+              ${isEst ? '⚡ Estimació' : '🟢 GPS Directe'}
             </span>
           </div>
-          <div style="font-size:12px; color:${lineColor}; font-weight:700; margin-bottom:4px;">
-            ${bus.fromStop} ➔ ${bus.toStop}
+
+          <div class="map-popup-route" style="color:${lineColor};">
+            <span>${bus.fromStop}</span>
+            <span style="opacity:0.6;">➔</span>
+            <span>${bus.toStop}</span>
           </div>
-          <div style="font-size:11px; color:#64748b; line-height:1.5;">
-            📍 Coord: <strong style="color:#0f172a;">${coordsText}</strong><br>
-            🧭 Rumb: <strong>${compassLabel} (${bearingAngle}°)</strong><br>
-            ⚡ Velocitat: <strong>${speedText}</strong><br>
-            ⏱️ Progrés trajecte: <strong>${bus.totalProgress || 0}%</strong><br>
-            ${bus.delayFormatted ? `🚦 Puntualitat: <strong>${bus.delayFormatted}</strong>` : ''}
+
+          <div class="map-popup-grid">
+            <div class="map-popup-item">
+              <span class="map-popup-item-label">⚡ Velocitat</span>
+              <span class="map-popup-item-val">${speedText}</span>
+            </div>
+            <div class="map-popup-item">
+              <span class="map-popup-item-label">🧭 Rumb</span>
+              <span class="map-popup-item-val">${compassLabel} (${bearingAngle}°)</span>
+            </div>
+            <div class="map-popup-item">
+              <span class="map-popup-item-label">📊 Progrés</span>
+              <span class="map-popup-item-val">${bus.totalProgress || 0}%</span>
+            </div>
+            <div class="map-popup-item">
+              <span class="map-popup-item-label">🚦 Estat</span>
+              <span class="map-popup-item-val">${bus.delayFormatted || 'Puntual'}</span>
+            </div>
+          </div>
+
+          <div class="map-popup-coords-footer">
+            <span>📍 ${coordsText}</span>
+            <span>${isEst ? 'Estimació' : 'Temps Real'}</span>
           </div>
         </div>
       `;
