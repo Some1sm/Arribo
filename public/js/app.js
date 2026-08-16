@@ -76,12 +76,6 @@ class TransitApp {
   syncPageViewsDOM() {
     const pageId = this.currentPage;
 
-    // Update Tab Buttons
-    document.querySelectorAll('.nav-tab-btn').forEach(btn => {
-      const isTarget = btn.getAttribute('data-page') === pageId;
-      btn.classList.toggle('active', isTarget);
-    });
-
     // Toggle Page Views
     const viewC10 = document.getElementById('view-c10');
     const viewMataro = document.getElementById('view-mataro');
@@ -272,6 +266,10 @@ class TransitApp {
       this.openLinePicker();
     });
     document.getElementById('open-line-picker-btn-c10')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.openLinePicker();
+    });
+    document.querySelector('.logo-group')?.addEventListener('click', (e) => {
       e.preventDefault();
       this.openLinePicker();
     });
@@ -1280,17 +1278,6 @@ class TransitApp {
   // ==========================================
 
   setupEventListeners() {
-    // Top Navigation Tabs (Support Click & Fast Touch)
-    const tabC10 = document.getElementById('tab-c10');
-    const tabMataro = document.getElementById('tab-mataro');
-
-    if (tabC10) {
-      tabC10.addEventListener('click', (e) => { e.preventDefault(); this.switchPage('c10'); });
-    }
-    if (tabMataro) {
-      tabMataro.addEventListener('click', (e) => { e.preventDefault(); this.switchPage('mataro'); });
-    }
-
     // C-10 Direction buttons delegation
     const c10DirGroup = document.getElementById('c10-direction-toggle-group');
     if (c10DirGroup) {
