@@ -36,8 +36,9 @@ class TransitApp {
       // 1. Initialize Map
       this.mapController = new C10Map('map-container');
 
-      // 2. Determine initial page from URL hash
+      // 2. Determine initial page from URL hash & sync DOM views
       this.parseUrlHash();
+      this.syncPageViewsDOM();
 
       // 3. Setup DOM Listeners & Controls
       this.setupEventListeners();
@@ -62,13 +63,32 @@ class TransitApp {
     const hash = window.location.hash.toLowerCase();
     if (hash.startsWith('#mataro')) {
       this.currentPage = 'mataro';
-      const lineMatch = hash.match(/#mataro-?l?(\d)/);
+      const lineMatch = hash.match(/#mataro-?l?(\d+)/);
       if (lineMatch && lineMatch[1]) {
         this.activeMataroLineId = lineMatch[1];
       }
     } else {
       this.currentPage = 'c10';
     }
+  }
+
+  syncPageViewsDOM() {
+    const pageId = this.currentPage;
+
+    // Update Tab Buttons
+    document.querySelectorAll('.nav-tab-btn').forEach(btn => {
+      const isTarget = btn.getAttribute('data-page') === pageId;
+      btn.classList.toggle('active', isTarget);
+    });
+
+    // Toggle Page Views
+    const viewC10 = document.getElementById('view-c10');
+    const viewMataro = document.getElementById('view-mataro');
+    if (viewC10) viewC10.classList.toggle('active', pageId === 'c10');
+    if (viewMataro) viewMataro.classList.toggle('active', pageId === 'mataro');
+
+    // Update Header Brand
+    this.updateHeaderBrand();
   }
 
   // ==========================================
@@ -87,20 +107,7 @@ class TransitApp {
       window.history.replaceState(null, '', newHash);
     }
 
-    // Update Tab Buttons
-    document.querySelectorAll('.nav-tab-btn').forEach(btn => {
-      const isTarget = btn.getAttribute('data-page') === pageId;
-      btn.classList.toggle('active', isTarget);
-    });
-
-    // Toggle Page Views
-    const viewC10 = document.getElementById('view-c10');
-    const viewMataro = document.getElementById('view-mataro');
-    if (viewC10) viewC10.classList.toggle('active', pageId === 'c10');
-    if (viewMataro) viewMataro.classList.toggle('active', pageId === 'mataro');
-
-    // Update Header Brand
-    this.updateHeaderBrand();
+    this.syncPageViewsDOM();
 
     // Refresh Data & Fit Map Bounds for the new page
     this.refreshAllData(true);
@@ -113,6 +120,7 @@ class TransitApp {
       if (json.success && json.lines) {
         this.availableLines = json.lines;
         this.populateMataroLineSelector();
+        this.updateHeaderBrand();
       }
     } catch (e) {
       console.error('Error fetching lines:', e);
