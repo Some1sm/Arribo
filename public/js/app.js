@@ -15,6 +15,7 @@ class TransitApp {
     this.targetStopsByLine = JSON.parse(localStorage.getItem('bad_amb_target_stops') || '{}');
     this.allStops = [];
     this.activeBuses = [];
+    this.selectedVehicleIdByPage = { c10: null, mataro: null };
 
     this.pollInterval = 15;
     this.secondsRemaining = this.pollInterval;
@@ -493,7 +494,49 @@ class TransitApp {
   }
 
   renderC10Telemetry(corridorData) {
-    const b = (corridorData.activeBuses && corridorData.activeBuses[0]) || null;
+    const buses = corridorData.activeBuses || [];
+    const bar = document.getElementById('c10-telemetry-vehicles-bar');
+    const chipsContainer = document.getElementById('c10-telemetry-vehicles-chips');
+
+    if (buses.length > 0) {
+      if (bar) bar.style.display = 'flex';
+      
+      const selectedId = this.selectedVehicleIdByPage['c10'];
+      const activeBus = buses.find(b => String(b.tripId || b.vehicleId) === String(selectedId)) || buses[0];
+      this.selectedVehicleIdByPage['c10'] = activeBus.tripId || activeBus.vehicleId;
+
+      if (chipsContainer) {
+        chipsContainer.innerHTML = buses.map((b, idx) => {
+          const isSelected = String(b.tripId || b.vehicleId) === String(this.selectedVehicleIdByPage['c10']);
+          const label = b.vehicleId ? `Bus #${b.vehicleId}` : `Bus ${idx + 1}`;
+          const isParked = b.isTerminalLayover;
+          return `
+            <button type="button" class="telemetry-bus-chip ${isSelected ? 'active' : ''}" data-bus-trip="${b.tripId || b.vehicleId}">
+              <span>${isParked ? '🅿️' : '🚌'}</span>
+              <span>${label}</span>
+              <span style="font-size:0.68rem; opacity:0.8;">(${b.fromStop ? b.toStop : 'En servei'})</span>
+            </button>
+          `;
+        }).join('');
+
+        chipsContainer.querySelectorAll('.telemetry-bus-chip').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const tripId = btn.getAttribute('data-bus-trip');
+            this.selectedVehicleIdByPage['c10'] = tripId;
+            this.renderC10Telemetry(corridorData);
+          });
+        });
+      }
+
+      this.renderC10TelemetryFields(activeBus);
+    } else {
+      if (bar) bar.style.display = 'none';
+      this.renderC10TelemetryFields(null);
+    }
+  }
+
+  renderC10TelemetryFields(b) {
     const coordsEl = document.getElementById('c10-telemetry-coords');
     const bearingEl = document.getElementById('c10-telemetry-bearing');
     const speedEl = document.getElementById('c10-telemetry-speed');
@@ -526,7 +569,7 @@ class TransitApp {
     if (progressText) progressText.textContent = `${prog}%`;
 
     if (statusBadge) {
-      statusBadge.textContent = b.statusText || '🟢 Senyal GPS Actiu';
+      statusBadge.textContent = b.statusText || (b.isTerminalLayover ? '🅿️ En Regulació' : '🟢 Senyal GPS Actiu');
       statusBadge.className = 'telemetry-status-badge';
     }
   }
@@ -573,7 +616,7 @@ class TransitApp {
   }
 
   // ==========================================
-  // 4. UI RENDERING FOR URBÀ MATARÓ (L1..L8)
+  // 4. UI RENDERING FOR URBÀ MATARÓ (1..8)
   // ==========================================
 
   renderMataroTargetCard(data) {
@@ -609,7 +652,49 @@ class TransitApp {
   }
 
   renderMataroTelemetry(lineData) {
-    const b = (lineData.activeBuses && lineData.activeBuses[0]) || null;
+    const buses = lineData.activeBuses || [];
+    const bar = document.getElementById('mataro-telemetry-vehicles-bar');
+    const chipsContainer = document.getElementById('mataro-telemetry-vehicles-chips');
+
+    if (buses.length > 0) {
+      if (bar) bar.style.display = 'flex';
+
+      const selectedId = this.selectedVehicleIdByPage['mataro'];
+      const activeBus = buses.find(b => String(b.tripId || b.vehicleId) === String(selectedId)) || buses[0];
+      this.selectedVehicleIdByPage['mataro'] = activeBus.tripId || activeBus.vehicleId;
+
+      if (chipsContainer) {
+        chipsContainer.innerHTML = buses.map((b, idx) => {
+          const isSelected = String(b.tripId || b.vehicleId) === String(this.selectedVehicleIdByPage['mataro']);
+          const label = b.vehicleId ? `Bus #${b.vehicleId}` : `Bus ${idx + 1}`;
+          const isParked = b.isTerminalLayover;
+          return `
+            <button type="button" class="telemetry-bus-chip ${isSelected ? 'active' : ''}" data-bus-trip="${b.tripId || b.vehicleId}">
+              <span>${isParked ? '🅿️' : '🚌'}</span>
+              <span>${label}</span>
+              <span style="font-size:0.68rem; opacity:0.8;">(${b.toStop || 'En línia'})</span>
+            </button>
+          `;
+        }).join('');
+
+        chipsContainer.querySelectorAll('.telemetry-bus-chip').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const tripId = btn.getAttribute('data-bus-trip');
+            this.selectedVehicleIdByPage['mataro'] = tripId;
+            this.renderMataroTelemetry(lineData);
+          });
+        });
+      }
+
+      this.renderMataroTelemetryFields(activeBus, lineData);
+    } else {
+      if (bar) bar.style.display = 'none';
+      this.renderMataroTelemetryFields(null, lineData);
+    }
+  }
+
+  renderMataroTelemetryFields(b, lineData) {
     const coordsEl = document.getElementById('mataro-telemetry-coords');
     const bearingEl = document.getElementById('mataro-telemetry-bearing');
     const speedEl = document.getElementById('mataro-telemetry-speed');
@@ -646,7 +731,7 @@ class TransitApp {
     if (progressText) progressText.textContent = `${prog}%`;
 
     if (statusBadge) {
-      statusBadge.textContent = b.statusText || (isEst ? '⚡ Estimació Zona Cobertura' : '🟢 Senyal GPS Actiu');
+      statusBadge.textContent = b.statusText || (b.isTerminalLayover ? '🅿️ En Regulació' : isEst ? '⚡ Estimació Zona Cobertura' : '🟢 Senyal GPS Actiu');
       statusBadge.className = `telemetry-status-badge ${isEst ? 'estimated' : ''}`;
     }
 
