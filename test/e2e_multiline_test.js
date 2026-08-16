@@ -77,6 +77,16 @@ async function runTests() {
     assert(corridor.body.data.checkpoints.length >= 9, 'Should have 9 corridor checkpoints');
     console.log(`✅ C-10 Live Corridor passed (${corridor.body.data.checkpoints.length} checkpoints)`);
 
+    // 8. Universal Dynamic Endpoints
+    console.log('Test 8: Universal Dynamic API Endpoints');
+    const uLine = await request('/api/line/c10?direction=1');
+    assert.strictEqual(uLine.status, 200);
+    assert.strictEqual(uLine.body.data.code, 'C-10');
+    const uEta = await request('/api/line/8/target-eta?direction=0');
+    assert.strictEqual(uEta.status, 200);
+    assert(uEta.body.data.targetStop !== null);
+    console.log(`✅ Universal Dynamic Endpoints passed (Polymorphic API verified)`);
+
     console.log('\n🎉 ALL MULTI-LINE E2E TESTS PASSED SUCCESSFULLY! 🎉\n');
   } finally {
     server.close();

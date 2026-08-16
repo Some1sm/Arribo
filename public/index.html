@@ -72,203 +72,21 @@
   <main class="app-main">
 
     <!-- ======================================================== -->
-    <!-- PAGE 1: INTERURBÀ (C-10 BARCELONA ⇄ MATARÓ)             -->
+    <!-- DYNAMIC UNIVERSAL ACTIVE LINE VIEW                      -->
     <!-- ======================================================== -->
-    <div class="page-view active" id="view-c10">
-      
-      <!-- Multi-City Line Selector Bar -->
-      <section class="line-selector-section" aria-label="Selector de línia i ciutat">
-        <div class="line-selector-card" id="open-line-picker-btn-c10">
-          <div class="line-selector-current">
-            <span class="line-badge-hero" id="c10-active-line-badge" style="background:#009485;">C10</span>
-            <div class="line-selector-info">
-              <div class="line-selector-city-tag">
-                <span class="city-dot"></span>
-                <span id="c10-selector-city-name">Corredor Interurbà Maresme</span>
-              </div>
-              <div class="line-selector-title" id="c10-selector-active-title">C-10 — Barcelona ⇄ Mataró (per N-II)</div>
-            </div>
-          </div>
-          
-          <button type="button" class="btn-change-line" aria-label="Canviar línia o ciutat">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-            <span>Canviar línia</span>
-          </button>
-        </div>
-      </section>
-
-      <!-- Direction Selector Bar -->
-      <section class="direction-bar" aria-label="Selector de sentit C-10">
-        <div class="direction-toggle-group" id="c10-direction-toggle-group">
-          <button type="button" class="btn-direction active" id="c10-dir-btn-1" data-direction="1">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m9 18 6-6-6-6"/></svg>
-            <span>Cap a Mataró (Hospital / Pl. d'Itàlia)</span>
-          </button>
-          <button type="button" class="btn-direction" id="c10-dir-btn-0" data-direction="0">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m15 18-6-6 6-6"/></svg>
-            <span>Cap a Barcelona (Metro la Pau)</span>
-          </button>
-          <button type="button" class="btn-direction" id="c10-dir-btn-both" data-direction="both" title="Mostrar tots dos sentits al mapa">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-            <span>Ambdós sentits</span>
-          </button>
-        </div>
-
-        <div class="refresh-status">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          <span class="countdown-label-text">Actualització en 15s</span>
-        </div>
-      </section>
-
-      <!-- Hero ETA Section for C-10 Target Stop -->
-      <section class="hero-eta-grid" aria-label="Temps d'arribada C-10">
-        
-        <!-- Primary Target Card -->
-        <div class="target-card">
-          <div class="target-header">
-            <div style="flex:1;">
-              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.4rem; flex-wrap:wrap; gap:0.4rem;">
-                <div class="target-badge">⭐ Parada Principal C-10</div>
-                <div class="target-select-wrapper">
-                  <label for="c10-target-stop-select" style="font-size:0.75rem; color:var(--text-muted); margin-right:0.3rem;">Canviar:</label>
-                  <select id="c10-target-stop-select" class="target-stop-select" aria-label="Selecciona la teva parada principal C-10">
-                    <option value="">Carregant parades C-10...</option>
-                  </select>
-                </div>
-              </div>
-              <h2 class="target-name" id="c10-target-stop-title">Plaça d'Itàlia (Mataró)</h2>
-              <div class="target-subname">
-                <span>Codi: <strong id="c10-target-stop-code">121</strong></span> • 
-                <span id="c10-target-direction-sub">Sentit Mataró (Hospital)</span>
-              </div>
-            </div>
-            <a id="c10-target-maps-link" href="https://maps.app.goo.gl/ScnubXtht3oSKDCk6" target="_blank" rel="noopener noreferrer" class="maps-link" title="Obrir a Google Maps">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-              <span>Google Maps</span>
-            </a>
-          </div>
-
-          <div class="eta-hero-display">
-            <div class="eta-big-time" id="c10-eta-big-display">-- min</div>
-            <div class="eta-details">
-              <div class="eta-exact-time" id="c10-eta-clock-display">Hora estimada: --:--</div>
-              <div class="eta-status-pill scheduled" id="c10-eta-status-pill">
-                <span class="live-dot" style="width:6px; height:6px;"></span>
-                <span id="c10-eta-status-text">Calculant temps...</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="target-meta">
-            <div><span>Línia: <strong style="color:#009485;">C-10</strong></span></div>
-            <div><span>Destí: <strong id="c10-next-bus-dest" style="color:#fff;">Hospital de Mataró</strong></span></div>
-            <div><span>Operador: <strong>Empresa Casas (Moventis)</strong></span></div>
-          </div>
-        </div>
-
-        <!-- Upcoming Departures Card -->
-        <div class="departures-card">
-          <div class="card-title-group">
-            <h3 class="card-title">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-              Properes sortides C-10
-            </h3>
-            <span class="dep-type-badge" id="c10-dep-count-badge">Carregant...</span>
-          </div>
-          <div class="departures-list" id="c10-departures-list-container"></div>
-        </div>
-
-      </section>
-
-      <!-- Linear Corridor Tracker Section (N-II Checkpoints) -->
-      <section class="corridor-section" aria-label="Seguiment del Corredor C-10">
-        <div class="section-header">
-          <div>
-            <h3 class="card-title">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 0 1-2.827 0l-4.244-4.243a8 8 0 1 1 11.314 0z"/><path d="M15 11a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/></svg>
-              <span id="c10-corridor-title-text">Corredor N-II (Barcelona → Mataró)</span>
-            </h3>
-            <p style="font-size:0.78rem; color:var(--text-secondary); margin-top:2px;">
-              Seguiment checkpoint a checkpoint entre l'Àrea Metropolitana i el Maresme
-            </p>
-          </div>
-
-          <div class="corridor-zones">
-            <span class="zone-tag amb" id="c10-zone-pill-1">Àrea AMB</span>
-            <span style="color:var(--text-muted);">➔</span>
-            <span class="zone-tag maresme" id="c10-zone-pill-2">Zona Maresme</span>
-          </div>
-        </div>
-
-        <!-- Live GPS Telemetry Stream Inspector -->
-        <div class="telemetry-card">
-          <div class="telemetry-header">
-            <div class="telemetry-title-group">
-              <span class="telemetry-live-radar"></span>
-              <strong>🛰️ Telemetria GPS i Posició en Temps Real (C-10)</strong>
-            </div>
-            <span class="telemetry-status-badge" id="c10-telemetry-status-badge">🟢 Senyal GPS Actiu</span>
-          </div>
-
-          <!-- Active Vehicles Selection Bar -->
-          <div class="telemetry-vehicles-bar" id="c10-telemetry-vehicles-bar" style="display:none;">
-            <span class="telemetry-vehicles-label">Vehicles detectats:</span>
-            <div class="telemetry-vehicles-chips" id="c10-telemetry-vehicles-chips"></div>
-          </div>
-
-          <div class="telemetry-grid">
-            <div class="telemetry-item">
-              <span class="telemetry-label">📍 Coordenades GPS</span>
-              <strong class="telemetry-val" id="c10-telemetry-coords">--</strong>
-            </div>
-            <div class="telemetry-item">
-              <span class="telemetry-label">🧭 Rumb & Orientació</span>
-              <strong class="telemetry-val" id="c10-telemetry-bearing">--</strong>
-            </div>
-            <div class="telemetry-item">
-              <span class="telemetry-label">⚡ Velocitat</span>
-              <strong class="telemetry-val" id="c10-telemetry-speed">--</strong>
-            </div>
-            <div class="telemetry-item">
-              <span class="telemetry-label">🛣️ Tram Actual</span>
-              <strong class="telemetry-val" id="c10-telemetry-segment">--</strong>
-            </div>
-            <div class="telemetry-item">
-              <span class="telemetry-label">⏱️ Propera Parada</span>
-              <strong class="telemetry-val" id="c10-telemetry-eta-next">--</strong>
-            </div>
-            <div class="telemetry-item">
-              <span class="telemetry-label">📊 Progrés Trajecte</span>
-              <div style="display:flex; align-items:center; gap:0.5rem; width:100%; margin-top:2px;">
-                <div class="telemetry-progress-track"><div class="telemetry-progress-fill" id="c10-telemetry-progress-bar" style="width: 0%;"></div></div>
-                <span id="c10-telemetry-progress-text" style="font-weight:700; font-size:0.8rem; color:#fff;">0%</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Linear Timeline Container -->
-        <div class="corridor-timeline" id="c10-corridor-timeline-container"></div>
-      </section>
-
-    </div>
-
-    <!-- ======================================================== -->
-    <!-- PAGE 2: URBÀ MATARÓ (LÍNIES L1 – L8)                    -->
-    <!-- ======================================================== -->
-    <div class="page-view" id="view-mataro">
+    <div class="page-view active" id="view-active-line">
       
       <!-- Multi-City Line Selector Bar -->
       <section class="line-selector-section" aria-label="Selector de línia i ciutat">
         <div class="line-selector-card" id="open-line-picker-btn">
           <div class="line-selector-current">
-            <span class="line-badge-hero" id="mataro-active-line-badge" style="background:#ff00ff;">1</span>
+            <span class="line-badge-hero" id="active-line-badge" style="background:#009485;">C10</span>
             <div class="line-selector-info">
               <div class="line-selector-city-tag">
                 <span class="city-dot"></span>
-                <span id="line-selector-city-name">Xarxa Urbana de Mataró</span>
+                <span id="active-line-city-name">Corredor Interurbà Maresme</span>
               </div>
-              <div class="line-selector-title" id="line-selector-active-title">Línia 1 — Lavei ⇄ Estació</div>
+              <div class="line-selector-title" id="active-line-title">C-10 — Barcelona ⇄ Mataró (per N-II)</div>
             </div>
           </div>
           
@@ -279,59 +97,59 @@
         </div>
       </section>
 
-      <!-- Mataró Direction Selector Bar -->
-      <section class="direction-bar" aria-label="Selector de sentit línia urbana">
-        <div class="direction-toggle-group" id="mataro-direction-toggle-group"></div>
+      <!-- Dynamic Direction Selector Bar -->
+      <section class="direction-bar" aria-label="Selector de sentit">
+        <div class="direction-toggle-group" id="direction-toggle-group"></div>
 
         <div class="refresh-status">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          <span class="countdown-label-text">Actualització en 15s</span>
+          <span class="countdown-label-text" id="countdown-label">Actualització en 15s</span>
         </div>
       </section>
 
-      <!-- Hero ETA Section for Mataró Target Stop -->
-      <section class="hero-eta-grid" aria-label="Temps d'arribada línia urbana">
+      <!-- Dynamic Hero ETA Section -->
+      <section class="hero-eta-grid" aria-label="Temps d'arribada">
         
         <!-- Primary Target Card -->
         <div class="target-card">
           <div class="target-header">
             <div style="flex:1;">
               <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.4rem; flex-wrap:wrap; gap:0.4rem;">
-                <div class="target-badge" id="mataro-target-header-badge">⭐ Parada Principal Mataró</div>
+                <div class="target-badge" id="target-header-badge">⭐ Parada Principal</div>
                 <div class="target-select-wrapper">
-                  <label for="mataro-target-stop-select" style="font-size:0.75rem; color:var(--text-muted); margin-right:0.3rem;">Canviar:</label>
-                  <select id="mataro-target-stop-select" class="target-stop-select" aria-label="Selecciona la teva parada principal Mataró">
+                  <label for="target-stop-select" style="font-size:0.75rem; color:var(--text-muted); margin-right:0.3rem;">Canviar:</label>
+                  <select id="target-stop-select" class="target-stop-select" aria-label="Selecciona la teva parada principal">
                     <option value="">Carregant parades...</option>
                   </select>
                 </div>
               </div>
-              <h2 class="target-name" id="mataro-target-stop-title">Parada Mataró</h2>
+              <h2 class="target-name" id="target-stop-title">Plaça d'Itàlia (Mataró)</h2>
               <div class="target-subname">
-                <span>Codi: <strong id="mataro-target-stop-code">--</strong></span> • 
-                <span id="mataro-target-direction-sub">Sentit</span>
+                <span>Codi: <strong id="target-stop-code">121</strong></span> • 
+                <span id="target-direction-sub">Sentit</span>
               </div>
             </div>
-            <a id="mataro-target-maps-link" href="#" target="_blank" rel="noopener noreferrer" class="maps-link" title="Obrir a Google Maps">
+            <a id="target-maps-link" href="#" target="_blank" rel="noopener noreferrer" class="maps-link" title="Obrir a Google Maps">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
               <span>Google Maps</span>
             </a>
           </div>
 
           <div class="eta-hero-display">
-            <div class="eta-big-time" id="mataro-eta-big-display">-- min</div>
+            <div class="eta-big-time" id="eta-big-display">-- min</div>
             <div class="eta-details">
-              <div class="eta-exact-time" id="mataro-eta-clock-display">Hora estimada: --:--</div>
-              <div class="eta-status-pill scheduled" id="mataro-eta-status-pill">
+              <div class="eta-exact-time" id="eta-clock-display">Hora estimada: --:--</div>
+              <div class="eta-status-pill scheduled" id="eta-status-pill">
                 <span class="live-dot" style="width:6px; height:6px;"></span>
-                <span id="mataro-eta-status-text">Calculant temps...</span>
+                <span id="eta-status-text">Calculant temps...</span>
               </div>
             </div>
           </div>
 
           <div class="target-meta">
-            <div><span>Línia: <strong id="mataro-next-bus-line-tag">L1</strong></span></div>
-            <div><span>Destí: <strong id="mataro-next-bus-dest" style="color:#fff;">Destí</strong></span></div>
-            <div><span>Operador: <strong>Mataró Bus (Avanza)</strong></span></div>
+            <div><span>Línia: <strong id="target-line-tag" style="color:#009485;">C-10</strong></span></div>
+            <div><span>Destí: <strong id="next-bus-dest" style="color:#fff;">Destí</strong></span></div>
+            <div><span>Operador: <strong id="target-operator-name">Operador</strong></span></div>
           </div>
         </div>
 
@@ -340,82 +158,82 @@
           <div class="card-title-group">
             <h3 class="card-title">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-              Properes arribades en temps real
+              Properes sortides
             </h3>
-            <span class="dep-type-badge" id="mataro-dep-count-badge">Carregant...</span>
+            <span class="dep-type-badge" id="dep-count-badge">Carregant...</span>
           </div>
-          <div class="departures-list" id="mataro-departures-list-container"></div>
+          <div class="departures-list" id="departures-list-container"></div>
         </div>
 
       </section>
 
-      <!-- Urban Route Progression & Dead-Zone Radar Telemetry -->
-      <section class="corridor-section" aria-label="Seguiment línia urbana">
+      <!-- Route Progression & Telemetry Cockpit -->
+      <section class="corridor-section" aria-label="Seguiment de la línia">
         <div class="section-header">
           <div>
             <h3 class="card-title">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 0 1-2.827 0l-4.244-4.243a8 8 0 1 1 11.314 0z"/><path d="M15 11a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/></svg>
-              <span id="mataro-corridor-title-text">Recorregut Urbà de Mataró</span>
+              <span id="corridor-title-text">Recorregut de la línia</span>
             </h3>
             <p style="font-size:0.78rem; color:var(--text-secondary); margin-top:2px;">
-              Telemetria oficial SIRI amb estimació automàtica en zones d'ombra de cobertura
+              Telemetria oficial en temps real amb estimació automàtica en zones d'ombra
             </p>
           </div>
 
           <div class="corridor-zones">
-            <span class="zone-tag maresme">Xarxa Urbana Mataró</span>
+            <span class="zone-tag maresme" id="corridor-zone-pill">Xarxa de Transport</span>
           </div>
         </div>
 
-        <!-- Dead-Zone Radar Telemetry Card -->
+        <!-- Dynamic Radar Telemetry Card -->
         <div class="telemetry-card">
           <div class="telemetry-header">
             <div class="telemetry-title-group">
-              <span class="telemetry-live-radar" id="mataro-telemetry-radar-dot"></span>
-              <strong>🛰️ Telemetria GPS i Estimació en Zones sense Cobertura</strong>
+              <span class="telemetry-live-radar" id="telemetry-radar-dot"></span>
+              <strong>🛰️ Telemetria GPS i Estimació en Zones de Cobertura</strong>
             </div>
-            <span class="telemetry-status-badge" id="mataro-telemetry-status-badge">🟢 Senyal GPS Actiu</span>
+            <span class="telemetry-status-badge" id="telemetry-status-badge">🟢 Senyal GPS Actiu</span>
           </div>
 
           <!-- Active Vehicles Selection Bar -->
-          <div class="telemetry-vehicles-bar" id="mataro-telemetry-vehicles-bar" style="display:none;">
+          <div class="telemetry-vehicles-bar" id="telemetry-vehicles-bar" style="display:none;">
             <span class="telemetry-vehicles-label">Vehicles detectats:</span>
-            <div class="telemetry-vehicles-chips" id="mataro-telemetry-vehicles-chips"></div>
+            <div class="telemetry-vehicles-chips" id="telemetry-vehicles-chips"></div>
           </div>
 
           <div class="telemetry-grid">
             <div class="telemetry-item">
               <span class="telemetry-label">📍 Coordenades GPS</span>
-              <strong class="telemetry-val" id="mataro-telemetry-coords">--</strong>
+              <strong class="telemetry-val" id="telemetry-coords">--</strong>
             </div>
             <div class="telemetry-item">
               <span class="telemetry-label">🧭 Rumb & Orientació</span>
-              <strong class="telemetry-val" id="mataro-telemetry-bearing">--</strong>
+              <strong class="telemetry-val" id="telemetry-bearing">--</strong>
             </div>
             <div class="telemetry-item">
               <span class="telemetry-label">⚡ Velocitat</span>
-              <strong class="telemetry-val" id="mataro-telemetry-speed">--</strong>
+              <strong class="telemetry-val" id="telemetry-speed">--</strong>
             </div>
             <div class="telemetry-item">
               <span class="telemetry-label">🛣️ Tram Actual</span>
-              <strong class="telemetry-val" id="mataro-telemetry-segment">--</strong>
+              <strong class="telemetry-val" id="telemetry-segment">--</strong>
             </div>
             <div class="telemetry-item">
               <span class="telemetry-label">⏱️ Propera Parada</span>
-              <strong class="telemetry-val" id="mataro-telemetry-eta-next">--</strong>
+              <strong class="telemetry-val" id="telemetry-eta-next">--</strong>
             </div>
             <div class="telemetry-item">
               <span class="telemetry-label">📊 Progrés Trajecte</span>
               <div style="display:flex; align-items:center; gap:0.5rem; width:100%; margin-top:2px;">
-                <div class="telemetry-progress-track"><div class="telemetry-progress-fill" id="mataro-telemetry-progress-bar" style="width: 0%;"></div></div>
-                <span id="mataro-telemetry-progress-text" style="font-weight:700; font-size:0.8rem; color:#fff;">0%</span>
+                <div class="telemetry-progress-track"><div class="telemetry-progress-fill" id="telemetry-progress-bar" style="width: 0%;"></div></div>
+                <span id="telemetry-progress-text" style="font-weight:700; font-size:0.8rem; color:#fff;">0%</span>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Mataró Stops Progression Timeline -->
-        <div class="corridor-timeline" id="mataro-corridor-timeline-container"></div>
+        <!-- Progression Timeline -->
+        <div class="corridor-timeline" id="corridor-timeline-container"></div>
       </section>
 
     </div>

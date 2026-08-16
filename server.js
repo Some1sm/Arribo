@@ -100,7 +100,100 @@ app.get('/api/search/stops', (req, res) => {
 });
 
 // ==========================================
-// 2. LINE C-10 CORRIDOR ENDPOINTS
+// 2. UNIVERSAL DYNAMIC LINE ENDPOINTS
+// ==========================================
+
+// Get unified line details (stops, geometry, active buses) for any line
+app.get('/api/line/:lineId', async (req, res) => {
+  const { lineId } = req.params;
+  const direction = req.query.direction || '1';
+  try {
+    if (lineId === 'c10') {
+      const tracking = await corridorTracker.getCorridorLiveTracking(direction);
+      const stops = corridorTracker.getStops(direction);
+      res.json({
+        success: true,
+        data: {
+          id: 'c10',
+          code: 'C-10',
+          name: 'Barcelona ⇄ Mataró (per N-II)',
+          color: '#009485',
+          agency: 'Moventis / Casas (Interurbà Maresme)',
+          direction: String(direction),
+          stops: stops,
+          coords: tracking.routePolyline || [],
+          activeBuses: tracking.activeBuses || [],
+          checkpoints: tracking.checkpoints || [],
+          totalVehiclesInCircuit: tracking.activeBuses?.length || 0,
+          serviceStatus: {
+            isOperating: (tracking.activeBuses?.length || 0) > 0,
+            firstServiceTomorrow: direction === '1' ? '08:15' : '06:45'
+          }
+        }
+      });
+    } else {
+      const data = await mataroTracker.getLineDetails(lineId, direction);
+      res.json({ success: true, data });
+    }
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Get unified Target Stop ETA for any line
+app.get('/api/line/:lineId/target-eta', async (req, res) => {
+  const { lineId } = req.params;
+  const direction = req.query.direction || '1';
+  const stopId = req.query.stopId || null;
+  try {
+    if (lineId === 'c10') {
+      const data = await corridorTracker.getTargetStopETA(direction, stopId);
+      res.json({ success: true, data });
+    } else {
+      const data = await mataroTracker.getTargetStopETA(lineId, stopId, direction);
+      res.json({ success: true, data });
+    }
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Get unified Live Telemetry & Vehicles for any line
+app.get('/api/line/:lineId/live', async (req, res) => {
+  const { lineId } = req.params;
+  const direction = req.query.direction || '1';
+  try {
+    if (lineId === 'c10') {
+      const data = await corridorTracker.getCorridorLiveTracking(direction);
+      res.json({ success: true, data });
+    } else {
+      const data = await mataroTracker.getLineDetails(lineId, direction);
+      res.json({ success: true, data });
+    }
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Get unified Stop Departures for any line & stop
+app.get('/api/line/:lineId/stop/:stopId/departures', async (req, res) => {
+  const { lineId, stopId } = req.params;
+  const direction = req.query.direction || '1';
+  try {
+    if (lineId === 'c10') {
+      const data = await corridorTracker.getStopDepartures(stopId, direction);
+      res.json({ success: true, data });
+    } else {
+      const data = await mataroTracker.getStopDepartures(stopId, lineId);
+      res.json({ success: true, data });
+    }
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ==========================================
+// 3. LEGACY ENDPOINTS (BACKWARDS COMPATIBILITY)
 // ==========================================
 
 // Target stop real-time ETA endpoint for C-10
@@ -153,10 +246,6 @@ app.get('/api/c10/live-corridor', async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-
-// ==========================================
-// 3. MATARÓ BUS (L1–L8) ENDPOINTS
-// ==========================================
 
 // List of all Mataró urban lines
 app.get('/api/mataro/lines', (req, res) => {

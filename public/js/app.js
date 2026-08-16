@@ -1,13 +1,10 @@
-// Bad AMB Bus Tracker - Unified Multi-Page Application Controller
-// Page 1: Interurbà (Line C-10 Barcelona ⇄ Mataró)
-// Page 2: Urbà Mataró (Lines L1 to L8 Avanza)
+// Bad AMB Bus Tracker - Unified Dynamic Multi-Line Platform Controller
+// Universal architecture supporting C-10, Mataró Urbà (L1..L8), and all regional lines
 
 class TransitApp {
   constructor() {
-    this.currentPage = 'c10'; // 'c10' | 'mataro'
-    this.activeMataroLineId = '1'; // '1'..'8'
-    this.c10Direction = '1'; // '1' (to Mataró) | '0' (to Barcelona)
-    this.mataroDirection = '0'; // '0' | '1'
+    this.activeLineId = 'c10';
+    this.activeDirection = '1';
 
     this.availableLines = [];
     this.activeLineData = null;
@@ -15,7 +12,7 @@ class TransitApp {
     this.targetStopsByLine = JSON.parse(localStorage.getItem('bad_amb_target_stops') || '{}');
     this.allStops = [];
     this.activeBuses = [];
-    this.selectedVehicleIdByPage = { c10: null, mataro: null };
+    this.selectedVehicleId = null;
 
     this.pollInterval = 15;
     this.secondsRemaining = this.pollInterval;
@@ -31,28 +28,25 @@ class TransitApp {
   }
 
   async init() {
-    console.log('🚀 Initializing Bad AMB Bus Tracker Mobile-First Engine...');
+    console.log('🚀 Initializing Bad AMB Bus Tracker Universal Engine...');
 
     try {
       // 1. Initialize Map
       this.mapController = new C10Map('map-container');
 
-      // 2. Determine initial page from URL hash & sync DOM views
+      // 2. Load Available Lines & Determine Initial Route from URL hash
+      await this.fetchLines();
       this.parseUrlHash();
-      this.syncPageViewsDOM();
 
       // 3. Setup DOM Listeners & Controls
       this.setupEventListeners();
       this.setupMapResizeControls();
       this.setupAudio();
 
-      // 4. Load Available Lines & Render Navigation
-      await this.fetchLines();
-
-      // 5. Initial Data Fetch
+      // 4. Initial Data Fetch
       await this.refreshAllData(true);
 
-      // 6. Start Polling & Animation Glider Loop
+      // 5. Start Polling & Animation Glider Loop
       this.startAutoRefresh();
       this.startAnimationLoop();
     } catch (err) {
@@ -61,53 +55,41 @@ class TransitApp {
   }
 
   parseUrlHash() {
-    const hash = window.location.hash.toLowerCase();
-    if (hash.startsWith('#mataro')) {
-      this.currentPage = 'mataro';
-      const lineMatch = hash.match(/#mataro-?l?(\d+)/);
-      if (lineMatch && lineMatch[1]) {
-        this.activeMataroLineId = lineMatch[1];
+    const hash = window.location.hash.toLowerCase().replace('#', '').trim();
+    if (!hash) {
+      this.activeLineId = 'c10';
+      return;
+    }
+
+    if (hash.startsWith('mataro-l') || hash.startsWith('mataro-')) {
+      const match = hash.match(/mataro-?l?(\d+)/);
+      if (match && match[1]) {
+        this.activeLineId = match[1];
+        return;
       }
+    }
+
+    if (hash.startsWith('l') && /^\d+$/.test(hash.replace('l', ''))) {
+      this.activeLineId = hash.replace('l', '');
+      return;
+    }
+
+    const matchedLine = this.availableLines.find(l => 
+      String(l.id).toLowerCase() === hash || 
+      String(l.code).toLowerCase() === hash || 
+      String(l.id).toLowerCase() === hash.replace('line-', '')
+    );
+
+    if (matchedLine) {
+      this.activeLineId = String(matchedLine.id);
     } else {
-      this.currentPage = 'c10';
+      this.activeLineId = 'c10';
     }
-  }
-
-  syncPageViewsDOM() {
-    const pageId = this.currentPage;
-
-    // Toggle Page Views
-    const viewC10 = document.getElementById('view-c10');
-    const viewMataro = document.getElementById('view-mataro');
-    if (viewC10) viewC10.classList.toggle('active', pageId === 'c10');
-    if (viewMataro) viewMataro.classList.toggle('active', pageId === 'mataro');
-
-    // Update Header Brand & Selector Card
-    this.updateHeaderBrand();
-    this.updateLineSelectorCard();
   }
 
   // ==========================================
-  // 1. PAGE NAVIGATION & TABS
+  // 1. UNIVERSAL LINE NAVIGATION & CONTROLLER
   // ==========================================
-
-  switchPage(pageId, mataroLineId = null) {
-    this.currentPage = pageId;
-    if (mataroLineId) {
-      this.activeMataroLineId = String(mataroLineId);
-    }
-
-    // Update URL hash without page reload
-    const newHash = pageId === 'mataro' ? `#mataro-l${this.activeMataroLineId}` : '#c10';
-    if (window.location.hash !== newHash) {
-      window.history.replaceState(null, '', newHash);
-    }
-
-    this.syncPageViewsDOM();
-
-    // Refresh Data & Fit Map Bounds for the new page
-    this.refreshAllData(true);
-  }
 
   async fetchLines() {
     try {
@@ -115,244 +97,30 @@ class TransitApp {
       const json = await res.json();
       if (json.success && json.lines) {
         this.availableLines = json.lines;
-        this.updateHeaderBrand();
-        this.updateLineSelectorCard();
       }
     } catch (e) {
       console.error('Error fetching lines:', e);
     }
   }
 
-  openLinePicker() {
-    const backdrop = document.getElementById('line-picker-modal-backdrop');
-    const input = document.getElementById('line-picker-search-input');
-    if (!backdrop) return;
-    this.linePickerSearch = '';
-    if (input) input.value = '';
-    this.renderLinePicker();
-    backdrop.classList.add('active');
-    setTimeout(() => input?.focus(), 50);
-  }
+  switchLine(lineId, direction = null) {
+    this.activeLineId = String(lineId);
+    this.selectedVehicleId = null;
 
-  closeLinePicker() {
-    const backdrop = document.getElementById('line-picker-modal-backdrop');
-    if (backdrop) backdrop.classList.remove('active');
-  }
-
-  renderLinePicker() {
-    const container = document.getElementById('line-picker-container');
-    if (!container) return;
-
-    const q = (this.linePickerSearch || '').trim().toLowerCase();
-    const cityFilter = this.linePickerFilter || 'all';
-
-    // Group lines by network / city
-    const mataroLines = this.availableLines.filter(l => l.id !== 'c10');
-    const maresmeLines = this.availableLines.filter(l => l.id === 'c10');
-
-    const filterFn = (l) => {
-      if (!q) return true;
-      const code = (l.code || String(l.id)).toLowerCase();
-      const name = (l.name || '').toLowerCase();
-      const agency = (l.agency || '').toLowerCase();
-      return code.includes(q) || name.includes(q) || agency.includes(q) || ('línia ' + code).includes(q) || ('linia ' + code).includes(q);
-    };
-
-    const filteredMataro = (cityFilter === 'all' || cityFilter === 'mataro') ? mataroLines.filter(filterFn) : [];
-    const filteredMaresme = (cityFilter === 'all' || cityFilter === 'maresme') ? maresmeLines.filter(filterFn) : [];
-
-    if (filteredMataro.length === 0 && filteredMaresme.length === 0) {
-      container.innerHTML = `
-        <div style="padding: 2.5rem 1rem; text-align: center; color: var(--text-muted);">
-          <div style="font-size: 2rem; margin-bottom: 0.5rem;">🔍</div>
-          <div style="font-weight: 700; color: #fff; margin-bottom: 0.25rem;">Cap línia trobada</div>
-          <div style="font-size: 0.8rem;">No hi ha cap resultat per "${this.linePickerSearch}". Prova cercant per número (ex: 1, 7, C10) o destí.</div>
-        </div>
-      `;
-      return;
-    }
-
-    let html = '';
-
-    const isNight = new Date().getHours() >= 22 || new Date().getHours() < 6;
-
-    // Category 1: Mataró Urbà
-    if (filteredMataro.length > 0) {
-      html += `
-        <div class="line-category-group">
-          <div class="line-category-title">
-            <span>📍 Xarxa Urbana de Mataró (${filteredMataro.length})</span>
-          </div>
-          <div class="line-grid">
-            ${filteredMataro.map(l => {
-              const isActive = this.currentPage === 'mataro' && String(l.id) === String(this.activeMataroLineId);
-              const contrast = this.getContrastColor(l.color);
-              return `
-                <div class="line-grid-card ${isActive ? 'active' : ''}" data-line-id="${l.id}" data-page="mataro">
-                  <div class="line-card-left">
-                    <span class="line-card-badge" style="background:${l.color}; color:${contrast};">${l.code}</span>
-                    <div class="line-card-details">
-                      <div class="line-card-name">Línia ${l.code}: ${l.name}</div>
-                      <div class="line-card-sub">
-                        <span>📍 Mataró Bus</span>
-                        <span>•</span>
-                        <span>${isNight ? '🌙 Represa al matí' : `${l.directions ? l.directions.length : 2} sentits`}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <span class="line-card-arrow">➔</span>
-                </div>
-              `;
-            }).join('')}
-          </div>
-        </div>
-      `;
-    }
-
-    // Category 2: Maresme Interurbà
-    if (filteredMaresme.length > 0) {
-      html += `
-        <div class="line-category-group">
-          <div class="line-category-title">
-            <span>🌊 Corredors Interurbans del Maresme (${filteredMaresme.length})</span>
-          </div>
-          <div class="line-grid">
-            ${filteredMaresme.map(l => {
-              const isActive = this.currentPage === 'c10';
-              const contrast = this.getContrastColor(l.color);
-              return `
-                <div class="line-grid-card ${isActive ? 'active' : ''}" data-line-id="c10" data-page="c10">
-                  <div class="line-card-left">
-                    <span class="line-card-badge" style="background:${l.color}; color:${contrast};">${l.code}</span>
-                    <div class="line-card-details">
-                      <div class="line-card-name">${l.code}: ${l.name}</div>
-                      <div class="line-card-sub">
-                        <span>🌊 Casas / Moventis</span>
-                        <span>•</span>
-                        <span>${isNight ? '🌙 Represa al matí' : 'Corredor N-II'}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <span class="line-card-arrow">➔</span>
-                </div>
-              `;
-            }).join('')}
-          </div>
-        </div>
-      `;
-    }
-
-    container.innerHTML = html;
-
-    // Attach click listeners to cards
-    container.querySelectorAll('.line-grid-card').forEach(card => {
-      card.addEventListener('click', (e) => {
-        e.preventDefault();
-        const page = card.getAttribute('data-page');
-        const lineId = card.getAttribute('data-line-id');
-        this.closeLinePicker();
-
-        if (page === 'c10') {
-          this.switchPage('c10');
-        } else {
-          this.switchPage('mataro', lineId);
-        }
-      });
-    });
-  }
-
-  setupLinePicker() {
-    // Open Triggers
-    document.getElementById('open-line-picker-btn')?.addEventListener('click', (e) => {
-      e.preventDefault();
-      this.openLinePicker();
-    });
-    document.getElementById('open-line-picker-btn-c10')?.addEventListener('click', (e) => {
-      e.preventDefault();
-      this.openLinePicker();
-    });
-    document.querySelector('.logo-group')?.addEventListener('click', (e) => {
-      e.preventDefault();
-      this.openLinePicker();
-    });
-
-    // Close Trigger
-    document.getElementById('line-picker-close-btn')?.addEventListener('click', (e) => {
-      e.preventDefault();
-      this.closeLinePicker();
-    });
-
-    // Backdrop click
-    document.getElementById('line-picker-modal-backdrop')?.addEventListener('click', (e) => {
-      if (e.target.id === 'line-picker-modal-backdrop') {
-        this.closeLinePicker();
-      }
-    });
-
-    // Search input
-    const input = document.getElementById('line-picker-search-input');
-    if (input) {
-      input.addEventListener('input', () => {
-        this.linePickerSearch = input.value;
-        this.renderLinePicker();
-      });
-    }
-
-    // Filter tabs
-    const tabs = document.querySelectorAll('.line-filter-tab');
-    tabs.forEach(tab => {
-      tab.addEventListener('click', (e) => {
-        e.preventDefault();
-        tabs.forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
-        this.linePickerFilter = tab.getAttribute('data-city') || 'all';
-        this.renderLinePicker();
-      });
-    });
-
-    // Keyboard Shortcuts (Cmd/Ctrl + K or ESC)
-    document.addEventListener('keydown', (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        this.openLinePicker();
-      } else if (e.key === 'Escape') {
-        this.closeLinePicker();
-      }
-    });
-  }
-
-  updateLineSelectorCard() {
-    const badge = document.getElementById('mataro-active-line-badge');
-    const title = document.getElementById('line-selector-active-title');
-    const city = document.getElementById('line-selector-city-name');
-
-    if (this.currentPage === 'c10') {
-      if (badge) {
-        badge.textContent = 'C10';
-        badge.style.background = '#009485';
-        badge.style.color = '#fff';
-      }
-      if (title) title.textContent = 'C-10 — Barcelona ⇄ Mataró (per N-II)';
-      if (city) city.textContent = 'Corredor Interurbà Maresme';
+    const lineObj = this.availableLines.find(l => String(l.id) === String(lineId));
+    if (direction !== null) {
+      this.activeDirection = String(direction);
+    } else if (lineObj?.directions?.length > 0) {
+      this.activeDirection = String(lineObj.directions[0].dirId || '1');
     } else {
-      const lineObj = this.availableLines.find(l => String(l.id) === String(this.activeMataroLineId)) || { code: `${this.activeMataroLineId}`, color: '#ff00ff', name: `Línia ${this.activeMataroLineId}` };
-      if (badge) {
-        badge.textContent = lineObj.code;
-        badge.style.background = lineObj.color;
-        badge.style.color = this.getContrastColor(lineObj.color);
-      }
-      if (title) title.textContent = `Línia ${lineObj.code} — ${lineObj.name}`;
-      if (city) city.textContent = 'Xarxa Urbana de Mataró';
+      this.activeDirection = '1';
     }
-  }
 
-  switchMataroLine(lineId) {
-    this.activeMataroLineId = String(lineId);
-    this.mataroDirection = '0';
-    window.history.replaceState(null, '', `#mataro-l${lineId}`);
-    
-    this.updateHeaderBrand();
-    this.updateLineSelectorCard();
+    const hash = this.activeLineId === 'c10' ? '#c10' : `#l${this.activeLineId}`;
+    if (window.location.hash !== hash) {
+      window.history.replaceState(null, '', hash);
+    }
+
     this.refreshAllData(true);
   }
 
@@ -367,60 +135,77 @@ class TransitApp {
     return yiq >= 160 ? '#0f172a' : '#ffffff';
   }
 
-  updateHeaderBrand() {
-    const badge = document.getElementById('header-line-badge');
-    const modeBadge = document.getElementById('header-mode-badge');
-    const subtitle = document.getElementById('header-subtitle');
-    const mapTitle = document.getElementById('map-line-title');
-
-    if (this.currentPage === 'c10') {
-      if (badge) {
-        badge.textContent = 'C10';
-        badge.style.background = '#009485';
-        badge.style.color = '#ffffff';
-      }
-      if (modeBadge) {
-        modeBadge.textContent = 'Interurbà';
-        modeBadge.className = 'header-mode-badge interurba';
-        modeBadge.style.background = 'rgba(0, 148, 133, 0.2)';
-        modeBadge.style.color = '#2dd4bf';
-        modeBadge.style.borderColor = 'rgba(0, 148, 133, 0.45)';
-        modeBadge.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.25)';
-      }
-      if (subtitle) subtitle.textContent = 'Barcelona ↔ Badalona ↔ Maresme ↔ Mataró (per N-II)';
-      if (mapTitle) mapTitle.textContent = 'Traçat del Corredor C-10 i parades';
-    } else {
-      const lineObj = this.availableLines.find(l => String(l.id) === String(this.activeMataroLineId)) || { code: `${this.activeMataroLineId}`, color: '#00ea00', name: `Línia ${this.activeMataroLineId}` };
-      if (badge) {
-        badge.textContent = lineObj.code;
-        badge.style.background = lineObj.color;
-        badge.style.color = this.getContrastColor(lineObj.color);
-      }
-      if (modeBadge) {
-        modeBadge.textContent = 'Urbà Mataró';
-        modeBadge.className = 'header-mode-badge urba';
-        modeBadge.style.background = `rgba(${this.hexToRgb(lineObj.color)}, 0.22)`;
-        modeBadge.style.color = '#ffffff';
-        modeBadge.style.borderColor = lineObj.color;
-        modeBadge.style.boxShadow = `0 0 12px rgba(${this.hexToRgb(lineObj.color)}, 0.35)`;
-      }
-      if (subtitle) subtitle.textContent = `Xarxa Urbana • Línia ${lineObj.code}: ${lineObj.name}`;
-      if (mapTitle) mapTitle.textContent = `Traçat Línia ${lineObj.code} i parades`;
-    }
+  hexToRgb(hex) {
+    if (!hex) return '0, 148, 133';
+    let c = hex.replace('#', '');
+    if (c.length === 3) c = c.split('').map(x => x + x).join('');
+    const num = parseInt(c, 16);
+    return `${(num >> 16) & 255}, ${(num >> 8) & 255}, ${num & 255}`;
   }
 
   // ==========================================
-  // 2. DATA REFRESH ENGINE
+  // 2. DATA REFRESH ENGINE (POLYMORPHIC)
   // ==========================================
 
   async refreshAllData(shouldFitBounds = false) {
     this.setLiveStatus('syncing');
 
     try {
-      if (this.currentPage === 'c10') {
-        await this.refreshC10Data(shouldFitBounds);
-      } else {
-        await this.refreshMataroData(shouldFitBounds);
+      const lId = this.activeLineId;
+      const targetStopId = this.targetStopsByLine[lId] || null;
+      const dir = this.activeDirection;
+
+      // 1. Unified Line details & active buses
+      const lineRes = await fetch(`/api/line/${lId}?direction=${dir}`).then(r => r.json());
+
+      // 2. Unified Target Stop ETA
+      const etaRes = await fetch(`/api/line/${lId}/target-eta?direction=${dir}${targetStopId ? `&stopId=${targetStopId}` : ''}`).then(r => r.json());
+
+      if (lineRes.success && lineRes.data) {
+        const lData = lineRes.data;
+        this.activeLineData = lData;
+        this.allStops = lData.stops || [];
+        this.activeBuses = lData.activeBuses || [];
+
+        // 1. Update Header & Banner
+        this.updateHeaderBrand(lData);
+        this.renderLineBanner(lData);
+
+        // 2. Render Direction Buttons
+        const lineMeta = this.availableLines.find(l => String(l.id) === String(lId)) || lData;
+        this.renderDirectionButtons(lineMeta.directions || lData.directions || [], this.activeDirection);
+
+        // 3. Render Target Card
+        const activeTargetId = targetStopId || (etaRes.data?.targetStop?.id || etaRes.data?.targetStop?.mouteStopId || this.allStops[0]?.id || this.allStops[0]?.mouteStopId);
+        this.populateSelect('target-stop-select', this.allStops, activeTargetId);
+        
+        if (etaRes.success && etaRes.data) {
+          this.renderTargetCard(etaRes.data, lData);
+        }
+
+        // 4. Render Cockpit & Telemetry
+        this.renderTelemetryCockpit(lData);
+
+        // 5. Render Route Progression Timeline
+        this.renderRouteTimeline(lData, activeTargetId);
+
+        // 6. Render Stops Browser
+        this.renderStopsBrowser(this.allStops, lId);
+
+        // 7. Update Map
+        this.updateActiveBusesCount(this.activeBuses.length);
+        const lineColor = lData.color || '#009485';
+        const coords = lData.coords || lData.polyline || [];
+        this.mapController.renderStops(
+          this.allStops, 
+          activeTargetId, 
+          (s) => this.inspectStop(s.id || s.mouteStopId, s.name), 
+          shouldFitBounds, 
+          lineColor, 
+          coords
+        );
+        this.mapController.updateBusMarkers(this.activeBuses, lineColor);
+        this.checkArrivalAlerts(lData, activeTargetId);
       }
 
       this.setLiveStatus('online');
@@ -432,147 +217,82 @@ class TransitApp {
     }
   }
 
-  // Refresh Interurbà (C-10)
-  async refreshC10Data(shouldFitBounds = false) {
-    const targetStopId = this.targetStopsByLine['c10'] || null;
+  updateHeaderBrand(lData) {
+    const badge = document.getElementById('header-line-badge');
+    const modeBadge = document.getElementById('header-mode-badge');
+    const subtitle = document.getElementById('header-subtitle');
+    const mapTitle = document.getElementById('map-line-title');
 
-    // Update active class on C-10 direction buttons without rebuilding DOM
-    const dirBtn1 = document.getElementById('c10-dir-btn-1');
-    const dirBtn0 = document.getElementById('c10-dir-btn-0');
-    const dirBtnBoth = document.getElementById('c10-dir-btn-both');
-    if (dirBtn1) dirBtn1.classList.toggle('active', this.c10Direction === '1');
-    if (dirBtn0) dirBtn0.classList.toggle('active', this.c10Direction === '0');
-    if (dirBtnBoth) dirBtnBoth.classList.toggle('active', this.c10Direction === 'both');
+    const code = lData.code || lData.id || 'C-10';
+    const color = lData.color || '#009485';
+    const isInterurban = lData.id === 'c10' || code.startsWith('C-') || code.startsWith('E');
 
-    if (this.c10Direction === 'both') {
-      const [eta1, stops1, corr1, stops0, corr0] = await Promise.all([
-        fetch(`/api/c10/target-eta?direction=1${targetStopId ? `&stopId=${targetStopId}` : ''}`).then(r => r.json()),
-        fetch(`/api/c10/stops?direction=1`).then(r => r.json()),
-        fetch(`/api/c10/live-corridor?direction=1`).then(r => r.json()),
-        fetch(`/api/c10/stops?direction=0`).then(r => r.json()),
-        fetch(`/api/c10/live-corridor?direction=0`).then(r => r.json())
-      ]);
+    if (badge) {
+      badge.textContent = code;
+      badge.style.background = color;
+      badge.style.color = this.getContrastColor(color);
+    }
 
-      this.allStops = stops1.stops || [];
-      const secondaryStops = stops0.stops || [];
-      this.activeBuses = [...(corr1.data?.activeBuses || []), ...(corr0.data?.activeBuses || [])];
+    if (modeBadge) {
+      modeBadge.textContent = isInterurban ? 'Interurbà' : 'Urbà Mataró';
+      modeBadge.className = `header-mode-badge ${isInterurban ? 'interurba' : 'urba'}`;
+      modeBadge.style.background = `rgba(${this.hexToRgb(color)}, 0.22)`;
+      modeBadge.style.color = '#ffffff';
+      modeBadge.style.borderColor = color;
+      modeBadge.style.boxShadow = `0 2px 8px rgba(0, 0, 0, 0.25)`;
+    }
 
-      this.populateSelect('c10-target-stop-select', this.allStops, targetStopId || '10037202');
-      this.renderStopsBrowser(this.allStops, 'c10');
+    if (subtitle) {
+      subtitle.textContent = `${lData.agency || 'Transport'} • ${lData.name || code}`;
+    }
 
-      if (eta1.success && eta1.data) {
-        this.renderC10TargetCard(eta1.data);
-      }
+    if (mapTitle) {
+      mapTitle.textContent = `Traçat ${code} i parades en temps real`;
+    }
+  }
 
-      if (corr1.success && corr1.data) {
-        this.renderC10Telemetry(corr1.data);
-        this.renderC10CorridorTimeline(corr1.data);
-      }
-      this.updateActiveBusesCount(this.activeBuses.length);
+  renderLineBanner(lData) {
+    const badge = document.getElementById('active-line-badge');
+    const city = document.getElementById('active-line-city-name');
+    const title = document.getElementById('active-line-title');
 
-      const activeTargetId = targetStopId || (eta1.data?.targetStop?.mouteStopId || '10037202');
-      const p1Coords = this.allStops.map(s => [s.lat, s.lon]).filter(p => p[0] && p[1]);
-      const p0Coords = secondaryStops.map(s => [s.lat, s.lon]).filter(p => p[0] && p[1]);
+    const code = lData.code || lData.id || 'C-10';
+    const color = lData.color || '#009485';
 
-      this.mapController.renderStops(this.allStops, activeTargetId, (s) => this.inspectStop(s.mouteStopId, s.name), shouldFitBounds, '#009485', p1Coords, p0Coords, secondaryStops, '#f59e0b');
-      this.mapController.updateBusMarkers(this.activeBuses, '#009485');
+    if (badge) {
+      badge.textContent = code;
+      badge.style.background = color;
+      badge.style.color = this.getContrastColor(color);
+    }
+
+    if (city) {
+      city.textContent = lData.agency || 'Xarxa de Transport';
+    }
+
+    if (title) {
+      title.textContent = `${code} — ${lData.name || ''}`;
+    }
+  }
+
+  renderDirectionButtons(directions, currentDir) {
+    const container = document.getElementById('direction-toggle-group');
+    if (!container) return;
+
+    if (!directions || directions.length === 0) {
+      container.innerHTML = `
+        <button type="button" class="btn-direction active" data-dir-id="1">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m9 18 6-6-6-6"/></svg>
+          <span>Sentit Únic / Circular</span>
+        </button>
+      `;
       return;
     }
 
-    // 1. Target ETA
-    const etaRes = await fetch(`/api/c10/target-eta?direction=${this.c10Direction}${targetStopId ? `&stopId=${targetStopId}` : ''}`).then(r => r.json());
-
-    // 2. Stops Catalog
-    const stopsRes = await fetch(`/api/c10/stops?direction=${this.c10Direction}`).then(r => r.json());
-
-    // 3. Live Corridor Telemetry
-    const corridorRes = await fetch(`/api/c10/live-corridor?direction=${this.c10Direction}`).then(r => r.json());
-
-    if (stopsRes.success) {
-      this.allStops = stopsRes.stops || [];
-      this.populateSelect('c10-target-stop-select', this.allStops, targetStopId || '10037202');
-      this.renderStopsBrowser(this.allStops, 'c10');
-    }
-
-    if (etaRes.success && etaRes.data) {
-      this.renderC10TargetCard(etaRes.data);
-    }
-
-    if (corridorRes.success && corridorRes.data) {
-      this.activeBuses = corridorRes.data.activeBuses || [];
-      this.renderC10Telemetry(corridorRes.data);
-      this.renderC10CorridorTimeline(corridorRes.data);
-      this.updateActiveBusesCount(corridorRes.data.totalActiveBuses || 0);
-      this.checkArrivalAlerts(corridorRes.data, 'c10');
-    }
-
-    // Map Render
-    const activeTargetId = targetStopId || (etaRes.data?.targetStop?.mouteStopId || '10037202');
-    this.mapController.renderStops(this.allStops, activeTargetId, (s) => this.inspectStop(s.mouteStopId, s.name), shouldFitBounds, '#009485');
-    this.mapController.updateBusMarkers(this.activeBuses, '#009485');
-  }
-
-  // Refresh Urbà Mataró (1..8)
-  async refreshMataroData(shouldFitBounds = false) {
-    const lId = this.activeMataroLineId;
-    const targetStopId = this.targetStopsByLine[lId] || null;
-
-    const queryDir = this.mataroDirection === 'both' ? 'both' : this.mataroDirection;
-    const etaQueryDir = this.mataroDirection === 'both' ? '0' : this.mataroDirection;
-
-    // 1. Line details with SIRI live telemetry & dead-zone estimation
-    const lineRes = await fetch(`/api/mataro/line/${lId}?direction=${queryDir}`).then(r => r.json());
-
-    // 2. Target Stop ETA
-    const etaRes = await fetch(`/api/mataro/target-eta?lineId=${lId}&direction=${etaQueryDir}${targetStopId ? `&stopId=${targetStopId}` : ''}`).then(r => r.json());
-
-    if (lineRes.success && lineRes.data) {
-      const lData = lineRes.data;
-      this.activeLineData = lData;
-      this.allStops = lData.stops || [];
-      this.activeBuses = lData.activeBuses || [];
-
-      // Direction buttons for Mataró Line
-      const lineObj = this.availableLines.find(l => String(l.id) === String(lId));
-      if (lineObj && lineObj.directions) {
-        this.renderDirectionButtons('mataro-direction-toggle-group', lineObj.directions.map(d => ({ id: d.dirId, name: d.name })), this.mataroDirection);
-      }
-
-      // Populate Target Select & Browser
-      const activeTargetId = targetStopId || (etaRes.data?.targetStop?.id || this.allStops[0]?.id);
-      this.populateSelect('mataro-target-stop-select', this.allStops, activeTargetId);
-      this.renderStopsBrowser(this.allStops, lId);
-
-      // Render Telemetry & Timeline
-      this.renderMataroTelemetry(lData);
-      this.renderMataroTimeline(lData, activeTargetId);
-      this.updateActiveBusesCount(lData.totalActiveBuses || 0);
-
-      // Map Render with High-Res Road Polyline
-      if (this.mataroDirection === 'both' && lData.allDirections && lData.allDirections.length > 1) {
-        const d0 = lData.allDirections[0];
-        const d1 = lData.allDirections[1];
-        this.mapController.renderStops(d0.stops || this.allStops, activeTargetId, (s) => this.inspectStop(s.id, s.name), shouldFitBounds, lData.color, d0.polyline, d1.polyline, d1.stops, '#38bdf8');
-        this.mapController.updateBusMarkers(this.activeBuses, lData.color, '#38bdf8');
-      } else {
-        this.mapController.renderStops(this.allStops, activeTargetId, (s) => this.inspectStop(s.id, s.name), shouldFitBounds, lData.color, lData.polyline);
-        this.mapController.updateBusMarkers(this.activeBuses, lData.color);
-      }
-    }
-
-    if (etaRes.success && etaRes.data) {
-      this.renderMataroTargetCard(etaRes.data);
-    }
-  }
-
-  renderDirectionButtons(containerId, directions, currentDir) {
-    const container = document.getElementById(containerId);
-    if (!container || !directions || directions.length === 0) return;
-
     let html = directions.map((d, i) => {
-      const isActive = String(d.id) === String(currentDir);
+      const dirId = String(d.dirId || d.id);
+      const isActive = dirId === String(currentDir);
       return `
-        <button type="button" class="btn-direction ${isActive ? 'active' : ''}" data-dir-id="${d.id}">
+        <button type="button" class="btn-direction ${isActive ? 'active' : ''}" data-dir-id="${dirId}">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="${i === 0 ? 'm9 18 6-6-6-6' : 'm15 18-6-6 6-6'}"/></svg>
           <span>${d.name}</span>
         </button>
@@ -591,337 +311,44 @@ class TransitApp {
   }
 
   // ==========================================
-  // 3. UI RENDERING FOR INTERURBÀ (C-10)
+  // 3. TARGET CARD & HERO ETA (UNIVERSAL)
   // ==========================================
 
-  renderC10TargetCard(data) {
-    const titleEl = document.getElementById('c10-target-stop-title');
-    const codeEl = document.getElementById('c10-target-stop-code');
-    const dirSubEl = document.getElementById('c10-target-direction-sub');
-    const etaBigEl = document.getElementById('c10-eta-big-display');
-    const etaClockEl = document.getElementById('c10-eta-clock-display');
-    const etaPillEl = document.getElementById('c10-eta-status-pill');
-    const etaStatusText = document.getElementById('c10-eta-status-text');
-    const destEl = document.getElementById('c10-next-bus-dest');
-    const mapsLinkEl = document.getElementById('c10-target-maps-link');
+  renderTargetCard(data, lData) {
+    const titleEl = document.getElementById('target-stop-title');
+    const codeEl = document.getElementById('target-stop-code');
+    const dirSubEl = document.getElementById('target-direction-sub');
+    const etaBigEl = document.getElementById('eta-big-display');
+    const etaClockEl = document.getElementById('eta-clock-display');
+    const etaPillEl = document.getElementById('eta-status-pill');
+    const etaStatusText = document.getElementById('eta-status-text');
+    const lineTagEl = document.getElementById('target-line-tag');
+    const destEl = document.getElementById('next-bus-dest');
+    const opEl = document.getElementById('target-operator-name');
+    const mapsLinkEl = document.getElementById('target-maps-link');
 
     const stop = data.targetStop || {};
     const next = data.nextBus || null;
 
-    if (titleEl) titleEl.textContent = stop.name || "Plaça d'Itàlia (Mataró)";
-    if (codeEl) codeEl.textContent = stop.code || '121';
-    if (dirSubEl) dirSubEl.textContent = data.directionName || 'Sentit Mataró';
-    if (destEl) destEl.textContent = next?.destination || data.directionName || 'Hospital de Mataró';
-
-    if (mapsLinkEl && stop.lat && stop.lon) {
-      mapsLinkEl.href = `https://www.google.com/maps/search/?api=1&query=${stop.lat},${stop.lon}`;
-    }
-
-    this.renderEtaDisplay(next, etaBigEl, etaClockEl, etaPillEl, etaStatusText);
-    this.renderDeparturesInto('c10-departures-list-container', 'c10-dep-count-badge', data.upcomingDepartures || []);
-  }
-
-  renderC10Telemetry(corridorData) {
-    const buses = corridorData.activeBuses || [];
-    const bar = document.getElementById('c10-telemetry-vehicles-bar');
-    const chipsContainer = document.getElementById('c10-telemetry-vehicles-chips');
-
-    if (buses.length > 0) {
-      if (bar) bar.style.display = 'flex';
-      
-      const selectedId = this.selectedVehicleIdByPage['c10'];
-      const activeBus = buses.find(b => String(b.tripId || b.vehicleId) === String(selectedId)) || buses[0];
-      this.selectedVehicleIdByPage['c10'] = activeBus.tripId || activeBus.vehicleId;
-
-      if (chipsContainer) {
-        chipsContainer.innerHTML = buses.map((b, idx) => {
-          const isSelected = String(b.tripId || b.vehicleId) === String(this.selectedVehicleIdByPage['c10']);
-          const label = b.vehicleId ? `Bus #${b.vehicleId}` : `Bus ${idx + 1}`;
-          const isParked = b.isTerminalLayover;
-          return `
-            <button type="button" class="telemetry-bus-chip ${isSelected ? 'active' : ''}" data-bus-trip="${b.tripId || b.vehicleId}">
-              <span>${isParked ? '🅿️' : '🚌'}</span>
-              <span>${label}</span>
-              <span style="font-size:0.68rem; opacity:0.8;">(${b.fromStop ? b.toStop : 'En servei'})</span>
-            </button>
-          `;
-        }).join('');
-
-        chipsContainer.querySelectorAll('.telemetry-bus-chip').forEach(btn => {
-          btn.addEventListener('click', (e) => {
-            e.preventDefault();
-            const tripId = btn.getAttribute('data-bus-trip');
-            this.selectedVehicleIdByPage['c10'] = tripId;
-            this.renderC10Telemetry(corridorData);
-          });
-        });
-      }
-
-      this.renderC10TelemetryFields(activeBus);
-    } else {
-      if (bar) bar.style.display = 'none';
-      this.renderC10TelemetryFields(null);
-    }
-  }
-
-  renderC10TelemetryFields(b) {
-    const coordsEl = document.getElementById('c10-telemetry-coords');
-    const bearingEl = document.getElementById('c10-telemetry-bearing');
-    const speedEl = document.getElementById('c10-telemetry-speed');
-    const segmentEl = document.getElementById('c10-telemetry-segment');
-    const etaNextEl = document.getElementById('c10-telemetry-eta-next');
-    const progressFill = document.getElementById('c10-telemetry-progress-bar');
-    const progressText = document.getElementById('c10-telemetry-progress-text');
-    const statusBadge = document.getElementById('c10-telemetry-status-badge');
-
-    if (!b) {
-      const firstTime = this.c10Direction === '1' ? '08:15' : '06:45';
-      if (coordsEl) coordsEl.textContent = 'Sense autobusos en ruta';
-      if (bearingEl) bearingEl.textContent = '--';
-      if (speedEl) speedEl.textContent = '0 km/h (Parat)';
-      if (segmentEl) segmentEl.textContent = 'Circuit fora d\'horari';
-      if (etaNextEl) etaNextEl.textContent = `Represa demà (${firstTime})`;
-      if (progressFill) progressFill.style.width = '0%';
-      if (progressText) progressText.textContent = '0%';
-      if (statusBadge) {
-        statusBadge.textContent = '🌙 Servei Nocturn / Inactiu';
-        statusBadge.className = 'telemetry-status-badge night';
-      }
-      return;
-    }
-
-    if (coordsEl) coordsEl.textContent = b.coordinatesFormatted || `${b.lat.toFixed(5)}° N, ${b.lon.toFixed(5)}° E`;
-    if (bearingEl) bearingEl.textContent = `${b.compass?.label || 'N/A'} (${b.bearing || 0}°)`;
-    if (speedEl) speedEl.textContent = `${b.speedKmh || 35} km/h`;
-    if (segmentEl) segmentEl.textContent = `${b.fromStop} ➔ ${b.toStop}`;
-    if (etaNextEl) etaNextEl.textContent = b.secondsToNextStop ? `~${Math.round(b.secondsToNextStop / 60)} min (${b.toStop})` : `${b.toStop}`;
-    
-    const prog = Math.min(100, Math.max(0, b.totalProgress || 0));
-    if (progressFill) progressFill.style.width = `${prog}%`;
-    if (progressText) progressText.textContent = `${prog}%`;
-
-    if (statusBadge) {
-      statusBadge.textContent = b.statusText || (b.isTerminalLayover ? '🅿️ En Regulació' : '🟢 Senyal GPS Actiu');
-      statusBadge.className = 'telemetry-status-badge';
-    }
-  }
-
-  renderC10CorridorTimeline(corridorData) {
-    const container = document.getElementById('c10-corridor-timeline-container');
-    const checkpoints = corridorData.checkpoints || [];
-    if (!container || checkpoints.length === 0) return;
-
-    const currentTargetId = this.targetStopsByLine['c10'] || '10037202';
-
-    container.innerHTML = checkpoints.map((cp, idx) => {
-      const isTarget = Boolean(currentTargetId && cp.id === currentTargetId);
-      const isPassed = cp.isPassed;
-      const hasBus = cp.hasBus;
-
-      let nodeClass = 'step-node';
-      let iconContent = `${idx + 1}`;
-
-      if (hasBus) {
-        nodeClass += ' has-bus';
-        iconContent = '🚌';
-      } else if (isPassed) {
-        nodeClass += ' passed';
-        iconContent = '✓';
-      } else if (isTarget) {
-        nodeClass += ' target';
-        iconContent = '⭐';
-      }
-
-      return `
-        <div class="corridor-step" data-target-id="${cp.id}" style="cursor:pointer;" title="Fixar ${cp.name} com a parada principal">
-          <div class="${nodeClass}">
-            <span>${iconContent}</span>
-          </div>
-          <div class="step-info">
-            <span class="step-name">${cp.name}</span>
-            <span class="step-eta">${cp.etaMinutes === 0 ? 'Ara' : `${cp.etaMinutes} min`}</span>
-            <span class="step-zone">${cp.zone}</span>
-          </div>
-        </div>
-      `;
-    }).join('');
-  }
-
-  // ==========================================
-  // 4. UI RENDERING FOR URBÀ MATARÓ (1..8)
-  // ==========================================
-
-  renderMataroTargetCard(data) {
-    const titleEl = document.getElementById('mataro-target-stop-title');
-    const codeEl = document.getElementById('mataro-target-stop-code');
-    const dirSubEl = document.getElementById('mataro-target-direction-sub');
-    const etaBigEl = document.getElementById('mataro-eta-big-display');
-    const etaClockEl = document.getElementById('mataro-eta-clock-display');
-    const etaPillEl = document.getElementById('mataro-eta-status-pill');
-    const etaStatusText = document.getElementById('mataro-eta-status-text');
-    const lineTagEl = document.getElementById('mataro-next-bus-line-tag');
-    const destEl = document.getElementById('mataro-next-bus-dest');
-    const mapsLinkEl = document.getElementById('mataro-target-maps-link');
-
-    const stop = data.targetStop || {};
-    const next = data.nextBus || null;
-
-    if (titleEl) titleEl.textContent = stop.name || 'Parada Mataró';
+    if (titleEl) titleEl.textContent = stop.name || 'Parada';
     if (codeEl) codeEl.textContent = stop.code || stop.id || '--';
     if (dirSubEl) dirSubEl.textContent = data.directionName || 'En servei';
+
     if (lineTagEl) {
-      lineTagEl.textContent = `Línia ${this.activeMataroLineId}`;
-      if (data.line?.color) lineTagEl.style.color = data.line.color;
+      lineTagEl.textContent = lData.code || lData.id || 'C-10';
+      if (lData.color) lineTagEl.style.color = lData.color;
     }
+
     if (destEl) destEl.textContent = next?.destination || data.directionName || 'Destí';
+    if (opEl) opEl.textContent = lData.agency || 'Operador de Transport';
 
     if (mapsLinkEl && stop.lat && stop.lon) {
       mapsLinkEl.href = `https://www.google.com/maps/search/?api=1&query=${stop.lat},${stop.lon}`;
     }
 
     this.renderEtaDisplay(next, etaBigEl, etaClockEl, etaPillEl, etaStatusText);
-    this.renderDeparturesInto('mataro-departures-list-container', 'mataro-dep-count-badge', data.upcomingDepartures || []);
+    this.renderDeparturesInto('departures-list-container', 'dep-count-badge', data.upcomingDepartures || []);
   }
-
-  renderMataroTelemetry(lineData) {
-    const buses = lineData.activeBuses || [];
-    const bar = document.getElementById('mataro-telemetry-vehicles-bar');
-    const chipsContainer = document.getElementById('mataro-telemetry-vehicles-chips');
-
-    if (buses.length > 0) {
-      if (bar) bar.style.display = 'flex';
-
-      const selectedId = this.selectedVehicleIdByPage['mataro'];
-      const activeBus = buses.find(b => String(b.tripId || b.vehicleId) === String(selectedId)) || buses[0];
-      this.selectedVehicleIdByPage['mataro'] = activeBus.tripId || activeBus.vehicleId;
-
-      if (chipsContainer) {
-        chipsContainer.innerHTML = buses.map((b, idx) => {
-          const isSelected = String(b.tripId || b.vehicleId) === String(this.selectedVehicleIdByPage['mataro']);
-          const label = b.vehicleId ? `Bus #${b.vehicleId}` : `Bus ${idx + 1}`;
-          const isParked = b.isTerminalLayover;
-          return `
-            <button type="button" class="telemetry-bus-chip ${isSelected ? 'active' : ''}" data-bus-trip="${b.tripId || b.vehicleId}">
-              <span>${isParked ? '🅿️' : '🚌'}</span>
-              <span>${label}</span>
-              <span style="font-size:0.68rem; opacity:0.8;">(${b.toStop || 'En línia'})</span>
-            </button>
-          `;
-        }).join('');
-
-        chipsContainer.querySelectorAll('.telemetry-bus-chip').forEach(btn => {
-          btn.addEventListener('click', (e) => {
-            e.preventDefault();
-            const tripId = btn.getAttribute('data-bus-trip');
-            this.selectedVehicleIdByPage['mataro'] = tripId;
-            this.renderMataroTelemetry(lineData);
-          });
-        });
-      }
-
-      this.renderMataroTelemetryFields(activeBus, lineData);
-    } else {
-      if (bar) bar.style.display = 'none';
-      this.renderMataroTelemetryFields(null, lineData);
-    }
-  }
-
-  renderMataroTelemetryFields(b, lineData) {
-    const coordsEl = document.getElementById('mataro-telemetry-coords');
-    const bearingEl = document.getElementById('mataro-telemetry-bearing');
-    const speedEl = document.getElementById('mataro-telemetry-speed');
-    const segmentEl = document.getElementById('mataro-telemetry-segment');
-    const etaNextEl = document.getElementById('mataro-telemetry-eta-next');
-    const progressFill = document.getElementById('mataro-telemetry-progress-bar');
-    const progressText = document.getElementById('mataro-telemetry-progress-text');
-    const statusBadge = document.getElementById('mataro-telemetry-status-badge');
-    const radarDot = document.getElementById('mataro-telemetry-radar-dot');
-
-    if (!b) {
-      const firstTime = lineData?.serviceStatus?.firstServiceTomorrow || '07:30';
-      if (coordsEl) coordsEl.textContent = 'Sense autobusos en ruta';
-      if (bearingEl) bearingEl.textContent = '--';
-      if (speedEl) speedEl.textContent = '0 km/h (Parat)';
-      if (segmentEl) segmentEl.textContent = 'Circuit fora d\'horari';
-      if (etaNextEl) etaNextEl.textContent = `Represa demà (${firstTime})`;
-      if (progressFill) progressFill.style.width = '0%';
-      if (progressText) progressText.textContent = '0%';
-      if (statusBadge) { 
-        statusBadge.textContent = '🌙 Servei Nocturn / Inactiu'; 
-        statusBadge.className = 'telemetry-status-badge night'; 
-      }
-      if (radarDot) radarDot.className = 'telemetry-live-radar night';
-      return;
-    }
-
-    const isEst = Boolean(b.isEstimated);
-
-    if (coordsEl) coordsEl.textContent = b.coordinatesFormatted || `${b.lat.toFixed(5)}° N, ${b.lon.toFixed(5)}° E`;
-    if (bearingEl) bearingEl.textContent = `${b.compass?.label || 'N/A'} (${b.bearing || 0}°)`;
-    if (speedEl) speedEl.textContent = `${b.speedKmh || 30} km/h`;
-    if (segmentEl) segmentEl.textContent = `${b.fromStop} ➔ ${b.toStop}`;
-    if (etaNextEl) etaNextEl.textContent = b.secondsToNextStop ? `~${Math.round(b.secondsToNextStop / 60)} min (${b.toStop})` : `${b.toStop}`;
-    
-    const prog = Math.min(100, Math.max(0, b.totalProgress || 0));
-    if (progressFill) progressFill.style.width = `${prog}%`;
-    if (progressText) progressText.textContent = `${prog}%`;
-
-    if (statusBadge) {
-      statusBadge.textContent = b.statusText || (b.isTerminalLayover ? '🅿️ En Regulació' : isEst ? '⚡ Estimació Zona Cobertura' : '🟢 Senyal GPS Actiu');
-      statusBadge.className = `telemetry-status-badge ${isEst ? 'estimated' : ''}`;
-    }
-
-    if (radarDot) {
-      radarDot.className = `telemetry-live-radar ${isEst ? 'dead-zone' : ''}`;
-    }
-  }
-
-  renderMataroTimeline(lineData, activeTargetId) {
-    const container = document.getElementById('mataro-corridor-timeline-container');
-    const stops = lineData.stops || [];
-    if (!container || stops.length === 0) return;
-
-    const stepInterval = Math.max(1, Math.floor(stops.length / 8));
-    const checkpoints = stops.filter((s, i) => i === 0 || i === stops.length - 1 || i % stepInterval === 0 || s.id === activeTargetId);
-
-    const activeBus = lineData.activeBuses[0] || null;
-
-    container.innerHTML = checkpoints.map((s, idx) => {
-      const isTarget = String(s.id) === String(activeTargetId);
-      const isPassed = activeBus && s.seq < (activeBus.fromSeq || 0);
-      const hasBus = activeBus && (s.seq === activeBus.fromSeq || s.seq === activeBus.toSeq);
-
-      let nodeClass = 'step-node';
-      let iconContent = `${idx + 1}`;
-
-      if (hasBus) {
-        nodeClass += ' has-bus';
-        iconContent = '🚌';
-      } else if (isPassed) {
-        nodeClass += ' passed';
-        iconContent = '✓';
-      } else if (isTarget) {
-        nodeClass += ' target';
-        iconContent = '⭐';
-      }
-
-      return `
-        <div class="corridor-step" data-target-id="${s.id}" style="cursor:pointer;" title="Fixar ${s.name} com a parada principal">
-          <div class="${nodeClass}">
-            <span>${iconContent}</span>
-          </div>
-          <div class="step-info">
-            <span class="step-name">${s.name}</span>
-            <span class="step-zone">#${s.seq} Mataró</span>
-          </div>
-        </div>
-      `;
-    }).join('');
-  }
-
-  // ==========================================
-  // 5. HELPER RENDERING METHODS
-  // ==========================================
 
   renderEtaDisplay(next, etaBigEl, etaClockEl, etaPillEl, etaStatusText) {
     if (next) {
@@ -977,7 +404,7 @@ class TransitApp {
       return;
     }
 
-    container.innerHTML = departures.slice(0, 6).map((dep, idx) => {
+    container.innerHTML = departures.slice(0, 8).map((dep, idx) => {
       const clockTime = dep.expectedIso
         ? new Date(dep.expectedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
         : (dep.departureTime || '--:--');
@@ -1030,6 +457,163 @@ class TransitApp {
     }).join('');
   }
 
+  // ==========================================
+  // 4. TELEMETRY COCKPIT & VEHICLE SWITCHER
+  // ==========================================
+
+  renderTelemetryCockpit(lineData) {
+    const buses = lineData.activeBuses || [];
+    const bar = document.getElementById('telemetry-vehicles-bar');
+    const chipsContainer = document.getElementById('telemetry-vehicles-chips');
+
+    if (buses.length > 0) {
+      if (bar) bar.style.display = 'flex';
+
+      const activeBus = buses.find(b => String(b.tripId || b.vehicleId) === String(this.selectedVehicleId)) || buses[0];
+      this.selectedVehicleId = activeBus.tripId || activeBus.vehicleId;
+
+      if (chipsContainer) {
+        chipsContainer.innerHTML = buses.map((b, idx) => {
+          const isSelected = String(b.tripId || b.vehicleId) === String(this.selectedVehicleId);
+          const label = b.vehicleId ? `Bus #${b.vehicleId}` : `Bus ${idx + 1}`;
+          const isParked = b.isTerminalLayover;
+          return `
+            <button type="button" class="telemetry-bus-chip ${isSelected ? 'active' : ''}" data-bus-trip="${b.tripId || b.vehicleId}">
+              <span>${isParked ? '🅿️' : '🚌'}</span>
+              <span>${label}</span>
+              <span style="font-size:0.68rem; opacity:0.8;">(${b.toStop || b.destination || 'En línia'})</span>
+            </button>
+          `;
+        }).join('');
+
+        chipsContainer.querySelectorAll('.telemetry-bus-chip').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            this.selectedVehicleId = btn.getAttribute('data-bus-trip');
+            this.renderTelemetryCockpit(lineData);
+          });
+        });
+      }
+
+      this.renderTelemetryFields(activeBus, lineData);
+    } else {
+      if (bar) bar.style.display = 'none';
+      this.renderTelemetryFields(null, lineData);
+    }
+  }
+
+  renderTelemetryFields(b, lineData) {
+    const coordsEl = document.getElementById('telemetry-coords');
+    const bearingEl = document.getElementById('telemetry-bearing');
+    const speedEl = document.getElementById('telemetry-speed');
+    const segmentEl = document.getElementById('telemetry-segment');
+    const etaNextEl = document.getElementById('telemetry-eta-next');
+    const progressFill = document.getElementById('telemetry-progress-bar');
+    const progressText = document.getElementById('telemetry-progress-text');
+    const statusBadge = document.getElementById('telemetry-status-badge');
+    const radarDot = document.getElementById('telemetry-radar-dot');
+
+    if (!b) {
+      const firstTime = lineData?.serviceStatus?.firstServiceTomorrow || '06:45';
+      if (coordsEl) coordsEl.textContent = 'Sense autobusos en ruta';
+      if (bearingEl) bearingEl.textContent = '--';
+      if (speedEl) speedEl.textContent = '0 km/h (Parat)';
+      if (segmentEl) segmentEl.textContent = 'Circuit fora d\'horari';
+      if (etaNextEl) etaNextEl.textContent = `Represa demà (${firstTime})`;
+      if (progressFill) progressFill.style.width = '0%';
+      if (progressText) progressText.textContent = '0%';
+      if (statusBadge) { 
+        statusBadge.textContent = '🌙 Servei Nocturn / Inactiu'; 
+        statusBadge.className = 'telemetry-status-badge night'; 
+      }
+      if (radarDot) radarDot.className = 'telemetry-live-radar night';
+      return;
+    }
+
+    const isEst = Boolean(b.isEstimated);
+
+    if (coordsEl) coordsEl.textContent = b.coordinatesFormatted || `${b.lat.toFixed(5)}° N, ${b.lon.toFixed(5)}° E`;
+    if (bearingEl) bearingEl.textContent = `${b.compass?.label || 'N/A'} (${b.bearing || 0}°)`;
+    if (speedEl) speedEl.textContent = `${b.speedKmh || 32} km/h`;
+    if (segmentEl) segmentEl.textContent = `${b.fromStop || 'Origen'} ➔ ${b.toStop || 'Destí'}`;
+    if (etaNextEl) etaNextEl.textContent = b.secondsToNextStop ? `~${Math.round(b.secondsToNextStop / 60)} min (${b.toStop})` : `${b.toStop || 'En trajecte'}`;
+    
+    const prog = Math.min(100, Math.max(0, b.totalProgress || 0));
+    if (progressFill) progressFill.style.width = `${prog}%`;
+    if (progressText) progressText.textContent = `${prog}%`;
+
+    if (statusBadge) {
+      statusBadge.textContent = b.statusText || (b.isTerminalLayover ? '🅿️ En Regulació' : isEst ? '⚡ Estimació Zona Cobertura' : '🟢 Senyal GPS Actiu');
+      statusBadge.className = `telemetry-status-badge ${isEst ? 'estimated' : ''}`;
+    }
+
+    if (radarDot) {
+      radarDot.className = `telemetry-live-radar ${isEst ? 'dead-zone' : ''}`;
+    }
+  }
+
+  // ==========================================
+  // 5. ROUTE PROGRESSION TIMELINE (UNIVERSAL)
+  // ==========================================
+
+  renderRouteTimeline(lineData, activeTargetId) {
+    const container = document.getElementById('corridor-timeline-container');
+    const titleEl = document.getElementById('corridor-title-text');
+    const zonePill = document.getElementById('corridor-zone-pill');
+
+    if (titleEl) {
+      titleEl.textContent = `Recorregut ${lineData.code || lineData.id || ''}: ${lineData.name || ''}`;
+    }
+
+    if (zonePill) {
+      zonePill.textContent = lineData.agency || 'Xarxa de Transport';
+    }
+
+    const stops = lineData.stops || [];
+    if (!container || stops.length === 0) return;
+
+    const stepInterval = Math.max(1, Math.floor(stops.length / 9));
+    const checkpoints = stops.filter((s, i) => i === 0 || i === stops.length - 1 || i % stepInterval === 0 || String(s.id || s.mouteStopId) === String(activeTargetId));
+    const activeBus = lineData.activeBuses?.[0] || null;
+
+    container.innerHTML = checkpoints.map((s, idx) => {
+      const sId = String(s.id || s.mouteStopId || s.code);
+      const isTarget = sId === String(activeTargetId);
+      const isPassed = activeBus && s.seq < (activeBus.fromSeq || 0);
+      const hasBus = activeBus && (s.seq === activeBus.fromSeq || s.seq === activeBus.toSeq);
+
+      let nodeClass = 'step-node';
+      let iconContent = `${idx + 1}`;
+
+      if (hasBus) {
+        nodeClass += ' has-bus';
+        iconContent = '🚌';
+      } else if (isPassed) {
+        nodeClass += ' passed';
+        iconContent = '✓';
+      } else if (isTarget) {
+        nodeClass += ' target';
+        iconContent = '⭐';
+      }
+
+      return `
+        <div class="corridor-step" data-target-id="${sId}" style="cursor:pointer;" title="Fixar ${s.name} com a parada principal">
+          <div class="${nodeClass}">
+            <span>${iconContent}</span>
+          </div>
+          <div class="step-info">
+            <span class="step-name">${s.name}</span>
+            <span class="step-zone">#${s.seq || idx + 1} • ${s.zone || 'Parada'}</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  // ==========================================
+  // 6. STOPS BROWSER & SELECTOR (UNIVERSAL)
+  // ==========================================
+
   populateSelect(selectId, stops, selectedId) {
     const select = document.getElementById(selectId);
     if (!select) return;
@@ -1070,8 +654,14 @@ class TransitApp {
     }).join('');
   }
 
+  setTargetStop(stopId) {
+    this.targetStopsByLine[this.activeLineId] = String(stopId);
+    localStorage.setItem('bad_amb_target_stops', JSON.stringify(this.targetStopsByLine));
+    this.refreshAllData(false);
+  }
+
   // ==========================================
-  // 6. STOP INSPECTION & TARGET SELECTION
+  // 7. STOP INSPECTION MODAL (UNIVERSAL)
   // ==========================================
 
   async inspectStop(stopId, stopName) {
@@ -1083,7 +673,6 @@ class TransitApp {
     const setTargetBtn = document.getElementById('modal-set-target-btn');
     const mapsLink = document.getElementById('modal-maps-link');
 
-    // Previous & Next Navigation elements
     const prevBtn = document.getElementById('modal-prev-stop-btn');
     const prevName = document.getElementById('modal-prev-stop-name');
     const nextBtn = document.getElementById('modal-next-stop-btn');
@@ -1092,23 +681,9 @@ class TransitApp {
 
     if (!modal) return;
 
-    // 1. Calculate Stop Sequence & Adjacent Stops across all active directions
     let stopsList = this.allStops || [];
     let currIndex = stopsList.findIndex(s => String(s.id || s.mouteStopId || s.code) === String(stopId));
 
-    // Fallback search in all directions if showing dual directions or alternate direction
-    if (currIndex === -1 && this.activeLineData?.allDirections) {
-      for (const dir of this.activeLineData.allDirections) {
-        const idx = (dir.stops || []).findIndex(s => String(s.id || s.mouteStopId || s.code) === String(stopId));
-        if (idx !== -1) {
-          stopsList = dir.stops;
-          currIndex = idx;
-          break;
-        }
-      }
-    }
-
-    // Fallback search across available lines
     if (currIndex === -1 && this.availableLines) {
       for (const line of this.availableLines) {
         for (const dir of (line.directions || [])) {
@@ -1134,22 +709,18 @@ class TransitApp {
     if (countBadge) countBadge.textContent = 'Consultant...';
     if (listEl) listEl.innerHTML = '<div style="color:var(--text-muted); font-size:0.85rem; padding:0.5rem;">Consultant temps real i horaris...</div>';
 
-    // Sequence Badge
     if (seqBadge) {
       seqBadge.textContent = currIndex >= 0 ? `Parada #${currIndex + 1} / ${totalStops}` : 'Parada';
     }
 
-    // Determine Previous and Next stops with smart circular looping
     let prevStop = null;
     let nextStop = null;
 
     if (totalStops > 1 && currIndex >= 0) {
-      // Circular navigation for urban/circular routes
       prevStop = currIndex > 0 ? stopsList[currIndex - 1] : stopsList[totalStops - 1];
       nextStop = currIndex < totalStops - 1 ? stopsList[currIndex + 1] : stopsList[0];
     }
 
-    // Previous Stop Navigation Button
     if (prevBtn && prevName) {
       if (prevStop) {
         prevBtn.disabled = false;
@@ -1167,7 +738,6 @@ class TransitApp {
       }
     }
 
-    // Next Stop Navigation Button
     if (nextBtn && nextName) {
       if (nextStop) {
         nextBtn.disabled = false;
@@ -1195,11 +765,9 @@ class TransitApp {
     }
 
     try {
-      const endpoint = this.currentPage === 'c10'
-        ? `/api/c10/stop/${stopId}/departures?direction=${this.c10Direction}`
-        : `/api/mataro/stop/${stopId}/departures?lineId=${this.activeMataroLineId}`;
-
+      const endpoint = `/api/line/${this.activeLineId}/stop/${stopId}/departures?direction=${this.activeDirection}`;
       const res = await fetch(endpoint).then(r => r.json());
+
       if (res.success && res.data) {
         const deps = res.data.departures || [];
         const stopObj = res.data.stop || {};
@@ -1246,7 +814,7 @@ class TransitApp {
 
           const pillLabel = isFirstMorning
             ? '1r Servei'
-            : (isTomorrow ? 'Programat' : (d.isEstimated ? `⚡ Estimat ${d.vehicleId ? `#${d.vehicleId}` : ''}` : (d.delayBadgeText || 'Puntual')));
+            : (isTomorrow ? 'Programat' : (d.isEstimated ? `⚡ Estimat ${d.vehicleId ? `#${dep.vehicleId}` : ''}` : (d.delayBadgeText || 'Puntual')));
 
           const pillClass = isTomorrow ? 'scheduled' : (d.delayStatus || 'on-time');
 
@@ -1289,16 +857,186 @@ class TransitApp {
     }
   }
 
-  setTargetStop(stopId) {
-    const key = this.currentPage === 'c10' ? 'c10' : this.activeMataroLineId;
-    this.targetStopsByLine[key] = String(stopId);
-    localStorage.setItem('bad_amb_target_stops', JSON.stringify(this.targetStopsByLine));
-    this.refreshAllData(false);
+  // ==========================================
+  // 8. LINE EXPLORER MODAL & GLOBAL SEARCH
+  // ==========================================
+
+  openLinePicker() {
+    const backdrop = document.getElementById('line-picker-modal-backdrop');
+    const input = document.getElementById('line-picker-search-input');
+    if (!backdrop) return;
+    this.linePickerSearch = '';
+    if (input) input.value = '';
+    this.renderLinePicker();
+    backdrop.classList.add('active');
+    setTimeout(() => input?.focus(), 50);
   }
 
-  // ==========================================
-  // 7. GLOBAL UNIVERSAL SEARCH
-  // ==========================================
+  closeLinePicker() {
+    const backdrop = document.getElementById('line-picker-modal-backdrop');
+    if (backdrop) backdrop.classList.remove('active');
+  }
+
+  renderLinePicker() {
+    const container = document.getElementById('line-picker-container');
+    if (!container) return;
+
+    const q = (this.linePickerSearch || '').trim().toLowerCase();
+    const cityFilter = this.linePickerFilter || 'all';
+
+    const mataroLines = this.availableLines.filter(l => l.id !== 'c10');
+    const maresmeLines = this.availableLines.filter(l => l.id === 'c10');
+
+    const filterFn = (l) => {
+      if (!q) return true;
+      const code = (l.code || String(l.id)).toLowerCase();
+      const name = (l.name || '').toLowerCase();
+      const agency = (l.agency || '').toLowerCase();
+      return code.includes(q) || name.includes(q) || agency.includes(q) || ('línia ' + code).includes(q);
+    };
+
+    const filteredMataro = (cityFilter === 'all' || cityFilter === 'mataro') ? mataroLines.filter(filterFn) : [];
+    const filteredMaresme = (cityFilter === 'all' || cityFilter === 'maresme') ? maresmeLines.filter(filterFn) : [];
+
+    if (filteredMataro.length === 0 && filteredMaresme.length === 0) {
+      container.innerHTML = `
+        <div style="padding: 2.5rem 1rem; text-align: center; color: var(--text-muted);">
+          <div style="font-size: 2rem; margin-bottom: 0.5rem;">🔍</div>
+          <div style="font-weight: 700; color: #fff; margin-bottom: 0.25rem;">Cap línia trobada</div>
+          <div style="font-size: 0.8rem;">No hi ha cap resultat per "${this.linePickerSearch}".</div>
+        </div>
+      `;
+      return;
+    }
+
+    let html = '';
+    const isNight = new Date().getHours() >= 22 || new Date().getHours() < 6;
+
+    if (filteredMataro.length > 0) {
+      html += `
+        <div class="line-category-group">
+          <div class="line-category-title">
+            <span>📍 Xarxa Urbana de Mataró (${filteredMataro.length})</span>
+          </div>
+          <div class="line-grid">
+            ${filteredMataro.map(l => {
+              const isActive = String(l.id) === String(this.activeLineId);
+              const contrast = this.getContrastColor(l.color);
+              return `
+                <div class="line-grid-card ${isActive ? 'active' : ''}" data-line-id="${l.id}">
+                  <div class="line-card-left">
+                    <span class="line-card-badge" style="background:${l.color}; color:${contrast};">${l.code}</span>
+                    <div class="line-card-details">
+                      <div class="line-card-name">Línia ${l.code}: ${l.name}</div>
+                      <div class="line-card-sub">
+                        <span>📍 Mataró Bus</span>
+                        <span>•</span>
+                        <span>${isNight ? '🌙 Represa al matí' : `${l.directions ? l.directions.length : 2} sentits`}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <span class="line-card-arrow">➔</span>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    if (filteredMaresme.length > 0) {
+      html += `
+        <div class="line-category-group">
+          <div class="line-category-title">
+            <span>🌊 Corredors Interurbans del Maresme (${filteredMaresme.length})</span>
+          </div>
+          <div class="line-grid">
+            ${filteredMaresme.map(l => {
+              const isActive = String(l.id) === String(this.activeLineId);
+              const contrast = this.getContrastColor(l.color);
+              return `
+                <div class="line-grid-card ${isActive ? 'active' : ''}" data-line-id="c10">
+                  <div class="line-card-left">
+                    <span class="line-card-badge" style="background:${l.color}; color:${contrast};">${l.code}</span>
+                    <div class="line-card-details">
+                      <div class="line-card-name">${l.code}: ${l.name}</div>
+                      <div class="line-card-sub">
+                        <span>🌊 Casas / Moventis</span>
+                        <span>•</span>
+                        <span>${isNight ? '🌙 Represa al matí' : 'Corredor N-II'}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <span class="line-card-arrow">➔</span>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    container.innerHTML = html;
+
+    container.querySelectorAll('.line-grid-card').forEach(card => {
+      card.addEventListener('click', (e) => {
+        e.preventDefault();
+        const lineId = card.getAttribute('data-line-id');
+        this.closeLinePicker();
+        this.switchLine(lineId);
+      });
+    });
+  }
+
+  setupLinePicker() {
+    document.getElementById('open-line-picker-btn')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.openLinePicker();
+    });
+
+    document.querySelector('.logo-group')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.openLinePicker();
+    });
+
+    document.getElementById('line-picker-close-btn')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.closeLinePicker();
+    });
+
+    document.getElementById('line-picker-modal-backdrop')?.addEventListener('click', (e) => {
+      if (e.target.id === 'line-picker-modal-backdrop') {
+        this.closeLinePicker();
+      }
+    });
+
+    const input = document.getElementById('line-picker-search-input');
+    if (input) {
+      input.addEventListener('input', () => {
+        this.linePickerSearch = input.value;
+        this.renderLinePicker();
+      });
+    }
+
+    document.querySelectorAll('.line-filter-tab').forEach(tab => {
+      tab.addEventListener('click', (e) => {
+        e.preventDefault();
+        document.querySelectorAll('.line-filter-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        this.linePickerFilter = tab.getAttribute('data-city') || 'all';
+        this.renderLinePicker();
+      });
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        this.openLinePicker();
+      } else if (e.key === 'Escape') {
+        this.closeLinePicker();
+      }
+    });
+  }
 
   setupGlobalSearch() {
     const input = document.getElementById('global-search-input');
@@ -1368,12 +1106,7 @@ class TransitApp {
         dropdown.classList.remove('active');
         input.value = '';
 
-        if (lineId === 'c10') {
-          this.switchPage('c10');
-        } else {
-          this.switchPage('mataro', lineId);
-        }
-
+        this.switchLine(lineId);
         this.setTargetStop(stopId);
 
         if (lat && lon) {
@@ -1386,48 +1119,26 @@ class TransitApp {
   }
 
   // ==========================================
-  // 8. ROBUST EVENT LISTENERS & EVENT DELEGATION
+  // 9. EVENT LISTENERS & MAP CONTROLS
   // ==========================================
 
   setupEventListeners() {
-    // C-10 Direction buttons delegation
-    const c10DirGroup = document.getElementById('c10-direction-toggle-group');
-    if (c10DirGroup) {
-      c10DirGroup.addEventListener('click', (e) => {
+    // Dynamic Direction buttons delegation
+    const dirGroup = document.getElementById('direction-toggle-group');
+    if (dirGroup) {
+      dirGroup.addEventListener('click', (e) => {
         const btn = e.target.closest('.btn-direction');
         if (!btn) return;
         e.preventDefault();
-        const dirId = btn.getAttribute('data-direction');
-        if (dirId && dirId !== this.c10Direction) {
-          this.c10Direction = dirId;
+        const dirId = btn.getAttribute('data-dir-id') || btn.getAttribute('data-direction');
+        if (dirId && dirId !== this.activeDirection) {
+          this.activeDirection = dirId;
           this.refreshAllData(true);
         }
       });
     }
 
-    // Mataró Direction buttons delegation
-    const mataroDirGroup = document.getElementById('mataro-direction-toggle-group');
-    if (mataroDirGroup) {
-      mataroDirGroup.addEventListener('click', (e) => {
-        const btn = e.target.closest('.btn-direction');
-        if (!btn) return;
-        e.preventDefault();
-        const dirId = btn.getAttribute('data-dir-id');
-        if (dirId && dirId !== this.mataroDirection) {
-          this.mataroDirection = dirId;
-          this.refreshAllData(true);
-        }
-      });
-    }
-
-    // Mataró Line Selector Dropdown change
-    document.getElementById('mataro-line-select-dropdown')?.addEventListener('change', (e) => {
-      if (e.target.value) {
-        this.switchMataroLine(e.target.value);
-      }
-    });
-
-    // Corridor Steps Timeline delegation (Interurbà & Mataró)
+    // Corridor Steps Timeline delegation
     document.addEventListener('click', (e) => {
       const step = e.target.closest('.corridor-step');
       if (step) {
@@ -1454,15 +1165,22 @@ class TransitApp {
       });
     }
 
-    // Footer Links
-    document.getElementById('footer-link-c10')?.addEventListener('click', (e) => { e.preventDefault(); this.switchPage('c10'); });
-    document.getElementById('footer-link-mataro')?.addEventListener('click', (e) => { e.preventDefault(); this.switchPage('mataro'); });
+    // Target Stop Dropdown
+    document.getElementById('target-stop-select')?.addEventListener('change', (e) => {
+      if (e.target.value) this.setTargetStop(e.target.value);
+    });
 
     // Refresh Button
-    document.getElementById('btn-refresh')?.addEventListener('click', (e) => { e.preventDefault(); this.refreshAllData(false); });
+    document.getElementById('btn-refresh')?.addEventListener('click', (e) => { 
+      e.preventDefault(); 
+      this.refreshAllData(false); 
+    });
 
     // Sound Alarm Button
-    document.getElementById('btn-sound')?.addEventListener('click', (e) => { e.preventDefault(); this.toggleSound(); });
+    document.getElementById('btn-sound')?.addEventListener('click', (e) => { 
+      e.preventDefault(); 
+      this.toggleSound(); 
+    });
 
     // Modal Close Button & Backdrop
     document.getElementById('modal-close-btn')?.addEventListener('click', (e) => {
@@ -1476,15 +1194,6 @@ class TransitApp {
       }
     });
 
-    // Target Stop Dropdowns
-    document.getElementById('c10-target-stop-select')?.addEventListener('change', (e) => {
-      if (e.target.value) this.setTargetStop(e.target.value);
-    });
-
-    document.getElementById('mataro-target-stop-select')?.addEventListener('change', (e) => {
-      if (e.target.value) this.setTargetStop(e.target.value);
-    });
-
     // Filter Stops Browser Input
     document.getElementById('stop-search-input')?.addEventListener('input', (e) => {
       const q = e.target.value.toLowerCase();
@@ -1494,10 +1203,20 @@ class TransitApp {
       });
     });
 
-    // Window Popstate (Back/Forward URL Navigation)
+    // Footer Quick Links
+    document.getElementById('footer-link-c10')?.addEventListener('click', (e) => { 
+      e.preventDefault(); 
+      this.switchLine('c10'); 
+    });
+    document.getElementById('footer-link-mataro')?.addEventListener('click', (e) => { 
+      e.preventDefault(); 
+      this.switchLine('1'); 
+    });
+
+    // Window Hashchange (Browser Back/Forward Navigation)
     window.addEventListener('hashchange', () => {
       this.parseUrlHash();
-      this.switchPage(this.currentPage, this.activeMataroLineId);
+      this.refreshAllData(true);
     });
 
     this.setupGlobalSearch();
@@ -1530,7 +1249,6 @@ class TransitApp {
       this.mapController.invalidateSize();
     });
 
-    // Safe, non-intrusive drag resize
     if (resizeBar && mapContainer) {
       let isDragging = false;
       let startY = 0;
@@ -1576,7 +1294,7 @@ class TransitApp {
   }
 
   // ==========================================
-  // 9. ANIMATION, AUDIO & UTILITIES
+  // 10. ANIMATION, AUDIO & UTILITIES
   // ==========================================
 
   startAnimationLoop() {
@@ -1602,9 +1320,10 @@ class TransitApp {
   }
 
   updateCountdownLabel() {
-    document.querySelectorAll('.countdown-label-text').forEach(el => {
-      el.textContent = `Actualització en ${this.secondsRemaining}s`;
-    });
+    const label = document.getElementById('countdown-label');
+    if (label) {
+      label.textContent = `Actualització en ${this.secondsRemaining}s`;
+    }
   }
 
   setLiveStatus(status) {
@@ -1673,29 +1392,19 @@ class TransitApp {
     }
   }
 
-  checkArrivalAlerts(corridorData, lineKey) {
+  checkArrivalAlerts(lineData, activeTargetId) {
     if (!this.soundEnabled) return;
-    const targetStopId = this.targetStopsByLine[lineKey] || '10037202';
-    const targetCp = (corridorData.checkpoints || []).find(c => c.id === targetStopId);
+    const buses = lineData.activeBuses || [];
+    const approaching = buses.some(b => String(b.toStopId || b.nextStopId) === String(activeTargetId) && b.secondsToNextStop && b.secondsToNextStop <= 180);
 
-    if (targetCp && targetCp.etaMinutes <= 3 && targetCp.etaMinutes > 0 && targetCp.hasBus) {
-      if (this.lastAlertedTrip !== targetStopId) {
-        this.lastAlertedTrip = targetStopId;
-        this.playChime();
-      }
+    if (approaching && this.lastAlertedTrip !== activeTargetId) {
+      this.lastAlertedTrip = activeTargetId;
+      this.playChime();
     }
-  }
-
-  hexToRgb(hex) {
-    if (!hex) return '0, 148, 133';
-    let c = hex.replace('#', '');
-    if (c.length === 3) c = c.split('').map(x => x + x).join('');
-    const num = parseInt(c, 16);
-    return `${(num >> 16) & 255}, ${(num >> 8) & 255}, ${num & 255}`;
   }
 }
 
-// Instantiate global app
+// Instantiate global application
 window.addEventListener('DOMContentLoaded', () => {
-  window.c10App = new TransitApp();
+  window.transitApp = new TransitApp();
 });
