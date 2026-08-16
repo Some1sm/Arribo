@@ -521,15 +521,34 @@
   <div class="stop-modal-backdrop" id="stop-modal-backdrop">
     <div class="stop-modal">
       <button type="button" class="modal-close-btn" id="modal-close-btn" aria-label="Tancar finestra">&times;</button>
+      
+      <!-- Previous & Next Stop Navigation Bar -->
+      <div class="stop-modal-nav-bar">
+        <button type="button" class="btn-stop-nav" id="modal-prev-stop-btn" title="Parada anterior">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+          <span class="stop-nav-label" id="modal-prev-stop-name">Anterior</span>
+        </button>
+
+        <span class="stop-nav-seq-badge" id="modal-stop-seq-badge">Parada #--</span>
+
+        <button type="button" class="btn-stop-nav" id="modal-next-stop-btn" title="Parada següent">
+          <span class="stop-nav-label" id="modal-next-stop-name">Següent</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>
+
       <div class="target-badge" id="modal-stop-badge">Detalls de parada</div>
       <h3 class="target-name" id="modal-stop-title" style="font-size:1.3rem; margin-top:0.3rem;">Nom de la parada</h3>
-      <p class="target-subname" id="modal-stop-subtitle" style="margin-bottom:1.25rem;">Codi parada: --</p>
+      <p class="target-subname" id="modal-stop-subtitle" style="margin-bottom:1rem;">Codi parada: --</p>
 
       <div style="margin-bottom:1rem;">
-        <h4 style="font-size:0.85rem; font-weight:700; color:var(--text-secondary); margin-bottom:0.5rem; text-transform:uppercase;">
-          Properes arribades en temps real
-        </h4>
-        <div class="departures-list" id="modal-departures-list" style="max-height:220px;"></div>
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.5rem;">
+          <h4 style="font-size:0.82rem; font-weight:700; color:var(--text-secondary); text-transform:uppercase;">
+            Arribades (Temps Real + Horari Teòric)
+          </h4>
+          <span class="dep-type-badge" id="modal-departures-count-badge">Carregant...</span>
+        </div>
+        <div class="departures-list" id="modal-departures-list" style="max-height:280px; overflow-y:auto;"></div>
       </div>
 
       <div class="modal-actions-footer" style="display:flex; align-items:center; justify-content:space-between; gap:0.5rem; margin-top:1rem; padding-top:0.85rem; border-top:1px solid var(--border-subtle); flex-wrap:wrap;">

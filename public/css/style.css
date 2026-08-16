@@ -1254,11 +1254,68 @@ body {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
-  max-width: 500px;
+  max-width: 520px;
   width: 100%;
-  padding: 1.75rem;
+  padding: 1.5rem 1.75rem;
   box-shadow: var(--shadow-lg);
   position: relative;
+}
+
+/* Stop Navigation Bar inside Modal */
+.stop-modal-nav-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-md);
+  padding: 0.4rem 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.btn-stop-nav {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+  padding: 0.35rem 0.65rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+  max-width: 155px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.btn-stop-nav:hover:not(:disabled) {
+  background: var(--c10-primary);
+  color: #fff;
+  border-color: var(--c10-primary);
+  box-shadow: 0 0 10px rgba(0, 148, 133, 0.3);
+}
+
+.btn-stop-nav:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.stop-nav-seq-badge {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--radius-full);
+  white-space: nowrap;
 }
 
 .modal-close-btn {
@@ -1270,6 +1327,21 @@ body {
   color: var(--text-secondary);
   font-size: 1.25rem;
   cursor: pointer;
+}
+
+/* Dual Time Format Item in Departures List */
+.dep-time-sub {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 1px;
+}
+
+.dep-sched-time {
+  color: #94a3b8;
+  font-family: var(--font-mono);
 }
 
 /* Footer */

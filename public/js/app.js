@@ -1030,14 +1030,75 @@ class TransitApp {
     const titleEl = document.getElementById('modal-stop-title');
     const subEl = document.getElementById('modal-stop-subtitle');
     const listEl = document.getElementById('modal-departures-list');
+    const countBadge = document.getElementById('modal-departures-count-badge');
     const setTargetBtn = document.getElementById('modal-set-target-btn');
     const mapsLink = document.getElementById('modal-maps-link');
 
+    // Previous & Next Navigation elements
+    const prevBtn = document.getElementById('modal-prev-stop-btn');
+    const prevName = document.getElementById('modal-prev-stop-name');
+    const nextBtn = document.getElementById('modal-next-stop-btn');
+    const nextName = document.getElementById('modal-next-stop-name');
+    const seqBadge = document.getElementById('modal-stop-seq-badge');
+
     if (!modal) return;
 
-    if (titleEl) titleEl.textContent = stopName || 'Parada';
-    if (subEl) subEl.textContent = `Codi identificador: ${stopId}`;
-    if (listEl) listEl.innerHTML = '<div style="color:var(--text-muted); font-size:0.85rem; padding:0.5rem;">Consultant temps real...</div>';
+    // 1. Calculate Stop Sequence & Adjacent Stops
+    const stopsList = this.allStops || [];
+    const totalStops = stopsList.length;
+    const currIndex = stopsList.findIndex(s => String(s.id || s.mouteStopId || s.code) === String(stopId));
+    const currStop = currIndex >= 0 ? stopsList[currIndex] : null;
+
+    const displayName = stopName || currStop?.name || 'Parada';
+    const displayCode = stopId || currStop?.code || '--';
+
+    if (titleEl) titleEl.textContent = displayName;
+    if (subEl) subEl.textContent = `Codi identificador: ${displayCode}`;
+    if (countBadge) countBadge.textContent = 'Consultant...';
+    if (listEl) listEl.innerHTML = '<div style="color:var(--text-muted); font-size:0.85rem; padding:0.5rem;">Consultant temps real i horaris...</div>';
+
+    // Sequence Badge
+    if (seqBadge) {
+      seqBadge.textContent = currIndex >= 0 ? `Parada #${currIndex + 1} / ${totalStops}` : 'Parada';
+    }
+
+    // Previous Stop Navigation
+    if (prevBtn && prevName) {
+      if (currIndex > 0) {
+        const prevStop = stopsList[currIndex - 1];
+        prevBtn.disabled = false;
+        prevName.textContent = prevStop.name.length > 14 ? `${prevStop.name.substring(0, 13)}…` : prevStop.name;
+        prevBtn.onclick = (e) => {
+          e.preventDefault();
+          const pId = prevStop.id || prevStop.mouteStopId || prevStop.code;
+          this.inspectStop(pId, prevStop.name);
+          if (prevStop.lat && prevStop.lon) this.mapController.focusTargetStop(prevStop.lat, prevStop.lon);
+        };
+      } else {
+        prevBtn.disabled = true;
+        prevName.textContent = 'Capçalera';
+        prevBtn.onclick = null;
+      }
+    }
+
+    // Next Stop Navigation
+    if (nextBtn && nextName) {
+      if (currIndex >= 0 && currIndex < totalStops - 1) {
+        const nextStop = stopsList[currIndex + 1];
+        nextBtn.disabled = false;
+        nextName.textContent = nextStop.name.length > 14 ? `${nextStop.name.substring(0, 13)}…` : nextStop.name;
+        nextBtn.onclick = (e) => {
+          e.preventDefault();
+          const nId = nextStop.id || nextStop.mouteStopId || nextStop.code;
+          this.inspectStop(nId, nextStop.name);
+          if (nextStop.lat && nextStop.lon) this.mapController.focusTargetStop(nextStop.lat, nextStop.lon);
+        };
+      } else {
+        nextBtn.disabled = true;
+        nextName.textContent = 'Terminus';
+        nextBtn.onclick = null;
+      }
+    }
 
     modal.classList.add('active');
 
@@ -1058,6 +1119,8 @@ class TransitApp {
         const deps = res.data.departures || [];
         const stopObj = res.data.stop || {};
 
+        if (countBadge) countBadge.textContent = `${deps.length} sortides`;
+
         if (mapsLink && stopObj.lat && stopObj.lon) {
           mapsLink.href = `https://www.google.com/maps/search/?api=1&query=${stopObj.lat},${stopObj.lon}`;
         }
@@ -1067,20 +1130,41 @@ class TransitApp {
           return;
         }
 
-        listEl.innerHTML = deps.slice(0, 6).map(d => {
-          const clockTime = d.expectedIso
+        listEl.innerHTML = deps.slice(0, 8).map((d, idx) => {
+          const estTime = d.expectedIso
             ? new Date(d.expectedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
             : (d.departureTime || '--:--');
 
+          const schedTime = d.aimedIso
+            ? new Date(d.aimedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+            : (d.isEstimated ? estTime : null);
+
+          const isDiff = schedTime && schedTime !== estTime;
+          const delayText = d.delayMins !== undefined && d.delayMins !== 0
+            ? (d.delayMins > 0 ? `+${d.delayMins} min retard` : `${d.delayMins} min avançat`)
+            : 'Puntual';
+
           return `
-            <div class="departure-item">
+            <div class="departure-item ${idx === 0 ? 'highlight-next' : ''}">
               <div class="dep-time-group">
-                <span class="dep-clock">${clockTime}</span>
-                <span class="dep-dest">
+                <div style="display:flex; align-items:baseline; gap:0.4rem;">
+                  <span class="dep-clock">${estTime}</span>
+                  <span style="font-size:0.75rem; color:var(--text-secondary); font-weight:600;">(Estimat)</span>
+                </div>
+                
+                <div class="dep-dest">
                   ${d.lineId ? `<span class="line-badge-sm" style="font-size:0.68rem; padding:1px 5px; margin-right:4px; background:var(--c10-primary);">${d.lineId}</span>` : ''}
                   Cap a <strong>${d.destination || 'Destí'}</strong>
-                </span>
+                </div>
+
+                ${schedTime ? `
+                  <div class="dep-time-sub">
+                    <span>📅 Horari teòric: <strong class="dep-sched-time">${schedTime}</strong></span>
+                    ${isDiff ? `<span>•</span> <span style="color:${d.delayMins > 2 ? '#f87171' : '#34d399'}; font-weight:600;">${delayText}</span>` : `<span>•</span> <span style="color:#34d399; font-weight:600;">Puntual</span>`}
+                  </div>
+                ` : ''}
               </div>
+
               <div class="dep-status">
                 <span class="dep-mins">${d.minutesAway === 0 ? 'Imminent' : `${d.minutesAway} min`}</span>
                 <span class="dep-delay-pill ${d.delayStatus || 'on-time'}">${d.delayBadgeText || 'Puntual'}</span>
