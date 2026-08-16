@@ -88,8 +88,9 @@ class TransitApp {
     if (viewC10) viewC10.classList.toggle('active', pageId === 'c10');
     if (viewMataro) viewMataro.classList.toggle('active', pageId === 'mataro');
 
-    // Update Header Brand
+    // Update Header Brand & Selector Card
     this.updateHeaderBrand();
+    this.updateLineSelectorCard();
   }
 
   // ==========================================
@@ -120,31 +121,228 @@ class TransitApp {
       const json = await res.json();
       if (json.success && json.lines) {
         this.availableLines = json.lines;
-        this.populateMataroLineSelector();
         this.updateHeaderBrand();
+        this.updateLineSelectorCard();
       }
     } catch (e) {
       console.error('Error fetching lines:', e);
     }
   }
 
-  populateMataroLineSelector() {
-    const dropdown = document.getElementById('mataro-line-select-dropdown');
-    const activeBadge = document.getElementById('mataro-active-line-badge');
-    if (!dropdown) return;
+  openLinePicker() {
+    const backdrop = document.getElementById('line-picker-modal-backdrop');
+    const input = document.getElementById('line-picker-search-input');
+    if (!backdrop) return;
+    this.linePickerSearch = '';
+    if (input) input.value = '';
+    this.renderLinePicker();
+    backdrop.classList.add('active');
+    setTimeout(() => input?.focus(), 50);
+  }
 
+  closeLinePicker() {
+    const backdrop = document.getElementById('line-picker-modal-backdrop');
+    if (backdrop) backdrop.classList.remove('active');
+  }
+
+  renderLinePicker() {
+    const container = document.getElementById('line-picker-container');
+    if (!container) return;
+
+    const q = (this.linePickerSearch || '').trim().toLowerCase();
+    const cityFilter = this.linePickerFilter || 'all';
+
+    // Group lines by network / city
     const mataroLines = this.availableLines.filter(l => l.id !== 'c10');
+    const maresmeLines = this.availableLines.filter(l => l.id === 'c10');
 
-    dropdown.innerHTML = mataroLines.map(l => {
-      const isSelected = String(l.id) === String(this.activeMataroLineId);
-      return `<option value="${l.id}" ${isSelected ? 'selected' : ''}>Línia ${l.code} — ${l.name}</option>`;
-    }).join('');
+    const filterFn = (l) => {
+      if (!q) return true;
+      const code = (l.code || String(l.id)).toLowerCase();
+      const name = (l.name || '').toLowerCase();
+      const agency = (l.agency || '').toLowerCase();
+      return code.includes(q) || name.includes(q) || agency.includes(q) || ('línia ' + code).includes(q) || ('linia ' + code).includes(q);
+    };
 
-    const activeObj = mataroLines.find(l => String(l.id) === String(this.activeMataroLineId)) || mataroLines[0];
-    if (activeObj && activeBadge) {
-      activeBadge.textContent = activeObj.code;
-      activeBadge.style.background = activeObj.color;
-      activeBadge.style.color = this.getContrastColor(activeObj.color);
+    const filteredMataro = (cityFilter === 'all' || cityFilter === 'mataro') ? mataroLines.filter(filterFn) : [];
+    const filteredMaresme = (cityFilter === 'all' || cityFilter === 'maresme') ? maresmeLines.filter(filterFn) : [];
+
+    if (filteredMataro.length === 0 && filteredMaresme.length === 0) {
+      container.innerHTML = `
+        <div style="padding: 2.5rem 1rem; text-align: center; color: var(--text-muted);">
+          <div style="font-size: 2rem; margin-bottom: 0.5rem;">🔍</div>
+          <div style="font-weight: 700; color: #fff; margin-bottom: 0.25rem;">Cap línia trobada</div>
+          <div style="font-size: 0.8rem;">No hi ha cap resultat per "${this.linePickerSearch}". Prova cercant per número (ex: 1, 7, C10) o destí.</div>
+        </div>
+      `;
+      return;
+    }
+
+    let html = '';
+
+    // Category 1: Mataró Urbà
+    if (filteredMataro.length > 0) {
+      html += `
+        <div class="line-category-group">
+          <div class="line-category-title">
+            <span>📍 Xarxa Urbana de Mataró (${filteredMataro.length})</span>
+          </div>
+          <div class="line-grid">
+            ${filteredMataro.map(l => {
+              const isActive = this.currentPage === 'mataro' && String(l.id) === String(this.activeMataroLineId);
+              const contrast = this.getContrastColor(l.color);
+              return `
+                <div class="line-grid-card ${isActive ? 'active' : ''}" data-line-id="${l.id}" data-page="mataro">
+                  <div class="line-card-left">
+                    <span class="line-card-badge" style="background:${l.color}; color:${contrast};">${l.code}</span>
+                    <div class="line-card-details">
+                      <div class="line-card-name">Línia ${l.code}: ${l.name}</div>
+                      <div class="line-card-sub">
+                        <span>📍 Mataró Bus</span>
+                        <span>•</span>
+                        <span>${l.directions ? l.directions.length : 2} sentits</span>
+                      </div>
+                    </div>
+                  </div>
+                  <span class="line-card-arrow">➔</span>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    // Category 2: Maresme Interurbà
+    if (filteredMaresme.length > 0) {
+      html += `
+        <div class="line-category-group">
+          <div class="line-category-title">
+            <span>🌊 Corredors Interurbans del Maresme (${filteredMaresme.length})</span>
+          </div>
+          <div class="line-grid">
+            ${filteredMaresme.map(l => {
+              const isActive = this.currentPage === 'c10';
+              const contrast = this.getContrastColor(l.color);
+              return `
+                <div class="line-grid-card ${isActive ? 'active' : ''}" data-line-id="c10" data-page="c10">
+                  <div class="line-card-left">
+                    <span class="line-card-badge" style="background:${l.color}; color:${contrast};">${l.code}</span>
+                    <div class="line-card-details">
+                      <div class="line-card-name">${l.code}: ${l.name}</div>
+                      <div class="line-card-sub">
+                        <span>🌊 Casas / Moventis</span>
+                        <span>•</span>
+                        <span>Corredor N-II</span>
+                      </div>
+                    </div>
+                  </div>
+                  <span class="line-card-arrow">➔</span>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    container.innerHTML = html;
+
+    // Attach click listeners to cards
+    container.querySelectorAll('.line-grid-card').forEach(card => {
+      card.addEventListener('click', (e) => {
+        e.preventDefault();
+        const page = card.getAttribute('data-page');
+        const lineId = card.getAttribute('data-line-id');
+        this.closeLinePicker();
+
+        if (page === 'c10') {
+          this.switchPage('c10');
+        } else {
+          this.switchPage('mataro', lineId);
+        }
+      });
+    });
+  }
+
+  setupLinePicker() {
+    // Open Triggers
+    document.getElementById('open-line-picker-btn')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.openLinePicker();
+    });
+    document.getElementById('open-line-picker-btn-c10')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.openLinePicker();
+    });
+
+    // Close Trigger
+    document.getElementById('line-picker-close-btn')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.closeLinePicker();
+    });
+
+    // Backdrop click
+    document.getElementById('line-picker-modal-backdrop')?.addEventListener('click', (e) => {
+      if (e.target.id === 'line-picker-modal-backdrop') {
+        this.closeLinePicker();
+      }
+    });
+
+    // Search input
+    const input = document.getElementById('line-picker-search-input');
+    if (input) {
+      input.addEventListener('input', () => {
+        this.linePickerSearch = input.value;
+        this.renderLinePicker();
+      });
+    }
+
+    // Filter tabs
+    const tabs = document.querySelectorAll('.line-filter-tab');
+    tabs.forEach(tab => {
+      tab.addEventListener('click', (e) => {
+        e.preventDefault();
+        tabs.forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        this.linePickerFilter = tab.getAttribute('data-city') || 'all';
+        this.renderLinePicker();
+      });
+    });
+
+    // Keyboard Shortcuts (Cmd/Ctrl + K or ESC)
+    document.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        this.openLinePicker();
+      } else if (e.key === 'Escape') {
+        this.closeLinePicker();
+      }
+    });
+  }
+
+  updateLineSelectorCard() {
+    const badge = document.getElementById('mataro-active-line-badge');
+    const title = document.getElementById('line-selector-active-title');
+    const city = document.getElementById('line-selector-city-name');
+
+    if (this.currentPage === 'c10') {
+      if (badge) {
+        badge.textContent = 'C10';
+        badge.style.background = '#009485';
+        badge.style.color = '#fff';
+      }
+      if (title) title.textContent = 'C-10 — Barcelona ⇄ Mataró (per N-II)';
+      if (city) city.textContent = 'Corredor Interurbà Maresme';
+    } else {
+      const lineObj = this.availableLines.find(l => String(l.id) === String(this.activeMataroLineId)) || { code: `${this.activeMataroLineId}`, color: '#ff00ff', name: `Línia ${this.activeMataroLineId}` };
+      if (badge) {
+        badge.textContent = lineObj.code;
+        badge.style.background = lineObj.color;
+        badge.style.color = this.getContrastColor(lineObj.color);
+      }
+      if (title) title.textContent = `Línia ${lineObj.code} — ${lineObj.name}`;
+      if (city) city.textContent = 'Xarxa Urbana de Mataró';
     }
   }
 
@@ -153,81 +351,9 @@ class TransitApp {
     this.mataroDirection = '0';
     window.history.replaceState(null, '', `#mataro-l${lineId}`);
     
-    // Update Dropdown & Badge
-    const dropdown = document.getElementById('mataro-line-select-dropdown');
-    const activeBadge = document.getElementById('mataro-active-line-badge');
-    if (dropdown) dropdown.value = String(lineId);
-
-    const activeObj = this.availableLines.find(l => String(l.id) === String(lineId));
-    if (activeObj && activeBadge) {
-      activeBadge.textContent = activeObj.code;
-      activeBadge.style.background = activeObj.color;
-      activeBadge.style.color = this.getContrastColor(activeObj.color);
-    }
-
     this.updateHeaderBrand();
+    this.updateLineSelectorCard();
     this.refreshAllData(true);
-  }
-
-  setupLineSearchFilter() {
-    const input = document.getElementById('mataro-line-search-input');
-    const dropdown = document.getElementById('mataro-line-filter-dropdown');
-    if (!input || !dropdown) return;
-
-    input.addEventListener('input', () => {
-      const q = input.value.trim().toLowerCase();
-      if (!q) {
-        dropdown.classList.remove('active');
-        dropdown.innerHTML = '';
-        return;
-      }
-
-      const mataroLines = this.availableLines.filter(l => l.id !== 'c10');
-      const matches = mataroLines.filter(l => 
-        l.code.toLowerCase().includes(q) || 
-        l.name.toLowerCase().includes(q) ||
-        ('línia ' + l.code).includes(q) ||
-        ('linia ' + l.code).includes(q) ||
-        ('l' + l.code).includes(q) ||
-        (l.id && String(l.id) === q.replace('l', ''))
-      );
-
-      if (matches.length === 0) {
-        dropdown.innerHTML = '<div style="padding:0.65rem 1rem; color:var(--text-muted); font-size:0.8rem;">Cap línia trobada.</div>';
-        dropdown.classList.add('active');
-        return;
-      }
-
-      dropdown.innerHTML = matches.map(l => `
-        <div class="line-filter-item" data-line-id="${l.id}">
-          <div class="line-filter-left">
-            <span class="line-badge-sm" style="background:${l.color}; color:${this.getContrastColor(l.color)};">${l.code}</span>
-            <span class="line-filter-name">Línia ${l.code}: ${l.name}</span>
-          </div>
-          <span style="font-size:0.75rem; color:var(--c10-primary); font-weight:700;">Seleccionar ➔</span>
-        </div>
-      `).join('');
-
-      dropdown.classList.add('active');
-
-      dropdown.querySelectorAll('.line-filter-item').forEach(item => {
-        item.addEventListener('click', (e) => {
-          e.preventDefault();
-          const lId = item.getAttribute('data-line-id');
-          if (lId) {
-            this.switchMataroLine(lId);
-            input.value = '';
-            dropdown.classList.remove('active');
-          }
-        });
-      });
-    });
-
-    document.addEventListener('click', (e) => {
-      if (!input.contains(e.target) && !dropdown.contains(e.target)) {
-        dropdown.classList.remove('active');
-      }
-    });
   }
 
   getContrastColor(hex) {
@@ -1177,7 +1303,7 @@ class TransitApp {
     });
 
     this.setupGlobalSearch();
-    this.setupLineSearchFilter();
+    this.setupLinePicker();
   }
 
   setupMapResizeControls() {

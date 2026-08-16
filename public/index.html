@@ -88,6 +88,27 @@
     <!-- ======================================================== -->
     <div class="page-view active" id="view-c10">
       
+      <!-- Multi-City Line Selector Bar -->
+      <section class="line-selector-section" aria-label="Selector de línia i ciutat">
+        <div class="line-selector-card" id="open-line-picker-btn-c10">
+          <div class="line-selector-current">
+            <span class="line-badge-hero" id="c10-active-line-badge" style="background:#009485;">C10</span>
+            <div class="line-selector-info">
+              <div class="line-selector-city-tag">
+                <span class="city-dot"></span>
+                <span id="c10-selector-city-name">Corredor Interurbà Maresme</span>
+              </div>
+              <div class="line-selector-title" id="c10-selector-active-title">C-10 — Barcelona ⇄ Mataró (per N-II)</div>
+            </div>
+          </div>
+          
+          <button type="button" class="btn-change-line" aria-label="Canviar línia o ciutat">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+            <span>Canviar línia</span>
+          </button>
+        </div>
+      </section>
+
       <!-- Direction Selector Bar -->
       <section class="direction-bar" aria-label="Selector de sentit C-10">
         <div class="direction-toggle-group" id="c10-direction-toggle-group">
@@ -249,28 +270,24 @@
     <!-- ======================================================== -->
     <div class="page-view" id="view-mataro">
       
-      <!-- Urban Line Selector & Search Section -->
-      <section class="line-selector-section" aria-label="Selector de línia urbana Mataró">
-        <div class="line-selector-controls-bar">
+      <!-- Multi-City Line Selector Bar -->
+      <section class="line-selector-section" aria-label="Selector de línia i ciutat">
+        <div class="line-selector-card" id="open-line-picker-btn">
+          <div class="line-selector-current">
+            <span class="line-badge-hero" id="mataro-active-line-badge" style="background:#ff00ff;">1</span>
+            <div class="line-selector-info">
+              <div class="line-selector-city-tag">
+                <span class="city-dot"></span>
+                <span id="line-selector-city-name">Xarxa Urbana de Mataró</span>
+              </div>
+              <div class="line-selector-title" id="line-selector-active-title">Línia 1 — Lavei ⇄ Estació</div>
+            </div>
+          </div>
           
-          <!-- Line Selector Dropdown Group -->
-          <div class="line-dropdown-wrapper">
-            <label for="mataro-line-select-dropdown" class="line-select-label">
-              <span class="line-badge-sm" id="mataro-active-line-badge" style="background:#ff00ff;">L1</span>
-              <span>Línia Activa:</span>
-            </label>
-            <select id="mataro-line-select-dropdown" class="line-selector-dropdown" aria-label="Selecciona la línia urbana">
-              <!-- Populated dynamically via JS -->
-            </select>
-          </div>
-
-          <!-- Quick Line Search Filter Input -->
-          <div class="line-search-wrapper">
-            <svg class="search-icon-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input type="text" id="mataro-line-search-input" class="line-search-input" placeholder="🔍 Filtrar línia per codi o destí (ex: L5, Hospital, Cirera, 3)..." autocomplete="off">
-            <div class="line-filter-results-dropdown" id="mataro-line-filter-dropdown"></div>
-          </div>
-
+          <button type="button" class="btn-change-line" aria-label="Canviar línia o ciutat">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+            <span>Canviar línia</span>
+          </button>
         </div>
       </section>
 
@@ -468,6 +485,37 @@
     </section>
 
   </main>
+
+  <!-- Universal Multi-City Line Selector Modal / Command Center -->
+  <div class="line-picker-modal-backdrop" id="line-picker-modal-backdrop">
+    <div class="line-picker-modal">
+      <button type="button" class="modal-close-btn" id="line-picker-close-btn" aria-label="Tancar finestra">&times;</button>
+      
+      <div class="line-picker-header">
+        <div class="target-badge">Xarxa de Transport</div>
+        <h3 class="line-picker-title">Explorador de Línies i Ciutats</h3>
+        <p class="line-picker-subtitle">Accés instantani a centenars de línies de transport urbà i interurbà</p>
+      </div>
+
+      <!-- Quick Search Filter in Modal -->
+      <div class="line-picker-search-bar">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="line-picker-search-input" class="line-picker-search-input" placeholder="🔍 Cerca per número de línia, destí o ciutat (ex: 1, 7, C10, Hospital, Cirera)..." autocomplete="off">
+      </div>
+
+      <!-- City & Network Filter Pills -->
+      <div class="line-picker-filter-tabs" id="line-picker-filter-tabs">
+        <button type="button" class="line-filter-tab active" data-city="all">🌐 Totes les xarxes</button>
+        <button type="button" class="line-filter-tab" data-city="mataro">📍 Mataró (8)</button>
+        <button type="button" class="line-filter-tab" data-city="maresme">🌊 Maresme Interurbà</button>
+      </div>
+
+      <!-- Scrollable Lines Grid & Categories -->
+      <div class="line-picker-scroll-container" id="line-picker-container">
+        <!-- Rendered dynamically -->
+      </div>
+    </div>
+  </div>
 
   <!-- Stop Departure Details Modal -->
   <div class="stop-modal-backdrop" id="stop-modal-backdrop">
