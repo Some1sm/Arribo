@@ -184,7 +184,7 @@ class TransitApp {
         }
 
         // 4. Render Cockpit & Telemetry
-        this.renderTelemetryCockpit(lData);
+        this.renderTelemetryCockpit(lData, etaRes.data);
 
         // 5. Render Route Progression Timeline
         this.renderRouteTimeline(lData, activeTargetId);
@@ -461,7 +461,7 @@ class TransitApp {
   // 4. TELEMETRY COCKPIT & VEHICLE SWITCHER
   // ==========================================
 
-  renderTelemetryCockpit(lineData) {
+  renderTelemetryCockpit(lineData, targetData = null) {
     const buses = lineData.activeBuses || [];
     const bar = document.getElementById('telemetry-vehicles-bar');
     const chipsContainer = document.getElementById('telemetry-vehicles-chips');
@@ -490,19 +490,19 @@ class TransitApp {
           btn.addEventListener('click', (e) => {
             e.preventDefault();
             this.selectedVehicleId = btn.getAttribute('data-bus-trip');
-            this.renderTelemetryCockpit(lineData);
+            this.renderTelemetryCockpit(lineData, targetData);
           });
         });
       }
 
-      this.renderTelemetryFields(activeBus, lineData);
+      this.renderTelemetryFields(activeBus, lineData, targetData);
     } else {
       if (bar) bar.style.display = 'none';
-      this.renderTelemetryFields(null, lineData);
+      this.renderTelemetryFields(null, lineData, targetData);
     }
   }
 
-  renderTelemetryFields(b, lineData) {
+  renderTelemetryFields(b, lineData, targetData = null) {
     const coordsEl = document.getElementById('telemetry-coords');
     const bearingEl = document.getElementById('telemetry-bearing');
     const speedEl = document.getElementById('telemetry-speed');
@@ -514,12 +514,13 @@ class TransitApp {
     const radarDot = document.getElementById('telemetry-radar-dot');
 
     if (!b) {
-      const firstTime = lineData?.serviceStatus?.firstServiceTomorrow || '06:45';
+      const nextTime = targetData?.nextBus?.departureTime || lineData?.serviceStatus?.firstServiceTomorrow || '06:45';
+      const targetName = targetData?.targetStop?.name || 'Parada';
       if (coordsEl) coordsEl.textContent = 'Sense autobusos en ruta';
       if (bearingEl) bearingEl.textContent = '--';
       if (speedEl) speedEl.textContent = '0 km/h (Parat)';
       if (segmentEl) segmentEl.textContent = 'Circuit fora d\'horari';
-      if (etaNextEl) etaNextEl.textContent = `Represa demà (${firstTime})`;
+      if (etaNextEl) etaNextEl.textContent = `Pas per ${targetName}: ${nextTime}`;
       if (progressFill) progressFill.style.width = '0%';
       if (progressText) progressText.textContent = '0%';
       if (statusBadge) { 

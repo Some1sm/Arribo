@@ -441,15 +441,66 @@ class SagalesTracker {
       });
     }
 
-    // If no real-time trips found (or off-peak), generate scheduled night departures
+    // If no real-time trips found (or off-peak), generate scheduled departures with exact calculated passing time for this stop
     if (departures.length === 0) {
+      const stops = lDetails.stops || [];
+      const stopIdx = stops.findIndex(s => String(s.id) === sIdStr || String(s.code) === sIdStr);
+
+      let travelSec = 0;
+      if (stopIdx > 0) {
+        let cumDist = 0;
+        for (let i = 1; i <= stopIdx; i++) {
+          const s0 = stops[i - 1];
+          const s1 = stops[i];
+          if (s0.lat && s0.lon && s1.lat && s1.lon) {
+            cumDist += geoUtils.calculateDistanceMeters(s0.lat, s0.lon, s1.lat, s1.lon);
+          } else {
+            cumDist += 600;
+          }
+        }
+        travelSec = Math.round((cumDist / 10.0) + (stopIdx * 30));
+      }
+
       const tomorrow = new Date(Date.now() + 24 * 3600 * 1000);
       const networkTomorrow = timeUtils.getNetworkTime(this.agencyTimezone, tomorrow);
 
-      const nightTimes = ['23:45', '00:45', '01:45', '02:45', '03:45', '04:45'];
-      nightTimes.forEach((timeStr, idx) => {
-        const [hh, mm] = timeStr.split(':').map(Number);
-        const depUtc = timeUtils.localTimeToUtcDate(networkTomorrow.year, networkTomorrow.month, networkTomorrow.day, hh, mm, 0, this.agencyTimezone);
+      const baseScheduleMap = {
+        'n82': {
+          '0': ['23:45', '00:45', '01:45', '02:45', '03:45', '04:45'],
+          '1': ['23:30', '00:30', '01:30', '02:30', '03:30', '04:30']
+        },
+        'n83': {
+          '0': ['00:00', '01:00', '02:00', '03:00', '04:00', '05:00'],
+          '1': ['23:30', '00:30', '01:30', '02:30', '03:30', '04:30']
+        },
+        '603': {
+          '0': ['06:30', '07:30', '08:30', '09:30', '10:30', '11:30', '12:30', '13:30', '14:30', '15:30', '16:30', '17:30', '18:30', '19:30', '20:30', '21:30'],
+          '1': ['06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00']
+        },
+        'n70': {
+          '0': ['23:45', '00:45', '01:45', '02:45', '03:45', '04:45'],
+          '1': ['23:15', '00:15', '01:15', '02:15', '03:15', '04:15']
+        },
+        'n71': {
+          '0': ['23:45', '00:45', '01:45', '02:45', '03:45', '04:45'],
+          '1': ['23:15', '00:15', '01:15', '02:15', '03:15', '04:15']
+        },
+        'n73': {
+          '0': ['23:45', '00:45', '01:45', '02:45', '03:45', '04:45'],
+          '1': ['23:15', '00:15', '01:15', '02:15', '03:15', '04:15']
+        }
+      };
+
+      const baseTimes = baseScheduleMap[lineConfig.id]?.[dir] || ['23:45', '00:45', '01:45', '02:45', '03:45', '04:45'];
+
+      baseTimes.forEach((initTimeStr, idx) => {
+        const initSec = timeUtils.timeToSec(initTimeStr);
+        const passSec = initSec + travelSec;
+        const passHour = Math.floor(passSec / 3600) % 24;
+        const passMin = Math.floor((passSec % 3600) / 60);
+        const passTimeStr = `${String(passHour).padStart(2, '0')}:${String(passMin).padStart(2, '0')}`;
+
+        const depUtc = timeUtils.localTimeToUtcDate(networkTomorrow.year, networkTomorrow.month, networkTomorrow.day, passHour, passMin, 0, this.agencyTimezone);
         const diffMs = depUtc.getTime() - now;
         const diffMin = Math.max(1, Math.round(diffMs / 60000));
         const isFirst = idx === 0;
@@ -458,7 +509,7 @@ class SagalesTracker {
           lineId: lineConfig.id,
           lineName: lineConfig.code,
           destination: dir === '0' ? lineConfig.directions[0].name : lineConfig.directions[1].name,
-          departureTime: timeStr,
+          departureTime: passTimeStr,
           expectedIso: depUtc.toISOString(),
           aimedIso: depUtc.toISOString(),
           minutesAway: diffMin,
@@ -468,9 +519,9 @@ class SagalesTracker {
           isFirstOfDay: isFirst,
           isNextService: isFirst,
           delayStatus: 'scheduled',
-          delayBadgeText: isFirst ? '🌅 1r Servei nocturn' : 'Programat',
-          comparisonText: `📅 Horari teòric: ${timeStr}`,
-          formattedStatus: timeStr
+          delayBadgeText: isFirst ? '🌅 1r Servei' : 'Programat',
+          comparisonText: isFirst ? `📅 Pas teòric previst: ${passTimeStr}` : `📅 Horari teòric: ${passTimeStr}`,
+          formattedStatus: passTimeStr
         });
       });
     }
