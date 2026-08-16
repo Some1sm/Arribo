@@ -194,7 +194,7 @@ class C10Map {
         const isMaresme = stop.zone === 'Zona Maresme' || (stop.lon && stop.lon >= 2.289);
 
         const markerHtml = `
-          <div style="
+          <div class="stop-marker-dot" style="
             width: ${isTarget ? '22px' : '14px'};
             height: ${isTarget ? '22px' : '14px'};
             background-color: ${isTarget ? lineColor : isMaresme ? '#06b6d4' : '#f97316'};
@@ -202,6 +202,7 @@ class C10Map {
             border-radius: 50%;
             box-shadow: 0 0 10px ${isTarget ? lineColor : 'rgba(0,0,0,0.5)'};
             cursor: pointer;
+            transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.2s ease;
             ${isTarget ? 'animation: pulse-dot 1.5s infinite;' : ''}
           "></div>
         `;
@@ -215,41 +216,27 @@ class C10Map {
 
         const marker = L.marker(latLng, { icon: customIcon }).addTo(this.map);
 
-        const popupContent = `
-          <div class="map-popup-card">
-            <div class="map-popup-header">
-              <div class="map-popup-title">
-                <span style="color:${lineColor};">📍</span>
-                <span>${stop.name}</span>
-              </div>
-              <span class="map-popup-badge live">#${stop.seq || index + 1}</span>
-            </div>
-            
-            ${isTarget ? `<div style="color:${lineColor}; font-weight:800; font-size:0.75rem; margin-bottom:0.4rem;">⭐ PARADA PRINCIPAL</div>` : ''}
-
-            <div style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:0.65rem;">
-              <span>Zona: <strong>${stop.zone || (isMaresme ? 'Maresme' : 'AMB')}</strong></span>
-              ${stop.code ? ` • Codi: <strong style="color:#fff; font-family:var(--font-mono);">${stop.code}</strong>` : ''}
-            </div>
-
-            <div class="map-popup-actions">
-              <button type="button" class="btn-popup-primary" style="background:${lineColor};" onclick="window.c10App.inspectStop('${stopIdentifier}', '${stop.name.replace(/'/g, "\\'")}')">
-                <span>⏱️ Veure temps d'arribada</span>
-              </button>
-              ${!isTarget ? `
-                <button type="button" class="btn-popup-secondary" onclick="window.c10App.setTargetStop('${stopIdentifier}')">
-                  <span>⭐ Fixar com a principal</span>
-                </button>
-              ` : ''}
-            </div>
+        // 1. Sleek hover tooltip (Mini Bubble on hover)
+        marker.bindTooltip(`
+          <div style="display:flex; align-items:center; gap:6px;">
+            <span style="background:${lineColor}; color:#fff; font-size:10px; font-weight:800; padding:1px 5px; border-radius:3px;">#${stop.seq || index + 1}</span>
+            <span>${stop.name}</span>
           </div>
-        `;
+        `, {
+          direction: 'top',
+          offset: [0, -8],
+          className: 'stop-hover-tooltip',
+          opacity: 0.95
+        });
 
-        marker.bindPopup(popupContent, { maxWidth: 280 });
-
-        if (onStopClick) {
-          marker.on('click', () => onStopClick(stop));
-        }
+        // 2. Click directly on stop marker or button to open departures modal
+        marker.on('click', () => {
+          if (onStopClick) {
+            onStopClick(stop);
+          } else {
+            window.c10App?.inspectStop(stopIdentifier, stop.name);
+          }
+        });
 
         this.stopMarkers.push(marker);
       });

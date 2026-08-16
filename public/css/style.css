@@ -1525,6 +1525,35 @@ body {
 }
 
 
+/* Stop Hover Marker Dot and Tooltip */
+.c10-stop-marker {
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.c10-stop-marker:hover .stop-marker-dot {
+  transform: scale(1.4);
+  filter: brightness(1.25);
+  box-shadow: 0 0 16px rgba(0, 148, 133, 0.8) !important;
+}
+
+.leaflet-tooltip.stop-hover-tooltip {
+  background: #0f172a !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  border-radius: var(--radius-sm) !important;
+  padding: 5px 9px !important;
+  font-family: var(--font-sans) !important;
+  font-size: 0.78rem !important;
+  font-weight: 700 !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5) !important;
+  pointer-events: none !important;
+  white-space: nowrap !important;
+}
+
+.leaflet-tooltip.stop-hover-tooltip::before {
+  border-top-color: #0f172a !important;
+}
+
 /* ======================================================== */
 /* MODERN LEAFLET MAP POPUP & BUBBLE STYLES                 */
 /* ======================================================== */
