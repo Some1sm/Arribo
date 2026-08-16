@@ -87,6 +87,18 @@ async function runTests() {
     assert(uEta.body.data.targetStop !== null);
     console.log(`✅ Universal Dynamic Endpoints passed (Polymorphic API verified)`);
 
+    // 9. Sagalés N82 Real-time API
+    console.log('Test 9: Sagalés N82 Night Bus Integration');
+    const n82Line = await request('/api/line/n82?direction=0');
+    assert.strictEqual(n82Line.status, 200);
+    assert.strictEqual(n82Line.body.data.code, 'N82');
+    assert(n82Line.body.data.stops.length >= 10, 'N82 should have stops');
+    assert(n82Line.body.data.coords.length >= 500, 'N82 should have decoded polyline');
+    const n82Eta = await request('/api/line/n82/target-eta?direction=0');
+    assert.strictEqual(n82Eta.status, 200);
+    assert(n82Eta.body.data.targetStop !== null);
+    console.log(`✅ Sagalés N82 passed (${n82Line.body.data.stops.length} stops, ${n82Line.body.data.coords.length} polyline coords, ${n82Line.body.data.activeBuses.length} active buses)`);
+
     console.log('\n🎉 ALL MULTI-LINE E2E TESTS PASSED SUCCESSFULLY! 🎉\n');
   } finally {
     server.close();
