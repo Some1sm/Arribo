@@ -75,7 +75,7 @@ app.get('/api/search/stops', (req, res) => {
   // Search Mataró Bus stops
   mataroTracker.allStopsMap.forEach(s => {
     if (s.name.toLowerCase().includes(q) || s.id.includes(q)) {
-      const lineCodes = s.lineas.map(l => `L${l.id}`).join(', ') || 'Mataró Urbà';
+      const lineCodes = s.lineas.map(l => `Línia ${l.id}`).join(', ') || 'Mataró Urbà';
       const firstLine = s.lineas[0] || { id: '1', color: '#ff00ff' };
       results.push({
         lineId: firstLine.id,

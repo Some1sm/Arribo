@@ -167,22 +167,94 @@ class C10Map {
     return { lat: last[0], lon: last[1], bearing: 0 };
   }
 
-  // Render stops and road polyline on map
-  renderStops(stops, targetStopId = '', onStopClick = null, shouldFitBounds = false, lineColor = '#009485', customPolyline = null) {
+  // Create directional arrows along a polyline
+  createDirectionalArrows(polylineCoords, color) {
+    if (!polylineCoords || polylineCoords.length < 2) return [];
+    const arrows = [];
+    let accumulated = 0;
+    
+    for (let i = 0; i < polylineCoords.length - 1; i++) {
+      const p1 = polylineCoords[i];
+      const p2 = polylineCoords[i + 1];
+      const d = this.calculateDistanceMeters(p1[0], p1[1], p2[0], p2[1]);
+      accumulated += d;
+
+      // Place an arrow roughly every 800 meters along the route
+      if (accumulated >= 800) {
+        accumulated = 0;
+        const midLat = (p1[0] + p2[0]) / 2;
+        const midLon = (p1[1] + p2[1]) / 2;
+        const bearing = this.calculateBearing(p1[0], p1[1], p2[0], p2[1]);
+
+        const arrowHtml = `
+          <div style="
+            transform: rotate(${bearing}deg);
+            color: ${color};
+            font-size: 13px;
+            font-weight: 900;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-shadow: 0 0 3px #000, 0 0 6px #000;
+            pointer-events: none;
+            user-select: none;
+          ">▲</div>
+        `;
+
+        const icon = L.divIcon({
+          html: arrowHtml,
+          className: 'polyline-dir-arrow',
+          iconSize: [14, 14],
+          iconAnchor: [7, 7]
+        });
+
+        const marker = L.marker([midLat, midLon], { icon, interactive: false }).addTo(this.map);
+        arrows.push(marker);
+      }
+    }
+    return arrows;
+  }
+
+  // Render stops and road polyline on map (with support for both directions simultaneously)
+  renderStops(stops, targetStopId = '', onStopClick = null, shouldFitBounds = false, lineColor = '#009485', customPolyline = null, secondaryPolyline = null, secondaryStops = null, secondaryColor = '#38bdf8') {
     if (!this.map) return;
 
-    const stopsFingerprint = `${stops.length}_${targetStopId}_${lineColor}_${customPolyline ? customPolyline.length : 0}`;
+    const stopsFingerprint = `${stops.length}_${targetStopId}_${lineColor}_${customPolyline ? customPolyline.length : 0}_${secondaryPolyline ? secondaryPolyline.length : 0}`;
     const alreadyRendered = this.lastStopsFingerprint === stopsFingerprint && this.stopMarkers.length > 0;
 
     if (!alreadyRendered) {
+      // Clean up previous markers & polylines
       this.stopMarkers.forEach(m => this.map.removeLayer(m));
       this.stopMarkers = [];
+
+      if (this.secondaryStopMarkers) {
+        this.secondaryStopMarkers.forEach(m => this.map.removeLayer(m));
+        this.secondaryStopMarkers = [];
+      } else {
+        this.secondaryStopMarkers = [];
+      }
+
+      if (this.directionalArrowMarkers) {
+        this.directionalArrowMarkers.forEach(m => this.map.removeLayer(m));
+        this.directionalArrowMarkers = [];
+      } else {
+        this.directionalArrowMarkers = [];
+      }
+
       if (this.routePolyline) {
         this.map.removeLayer(this.routePolyline);
+        this.routePolyline = null;
+      }
+
+      if (this.secondaryRoutePolyline) {
+        this.map.removeLayer(this.secondaryRoutePolyline);
+        this.secondaryRoutePolyline = null;
       }
 
       const latLngs = [];
 
+      // 1. Render Primary Direction Stops
       stops.forEach((stop, index) => {
         if (!stop.lat || !stop.lon) return;
 
@@ -216,7 +288,7 @@ class C10Map {
 
         const marker = L.marker(latLng, { icon: customIcon }).addTo(this.map);
 
-        // 1. Sleek hover tooltip (Mini Bubble on hover)
+        // Hover tooltip
         marker.bindTooltip(`
           <div style="display:flex; align-items:center; gap:6px;">
             <span style="background:${lineColor}; color:#fff; font-size:10px; font-weight:800; padding:1px 5px; border-radius:3px;">#${stop.seq || index + 1}</span>
@@ -229,7 +301,7 @@ class C10Map {
           opacity: 0.95
         });
 
-        // 2. Click directly on stop marker or button to open departures modal
+        // Click directly on stop marker to open departures modal
         marker.on('click', () => {
           if (onStopClick) {
             onStopClick(stop);
@@ -241,20 +313,102 @@ class C10Map {
         this.stopMarkers.push(marker);
       });
 
-      // Save polyline coordinates
+      // 2. Render Secondary Direction Stops (if showing both directions)
+      if (secondaryStops && secondaryStops.length > 0) {
+        secondaryStops.forEach((stop, index) => {
+          if (!stop.lat || !stop.lon) return;
+          const stopIdentifier = String(stop.mouteStopId || stop.id || stop.code || '');
+          const isTarget = stopIdentifier === String(targetStopId);
+
+          const markerHtml = `
+            <div class="stop-marker-dot secondary" style="
+              width: 12px;
+              height: 12px;
+              background-color: ${secondaryColor};
+              border: 1.5px solid #ffffff;
+              border-radius: 50%;
+              box-shadow: 0 0 8px ${secondaryColor};
+              cursor: pointer;
+              transition: transform 0.2s ease;
+            "></div>
+          `;
+
+          const customIcon = L.divIcon({
+            html: markerHtml,
+            className: 'c10-stop-marker secondary',
+            iconSize: [12, 12],
+            iconAnchor: [6, 6]
+          });
+
+          const marker = L.marker([stop.lat, stop.lon], { icon: customIcon }).addTo(this.map);
+
+          marker.bindTooltip(`
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="background:${secondaryColor}; color:#fff; font-size:10px; font-weight:800; padding:1px 5px; border-radius:3px;">Sentit 2</span>
+              <span>${stop.name}</span>
+            </div>
+          `, {
+            direction: 'top',
+            offset: [0, -6],
+            className: 'stop-hover-tooltip',
+            opacity: 0.95
+          });
+
+          marker.on('click', () => {
+            if (onStopClick) {
+              onStopClick(stop);
+            } else {
+              window.c10App?.inspectStop(stopIdentifier, stop.name);
+            }
+          });
+
+          this.secondaryStopMarkers.push(marker);
+        });
+      }
+
+      // 3. Save polyline coordinates
       this.activePolylineCoords = (customPolyline && customPolyline.length > 1) ? customPolyline : latLngs;
 
+      // 4. Draw Primary Route Polyline
       if (this.activePolylineCoords.length > 1) {
         this.routePolyline = L.polyline(this.activePolylineCoords, {
           color: lineColor || '#009485',
-          weight: 4,
-          opacity: 0.85,
+          weight: 4.5,
+          opacity: 0.9,
           lineCap: 'round',
           lineJoin: 'round'
         }).addTo(this.map);
 
-        if (shouldFitBounds) {
-          this.map.fitBounds(this.routePolyline.getBounds(), { padding: [30, 30] });
+        // Add Directional Arrow Chevrons
+        const primaryArrows = this.createDirectionalArrows(this.activePolylineCoords, lineColor || '#009485');
+        this.directionalArrowMarkers.push(...primaryArrows);
+      }
+
+      // 5. Draw Secondary Route Polyline (if both directions active)
+      if (secondaryPolyline && secondaryPolyline.length > 1) {
+        this.secondaryRoutePolyline = L.polyline(secondaryPolyline, {
+          color: secondaryColor || '#38bdf8',
+          weight: 4,
+          opacity: 0.85,
+          dashArray: '8, 8',
+          lineCap: 'round',
+          lineJoin: 'round'
+        }).addTo(this.map);
+
+        // Add Directional Arrow Chevrons for secondary direction
+        const secondaryArrows = this.createDirectionalArrows(secondaryPolyline, secondaryColor || '#38bdf8');
+        this.directionalArrowMarkers.push(...secondaryArrows);
+      }
+
+      // 6. Fit Map Bounds
+      if (shouldFitBounds) {
+        const boundsGroup = [];
+        if (this.routePolyline) boundsGroup.push(this.routePolyline);
+        if (this.secondaryRoutePolyline) boundsGroup.push(this.secondaryRoutePolyline);
+
+        if (boundsGroup.length > 0) {
+          const group = new L.featureGroup(boundsGroup);
+          this.map.fitBounds(group.getBounds(), { padding: [35, 35] });
         }
       }
 

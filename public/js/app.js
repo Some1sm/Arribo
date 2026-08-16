@@ -136,13 +136,14 @@ class TransitApp {
 
     dropdown.innerHTML = mataroLines.map(l => {
       const isSelected = String(l.id) === String(this.activeMataroLineId);
-      return `<option value="${l.id}" ${isSelected ? 'selected' : ''}>${l.code} — ${l.name}</option>`;
+      return `<option value="${l.id}" ${isSelected ? 'selected' : ''}>Línia ${l.code} — ${l.name}</option>`;
     }).join('');
 
     const activeObj = mataroLines.find(l => String(l.id) === String(this.activeMataroLineId)) || mataroLines[0];
     if (activeObj && activeBadge) {
       activeBadge.textContent = activeObj.code;
       activeBadge.style.background = activeObj.color;
+      activeBadge.style.color = this.getContrastColor(activeObj.color);
     }
   }
 
@@ -160,6 +161,7 @@ class TransitApp {
     if (activeObj && activeBadge) {
       activeBadge.textContent = activeObj.code;
       activeBadge.style.background = activeObj.color;
+      activeBadge.style.color = this.getContrastColor(activeObj.color);
     }
 
     this.updateHeaderBrand();
@@ -183,6 +185,9 @@ class TransitApp {
       const matches = mataroLines.filter(l => 
         l.code.toLowerCase().includes(q) || 
         l.name.toLowerCase().includes(q) ||
+        ('línia ' + l.code).includes(q) ||
+        ('linia ' + l.code).includes(q) ||
+        ('l' + l.code).includes(q) ||
         (l.id && String(l.id) === q.replace('l', ''))
       );
 
@@ -195,8 +200,8 @@ class TransitApp {
       dropdown.innerHTML = matches.map(l => `
         <div class="line-filter-item" data-line-id="${l.id}">
           <div class="line-filter-left">
-            <span class="line-badge-sm" style="background:${l.color};">${l.code}</span>
-            <span class="line-filter-name">${l.name}</span>
+            <span class="line-badge-sm" style="background:${l.color}; color:${this.getContrastColor(l.color)};">${l.code}</span>
+            <span class="line-filter-name">Línia ${l.code}: ${l.name}</span>
           </div>
           <span style="font-size:0.75rem; color:var(--c10-primary); font-weight:700;">Seleccionar ➔</span>
         </div>
@@ -258,7 +263,7 @@ class TransitApp {
       if (subtitle) subtitle.textContent = 'Barcelona ↔ Badalona ↔ Maresme ↔ Mataró (per N-II)';
       if (mapTitle) mapTitle.textContent = 'Traçat del Corredor C-10 i parades';
     } else {
-      const lineObj = this.availableLines.find(l => String(l.id) === String(this.activeMataroLineId)) || { code: `L${this.activeMataroLineId}`, color: '#00ea00', name: 'Mataró Bus' };
+      const lineObj = this.availableLines.find(l => String(l.id) === String(this.activeMataroLineId)) || { code: `${this.activeMataroLineId}`, color: '#00ea00', name: `Línia ${this.activeMataroLineId}` };
       if (badge) {
         badge.textContent = lineObj.code;
         badge.style.background = lineObj.color;
@@ -272,8 +277,8 @@ class TransitApp {
         modeBadge.style.borderColor = lineObj.color;
         modeBadge.style.boxShadow = `0 0 12px rgba(${this.hexToRgb(lineObj.color)}, 0.35)`;
       }
-      if (subtitle) subtitle.textContent = `Xarxa Urbana • ${lineObj.code}: ${lineObj.name}`;
-      if (mapTitle) mapTitle.textContent = `Traçat línia urbana ${lineObj.code} i parades`;
+      if (subtitle) subtitle.textContent = `Xarxa Urbana • Línia ${lineObj.code}: ${lineObj.name}`;
+      if (mapTitle) mapTitle.textContent = `Traçat Línia ${lineObj.code} i parades`;
     }
   }
 
@@ -304,6 +309,49 @@ class TransitApp {
   async refreshC10Data(shouldFitBounds = false) {
     const targetStopId = this.targetStopsByLine['c10'] || null;
 
+    // Update active class on C-10 direction buttons without rebuilding DOM
+    const dirBtn1 = document.getElementById('c10-dir-btn-1');
+    const dirBtn0 = document.getElementById('c10-dir-btn-0');
+    const dirBtnBoth = document.getElementById('c10-dir-btn-both');
+    if (dirBtn1) dirBtn1.classList.toggle('active', this.c10Direction === '1');
+    if (dirBtn0) dirBtn0.classList.toggle('active', this.c10Direction === '0');
+    if (dirBtnBoth) dirBtnBoth.classList.toggle('active', this.c10Direction === 'both');
+
+    if (this.c10Direction === 'both') {
+      const [eta1, stops1, corr1, stops0, corr0] = await Promise.all([
+        fetch(`/api/c10/target-eta?direction=1${targetStopId ? `&stopId=${targetStopId}` : ''}`).then(r => r.json()),
+        fetch(`/api/c10/stops?direction=1`).then(r => r.json()),
+        fetch(`/api/c10/live-corridor?direction=1`).then(r => r.json()),
+        fetch(`/api/c10/stops?direction=0`).then(r => r.json()),
+        fetch(`/api/c10/live-corridor?direction=0`).then(r => r.json())
+      ]);
+
+      this.allStops = stops1.stops || [];
+      const secondaryStops = stops0.stops || [];
+      this.activeBuses = [...(corr1.data?.activeBuses || []), ...(corr0.data?.activeBuses || [])];
+
+      this.populateSelect('c10-target-stop-select', this.allStops, targetStopId || '10037202');
+      this.renderStopsBrowser(this.allStops, 'c10');
+
+      if (eta1.success && eta1.data) {
+        this.renderC10TargetCard(eta1.data);
+      }
+
+      if (corr1.success && corr1.data) {
+        this.renderC10Telemetry(corr1.data);
+        this.renderC10CorridorTimeline(corr1.data);
+      }
+      this.updateActiveBusesCount(this.activeBuses.length);
+
+      const activeTargetId = targetStopId || (eta1.data?.targetStop?.mouteStopId || '10037202');
+      const p1Coords = this.allStops.map(s => [s.lat, s.lon]).filter(p => p[0] && p[1]);
+      const p0Coords = secondaryStops.map(s => [s.lat, s.lon]).filter(p => p[0] && p[1]);
+
+      this.mapController.renderStops(this.allStops, activeTargetId, (s) => this.inspectStop(s.mouteStopId, s.name), shouldFitBounds, '#009485', p1Coords, p0Coords, secondaryStops, '#f59e0b');
+      this.mapController.updateBusMarkers(this.activeBuses, '#009485');
+      return;
+    }
+
     // 1. Target ETA
     const etaRes = await fetch(`/api/c10/target-eta?direction=${this.c10Direction}${targetStopId ? `&stopId=${targetStopId}` : ''}`).then(r => r.json());
 
@@ -331,28 +379,24 @@ class TransitApp {
       this.checkArrivalAlerts(corridorRes.data, 'c10');
     }
 
-    // Update active class on C-10 direction buttons without rebuilding DOM
-    const dirBtn1 = document.getElementById('c10-dir-btn-1');
-    const dirBtn0 = document.getElementById('c10-dir-btn-0');
-    if (dirBtn1) dirBtn1.classList.toggle('active', this.c10Direction === '1');
-    if (dirBtn0) dirBtn0.classList.toggle('active', this.c10Direction === '0');
-
     // Map Render
     const activeTargetId = targetStopId || (etaRes.data?.targetStop?.mouteStopId || '10037202');
     this.mapController.renderStops(this.allStops, activeTargetId, (s) => this.inspectStop(s.mouteStopId, s.name), shouldFitBounds, '#009485');
     this.mapController.updateBusMarkers(this.activeBuses, '#009485');
   }
 
-  // Refresh Urbà Mataró (L1..L8)
+  // Refresh Urbà Mataró (1..8)
   async refreshMataroData(shouldFitBounds = false) {
     const lId = this.activeMataroLineId;
     const targetStopId = this.targetStopsByLine[lId] || null;
 
+    const queryDir = this.mataroDirection === 'both' ? '0' : this.mataroDirection;
+
     // 1. Line details with SIRI live telemetry & dead-zone estimation
-    const lineRes = await fetch(`/api/mataro/line/${lId}?direction=${this.mataroDirection}`).then(r => r.json());
+    const lineRes = await fetch(`/api/mataro/line/${lId}?direction=${queryDir}`).then(r => r.json());
 
     // 2. Target Stop ETA
-    const etaRes = await fetch(`/api/mataro/target-eta?lineId=${lId}&direction=${this.mataroDirection}${targetStopId ? `&stopId=${targetStopId}` : ''}`).then(r => r.json());
+    const etaRes = await fetch(`/api/mataro/target-eta?lineId=${lId}&direction=${queryDir}${targetStopId ? `&stopId=${targetStopId}` : ''}`).then(r => r.json());
 
     if (lineRes.success && lineRes.data) {
       const lData = lineRes.data;
@@ -377,7 +421,13 @@ class TransitApp {
       this.updateActiveBusesCount(lData.totalActiveBuses || 0);
 
       // Map Render with High-Res Road Polyline
-      this.mapController.renderStops(this.allStops, activeTargetId, (s) => this.inspectStop(s.id, s.name), shouldFitBounds, lData.color, lData.polyline);
+      if (this.mataroDirection === 'both' && lData.allDirections && lData.allDirections.length > 1) {
+        const d0 = lData.allDirections[0];
+        const d1 = lData.allDirections[1];
+        this.mapController.renderStops(d0.stops || this.allStops, activeTargetId, (s) => this.inspectStop(s.id, s.name), shouldFitBounds, lData.color, d0.polyline, d1.polyline, d1.stops, '#38bdf8');
+      } else {
+        this.mapController.renderStops(this.allStops, activeTargetId, (s) => this.inspectStop(s.id, s.name), shouldFitBounds, lData.color, lData.polyline);
+      }
       this.mapController.updateBusMarkers(this.activeBuses, lData.color);
     }
 
@@ -390,7 +440,7 @@ class TransitApp {
     const container = document.getElementById(containerId);
     if (!container || !directions || directions.length === 0) return;
 
-    container.innerHTML = directions.map((d, i) => {
+    let html = directions.map((d, i) => {
       const isActive = String(d.id) === String(currentDir);
       return `
         <button type="button" class="btn-direction ${isActive ? 'active' : ''}" data-dir-id="${d.id}">
@@ -399,6 +449,16 @@ class TransitApp {
         </button>
       `;
     }).join('');
+
+    const isBothActive = String(currentDir) === 'both';
+    html += `
+      <button type="button" class="btn-direction ${isBothActive ? 'active' : ''}" data-dir-id="both" title="Mostrar tots dos sentits al mapa">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+        <span>Ambdós sentits</span>
+      </button>
+    `;
+
+    container.innerHTML = html;
   }
 
   // ==========================================
@@ -535,7 +595,7 @@ class TransitApp {
     if (codeEl) codeEl.textContent = stop.code || stop.id || '--';
     if (dirSubEl) dirSubEl.textContent = data.directionName || 'En servei';
     if (lineTagEl) {
-      lineTagEl.textContent = `L${this.activeMataroLineId}`;
+      lineTagEl.textContent = `Línia ${this.activeMataroLineId}`;
       if (data.line?.color) lineTagEl.style.color = data.line.color;
     }
     if (destEl) destEl.textContent = next?.destination || data.directionName || 'Destí';

@@ -53,7 +53,7 @@ class MataroTracker {
       const routes = this.routesData[l.id] || [];
       return {
         id: l.id,
-        code: `L${l.id}`,
+        code: String(l.id),
         name: l.name.trim(),
         color: l.color || '#009485',
         agency: 'Mataró Bus (Avanza)',
@@ -99,6 +99,26 @@ class MataroTracker {
       };
     });
 
+    // All Directions data for showing both directions on map
+    const allDirections = routes.map((r, idx) => ({
+      dirId: String(idx),
+      name: r.name,
+      polyline: (r.coords || []).map(c => [parseFloat(c.Latitude), parseFloat(c.Longitude)]),
+      stops: (r.stops || []).map((s, sIdx) => {
+        const globalStop = this.allStopsMap.get(String(s.id)) || {};
+        return {
+          id: String(s.id),
+          seq: sIdx + 1,
+          name: s.name.replace(/ - \d+$/, ''),
+          lat: s.latitude || globalStop.lat,
+          lon: s.longitude || globalStop.lon,
+          code: String(s.id),
+          zone: 'Mataró Urbà',
+          color: lineInfo.color
+        };
+      })
+    }));
+
     // Fetch Live Buses via SIRI
     const liveVehicles = await siriClient.getLiveVehicles(lId);
 
@@ -107,7 +127,7 @@ class MataroTracker {
 
     return {
       lineId: lId,
-      code: `L${lId}`,
+      code: String(lId),
       name: lineInfo.name.trim(),
       color: lineInfo.color,
       direction: String(dirIdx),
@@ -115,6 +135,7 @@ class MataroTracker {
       totalStops: stops.length,
       stops,
       polyline,
+      allDirections,
       activeBuses: processedBuses,
       totalActiveBuses: processedBuses.length
     };
@@ -402,7 +423,7 @@ class MataroTracker {
     return {
       line: {
         id: lId,
-        code: `L${lId}`,
+        code: String(lId),
         name: lineInfo.name.trim(),
         color: lineInfo.color
       },
