@@ -72,9 +72,10 @@ class MataroTracker {
     const lId = String(lineId);
     const lineInfo = this.linesData.find(l => String(l.id) === lId) || { id: lId, name: `Línia ${lId}`, color: '#009485' };
     const routes = this.routesData[lId] || [];
+    const isBoth = direction === 'both';
     
     // Choose route by index or ID
-    const dirIdx = parseInt(direction, 10) || 0;
+    const dirIdx = isBoth ? 0 : (parseInt(direction, 10) || 0);
     const selectedRoute = routes[dirIdx] || routes[0] || { coords: [], stops: [] };
 
     // Format polyline
@@ -123,7 +124,28 @@ class MataroTracker {
     const liveVehicles = await siriClient.getLiveVehicles(lId);
 
     // Apply Road-Snapping and Dead-Zone Location Estimation
-    const processedBuses = this.processBusesWithDeadReckoning(liveVehicles, selectedRoute, stops);
+    let processedBuses = [];
+    if (isBoth && routes.length > 1) {
+      const buses0 = this.processBusesWithDeadReckoning(liveVehicles, routes[0], allDirections[0].stops, '0');
+      const buses1 = this.processBusesWithDeadReckoning(liveVehicles, routes[1], allDirections[1].stops, '1');
+
+      const busMap = new Map();
+      liveVehicles.forEach(v => {
+        const b0 = buses0.find(b => b.vehicleId === v.vehicleId);
+        const b1 = buses1.find(b => b.vehicleId === v.vehicleId);
+        if (b0 && b1) {
+          const best = (b0._snapDist <= b1._snapDist) ? b0 : b1;
+          busMap.set(v.vehicleId, best);
+        } else if (b0) {
+          busMap.set(v.vehicleId, b0);
+        } else if (b1) {
+          busMap.set(v.vehicleId, b1);
+        }
+      });
+      processedBuses = Array.from(busMap.values());
+    } else {
+      processedBuses = this.processBusesWithDeadReckoning(liveVehicles, selectedRoute, stops, String(dirIdx));
+    }
 
     return {
       lineId: lId,
@@ -131,7 +153,7 @@ class MataroTracker {
       name: lineInfo.name.trim(),
       color: lineInfo.color,
       direction: String(dirIdx),
-      directionName: selectedRoute.name || `${lineInfo.name}`,
+      directionName: isBoth ? 'Ambdós sentits' : (selectedRoute.name || `${lineInfo.name}`),
       totalStops: stops.length,
       stops,
       polyline,
@@ -186,7 +208,7 @@ class MataroTracker {
   }
 
   // Dead-Zone Position Estimation (Dead-Reckoning along Polyline)
-  processBusesWithDeadReckoning(liveBuses, route, stops) {
+  processBusesWithDeadReckoning(liveBuses, route, stops, dirId = '0') {
     const now = Date.now();
     const result = [];
     const polyCoords = (route.coords || []).map(c => ({ lat: parseFloat(c.Latitude), lon: parseFloat(c.Longitude) }));
@@ -203,6 +225,7 @@ class MataroTracker {
       this.vehicleHistory.set(b.vehicleId, {
         vehicleId: b.vehicleId,
         lineId: b.lineId,
+        direction: dirId,
         lat: roadLat,
         lon: roadLon,
         bearing: roadBearing,
@@ -221,6 +244,8 @@ class MataroTracker {
         tripId: `mataro_${b.vehicleId}`,
         vehicleId: b.vehicleId,
         lineId: b.lineId,
+        direction: dirId,
+        _snapDist: snapped.dist,
         lat: roadLat,
         lon: roadLon,
         bearing: roadBearing,

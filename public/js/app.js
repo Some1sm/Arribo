@@ -391,13 +391,14 @@ class TransitApp {
     const lId = this.activeMataroLineId;
     const targetStopId = this.targetStopsByLine[lId] || null;
 
-    const queryDir = this.mataroDirection === 'both' ? '0' : this.mataroDirection;
+    const queryDir = this.mataroDirection === 'both' ? 'both' : this.mataroDirection;
+    const etaQueryDir = this.mataroDirection === 'both' ? '0' : this.mataroDirection;
 
     // 1. Line details with SIRI live telemetry & dead-zone estimation
     const lineRes = await fetch(`/api/mataro/line/${lId}?direction=${queryDir}`).then(r => r.json());
 
     // 2. Target Stop ETA
-    const etaRes = await fetch(`/api/mataro/target-eta?lineId=${lId}&direction=${queryDir}${targetStopId ? `&stopId=${targetStopId}` : ''}`).then(r => r.json());
+    const etaRes = await fetch(`/api/mataro/target-eta?lineId=${lId}&direction=${etaQueryDir}${targetStopId ? `&stopId=${targetStopId}` : ''}`).then(r => r.json());
 
     if (lineRes.success && lineRes.data) {
       const lData = lineRes.data;
@@ -426,10 +427,11 @@ class TransitApp {
         const d0 = lData.allDirections[0];
         const d1 = lData.allDirections[1];
         this.mapController.renderStops(d0.stops || this.allStops, activeTargetId, (s) => this.inspectStop(s.id, s.name), shouldFitBounds, lData.color, d0.polyline, d1.polyline, d1.stops, '#38bdf8');
+        this.mapController.updateBusMarkers(this.activeBuses, lData.color, '#38bdf8');
       } else {
         this.mapController.renderStops(this.allStops, activeTargetId, (s) => this.inspectStop(s.id, s.name), shouldFitBounds, lData.color, lData.polyline);
+        this.mapController.updateBusMarkers(this.activeBuses, lData.color);
       }
-      this.mapController.updateBusMarkers(this.activeBuses, lData.color);
     }
 
     if (etaRes.success && etaRes.data) {

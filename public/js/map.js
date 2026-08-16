@@ -417,7 +417,8 @@ class C10Map {
   }
 
   // Update active bus markers and attach road subpaths
-  updateBusMarkers(activeBuses, lineColor = '#009485') {
+  // Update active bus markers and attach road subpaths
+  updateBusMarkers(activeBuses, lineColor = '#009485', secondaryColor = '#38bdf8') {
     if (!this.map) return;
 
     const currentTripIds = new Set(activeBuses.map(b => b.tripId));
@@ -430,19 +431,25 @@ class C10Map {
       }
     }
 
+    const secondaryCoords = (this.secondaryRoutePolyline) ? this.secondaryRoutePolyline.getLatLngs().map(p => [p.lat, p.lng]) : null;
+
     activeBuses.forEach(bus => {
       if (!bus.lat || !bus.lon) return;
 
-      // 1. Street-Snapping: Snap raw GPS strictly to the road polyline
+      const isSecDir = String(bus.direction) === '1' && secondaryCoords && secondaryCoords.length > 1;
+      const targetPolyline = isSecDir ? secondaryCoords : (this.activePolylineCoords || []);
+      const busColor = isSecDir ? secondaryColor : lineColor;
+
+      // 1. Street-Snapping: Snap raw GPS strictly to the target road polyline
       let snapped = { lat: bus.lat, lon: bus.lon, bearing: bus.bearing || 0 };
-      if (this.activePolylineCoords && this.activePolylineCoords.length > 1) {
-        snapped = this.snapToPolyline(bus.lat, bus.lon, this.activePolylineCoords);
+      if (targetPolyline && targetPolyline.length > 1) {
+        snapped = this.snapToPolyline(bus.lat, bus.lon, targetPolyline);
       }
 
       // 2. Extract road subpath between fromCoords and toCoords
       let subpath = null;
-      if (bus.fromCoords && bus.toCoords && this.activePolylineCoords && this.activePolylineCoords.length > 1) {
-        subpath = this.extractSubpath(this.activePolylineCoords, bus.fromCoords.lat, bus.fromCoords.lon, bus.toCoords.lat, bus.toCoords.lon);
+      if (bus.fromCoords && bus.toCoords && targetPolyline && targetPolyline.length > 1) {
+        subpath = this.extractSubpath(targetPolyline, bus.fromCoords.lat, bus.fromCoords.lon, bus.toCoords.lat, bus.toCoords.lon);
       }
 
       const bearingAngle = snapped.bearing || bus.bearing || 0;
@@ -486,12 +493,12 @@ class C10Map {
             <div class="map-popup-title">
               <span>🚌 Bus ${bus.vehicleId ? `#${bus.vehicleId}` : ''}</span>
             </div>
-            <span class="map-popup-badge ${isEst ? 'estimated' : 'live'}">
-              ${isEst ? '⚡ Estimació' : '🟢 GPS Directe'}
+            <span class="map-popup-badge ${isEst ? 'estimated' : 'live'}" style="background:${isSecDir ? 'rgba(56, 189, 248, 0.2)' : ''}; color:${isSecDir ? '#38bdf8' : ''};">
+              ${isEst ? '⚡ Estimació' : isSecDir ? '🔄 Sentit 2' : '🟢 GPS Directe'}
             </span>
           </div>
 
-          <div class="map-popup-route" style="color:${lineColor};">
+          <div class="map-popup-route" style="color:${busColor};">
             <span>${bus.fromStop}</span>
             <span style="opacity:0.6;">➔</span>
             <span>${bus.toStop}</span>
@@ -549,7 +556,7 @@ class C10Map {
       } else {
         const pinBg = isEst
           ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
-          : (lineColor || 'linear-gradient(135deg, #10b981 0%, #059669 100%)');
+          : (busColor || 'linear-gradient(135deg, #10b981 0%, #059669 100%)');
 
         const isHeadingWest = bearingAngle > 180 && bearingAngle < 360;
         const busHtml = bus.isTerminalLayover ? `
