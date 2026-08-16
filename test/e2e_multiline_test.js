@@ -139,6 +139,18 @@ async function runTests() {
     assert(a1Line.body.data.stops.length >= 4, 'A1 should have stops');
     console.log(`✅ Monbus Aerobús A1 passed (${a1Line.body.data.stops.length} stops, Agency: ${a1Line.body.data.agency})`);
 
+    // 14. Moventis / Casas NitBus N80
+    console.log('Test 14: Moventis / Casas NitBus N80 Line');
+    const n80Line = await request('/api/line/n80?direction=0');
+    assert.strictEqual(n80Line.status, 200);
+    assert.strictEqual(n80Line.body.data.code, 'N80');
+    assert(n80Line.body.data.stops.length >= 25, 'N80 should have >= 25 stops');
+    assert(n80Line.body.data.coords.length >= 500, 'N80 should have >= 500 shape points');
+    const n80Eta = await request('/api/line/n80/target-eta?direction=0');
+    assert.strictEqual(n80Eta.status, 200);
+    assert(n80Eta.body.data.targetStop !== null);
+    console.log(`✅ Moventis N80 passed (${n80Line.body.data.stops.length} stops, ${n80Line.body.data.coords.length} polyline coords)`);
+
     console.log('\n🎉 ALL MULTI-LINE & MULTI-PROVIDER E2E TESTS PASSED SUCCESSFULLY! 🎉\n');
   } finally {
     server.close();

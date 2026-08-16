@@ -6,6 +6,7 @@ const mataroTracker = require('./src/mataroTracker');
 const sagalesTracker = require('./src/sagalesTracker');
 const ambTracker = require('./src/ambTracker');
 const rodaliesTracker = require('./src/rodaliesTracker');
+const maresmeTracker = require('./src/maresmeTracker');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -32,6 +33,7 @@ app.use('/api', (req, res, next) => {
 function getTrackerForLine(lineId) {
   const cleanId = String(lineId).toLowerCase().trim();
   if (cleanId === 'c10' || cleanId === 'c-10') return { type: 'c10', tracker: corridorTracker };
+  if (maresmeTracker.resolveLine(cleanId)) return { type: 'maresme', tracker: maresmeTracker };
   if (rodaliesTracker.resolveLine(cleanId)) return { type: 'rodalies', tracker: rodaliesTracker };
   if (sagalesTracker.resolveLineConfig(cleanId)) return { type: 'sagales', tracker: sagalesTracker };
   if (mataroTracker.resolveLineConfig(cleanId)) return { type: 'mataro', tracker: mataroTracker };
@@ -60,6 +62,7 @@ app.get('/api/lines', async (req, res) => {
     ]
   };
 
+  const maresmeLines = maresmeTracker.getLines();
   const rodaliesLines = rodaliesTracker.getLines();
   const sagalesLines = sagalesTracker.getLines();
   const ambLines = ambTracker.getLines();
@@ -67,8 +70,8 @@ app.get('/api/lines', async (req, res) => {
 
   res.json({
     success: true,
-    totalLines: 1 + rodaliesLines.length + sagalesLines.length + ambLines.length + mataroLines.length,
-    lines: [c10Line, ...rodaliesLines, ...sagalesLines, ...ambLines, ...mataroLines]
+    totalLines: 1 + maresmeLines.length + rodaliesLines.length + sagalesLines.length + ambLines.length + mataroLines.length,
+    lines: [c10Line, ...maresmeLines, ...rodaliesLines, ...sagalesLines, ...ambLines, ...mataroLines]
   });
 });
 
@@ -94,6 +97,24 @@ app.get('/api/search/stops', (req, res) => {
         code: s.code,
         zone: '🚆 Rodalies de Catalunya',
         isTrain: true,
+        lat: s.lat,
+        lon: s.lon
+      });
+    }
+  });
+
+  // 2. Search Maresme Moventis / Casas stops (N80, N81, e11.1, e11.2, C-20, C-30, etc.)
+  maresmeTracker.allStopsMap.forEach(s => {
+    if (results.length < 35 && (s.name.toLowerCase().includes(q) || (s.code && s.code.includes(q)))) {
+      results.push({
+        lineId: s.lineId,
+        lineCode: s.lineCode,
+        lineName: s.name,
+        lineColor: s.lineColor || '#009485',
+        stopId: s.id,
+        stopName: s.name,
+        code: s.code,
+        zone: '🌊 Moventis Maresme',
         lat: s.lat,
         lon: s.lon
       });
