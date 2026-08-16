@@ -362,7 +362,7 @@ class TransitApp {
         if (etaClockEl) etaClockEl.textContent = `1r pas previst: ${clockTime}`;
         if (etaPillEl && etaStatusText) {
           etaPillEl.className = 'eta-status-pill scheduled';
-          etaStatusText.textContent = '🌙 Represa al matí';
+          etaStatusText.textContent = 'Represa al matí';
         }
       } else {
         if (etaBigEl) etaBigEl.textContent = next.formattedStatus || `${next.minutesAway} min`;
@@ -372,13 +372,15 @@ class TransitApp {
           etaPillEl.className = 'eta-status-pill';
           if (next.delayStatus === 'delayed') {
             etaPillEl.classList.add('delayed');
-            etaStatusText.textContent = `⚠️ Retard (${next.delayBadgeText || '+2 min'})`;
+            const cleanDelay = (next.delayBadgeText || '+2 min').replace(/retard/gi, '').trim();
+            etaStatusText.textContent = `Retard (${cleanDelay})`;
           } else if (next.delayStatus === 'early') {
             etaPillEl.classList.add('early');
-            etaStatusText.textContent = `⚡ Avançat (${next.delayBadgeText || '-2 min'})`;
+            const cleanEarly = (next.delayBadgeText || '-2 min').replace(/avançat/gi, '').trim();
+            etaStatusText.textContent = `Avançat (${cleanEarly})`;
           } else {
             etaPillEl.classList.add('live');
-            etaStatusText.textContent = next.isRealTime ? '🟢 Temps Real Actiu' : '📅 Horari Teòric';
+            etaStatusText.textContent = next.isRealTime ? 'Temps Real Actiu' : 'Horari Teòric';
           }
         }
       }

@@ -535,21 +535,49 @@ body {
   gap: 0.35rem;
   font-size: 0.75rem;
   font-weight: 600;
-  padding: 0.2rem 0.5rem;
+  padding: 0.2rem 0.55rem;
   border-radius: var(--radius-sm);
   width: fit-content;
 }
 
-.eta-status-pill.realtime {
+.eta-status-pill.live {
   background: rgba(16, 185, 129, 0.15);
   color: #34d399;
   border: 1px solid rgba(16, 185, 129, 0.3);
+}
+.eta-status-pill.live .live-dot {
+  background: #10b981 !important;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.6) !important;
+}
+
+.eta-status-pill.delayed {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+.eta-status-pill.delayed .live-dot {
+  background: #f59e0b !important;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.6) !important;
+}
+
+.eta-status-pill.early {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+.eta-status-pill.early .live-dot {
+  background: #38bdf8 !important;
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.6) !important;
 }
 
 .eta-status-pill.scheduled {
   background: rgba(59, 130, 246, 0.15);
   color: #60a5fa;
   border: 1px solid rgba(59, 130, 246, 0.3);
+}
+.eta-status-pill.scheduled .live-dot {
+  background: #60a5fa !important;
+  box-shadow: 0 0 6px rgba(59, 130, 246, 0.6) !important;
 }
 
 .target-meta-footer {
