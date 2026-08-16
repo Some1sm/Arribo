@@ -545,6 +545,12 @@ class C10Map {
         </div>
       `;
 
+      const pinBg = isEst
+        ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
+        : (bus.isTerminalLayover 
+            ? 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)'
+            : (busColor || 'linear-gradient(135deg, #10b981 0%, #059669 100%)'));
+
       if (this.busMarkersMap.has(bus.tripId)) {
         const obj = this.busMarkersMap.get(bus.tripId);
         obj.busData = bus;
@@ -558,11 +564,20 @@ class C10Map {
         if (bus.isTerminalLayover) {
           obj.marker.setLatLng([snapped.lat, snapped.lon]);
         }
-      } else {
-        const pinBg = isEst
-          ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
-          : (busColor || 'linear-gradient(135deg, #10b981 0%, #059669 100%)');
 
+        // Dynamically update pin background and status dot to restore live colors immediately upon GPS reconnection
+        const el = obj.marker.getElement();
+        if (el) {
+          const pinEl = el.querySelector('.live-bus-pin');
+          if (pinEl) {
+            pinEl.style.background = pinBg;
+          }
+          const dotEl = el.querySelector('.bus-status-dot');
+          if (dotEl) {
+            dotEl.className = `bus-status-dot ${isEst ? 'estimated' : 'live'}`;
+          }
+        }
+      } else {
         const isHeadingWest = bearingAngle > 180 && bearingAngle < 360;
         const busHtml = bus.isTerminalLayover ? `
           <div class="live-bus-marker-wrap">
