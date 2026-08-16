@@ -1498,18 +1498,340 @@ body {
   font-size: 1rem;
 }
 
+/* ======================================================== */
+/* COMPREHENSIVE MOBILE-FRIENDLY & RESPONSIVE DESIGN SYSTEM */
+/* ======================================================== */
+
+/* General Mobile Enhancements */
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+button, input, select {
+  -webkit-tap-highlight-color: transparent;
+}
+
+input, select {
+  font-size: 16px !important; /* Prevents auto-zoom on iOS Safari */
+}
+
+/* Tablet & Phablet Breakpoint (<= 1024px) */
 @media (max-width: 1024px) {
   .header-container {
     flex-direction: column;
     align-items: stretch;
-    gap: 0.85rem;
+    gap: 0.75rem;
   }
   .main-page-nav {
+    width: 100%;
+    display: flex;
+  }
+  .nav-tab-btn {
+    flex: 1;
     justify-content: center;
+    padding: 0.6rem 0.5rem;
   }
   .header-actions {
+    display: flex;
+    align-items: center;
     justify-content: space-between;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .global-search-container {
+    max-width: 100%;
+    order: 3;
+    width: 100%;
+    margin-top: 0.25rem;
   }
 }
+
+/* Mobile Screen Breakpoint (<= 768px) */
+@media (max-width: 768px) {
+  .app-header {
+    padding: 0.65rem 0.85rem;
+  }
+
+  .app-main {
+    padding: 0.85rem 0.75rem;
+    gap: 1rem;
+  }
+
+  .logo-group {
+    gap: 0.6rem;
+  }
+
+  .line-badge {
+    font-size: 1rem;
+    padding: 0.25rem 0.6rem;
+  }
+
+  .app-title-group h1 {
+    font-size: 1rem;
+  }
+
+  .app-subtitle {
+    font-size: 0.72rem;
+  }
+
+  .nav-tab-btn {
+    font-size: 0.78rem;
+    padding: 0.5rem 0.35rem;
+  }
+
+  .nav-tab-icon {
+    font-size: 0.9rem;
+  }
+
+  /* Direction Selector Bar on Mobile */
+  .direction-bar {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 0.5rem;
+    gap: 0.5rem;
+  }
+
+  .direction-toggle-group {
+    flex-direction: column;
+    width: 100%;
+    min-width: 0;
+    gap: 0.35rem;
+  }
+
+  .btn-direction {
+    width: 100%;
+    min-height: 44px;
+    padding: 0.55rem 0.75rem;
+    font-size: 0.82rem;
+    justify-content: flex-start;
+    text-align: left;
+    white-space: normal;
+  }
+
+  .refresh-status {
+    width: 100%;
+    justify-content: center;
+    font-size: 0.75rem;
+  }
+
+  /* Hero ETA Grid on Mobile */
+  .hero-eta-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .target-card {
+    padding: 1.25rem;
+  }
+
+  .target-name {
+    font-size: 1.35rem;
+  }
+
+  .eta-hero-display {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+    margin: 1rem 0;
+  }
+
+  .eta-big-time {
+    font-size: 2.3rem;
+  }
+
+  .target-meta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+    font-size: 0.78rem;
+  }
+
+  .target-select-wrapper {
+    width: 100%;
+    margin-top: 0.35rem;
+  }
+
+  .target-stop-select {
+    max-width: 100%;
+    width: 100%;
+  }
+
+  /* Line Selector Pills Scroll */
+  .line-pills-scroll {
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+    padding-bottom: 6px;
+  }
+
+  .line-pill-btn {
+    padding: 0.4rem 0.75rem;
+    font-size: 0.75rem;
+    min-height: 38px;
+    scroll-snap-align: start;
+  }
+
+  /* Telemetry Cockpit on Mobile */
+  .telemetry-card {
+    padding: 1rem;
+  }
+
+  .telemetry-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.4rem;
+  }
+
+  .telemetry-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.6rem;
+  }
+
+  .telemetry-item:last-child {
+    grid-column: span 2;
+  }
+
+  .telemetry-label {
+    font-size: 0.68rem;
+  }
+
+  .telemetry-val {
+    font-size: 0.85rem;
+  }
+
+  /* Corridor Timeline on Mobile */
+  .corridor-timeline {
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 0.5rem;
+  }
+
+  .corridor-step {
+    min-width: 90px;
+    padding: 0 0.35rem;
+  }
+
+  .step-node {
+    width: 28px;
+    height: 28px;
+    font-size: 0.8rem;
+  }
+
+  .step-name {
+    font-size: 0.7rem;
+  }
+
+  /* Explorer & Map on Mobile */
+  .explorer-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .map-card {
+    min-height: 320px;
+  }
+
+  #map-container {
+    min-height: 280px;
+    height: 320px !important;
+  }
+
+  .map-header {
+    padding: 0.75rem 1rem;
+  }
+
+  /* Stops Browser on Mobile */
+  .stops-browser-card {
+    max-height: 380px;
+    padding: 1rem;
+  }
+
+  .stop-row-item {
+    min-height: 46px;
+    padding: 0.65rem 0.75rem;
+  }
+
+  .stop-row-name {
+    font-size: 0.8rem;
+  }
+
+  /* Modal Bottom Sheet on Mobile */
+  .stop-modal-backdrop {
+    padding: 0;
+    align-items: flex-end;
+  }
+
+  .stop-modal {
+    border-radius: 20px 20px 0 0;
+    max-height: 85vh;
+    padding: 1.25rem 1.25rem max(1.25rem, env(safe-area-inset-bottom));
+    width: 100%;
+  }
+
+  .modal-actions-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .btn-set-favorite-target {
+    width: 100%;
+    justify-content: center;
+    min-height: 44px;
+  }
+
+  .modal-actions-footer .maps-link {
+    width: 100%;
+    justify-content: center;
+    min-height: 40px;
+  }
+
+  /* Footer on Mobile */
+  .app-footer {
+    padding: 1rem 0.85rem max(1rem, env(safe-area-inset-bottom));
+  }
+
+  .footer-content {
+    flex-direction: column;
+    text-align: center;
+    gap: 0.6rem;
+  }
+
+  .footer-links {
+    display: flex;
+    justify-content: center;
+    gap: 0.75rem;
+  }
+
+  .footer-links a {
+    margin-left: 0;
+  }
+}
+
+/* Extra Small Phones (<= 400px) */
+@media (max-width: 400px) {
+  .logo-group {
+    flex-direction: row;
+  }
+
+  .line-badge {
+    font-size: 0.9rem;
+    padding: 0.2rem 0.5rem;
+  }
+
+  .app-title-group h1 {
+    font-size: 0.92rem;
+  }
+
+  .telemetry-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .telemetry-item:last-child {
+    grid-column: span 1;
+  }
+
+  .eta-big-time {
+    font-size: 2rem;
+  }
+}
+
 
 
