@@ -1041,14 +1041,42 @@ class TransitApp {
 
     if (!modal) return;
 
-    // 1. Calculate Stop Sequence & Adjacent Stops
-    const stopsList = this.allStops || [];
+    // 1. Calculate Stop Sequence & Adjacent Stops across all active directions
+    let stopsList = this.allStops || [];
+    let currIndex = stopsList.findIndex(s => String(s.id || s.mouteStopId || s.code) === String(stopId));
+
+    // Fallback search in all directions if showing dual directions or alternate direction
+    if (currIndex === -1 && this.activeLineData?.allDirections) {
+      for (const dir of this.activeLineData.allDirections) {
+        const idx = (dir.stops || []).findIndex(s => String(s.id || s.mouteStopId || s.code) === String(stopId));
+        if (idx !== -1) {
+          stopsList = dir.stops;
+          currIndex = idx;
+          break;
+        }
+      }
+    }
+
+    // Fallback search across available lines
+    if (currIndex === -1 && this.availableLines) {
+      for (const line of this.availableLines) {
+        for (const dir of (line.directions || [])) {
+          const idx = (dir.stops || []).findIndex(s => String(s.id || s.mouteStopId || s.code) === String(stopId));
+          if (idx !== -1) {
+            stopsList = dir.stops;
+            currIndex = idx;
+            break;
+          }
+        }
+        if (currIndex !== -1) break;
+      }
+    }
+
     const totalStops = stopsList.length;
-    const currIndex = stopsList.findIndex(s => String(s.id || s.mouteStopId || s.code) === String(stopId));
     const currStop = currIndex >= 0 ? stopsList[currIndex] : null;
 
     const displayName = stopName || currStop?.name || 'Parada';
-    const displayCode = stopId || currStop?.code || '--';
+    const displayCode = stopId || currStop?.code || currStop?.id || '--';
 
     if (titleEl) titleEl.textContent = displayName;
     if (subEl) subEl.textContent = `Codi identificador: ${displayCode}`;
@@ -1060,10 +1088,19 @@ class TransitApp {
       seqBadge.textContent = currIndex >= 0 ? `Parada #${currIndex + 1} / ${totalStops}` : 'Parada';
     }
 
-    // Previous Stop Navigation
+    // Determine Previous and Next stops with smart circular looping
+    let prevStop = null;
+    let nextStop = null;
+
+    if (totalStops > 1 && currIndex >= 0) {
+      // Circular navigation for urban/circular routes
+      prevStop = currIndex > 0 ? stopsList[currIndex - 1] : stopsList[totalStops - 1];
+      nextStop = currIndex < totalStops - 1 ? stopsList[currIndex + 1] : stopsList[0];
+    }
+
+    // Previous Stop Navigation Button
     if (prevBtn && prevName) {
-      if (currIndex > 0) {
-        const prevStop = stopsList[currIndex - 1];
+      if (prevStop) {
         prevBtn.disabled = false;
         prevName.textContent = prevStop.name.length > 14 ? `${prevStop.name.substring(0, 13)}…` : prevStop.name;
         prevBtn.onclick = (e) => {
@@ -1079,10 +1116,9 @@ class TransitApp {
       }
     }
 
-    // Next Stop Navigation
+    // Next Stop Navigation Button
     if (nextBtn && nextName) {
-      if (currIndex >= 0 && currIndex < totalStops - 1) {
-        const nextStop = stopsList[currIndex + 1];
+      if (nextStop) {
         nextBtn.disabled = false;
         nextName.textContent = nextStop.name.length > 14 ? `${nextStop.name.substring(0, 13)}…` : nextStop.name;
         nextBtn.onclick = (e) => {
