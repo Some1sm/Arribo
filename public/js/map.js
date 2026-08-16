@@ -421,13 +421,28 @@ class C10Map {
   updateBusMarkers(activeBuses, lineColor = '#009485', secondaryColor = '#38bdf8') {
     if (!this.map) return;
 
+    const now = Date.now();
     const currentTripIds = new Set(activeBuses.map(b => b.tripId));
 
-    // Remove old buses not active anymore
+    // Handle missing buses with 90-second client-side dead-reckoning hold buffer
     for (const [tId, obj] of this.busMarkersMap.entries()) {
       if (!currentTripIds.has(tId)) {
-        this.map.removeLayer(obj.marker);
-        this.busMarkersMap.delete(tId);
+        const elapsedSec = (now - (obj.lastUpdated || now)) / 1000;
+        if (elapsedSec > 90) {
+          this.map.removeLayer(obj.marker);
+          this.busMarkersMap.delete(tId);
+        } else {
+          // Transition marker visually to Estimated (Amber)
+          if (obj.busData) obj.busData.isEstimated = true;
+          const pinEl = obj.marker.getElement()?.querySelector('.live-bus-pin');
+          if (pinEl) {
+            pinEl.style.background = 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)';
+          }
+          const dotEl = obj.marker.getElement()?.querySelector('.bus-status-dot');
+          if (dotEl) {
+            dotEl.className = 'bus-status-dot estimated';
+          }
+        }
       }
     }
 
@@ -537,6 +552,7 @@ class C10Map {
         obj.targetLon = snapped.lon;
         obj.targetBearing = bearingAngle;
         obj.subpath = subpath;
+        obj.lastUpdated = now;
         obj.marker.setPopupContent(popupHtml);
 
         if (bus.isTerminalLayover) {
@@ -587,6 +603,7 @@ class C10Map {
           targetBearing: bearingAngle,
           currentBearing: bearingAngle,
           isFacingWest: isHeadingWest,
+          lastUpdated: now,
           subpath
         });
       }
