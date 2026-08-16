@@ -959,20 +959,26 @@ class TransitApp {
       return;
     }
 
-    container.innerHTML = departures.slice(0, 6).map((dep, idx) => `
-      <div class="departure-item ${idx === 0 ? 'highlight-next' : ''}">
-        <div class="dep-time-group">
-          <span class="dep-clock">${dep.departureTime}</span>
-          <span class="dep-dest">Cap a <strong>${dep.destination || 'Destí'}</strong></span>
+    container.innerHTML = departures.slice(0, 6).map((dep, idx) => {
+      const clockTime = dep.expectedIso
+        ? new Date(dep.expectedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+        : (dep.departureTime || '--:--');
+
+      return `
+        <div class="departure-item ${idx === 0 ? 'highlight-next' : ''}">
+          <div class="dep-time-group">
+            <span class="dep-clock">${clockTime}</span>
+            <span class="dep-dest">Cap a <strong>${dep.destination || 'Destí'}</strong></span>
+          </div>
+          <div class="dep-status">
+            <span class="dep-mins">${dep.minutesAway === 0 ? 'Ara' : `${dep.minutesAway} min`}</span>
+            <span class="dep-delay-pill ${dep.delayStatus || 'on-time'}">
+              ${dep.delayBadgeText || 'Puntual'}
+            </span>
+          </div>
         </div>
-        <div class="dep-status">
-          <span class="dep-mins">${dep.minutesAway === 0 ? 'Ara' : `${dep.minutesAway} min`}</span>
-          <span class="dep-delay-pill ${dep.delayStatus || 'on-time'}">
-            ${dep.delayBadgeText || 'Puntual'}
-          </span>
-        </div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
   }
 
   populateSelect(selectId, stops, selectedId) {
@@ -1061,21 +1067,27 @@ class TransitApp {
           return;
         }
 
-        listEl.innerHTML = deps.slice(0, 6).map(d => `
-          <div class="departure-item">
-            <div class="dep-time-group">
-              <span class="dep-clock">${d.departureTime}</span>
-              <span class="dep-dest">
-                ${d.lineId ? `<span class="line-badge-sm" style="font-size:0.68rem; padding:1px 5px; margin-right:4px; background:var(--c10-primary);">${d.lineId}</span>` : ''}
-                Cap a <strong>${d.destination || 'Destí'}</strong>
-              </span>
+        listEl.innerHTML = deps.slice(0, 6).map(d => {
+          const clockTime = d.expectedIso
+            ? new Date(d.expectedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+            : (d.departureTime || '--:--');
+
+          return `
+            <div class="departure-item">
+              <div class="dep-time-group">
+                <span class="dep-clock">${clockTime}</span>
+                <span class="dep-dest">
+                  ${d.lineId ? `<span class="line-badge-sm" style="font-size:0.68rem; padding:1px 5px; margin-right:4px; background:var(--c10-primary);">${d.lineId}</span>` : ''}
+                  Cap a <strong>${d.destination || 'Destí'}</strong>
+                </span>
+              </div>
+              <div class="dep-status">
+                <span class="dep-mins">${d.minutesAway === 0 ? 'Imminent' : `${d.minutesAway} min`}</span>
+                <span class="dep-delay-pill ${d.delayStatus || 'on-time'}">${d.delayBadgeText || 'Puntual'}</span>
+              </div>
             </div>
-            <div class="dep-status">
-              <span class="dep-mins">${d.minutesAway === 0 ? 'Imminent' : `${d.minutesAway} min`}</span>
-              <span class="dep-delay-pill ${d.delayStatus || 'on-time'}">${d.delayBadgeText || 'Puntual'}</span>
-            </div>
-          </div>
-        `).join('');
+          `;
+        }).join('');
       }
     } catch (e) {
       console.error('Stop departures fetch error:', e);

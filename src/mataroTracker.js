@@ -549,7 +549,7 @@ class MataroTracker {
           // Include within the extended 120-minute window
           if (minutesAway >= 1 && minutesAway <= 120) {
             const arrDate = new Date(now + minutesAway * 60000);
-            const formattedTime = arrDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+            const formattedTime = arrDate.toLocaleTimeString('es-ES', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit', hour12: false });
 
             estimatedArrivals.push({
               lineId: lId,

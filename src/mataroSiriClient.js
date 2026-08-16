@@ -210,7 +210,7 @@ class MataroSiriClient {
           const now = new Date();
           const diffMs = arrDate.getTime() - now.getTime();
           minutesAway = Math.max(0, Math.round(diffMs / 60000));
-          formattedTime = arrDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+          formattedTime = arrDate.toLocaleTimeString('es-ES', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit', hour12: false });
         }
 
         arrivals.push({
