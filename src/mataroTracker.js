@@ -67,6 +67,37 @@ class MataroTracker {
     });
   }
 
+  // Deterministically match a SIRI live vehicle to route index (0 = Anada, 1 = Tornada)
+  matchVehicleToRouteIndex(vehicle, routes) {
+    if (!routes || routes.length <= 1) return 0;
+    
+    const cleanDir = (vehicle.directionName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const cleanDest = (vehicle.destination || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    // 1. Exact string match against route name (e.g. "hospitalrodalies")
+    for (let i = 0; i < routes.length; i++) {
+      const cleanR = (routes[i].name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (cleanDir && cleanR && cleanDir === cleanR) return i;
+    }
+
+    // 2. Match route destination part (e.g. route "Hospital - Rodalies" has destination "Rodalies")
+    for (let i = 0; i < routes.length; i++) {
+      const parts = (routes[i].name || '').split('-');
+      const destPart = (parts[1] || parts[0] || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (cleanDest && destPart && (destPart.includes(cleanDest) || cleanDest.includes(destPart))) {
+        return i;
+      }
+    }
+
+    // 3. Substring match
+    for (let i = 0; i < routes.length; i++) {
+      const cleanR = (routes[i].name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (cleanDir && cleanR && (cleanDir.includes(cleanR) || cleanR.includes(cleanDir))) return i;
+    }
+
+    return 0;
+  }
+
   // 2. Get full details for a line & direction (stops, route polyline, and live/estimated buses)
   async getLineDetails(lineId, direction = '0') {
     const lId = String(lineId);
@@ -123,28 +154,22 @@ class MataroTracker {
     // Fetch Live Buses via SIRI
     const liveVehicles = await siriClient.getLiveVehicles(lId);
 
-    // Apply Road-Snapping and Dead-Zone Location Estimation
+    // Apply Deterministic Direction Matching & Road-Snapping
     let processedBuses = [];
     if (isBoth && routes.length > 1) {
-      const buses0 = this.processBusesWithDeadReckoning(liveVehicles, routes[0], allDirections[0].stops, '0');
-      const buses1 = this.processBusesWithDeadReckoning(liveVehicles, routes[1], allDirections[1].stops, '1');
+      const vehs0 = liveVehicles.filter(v => this.matchVehicleToRouteIndex(v, routes) === 0);
+      const vehs1 = liveVehicles.filter(v => this.matchVehicleToRouteIndex(v, routes) === 1);
 
-      const busMap = new Map();
-      liveVehicles.forEach(v => {
-        const b0 = buses0.find(b => b.vehicleId === v.vehicleId);
-        const b1 = buses1.find(b => b.vehicleId === v.vehicleId);
-        if (b0 && b1) {
-          const best = (b0._snapDist <= b1._snapDist) ? b0 : b1;
-          busMap.set(v.vehicleId, best);
-        } else if (b0) {
-          busMap.set(v.vehicleId, b0);
-        } else if (b1) {
-          busMap.set(v.vehicleId, b1);
-        }
-      });
-      processedBuses = Array.from(busMap.values());
+      const buses0 = this.processBusesWithDeadReckoning(vehs0, routes[0], allDirections[0].stops, '0');
+      const buses1 = this.processBusesWithDeadReckoning(vehs1, routes[1], allDirections[1].stops, '1');
+
+      processedBuses = [...buses0, ...buses1];
     } else {
-      processedBuses = this.processBusesWithDeadReckoning(liveVehicles, selectedRoute, stops, String(dirIdx));
+      const vehsForDir = routes.length > 1
+        ? liveVehicles.filter(v => this.matchVehicleToRouteIndex(v, routes) === dirIdx)
+        : liveVehicles;
+
+      processedBuses = this.processBusesWithDeadReckoning(vehsForDir, selectedRoute, stops, String(dirIdx));
     }
 
     return {

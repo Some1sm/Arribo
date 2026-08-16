@@ -533,25 +533,14 @@ class C10Map {
       if (this.busMarkersMap.has(bus.tripId)) {
         const obj = this.busMarkersMap.get(bus.tripId);
         obj.busData = bus;
+        obj.targetLat = snapped.lat;
+        obj.targetLon = snapped.lon;
+        obj.targetBearing = bearingAngle;
         obj.subpath = subpath;
-        obj.currentBearing = bearingAngle;
         obj.marker.setPopupContent(popupHtml);
 
         if (bus.isTerminalLayover) {
           obj.marker.setLatLng([snapped.lat, snapped.lon]);
-        }
-
-        const el = obj.marker.getElement();
-        if (el) {
-          const cone = el.querySelector('.bus-heading-cone');
-          if (cone && !bus.isTerminalLayover) {
-            cone.style.transform = `rotate(${bearingAngle}deg)`;
-          }
-          const icon = el.querySelector('.bus-icon-inner');
-          if (icon) {
-            const isWest = bearingAngle > 180 && bearingAngle < 360;
-            icon.style.transform = `scaleX(${isWest ? -1 : 1})`;
-          }
         }
       } else {
         const pinBg = isEst
@@ -593,74 +582,78 @@ class C10Map {
         this.busMarkersMap.set(bus.tripId, {
           marker,
           busData: bus,
-          subpath,
-          currentBearing: bearingAngle
+          targetLat: snapped.lat,
+          targetLon: snapped.lon,
+          targetBearing: bearingAngle,
+          currentBearing: bearingAngle,
+          isFacingWest: isHeadingWest,
+          subpath
         });
       }
     });
   }
 
-  // Smooth continuous client-side gliding strictly along road subpath (never cuts through buildings)
+  // Smooth continuous client-side gliding with zero rollbacks and anti-flicker hysteresis
   stepBusAnimation(nowSec) {
     for (const [tId, obj] of this.busMarkersMap.entries()) {
       const bus = obj.busData;
-      if (!bus) continue;
+      if (!bus || !obj.marker) continue;
 
-      let lat = null;
-      let lon = null;
-      let bearing = null;
+      const currentPos = obj.marker.getLatLng();
+      if (!currentPos) continue;
 
-      // 1. If parked in terminal layover, stay exactly at terminal
+      // 1. If parked in terminal layover, stay at terminal
       if (bus.isTerminalLayover) {
-        lat = bus.lat;
-        lon = bus.lon;
-        bearing = bus.bearing || 0;
-      }
-      // 2. Road Subpath Follower: Glides along the exact road polyline segments (street curves)
-      else if (obj.subpath && obj.subpath.length > 1 && bus.segStartSec && bus.segEndSec) {
-        const duration = Math.max(1, bus.segEndSec - bus.segStartSec);
-        const rawProgress = (nowSec - bus.segStartSec) / duration;
-        const progress = Math.max(0, Math.min(0.99, rawProgress));
-        
-        const pt = this.interpolateAlongSubpath(obj.subpath, progress);
-        if (pt) {
-          lat = pt.lat;
-          lon = pt.lon;
-          bearing = pt.bearing;
-        }
-      }
-      // 3. Fallback: Snap current GPS coordinate to polyline
-      else if (bus.lat && bus.lon) {
-        const snapped = this.snapToPolyline(bus.lat, bus.lon, this.activePolylineCoords);
-        lat = snapped.lat;
-        lon = snapped.lon;
-        bearing = snapped.bearing || bus.bearing || 0;
+        obj.marker.setLatLng([bus.lat, bus.lon]);
+        continue;
       }
 
-      if (lat !== null && lon !== null) {
-        const currentPos = obj.marker.getLatLng();
-        if (currentPos && (Math.abs(currentPos.lat - lat) > 0.000001 || Math.abs(currentPos.lng - lon) > 0.000001)) {
-          // Smooth 40% LERP step for continuous organic motion
-          const smoothLat = currentPos.lat + (lat - currentPos.lat) * 0.4;
-          const smoothLon = currentPos.lng + (lon - currentPos.lng) * 0.4;
-          obj.marker.setLatLng([smoothLat, smoothLon]);
-        } else if (!currentPos) {
-          obj.marker.setLatLng([lat, lon]);
-        }
+      const targetLat = obj.targetLat !== undefined ? obj.targetLat : bus.lat;
+      const targetLon = obj.targetLon !== undefined ? obj.targetLon : bus.lon;
+      const targetBearing = obj.targetBearing !== undefined ? obj.targetBearing : (bus.bearing || 0);
 
-        // Dynamically rotate the heading pointer arrow to match the street direction without flipping the bus upside down
-        if (bearing !== null && !bus.isTerminalLayover) {
-          const el = obj.marker.getElement();
-          if (el) {
-            const cone = el.querySelector('.bus-heading-cone');
-            if (cone) {
-              cone.style.transform = `rotate(${bearing}deg)`;
-            }
-            const icon = el.querySelector('.bus-icon-inner');
-            if (icon) {
-              const isWest = bearing > 180 && bearing < 360;
-              icon.style.transform = `scaleX(${isWest ? -1 : 1})`;
-            }
+      // 2. Smooth exponential position LERP (smooth forward motion towards validated road coordinate)
+      const dLat = targetLat - currentPos.lat;
+      const dLon = targetLon - currentPos.lng;
+      const distDeg = Math.sqrt(dLat * dLat + dLon * dLon);
+
+      if (distDeg > 0.005) {
+        // Large distance (teleport or initial spawn): snap directly
+        obj.marker.setLatLng([targetLat, targetLon]);
+      } else if (distDeg > 0.000002) {
+        // Smooth forward glide (8% step per frame = ~0.8s smooth transition without rollback)
+        const smoothLat = currentPos.lat + dLat * 0.08;
+        const smoothLon = currentPos.lng + dLon * 0.08;
+        obj.marker.setLatLng([smoothLat, smoothLon]);
+      }
+
+      // 3. Smooth shortest-angle rotation interpolation for direction cone
+      if (targetBearing !== null) {
+        let currentBearing = obj.currentBearing !== undefined ? obj.currentBearing : targetBearing;
+        let delta = (targetBearing - currentBearing + 540) % 360 - 180;
+        currentBearing = (currentBearing + delta * 0.12 + 360) % 360;
+        obj.currentBearing = currentBearing;
+
+        const el = obj.marker.getElement();
+        if (el) {
+          const cone = el.querySelector('.bus-heading-cone');
+          if (cone) {
+            cone.style.transform = `rotate(${Math.round(currentBearing)}deg)`;
+          }
+
+          // Anti-flicker hysteresis for bus emoji facing direction:
+          // Only switch to West if strongly pointing West (> 200° and < 340°)
+          // Only switch to East if strongly pointing East (< 160° or > 20°)
+          // In the deadband zone (160°-200° and 340°-20°), preserve previous facing state to eliminate rapid flipping on curves
+          if (currentBearing >= 200 && currentBearing <= 340) {
+            obj.isFacingWest = true;
+          } else if (currentBearing <= 160 || (currentBearing >= 20 && currentBearing <= 160)) {
+            obj.isFacingWest = false;
+          }
+
+          const icon = el.querySelector('.bus-icon-inner');
+          if (icon) {
+            icon.style.transform = `scaleX(${obj.isFacingWest ? -1 : 1})`;
           }
         }
       }
