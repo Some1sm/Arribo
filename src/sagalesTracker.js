@@ -241,8 +241,14 @@ class SagalesTracker {
 
     // Process Active Buses
     if (feed && feed.bus && Array.isArray(feed.bus.entities)) {
-      const entities = feed.bus.entities;
+      const rawEntities = feed.bus.entities;
       const now = Date.now();
+
+      // Filter to ONLY buses traveling in the requested direction
+      const entities = rawEntities.filter(ent => {
+        const entDir = String(ent.tripUpdate?.trip?.directionId ?? ent.vehicle?.trip?.directionId ?? '0');
+        return entDir === dir;
+      });
 
       activeBuses = entities.map((ent, idx) => {
         const v = ent.vehicle || {};
@@ -397,6 +403,9 @@ class SagalesTracker {
     if (lFeed && lFeed.bus && Array.isArray(lFeed.bus.entities)) {
       lFeed.bus.entities.forEach(ent => {
         const trip = ent.tripUpdate?.trip || ent.vehicle?.trip || {};
+        const entDir = String(trip.directionId ?? ent.vehicle?.trip?.directionId ?? '0');
+        if (entDir !== dir) return; // Skip buses from opposite direction
+
         const v = ent.vehicle || {};
         const stopUpdates = ent.tripUpdate?.stopTimeUpdate || [];
 
