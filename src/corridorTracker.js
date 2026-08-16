@@ -422,6 +422,15 @@ class CorridorTracker {
     }
 
     results.sort((a, b) => new Date(a.departureDate).getTime() - new Date(b.departureDate).getTime());
+
+    const hasToday = results.some(r => r.isToday);
+    if (!hasToday && results.length > 0) {
+      results[0].isFirstOfDay = true;
+      results[0].isNextService = true;
+      results[0].delayBadgeText = '🌅 1r Servei del matí';
+      results[0].comparisonText = `📅 Pas teòric previst demà a les ${results[0].departureTime}`;
+    }
+
     return results;
   }
 
@@ -518,7 +527,7 @@ class CorridorTracker {
     }
 
     if (departuresToUse.length === 0) {
-      // If no departures left today, get first departure of tomorrow
+      // If no departures left today, get full schedule of tomorrow
       const tomorrow = new Date(Date.now() + 24 * 3600 * 1000);
       const networkTomorrow = timeUtils.getNetworkTime(this.agencyTimezone, tomorrow);
       const scheduleTrips = isDir1 ? this.fullSchedule.dir1 : this.fullSchedule.dir0;
@@ -526,37 +535,40 @@ class CorridorTracker {
       tomorrowsTrips.sort((a, b) => timeToSec(a.stops[0].dep) - timeToSec(b.stops[0].dep));
 
       if (tomorrowsTrips.length > 0) {
-        const firstTrip = tomorrowsTrips[0];
-        const stopEntry = firstTrip.stops.find(s => s.stopId === gtfsStopId || s.seq === stopSeq) || firstTrip.stops[0];
-        if (stopEntry) {
-          const timeStr = (stopEntry.dep || stopEntry.arr || '').substring(0, 5);
-          const [h, m] = timeStr.split(':').map(Number);
-          const depUtcDate = timeUtils.localTimeToUtcDate(networkTomorrow.year, networkTomorrow.month, networkTomorrow.day, h, m, 0, this.agencyTimezone);
-          const diffMs = depUtcDate.getTime() - Date.now();
-          const diffMin = Math.max(1, Math.round(diffMs / 60000));
-          const depIso = depUtcDate.toISOString();
+        tomorrowsTrips.forEach((trip, tIdx) => {
+          const stopEntry = trip.stops.find(s => s.stopId === gtfsStopId || s.seq === stopSeq) || trip.stops[0];
+          if (stopEntry) {
+            const timeStr = (stopEntry.dep || stopEntry.arr || '').substring(0, 5);
+            const [h, m] = timeStr.split(':').map(Number);
+            const depUtcDate = timeUtils.localTimeToUtcDate(networkTomorrow.year, networkTomorrow.month, networkTomorrow.day, h, m, 0, this.agencyTimezone);
+            const diffMs = depUtcDate.getTime() - Date.now();
+            const diffMin = Math.max(1, Math.round(diffMs / 60000));
+            const depIso = depUtcDate.toISOString();
+            const isFirst = tIdx === 0;
 
-          departuresToUse.push({
-            lineId: '02498',
-            lineName: 'C-10',
-            destination: isDir1 ? 'Hospital de Mataró' : 'Barcelona (Metro la Pau)',
-            directionId: isDir1 ? 'R' : 'A',
-            departureTime: timeStr,
-            departureDate: depIso,
-            expectedIso: depIso,
-            aimedIso: depIso,
-            minutesAway: diffMin,
-            isRealtime: false,
-            isToday: false,
-            isNextService: true,
-            scheduledTime: timeStr,
-            delayMinutes: 0,
-            delayStatus: 'scheduled',
-            delayBadgeText: '🌅 1r Servei del matí',
-            comparisonText: `📅 Primer autobús de demà (${timeStr})`,
-            formattedStatus: `${timeStr}`
-          });
-        }
+            departuresToUse.push({
+              lineId: '02498',
+              lineName: 'C-10',
+              destination: isDir1 ? 'Hospital de Mataró' : 'Barcelona (Metro la Pau)',
+              directionId: isDir1 ? 'R' : 'A',
+              departureTime: timeStr,
+              departureDate: depIso,
+              expectedIso: depIso,
+              aimedIso: depIso,
+              minutesAway: diffMin,
+              isRealtime: false,
+              isToday: false,
+              isFirstOfDay: isFirst,
+              isNextService: isFirst,
+              scheduledTime: timeStr,
+              delayMinutes: 0,
+              delayStatus: 'scheduled',
+              delayBadgeText: isFirst ? '🌅 1r Servei del matí' : 'Programat',
+              comparisonText: isFirst ? `📅 Pas teòric previst demà a les ${timeStr}` : `📅 Horari teòric: ${timeStr}`,
+              formattedStatus: `${timeStr}`
+            });
+          }
+        });
       }
     }
 
@@ -622,37 +634,40 @@ class CorridorTracker {
       tomorrowsTrips.sort((a, b) => timeToSec(a.stops[0].dep) - timeToSec(b.stops[0].dep));
 
       if (tomorrowsTrips.length > 0) {
-        const firstTrip = tomorrowsTrips[0];
-        const stopEntry = firstTrip.stops.find(s => s.stopId === gtfsStopId || s.seq === seq) || firstTrip.stops[0];
-        if (stopEntry) {
-          const timeStr = (stopEntry.dep || stopEntry.arr || '').substring(0, 5);
-          const [h, m] = timeStr.split(':').map(Number);
-          const depUtcDate = timeUtils.localTimeToUtcDate(networkTomorrow.year, networkTomorrow.month, networkTomorrow.day, h, m, 0, this.agencyTimezone);
-          const diffMs = depUtcDate.getTime() - Date.now();
-          const diffMin = Math.max(1, Math.round(diffMs / 60000));
-          const depIso = depUtcDate.toISOString();
+        tomorrowsTrips.forEach((trip, tIdx) => {
+          const stopEntry = trip.stops.find(s => s.stopId === gtfsStopId || s.seq === seq) || trip.stops[0];
+          if (stopEntry) {
+            const timeStr = (stopEntry.dep || stopEntry.arr || '').substring(0, 5);
+            const [h, m] = timeStr.split(':').map(Number);
+            const depUtcDate = timeUtils.localTimeToUtcDate(networkTomorrow.year, networkTomorrow.month, networkTomorrow.day, h, m, 0, this.agencyTimezone);
+            const diffMs = depUtcDate.getTime() - Date.now();
+            const diffMin = Math.max(1, Math.round(diffMs / 60000));
+            const depIso = depUtcDate.toISOString();
+            const isFirst = tIdx === 0;
 
-          departures.push({
-            lineId: '02498',
-            lineName: 'C-10',
-            destination: isDir1 ? 'Hospital de Mataró' : 'Barcelona (Metro la Pau)',
-            directionId: isDir1 ? 'R' : 'A',
-            departureTime: timeStr,
-            departureDate: depIso,
-            expectedIso: depIso,
-            aimedIso: depIso,
-            minutesAway: diffMin,
-            isRealtime: false,
-            isToday: false,
-            isNextService: true,
-            scheduledTime: timeStr,
-            delayMinutes: 0,
-            delayStatus: 'scheduled',
-            delayBadgeText: '🌅 1r Servei del matí',
-            comparisonText: `📅 Primer autobús de demà (${timeStr})`,
-            formattedStatus: `${timeStr}`
-          });
-        }
+            departures.push({
+              lineId: '02498',
+              lineName: 'C-10',
+              destination: isDir1 ? 'Hospital de Mataró' : 'Barcelona (Metro la Pau)',
+              directionId: isDir1 ? 'R' : 'A',
+              departureTime: timeStr,
+              departureDate: depIso,
+              expectedIso: depIso,
+              aimedIso: depIso,
+              minutesAway: diffMin,
+              isRealtime: false,
+              isToday: false,
+              isFirstOfDay: isFirst,
+              isNextService: isFirst,
+              scheduledTime: timeStr,
+              delayMinutes: 0,
+              delayStatus: 'scheduled',
+              delayBadgeText: isFirst ? '🌅 1r Servei del matí' : 'Programat',
+              comparisonText: isFirst ? `📅 Pas teòric previst demà a les ${timeStr}` : `📅 Horari teòric: ${timeStr}`,
+              formattedStatus: `${timeStr}`
+            });
+          }
+        });
       }
     }
 

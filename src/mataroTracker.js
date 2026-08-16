@@ -645,7 +645,7 @@ class MataroTracker {
       .filter(d => d.minutesAway !== undefined && d.minutesAway <= 120)
       .sort((a, b) => a.minutesAway - b.minutesAway);
 
-    // 4. If zero live/estimated arrivals (e.g. night time / off-peak), inject first morning departure with exact passing time
+    // 4. If zero live/estimated arrivals (e.g. night time / off-peak), inject full theoretical scheduled departures with exact passing times
     if (finalDepartures.length === 0) {
       const routesForStop = this.findRoutesServingStop(sId, lineId);
       const tomorrow = new Date(Date.now() + 24 * 3600 * 1000);
@@ -653,6 +653,7 @@ class MataroTracker {
 
       routesForStop.forEach(r => {
         const startSec = timeUtils.timeToSec(r.horario?.inicio || '07:30');
+        const endSec = timeUtils.timeToSec(r.horario?.fin || '22:00');
         const routeStops = r.stops || [];
         const stopIdx = routeStops.findIndex(s => String(s.id) === sId);
 
@@ -677,33 +678,42 @@ class MataroTracker {
           travelSec = Math.round((cumDist / 4.8) + (stopIdx * 25));
         }
 
-        const passingSec = startSec + travelSec;
-        const passHour = Math.floor(passingSec / 3600) % 24;
-        const passMin = Math.floor((passingSec % 3600) / 60);
-        const passingTimeStr = `${String(passHour).padStart(2, '0')}:${String(passMin).padStart(2, '0')}`;
+        const lIdStr = String(r.id_linea || lineId || '1');
+        const headwaySec = (lIdStr === '1' || lIdStr === '2' || lIdStr === '3') ? 15 * 60 : ((lIdStr === '6' || lIdStr === '8') ? 30 * 60 : 20 * 60);
 
-        const depUtcDate = timeUtils.localTimeToUtcDate(networkTomorrow.year, networkTomorrow.month, networkTomorrow.day, passHour, passMin, 0, this.agencyTimezone);
-        const diffMs = depUtcDate.getTime() - Date.now();
-        const diffMin = Math.max(1, Math.round(diffMs / 60000));
+        let tripCount = 0;
+        for (let depSec = startSec; depSec <= endSec && tripCount < 10; depSec += headwaySec) {
+          const passingSec = depSec + travelSec;
+          const passHour = Math.floor(passingSec / 3600) % 24;
+          const passMin = Math.floor((passingSec % 3600) / 60);
+          const passingTimeStr = `${String(passHour).padStart(2, '0')}:${String(passMin).padStart(2, '0')}`;
 
-        finalDepartures.push({
-          lineId: String(r.id_linea || lineId || '1'),
-          lineName: r.lineName || `Línia ${r.id_linea || lineId}`,
-          destination: r.name,
-          departureTime: passingTimeStr,
-          departureDate: depUtcDate.toISOString(),
-          expectedIso: depUtcDate.toISOString(),
-          aimedIso: depUtcDate.toISOString(),
-          minutesAway: diffMin,
-          isRealTime: false,
-          isEstimated: false,
-          isToday: false,
-          isNextService: true,
-          delayStatus: 'scheduled',
-          delayBadgeText: '🌅 1r Servei del matí',
-          comparisonText: `📅 Pas teòric previst demà a les ${passingTimeStr}`,
-          formattedStatus: `${passingTimeStr}`
-        });
+          const depUtcDate = timeUtils.localTimeToUtcDate(networkTomorrow.year, networkTomorrow.month, networkTomorrow.day, passHour, passMin, 0, this.agencyTimezone);
+          const diffMs = depUtcDate.getTime() - Date.now();
+          const diffMin = Math.max(1, Math.round(diffMs / 60000));
+          const isFirst = tripCount === 0;
+
+          finalDepartures.push({
+            lineId: lIdStr,
+            lineName: r.lineName || `Línia ${lIdStr}`,
+            destination: r.name,
+            departureTime: passingTimeStr,
+            departureDate: depUtcDate.toISOString(),
+            expectedIso: depUtcDate.toISOString(),
+            aimedIso: depUtcDate.toISOString(),
+            minutesAway: diffMin,
+            isRealTime: false,
+            isEstimated: false,
+            isToday: false,
+            isFirstOfDay: isFirst,
+            isNextService: isFirst,
+            delayStatus: 'scheduled',
+            delayBadgeText: isFirst ? '🌅 1r Servei del matí' : 'Programat',
+            comparisonText: isFirst ? `📅 Pas teòric previst demà a les ${passingTimeStr}` : `📅 Horari teòric: ${passingTimeStr}`,
+            formattedStatus: `${passingTimeStr}`
+          });
+          tripCount++;
+        }
       });
     }
 

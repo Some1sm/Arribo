@@ -982,29 +982,45 @@ class TransitApp {
         ? new Date(dep.expectedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
         : (dep.departureTime || '--:--');
 
-      const isNextServ = dep.isNextService || !dep.isToday;
+      const isFirstMorning = Boolean(dep.isFirstOfDay || dep.isNextService || (idx === 0 && dep.isToday === false));
+      const isTomorrow = dep.isToday === false;
 
-      const minsText = isNextServ
+      const minsText = isFirstMorning
         ? `🌅 Demà ${dep.departureTime || clockTime}`
-        : ((dep.minutesAway !== undefined && dep.minutesAway >= 0 && dep.minutesAway <= 180)
-            ? (dep.minutesAway === 0 ? 'Ara' : `${dep.minutesAway} min`)
-            : `${clockTime}`);
+        : (isTomorrow
+            ? `Demà ${dep.departureTime || clockTime}`
+            : ((dep.minutesAway !== undefined && dep.minutesAway >= 0 && dep.minutesAway <= 180)
+                ? (dep.minutesAway === 0 ? 'Ara' : `${dep.minutesAway} min`)
+                : `${clockTime}`));
 
-      const pillLabel = isNextServ
-        ? '🌅 1r Servei matí'
-        : (dep.isEstimated ? `⚡ Estimat ${dep.vehicleId ? `#${dep.vehicleId}` : ''}` : (dep.delayBadgeText || 'Puntual'));
+      const tagLabel = isFirstMorning
+        ? '🌅 1r Servei'
+        : (isTomorrow ? 'Programat' : (dep.isEstimated ? '⚡ Estimat' : '🟢 Temps Real'));
 
-      const pillClass = isNextServ ? 'scheduled' : (dep.delayStatus || 'on-time');
+      const pillLabel = isFirstMorning
+        ? '1r Servei'
+        : (isTomorrow ? 'Programat' : (dep.isEstimated ? `⚡ Estimat ${dep.vehicleId ? `#${dep.vehicleId}` : ''}` : (dep.delayBadgeText || 'Puntual')));
+
+      const pillClass = isTomorrow ? 'scheduled' : (dep.delayStatus || 'on-time');
 
       return `
         <div class="departure-item ${idx === 0 ? 'highlight-next' : ''}">
           <div class="dep-time-group">
-            <span class="dep-clock">${clockTime}</span>
-            <span class="dep-dest">Cap a <strong>${dep.destination || 'Destí'}</strong></span>
-            ${isNextServ ? `<div class="dep-time-sub" style="color:var(--text-muted); font-size:0.75rem;"><span>📅 Represa matinal</span></div>` : ''}
+            <div class="dep-time-row">
+              <span class="dep-clock">${clockTime}</span>
+              <span class="dep-tag-sub ${isFirstMorning ? 'first-service' : ''}">${tagLabel}</span>
+            </div>
+            <div class="dep-dest">
+              Cap a <strong>${dep.destination || 'Destí'}</strong>
+            </div>
+            <div class="dep-time-sub">
+              ${isFirstMorning
+                ? `<span>📅 Primer autobús del matí (${dep.departureTime || clockTime})</span>`
+                : (isTomorrow ? `<span>📅 Horari teòric: ${dep.departureTime || clockTime}</span>` : `<span>📅 Horari previst</span>`)}
+            </div>
           </div>
           <div class="dep-status">
-            <span class="dep-mins">${minsText}</span>
+            <span class="dep-mins" style="${isFirstMorning ? 'color:#fbbf24;' : (isTomorrow ? 'color:#94a3b8;' : '')}">${minsText}</span>
             <span class="dep-delay-pill ${pillClass}">
               ${pillLabel}
             </span>
@@ -1199,7 +1215,7 @@ class TransitApp {
           return;
         }
 
-        listEl.innerHTML = deps.slice(0, 8).map((d, idx) => {
+        listEl.innerHTML = deps.slice(0, 10).map((d, idx) => {
           const estTime = d.expectedIso
             ? new Date(d.expectedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
             : (d.departureTime || '--:--');
@@ -1208,30 +1224,38 @@ class TransitApp {
             ? new Date(d.aimedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
             : (d.isEstimated ? estTime : null);
 
+          const isFirstMorning = Boolean(d.isFirstOfDay || d.isNextService || (idx === 0 && d.isToday === false));
+          const isTomorrow = d.isToday === false;
+
           const isDiff = schedTime && schedTime !== estTime;
           const delayText = d.delayMins !== undefined && d.delayMins !== 0
             ? (d.delayMins > 0 ? `+${d.delayMins} min retard` : `${d.delayMins} min avançat`)
             : 'Puntual';
 
-          const isNextServ = d.isNextService || !d.isToday;
-          const minsText = isNextServ
+          const minsText = isFirstMorning
             ? `🌅 Demà ${d.departureTime || estTime}`
-            : ((d.minutesAway !== undefined && d.minutesAway >= 0 && d.minutesAway <= 180)
-                ? (d.minutesAway === 0 ? 'Imminent' : `${d.minutesAway} min`)
-                : `${estTime}`);
+            : (isTomorrow
+                ? `Demà ${d.departureTime || estTime}`
+                : ((d.minutesAway !== undefined && d.minutesAway >= 0 && d.minutesAway <= 180)
+                    ? (d.minutesAway === 0 ? 'Imminent' : `${d.minutesAway} min`)
+                    : `${estTime}`));
 
-          const pillLabel = isNextServ 
-            ? '🌅 1r Servei matí'
-            : (d.isEstimated ? `⚡ Estimat ${d.vehicleId ? `#${d.vehicleId}` : ''}` : (d.delayBadgeText || 'Puntual'));
+          const tagLabel = isFirstMorning
+            ? '🌅 1r Servei'
+            : (isTomorrow ? 'Programat' : (d.isEstimated ? '⚡ Estimat' : '🟢 Temps Real'));
 
-          const pillClass = isNextServ ? 'scheduled' : (d.delayStatus || 'on-time');
+          const pillLabel = isFirstMorning
+            ? '1r Servei'
+            : (isTomorrow ? 'Programat' : (d.isEstimated ? `⚡ Estimat ${d.vehicleId ? `#${d.vehicleId}` : ''}` : (d.delayBadgeText || 'Puntual')));
+
+          const pillClass = isTomorrow ? 'scheduled' : (d.delayStatus || 'on-time');
 
           return `
             <div class="departure-item ${idx === 0 ? 'highlight-next' : ''}">
               <div class="dep-time-group">
-                <div style="display:flex; align-items:baseline; gap:0.4rem;">
+                <div class="dep-time-row">
                   <span class="dep-clock">${estTime}</span>
-                  <span style="font-size:0.75rem; color:var(--text-secondary); font-weight:600;">${isNextServ ? '(1r Servei)' : (d.isEstimated ? '(Estimat)' : '(Temps Real)')}</span>
+                  <span class="dep-tag-sub ${isFirstMorning ? 'first-service' : ''}">${tagLabel}</span>
                 </div>
                 
                 <div class="dep-dest">
@@ -1239,20 +1263,20 @@ class TransitApp {
                   Cap a <strong>${d.destination || 'Destí'}</strong>
                 </div>
 
-                ${isNextServ ? `
-                  <div class="dep-time-sub" style="color:var(--text-muted); font-size:0.75rem;">
+                <div class="dep-time-sub">
+                  ${isFirstMorning ? `
                     <span>📅 Primer autobús del matí (${d.departureTime || estTime})</span>
-                  </div>
-                ` : (schedTime ? `
-                  <div class="dep-time-sub">
+                  ` : (isTomorrow ? `
+                    <span>📅 Horari teòric: <strong class="dep-sched-time">${d.departureTime || estTime}</strong></span>
+                  ` : (schedTime ? `
                     <span>📅 Horari teòric: <strong class="dep-sched-time">${schedTime}</strong></span>
                     ${isDiff ? `<span>•</span> <span style="color:${d.delayMins > 2 ? '#f87171' : '#34d399'}; font-weight:600;">${delayText}</span>` : `<span>•</span> <span style="color:#34d399; font-weight:600;">Puntual</span>`}
-                  </div>
-                ` : '')}
+                  ` : ''))}
+                </div>
               </div>
 
               <div class="dep-status">
-                <span class="dep-mins">${minsText}</span>
+                <span class="dep-mins" style="${isFirstMorning ? 'color:#fbbf24;' : (isTomorrow ? 'color:#94a3b8;' : '')}">${minsText}</span>
                 <span class="dep-delay-pill ${pillClass}" title="${d.delayBadgeText || pillLabel}">${pillLabel}</span>
               </div>
             </div>
