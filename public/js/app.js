@@ -174,6 +174,8 @@ class TransitApp {
 
     let html = '';
 
+    const isNight = new Date().getHours() >= 22 || new Date().getHours() < 6;
+
     // Category 1: Mataró Urbà
     if (filteredMataro.length > 0) {
       html += `
@@ -194,7 +196,7 @@ class TransitApp {
                       <div class="line-card-sub">
                         <span>📍 Mataró Bus</span>
                         <span>•</span>
-                        <span>${l.directions ? l.directions.length : 2} sentits</span>
+                        <span>${isNight ? '🌙 Represa al matí' : `${l.directions ? l.directions.length : 2} sentits`}</span>
                       </div>
                     </div>
                   </div>
@@ -227,7 +229,7 @@ class TransitApp {
                       <div class="line-card-sub">
                         <span>🌊 Casas / Moventis</span>
                         <span>•</span>
-                        <span>Corredor N-II</span>
+                        <span>${isNight ? '🌙 Represa al matí' : 'Corredor N-II'}</span>
                       </div>
                     </div>
                   </div>
@@ -673,14 +675,18 @@ class TransitApp {
     const statusBadge = document.getElementById('c10-telemetry-status-badge');
 
     if (!b) {
-      if (coordsEl) coordsEl.textContent = 'Sense vehicle actiu';
+      const firstTime = this.c10Direction === '1' ? '08:15' : '06:45';
+      if (coordsEl) coordsEl.textContent = 'Sense autobusos en ruta';
       if (bearingEl) bearingEl.textContent = '--';
-      if (speedEl) speedEl.textContent = '0 km/h';
-      if (segmentEl) segmentEl.textContent = 'Corredor N-II';
-      if (etaNextEl) etaNextEl.textContent = '--';
+      if (speedEl) speedEl.textContent = '0 km/h (Parat)';
+      if (segmentEl) segmentEl.textContent = 'Circuit fora d\'horari';
+      if (etaNextEl) etaNextEl.textContent = `Represa demà (${firstTime})`;
       if (progressFill) progressFill.style.width = '0%';
       if (progressText) progressText.textContent = '0%';
-      if (statusBadge) statusBadge.textContent = '⚪ Sense dades';
+      if (statusBadge) {
+        statusBadge.textContent = '🌙 Servei Nocturn / Inactiu';
+        statusBadge.className = 'telemetry-status-badge night';
+      }
       return;
     }
 
@@ -832,15 +838,19 @@ class TransitApp {
     const radarDot = document.getElementById('mataro-telemetry-radar-dot');
 
     if (!b) {
-      if (coordsEl) coordsEl.textContent = 'Sense vehicle actiu';
+      const firstTime = lineData?.serviceStatus?.firstServiceTomorrow || '07:30';
+      if (coordsEl) coordsEl.textContent = 'Sense autobusos en ruta';
       if (bearingEl) bearingEl.textContent = '--';
-      if (speedEl) speedEl.textContent = '0 km/h';
-      if (segmentEl) segmentEl.textContent = lineData.name;
-      if (etaNextEl) etaNextEl.textContent = '--';
+      if (speedEl) speedEl.textContent = '0 km/h (Parat)';
+      if (segmentEl) segmentEl.textContent = 'Circuit fora d\'horari';
+      if (etaNextEl) etaNextEl.textContent = `Represa demà (${firstTime})`;
       if (progressFill) progressFill.style.width = '0%';
       if (progressText) progressText.textContent = '0%';
-      if (statusBadge) { statusBadge.textContent = '⚪ Sense dades'; statusBadge.className = 'telemetry-status-badge'; }
-      if (radarDot) radarDot.className = 'telemetry-live-radar';
+      if (statusBadge) { 
+        statusBadge.textContent = '🌙 Servei Nocturn / Inactiu'; 
+        statusBadge.className = 'telemetry-status-badge night'; 
+      }
+      if (radarDot) radarDot.className = 'telemetry-live-radar night';
       return;
     }
 
@@ -915,20 +925,30 @@ class TransitApp {
 
   renderEtaDisplay(next, etaBigEl, etaClockEl, etaPillEl, etaStatusText) {
     if (next) {
-      if (etaBigEl) etaBigEl.textContent = next.formattedStatus || `${next.minutesAway} min`;
-      if (etaClockEl) etaClockEl.textContent = `Hora estimada: ${next.departureTime || '--:--'}`;
+      const isNextServ = next.isNextService || !next.isToday;
+      if (isNextServ) {
+        if (etaBigEl) etaBigEl.textContent = `🌅 ${next.departureTime || '--:--'}`;
+        if (etaClockEl) etaClockEl.textContent = `1r servei de demà al matí`;
+        if (etaPillEl && etaStatusText) {
+          etaPillEl.className = 'eta-status-pill scheduled';
+          etaStatusText.textContent = '🌙 Represa al matí';
+        }
+      } else {
+        if (etaBigEl) etaBigEl.textContent = next.formattedStatus || `${next.minutesAway} min`;
+        if (etaClockEl) etaClockEl.textContent = `Hora estimada: ${next.departureTime || '--:--'}`;
 
-      if (etaPillEl && etaStatusText) {
-        etaPillEl.className = 'eta-status-pill';
-        if (next.delayStatus === 'delayed') {
-          etaPillEl.classList.add('delayed');
-          etaStatusText.textContent = `⚠️ Retard (${next.delayBadgeText || '+2 min'})`;
-        } else if (next.delayStatus === 'early') {
-          etaPillEl.classList.add('early');
-          etaStatusText.textContent = `⚡ Avançat (${next.delayBadgeText || '-2 min'})`;
-        } else {
-          etaPillEl.classList.add('live');
-          etaStatusText.textContent = next.isRealTime ? '🟢 Temps Real Actiu' : '📅 Horari Teòric';
+        if (etaPillEl && etaStatusText) {
+          etaPillEl.className = 'eta-status-pill';
+          if (next.delayStatus === 'delayed') {
+            etaPillEl.classList.add('delayed');
+            etaStatusText.textContent = `⚠️ Retard (${next.delayBadgeText || '+2 min'})`;
+          } else if (next.delayStatus === 'early') {
+            etaPillEl.classList.add('early');
+            etaStatusText.textContent = `⚡ Avançat (${next.delayBadgeText || '-2 min'})`;
+          } else {
+            etaPillEl.classList.add('live');
+            etaStatusText.textContent = next.isRealTime ? '🟢 Temps Real Actiu' : '📅 Horari Teòric';
+          }
         }
       }
     } else {
@@ -962,22 +982,31 @@ class TransitApp {
         ? new Date(dep.expectedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
         : (dep.departureTime || '--:--');
 
-      const minsText = (dep.minutesAway !== undefined && dep.minutesAway >= 0 && dep.minutesAway <= 180)
-        ? (dep.minutesAway === 0 ? 'Ara' : `${dep.minutesAway} min`)
-        : (dep.isToday === false && dep.expectedIso 
-            ? new Date(dep.expectedIso).toLocaleDateString(navigator.language || undefined, { weekday: 'short', day: 'numeric' })
+      const isNextServ = dep.isNextService || !dep.isToday;
+
+      const minsText = isNextServ
+        ? `🌅 Demà ${dep.departureTime || clockTime}`
+        : ((dep.minutesAway !== undefined && dep.minutesAway >= 0 && dep.minutesAway <= 180)
+            ? (dep.minutesAway === 0 ? 'Ara' : `${dep.minutesAway} min`)
             : `${clockTime}`);
+
+      const pillLabel = isNextServ
+        ? '🌅 1r Servei matí'
+        : (dep.isEstimated ? `⚡ Estimat ${dep.vehicleId ? `#${dep.vehicleId}` : ''}` : (dep.delayBadgeText || 'Puntual'));
+
+      const pillClass = isNextServ ? 'scheduled' : (dep.delayStatus || 'on-time');
 
       return `
         <div class="departure-item ${idx === 0 ? 'highlight-next' : ''}">
           <div class="dep-time-group">
             <span class="dep-clock">${clockTime}</span>
             <span class="dep-dest">Cap a <strong>${dep.destination || 'Destí'}</strong></span>
+            ${isNextServ ? `<div class="dep-time-sub" style="color:var(--text-muted); font-size:0.75rem;"><span>📅 Represa matinal</span></div>` : ''}
           </div>
           <div class="dep-status">
             <span class="dep-mins">${minsText}</span>
-            <span class="dep-delay-pill ${dep.delayStatus || 'on-time'}">
-              ${dep.delayBadgeText || 'Puntual'}
+            <span class="dep-delay-pill ${pillClass}">
+              ${pillLabel}
             </span>
           </div>
         </div>
@@ -1184,22 +1213,25 @@ class TransitApp {
             ? (d.delayMins > 0 ? `+${d.delayMins} min retard` : `${d.delayMins} min avançat`)
             : 'Puntual';
 
-          const pillLabel = d.isEstimated 
-            ? `⚡ Estimat ${d.vehicleId ? `#${d.vehicleId}` : ''}`
-            : (d.delayBadgeText || 'Puntual');
-
-          const minsText = (d.minutesAway !== undefined && d.minutesAway >= 0 && d.minutesAway <= 180)
-            ? (d.minutesAway === 0 ? 'Imminent' : `${d.minutesAway} min`)
-            : (d.isToday === false && d.expectedIso 
-                ? new Date(d.expectedIso).toLocaleDateString(navigator.language || undefined, { weekday: 'short', day: 'numeric' })
+          const isNextServ = d.isNextService || !d.isToday;
+          const minsText = isNextServ
+            ? `🌅 Demà ${d.departureTime || estTime}`
+            : ((d.minutesAway !== undefined && d.minutesAway >= 0 && d.minutesAway <= 180)
+                ? (d.minutesAway === 0 ? 'Imminent' : `${d.minutesAway} min`)
                 : `${estTime}`);
+
+          const pillLabel = isNextServ 
+            ? '🌅 1r Servei matí'
+            : (d.isEstimated ? `⚡ Estimat ${d.vehicleId ? `#${d.vehicleId}` : ''}` : (d.delayBadgeText || 'Puntual'));
+
+          const pillClass = isNextServ ? 'scheduled' : (d.delayStatus || 'on-time');
 
           return `
             <div class="departure-item ${idx === 0 ? 'highlight-next' : ''}">
               <div class="dep-time-group">
                 <div style="display:flex; align-items:baseline; gap:0.4rem;">
                   <span class="dep-clock">${estTime}</span>
-                  <span style="font-size:0.75rem; color:var(--text-secondary); font-weight:600;">${d.isEstimated ? '(Estimat)' : '(Temps Real)'}</span>
+                  <span style="font-size:0.75rem; color:var(--text-secondary); font-weight:600;">${isNextServ ? '(1r Servei)' : (d.isEstimated ? '(Estimat)' : '(Temps Real)')}</span>
                 </div>
                 
                 <div class="dep-dest">
@@ -1207,17 +1239,21 @@ class TransitApp {
                   Cap a <strong>${d.destination || 'Destí'}</strong>
                 </div>
 
-                ${schedTime ? `
+                ${isNextServ ? `
+                  <div class="dep-time-sub" style="color:var(--text-muted); font-size:0.75rem;">
+                    <span>📅 Primer autobús del matí (${d.departureTime || estTime})</span>
+                  </div>
+                ` : (schedTime ? `
                   <div class="dep-time-sub">
                     <span>📅 Horari teòric: <strong class="dep-sched-time">${schedTime}</strong></span>
                     ${isDiff ? `<span>•</span> <span style="color:${d.delayMins > 2 ? '#f87171' : '#34d399'}; font-weight:600;">${delayText}</span>` : `<span>•</span> <span style="color:#34d399; font-weight:600;">Puntual</span>`}
                   </div>
-                ` : ''}
+                ` : '')}
               </div>
 
               <div class="dep-status">
                 <span class="dep-mins">${minsText}</span>
-                <span class="dep-delay-pill ${d.delayStatus || 'on-time'}" title="${d.delayBadgeText || pillLabel}">${pillLabel}</span>
+                <span class="dep-delay-pill ${pillClass}" title="${d.delayBadgeText || pillLabel}">${pillLabel}</span>
               </div>
             </div>
           `;

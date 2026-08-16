@@ -517,7 +517,55 @@ class CorridorTracker {
       departuresToUse.sort((a, b) => a.minutesAway - b.minutesAway);
     }
 
+    if (departuresToUse.length === 0) {
+      // If no departures left today, get first departure of tomorrow
+      const tomorrow = new Date(Date.now() + 24 * 3600 * 1000);
+      const networkTomorrow = timeUtils.getNetworkTime(this.agencyTimezone, tomorrow);
+      const scheduleTrips = isDir1 ? this.fullSchedule.dir1 : this.fullSchedule.dir0;
+      const tomorrowsTrips = scheduleTrips.filter(trip => this.isServiceActiveOnDate(trip.serviceId, tomorrow));
+      tomorrowsTrips.sort((a, b) => timeToSec(a.stops[0].dep) - timeToSec(b.stops[0].dep));
+
+      if (tomorrowsTrips.length > 0) {
+        const firstTrip = tomorrowsTrips[0];
+        const stopEntry = firstTrip.stops.find(s => s.stopId === gtfsStopId || s.seq === stopSeq) || firstTrip.stops[0];
+        if (stopEntry) {
+          const timeStr = (stopEntry.dep || stopEntry.arr || '').substring(0, 5);
+          const [h, m] = timeStr.split(':').map(Number);
+          const depUtcDate = timeUtils.localTimeToUtcDate(networkTomorrow.year, networkTomorrow.month, networkTomorrow.day, h, m, 0, this.agencyTimezone);
+          const diffMs = depUtcDate.getTime() - Date.now();
+          const diffMin = Math.max(1, Math.round(diffMs / 60000));
+          const depIso = depUtcDate.toISOString();
+
+          departuresToUse.push({
+            lineId: '02498',
+            lineName: 'C-10',
+            destination: isDir1 ? 'Hospital de Mataró' : 'Barcelona (Metro la Pau)',
+            directionId: isDir1 ? 'R' : 'A',
+            departureTime: timeStr,
+            departureDate: depIso,
+            expectedIso: depIso,
+            aimedIso: depIso,
+            minutesAway: diffMin,
+            isRealtime: false,
+            isToday: false,
+            isNextService: true,
+            scheduledTime: timeStr,
+            delayMinutes: 0,
+            delayStatus: 'scheduled',
+            delayBadgeText: '🌅 1r Servei del matí',
+            comparisonText: `📅 Primer autobús de demà (${timeStr})`,
+            formattedStatus: `${timeStr}`
+          });
+        }
+      }
+    }
+
     const nextBus = departuresToUse.find(d => d.minutesAway >= -2) || departuresToUse[0] || null;
+    if (nextBus && (!nextBus.isToday || nextBus.isNextService)) {
+      nextBus.delayBadgeText = '🌅 1r Servei del matí';
+    }
+
+    const firstTimeTomorrow = departuresToUse[0]?.departureTime || (isDir1 ? '08:15' : '06:45');
 
     return {
       targetStop: {
@@ -538,11 +586,20 @@ class CorridorTracker {
       nextBus: nextBus,
       upcomingDepartures: departuresToUse.slice(0, 8),
       allDepartures: departuresToUse,
+      serviceStatus: {
+        isOperating: departuresToUse.some(d => d.isToday && (d.isRealtime || d.minutesAway <= 120)),
+        period: (new Date().getHours() >= 22 || new Date().getHours() < 6) ? 'night' : 'day',
+        firstServiceTomorrow: firstTimeTomorrow,
+        statusText: departuresToUse.some(d => d.isToday && (d.isRealtime || d.minutesAway <= 120))
+          ? 'Servei en funcionament'
+          : `Servei fora d'horari • Represa demà a les ${firstTimeTomorrow}`
+      },
       lastUpdated: new Date().toISOString()
     };
   }
 
   async getStopDepartures(stopId, direction = '1') {
+    const isDir1 = direction === '1';
     const stopsList = direction === '0' ? this.stopsDir0 : this.stopsDir1;
     const stopObj = stopsList.find(s => s.mouteStopId === stopId) || {};
     const gtfsStopId = stopObj.gtfsStopId || null;
@@ -555,6 +612,48 @@ class CorridorTracker {
     } catch (err) {
       console.warn(`[CorridorTracker] Mou-te API transient issue for stop ${stopId} (${err.message}). Using GTFS schedule fallback.`);
       departures = this.parseDepartures(null, gtfsStopId, direction, stopId, seq);
+    }
+
+    if (departures.length === 0) {
+      const tomorrow = new Date(Date.now() + 24 * 3600 * 1000);
+      const networkTomorrow = timeUtils.getNetworkTime(this.agencyTimezone, tomorrow);
+      const scheduleTrips = isDir1 ? this.fullSchedule.dir1 : this.fullSchedule.dir0;
+      const tomorrowsTrips = scheduleTrips.filter(trip => this.isServiceActiveOnDate(trip.serviceId, tomorrow));
+      tomorrowsTrips.sort((a, b) => timeToSec(a.stops[0].dep) - timeToSec(b.stops[0].dep));
+
+      if (tomorrowsTrips.length > 0) {
+        const firstTrip = tomorrowsTrips[0];
+        const stopEntry = firstTrip.stops.find(s => s.stopId === gtfsStopId || s.seq === seq) || firstTrip.stops[0];
+        if (stopEntry) {
+          const timeStr = (stopEntry.dep || stopEntry.arr || '').substring(0, 5);
+          const [h, m] = timeStr.split(':').map(Number);
+          const depUtcDate = timeUtils.localTimeToUtcDate(networkTomorrow.year, networkTomorrow.month, networkTomorrow.day, h, m, 0, this.agencyTimezone);
+          const diffMs = depUtcDate.getTime() - Date.now();
+          const diffMin = Math.max(1, Math.round(diffMs / 60000));
+          const depIso = depUtcDate.toISOString();
+
+          departures.push({
+            lineId: '02498',
+            lineName: 'C-10',
+            destination: isDir1 ? 'Hospital de Mataró' : 'Barcelona (Metro la Pau)',
+            directionId: isDir1 ? 'R' : 'A',
+            departureTime: timeStr,
+            departureDate: depIso,
+            expectedIso: depIso,
+            aimedIso: depIso,
+            minutesAway: diffMin,
+            isRealtime: false,
+            isToday: false,
+            isNextService: true,
+            scheduledTime: timeStr,
+            delayMinutes: 0,
+            delayStatus: 'scheduled',
+            delayBadgeText: '🌅 1r Servei del matí',
+            comparisonText: `📅 Primer autobús de demà (${timeStr})`,
+            formattedStatus: `${timeStr}`
+          });
+        }
+      }
     }
 
     return {

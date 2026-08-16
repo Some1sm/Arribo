@@ -582,6 +582,40 @@ class MataroTracker {
     return estimatedArrivals;
   }
 
+  findRoutesServingStop(stopId, lineId = '') {
+    const sId = String(stopId);
+    const results = [];
+
+    const linesToCheck = lineId ? [String(lineId)] : Object.keys(this.routesData);
+    for (const lId of linesToCheck) {
+      const routes = this.routesData[lId] || [];
+      const lineInfo = this.linesData.find(l => String(l.id) === lId) || { id: lId, name: `Línia ${lId}` };
+      for (const r of routes) {
+        if ((r.stops || []).some(s => String(s.id) === sId)) {
+          results.push({
+            ...r,
+            id_linea: lId,
+            lineName: lineInfo.name.trim()
+          });
+        }
+      }
+    }
+
+    if (results.length === 0 && lineId && this.routesData[lineId]) {
+      const lineInfo = this.linesData.find(l => String(l.id) === String(lineId)) || { id: lineId, name: `Línia ${lineId}` };
+      const defaultRoute = this.routesData[lineId][0];
+      if (defaultRoute) {
+        results.push({
+          ...defaultRoute,
+          id_linea: String(lineId),
+          lineName: lineInfo.name.trim()
+        });
+      }
+    }
+
+    return results;
+  }
+
   // 3. Get Real-Time & Estimated Departures for a stop (up to 120 mins)
   async getStopDepartures(stopId, lineId = '') {
     const sId = String(stopId);
@@ -607,9 +641,43 @@ class MataroTracker {
     const combined = [...liveArrivals, ...estimatedArrivals];
     
     // Filter to 120-minute window and sort chronologically
-    const finalDepartures = combined
+    let finalDepartures = combined
       .filter(d => d.minutesAway !== undefined && d.minutesAway <= 120)
       .sort((a, b) => a.minutesAway - b.minutesAway);
+
+    // 4. If zero live/estimated arrivals (e.g. night time / off-peak), inject first morning departure
+    if (finalDepartures.length === 0) {
+      const routesForStop = this.findRoutesServingStop(sId, lineId);
+      const tomorrow = new Date(Date.now() + 24 * 3600 * 1000);
+      const networkTomorrow = timeUtils.getNetworkTime(this.agencyTimezone, tomorrow);
+
+      routesForStop.forEach(r => {
+        const startTimeStr = r.horario?.inicio || '07:30';
+        const [h, m] = startTimeStr.split(':').map(Number);
+        const depUtcDate = timeUtils.localTimeToUtcDate(networkTomorrow.year, networkTomorrow.month, networkTomorrow.day, h, m, 0, this.agencyTimezone);
+        const diffMs = depUtcDate.getTime() - Date.now();
+        const diffMin = Math.max(1, Math.round(diffMs / 60000));
+
+        finalDepartures.push({
+          lineId: String(r.id_linea || lineId || '1'),
+          lineName: r.lineName || `Línia ${r.id_linea || lineId}`,
+          destination: r.name,
+          departureTime: startTimeStr,
+          departureDate: depUtcDate.toISOString(),
+          expectedIso: depUtcDate.toISOString(),
+          aimedIso: depUtcDate.toISOString(),
+          minutesAway: diffMin,
+          isRealTime: false,
+          isEstimated: false,
+          isToday: false,
+          isNextService: true,
+          delayStatus: 'scheduled',
+          delayBadgeText: '🌅 1r Servei del matí',
+          comparisonText: `📅 Primer autobús de demà (${startTimeStr})`,
+          formattedStatus: `${startTimeStr}`
+        });
+      });
+    }
 
     return {
       stop: {
@@ -640,7 +708,6 @@ class MataroTracker {
     }
 
     if (!chosenStop && routeStops.length > 0) {
-      // Default to middle or major stop
       chosenStop = routeStops[Math.floor(routeStops.length / 2)] || routeStops[0];
     }
 
@@ -652,6 +719,8 @@ class MataroTracker {
     const stopDepartures = await this.getStopDepartures(sId, lId);
     const deps = stopDepartures.departures || [];
     const nextBus = deps.length > 0 ? deps[0] : null;
+
+    const firstTimeTomorrow = selectedRoute.horario?.inicio || '07:30';
 
     return {
       line: {
@@ -672,7 +741,13 @@ class MataroTracker {
       direction: String(dirIdx),
       directionName: selectedRoute.name || lineInfo.name,
       nextBus,
-      upcomingDepartures: deps
+      upcomingDepartures: deps,
+      serviceStatus: {
+        isOperating: deps.some(d => d.isRealTime || d.isEstimated),
+        period: (new Date().getHours() >= 22 || new Date().getHours() < 6) ? 'night' : 'day',
+        firstServiceTomorrow: firstTimeTomorrow,
+        statusText: deps.some(d => d.isRealTime || d.isEstimated) ? 'Servei en funcionament' : `Servei fora d'horari • Represa demà a les ${firstTimeTomorrow}`
+      }
     };
   }
 }
