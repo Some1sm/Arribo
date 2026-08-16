@@ -115,6 +115,36 @@ body {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.header-mode-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: var(--radius-full);
+  line-height: 1.2;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.header-mode-badge.interurba {
+  background: rgba(0, 148, 133, 0.18);
+  color: #2dd4bf;
+  border: 1px solid rgba(0, 148, 133, 0.45);
+}
+
+.header-mode-badge.urba {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
 }
 
 .app-subtitle {
@@ -1524,6 +1554,96 @@ body {
   color: #fff;
 }
 
+
+/* ======================================================== */
+/* LIVE VEHICLE MARKER & DIRECTIONAL POINTER               */
+/* ======================================================== */
+
+.c10-live-bus-icon {
+  background: transparent !important;
+  border: none !important;
+}
+
+.live-bus-marker-wrap {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bus-heading-cone {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  pointer-events: none;
+  transition: transform 0.25s linear;
+  z-index: 1;
+}
+
+.bus-heading-arrow {
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-bottom: 9px solid #ffffff;
+  filter: drop-shadow(0 -1px 3px rgba(0, 0, 0, 0.7));
+  margin-top: 1px;
+}
+
+.live-bus-pin {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 2.5px solid #ffffff;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6), 0 0 10px rgba(0, 148, 133, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  position: relative;
+  z-index: 2;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.live-bus-pin:hover {
+  transform: scale(1.15);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.8), 0 0 16px rgba(0, 148, 133, 0.8);
+}
+
+.bus-icon-inner {
+  display: inline-block;
+  user-select: none;
+  line-height: 1;
+  transition: transform 0.2s ease;
+}
+
+.bus-status-dot {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 11px;
+  height: 11px;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+}
+
+.bus-status-dot.live {
+  background: #34d399;
+  box-shadow: 0 0 8px #34d399;
+}
+
+.bus-status-dot.estimated {
+  background: #fbbf24;
+  box-shadow: 0 0 8px #fbbf24;
+}
 
 /* Stop Hover Marker Dot and Tooltip */
 .c10-stop-marker {

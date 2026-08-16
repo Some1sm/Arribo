@@ -224,6 +224,17 @@ class TransitApp {
     });
   }
 
+  getContrastColor(hex) {
+    if (!hex) return '#ffffff';
+    let c = hex.replace('#', '');
+    if (c.length === 3) c = c.split('').map(x => x + x).join('');
+    const r = parseInt(c.substring(0, 2), 16) || 0;
+    const g = parseInt(c.substring(2, 4), 16) || 0;
+    const b = parseInt(c.substring(4, 6), 16) || 0;
+    const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+    return yiq >= 160 ? '#0f172a' : '#ffffff';
+  }
+
   updateHeaderBrand() {
     const badge = document.getElementById('header-line-badge');
     const modeBadge = document.getElementById('header-mode-badge');
@@ -231,14 +242,36 @@ class TransitApp {
     const mapTitle = document.getElementById('map-line-title');
 
     if (this.currentPage === 'c10') {
-      if (badge) { badge.textContent = 'C10'; badge.style.background = '#009485'; }
-      if (modeBadge) { modeBadge.textContent = 'Interurbà'; modeBadge.style.background = '#009485'; }
+      if (badge) {
+        badge.textContent = 'C10';
+        badge.style.background = '#009485';
+        badge.style.color = '#ffffff';
+      }
+      if (modeBadge) {
+        modeBadge.textContent = 'Interurbà';
+        modeBadge.className = 'header-mode-badge interurba';
+        modeBadge.style.background = 'rgba(0, 148, 133, 0.2)';
+        modeBadge.style.color = '#2dd4bf';
+        modeBadge.style.borderColor = 'rgba(0, 148, 133, 0.45)';
+        modeBadge.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.25)';
+      }
       if (subtitle) subtitle.textContent = 'Barcelona ↔ Badalona ↔ Maresme ↔ Mataró (per N-II)';
       if (mapTitle) mapTitle.textContent = 'Traçat del Corredor C-10 i parades';
     } else {
       const lineObj = this.availableLines.find(l => String(l.id) === String(this.activeMataroLineId)) || { code: `L${this.activeMataroLineId}`, color: '#00ea00', name: 'Mataró Bus' };
-      if (badge) { badge.textContent = lineObj.code; badge.style.background = lineObj.color; }
-      if (modeBadge) { modeBadge.textContent = 'Urbà Mataró'; modeBadge.style.background = lineObj.color; }
+      if (badge) {
+        badge.textContent = lineObj.code;
+        badge.style.background = lineObj.color;
+        badge.style.color = this.getContrastColor(lineObj.color);
+      }
+      if (modeBadge) {
+        modeBadge.textContent = 'Urbà Mataró';
+        modeBadge.className = 'header-mode-badge urba';
+        modeBadge.style.background = `rgba(${this.hexToRgb(lineObj.color)}, 0.22)`;
+        modeBadge.style.color = '#ffffff';
+        modeBadge.style.borderColor = lineObj.color;
+        modeBadge.style.boxShadow = `0 0 12px rgba(${this.hexToRgb(lineObj.color)}, 0.35)`;
+      }
       if (subtitle) subtitle.textContent = `Xarxa Urbana • ${lineObj.code}: ${lineObj.name}`;
       if (mapTitle) mapTitle.textContent = `Traçat línia urbana ${lineObj.code} i parades`;
     }

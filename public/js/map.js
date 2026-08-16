@@ -382,14 +382,14 @@ class C10Map {
 
         const el = obj.marker.getElement();
         if (el) {
-          const pin = el.querySelector('.live-bus-pin');
-          if (pin) {
-            if (bus.isTerminalLayover) {
-              pin.style.background = 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)';
-              pin.textContent = '🅿️';
-            } else {
-              pin.style.transform = `rotate(${bearingAngle}deg)`;
-            }
+          const cone = el.querySelector('.bus-heading-cone');
+          if (cone && !bus.isTerminalLayover) {
+            cone.style.transform = `rotate(${bearingAngle}deg)`;
+          }
+          const icon = el.querySelector('.bus-icon-inner');
+          if (icon) {
+            const isWest = bearingAngle > 180 && bearingAngle < 360;
+            icon.style.transform = `scaleX(${isWest ? -1 : 1})`;
           }
         }
       } else {
@@ -397,60 +397,30 @@ class C10Map {
           ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
           : (lineColor || 'linear-gradient(135deg, #10b981 0%, #059669 100%)');
 
+        const isHeadingWest = bearingAngle > 180 && bearingAngle < 360;
         const busHtml = bus.isTerminalLayover ? `
-          <div class="live-bus-pin layover" style="
-            background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
-            color: #fff;
-            width: 36px;
-            height: 36px;
-            border-radius: 50%;
-            border: 2.5px solid #ffffff;
-            box-shadow: 0 4px 14px rgba(59, 130, 246, 0.7);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 16px;
-            position: relative;
-          ">
-            🅿️
+          <div class="live-bus-marker-wrap">
+            <div class="live-bus-pin" style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);">
+              <span class="bus-icon-inner">🅿️</span>
+            </div>
           </div>
         ` : `
-          <div class="live-bus-pin" style="
-            background: ${pinBg};
-            color: #fff;
-            width: 36px;
-            height: 36px;
-            border-radius: 50%;
-            border: 2.5px solid #ffffff;
-            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 16px;
-            transition: transform 0.2s ease;
-            transform: rotate(${bearingAngle}deg);
-            position: relative;
-          ">
-            🚌
-            <span style="
-              position: absolute;
-              top: -6px;
-              right: -6px;
-              width: 12px;
-              height: 12px;
-              background: ${isEst ? '#fbbf24' : '#38bdf8'};
-              border: 1.5px solid #fff;
-              border-radius: 50%;
-              box-shadow: 0 0 8px ${isEst ? '#fbbf24' : '#38bdf8'};
-            "></span>
+          <div class="live-bus-marker-wrap">
+            <div class="bus-heading-cone" style="transform: rotate(${bearingAngle}deg);">
+              <div class="bus-heading-arrow"></div>
+            </div>
+            <div class="live-bus-pin" style="background: ${pinBg};">
+              <span class="bus-icon-inner" style="transform: scaleX(${isHeadingWest ? -1 : 1});">🚌</span>
+              <span class="bus-status-dot ${isEst ? 'estimated' : 'live'}"></span>
+            </div>
           </div>
         `;
 
         const busIcon = L.divIcon({
           html: busHtml,
           className: 'c10-live-bus-icon',
-          iconSize: [36, 36],
-          iconAnchor: [18, 18]
+          iconSize: [44, 44],
+          iconAnchor: [22, 22]
         });
 
         const marker = L.marker([snapped.lat, snapped.lon], {
@@ -517,13 +487,18 @@ class C10Map {
           obj.marker.setLatLng([lat, lon]);
         }
 
-        // Dynamically rotate bus pin to match the street direction
+        // Dynamically rotate the heading pointer arrow to match the street direction without flipping the bus upside down
         if (bearing !== null && !bus.isTerminalLayover) {
           const el = obj.marker.getElement();
           if (el) {
-            const pin = el.querySelector('.live-bus-pin');
-            if (pin) {
-              pin.style.transform = `rotate(${bearing}deg)`;
+            const cone = el.querySelector('.bus-heading-cone');
+            if (cone) {
+              cone.style.transform = `rotate(${bearing}deg)`;
+            }
+            const icon = el.querySelector('.bus-icon-inner');
+            if (icon) {
+              const isWest = bearing > 180 && bearing < 360;
+              icon.style.transform = `scaleX(${isWest ? -1 : 1})`;
             }
           }
         }
