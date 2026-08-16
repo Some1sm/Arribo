@@ -1,4 +1,4 @@
-// Leaflet Map Module for Line C-10 Tracker
+// Leaflet Map Module for Multi-Line Transit Platform (C-10 + Mataró Bus)
 class C10Map {
   constructor(containerId) {
     this.containerId = containerId;
@@ -16,11 +16,11 @@ class C10Map {
       return;
     }
 
-    // Centered along the Barcelona <-> Mataró coastal corridor
+    // Centered along the coastal corridor / Mataró
     this.map = L.map(this.containerId, {
       zoomControl: true,
       scrollWheelZoom: true
-    }).setView([41.49, 2.33], 12);
+    }).setView([41.54, 2.44], 13);
 
     // High quality modern tile layer (CartoDB Voyager)
     L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
@@ -30,10 +30,10 @@ class C10Map {
     }).addTo(this.map);
   }
 
-  renderStops(stops, targetStopMouteId = '10037202', onStopClick = null, shouldFitBounds = false) {
+  renderStops(stops, targetStopId = '', onStopClick = null, shouldFitBounds = false, lineColor = '#009485', customPolyline = null) {
     if (!this.map) return;
 
-    const stopsFingerprint = `${stops.length}_${targetStopMouteId}`;
+    const stopsFingerprint = `${stops.length}_${targetStopId}_${lineColor}_${customPolyline ? customPolyline.length : 0}`;
     const alreadyRendered = this.lastStopsFingerprint === stopsFingerprint && this.stopMarkers.length > 0;
 
     if (!alreadyRendered) {
@@ -51,17 +51,18 @@ class C10Map {
         const latLng = [stop.lat, stop.lon];
         latLngs.push(latLng);
 
-        const isTarget = stop.mouteStopId === targetStopMouteId;
-        const isMaresme = stop.lon ? stop.lon >= 2.289 : (stop.name && (stop.name.toLowerCase().includes('mataró') || stop.name.toLowerCase().includes('itàlia') || stop.name.toLowerCase().includes('masnou') || stop.name.toLowerCase().includes('premià') || stop.name.toLowerCase().includes('vilassar')));
+        const stopIdentifier = String(stop.mouteStopId || stop.id || stop.code || '');
+        const isTarget = stopIdentifier === String(targetStopId);
+        const isMaresme = stop.zone === 'Zona Maresme' || (stop.lon && stop.lon >= 2.289);
 
         const markerHtml = `
           <div style="
             width: ${isTarget ? '22px' : '14px'};
             height: ${isTarget ? '22px' : '14px'};
-            background-color: ${isTarget ? '#009485' : isMaresme ? '#06b6d4' : '#f97316'};
+            background-color: ${isTarget ? lineColor : isMaresme ? '#06b6d4' : '#f97316'};
             border: 2px solid #ffffff;
             border-radius: 50%;
-            box-shadow: 0 0 10px ${isTarget ? 'rgba(0,148,133,0.9)' : 'rgba(0,0,0,0.5)'};
+            box-shadow: 0 0 10px ${isTarget ? lineColor : 'rgba(0,0,0,0.5)'};
             cursor: pointer;
             ${isTarget ? 'animation: pulse-dot 1.5s infinite;' : ''}
           "></div>
@@ -79,13 +80,13 @@ class C10Map {
         const popupContent = `
           <div style="font-family: sans-serif; min-width: 190px; padding: 6px;">
             <strong style="font-size: 13px; color: #0f172a; display:block; margin-bottom:2px;">${stop.name}</strong>
-            ${isTarget ? '<div style="color: #009485; font-weight: 700; font-size: 11px; margin-bottom: 4px;">⭐ PARADA PRINCIPAL</div>' : ''}
+            ${isTarget ? `<div style="color: ${lineColor}; font-weight: 700; font-size: 11px; margin-bottom: 4px;">⭐ PARADA PRINCIPAL</div>` : ''}
             <div style="font-size: 11px; color: #64748b; margin-bottom: 6px;">
-              Seq: <strong>#${stop.seq}</strong> • Zona: <strong>${isMaresme ? 'Maresme' : 'AMB'}</strong>${stop.code ? ` • Codi: <strong>${stop.code}</strong>` : ''}
+              Seq: <strong>#${stop.seq || index + 1}</strong> • Zona: <strong>${stop.zone || (isMaresme ? 'Maresme' : 'AMB')}</strong>${stop.code ? ` • Codi: <strong>${stop.code}</strong>` : ''}
             </div>
             <div style="display:flex; flex-direction:column; gap:4px;">
-              ${stop.mouteStopId ? `<button onclick="window.c10App.inspectStop('${stop.mouteStopId}', '${stop.name}')" style="width: 100%; background: #009485; color: #fff; border: none; padding: 5px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer;">Veure temps d'arribada</button>` : ''}
-              ${!isTarget && stop.mouteStopId ? `<button onclick="window.c10App.setTargetStop('${stop.mouteStopId}')" style="width: 100%; background: #f1f5f9; color: #0f172a; border: 1px solid #cbd5e1; padding: 4px 8px; border-radius: 4px; font-size: 10.5px; font-weight: 600; cursor: pointer;">⭐ Fixar com a parada principal</button>` : ''}
+              <button onclick="window.c10App.inspectStop('${stopIdentifier}', '${stop.name.replace(/'/g, "\\'")}')" style="width: 100%; background: ${lineColor}; color: #fff; border: none; padding: 5px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer;">Veure temps d'arribada</button>
+              ${!isTarget ? `<button onclick="window.c10App.setTargetStop('${stopIdentifier}')" style="width: 100%; background: #f1f5f9; color: #0f172a; border: 1px solid #cbd5e1; padding: 4px 8px; border-radius: 4px; font-size: 10.5px; font-weight: 600; cursor: pointer;">⭐ Fixar com a parada principal</button>` : ''}
             </div>
           </div>
         `;
@@ -99,13 +100,16 @@ class C10Map {
         this.stopMarkers.push(marker);
       });
 
-      if (latLngs.length > 1) {
-        this.routePolyline = L.polyline(latLngs, {
-          color: '#009485',
+      // Draw high resolution polyline or connect stops
+      const polylinePoints = (customPolyline && customPolyline.length > 1) ? customPolyline : latLngs;
+
+      if (polylinePoints.length > 1) {
+        this.routePolyline = L.polyline(polylinePoints, {
+          color: lineColor || '#009485',
           weight: 4,
           opacity: 0.85,
-          dashArray: '1, 6',
-          lineCap: 'round'
+          lineCap: 'round',
+          lineJoin: 'round'
         }).addTo(this.map);
 
         if (shouldFitBounds) {
@@ -117,7 +121,7 @@ class C10Map {
     }
   }
 
-  updateBusMarkers(activeBuses) {
+  updateBusMarkers(activeBuses, lineColor = '#009485') {
     if (!this.map) return;
 
     const currentTripIds = new Set(activeBuses.map(b => b.tripId));
@@ -135,13 +139,14 @@ class C10Map {
 
       const bearingAngle = bus.bearing || 0;
       const compassLabel = bus.compass?.label || '';
-      const speedText = bus.speedKmh ? `${bus.speedKmh} km/h` : (bus.isTerminalLayover ? '0 km/h (Aturat)' : '35-45 km/h');
+      const speedText = bus.speedKmh ? `${bus.speedKmh} km/h` : (bus.isTerminalLayover ? '0 km/h (Aturat)' : '30-40 km/h');
       const coordsText = bus.coordinatesFormatted || `${bus.lat.toFixed(5)}° N, ${bus.lon.toFixed(5)}° E`;
+      const isEst = Boolean(bus.isEstimated);
 
       const popupHtml = bus.isTerminalLayover ? `
         <div style="font-family: sans-serif; min-width: 220px; padding: 6px;">
           <div style="display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid #e2e8f0; padding-bottom:4px; margin-bottom:6px;">
-            <strong style="color:#0f172a; font-size:13px;">🅿️ Bus C-10 en Regulació</strong>
+            <strong style="color:#0f172a; font-size:13px;">🅿️ Bus en Regulació</strong>
             <span style="background:#dbeafe; color:#1d4ed8; font-size:10px; font-weight:700; padding:1px 5px; border-radius:3px;">A CAPÇALERA</span>
           </div>
           <div style="font-size:12px; color:#2563eb; font-weight:700; margin-bottom:4px;">
@@ -149,24 +154,27 @@ class C10Map {
           </div>
           <div style="font-size:11px; color:#64748b; line-height:1.5;">
             📍 Coord: <strong style="color:#0f172a;">${coordsText}</strong><br>
-            ⏱️ Estat: <strong>${bus.currentSegmentTime}</strong><br>
-            🔄 Esperant inici del proper viatge de tornada.
+            ⏱️ Estat: <strong>Aturat en espera</strong><br>
+            🔄 Vehicle: <strong>#${bus.vehicleId || 'Bus'}</strong>
           </div>
         </div>
       ` : `
         <div style="font-family: sans-serif; min-width: 210px; padding: 6px;">
           <div style="display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid #e2e8f0; padding-bottom:4px; margin-bottom:6px;">
-            <strong style="color:#0f172a; font-size:13px;">🚌 Bus C-10 en directe</strong>
-            <span style="background:#dcfce7; color:#15803d; font-size:10px; font-weight:700; padding:1px 5px; border-radius:3px;">GPS RECONSTRUÏT</span>
+            <strong style="color:#0f172a; font-size:13px;">🚌 Bus ${bus.vehicleId ? `#${bus.vehicleId}` : ''}</strong>
+            <span style="background:${isEst ? '#fef3c7' : '#dcfce7'}; color:${isEst ? '#b45309' : '#15803d'}; font-size:10px; font-weight:700; padding:1px 5px; border-radius:3px;">
+              ${isEst ? '⚡ ESTIMACIÓ ZONA' : '🟢 GPS DIRECTE'}
+            </span>
           </div>
-          <div style="font-size:12px; color:#009485; font-weight:700; margin-bottom:4px;">
+          <div style="font-size:12px; color:${lineColor}; font-weight:700; margin-bottom:4px;">
             ${bus.fromStop} ➔ ${bus.toStop}
           </div>
           <div style="font-size:11px; color:#64748b; line-height:1.5;">
             📍 Coord: <strong style="color:#0f172a;">${coordsText}</strong><br>
             🧭 Rumb: <strong>${compassLabel} (${bearingAngle}°)</strong><br>
-            ⚡ Velocitat: <strong>~${speedText}</strong><br>
-            ⏱️ Progrés trajecte: <strong>${bus.totalProgress}%</strong>
+            ⚡ Velocitat: <strong>${speedText}</strong><br>
+            ⏱️ Progrés trajecte: <strong>${bus.totalProgress || 0}%</strong><br>
+            ${bus.delayFormatted ? `🚦 Puntualitat: <strong>${bus.delayFormatted}</strong>` : ''}
           </div>
         </div>
       `;
@@ -176,7 +184,6 @@ class C10Map {
         obj.busData = bus;
         obj.marker.setPopupContent(popupHtml);
 
-        // If in terminal layover, snap immediately to terminal pin
         if (bus.isTerminalLayover) {
           obj.marker.setLatLng([bus.lat, bus.lon]);
         }
@@ -194,6 +201,10 @@ class C10Map {
           }
         }
       } else {
+        const pinBg = isEst
+          ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
+          : (lineColor || 'linear-gradient(135deg, #10b981 0%, #059669 100%)');
+
         const busHtml = bus.isTerminalLayover ? `
           <div class="live-bus-pin layover" style="
             background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
@@ -213,13 +224,13 @@ class C10Map {
           </div>
         ` : `
           <div class="live-bus-pin" style="
-            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            background: ${pinBg};
             color: #fff;
             width: 36px;
             height: 36px;
             border-radius: 50%;
             border: 2.5px solid #ffffff;
-            box-shadow: 0 4px 14px rgba(16, 185, 129, 0.7);
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -235,10 +246,10 @@ class C10Map {
               right: -6px;
               width: 12px;
               height: 12px;
-              background: #38bdf8;
+              background: ${isEst ? '#fbbf24' : '#38bdf8'};
               border: 1.5px solid #fff;
               border-radius: 50%;
-              box-shadow: 0 0 8px #38bdf8;
+              box-shadow: 0 0 8px ${isEst ? '#fbbf24' : '#38bdf8'};
             "></span>
           </div>
         `;
@@ -303,8 +314,8 @@ class C10Map {
     }
   }
 
-  focusTargetStop(lat = 41.5468674, lon = 2.4321194) {
-    if (!this.map) return;
+  focusTargetStop(lat, lon) {
+    if (!this.map || !lat || !lon) return;
     this.map.flyTo([lat, lon], 15, { duration: 1.2 });
   }
 

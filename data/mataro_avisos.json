@@ -1,0 +1,19 @@
+{
+  "success": true,
+  "message": [
+    {
+      "id": 1505,
+      "title_ca": "HORARIS ESTIU 2026",
+      "title_es": "HORARIOS VERANO 2026",
+      "text_ca": "Del 27 de juliol fins al 23 d'agost, els autobusos circularan amb horari d'estiu. Només feiners. Els caps de setmana, els horaris no canvien.",
+      "text_es": "Del 27 de julio hasta el 23 de agosto, los autobuses circularán con horario de verano. Solo laborables. Los fines de semana, los horarios no cambian.",
+      "imagen": "",
+      "inicio": "2026-50-2 8:50:36",
+      "fin": "2026-55-29 8:55:36",
+      "url": "",
+      "estado": 1,
+      "ordering": 1,
+      "creado": "2026-48-2 8:48:36"
+    }
+  ]
+}

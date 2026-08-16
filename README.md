@@ -1,6 +1,6 @@
-# 🚌 BadAMBBusTracker — Live Tracker & GPS Telemetry Solver (Line C-10)
+# 🚌 Bad AMB Bus Tracker — Multi-Line Real-Time Transit Platform
 
-> Real-time monitoring, live GPS telemetry reconstruction, and multi-checkpoint corridor solver for interurban bus line **C-10 (Barcelona ⇄ Mataró per la N-II)** operated by Empresa Casas / Moventis.
+> Live tracking, real-time GPS telemetry, universal stop search, and dead-zone location estimator for interurban line **C-10 (Barcelona ⇄ Mataró per N-II)** and all 8 urban lines of **Mataró Bus (L1, L2, L3, L4, L5, L6, L7, L8)**.
 
 [![Node.js](https://img.shields.io/badge/Node.js-v18+-green.svg)](https://nodejs.org/)
 [![Express](https://img.shields.io/badge/Express-4.19+-blue.svg)](https://expressjs.com/)
@@ -9,38 +9,52 @@
 
 ---
 
-## 🧭 The Problem with AMB Mobilitat & Our Solution
+## 🧭 The Problem & Our Solution
 
-- **The Problem**: The *AMB Mobilitat* app only covers stops located inside the 36 metropolitan municipalities (up to Montgat). When the C-10 enters the Maresme coastal region (*El Masnou, Premià de Mar, Vilassar de Mar, Cabrera de Mar, Mataró*), the vehicle "disappears" or falls back to static tables.
-- **The Solution**: We integrated directly with the official Generalitat de Catalunya **Mou-te REST API** (`https://mou-te.gencat.cat/MouteAPI/rest/`) authenticated with dynamic HMAC MD5 security tokens, combined with an open GTFS feed and an advanced **Multi-Stop Dynamic Gradient GPS Solver** to track the entire 42-stop corridor in real time.
+1. **The AMB Mobilitat Dead Zone**: The official *AMB Mobilitat* app only covers stops inside the 36 metropolitan municipalities (stopping abruptly at Montgat). When line C-10 travels into the Maresme coastal region (*El Masnou, Premià de Mar, Vilassar de Mar, Cabrera de Mar, Mataró*), vehicles disappear.
+2. **Mataró Bus Coverage Shadow Drops**: In urban Mataró, buses frequently cross cellular dead zones where mobile apps stop rendering them or drop live GPS telemetry.
+3. **The Solution**: 
+   - Direct integration with Generalitat de Catalunya's **Mou-te REST API** with HMAC MD5 tokens for the C-10 interurban corridor.
+   - Reverse-engineered integration with Avanza's official **SIRI SOAP service** (`sirimataro.avanzagrupo.com`) for real-time Mataró Bus fleet monitoring.
+   - Built-in **Dead-Zone Location Estimator (Dead-Reckoning)** that projects bus movement smoothly along exact road polyline geometries during coverage dropouts.
 
 ---
 
-## ✨ Features
+## 🚌 Supported Lines
 
-- 🛰️ **Dynamic Gradient GPS Solver**:
-  - Computes exact vehicle latitude/longitude ($6$-decimal precision) along the road polyline.
-  - Spherical trigonometry for Great-Circle bearing angle ($0^\circ - 360^\circ$) and compass orientation (e.g. `NE ↗️`).
-  - Physical velocity calculation ($\text{km/h}$) and remaining distance/time to the next checkpoint.
-- 📡 **Live GPS Telemetry Stream Inspector**:
-  - Live cockpit radar panel displaying real-time coordinates, heading angle, estimated speed, active road segment, and overall route completion percentage.
+| Line | Name | Operator | Official Color |
+| :--- | :--- | :--- | :--- |
+| **C-10** | Barcelona ⇄ Mataró (per N-II) | Empresa Casas (Moventis) | `#009485` Teal |
+| **L1** | Circular 1 (Hospital ⇄ Rodalies) | Mataró Bus (Avanza) | `#ff00ff` Magenta |
+| **L2** | Circular 2 (Hospital ⇄ Rodalies) | Mataró Bus (Avanza) | `#804000` Brown |
+| **L3** | Camí de la Serra ⇄ Vista Alegre ⇄ Rocafonda | Mataró Bus (Avanza) | `#808080` Gray |
+| **L4** | Cirera ⇄ Molins | Mataró Bus (Avanza) | `#ff0000` Red |
+| **L5** | Rodalies ⇄ Hospital de Mataró | Mataró Bus (Avanza) | `#00ea00` Lime |
+| **L6** | Institut Català Salut ⇄ Ctra. de Mata | Mataró Bus (Avanza) | `#febf01` Amber |
+| **L7** | Pl. Tereses ⇄ Cerdanyola | Mataró Bus (Avanza) | `#80ffff` Cyan |
+| **L8** | Rodalies ⇄ Galícia | Mataró Bus (Avanza) | `#008040` Forest |
+
+---
+
+## ✨ Key Features
+
+- 🔍 **Universal Stop Searcher**: Search by stop name, code, or neighborhood across all lines in Mataró and the coastal corridor with instant jump and target selection.
+- 🛰️ **Dead-Zone GPS Location Estimator**:
+  - When vehicles cross cellular shadow zones or signal is delayed, the system extrapolates vehicle coordinates along the road polyline using speed and stop progression.
+  - Visual status pill indicators: `🟢 Senyal GPS Actiu` vs `⚡ Estimació Zona Cobertura`.
+- 🧭 **Cockpit GPS Telemetry Inspector**:
+  - High-precision latitude/longitude coordinates.
+  - Great-circle compass bearing angle ($0^\circ - 360^\circ$) and compass label (e.g. `NW ↖️`).
+  - Vehicle physical speed ($\text{km/h}$), delay duration, active segment, and route progression percentage.
 - 🗺️ **Interactive Leaflet Canvas Map**:
-  - Per-second client-side multi-segment gliding animation (`requestAnimationFrame`).
-  - Vehicle marker rotated in real time to match the bus's forward bearing (`transform: rotate(θ deg)`).
-  - Stop markers color-coded by region, with interactive departure inspection popups.
-- ⭐ **Fully Customizable Target Stop**:
-  - Select **any stop** along the route as your primary favorite via the top dropdown, list star icons (`⭐`), or map popups.
-  - Saved persistently in `localStorage` across reloads with dedicated Google Maps direct navigation links.
-- ⚡ **Unified Active-Trip Corridor Timeline**:
-  - 9 linear checkpoints showing coherent progression for the single active trip on the road.
-  - Completed stops marked with checkmarks (**`✓ Passat`**), current location with glowing **`🚌`**, and upcoming stops with live ETAs and delay tags.
-- 🅿️ **Terminal Layover & Turnaround Synchronization**:
-  - Detects when a bus arrives at the terminus (*Hospital de Mataró* or *Barcelona La Pau*) and enters dwell turnaround (**`🅿️ En Regulació`**).
-  - Synchronized seamlessly with return schedule departures in the opposite direction.
-- 🏙️ **Geographic Regional Zoning**:
-  - True spatial boundary classification at the Montgat/Maresme border ($2.289^\circ\text{ E}$ Longitude) cleanly separating **Zona AMB** from **Zona Maresme**.
-- 🔊 **Audio & Notification Alerts**:
-  - Web Audio API chime and HTML5 desktop push notifications when your bus is within 5 minutes.
+  - Continuous 60fps hardware-accelerated gliding animation without teleportation or rubber-banding.
+  - Dynamic route polyline rendered in the line's official color.
+  - Bus pin rotation matching the vehicle's actual forward direction.
+- ⭐ **Persistent Target Stop & Departure Countdowns**:
+  - Choose any favorite stop on any line via the select dropdown, list stars, or map popups.
+  - Real-time countdowns (`Imminent`, `3 min`, etc.) with punctual / early / delayed status badges.
+- 🔊 **Audio Chimes & Push Notifications**:
+  - Synthesized Web Audio API arrival chimes when your bus is approaching.
 
 ---
 
@@ -48,37 +62,39 @@
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `GET` | `/api/c10/target-eta?direction={0\|1}&stopId={id}` | Returns live countdown, schedule comparison, and upcoming departures for the chosen stop. |
-| `GET` | `/api/c10/live-corridor?direction={0\|1}` | Returns 9 unified corridor checkpoints and active vehicle GPS telemetry. |
-| `GET` | `/api/c10/stops?direction={0\|1}` | Returns all 41–42 stops with GPS coordinates, GTFS codes, and zone tags. |
-| `GET` | `/api/c10/stop/:id/departures?direction={0\|1}` | Returns real-time arrival departures for any specific stop pole. |
-| `GET` | `/api/health` | Service health check. |
+| `GET` | `/api/lines` | Returns all supported transit lines (C-10 + Mataró L1..L8). |
+| `GET` | `/api/search/stops?q={query}` | Universal search across all stops by name or code. |
+| `GET` | `/api/mataro/lines` | Returns metadata for all 8 Mataró urban lines. |
+| `GET` | `/api/mataro/line/:lineId?direction={0\|1}` | Returns stops, polyline geometry, and active/estimated buses for a Mataró line. |
+| `GET` | `/api/mataro/target-eta?lineId={id}&stopId={id}&direction={dir}` | Returns real-time arrival countdown for target stop on Mataró Bus. |
+| `GET` | `/api/mataro/stop/:stopId/departures?lineId={id}` | Returns live stop departures. |
+| `GET` | `/api/c10/target-eta?direction={0\|1}&stopId={id}` | C-10 target stop countdown and upcoming departures. |
+| `GET` | `/api/c10/live-corridor?direction={0\|1}` | C-10 corridor checkpoints and GPS telemetry. |
+| `GET` | `/api/c10/stops?direction={0\|1}` | C-10 stop catalog. |
+| `GET` | `/api/health` | Health check endpoint. |
 
 ---
 
-## 🌐 Free 1-Click Cloud Deployment
-
-Deploy this tracker for free and share the live URL with friends:
+## 🌐 1-Click Free Cloud Deployment
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FSome1sm%2FBadAMBBusTracker)
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Some1sm/BadAMBBusTracker)
 
-### Option 1: Vercel (Recommended — 100% Free & Fast)
-1. Go to [Vercel.com](https://vercel.com) and log in with your GitHub account.
-2. Click **"Add New Project"** and import `Some1sm/BadAMBBusTracker`.
-3. Click **Deploy**. Vercel will instantly build and host your app with an `https://badambbustracker.vercel.app` URL!
+### Option 1: Vercel (100% Free)
+1. Log in to [Vercel.com](https://vercel.com) with GitHub.
+2. Click **Add New Project** and select `Some1sm/BadAMBBusTracker`.
+3. Click **Deploy**. Vercel will launch your live site instantly!
 
 ### Option 2: Render
-1. Go to [Render.com](https://render.com) and connect your GitHub repository.
-2. Choose **Web Service** (Free Plan) with Node.js runtime.
-3. Render will deploy your app on `https://badambbustracker.onrender.com`.
+1. Connect your repository on [Render.com](https://render.com).
+2. Choose **Web Service** (Node runtime).
 
 ---
 
-## 🚀 Getting Started Locally
+## 🚀 Running Locally
 
 ```bash
-# 1. Clone the repository
+# 1. Clone repo
 git clone https://github.com/Some1sm/BadAMBBusTracker.git
 cd BadAMBBusTracker
 
@@ -86,42 +102,16 @@ cd BadAMBBusTracker
 npm install
 
 # 3. Run automated test suite
-npm test
+node test/e2e_multiline_test.js
 
-# 4. Start the local server
+# 4. Start local server
 npm start
 ```
 
-Open your browser at **`http://localhost:3000`**.
+Visit **`http://localhost:3000`** in your browser.
 
 ---
 
-## 📁 Project Architecture
+## 📜 License & Credits
 
-```
-├── data/                       # GTFS stops & route schedule datasets
-│   ├── c10_full_schedule.json  # Complete timetable with service calendars
-│   ├── c10_matched_stops_dir0.json
-│   └── c10_matched_stops_dir1.json
-├── public/                     # Static Web Frontend
-│   ├── index.html              # Modern responsive HTML5 UI
-│   ├── css/style.css           # Custom CSS3 theme & animations
-│   └── js/
-│       ├── app.js              # Application state, timer loops & audio
-│       └── map.js              # Leaflet map, marker rotation & gliding
-├── src/                        # Backend Engine
-│   ├── mouteClient.js          # Mou-te REST API client with HMAC MD5 auth
-│   ├── geoUtils.js             # Haversine, Great-Circle bearing & compass math
-│   └── corridorTracker.js      # GPS interpolation & corridor engine
-├── test/
-│   └── e2e_test.js             # Automated E2E verification test suite
-├── server.js                   # Express server & API routes
-└── package.json
-```
-
----
-
-## 📜 License & Acknowledgments
-
-- Data provided by **Generalitat de Catalunya (Mou-te / ATM)** and **AMB Mobilitat**.
-- Built with ❤️ for commuters along the Maresme coastal corridor.
+- Data sources: **Generalitat de Catalunya (Mou-te / ATM)**, **AMB Mobilitat**, and **Mataró Bus (Avanza / CTSA SIRI)**.

@@ -1,12 +1,12 @@
 {
-  "name": "c10-realtime-tracker",
-  "version": "1.0.0",
-  "description": "Real-time tracker for bus line C-10 (Barcelona - Mataró) focusing on Plaça d'Itàlia and Maresme stops beyond AMB boundary",
+  "name": "bad-amb-bus-tracker",
+  "version": "2.0.0",
+  "description": "Real-time tracker and GPS telemetry platform for line C-10 (Barcelona - Mataró) and all Mataró Bus urban lines (L1-L8) with dead-zone estimation",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test": "node test/api_test.js"
+    "test": "node test/e2e_multiline_test.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

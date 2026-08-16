@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>C-10 Temps Real | Seguiment de Bus Mataró - Barcelona</title>
-  <meta name="description" content="Temps d'arribada en temps real de la línia C-10 de Moventis / Casas per a la parada Plaça d'Itàlia (Mataró) i parades del Maresme més enllà de l'AMB.">
+  <title>Bad AMB Bus Tracker | Seguiment C-10 i Mataró Bus en Temps Real</title>
+  <meta name="description" content="Plataforma en temps real i telemetria GPS per a la línia C-10 (Barcelona - Mataró) i totes les línies de Mataró Bus (L1-L8) amb estimació de zones sense cobertura.">
   
   <!-- Favicon -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚌</text></svg>">
@@ -21,16 +21,16 @@
   <header class="app-header">
     <div class="header-container">
       <div class="logo-group">
-        <div class="line-badge" id="line-badge">C10</div>
+        <div class="line-badge" id="line-badge" style="background:#009485;">C10</div>
         <div class="app-title-group">
-          <h1>Bus C-10 Temps Real <span class="target-badge">Maresme Directe</span></h1>
-          <p class="app-subtitle">Barcelona ↔ Badalona ↔ Montgat ↔ El Masnou ↔ Premià ↔ Vilassar ↔ Mataró</p>
+          <h1>Bad AMB Bus Tracker <span class="target-badge" id="line-tag-badge">Temps Real</span></h1>
+          <p class="app-subtitle" id="app-subtitle">Barcelona ↔ Badalona ↔ Maresme ↔ Mataró Urbà (L1–L8)</p>
         </div>
       </div>
 
       <div class="header-actions">
         <!-- Active Buses Counter Chip -->
-        <div class="active-buses-chip" id="header-active-buses-chip" title="Nombre de busos C-10 circulant actualment en ruta">
+        <div class="active-buses-chip" id="header-active-buses-chip" title="Nombre de busos circulant actualment en aquesta línia">
           <span class="active-buses-icon">🚌</span>
           <span id="header-active-buses-text"><strong>0</strong> busos en ruta</span>
         </div>
@@ -62,16 +62,37 @@
   <!-- Main Content Container -->
   <main class="app-main">
 
+    <!-- Global Bus Line Selector -->
+    <section class="line-selector-section" aria-label="Selector de línia de transport">
+      <div class="line-selector-header">
+        <div class="line-selector-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/></svg>
+          <span>Selecciona Línia:</span>
+        </div>
+
+        <!-- Universal Stop Search Input -->
+        <div class="global-search-container">
+          <svg class="search-icon-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" id="global-search-input" class="global-search-input" placeholder="Cercador ràpid de parades (ex: Hospital, Rodalies, Itàlia, Premià)..." autocomplete="off">
+          <div class="search-results-dropdown" id="search-results-dropdown"></div>
+        </div>
+      </div>
+
+      <div class="line-pills-scroll" id="line-pills-container">
+        <!-- Populated dynamically via JS -->
+      </div>
+    </section>
+
     <!-- Direction Selector Bar -->
     <section class="direction-bar" aria-label="Selector de sentit del trajecte">
-      <div class="direction-toggle-group">
+      <div class="direction-toggle-group" id="direction-toggle-group">
         <button class="btn-direction active" id="dir-btn-1" data-direction="1">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m9 18 6-6-6-6"/></svg>
-          <span>Cap a Mataró (Pl. d'Itàlia / Hospital)</span>
+          <span id="dir-label-1">Cap a Mataró (Hospital / Pl. d'Itàlia)</span>
         </button>
         <button class="btn-direction" id="dir-btn-0" data-direction="0">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m15 18-6-6 6-6"/></svg>
-          <span>Cap a Barcelona (Metro la Pau)</span>
+          <span id="dir-label-0">Cap a Barcelona (Metro la Pau)</span>
         </button>
       </div>
 
@@ -89,7 +110,7 @@
         <div class="target-header">
           <div style="flex:1;">
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.4rem; flex-wrap:wrap; gap:0.4rem;">
-              <div class="target-badge">⭐ Parada Principal</div>
+              <div class="target-badge" id="target-header-badge">⭐ Parada Principal</div>
               <div class="target-select-wrapper">
                 <label for="target-stop-select" style="font-size:0.75rem; color:var(--text-muted); margin-right:0.3rem;">Canviar:</label>
                 <select id="target-stop-select" class="target-stop-select" aria-label="Selecciona la teva parada principal">
@@ -120,28 +141,15 @@
           </div>
         </div>
 
-        <!-- Schedule vs Real-Time Comparison Box -->
-        <div class="schedule-comparison-box" id="schedule-comparison-box">
-          <div class="sched-col">
-            <span class="sched-col-label">📅 Horari teòric</span>
-            <span class="sched-col-val" id="eta-sched-time">--:--</span>
+        <div class="target-meta">
+          <div>
+            <span>Línia: <strong id="next-bus-line-tag" style="color:var(--c10-primary);">C-10</strong></span>
           </div>
-          <div class="sched-col">
-            <span class="sched-col-label">🟢 Estimació GPS</span>
-            <span class="sched-col-val" id="eta-realtime-time">--:--</span>
-          </div>
-          <div class="sched-col">
-            <span class="sched-col-label">⏱️ Puntualitat</span>
-            <span class="sched-delay-badge scheduled" id="eta-delay-badge">Programat</span>
-          </div>
-        </div>
-
-        <div class="target-meta-footer">
           <div>
             <span>Destí: <strong id="next-bus-dest" style="color:#fff;">Hospital de Mataró</strong></span>
           </div>
           <div>
-            <span>Operador: <strong>Empresa Casas (Moventis)</strong></span>
+            <span>Operador: <strong id="next-bus-operator">Empresa Casas (Moventis)</strong></span>
           </div>
         </div>
       </div>
@@ -151,7 +159,7 @@
         <div class="card-title-group">
           <h3 class="card-title">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-            Properes sortides C-10
+            Properes sortides en aquesta parada
           </h3>
           <span class="dep-type-badge" id="dep-count-badge">Carregant...</span>
         </div>
@@ -173,22 +181,22 @@
     </section>
 
     <!-- Linear Corridor Tracker Section -->
-    <section class="corridor-section" aria-label="Seguiment del corredor N-II">
+    <section class="corridor-section" aria-label="Seguiment del recorregut">
       <div class="section-header">
         <div>
           <h3 class="card-title">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 0 1-2.827 0l-4.244-4.243a8 8 0 1 1 11.314 0z"/><path d="M15 11a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/></svg>
             <span id="corridor-title-text">Seguiment en ruta pel Corredor N-II (Barcelona → Mataró)</span>
           </h3>
-          <p style="font-size:0.78rem; color:var(--text-secondary); margin-top:2px;">
+          <p style="font-size:0.78rem; color:var(--text-secondary); margin-top:2px;" id="corridor-desc-text">
             Detecta la progressió del bus a través dels punts de control des de l'Àrea Metropolitana fins al Maresme
           </p>
         </div>
 
         <div class="corridor-zones" id="corridor-zones-container">
-          <span class="zone-tag amb" id="zone-pill-1">Àrea AMB (Fins a Montgat)</span>
+          <span class="zone-tag amb" id="zone-pill-1">Àrea AMB</span>
           <span style="color:var(--text-muted);" id="zone-arrow">➔</span>
-          <span class="zone-tag maresme" id="zone-pill-2">Zona Maresme (El Masnou - Mataró)</span>
+          <span class="zone-tag maresme" id="zone-pill-2">Zona Maresme</span>
         </div>
       </div>
 
@@ -202,7 +210,7 @@
       <div class="telemetry-card" id="telemetry-card">
         <div class="telemetry-header">
           <div class="telemetry-title-group">
-            <span class="telemetry-live-radar"></span>
+            <span class="telemetry-live-radar" id="telemetry-radar-dot"></span>
             <strong>🛰️ Telemetria GPS i Posició del Bus en Temps Real</strong>
           </div>
           <span class="telemetry-status-badge" id="telemetry-status-badge">🟢 Senyal GPS Actiu</span>
@@ -254,7 +262,7 @@
           <div>
             <h3 class="card-title" style="font-size:0.95rem;">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
-              Traçat de la línia C-10 i parades
+              <span id="map-line-title">Traçat i parades en temps real</span>
             </h3>
             <span style="font-size:0.75rem; color:var(--text-secondary);">Fes clic sobre qualsevol parada per veure el temps</span>
           </div>
@@ -285,10 +293,10 @@
       <div class="stops-browser-card">
         <h3 class="card-title" style="font-size:0.95rem; margin-bottom:0.6rem;">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-          Totes les parades de la línia (<span id="stops-total-count">42</span>)
+          Parades del trajecte (<span id="stops-total-count">--</span>)
         </h3>
         
-        <input type="text" id="stop-search-input" class="stops-search-input" placeholder="Cercar parada (ex: Itàlia, Premià, Masnou, Badalona)...">
+        <input type="text" id="stop-search-input" class="stops-search-input" placeholder="Filtrar parades de la línia...">
 
         <div class="stops-list-scroll" id="stops-list-scroll">
           <!-- Populated by JavaScript -->
@@ -332,10 +340,10 @@
   <footer class="app-footer">
     <div class="footer-content">
       <div>
-        <span>🚌 C-10 Bus Tracker • Dades oficials en temps real de la Generalitat de Catalunya (Mou-te / ATM) i AMB Mobilitat</span>
+        <span>🚌 Bad AMB Bus Tracker • Dades oficials en temps real: Generalitat de Catalunya (Mou-te / ATM), AMB Mobilitat i Mataró Bus (Avanza SIRI)</span>
       </div>
       <div class="footer-links">
-        <a href="https://maps.app.goo.gl/ScnubXtht3oSKDCk6" target="_blank" rel="noopener noreferrer">Ubicació Pl. d'Itàlia</a>
+        <a href="https://mataro.avanzagrupo.com" target="_blank" rel="noopener noreferrer">Mataró Bus</a>
         <a href="https://mou-te.gencat.cat" target="_blank" rel="noopener noreferrer">Mou-te Gencat</a>
       </div>
     </div>
