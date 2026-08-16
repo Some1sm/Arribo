@@ -576,7 +576,7 @@ class C10App {
       const step = document.createElement('div');
       step.className = 'corridor-step';
 
-      const isTarget = cp.id === currentTargetMouteId || cp.name.includes('Target') || cp.name.includes("Itàlia");
+      const isTarget = Boolean(currentTargetMouteId && cp.id === currentTargetMouteId);
       const isPassed = cp.nextBus?.isPassed || false;
       const hasBus = activeBuses.some(b => b.toSeq >= cp.seq - 1 && b.fromSeq <= cp.seq);
       const etaTime = cp.nextBus ? cp.nextBus.departureTime : 'Sense dades';
@@ -830,8 +830,9 @@ class C10App {
         this.hasAlertedForTrip.add(key);
         this.playChime();
         if (Notification && Notification.permission === 'granted') {
+          const stopName = this.targetEtaData?.targetStop?.name || 'la parada seleccionada';
           new Notification('🚌 Bus C-10 Arribant!', {
-            body: `El bus C-10 arribarà a Plaça d'Itàlia en ${nextBus.formattedStatus}! (${nextBus.departureTime})`
+            body: `El bus C-10 arribarà a ${stopName} en ${nextBus.formattedStatus}! (${nextBus.departureTime})`
           });
         }
       }

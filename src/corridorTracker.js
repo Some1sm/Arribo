@@ -69,11 +69,11 @@ class CorridorTracker {
       { id: '10037286', name: 'Vilassar de Mar - Estació', zone: 'Maresme', seq: 26, gtfsStopId: 'GEN_PF08219011' },
       { id: '10037205', name: 'Mataró - Porta Laietana', zone: 'Maresme', seq: 34, gtfsStopId: 'GEN_PF08121080' },
       { id: '10026784', name: 'Mataró - Pl. Granollers', zone: 'Maresme', seq: 37, gtfsStopId: 'GEN_PF08121077' },
-      { id: '10037202', name: "Mataró - Pl. d'Itàlia (Target)", zone: 'Maresme', seq: 39, gtfsStopId: 'GEN_PF08121075' }
+      { id: '10037202', name: "Mataró - Pl. d'Itàlia", zone: 'Maresme', seq: 39, gtfsStopId: 'GEN_PF08121075' }
     ];
 
     this.checkpointsDir0 = [
-      { id: '10037202', name: "Mataró - Pl. d'Itàlia (Target)", zone: 'Maresme', seq: 3, gtfsStopId: 'GEN_PF08121041' },
+      { id: '10037202', name: "Mataró - Pl. d'Itàlia", zone: 'Maresme', seq: 3, gtfsStopId: 'GEN_PF08121041' },
       { id: '10026784', name: 'Mataró - Pl. Granollers', zone: 'Maresme', seq: 5, gtfsStopId: 'GEN_PF08121044' },
       { id: '10037205', name: 'Mataró - Porta Laietana', zone: 'Maresme', seq: 8, gtfsStopId: 'GEN_PF08121024' },
       { id: '10037286', name: 'Vilassar de Mar - Estació', zone: 'Maresme', seq: 21, gtfsStopId: 'GEN_PF08172018' },
