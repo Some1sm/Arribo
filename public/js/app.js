@@ -1142,12 +1142,16 @@ class TransitApp {
             ? (d.delayMins > 0 ? `+${d.delayMins} min retard` : `${d.delayMins} min avançat`)
             : 'Puntual';
 
+          const pillLabel = d.isEstimated 
+            ? `⚡ Estimat ${d.vehicleId ? `#${d.vehicleId}` : ''}`
+            : (d.delayBadgeText || 'Puntual');
+
           return `
             <div class="departure-item ${idx === 0 ? 'highlight-next' : ''}">
               <div class="dep-time-group">
                 <div style="display:flex; align-items:baseline; gap:0.4rem;">
                   <span class="dep-clock">${estTime}</span>
-                  <span style="font-size:0.75rem; color:var(--text-secondary); font-weight:600;">(Estimat)</span>
+                  <span style="font-size:0.75rem; color:var(--text-secondary); font-weight:600;">${d.isEstimated ? '(Estimat)' : '(Temps Real)'}</span>
                 </div>
                 
                 <div class="dep-dest">
@@ -1165,7 +1169,7 @@ class TransitApp {
 
               <div class="dep-status">
                 <span class="dep-mins">${d.minutesAway === 0 ? 'Imminent' : `${d.minutesAway} min`}</span>
-                <span class="dep-delay-pill ${d.delayStatus || 'on-time'}">${d.delayBadgeText || 'Puntual'}</span>
+                <span class="dep-delay-pill ${d.delayStatus || 'on-time'}" title="${d.delayBadgeText || pillLabel}">${pillLabel}</span>
               </div>
             </div>
           `;
