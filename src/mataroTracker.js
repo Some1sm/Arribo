@@ -645,16 +645,44 @@ class MataroTracker {
       .filter(d => d.minutesAway !== undefined && d.minutesAway <= 120)
       .sort((a, b) => a.minutesAway - b.minutesAway);
 
-    // 4. If zero live/estimated arrivals (e.g. night time / off-peak), inject first morning departure
+    // 4. If zero live/estimated arrivals (e.g. night time / off-peak), inject first morning departure with exact passing time
     if (finalDepartures.length === 0) {
       const routesForStop = this.findRoutesServingStop(sId, lineId);
       const tomorrow = new Date(Date.now() + 24 * 3600 * 1000);
       const networkTomorrow = timeUtils.getNetworkTime(this.agencyTimezone, tomorrow);
 
       routesForStop.forEach(r => {
-        const startTimeStr = r.horario?.inicio || '07:30';
-        const [h, m] = startTimeStr.split(':').map(Number);
-        const depUtcDate = timeUtils.localTimeToUtcDate(networkTomorrow.year, networkTomorrow.month, networkTomorrow.day, h, m, 0, this.agencyTimezone);
+        const startSec = timeUtils.timeToSec(r.horario?.inicio || '07:30');
+        const routeStops = r.stops || [];
+        const stopIdx = routeStops.findIndex(s => String(s.id) === sId);
+
+        let travelSec = 0;
+        if (stopIdx > 0) {
+          let cumDist = 0;
+          for (let i = 1; i <= stopIdx; i++) {
+            const p0 = routeStops[i - 1];
+            const p1 = routeStops[i];
+            if (p0 && p1) {
+              const lat0 = p0.latitude || p0.lat || 0;
+              const lon0 = p0.longitude || p0.lon || 0;
+              const lat1 = p1.latitude || p1.lat || 0;
+              const lon1 = p1.longitude || p1.lon || 0;
+              if (lat0 && lon0 && lat1 && lon1) {
+                cumDist += geoUtils.calculateDistanceMeters(lat0, lon0, lat1, lon1);
+              } else {
+                cumDist += 300;
+              }
+            }
+          }
+          travelSec = Math.round((cumDist / 4.8) + (stopIdx * 25));
+        }
+
+        const passingSec = startSec + travelSec;
+        const passHour = Math.floor(passingSec / 3600) % 24;
+        const passMin = Math.floor((passingSec % 3600) / 60);
+        const passingTimeStr = `${String(passHour).padStart(2, '0')}:${String(passMin).padStart(2, '0')}`;
+
+        const depUtcDate = timeUtils.localTimeToUtcDate(networkTomorrow.year, networkTomorrow.month, networkTomorrow.day, passHour, passMin, 0, this.agencyTimezone);
         const diffMs = depUtcDate.getTime() - Date.now();
         const diffMin = Math.max(1, Math.round(diffMs / 60000));
 
@@ -662,7 +690,7 @@ class MataroTracker {
           lineId: String(r.id_linea || lineId || '1'),
           lineName: r.lineName || `Línia ${r.id_linea || lineId}`,
           destination: r.name,
-          departureTime: startTimeStr,
+          departureTime: passingTimeStr,
           departureDate: depUtcDate.toISOString(),
           expectedIso: depUtcDate.toISOString(),
           aimedIso: depUtcDate.toISOString(),
@@ -673,8 +701,8 @@ class MataroTracker {
           isNextService: true,
           delayStatus: 'scheduled',
           delayBadgeText: '🌅 1r Servei del matí',
-          comparisonText: `📅 Primer autobús de demà (${startTimeStr})`,
-          formattedStatus: `${startTimeStr}`
+          comparisonText: `📅 Pas teòric previst demà a les ${passingTimeStr}`,
+          formattedStatus: `${passingTimeStr}`
         });
       });
     }
@@ -720,7 +748,7 @@ class MataroTracker {
     const deps = stopDepartures.departures || [];
     const nextBus = deps.length > 0 ? deps[0] : null;
 
-    const firstTimeTomorrow = selectedRoute.horario?.inicio || '07:30';
+    const firstTimeTomorrow = nextBus?.departureTime || selectedRoute.horario?.inicio || '07:30';
 
     return {
       line: {
