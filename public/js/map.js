@@ -174,8 +174,12 @@ class C10Map {
       if (this.busMarkersMap.has(bus.tripId)) {
         const obj = this.busMarkersMap.get(bus.tripId);
         obj.busData = bus;
-        obj.marker.setLatLng([bus.lat, bus.lon]);
         obj.marker.setPopupContent(popupHtml);
+
+        // If in terminal layover, snap immediately to terminal pin
+        if (bus.isTerminalLayover) {
+          obj.marker.setLatLng([bus.lat, bus.lon]);
+        }
 
         const el = obj.marker.getElement();
         if (el) {
@@ -257,7 +261,7 @@ class C10Map {
     });
   }
 
-  // Smooth client-side per-second interpolation along the active segment
+  // Smooth continuous client-side gliding along the active segment
   stepBusAnimation(nowSec) {
     for (const [tId, obj] of this.busMarkersMap.entries()) {
       const bus = obj.busData;
@@ -271,10 +275,11 @@ class C10Map {
         lat = bus.lat;
         lon = bus.lon;
       }
-      // 2. Smoothly glide along the server-calculated active segment
+      // 2. Smoothly glide along the active road segment without jumping back
       else if (bus.fromCoords && bus.toCoords && bus.segStartSec && bus.segEndSec) {
         const duration = Math.max(1, bus.segEndSec - bus.segStartSec);
-        const progress = Math.max(0, Math.min(1, (nowSec - bus.segStartSec) / duration));
+        const rawProgress = (nowSec - bus.segStartSec) / duration;
+        const progress = Math.max(0, Math.min(0.98, rawProgress));
         lat = bus.fromCoords.lat + progress * (bus.toCoords.lat - bus.fromCoords.lat);
         lon = bus.fromCoords.lon + progress * (bus.toCoords.lon - bus.fromCoords.lon);
       }
@@ -285,7 +290,15 @@ class C10Map {
       }
 
       if (lat !== null && lon !== null) {
-        obj.marker.setLatLng([lat, lon]);
+        const currentPos = obj.marker.getLatLng();
+        if (currentPos && (Math.abs(currentPos.lat - lat) > 0.000001 || Math.abs(currentPos.lng - lon) > 0.000001)) {
+          // Smooth 50% LERP step to eliminate rubber-banding and micro-jitters
+          const smoothLat = currentPos.lat + (lat - currentPos.lat) * 0.5;
+          const smoothLon = currentPos.lng + (lon - currentPos.lng) * 0.5;
+          obj.marker.setLatLng([smoothLat, smoothLon]);
+        } else if (!currentPos) {
+          obj.marker.setLatLng([lat, lon]);
+        }
       }
     }
   }
