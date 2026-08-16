@@ -674,17 +674,12 @@ body {
 .departures-list {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
-  flex: 1;
-  max-height: 290px;
-.departures-list {
-  display: flex;
-  flex-direction: column;
   gap: 0.65rem;
   overflow-y: auto;
   padding-right: 0.25rem;
   width: 100%;
   box-sizing: border-box;
+  max-height: 320px;
 }
 
 .departure-item {
