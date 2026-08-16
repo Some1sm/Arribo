@@ -167,7 +167,7 @@ app.get('/api/mataro/lines', (req, res) => {
 // Get Line details (stops, polyline geometry, and active buses with dead-zone estimation)
 app.get('/api/mataro/line/:lineId', async (req, res) => {
   const { lineId } = req.params;
-  const direction = req.query.direction === '1' ? '1' : '0';
+  const direction = req.query.direction === 'both' ? 'both' : (req.query.direction === '1' ? '1' : '0');
   try {
     const data = await mataroTracker.getLineDetails(lineId, direction);
     res.json({ success: true, data });
