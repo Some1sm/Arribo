@@ -30,11 +30,11 @@
 
       <!-- Main Navigation Tabs (Interurbà vs Urbà Mataró) -->
       <nav class="main-page-nav" aria-label="Navegació principal entre serveis">
-        <button class="nav-tab-btn active" id="tab-c10" data-page="c10">
+        <button type="button" class="nav-tab-btn active" id="tab-c10" data-page="c10">
           <span class="nav-tab-icon">🚌</span>
           <span class="nav-tab-label">Interurbà (C-10)</span>
         </button>
-        <button class="nav-tab-btn" id="tab-mataro" data-page="mataro">
+        <button type="button" class="nav-tab-btn" id="tab-mataro" data-page="mataro">
           <span class="nav-tab-icon">🏙️</span>
           <span class="nav-tab-label">Urbà Mataró (L1–L8)</span>
         </button>
@@ -59,13 +59,13 @@
           <span id="live-text">En directe</span>
         </div>
 
-        <button class="btn-icon" id="btn-refresh" title="Actualitzar ara" aria-label="Actualitzar dades">
+        <button type="button" class="btn-icon" id="btn-refresh" title="Actualitzar ara" aria-label="Actualitzar dades">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
           </svg>
         </button>
 
-        <button class="btn-icon" id="btn-sound" title="Activar avis sonor d'arribada" aria-label="Alarma sonora">
+        <button type="button" class="btn-icon" id="btn-sound" title="Activar avis sonor d'arribada" aria-label="Alarma sonora">
           <svg id="sound-icon-off" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
             <line x1="23" y1="9" x2="17" y2="15"></line>
@@ -91,11 +91,11 @@
       <!-- Direction Selector Bar -->
       <section class="direction-bar" aria-label="Selector de sentit C-10">
         <div class="direction-toggle-group" id="c10-direction-toggle-group">
-          <button class="btn-direction active" id="c10-dir-btn-1" data-direction="1">
+          <button type="button" class="btn-direction active" id="c10-dir-btn-1" data-direction="1">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m9 18 6-6-6-6"/></svg>
             <span>Cap a Mataró (Hospital / Pl. d'Itàlia)</span>
           </button>
-          <button class="btn-direction" id="c10-dir-btn-0" data-direction="0">
+          <button type="button" class="btn-direction" id="c10-dir-btn-0" data-direction="0">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m15 18-6-6 6-6"/></svg>
             <span>Cap a Barcelona (Metro la Pau)</span>
           </button>
@@ -408,11 +408,11 @@
           <!-- Map Resize & View Controls -->
           <div class="map-controls-group" style="display:flex; align-items:center; gap:0.4rem;">
             <span class="map-bus-counter-tag" id="map-bus-counter-tag">🚌 0 actius</span>
-            <button class="btn-map-control" id="btn-map-expand-height" title="Augmentar / Reduir alçada del mapa">
+            <button type="button" class="btn-map-control" id="btn-map-expand-height" title="Augmentar / Reduir alçada del mapa">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="8 3 12 7 16 3"/><polyline points="8 21 12 17 16 21"/><line x1="12" y1="7" x2="12" y2="17"/></svg>
               <span id="map-height-label">Gran</span>
             </button>
-            <button class="btn-map-control" id="btn-map-expand-width" title="Ampliar mapa a tota l'amplada">
+            <button type="button" class="btn-map-control" id="btn-map-expand-width" title="Ampliar mapa a tota l'amplada">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
               <span>Ample</span>
             </button>
@@ -446,7 +446,7 @@
   <!-- Stop Departure Details Modal -->
   <div class="stop-modal-backdrop" id="stop-modal-backdrop">
     <div class="stop-modal">
-      <button class="modal-close-btn" id="modal-close-btn" aria-label="Tancar finestra">&times;</button>
+      <button type="button" class="modal-close-btn" id="modal-close-btn" aria-label="Tancar finestra">&times;</button>
       <div class="target-badge" id="modal-stop-badge">Detalls de parada</div>
       <h3 class="target-name" id="modal-stop-title" style="font-size:1.3rem; margin-top:0.3rem;">Nom de la parada</h3>
       <p class="target-subname" id="modal-stop-subtitle" style="margin-bottom:1.25rem;">Codi parada: --</p>
@@ -459,7 +459,7 @@
       </div>
 
       <div class="modal-actions-footer" style="display:flex; align-items:center; justify-content:space-between; gap:0.5rem; margin-top:1rem; padding-top:0.85rem; border-top:1px solid var(--border-subtle); flex-wrap:wrap;">
-        <button class="btn-set-favorite-target" id="modal-set-target-btn">
+        <button type="button" class="btn-set-favorite-target" id="modal-set-target-btn">
           ⭐ Fixar com a Parada Principal
         </button>
         <a id="modal-maps-link" href="#" target="_blank" rel="noopener noreferrer" class="maps-link" style="font-size:0.75rem;">

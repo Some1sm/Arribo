@@ -30,28 +30,32 @@ class TransitApp {
   }
 
   async init() {
-    console.log('🚀 Initializing Bad AMB Bus Tracker with dedicated Interurbà & Urbà Mataró pages...');
+    console.log('🚀 Initializing Bad AMB Bus Tracker Mobile-First Engine...');
 
-    // 1. Initialize Map
-    this.mapController = new C10Map('map-container');
+    try {
+      // 1. Initialize Map
+      this.mapController = new C10Map('map-container');
 
-    // 2. Determine initial page from URL hash or localStorage
-    this.parseUrlHash();
+      // 2. Determine initial page from URL hash
+      this.parseUrlHash();
 
-    // 3. Setup DOM Listeners & Controls
-    this.setupEventListeners();
-    this.setupMapResizeControls();
-    this.setupAudio();
+      // 3. Setup DOM Listeners & Controls
+      this.setupEventListeners();
+      this.setupMapResizeControls();
+      this.setupAudio();
 
-    // 4. Load Available Lines & Render Navigation
-    await this.fetchLines();
+      // 4. Load Available Lines & Render Navigation
+      await this.fetchLines();
 
-    // 5. Initial Data Fetch
-    await this.refreshAllData(true);
+      // 5. Initial Data Fetch
+      await this.refreshAllData(true);
 
-    // 6. Start Polling & Animation Glider Loop
-    this.startAutoRefresh();
-    this.startAnimationLoop();
+      // 6. Start Polling & Animation Glider Loop
+      this.startAutoRefresh();
+      this.startAnimationLoop();
+    } catch (err) {
+      console.error('Fatal initialization error:', err);
+    }
   }
 
   parseUrlHash() {
@@ -72,25 +76,28 @@ class TransitApp {
   // ==========================================
 
   switchPage(pageId, mataroLineId = null) {
-    if (this.currentPage === pageId && !mataroLineId) return;
-
     this.currentPage = pageId;
     if (mataroLineId) {
       this.activeMataroLineId = String(mataroLineId);
     }
 
-    // Update URL hash without reload
+    // Update URL hash without page reload
     const newHash = pageId === 'mataro' ? `#mataro-l${this.activeMataroLineId}` : '#c10';
-    window.history.replaceState(null, '', newHash);
+    if (window.location.hash !== newHash) {
+      window.history.replaceState(null, '', newHash);
+    }
 
     // Update Tab Buttons
     document.querySelectorAll('.nav-tab-btn').forEach(btn => {
-      btn.classList.toggle('active', btn.getAttribute('data-page') === pageId);
+      const isTarget = btn.getAttribute('data-page') === pageId;
+      btn.classList.toggle('active', isTarget);
     });
 
     // Toggle Page Views
-    document.getElementById('view-c10')?.classList.toggle('active', pageId === 'c10');
-    document.getElementById('view-mataro')?.classList.toggle('active', pageId === 'mataro');
+    const viewC10 = document.getElementById('view-c10');
+    const viewMataro = document.getElementById('view-mataro');
+    if (viewC10) viewC10.classList.toggle('active', pageId === 'c10');
+    if (viewMataro) viewMataro.classList.toggle('active', pageId === 'mataro');
 
     // Update Header Brand
     this.updateHeaderBrand();
@@ -121,19 +128,12 @@ class TransitApp {
     container.innerHTML = mataroLines.map(l => {
       const isActive = String(l.id) === String(this.activeMataroLineId);
       return `
-        <button class="line-pill-btn ${isActive ? 'active' : ''}" data-mataro-line="${l.id}" style="${isActive ? `border-color:${l.color}; background:rgba(${this.hexToRgb(l.color)}, 0.18);` : ''}">
+        <button type="button" class="line-pill-btn ${isActive ? 'active' : ''}" data-mataro-line="${l.id}" style="${isActive ? `border-color:${l.color}; background:rgba(${this.hexToRgb(l.color)}, 0.18);` : ''}">
           <span class="line-pill-code" style="background:${l.color};">${l.code}</span>
           <span>${l.name}</span>
         </button>
       `;
     }).join('');
-
-    container.querySelectorAll('.line-pill-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const lineId = btn.getAttribute('data-mataro-line');
-        this.switchMataroLine(lineId);
-      });
-    });
   }
 
   switchMataroLine(lineId) {
@@ -141,6 +141,7 @@ class TransitApp {
     this.mataroDirection = '0';
     window.history.replaceState(null, '', `#mataro-l${lineId}`);
     this.renderMataroLinePills();
+    this.updateHeaderBrand();
     this.refreshAllData(true);
   }
 
@@ -218,14 +219,11 @@ class TransitApp {
       this.checkArrivalAlerts(corridorRes.data, 'c10');
     }
 
-    // Direction buttons
-    this.updateDirectionPills('c10-direction-toggle-group', [
-      { id: '1', name: "Cap a Mataró (Hospital / Pl. d'Itàlia)" },
-      { id: '0', name: 'Cap a Barcelona (Metro la Pau)' }
-    ], this.c10Direction, (dir) => {
-      this.c10Direction = dir;
-      this.refreshAllData(true);
-    });
+    // Update active class on C-10 direction buttons without rebuilding DOM
+    const dirBtn1 = document.getElementById('c10-dir-btn-1');
+    const dirBtn0 = document.getElementById('c10-dir-btn-0');
+    if (dirBtn1) dirBtn1.classList.toggle('active', this.c10Direction === '1');
+    if (dirBtn0) dirBtn0.classList.toggle('active', this.c10Direction === '0');
 
     // Map Render
     const activeTargetId = targetStopId || (etaRes.data?.targetStop?.mouteStopId || '10037202');
@@ -250,13 +248,10 @@ class TransitApp {
       this.allStops = lData.stops || [];
       this.activeBuses = lData.activeBuses || [];
 
-      // Direction buttons
+      // Direction buttons for Mataró Line
       const lineObj = this.availableLines.find(l => String(l.id) === String(lId));
       if (lineObj && lineObj.directions) {
-        this.updateDirectionPills('mataro-direction-toggle-group', lineObj.directions.map(d => ({ id: d.dirId, name: d.name })), this.mataroDirection, (dir) => {
-          this.mataroDirection = dir;
-          this.refreshAllData(true);
-        });
+        this.renderDirectionButtons('mataro-direction-toggle-group', lineObj.directions.map(d => ({ id: d.dirId, name: d.name })), this.mataroDirection);
       }
 
       // Populate Target Select & Browser
@@ -277,6 +272,21 @@ class TransitApp {
     if (etaRes.success && etaRes.data) {
       this.renderMataroTargetCard(etaRes.data);
     }
+  }
+
+  renderDirectionButtons(containerId, directions, currentDir) {
+    const container = document.getElementById(containerId);
+    if (!container || !directions || directions.length === 0) return;
+
+    container.innerHTML = directions.map((d, i) => {
+      const isActive = String(d.id) === String(currentDir);
+      return `
+        <button type="button" class="btn-direction ${isActive ? 'active' : ''}" data-dir-id="${d.id}">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="${i === 0 ? 'm9 18 6-6-6-6' : 'm15 18-6-6 6-6'}"/></svg>
+          <span>${d.name}</span>
+        </button>
+      `;
+    }).join('');
   }
 
   // ==========================================
@@ -376,7 +386,7 @@ class TransitApp {
       }
 
       return `
-        <div class="corridor-step" onclick="window.c10App.setTargetStop('${cp.id}')" style="cursor:pointer;" title="Fixar ${cp.name} com a parada principal">
+        <div class="corridor-step" data-target-id="${cp.id}" style="cursor:pointer;" title="Fixar ${cp.name} com a parada principal">
           <div class="${nodeClass}">
             <span>${iconContent}</span>
           </div>
@@ -503,7 +513,7 @@ class TransitApp {
       }
 
       return `
-        <div class="corridor-step" onclick="window.c10App.setTargetStop('${s.id}')" style="cursor:pointer;" title="Fixar ${s.name} com a parada principal">
+        <div class="corridor-step" data-target-id="${s.id}" style="cursor:pointer;" title="Fixar ${s.name} com a parada principal">
           <div class="${nodeClass}">
             <span>${iconContent}</span>
           </div>
@@ -580,28 +590,6 @@ class TransitApp {
     `).join('');
   }
 
-  updateDirectionPills(containerId, directions, currentDir, onSelect) {
-    const container = document.getElementById(containerId);
-    if (!container || !directions || directions.length === 0) return;
-
-    container.innerHTML = directions.map((d, i) => {
-      const isActive = String(d.id) === String(currentDir);
-      return `
-        <button class="btn-direction ${isActive ? 'active' : ''}" data-dir-id="${d.id}">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="${i === 0 ? 'm9 18 6-6-6-6' : 'm15 18-6-6 6-6'}"/></svg>
-          <span>${d.name}</span>
-        </button>
-      `;
-    }).join('');
-
-    container.querySelectorAll('.btn-direction').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const dId = btn.getAttribute('data-dir-id');
-        onSelect(dId);
-      });
-    });
-  }
-
   populateSelect(selectId, stops, selectedId) {
     const select = document.getElementById(selectId);
     if (!select) return;
@@ -626,7 +614,7 @@ class TransitApp {
       const id = String(s.mouteStopId || s.id || s.code);
       const isTarget = id === String(currentTargetId);
       return `
-        <div class="stop-row-item ${isTarget ? 'target-stop' : ''}" onclick="window.c10App.inspectStop('${id}', '${s.name.replace(/'/g, "\\'")}')">
+        <div class="stop-row-item ${isTarget ? 'target-stop' : ''}" data-stop-id="${id}" data-stop-name="${s.name.replace(/"/g, '&quot;')}">
           <div class="stop-row-left">
             <span class="stop-seq-badge">#${s.seq || i + 1}</span>
             <div>
@@ -634,7 +622,7 @@ class TransitApp {
               <div class="stop-row-zone">${s.zone || 'Parada'} ${s.code ? `• Codi: ${s.code}` : ''}</div>
             </div>
           </div>
-          <button class="btn-icon" style="width:28px; height:28px;" title="Veure arribades" onclick="event.stopPropagation(); window.c10App.inspectStop('${id}', '${s.name.replace(/'/g, "\\'")}')">
+          <button type="button" class="btn-icon btn-inspect-stop" style="width:34px; height:34px;" title="Veure arribades" data-stop-id="${id}" data-stop-name="${s.name.replace(/"/g, '&quot;')}">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
           </button>
         </div>
@@ -775,7 +763,8 @@ class TransitApp {
     dropdown.classList.add('active');
 
     dropdown.querySelectorAll('.search-result-item').forEach(item => {
-      item.addEventListener('click', async () => {
+      item.addEventListener('click', async (e) => {
+        e.preventDefault();
         const lineId = item.getAttribute('data-line-id');
         const stopId = item.getAttribute('data-stop-id');
         const stopName = item.getAttribute('data-name');
@@ -803,31 +792,112 @@ class TransitApp {
   }
 
   // ==========================================
-  // 8. EVENT LISTENERS & AUDIO
+  // 8. ROBUST EVENT LISTENERS & EVENT DELEGATION
   // ==========================================
 
   setupEventListeners() {
-    // Top Navigation Tabs
-    document.getElementById('tab-c10')?.addEventListener('click', () => this.switchPage('c10'));
-    document.getElementById('tab-mataro')?.addEventListener('click', () => this.switchPage('mataro'));
+    // Top Navigation Tabs (Support Click & Fast Touch)
+    const tabC10 = document.getElementById('tab-c10');
+    const tabMataro = document.getElementById('tab-mataro');
+
+    if (tabC10) {
+      tabC10.addEventListener('click', (e) => { e.preventDefault(); this.switchPage('c10'); });
+    }
+    if (tabMataro) {
+      tabMataro.addEventListener('click', (e) => { e.preventDefault(); this.switchPage('mataro'); });
+    }
+
+    // C-10 Direction buttons delegation
+    const c10DirGroup = document.getElementById('c10-direction-toggle-group');
+    if (c10DirGroup) {
+      c10DirGroup.addEventListener('click', (e) => {
+        const btn = e.target.closest('.btn-direction');
+        if (!btn) return;
+        e.preventDefault();
+        const dirId = btn.getAttribute('data-direction');
+        if (dirId && dirId !== this.c10Direction) {
+          this.c10Direction = dirId;
+          this.refreshAllData(true);
+        }
+      });
+    }
+
+    // Mataró Direction buttons delegation
+    const mataroDirGroup = document.getElementById('mataro-direction-toggle-group');
+    if (mataroDirGroup) {
+      mataroDirGroup.addEventListener('click', (e) => {
+        const btn = e.target.closest('.btn-direction');
+        if (!btn) return;
+        e.preventDefault();
+        const dirId = btn.getAttribute('data-dir-id');
+        if (dirId && dirId !== this.mataroDirection) {
+          this.mataroDirection = dirId;
+          this.refreshAllData(true);
+        }
+      });
+    }
+
+    // Mataró Line Selector Pills delegation
+    const mataroPills = document.getElementById('mataro-line-pills-container');
+    if (mataroPills) {
+      mataroPills.addEventListener('click', (e) => {
+        const btn = e.target.closest('.line-pill-btn');
+        if (!btn) return;
+        e.preventDefault();
+        const lineId = btn.getAttribute('data-mataro-line');
+        if (lineId) {
+          this.switchMataroLine(lineId);
+        }
+      });
+    }
+
+    // Corridor Steps Timeline delegation (Interurbà & Mataró)
+    document.addEventListener('click', (e) => {
+      const step = e.target.closest('.corridor-step');
+      if (step) {
+        e.preventDefault();
+        const targetId = step.getAttribute('data-target-id');
+        if (targetId) {
+          this.setTargetStop(targetId);
+        }
+      }
+    });
+
+    // Stops Browser List delegation
+    const stopsList = document.getElementById('stops-list-scroll');
+    if (stopsList) {
+      stopsList.addEventListener('click', (e) => {
+        const row = e.target.closest('.stop-row-item');
+        if (!row) return;
+        e.preventDefault();
+        const stopId = row.getAttribute('data-stop-id');
+        const stopName = row.getAttribute('data-stop-name');
+        if (stopId) {
+          this.inspectStop(stopId, stopName);
+        }
+      });
+    }
 
     // Footer Links
     document.getElementById('footer-link-c10')?.addEventListener('click', (e) => { e.preventDefault(); this.switchPage('c10'); });
     document.getElementById('footer-link-mataro')?.addEventListener('click', (e) => { e.preventDefault(); this.switchPage('mataro'); });
 
     // Refresh Button
-    document.getElementById('btn-refresh')?.addEventListener('click', () => this.refreshAllData(false));
+    document.getElementById('btn-refresh')?.addEventListener('click', (e) => { e.preventDefault(); this.refreshAllData(false); });
 
     // Sound Alarm Button
-    document.getElementById('btn-sound')?.addEventListener('click', () => this.toggleSound());
+    document.getElementById('btn-sound')?.addEventListener('click', (e) => { e.preventDefault(); this.toggleSound(); });
 
-    // Modal Close
-    document.getElementById('modal-close-btn')?.addEventListener('click', () => {
+    // Modal Close Button & Backdrop
+    document.getElementById('modal-close-btn')?.addEventListener('click', (e) => {
+      e.preventDefault();
       document.getElementById('stop-modal-backdrop')?.classList.remove('active');
     });
 
     document.getElementById('stop-modal-backdrop')?.addEventListener('click', (e) => {
-      if (e.target.id === 'stop-modal-backdrop') e.target.classList.remove('active');
+      if (e.target.id === 'stop-modal-backdrop') {
+        e.target.classList.remove('active');
+      }
     });
 
     // Target Stop Dropdowns
@@ -866,7 +936,8 @@ class TransitApp {
     const resizeBar = document.getElementById('map-resize-bar');
 
     let isTall = false;
-    expandHeightBtn?.addEventListener('click', () => {
+    expandHeightBtn?.addEventListener('click', (e) => {
+      e.preventDefault();
       isTall = !isTall;
       mapContainer.style.height = isTall ? '580px' : '380px';
       if (heightLabel) heightLabel.textContent = isTall ? 'Normal' : 'Gran';
@@ -874,36 +945,40 @@ class TransitApp {
     });
 
     let isFullWidth = false;
-    expandWidthBtn?.addEventListener('click', () => {
+    expandWidthBtn?.addEventListener('click', (e) => {
+      e.preventDefault();
       isFullWidth = !isFullWidth;
       explorerGrid?.classList.toggle('expanded-width', isFullWidth);
       expandWidthBtn.classList.toggle('active', isFullWidth);
       this.mapController.invalidateSize();
     });
 
+    // Safe, non-intrusive drag resize
     if (resizeBar && mapContainer) {
       let isDragging = false;
       let startY = 0;
       let startHeight = 0;
 
-      const onMouseDown = (e) => {
+      const onStart = (e) => {
         isDragging = true;
-        startY = e.clientY || e.touches[0].clientY;
+        startY = (e.touches && e.touches.length > 0) ? e.touches[0].clientY : e.clientY;
         startHeight = mapContainer.offsetHeight;
         resizeBar.classList.add('dragging');
         document.body.style.cursor = 'ns-resize';
       };
 
-      const onMouseMove = (e) => {
+      const onMove = (e) => {
         if (!isDragging) return;
-        const currentY = e.clientY || (e.touches && e.touches[0].clientY);
-        const delta = currentY - startY;
+        const clientY = (e.touches && e.touches.length > 0) ? e.touches[0].clientY : e.clientY;
+        if (typeof clientY !== 'number') return;
+        
+        const delta = clientY - startY;
         const newHeight = Math.max(260, Math.min(800, startHeight + delta));
         mapContainer.style.height = `${newHeight}px`;
         this.mapController.invalidateSize();
       };
 
-      const onMouseUp = () => {
+      const onEnd = () => {
         if (isDragging) {
           isDragging = false;
           resizeBar.classList.remove('dragging');
@@ -911,13 +986,15 @@ class TransitApp {
         }
       };
 
-      resizeBar.addEventListener('mousedown', onMouseDown);
-      window.addEventListener('mousemove', onMouseMove);
-      window.addEventListener('mouseup', onMouseUp);
+      resizeBar.addEventListener('mousedown', onStart);
+      resizeBar.addEventListener('touchstart', onStart, { passive: true });
 
-      resizeBar.addEventListener('touchstart', onMouseDown, { passive: true });
-      window.addEventListener('touchmove', onMouseMove, { passive: true });
-      window.addEventListener('touchend', onMouseUp);
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('touchmove', onMove, { passive: true });
+
+      window.addEventListener('mouseup', onEnd);
+      window.addEventListener('touchend', onEnd);
+      window.addEventListener('touchcancel', onEnd);
     }
   }
 
