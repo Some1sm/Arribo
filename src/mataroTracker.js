@@ -112,6 +112,11 @@ class MataroTracker {
     });
   }
 
+  resolveLineConfig(lineId) {
+    const cleanId = String(lineId).replace('mataro_', '').replace('line-', '').replace('linia-', '').trim();
+    return this.linesData.find(l => String(l.id) === cleanId) || null;
+  }
+
   // Deterministically match a SIRI live vehicle to route index (0 = Anada, 1 = Tornada)
   matchVehicleToRouteIndex(vehicle, routes) {
     if (!routes || routes.length <= 1) return 0;

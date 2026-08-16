@@ -97,9 +97,49 @@ async function runTests() {
     const n82Eta = await request('/api/line/n82/target-eta?direction=0');
     assert.strictEqual(n82Eta.status, 200);
     assert(n82Eta.body.data.targetStop !== null);
-    console.log(`✅ Sagalés N82 passed (${n82Line.body.data.stops.length} stops, ${n82Line.body.data.coords.length} polyline coords, ${n82Line.body.data.activeBuses.length} active buses)`);
+    console.log(`✅ Sagalés N82 passed (${n82Line.body.data.stops.length} stops, ${n82Line.body.data.coords.length} polyline coords)`);
 
-    console.log('\n🎉 ALL MULTI-LINE E2E TESTS PASSED SUCCESSFULLY! 🎉\n');
+    // 10. Rodalies de Catalunya Trains (R1)
+    console.log('Test 10: Rodalies de Catalunya Trains (R1)');
+    const r1Line = await request('/api/line/r1?direction=0');
+    assert.strictEqual(r1Line.status, 200);
+    assert.strictEqual(r1Line.body.data.code, 'R1');
+    assert.strictEqual(r1Line.body.data.isTrain, true);
+    assert(r1Line.body.data.stops.length >= 20, 'R1 should have >= 20 train stations');
+    assert(r1Line.body.data.coords.length >= 100, 'R1 should have track coordinates');
+    const r1Eta = await request('/api/line/r1/target-eta?direction=0');
+    assert.strictEqual(r1Eta.status, 200);
+    assert(r1Eta.body.data.targetStop !== null);
+    console.log(`✅ Rodalies R1 passed (${r1Line.body.data.stops.length} stations, ${r1Line.body.data.coords.length} track coords, ${r1Line.body.data.activeBuses.length} live trains)`);
+
+    // 11. DIREXIS TUSGSAL (B25)
+    console.log('Test 11: DIREXIS TUSGSAL Bus Line (B25)');
+    const b25Line = await request('/api/line/b25?direction=0');
+    assert.strictEqual(b25Line.status, 200);
+    assert.strictEqual(b25Line.body.data.code, 'B25');
+    assert(b25Line.body.data.stops.length >= 15, 'B25 should have stops');
+    const b25Eta = await request('/api/line/b25/target-eta?direction=0');
+    assert.strictEqual(b25Eta.status, 200);
+    assert(b25Eta.body.data.targetStop !== null);
+    console.log(`✅ TUSGSAL B25 passed (${b25Line.body.data.stops.length} stops, Agency: ${b25Line.body.data.agency})`);
+
+    // 12. Avanza Baix Llobregat (L80)
+    console.log('Test 12: Avanza Baix Llobregat Bus Line (L80)');
+    const l80Line = await request('/api/line/l80?direction=0');
+    assert.strictEqual(l80Line.status, 200);
+    assert.strictEqual(l80Line.body.data.code, 'L80');
+    assert(l80Line.body.data.stops.length >= 15, 'L80 should have stops');
+    console.log(`✅ Avanza L80 passed (${l80Line.body.data.stops.length} stops, Agency: ${l80Line.body.data.agency})`);
+
+    // 13. Monbus Aerobús (A1)
+    console.log('Test 13: Monbus Aerobús Line (A1)');
+    const a1Line = await request('/api/line/a1?direction=0');
+    assert.strictEqual(a1Line.status, 200);
+    assert.strictEqual(a1Line.body.data.code, 'A1');
+    assert(a1Line.body.data.stops.length >= 4, 'A1 should have stops');
+    console.log(`✅ Monbus Aerobús A1 passed (${a1Line.body.data.stops.length} stops, Agency: ${a1Line.body.data.agency})`);
+
+    console.log('\n🎉 ALL MULTI-LINE & MULTI-PROVIDER E2E TESTS PASSED SUCCESSFULLY! 🎉\n');
   } finally {
     server.close();
   }

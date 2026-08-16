@@ -889,13 +889,18 @@ class TransitApp {
     const q = (this.linePickerSearch || '').trim().toLowerCase();
     const cityFilter = this.linePickerFilter || 'all';
 
-    const isSagales = l => String(l.id).startsWith('n') || String(l.id) === '603' || (l.agency && l.agency.includes('Sagalés'));
-    const isMoventis = l => String(l.id) === 'c10' || (l.agency && (l.agency.includes('Moventis') || l.agency.includes('Casas')));
-    const isMataro = l => !isSagales(l) && !isMoventis(l);
-
-    const sagalesLines = this.availableLines.filter(isSagales);
-    const maresmeLines = this.availableLines.filter(isMoventis);
-    const mataroLines = this.availableLines.filter(isMataro);
+    // Group definitions
+    const groups = [
+      { id: 'rodalies', name: '🚆 Rodalies de Catalunya (Trens)', icon: '🚆', filter: l => l.group === 'rodalies' || l.isTrain || String(l.id).startsWith('rodalies_') },
+      { id: 'tusgsal', name: '🟡 DIREXIS TUSGSAL (Barcelonès Nord & NitBus)', icon: '🟡', filter: l => l.group === 'tusgsal' || (l.agency && l.agency.includes('TUSGSAL')) },
+      { id: 'avanza', name: '🔵 Avanza (Baix Llobregat & Exprés)', icon: '🔵', filter: l => l.group === 'avanza' || (l.agency && l.agency.includes('Avanza')) },
+      { id: 'monbus', name: '🟠 Monbus & Aerobús', icon: '🟠', filter: l => l.group === 'monbus' || (l.agency && (l.agency.includes('Monbus') || l.agency.includes('Aerobús'))) },
+      { id: 'moventis', name: '🌊 Moventis / Casas (Maresme & L\'Hospitalet)', icon: '🌊', filter: l => l.group === 'moventis' || String(l.id) === 'c10' || (l.agency && (l.agency.includes('Moventis') || l.agency.includes('Casas'))) },
+      { id: 'sagales', name: '🦉 Sagalés (NitBus & Costa)', icon: '🦉', filter: l => l.group === 'sagales' || (l.agency && l.agency.includes('Sagalés')) || ['n82', 'n83', '603', 'n70', 'n71', 'n73'].includes(String(l.id).toLowerCase()) },
+      { id: 'soler', name: '🟢 Soler i Sauret (Baix Llobregat)', icon: '🟢', filter: l => l.group === 'soler' || (l.agency && l.agency.includes('Soler')) },
+      { id: 'mataro', name: '📍 Mataró Bus Urbà', icon: '📍', filter: l => l.group === 'mataro' || (!l.group && !l.isTrain && !String(l.id).startsWith('amb_') && !String(l.id).startsWith('rodalies_') && !String(l.id).startsWith('n') && String(l.id) !== 'c10') },
+      { id: 'baixbus', name: '🟣 Baixbus / DIREXIS TGO', icon: '🟣', filter: l => l.group === 'baixbus' || (l.agency && l.agency.includes('TGO')) }
+    ];
 
     const filterFn = (l) => {
       if (!q) return true;
@@ -905,121 +910,57 @@ class TransitApp {
       return code.includes(q) || name.includes(q) || agency.includes(q) || ('línia ' + code).includes(q) || ('linia ' + code).includes(q);
     };
 
-    const filteredSagales = (cityFilter === 'all' || cityFilter === 'sagales') ? sagalesLines.filter(filterFn) : [];
-    const filteredMaresme = (cityFilter === 'all' || cityFilter === 'maresme') ? maresmeLines.filter(filterFn) : [];
-    const filteredMataro = (cityFilter === 'all' || cityFilter === 'mataro') ? mataroLines.filter(filterFn) : [];
+    let totalRendered = 0;
+    let html = '';
+    const isNight = new Date().getHours() >= 22 || new Date().getHours() < 6;
 
-    if (filteredSagales.length === 0 && filteredMaresme.length === 0 && filteredMataro.length === 0) {
+    groups.forEach(g => {
+      if (cityFilter !== 'all' && cityFilter !== g.id) return;
+      const groupLines = this.availableLines.filter(g.filter).filter(filterFn);
+      if (groupLines.length === 0) return;
+
+      totalRendered += groupLines.length;
+
+      html += `
+        <div class="line-category-group">
+          <div class="line-category-title">
+            <span>${g.name} (${groupLines.length})</span>
+          </div>
+          <div class="line-grid">
+            ${groupLines.map(l => {
+              const isActive = String(l.id) === String(this.activeLineId);
+              const contrast = this.getContrastColor(l.color);
+              return `
+                <div class="line-grid-card ${isActive ? 'active' : ''}" data-line-id="${l.id}">
+                  <div class="line-card-left">
+                    <span class="line-card-badge" style="background:${l.color}; color:${contrast};">${l.code}</span>
+                    <div class="line-card-details">
+                      <div class="line-card-name">${l.isTrain ? `Tren ${l.code}` : l.code}: ${l.name}</div>
+                      <div class="line-card-sub">
+                        <span>${l.agency || g.name}</span>
+                        <span>•</span>
+                        <span>${l.directions ? `${l.directions.length} sentits` : 'En servei'}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <span class="line-card-arrow">➔</span>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    });
+
+    if (totalRendered === 0) {
       container.innerHTML = `
         <div style="padding: 2.5rem 1rem; text-align: center; color: var(--text-muted);">
           <div style="font-size: 2rem; margin-bottom: 0.5rem;">🔍</div>
           <div style="font-weight: 700; color: #fff; margin-bottom: 0.25rem;">Cap línia trobada</div>
-          <div style="font-size: 0.8rem;">No hi ha cap resultat per "${this.linePickerSearch}". Prova cercant per codi (ex: N82, C10, 1, 603).</div>
+          <div style="font-size: 0.8rem;">No hi ha cap resultat per "${this.linePickerSearch}". Prova cercant per codi (ex: R1, B25, L80, N82, A1, C10, 1).</div>
         </div>
       `;
       return;
-    }
-
-    let html = '';
-    const isNight = new Date().getHours() >= 22 || new Date().getHours() < 6;
-
-    // 1. Sagalés (NitBus & Costa)
-    if (filteredSagales.length > 0) {
-      html += `
-        <div class="line-category-group">
-          <div class="line-category-title">
-            <span>🦉 Xarxa Sagalés & NitBus Nocturn (${filteredSagales.length})</span>
-          </div>
-          <div class="line-grid">
-            ${filteredSagales.map(l => {
-              const isActive = String(l.id) === String(this.activeLineId);
-              const contrast = this.getContrastColor(l.color);
-              return `
-                <div class="line-grid-card ${isActive ? 'active' : ''}" data-line-id="${l.id}">
-                  <div class="line-card-left">
-                    <span class="line-card-badge" style="background:${l.color}; color:${contrast};">${l.code}</span>
-                    <div class="line-card-details">
-                      <div class="line-card-name">${l.code}: ${l.name}</div>
-                      <div class="line-card-sub">
-                        <span>🦉 ${l.agency || 'Sagalés'}</span>
-                        <span>•</span>
-                        <span>${isNight ? '🟢 En servei ara' : '🌙 Horari nocturn'}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <span class="line-card-arrow">➔</span>
-                </div>
-              `;
-            }).join('')}
-          </div>
-        </div>
-      `;
-    }
-
-    // 2. Moventis / Casas (Interurbà Maresme)
-    if (filteredMaresme.length > 0) {
-      html += `
-        <div class="line-category-group">
-          <div class="line-category-title">
-            <span>🌊 Corredors Interurbans del Maresme (${filteredMaresme.length})</span>
-          </div>
-          <div class="line-grid">
-            ${filteredMaresme.map(l => {
-              const isActive = String(l.id) === String(this.activeLineId);
-              const contrast = this.getContrastColor(l.color);
-              return `
-                <div class="line-grid-card ${isActive ? 'active' : ''}" data-line-id="${l.id}">
-                  <div class="line-card-left">
-                    <span class="line-card-badge" style="background:${l.color}; color:${contrast};">${l.code}</span>
-                    <div class="line-card-details">
-                      <div class="line-card-name">${l.code}: ${l.name}</div>
-                      <div class="line-card-sub">
-                        <span>🌊 Casas / Moventis</span>
-                        <span>•</span>
-                        <span>${isNight ? '🌙 Represa al matí' : 'Corredor N-II'}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <span class="line-card-arrow">➔</span>
-                </div>
-              `;
-            }).join('')}
-          </div>
-        </div>
-      `;
-    }
-
-    // 3. Mataró Bus Urbà
-    if (filteredMataro.length > 0) {
-      html += `
-        <div class="line-category-group">
-          <div class="line-category-title">
-            <span>📍 Xarxa Urbana de Mataró (${filteredMataro.length})</span>
-          </div>
-          <div class="line-grid">
-            ${filteredMataro.map(l => {
-              const isActive = String(l.id) === String(this.activeLineId);
-              const contrast = this.getContrastColor(l.color);
-              return `
-                <div class="line-grid-card ${isActive ? 'active' : ''}" data-line-id="${l.id}">
-                  <div class="line-card-left">
-                    <span class="line-card-badge" style="background:${l.color}; color:${contrast};">${l.code}</span>
-                    <div class="line-card-details">
-                      <div class="line-card-name">Línia ${l.code}: ${l.name}</div>
-                      <div class="line-card-sub">
-                        <span>📍 Mataró Bus</span>
-                        <span>•</span>
-                        <span>${isNight ? '🌙 Represa al matí' : `${l.directions ? l.directions.length : 2} sentits`}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <span class="line-card-arrow">➔</span>
-                </div>
-              `;
-            }).join('')}
-          </div>
-        </div>
-      `;
     }
 
     container.innerHTML = html;

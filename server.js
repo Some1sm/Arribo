@@ -4,6 +4,8 @@ const path = require('path');
 const corridorTracker = require('./src/corridorTracker');
 const mataroTracker = require('./src/mataroTracker');
 const sagalesTracker = require('./src/sagalesTracker');
+const ambTracker = require('./src/ambTracker');
+const rodaliesTracker = require('./src/rodaliesTracker');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -12,6 +14,14 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Pre-initialize async trackers
+Promise.allSettled([
+  ambTracker.init(),
+  rodaliesTracker.init()
+]).then(() => {
+  console.log('[TransitPlatform] All Multi-Provider Trackers Initialized.');
+});
+
 // Request logger middleware
 app.use('/api', (req, res, next) => {
   const time = new Date().toLocaleTimeString();
@@ -19,34 +29,50 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
+function getTrackerForLine(lineId) {
+  const cleanId = String(lineId).toLowerCase().trim();
+  if (cleanId === 'c10' || cleanId === 'c-10') return { type: 'c10', tracker: corridorTracker };
+  if (rodaliesTracker.resolveLine(cleanId)) return { type: 'rodalies', tracker: rodaliesTracker };
+  if (sagalesTracker.resolveLineConfig(cleanId)) return { type: 'sagales', tracker: sagalesTracker };
+  if (mataroTracker.resolveLineConfig(cleanId)) return { type: 'mataro', tracker: mataroTracker };
+  if (ambTracker.resolveLine(cleanId)) return { type: 'amb', tracker: ambTracker };
+  return { type: 'amb', tracker: ambTracker };
+}
+
 // ==========================================
 // 1. UNIVERSAL TRANSIT LINES & SEARCH
 // ==========================================
 
-// List all available bus lines (Moventis C-10 + Sagalés N82/N83/603/N70.. + Mataró L1..L8)
-app.get('/api/lines', (req, res) => {
+// List all available transit lines across all providers
+app.get('/api/lines', async (req, res) => {
+  await Promise.allSettled([ambTracker.init(), rodaliesTracker.init()]);
+
   const c10Line = {
     id: 'c10',
     code: 'C-10',
     name: 'Barcelona ⇄ Mataró (per N-II)',
     color: '#009485',
     agency: 'Moventis / Casas (Interurbà Maresme)',
+    group: 'moventis',
     directions: [
       { dirId: '1', name: "Cap a Mataró (Hospital / Pl. d'Itàlia)" },
       { dirId: '0', name: 'Cap a Barcelona (Metro la Pau)' }
     ]
   };
 
+  const rodaliesLines = rodaliesTracker.getLines();
   const sagalesLines = sagalesTracker.getLines();
+  const ambLines = ambTracker.getLines();
   const mataroLines = mataroTracker.getLines();
 
   res.json({
     success: true,
-    lines: [c10Line, ...sagalesLines, ...mataroLines]
+    totalLines: 1 + rodaliesLines.length + sagalesLines.length + ambLines.length + mataroLines.length,
+    lines: [c10Line, ...rodaliesLines, ...sagalesLines, ...ambLines, ...mataroLines]
   });
 });
 
-// Universal Stop Searcher (Across Moventis C-10, Sagalés, and Mataró Bus stops)
+// Universal Stop Searcher (Across all bus and train stops in Catalonia)
 app.get('/api/search/stops', (req, res) => {
   const q = (req.query.q || '').trim().toLowerCase();
   if (!q || q.length < 2) {
@@ -55,7 +81,26 @@ app.get('/api/search/stops', (req, res) => {
 
   const results = [];
 
-  // Search C-10 stops
+  // 1. Search Rodalies train stations
+  rodaliesTracker.allStopsMap.forEach(s => {
+    if (s.name.toLowerCase().includes(q) || (s.cleanName && s.cleanName.toLowerCase().includes(q)) || s.id.includes(q)) {
+      results.push({
+        lineId: s.lineId || 'rodalies_r1',
+        lineCode: s.lineCode || 'R1',
+        lineName: s.name,
+        lineColor: s.lineColor || '#7DBCEC',
+        stopId: s.id,
+        stopName: s.name,
+        code: s.code,
+        zone: '🚆 Rodalies de Catalunya',
+        isTrain: true,
+        lat: s.lat,
+        lon: s.lon
+      });
+    }
+  });
+
+  // 2. Search C-10 stops
   const c10Stops = corridorTracker.getStops('1');
   c10Stops.forEach(s => {
     if (s.name.toLowerCase().includes(q) || (s.code && s.code.includes(q))) {
@@ -67,14 +112,14 @@ app.get('/api/search/stops', (req, res) => {
         stopId: s.mouteStopId,
         stopName: s.name,
         code: s.code,
-        zone: s.lon >= 2.289 ? 'Zona Maresme' : 'Zona AMB',
+        zone: s.lon >= 2.289 ? '🌊 Zona Maresme' : '🏙️ Zona AMB',
         lat: s.lat,
         lon: s.lon
       });
     }
   });
 
-  // Search Sagalés stops
+  // 3. Search Sagalés stops
   sagalesTracker.allStopsMap.forEach(s => {
     if (s.name.toLowerCase().includes(q) || (s.code && s.code.includes(q))) {
       results.push({
@@ -85,14 +130,32 @@ app.get('/api/search/stops', (req, res) => {
         stopId: s.id,
         stopName: s.name,
         code: s.code,
-        zone: s.city || 'Sagalés',
+        zone: `🦉 Sagalés (${s.city || 'Costa'})`,
         lat: s.lat,
         lon: s.lon
       });
     }
   });
 
-  // Search Mataró Bus stops
+  // 4. Search AMB Bus stops (TUSGSAL, Avanza, Monbus, Soler i Sauret, Baixbus, Moventis)
+  ambTracker.allStopsMap.forEach(s => {
+    if (results.length < 35 && (s.name.toLowerCase().includes(q) || (s.code && s.code.includes(q)))) {
+      results.push({
+        lineId: s.lineId,
+        lineCode: s.lineCode,
+        lineName: s.name,
+        lineColor: s.lineColor || '#009485',
+        stopId: s.id,
+        stopName: s.name,
+        code: s.code,
+        zone: '🏙️ Àrea Metropolitana (AMB)',
+        lat: s.lat,
+        lon: s.lon
+      });
+    }
+  });
+
+  // 5. Search Mataró Bus stops
   mataroTracker.allStopsMap.forEach(s => {
     if (s.name.toLowerCase().includes(q) || s.id.includes(q)) {
       const lineCodes = s.lineas.map(l => `Línia ${l.id}`).join(', ') || 'Mataró Urbà';
@@ -105,7 +168,7 @@ app.get('/api/search/stops', (req, res) => {
         stopId: s.id,
         stopName: s.name,
         code: s.id,
-        zone: 'Mataró Urbà',
+        zone: '📍 Mataró Urbà',
         lat: s.lat,
         lon: s.lon
       });
@@ -115,7 +178,7 @@ app.get('/api/search/stops', (req, res) => {
   res.json({
     success: true,
     query: q,
-    results: results.slice(0, 25)
+    results: results.slice(0, 30)
   });
 });
 
@@ -123,14 +186,16 @@ app.get('/api/search/stops', (req, res) => {
 // 2. UNIVERSAL DYNAMIC LINE ENDPOINTS
 // ==========================================
 
-// Get unified line details (stops, geometry, active buses) for any line
+// Get unified line details (stops, geometry, active vehicles) for any line
 app.get('/api/line/:lineId', async (req, res) => {
   const { lineId } = req.params;
-  const direction = req.query.direction || '1';
+  const direction = req.query.direction || '0';
   try {
-    if (lineId === 'c10') {
-      const tracking = await corridorTracker.getCorridorLiveTracking(direction);
-      const stops = corridorTracker.getStops(direction);
+    const { type, tracker } = getTrackerForLine(lineId);
+    if (type === 'c10') {
+      const dir = direction === '0' ? '0' : '1';
+      const tracking = await corridorTracker.getCorridorLiveTracking(dir);
+      const stops = corridorTracker.getStops(dir);
       res.json({
         success: true,
         data: {
@@ -139,7 +204,7 @@ app.get('/api/line/:lineId', async (req, res) => {
           name: 'Barcelona ⇄ Mataró (per N-II)',
           color: '#009485',
           agency: 'Moventis / Casas (Interurbà Maresme)',
-          direction: String(direction),
+          direction: String(dir),
           stops: stops,
           coords: tracking.routePolyline || [],
           activeBuses: tracking.activeBuses || [],
@@ -147,15 +212,12 @@ app.get('/api/line/:lineId', async (req, res) => {
           totalVehiclesInCircuit: tracking.activeBuses?.length || 0,
           serviceStatus: {
             isOperating: (tracking.activeBuses?.length || 0) > 0,
-            firstServiceTomorrow: direction === '1' ? '08:15' : '06:45'
+            firstServiceTomorrow: dir === '1' ? '08:15' : '06:45'
           }
         }
       });
-    } else if (sagalesTracker.resolveLineConfig(lineId)) {
-      const data = await sagalesTracker.getLineDetails(lineId, direction);
-      res.json({ success: true, data });
     } else {
-      const data = await mataroTracker.getLineDetails(lineId, direction);
+      const data = await tracker.getLineDetails(lineId, direction);
       res.json({ success: true, data });
     }
   } catch (err) {
@@ -166,17 +228,16 @@ app.get('/api/line/:lineId', async (req, res) => {
 // Get unified Target Stop ETA for any line
 app.get('/api/line/:lineId/target-eta', async (req, res) => {
   const { lineId } = req.params;
-  const direction = req.query.direction || '1';
+  const direction = req.query.direction || '0';
   const stopId = req.query.stopId || null;
   try {
-    if (lineId === 'c10') {
-      const data = await corridorTracker.getTargetStopETA(direction, stopId);
-      res.json({ success: true, data });
-    } else if (sagalesTracker.resolveLineConfig(lineId)) {
-      const data = await sagalesTracker.getTargetStopETA(lineId, stopId, direction);
+    const { type, tracker } = getTrackerForLine(lineId);
+    if (type === 'c10') {
+      const dir = direction === '0' ? '0' : '1';
+      const data = await corridorTracker.getTargetStopETA(dir, stopId);
       res.json({ success: true, data });
     } else {
-      const data = await mataroTracker.getTargetStopETA(lineId, stopId, direction);
+      const data = await tracker.getTargetStopETA(lineId, stopId, direction);
       res.json({ success: true, data });
     }
   } catch (err) {
@@ -187,16 +248,15 @@ app.get('/api/line/:lineId/target-eta', async (req, res) => {
 // Get unified Live Telemetry & Vehicles for any line
 app.get('/api/line/:lineId/live', async (req, res) => {
   const { lineId } = req.params;
-  const direction = req.query.direction || '1';
+  const direction = req.query.direction || '0';
   try {
-    if (lineId === 'c10') {
-      const data = await corridorTracker.getCorridorLiveTracking(direction);
-      res.json({ success: true, data });
-    } else if (sagalesTracker.resolveLineConfig(lineId)) {
-      const data = await sagalesTracker.getLineDetails(lineId, direction);
+    const { type, tracker } = getTrackerForLine(lineId);
+    if (type === 'c10') {
+      const dir = direction === '0' ? '0' : '1';
+      const data = await corridorTracker.getCorridorLiveTracking(dir);
       res.json({ success: true, data });
     } else {
-      const data = await mataroTracker.getLineDetails(lineId, direction);
+      const data = await tracker.getLineDetails(lineId, direction);
       res.json({ success: true, data });
     }
   } catch (err) {
@@ -207,16 +267,15 @@ app.get('/api/line/:lineId/live', async (req, res) => {
 // Get unified Stop Departures for any line & stop
 app.get('/api/line/:lineId/stop/:stopId/departures', async (req, res) => {
   const { lineId, stopId } = req.params;
-  const direction = req.query.direction || '1';
+  const direction = req.query.direction || '0';
   try {
-    if (lineId === 'c10') {
-      const data = await corridorTracker.getStopDepartures(stopId, direction);
-      res.json({ success: true, data });
-    } else if (sagalesTracker.resolveLineConfig(lineId)) {
-      const data = await sagalesTracker.getStopDepartures(stopId, lineId, direction);
+    const { type, tracker } = getTrackerForLine(lineId);
+    if (type === 'c10') {
+      const dir = direction === '0' ? '0' : '1';
+      const data = await corridorTracker.getStopDepartures(stopId, dir);
       res.json({ success: true, data });
     } else {
-      const data = await mataroTracker.getStopDepartures(stopId, lineId);
+      const data = await tracker.getStopDepartures(stopId, lineId, direction);
       res.json({ success: true, data });
     }
   } catch (err) {
