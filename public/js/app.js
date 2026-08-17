@@ -371,6 +371,16 @@ class TransitApp {
       badge.textContent = code;
       badge.style.background = color;
       badge.style.color = this.getContrastColor(color);
+      if (code.length >= 6) {
+        badge.style.fontSize = '0.9rem';
+        badge.style.padding = '0.35rem 0.6rem';
+      } else if (code.length >= 4) {
+        badge.style.fontSize = '1.05rem';
+        badge.style.padding = '0.35rem 0.7rem';
+      } else {
+        badge.style.fontSize = '1.25rem';
+        badge.style.padding = '0.35rem 0.85rem';
+      }
     }
 
     if (modeBadge) {

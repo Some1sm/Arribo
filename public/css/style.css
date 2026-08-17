@@ -223,6 +223,12 @@ body {
   align-items: center;
   justify-content: center;
   font-family: var(--font-sans);
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  flex-shrink: 0 !important;
+  min-width: max-content;
+  text-align: center;
+  line-height: 1;
 }
 
 .app-title-group h1 {
