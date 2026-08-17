@@ -40,8 +40,8 @@ const MARESME_LINES_CONFIG = [
     agency: 'Moventis / Casas (Exprés.cat)',
     group: 'moventis',
     directions: [
-      { dirId: '1', name: 'Cap a Mataró (Pl. de les Tereses)' },
-      { dirId: '0', name: 'Cap a Barcelona (Rda. Universitat)' }
+      { dirId: '0', name: 'Cap a Mataró (Pl. de les Tereses)' },
+      { dirId: '1', name: 'Cap a Barcelona (Rda. Universitat)' }
     ]
   },
   {
@@ -53,8 +53,8 @@ const MARESME_LINES_CONFIG = [
     agency: 'Moventis / Casas (Exprés.cat)',
     group: 'moventis',
     directions: [
-      { dirId: '1', name: 'Cap a Mataró (Nord / Camí de la Serra)' },
-      { dirId: '0', name: 'Cap a Barcelona (Rda. Universitat)' }
+      { dirId: '0', name: 'Cap a Mataró (Nord / Camí de la Serra)' },
+      { dirId: '1', name: 'Cap a Barcelona (Rda. Universitat)' }
     ]
   },
   {
@@ -66,7 +66,7 @@ const MARESME_LINES_CONFIG = [
     agency: 'Moventis / Casas (Maresme)',
     group: 'moventis',
     directions: [
-      { dirId: '0', name: 'Cap a Mataró (Estació Rodalies)' },
+      { dirId: '0', name: 'Cap a Mataró (Hospital / Estació)' },
       { dirId: '1', name: 'Cap a Sant Vicenç de Montalt' }
     ]
   },
@@ -79,8 +79,8 @@ const MARESME_LINES_CONFIG = [
     agency: 'Moventis / Casas (Maresme)',
     group: 'moventis',
     directions: [
-      { dirId: '1', name: 'Cap a Mataró (Hospital)' },
-      { dirId: '0', name: 'Cap a Vilassar de Dalt' }
+      { dirId: '0', name: 'Cap a Mataró (Hospital)' },
+      { dirId: '1', name: 'Cap a Vilassar de Dalt' }
     ]
   },
   {
@@ -92,8 +92,8 @@ const MARESME_LINES_CONFIG = [
     agency: 'Moventis / Casas (Maresme)',
     group: 'moventis',
     directions: [
-      { dirId: '0', name: 'Cap a Barcelona' },
-      { dirId: '1', name: 'Cap a Vilassar de Dalt' }
+      { dirId: '0', name: 'Cap a Vilassar de Dalt' },
+      { dirId: '1', name: 'Cap a Barcelona (Gran Via)' }
     ]
   },
   {
@@ -118,8 +118,8 @@ const MARESME_LINES_CONFIG = [
     agency: 'Moventis / Casas (Maresme)',
     group: 'moventis',
     directions: [
-      { dirId: '0', name: 'Cap a Premià de Mar' },
-      { dirId: '1', name: 'Cap a Premià de Dalt' }
+      { dirId: '0', name: 'Cap a Premià de Dalt' },
+      { dirId: '1', name: 'Cap a Premià de Mar (Estació)' }
     ]
   },
   {
@@ -131,8 +131,8 @@ const MARESME_LINES_CONFIG = [
     agency: 'Moventis / Casas (Maresme)',
     group: 'moventis',
     directions: [
-      { dirId: '0', name: 'Cap a El Masnou' },
-      { dirId: '1', name: 'Cap a Teià' }
+      { dirId: '0', name: 'Cap a Teià' },
+      { dirId: '1', name: 'Cap a El Masnou (Estació)' }
     ]
   }
 ];
