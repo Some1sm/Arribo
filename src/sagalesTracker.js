@@ -201,6 +201,27 @@ class SagalesTracker {
       throw new Error(`Sagalés line ${lineId} not found`);
     }
 
+    if (direction === 'both' && lineConfig.directions?.length > 1) {
+      const details0 = await this.getLineDetails(lineId, '0');
+      const details1 = await this.getLineDetails(lineId, '1');
+      return {
+        ...details0,
+        direction: 'both',
+        directionName: 'Ambdós sentits',
+        stops: details0.stops,
+        coords: details0.coords,
+        secondaryStops: details1.stops,
+        secondaryCoords: details1.coords,
+        secondaryColor: '#38bdf8',
+        allDirections: [
+          { dirId: '0', name: lineConfig.directions[0]?.name || 'Sentit 1', stops: details0.stops, coords: details0.coords },
+          { dirId: '1', name: lineConfig.directions[1]?.name || 'Sentit 2', stops: details1.stops, coords: details1.coords }
+        ],
+        activeBuses: [...(details0.activeBuses || []), ...(details1.activeBuses || [])],
+        totalActiveBuses: (details0.activeBuses?.length || 0) + (details1.activeBuses?.length || 0)
+      };
+    }
+
     const dir = direction === '1' ? '1' : '0';
     const feed = await this.getSagalesFeed(lineConfig.sagalesRouteId, dir);
 

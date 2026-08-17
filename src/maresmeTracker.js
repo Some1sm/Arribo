@@ -274,6 +274,27 @@ class MaresmeTracker {
     const lineConfig = this.resolveLine(lineId);
     if (!lineConfig) throw new Error(`Maresme line ${lineId} not found`);
 
+    if (direction === 'both' && lineConfig.directions?.length > 1) {
+      const details0 = await this.getLineDetails(lineId, String(lineConfig.directions[0].dirId || '0'));
+      const details1 = await this.getLineDetails(lineId, String(lineConfig.directions[1].dirId || '1'));
+      return {
+        ...details0,
+        direction: 'both',
+        directionName: 'Ambdós sentits',
+        stops: details0.stops,
+        coords: details0.coords,
+        secondaryStops: details1.stops,
+        secondaryCoords: details1.coords,
+        secondaryColor: '#38bdf8',
+        allDirections: [
+          { dirId: String(lineConfig.directions[0].dirId || '0'), name: lineConfig.directions[0].name, stops: details0.stops, coords: details0.coords },
+          { dirId: String(lineConfig.directions[1].dirId || '1'), name: lineConfig.directions[1].name, stops: details1.stops, coords: details1.coords }
+        ],
+        activeBuses: [...(details0.activeBuses || []), ...(details1.activeBuses || [])],
+        totalActiveBuses: (details0.activeBuses?.length || 0) + (details1.activeBuses?.length || 0)
+      };
+    }
+
     const dir = String(direction || '0');
     const lineTrips = this.tripsMap.get(lineConfig.routeId) || [];
     const dirTrips = lineTrips.filter(t => t.dirId === dir);

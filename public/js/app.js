@@ -248,14 +248,22 @@ class TransitApp {
         // 7. Update Map
         this.updateActiveBusesCount(this.activeBuses.length);
         const lineColor = lData.color || '#009485';
-        const coords = lData.coords || lData.polyline || [];
+        const isBoth = this.activeDirection === 'both' || lData.direction === 'both';
+        const coords = lData.coords || lData.polyline || lData.allDirections?.[0]?.coords || lData.allDirections?.[0]?.polyline || [];
+        const secondaryCoords = isBoth ? (lData.secondaryCoords || lData.allDirections?.[1]?.coords || lData.allDirections?.[1]?.polyline || null) : null;
+        const secondaryStops = isBoth ? (lData.secondaryStops || lData.allDirections?.[1]?.stops || null) : null;
+        const secondaryColor = isBoth ? (lData.secondaryColor || '#38bdf8') : '#38bdf8';
+
         this.mapController.renderStops(
           this.allStops, 
           activeTargetId, 
           (s) => this.inspectStop(s.id || s.mouteStopId, s.name), 
           shouldFitBounds, 
           lineColor, 
-          coords
+          coords,
+          secondaryCoords,
+          secondaryStops,
+          secondaryColor
         );
         this.mapController.updateBusMarkers(this.activeBuses, lineColor);
         this.checkArrivalAlerts(lData, activeTargetId);

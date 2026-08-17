@@ -214,29 +214,64 @@ app.get('/api/line/:lineId', async (req, res) => {
   try {
     const { type, tracker } = getTrackerForLine(lineId);
     if (type === 'c10') {
-      const dir = direction === '0' ? '0' : '1';
-      const tracking = await corridorTracker.getCorridorLiveTracking(dir);
-      const stops = corridorTracker.getStops(dir);
-      res.json({
-        success: true,
-        data: {
-          id: 'c10',
-          code: 'C-10',
-          name: 'Barcelona ⇄ Mataró (per N-II)',
-          color: '#009485',
-          agency: 'Moventis / Casas (Interurbà Maresme)',
-          direction: String(dir),
-          stops: stops,
-          coords: tracking.routePolyline || [],
-          activeBuses: tracking.activeBuses || [],
-          checkpoints: tracking.checkpoints || [],
-          totalVehiclesInCircuit: tracking.activeBuses?.length || 0,
-          serviceStatus: {
-            isOperating: (tracking.activeBuses?.length || 0) > 0,
-            firstServiceTomorrow: dir === '1' ? '08:15' : '06:45'
+      if (direction === 'both') {
+        const tracking1 = await corridorTracker.getCorridorLiveTracking('1');
+        const tracking0 = await corridorTracker.getCorridorLiveTracking('0');
+        const stops1 = corridorTracker.getStops('1');
+        const stops0 = corridorTracker.getStops('0');
+        res.json({
+          success: true,
+          data: {
+            id: 'c10',
+            code: 'C-10',
+            name: 'Barcelona ⇄ Mataró (per N-II)',
+            color: '#009485',
+            secondaryColor: '#38bdf8',
+            agency: 'Moventis / Casas (Interurbà Maresme)',
+            direction: 'both',
+            directionName: 'Ambdós sentits (Barcelona ⇄ Mataró)',
+            stops: stops1,
+            coords: tracking1.routePolyline || [],
+            secondaryStops: stops0,
+            secondaryCoords: tracking0.routePolyline || [],
+            allDirections: [
+              { dirId: '1', name: "Cap a Mataró (Hospital / Pl. d'Itàlia)", stops: stops1, coords: tracking1.routePolyline || [] },
+              { dirId: '0', name: "Cap a Barcelona (Metro la Pau)", stops: stops0, coords: tracking0.routePolyline || [] }
+            ],
+            activeBuses: [ ...(tracking1.activeBuses || []), ...(tracking0.activeBuses || []) ],
+            checkpoints: tracking1.checkpoints || [],
+            totalVehiclesInCircuit: (tracking1.activeBuses?.length || 0) + (tracking0.activeBuses?.length || 0),
+            serviceStatus: {
+              isOperating: ((tracking1.activeBuses?.length || 0) + (tracking0.activeBuses?.length || 0)) > 0,
+              firstServiceTomorrow: '06:45'
+            }
           }
-        }
-      });
+        });
+      } else {
+        const dir = direction === '0' ? '0' : '1';
+        const tracking = await corridorTracker.getCorridorLiveTracking(dir);
+        const stops = corridorTracker.getStops(dir);
+        res.json({
+          success: true,
+          data: {
+            id: 'c10',
+            code: 'C-10',
+            name: 'Barcelona ⇄ Mataró (per N-II)',
+            color: '#009485',
+            agency: 'Moventis / Casas (Interurbà Maresme)',
+            direction: String(dir),
+            stops: stops,
+            coords: tracking.routePolyline || [],
+            activeBuses: tracking.activeBuses || [],
+            checkpoints: tracking.checkpoints || [],
+            totalVehiclesInCircuit: tracking.activeBuses?.length || 0,
+            serviceStatus: {
+              isOperating: (tracking.activeBuses?.length || 0) > 0,
+              firstServiceTomorrow: dir === '1' ? '08:15' : '06:45'
+            }
+          }
+        });
+      }
     } else {
       const data = await tracker.getLineDetails(lineId, direction);
       res.json({ success: true, data });
