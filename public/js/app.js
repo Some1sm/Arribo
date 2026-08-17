@@ -1156,14 +1156,18 @@ class TransitApp {
 
     // Group definitions (Organized by Transit Networks)
     const groups = [
-      { id: 'moventis', name: '🌊 Moventis / Casas (Maresme & Exprés.cat)', icon: '🌊', filter: l => (l.group === 'moventis' || String(l.id) === 'c10' || String(l.id).startsWith('e11') || String(l.id).startsWith('c') || (l.agency && (l.agency.includes('Moventis') || l.agency.includes('Casas')))) && (!l.isTrain && l.group !== 'rodalies') },
+      { id: 'expres', name: '⚡ Exprés.cat (Xarxa d\'Altes Prestacions)', icon: '⚡', filter: l => (l.group === 'expres' || String(l.code).toLowerCase().startsWith('e') || (l.mode && l.mode.includes('Exprés'))) && (!l.isTrain && l.group !== 'rodalies') },
+      { id: 'sagales', name: '🦉 Sagalés (Vallès, Maresme, Costa & Osona)', icon: '🦉', filter: l => (l.group === 'sagales' || (l.agency && l.agency.toLowerCase().includes('sagal')) || ['n82', 'n83', '603', 'n70', 'n71', 'n73', '201', '230', 'e13', '320', '330', '400', '500'].includes(String(l.code).toLowerCase())) && (!l.isTrain && l.group !== 'rodalies') },
+      { id: 'moventis', name: '🌊 Moventis / Casas (Maresme & Vallès)', icon: '🌊', filter: l => (l.group === 'moventis' || String(l.id) === 'c10' || (l.agency && (l.agency.includes('Moventis') || l.agency.includes('Casas')))) && (!l.isTrain && l.group !== 'rodalies') },
       { id: 'mataro', name: '📍 Mataró Bus Urbà (L1..L8)', icon: '📍', filter: l => (l.group === 'mataro' || ['1','2','3','4','5','6','7','8','l1','l2','l3','l4','l5','l6','l7','l8'].includes(String(l.id).toLowerCase())) && (!l.isTrain && l.group !== 'rodalies' && l.group !== 'moventis' && String(l.id) !== 'c10') },
       { id: 'tusgsal', name: '🟡 DIREXIS TUSGSAL (Barcelonès Nord & NitBus)', icon: '🟡', filter: l => (l.group === 'tusgsal' || (l.agency && l.agency.includes('TUSGSAL'))) && (!l.isTrain && l.group !== 'rodalies') },
-      { id: 'avanza', name: '🔵 Avanza (Baix Llobregat & Exprés)', icon: '🔵', filter: l => (l.group === 'avanza' || (l.agency && l.agency.includes('Avanza'))) && (!l.isTrain && l.group !== 'rodalies') },
-      { id: 'monbus', name: '🟠 Monbus & Aerobús', icon: '🟠', filter: l => (l.group === 'monbus' || (l.agency && (l.agency.includes('Monbus') || l.agency.includes('Aerobús')))) && (!l.isTrain && l.group !== 'rodalies') },
-      { id: 'sagales', name: '🦉 Sagalés (NitBus & Costa)', icon: '🦉', filter: l => (l.group === 'sagales' || (l.agency && l.agency.includes('Sagalés')) || ['n82', 'n83', '603', 'n70', 'n71', 'n73'].includes(String(l.id).toLowerCase())) && (!l.isTrain && l.group !== 'rodalies') },
-      { id: 'soler', name: '🟢 Soler i Sauret (Baix Llobregat)', icon: '🟢', filter: l => (l.group === 'soler' || (l.agency && l.agency.includes('Soler'))) && (!l.isTrain && l.group !== 'rodalies') },
-      { id: 'baixbus', name: '🟣 Baixbus / DIREXIS TGO', icon: '🟣', filter: l => (l.group === 'baixbus' || (l.agency && l.agency.includes('TGO'))) && (!l.isTrain && l.group !== 'rodalies') }
+      { id: 'avanza', name: '🔵 Avanza (Baix Llobregat & Garraf)', icon: '🔵', filter: l => (l.group === 'avanza' || (l.agency && l.agency.includes('Avanza'))) && (!l.isTrain && l.group !== 'rodalies') },
+      { id: 'monbus', name: '🟠 Monbus, Hispano Igualadina & Aerobús', icon: '🟠', filter: l => (l.group === 'monbus' || (l.agency && (l.agency.includes('Monbus') || l.agency.includes('Igualadina') || l.agency.includes('Aerobús')))) && (!l.isTrain && l.group !== 'rodalies') },
+      { id: 'plana', name: '🏖️ Empresa Plana (Tarragona & Costa Daurada)', icon: '🏖️', filter: l => (l.group === 'plana' || (l.agency && l.agency.toLowerCase().includes('plana'))) && (!l.isTrain && l.group !== 'rodalies') },
+      { id: 'teisa', name: '🌲 TEISA (Girona, Garrotxa & Ripollès)', icon: '🌲', filter: l => (l.group === 'teisa' || (l.agency && l.agency.toLowerCase().includes('teisa'))) && (!l.isTrain && l.group !== 'rodalies') },
+      { id: 'hife', name: '⚓ HIFE (Terres de l\'Ebre & Delta)', icon: '⚓', filter: l => (l.group === 'hife' || (l.agency && l.agency.toLowerCase().includes('hife'))) && (!l.isTrain && l.group !== 'rodalies') },
+      { id: 'soler', name: '🟢 Soler i Sauret (Baix Llobregat & Anoia)', icon: '🟢', filter: l => (l.group === 'soler' || (l.agency && l.agency.toLowerCase().includes('soler'))) && (!l.isTrain && l.group !== 'rodalies') },
+      { id: 'interurba', name: '🚌 Altres Línies Interurbanes de Catalunya', icon: '🚌', filter: l => (l.group === 'interurba' || !l.group) && (!l.isTrain && l.group !== 'rodalies') }
     ];
 
     if (this.showTrainsInUI) {

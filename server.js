@@ -7,6 +7,7 @@ const sagalesTracker = require('./src/sagalesTracker');
 const ambTracker = require('./src/ambTracker');
 const rodaliesTracker = require('./src/rodaliesTracker');
 const maresmeTracker = require('./src/maresmeTracker');
+const cataloniaTracker = require('./src/cataloniaTracker');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -18,7 +19,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Pre-initialize async trackers
 Promise.allSettled([
   ambTracker.init(),
-  rodaliesTracker.init()
+  rodaliesTracker.init(),
+  cataloniaTracker.init()
 ]).then(() => {
   console.log('[TransitPlatform] All Multi-Provider Trackers Initialized.');
 });
@@ -35,10 +37,11 @@ function getTrackerForLine(lineId) {
   if (cleanId === 'c10' || cleanId === 'c-10') return { type: 'c10', tracker: corridorTracker };
   if (maresmeTracker.resolveLine(cleanId)) return { type: 'maresme', tracker: maresmeTracker };
   if (rodaliesTracker.resolveLine(cleanId)) return { type: 'rodalies', tracker: rodaliesTracker };
-  if (sagalesTracker.resolveLineConfig(cleanId)) return { type: 'sagales', tracker: sagalesTracker };
   if (mataroTracker.resolveLineConfig(cleanId)) return { type: 'mataro', tracker: mataroTracker };
   if (ambTracker.resolveLine(cleanId)) return { type: 'amb', tracker: ambTracker };
-  return { type: 'amb', tracker: ambTracker };
+  if (sagalesTracker.resolveLineConfig(cleanId)) return { type: 'sagales', tracker: sagalesTracker };
+  if (cataloniaTracker.resolveLine(cleanId)) return { type: 'catalonia', tracker: cataloniaTracker };
+  return { type: 'catalonia', tracker: cataloniaTracker };
 }
 
 // ==========================================
@@ -47,7 +50,7 @@ function getTrackerForLine(lineId) {
 
 // List all available transit lines across all providers
 app.get('/api/lines', async (req, res) => {
-  await Promise.allSettled([ambTracker.init(), rodaliesTracker.init()]);
+  await Promise.allSettled([ambTracker.init(), rodaliesTracker.init(), cataloniaTracker.init()]);
 
   const c10Line = {
     id: 'c10',
@@ -67,11 +70,30 @@ app.get('/api/lines', async (req, res) => {
   const sagalesLines = sagalesTracker.getLines();
   const ambLines = ambTracker.getLines();
   const mataroLines = mataroTracker.getLines();
+  const allCatLines = cataloniaTracker.getLines();
+
+  // Deduplicate against lines already registered in specialized trackers
+  const seenCodes = new Set(['c-10', 'c10', '1', '2', '3', '4', '5', '6', '7', '8']);
+  maresmeLines.forEach(l => seenCodes.add(String(l.code).toLowerCase()));
+  ambLines.forEach(l => seenCodes.add(String(l.code).toLowerCase()));
+  rodaliesLines.forEach(l => seenCodes.add(String(l.code).toLowerCase()));
+
+  const extraCatLines = allCatLines.filter(l => !seenCodes.has(String(l.code).toLowerCase()));
+
+  const combinedLines = [
+    c10Line,
+    ...maresmeLines,
+    ...rodaliesLines,
+    ...sagalesLines,
+    ...ambLines,
+    ...mataroLines,
+    ...extraCatLines
+  ];
 
   res.json({
     success: true,
-    totalLines: 1 + maresmeLines.length + rodaliesLines.length + sagalesLines.length + ambLines.length + mataroLines.length,
-    lines: [c10Line, ...maresmeLines, ...rodaliesLines, ...sagalesLines, ...ambLines, ...mataroLines]
+    totalLines: combinedLines.length,
+    lines: combinedLines
   });
 });
 
@@ -196,10 +218,30 @@ app.get('/api/search/stops', (req, res) => {
     }
   });
 
+  // 6. Search All Catalonia Interurban Bus stops (Sagalés, Plana, Hife, Teisa, etc.)
+  if (results.length < 35) {
+    cataloniaTracker.allStopsMap.forEach(s => {
+      if (results.length < 40 && (s.name.toLowerCase().includes(q) || (s.code && s.code.includes(q)))) {
+        results.push({
+          lineId: s.lineId,
+          lineCode: s.lineCode,
+          lineName: s.name,
+          lineColor: s.lineColor || '#009485',
+          stopId: s.id,
+          stopName: s.name,
+          code: s.code,
+          zone: `🚌 ${s.agency || 'Interurbà Catalunya'}`,
+          lat: s.lat,
+          lon: s.lon
+        });
+      }
+    });
+  }
+
   res.json({
     success: true,
     query: q,
-    results: results.slice(0, 30)
+    results: results.slice(0, 35)
   });
 });
 
