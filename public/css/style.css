@@ -1123,6 +1123,40 @@ body {
   background: var(--bg-target-gradient);
 }
 
+.departure-item.clickable-bus-dep {
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.departure-item.clickable-bus-dep:hover {
+  background: var(--bg-surface-elevated);
+  border-color: var(--c10-primary);
+  transform: translateX(4px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.dep-map-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--c10-primary-light);
+  background: rgba(0, 148, 133, 0.12);
+  border: 1px solid rgba(0, 148, 133, 0.3);
+  padding: 2px 7px;
+  border-radius: 4px;
+  margin-top: 0.2rem;
+  transition: all var(--transition-fast);
+}
+
+.departure-item.clickable-bus-dep:hover .dep-map-cta {
+  background: var(--c10-primary);
+  color: #ffffff;
+  border-color: var(--c10-primary);
+  box-shadow: 0 2px 8px var(--c10-primary-glow);
+}
+
 .dep-time-group {
   display: flex;
   flex-direction: column;

@@ -478,7 +478,7 @@ class C10Map {
            String(bus.id || '').trim() === s;
   }
 
-  highlightBus(selectedVehicleId, shouldPan = false) {
+  highlightBus(selectedVehicleId, shouldPan = false, coords = null) {
     this.selectedVehicleId = selectedVehicleId;
     let targetLatLng = null;
 
@@ -499,8 +499,13 @@ class C10Map {
       }
     }
 
+    if (!targetLatLng && coords && coords.lat && coords.lon) {
+      targetLatLng = L.latLng(coords.lat, coords.lon);
+    }
+
     if (shouldPan && targetLatLng && this.map) {
-      this.map.panTo(targetLatLng, { animate: true, duration: 0.6 });
+      const currentZoom = this.map.getZoom();
+      this.map.setView(targetLatLng, Math.max(currentZoom, 15), { animate: true, duration: 0.6 });
     }
   }
 

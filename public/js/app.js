@@ -197,6 +197,31 @@ class TransitApp {
     return `${(num >> 16) & 255}, ${(num >> 8) & 255}, ${num & 255}`;
   }
 
+  focusBusOnMap(vehicleId, coords = null) {
+    if (!vehicleId && !coords) return;
+    this.selectedVehicleId = vehicleId;
+
+    // If stop modal is currently open, close it cleanly
+    const stopModal = document.getElementById('stop-modal-backdrop');
+    if (stopModal && stopModal.classList.contains('active')) {
+      stopModal.classList.remove('active');
+    }
+
+    // Highlight marker and zoom/pan to it
+    this.mapController?.highlightBus(vehicleId, true, coords);
+
+    // Scroll viewport to map container smoothly
+    const mapSection = document.getElementById('map-container') || document.querySelector('.explorer-grid');
+    if (mapSection) {
+      mapSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    // Refresh telemetry cockpit selection
+    if (this.activeLineData) {
+      this.renderTelemetryCockpit(this.activeLineData);
+    }
+  }
+
   // ==========================================
   // 2. DATA REFRESH ENGINE (POLYMORPHIC)
   // ==========================================
@@ -523,6 +548,8 @@ class TransitApp {
         ? (dep.delayMins > 0 ? `+${dep.delayMins} min retard` : `${dep.delayMins} min avançat`)
         : 'Puntual';
 
+      const hasActiveBus = Boolean(dep.vehicleId || dep.busCoords);
+
       const minsText = isFirstMorning
         ? `🌅 Demà ${dep.departureTime || clockTime}`
         : (isTomorrow
@@ -533,16 +560,20 @@ class TransitApp {
 
       const tagLabel = isFirstMorning
         ? '🌅 1r Servei'
-        : (isTomorrow ? 'Programat' : (dep.isEstimated ? '⚡ Estimat' : '🟢 Temps Real'));
+        : (isTomorrow ? 'Programat' : (dep.isEstimated ? '⚡ En ruta' : '🟢 Temps Real'));
 
       const pillLabel = isFirstMorning
         ? '1r Servei'
-        : (isTomorrow ? 'Programat' : (dep.isEstimated ? `⚡ Estimat ${dep.vehicleId ? `#${dep.vehicleId}` : ''}` : (dep.delayBadgeText || 'Puntual')));
+        : (isTomorrow ? 'Programat' : (dep.isEstimated ? '⚡ En ruta' : (dep.delayBadgeText || 'Puntual')));
 
       const pillClass = isTomorrow ? 'scheduled' : (dep.delayStatus || 'on-time');
 
       return `
-        <div class="departure-item ${idx === 0 ? 'highlight-next' : ''}">
+        <div class="departure-item ${idx === 0 ? 'highlight-next' : ''} ${hasActiveBus ? 'clickable-bus-dep' : ''}"
+             data-vehicle-id="${dep.vehicleId || ''}"
+             data-bus-lat="${dep.busCoords?.lat || ''}"
+             data-bus-lon="${dep.busCoords?.lon || ''}"
+             title="${hasActiveBus ? 'Fes clic per localitzar aquest autobús en directe al mapa' : ''}">
           <div class="dep-time-group">
             <div class="dep-time-row">
               <span class="dep-clock">${clockTime}</span>
@@ -567,6 +598,12 @@ class TransitApp {
             <span class="dep-delay-pill ${pillClass}">
               ${pillLabel}
             </span>
+            ${hasActiveBus ? `
+              <span class="dep-map-cta">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polygon points="12 8 8 12 12 16 12 8"/></svg>
+                Veure al mapa
+              </span>
+            ` : ''}
           </div>
         </div>
       `;
@@ -919,6 +956,8 @@ class TransitApp {
             ? (d.delayMins > 0 ? `+${d.delayMins} min retard` : `${d.delayMins} min avançat`)
             : 'Puntual';
 
+          const hasActiveBus = Boolean(d.vehicleId || d.busCoords);
+
           const minsText = isFirstMorning
             ? `🌅 Demà ${d.departureTime || estTime}`
             : (isTomorrow
@@ -929,16 +968,20 @@ class TransitApp {
 
           const tagLabel = isFirstMorning
             ? '🌅 1r Servei'
-            : (isTomorrow ? 'Programat' : (d.isEstimated ? '⚡ Estimat' : '🟢 Temps Real'));
+            : (isTomorrow ? 'Programat' : (d.isEstimated ? '⚡ En ruta' : '🟢 Temps Real'));
 
           const pillLabel = isFirstMorning
             ? '1r Servei'
-            : (isTomorrow ? 'Programat' : (d.isEstimated ? `⚡ Estimat ${d.vehicleId ? `#${d.vehicleId}` : ''}` : (d.delayBadgeText || 'Puntual')));
+            : (isTomorrow ? 'Programat' : (d.isEstimated ? '⚡ En ruta' : (d.delayBadgeText || 'Puntual')));
 
           const pillClass = isTomorrow ? 'scheduled' : (d.delayStatus || 'on-time');
 
           return `
-            <div class="departure-item ${idx === 0 ? 'highlight-next' : ''}">
+            <div class="departure-item ${idx === 0 ? 'highlight-next' : ''} ${hasActiveBus ? 'clickable-bus-dep' : ''}"
+                 data-vehicle-id="${d.vehicleId || ''}"
+                 data-bus-lat="${d.busCoords?.lat || ''}"
+                 data-bus-lon="${d.busCoords?.lon || ''}"
+                 title="${hasActiveBus ? 'Fes clic per localitzar aquest autobús en directe al mapa' : ''}">
               <div class="dep-time-group">
                 <div class="dep-time-row">
                   <span class="dep-clock">${estTime}</span>
@@ -965,6 +1008,12 @@ class TransitApp {
               <div class="dep-status">
                 <span class="dep-mins" style="${isFirstMorning ? 'color:#fbbf24;' : (isTomorrow ? 'color:#94a3b8;' : '')}">${minsText}</span>
                 <span class="dep-delay-pill ${pillClass}" title="${d.delayBadgeText || pillLabel}">${pillLabel}</span>
+                ${hasActiveBus ? `
+                  <span class="dep-map-cta">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polygon points="12 8 8 12 12 16 12 8"/></svg>
+                    Veure al mapa
+                  </span>
+                ` : ''}
               </div>
             </div>
           `;
@@ -1277,6 +1326,21 @@ class TransitApp {
     // Target Stop Dropdown
     document.getElementById('target-stop-select')?.addEventListener('change', (e) => {
       if (e.target.value) this.setTargetStop(e.target.value);
+    });
+
+    // Click departure item to focus bus on map delegation
+    document.addEventListener('click', (e) => {
+      const depItem = e.target.closest('.departure-item.clickable-bus-dep');
+      if (depItem) {
+        e.preventDefault();
+        const vId = depItem.getAttribute('data-vehicle-id');
+        const lat = parseFloat(depItem.getAttribute('data-bus-lat'));
+        const lon = parseFloat(depItem.getAttribute('data-bus-lon'));
+        const coords = (lat && lon && !isNaN(lat) && !isNaN(lon)) ? { lat, lon } : null;
+        if (vId || coords) {
+          this.focusBusOnMap(vId, coords);
+        }
+      }
     });
 
     // Refresh Button
