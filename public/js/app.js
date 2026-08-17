@@ -127,10 +127,14 @@ class TransitApp {
       return;
     }
 
+    const cleanHash = hash.replace(/^#/, '').replace(/^line-/, '').replace(/^linia-/, '').replace(/^l(?=[a-zA-Z0-9])/, '');
+
     const matchedLine = this.availableLines.find(l => 
       String(l.id).toLowerCase() === hash || 
       String(l.code).toLowerCase() === hash || 
-      String(l.id).toLowerCase() === hash.replace('line-', '')
+      String(l.code).toLowerCase() === cleanHash ||
+      String(l.id).toLowerCase() === cleanHash ||
+      String(l.id).toLowerCase().includes(`_${cleanHash}`)
     );
 
     if (matchedLine) {
@@ -164,9 +168,9 @@ class TransitApp {
     if (direction !== null) {
       this.activeDirection = String(direction);
     } else if (lineObj?.directions?.length > 0) {
-      this.activeDirection = String(lineObj.directions[0].dirId || '1');
+      this.activeDirection = String(lineObj.directions[0].dirId !== undefined ? lineObj.directions[0].dirId : '0');
     } else {
-      this.activeDirection = '1';
+      this.activeDirection = '0';
     }
 
     const hash = this.activeLineId === 'c10' ? '#c10' : `#l${this.activeLineId}`;
