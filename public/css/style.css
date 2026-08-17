@@ -1959,9 +1959,24 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 0.75rem;
   margin-bottom: 1rem;
   padding-bottom: 0.75rem;
   border-bottom: 1px solid var(--border-subtle);
+}
+
+.stop-modal-nav-right {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.stop-modal-close-btn {
+  position: static;
+  width: 32px;
+  height: 32px;
+  font-size: 1.25rem;
+  flex-shrink: 0;
 }
 
 .btn-stop-nav {

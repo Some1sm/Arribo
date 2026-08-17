@@ -398,9 +398,7 @@
   <!-- Stop Departure Details Modal -->
   <div class="stop-modal-backdrop" id="stop-modal-backdrop">
     <div class="stop-modal">
-      <button type="button" class="modal-close-btn" id="modal-close-btn" aria-label="Tancar finestra">&times;</button>
-      
-      <!-- Previous & Next Stop Navigation Bar -->
+      <!-- Previous & Next Stop Navigation Bar with Clean Close Button -->
       <div class="stop-modal-nav-bar">
         <button type="button" class="btn-stop-nav" id="modal-prev-stop-btn" title="Parada anterior">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
@@ -409,10 +407,13 @@
 
         <span class="stop-nav-seq-badge" id="modal-stop-seq-badge">Parada #--</span>
 
-        <button type="button" class="btn-stop-nav" id="modal-next-stop-btn" title="Parada següent">
-          <span class="stop-nav-label" id="modal-next-stop-name">Següent</span>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-        </button>
+        <div class="stop-modal-nav-right">
+          <button type="button" class="btn-stop-nav" id="modal-next-stop-btn" title="Parada següent">
+            <span class="stop-nav-label" id="modal-next-stop-name">Següent</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+          <button type="button" class="modal-close-btn stop-modal-close-btn" id="modal-close-btn" aria-label="Tancar finestra" title="Tancar">&times;</button>
+        </div>
       </div>
 
       <div class="target-badge" id="modal-stop-badge">Detalls de parada</div>
