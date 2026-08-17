@@ -587,7 +587,7 @@ class TransitApp {
               <span class="dep-tag-sub ${isFirstMorning ? 'first-service' : ''}">${tagLabel}</span>
             </div>
             <div class="dep-dest">
-              Cap a <strong>${dep.destination || 'Destí'}</strong>
+              Cap a <strong>${(dep.destination || 'Destí').replace(/^Cap a\s+/i, '')}</strong>
             </div>
             <div class="dep-time-sub">
               ${isFirstMorning
@@ -997,7 +997,7 @@ class TransitApp {
                 
                 <div class="dep-dest">
                   ${d.lineId ? `<span class="line-badge-sm" style="font-size:0.68rem; padding:1px 5px; margin-right:4px; background:var(--c10-primary);">${d.lineId}</span>` : ''}
-                  Cap a <strong>${d.destination || 'Destí'}</strong>
+                  Cap a <strong>${(d.destination || 'Destí').replace(/^Cap a\s+/i, '')}</strong>
                 </div>
 
                 <div class="dep-time-sub">

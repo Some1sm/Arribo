@@ -617,7 +617,7 @@ class MaresmeTracker {
         let diffSec = depSec - currentSec;
         let dayOffset = 0;
 
-        if (diffSec < -300) {
+        if (diffSec < -60) {
           dayOffset = 1;
           diffSec += 86400;
         }
@@ -628,7 +628,7 @@ class MaresmeTracker {
         const depUtc = timeUtils.localTimeToUtcDate(netT.year, netT.month, netT.day, passH, passM, 0, this.agencyTimezone);
         const diffMin = Math.round(diffSec / 60);
 
-        if (diffMin >= -5 && diffMin <= 1440) {
+        if (diffMin >= 0 && diffMin <= 1440) {
           departures.push({
             lineId: displayLineId,
             lineName: lineConfig ? lineConfig.code : 'Moventis',
@@ -645,7 +645,7 @@ class MaresmeTracker {
             delayStatus: 'scheduled',
             delayBadgeText: 'Programat',
             comparisonText: `📅 Horari teòric: ${timeStr}`,
-            formattedStatus: diffMin <= 0 ? 'Imminent' : `${diffMin} min`
+            formattedStatus: diffMin === 0 ? 'Imminent' : `${diffMin} min`
           });
         }
       });
