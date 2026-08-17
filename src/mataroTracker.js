@@ -60,11 +60,11 @@ class MataroTracker {
   loadDatasets() {
     try {
       const getFilePath = (fileName) => {
+        const pCity = path.join(__dirname, '..', 'data', 'cities', 'mataro', fileName);
+        if (fs.existsSync(pCity)) return pCity;
         const p1 = path.join(__dirname, '..', 'data', fileName);
         if (fs.existsSync(p1)) return p1;
-        const p2 = path.join(__dirname, '..', 'static_data', fileName);
-        if (fs.existsSync(p2)) return p2;
-        return p1;
+        return pCity;
       };
 
       const lineasPath = getFilePath('mataro_lineas.json');
