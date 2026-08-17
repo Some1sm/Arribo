@@ -26,6 +26,11 @@ class CorridorTracker {
   constructor() {
     this.agencyTimezone = 'Europe/Madrid';
     this.dataDir = path.join(__dirname, '..', 'data');
+    this.stopsDir1 = [];
+    this.stopsDir0 = [];
+    this.stopsMapDir1 = new Map();
+    this.stopsMapDir0 = new Map();
+    this.fullSchedule = { dir1: [], dir0: [] };
     this.calendarExceptions = new Map();
     this.calendarWeekly = [];
     this.loadData();
@@ -145,7 +150,15 @@ class CorridorTracker {
                 serviceId: sId,
                 departureTime: depTime.substring(0, 5),
                 arrivalTime: arrTime.substring(0, 5),
-                stops: tTimes.map(st => ({ gtfsStopId: st[3], departureTime: st[2].substring(0, 5) }))
+                stops: tTimes.map(st => ({
+                  stopId: st[3],
+                  gtfsStopId: st[3],
+                  seq: parseInt(st[4], 10),
+                  arr: st[1],
+                  dep: st[2],
+                  departureTime: st[2].substring(0, 5),
+                  arrivalTime: st[1].substring(0, 5)
+                }))
               };
               if (dir === '1') schedDir1.push(entry);
               else schedDir0.push(entry);
@@ -271,7 +284,7 @@ class CorridorTracker {
 
   computeScheduledMatch(liveTimeStr, isRealtime, stopGtfsId, direction, stopMouteId = null, stopSeq = null) {
     const isDir1 = direction === '1';
-    const scheduleTrips = isDir1 ? this.fullSchedule.dir1 : this.fullSchedule.dir0;
+    const scheduleTrips = isDir1 ? (this.fullSchedule?.dir1 || []) : (this.fullSchedule?.dir0 || []);
     const stopsList = isDir1 ? this.stopsDir1 : this.stopsDir0;
     const now = new Date();
     const todaysTrips = scheduleTrips.filter(trip => this.isServiceActiveOnDate(trip.serviceId, now));
@@ -351,7 +364,7 @@ class CorridorTracker {
 
   parseDepartures(data, stopGtfsId = null, direction = '1', stopMouteId = null, stopSeq = null) {
     const isDir1 = direction === '1';
-    const scheduleTrips = isDir1 ? this.fullSchedule.dir1 : this.fullSchedule.dir0;
+    const scheduleTrips = isDir1 ? (this.fullSchedule?.dir1 || []) : (this.fullSchedule?.dir0 || []);
     const stopsList = isDir1 ? this.stopsDir1 : this.stopsDir0;
     const now = new Date();
     const networkNow = timeUtils.getNetworkTime(this.agencyTimezone, now);
@@ -424,7 +437,7 @@ class CorridorTracker {
     // ensure the active trip is preserved ONLY if it is physically active and has NOT passed this stop yet!
     const stopsMap = isDir1 ? this.stopsMapDir1 : this.stopsMapDir0;
     const stopsListCurrent = isDir1 ? this.stopsDir1 : this.stopsDir0;
-    const oppositeScheduleTrips = isDir1 ? this.fullSchedule.dir0 : this.fullSchedule.dir1;
+    const oppositeScheduleTrips = isDir1 ? (this.fullSchedule?.dir0 || []) : (this.fullSchedule?.dir1 || []);
     const oppositeTrips = oppositeScheduleTrips.filter(t => this.isServiceActiveOnDate(t.serviceId, now));
 
     for (const trip of todaysTrips) {
@@ -577,7 +590,7 @@ class CorridorTracker {
     let departuresToUse = filtered;
     if (departuresToUse.length === 0) {
       // If Mou-te single-pole only returned opposite direction, generate from GTFS schedule for this direction
-      const scheduleTrips = isDir1 ? this.fullSchedule.dir1 : this.fullSchedule.dir0;
+      const scheduleTrips = isDir1 ? (this.fullSchedule?.dir1 || []) : (this.fullSchedule?.dir0 || []);
       const now = new Date();
       const networkNow = timeUtils.getNetworkTime(this.agencyTimezone, now);
       const todaysTrips = scheduleTrips.filter(trip => this.isServiceActiveOnDate(trip.serviceId, now));
@@ -622,7 +635,7 @@ class CorridorTracker {
       // If no departures left today, get full schedule of tomorrow
       const tomorrow = new Date(Date.now() + 24 * 3600 * 1000);
       const networkTomorrow = timeUtils.getNetworkTime(this.agencyTimezone, tomorrow);
-      const scheduleTrips = isDir1 ? this.fullSchedule.dir1 : this.fullSchedule.dir0;
+      const scheduleTrips = isDir1 ? (this.fullSchedule?.dir1 || []) : (this.fullSchedule?.dir0 || []);
       const tomorrowsTrips = scheduleTrips.filter(trip => this.isServiceActiveOnDate(trip.serviceId, tomorrow));
       tomorrowsTrips.sort((a, b) => timeToSec(a.stops[0].dep) - timeToSec(b.stops[0].dep));
 
@@ -721,7 +734,7 @@ class CorridorTracker {
     if (departures.length === 0) {
       const tomorrow = new Date(Date.now() + 24 * 3600 * 1000);
       const networkTomorrow = timeUtils.getNetworkTime(this.agencyTimezone, tomorrow);
-      const scheduleTrips = isDir1 ? this.fullSchedule.dir1 : this.fullSchedule.dir0;
+      const scheduleTrips = isDir1 ? (this.fullSchedule?.dir1 || []) : (this.fullSchedule?.dir0 || []);
       const tomorrowsTrips = scheduleTrips.filter(trip => this.isServiceActiveOnDate(trip.serviceId, tomorrow));
       tomorrowsTrips.sort((a, b) => timeToSec(a.stops[0].dep) - timeToSec(b.stops[0].dep));
 
@@ -903,7 +916,7 @@ class CorridorTracker {
   async getCorridorLiveTracking(direction = '1') {
     const isDir1 = direction === '1';
     const checkpoints = isDir1 ? this.checkpointsDir1 : this.checkpointsDir0;
-    const scheduleTrips = isDir1 ? this.fullSchedule.dir1 : this.fullSchedule.dir0;
+    const scheduleTrips = isDir1 ? (this.fullSchedule?.dir1 || []) : (this.fullSchedule?.dir0 || []);
     const stopsMap = isDir1 ? this.stopsMapDir1 : this.stopsMapDir0;
     const stopsList = isDir1 ? this.stopsDir1 : this.stopsDir0;
 
@@ -914,7 +927,7 @@ class CorridorTracker {
     const todaysTrips = scheduleTrips.filter(trip => this.isServiceActiveOnDate(trip.serviceId, now));
     todaysTrips.sort((a, b) => timeToSec(a.stops[0].dep) - timeToSec(b.stops[0].dep));
 
-    const oppositeScheduleTrips = isDir1 ? this.fullSchedule.dir0 : this.fullSchedule.dir1;
+    const oppositeScheduleTrips = isDir1 ? (this.fullSchedule?.dir0 || []) : (this.fullSchedule?.dir1 || []);
     const oppositeTrips = oppositeScheduleTrips.filter(trip => this.isServiceActiveOnDate(trip.serviceId, now));
     oppositeTrips.sort((a, b) => timeToSec(a.stops[0].dep) - timeToSec(b.stops[0].dep));
 
