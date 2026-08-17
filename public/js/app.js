@@ -333,9 +333,19 @@ class TransitApp {
     const subtitle = document.getElementById('header-subtitle');
     const mapTitle = document.getElementById('map-line-title');
 
-    const code = lData.code || lData.id || 'C-10';
-    const color = lData.color || '#009485';
-    const isInterurban = lData.id === 'c10' || code.startsWith('C-') || code.startsWith('E');
+    const isMataroUrban = lData.group === 'mataro' || ['1','2','3','4','5','6','7','8'].includes(String(lData.id));
+    let modeText = lData.mode;
+    if (!modeText) {
+      if (lData.isTrain || lData.group === 'rodalies') modeText = 'Tren Rodalies';
+      else if (isMataroUrban) modeText = 'Urbà Mataró';
+      else if (code.startsWith('e') || code.startsWith('E')) modeText = 'Exprés.cat';
+      else if (code.startsWith('N') || code.startsWith('n')) modeText = 'NitBus';
+      else if (code.startsWith('A') && (lData.agency?.includes('Aerobús') || lData.agency?.includes('Monbus'))) modeText = 'Aerobús BCN';
+      else if (lData.agency?.includes('TUSGSAL')) modeText = 'DIREXIS TUSGSAL';
+      else if (lData.agency?.includes('Avanza')) modeText = 'Avanza Baix Llob.';
+      else if (lData.group === 'moventis' || lData.id === 'c10' || code.startsWith('C-')) modeText = 'Interurbà Maresme';
+      else modeText = lData.agency || 'Interurbà';
+    }
 
     if (badge) {
       badge.textContent = code;
@@ -344,8 +354,8 @@ class TransitApp {
     }
 
     if (modeBadge) {
-      modeBadge.textContent = isInterurban ? 'Interurbà' : 'Urbà Mataró';
-      modeBadge.className = `header-mode-badge ${isInterurban ? 'interurba' : 'urba'}`;
+      modeBadge.textContent = modeText;
+      modeBadge.className = `header-mode-badge ${isMataroUrban ? 'urba' : 'interurba'}`;
       modeBadge.style.background = `rgba(${this.hexToRgb(color)}, 0.22)`;
       modeBadge.style.color = '#ffffff';
       modeBadge.style.borderColor = color;
@@ -1058,10 +1068,10 @@ class TransitApp {
     const q = (this.linePickerSearch || '').trim().toLowerCase();
     const cityFilter = this.linePickerFilter || 'all';
 
-    // Group definitions (Organized by Bus Transit Networks)
+    // Group definitions (Organized by Transit Networks)
     const groups = [
-      { id: 'moventis', name: '🌊 Moventis / Casas (Maresme & L\'Hospitalet)', icon: '🌊', filter: l => (l.group === 'moventis' || String(l.id) === 'c10' || (l.agency && (l.agency.includes('Moventis') || l.agency.includes('Casas')))) && (!l.isTrain && l.group !== 'rodalies') },
-      { id: 'mataro', name: '📍 Mataró Bus Urbà (L1..L8)', icon: '📍', filter: l => (l.group === 'mataro' || (!l.group && !l.isTrain && !String(l.id).startsWith('amb_') && !String(l.id).startsWith('rodalies_') && !String(l.id).startsWith('n') && String(l.id) !== 'c10')) && (!l.isTrain && l.group !== 'rodalies') },
+      { id: 'moventis', name: '🌊 Moventis / Casas (Maresme & Exprés.cat)', icon: '🌊', filter: l => (l.group === 'moventis' || String(l.id) === 'c10' || String(l.id).startsWith('e11') || String(l.id).startsWith('c') || (l.agency && (l.agency.includes('Moventis') || l.agency.includes('Casas')))) && (!l.isTrain && l.group !== 'rodalies') },
+      { id: 'mataro', name: '📍 Mataró Bus Urbà (L1..L8)', icon: '📍', filter: l => (l.group === 'mataro' || ['1','2','3','4','5','6','7','8','l1','l2','l3','l4','l5','l6','l7','l8'].includes(String(l.id).toLowerCase())) && (!l.isTrain && l.group !== 'rodalies' && l.group !== 'moventis' && String(l.id) !== 'c10') },
       { id: 'tusgsal', name: '🟡 DIREXIS TUSGSAL (Barcelonès Nord & NitBus)', icon: '🟡', filter: l => (l.group === 'tusgsal' || (l.agency && l.agency.includes('TUSGSAL'))) && (!l.isTrain && l.group !== 'rodalies') },
       { id: 'avanza', name: '🔵 Avanza (Baix Llobregat & Exprés)', icon: '🔵', filter: l => (l.group === 'avanza' || (l.agency && l.agency.includes('Avanza'))) && (!l.isTrain && l.group !== 'rodalies') },
       { id: 'monbus', name: '🟠 Monbus & Aerobús', icon: '🟠', filter: l => (l.group === 'monbus' || (l.agency && (l.agency.includes('Monbus') || l.agency.includes('Aerobús')))) && (!l.isTrain && l.group !== 'rodalies') },

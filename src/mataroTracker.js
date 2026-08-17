@@ -92,7 +92,7 @@ class MataroTracker {
     }
   }
 
-  // 1. Get all Mataro urban lines
+  // 1. Get all Mataro urban lines (L1..L8)
   getLines() {
     return this.linesData.map(l => {
       const routes = this.routesData[l.id] || [];
@@ -101,7 +101,9 @@ class MataroTracker {
         code: String(l.id),
         name: l.name.trim(),
         color: l.color || '#009485',
-        agency: 'Mataró Bus (Avanza)',
+        agency: 'Mataró Bus',
+        group: 'mataro',
+        mode: 'Urbà Mataró',
         directions: routes.map((r, idx) => ({
           dirId: String(idx),
           routeId: r.id,
