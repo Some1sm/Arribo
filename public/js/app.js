@@ -23,8 +23,60 @@ class TransitApp {
     this.audioContext = null;
     this.lastAlertedTrip = null;
 
+    // Trains UI display flag: trains remain fully operational in backend/tests, but hidden from the general transit UI
+    this.showTrainsInUI = false;
+
+    // Theme Management (Light / Dark Mode)
+    this.currentTheme = this.getInitialTheme();
+    this.initTheme();
+
     this.mapController = null;
     this.init();
+  }
+
+  getInitialTheme() {
+    const saved = localStorage.getItem('bad_amb_theme');
+    if (saved === 'light' || saved === 'dark') return saved;
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+      return 'light';
+    }
+    return 'dark';
+  }
+
+  initTheme() {
+    document.documentElement.setAttribute('data-theme', this.currentTheme);
+    this.updateThemeButton();
+    if (window.matchMedia) {
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+        if (!localStorage.getItem('bad_amb_theme')) {
+          this.setTheme(e.matches ? 'dark' : 'light', false);
+        }
+      });
+    }
+  }
+
+  setTheme(theme, save = true) {
+    this.currentTheme = theme;
+    document.documentElement.setAttribute('data-theme', theme);
+    if (save) {
+      localStorage.setItem('bad_amb_theme', theme);
+    }
+    this.updateThemeButton();
+    if (this.mapController) {
+      this.mapController.setTheme(theme);
+    }
+  }
+
+  toggleTheme() {
+    this.setTheme(this.currentTheme === 'dark' ? 'light' : 'dark');
+  }
+
+  updateThemeButton() {
+    const btn = document.getElementById('btn-theme-toggle');
+    if (btn) {
+      btn.setAttribute('aria-label', `Canviar a mode ${this.currentTheme === 'dark' ? 'clar' : 'fosc'}`);
+      btn.setAttribute('title', `Canviar a mode ${this.currentTheme === 'dark' ? 'clar' : 'fosc'}`);
+    }
   }
 
   async init() {
@@ -33,6 +85,7 @@ class TransitApp {
     try {
       // 1. Initialize Map
       this.mapController = new C10Map('map-container');
+      this.mapController.setTheme(this.currentTheme);
 
       // 2. Load Available Lines & Determine Initial Route from URL hash
       await this.fetchLines();
@@ -891,18 +944,21 @@ class TransitApp {
     const q = (this.linePickerSearch || '').trim().toLowerCase();
     const cityFilter = this.linePickerFilter || 'all';
 
-    // Group definitions
+    // Group definitions (Organized by Bus Transit Networks)
     const groups = [
-      { id: 'rodalies', name: '🚆 Rodalies de Catalunya (Trens)', icon: '🚆', filter: l => l.group === 'rodalies' || l.isTrain || String(l.id).startsWith('rodalies_') },
-      { id: 'tusgsal', name: '🟡 DIREXIS TUSGSAL (Barcelonès Nord & NitBus)', icon: '🟡', filter: l => l.group === 'tusgsal' || (l.agency && l.agency.includes('TUSGSAL')) },
-      { id: 'avanza', name: '🔵 Avanza (Baix Llobregat & Exprés)', icon: '🔵', filter: l => l.group === 'avanza' || (l.agency && l.agency.includes('Avanza')) },
-      { id: 'monbus', name: '🟠 Monbus & Aerobús', icon: '🟠', filter: l => l.group === 'monbus' || (l.agency && (l.agency.includes('Monbus') || l.agency.includes('Aerobús'))) },
-      { id: 'moventis', name: '🌊 Moventis / Casas (Maresme & L\'Hospitalet)', icon: '🌊', filter: l => l.group === 'moventis' || String(l.id) === 'c10' || (l.agency && (l.agency.includes('Moventis') || l.agency.includes('Casas'))) },
-      { id: 'sagales', name: '🦉 Sagalés (NitBus & Costa)', icon: '🦉', filter: l => l.group === 'sagales' || (l.agency && l.agency.includes('Sagalés')) || ['n82', 'n83', '603', 'n70', 'n71', 'n73'].includes(String(l.id).toLowerCase()) },
-      { id: 'soler', name: '🟢 Soler i Sauret (Baix Llobregat)', icon: '🟢', filter: l => l.group === 'soler' || (l.agency && l.agency.includes('Soler')) },
-      { id: 'mataro', name: '📍 Mataró Bus Urbà', icon: '📍', filter: l => l.group === 'mataro' || (!l.group && !l.isTrain && !String(l.id).startsWith('amb_') && !String(l.id).startsWith('rodalies_') && !String(l.id).startsWith('n') && String(l.id) !== 'c10') },
-      { id: 'baixbus', name: '🟣 Baixbus / DIREXIS TGO', icon: '🟣', filter: l => l.group === 'baixbus' || (l.agency && l.agency.includes('TGO')) }
+      { id: 'moventis', name: '🌊 Moventis / Casas (Maresme & L\'Hospitalet)', icon: '🌊', filter: l => (l.group === 'moventis' || String(l.id) === 'c10' || (l.agency && (l.agency.includes('Moventis') || l.agency.includes('Casas')))) && (!l.isTrain && l.group !== 'rodalies') },
+      { id: 'mataro', name: '📍 Mataró Bus Urbà (L1..L8)', icon: '📍', filter: l => (l.group === 'mataro' || (!l.group && !l.isTrain && !String(l.id).startsWith('amb_') && !String(l.id).startsWith('rodalies_') && !String(l.id).startsWith('n') && String(l.id) !== 'c10')) && (!l.isTrain && l.group !== 'rodalies') },
+      { id: 'tusgsal', name: '🟡 DIREXIS TUSGSAL (Barcelonès Nord & NitBus)', icon: '🟡', filter: l => (l.group === 'tusgsal' || (l.agency && l.agency.includes('TUSGSAL'))) && (!l.isTrain && l.group !== 'rodalies') },
+      { id: 'avanza', name: '🔵 Avanza (Baix Llobregat & Exprés)', icon: '🔵', filter: l => (l.group === 'avanza' || (l.agency && l.agency.includes('Avanza'))) && (!l.isTrain && l.group !== 'rodalies') },
+      { id: 'monbus', name: '🟠 Monbus & Aerobús', icon: '🟠', filter: l => (l.group === 'monbus' || (l.agency && (l.agency.includes('Monbus') || l.agency.includes('Aerobús')))) && (!l.isTrain && l.group !== 'rodalies') },
+      { id: 'sagales', name: '🦉 Sagalés (NitBus & Costa)', icon: '🦉', filter: l => (l.group === 'sagales' || (l.agency && l.agency.includes('Sagalés')) || ['n82', 'n83', '603', 'n70', 'n71', 'n73'].includes(String(l.id).toLowerCase())) && (!l.isTrain && l.group !== 'rodalies') },
+      { id: 'soler', name: '🟢 Soler i Sauret (Baix Llobregat)', icon: '🟢', filter: l => (l.group === 'soler' || (l.agency && l.agency.includes('Soler'))) && (!l.isTrain && l.group !== 'rodalies') },
+      { id: 'baixbus', name: '🟣 Baixbus / DIREXIS TGO', icon: '🟣', filter: l => (l.group === 'baixbus' || (l.agency && l.agency.includes('TGO'))) && (!l.isTrain && l.group !== 'rodalies') }
     ];
+
+    if (this.showTrainsInUI) {
+      groups.unshift({ id: 'rodalies', name: '🚆 Rodalies de Catalunya (Trens)', icon: '🚆', filter: l => l.group === 'rodalies' || l.isTrain || String(l.id).startsWith('rodalies_') });
+    }
 
     const filterFn = (l) => {
       if (!q) return true;
@@ -1062,13 +1118,18 @@ class TransitApp {
   }
 
   renderSearchResults(results, dropdown, input) {
-    if (results.length === 0) {
+    let itemsToRender = results;
+    if (!this.showTrainsInUI) {
+      itemsToRender = results.filter(r => !r.isTrain && !r.lineCode?.startsWith('R') && !r.agency?.toLowerCase().includes('rodalies') && !r.agency?.toLowerCase().includes('renfe'));
+    }
+
+    if (itemsToRender.length === 0) {
       dropdown.innerHTML = '<div style="padding:0.75rem 1rem; color:var(--text-muted); font-size:0.8rem;">Cap parada trobada.</div>';
       dropdown.classList.add('active');
       return;
     }
 
-    dropdown.innerHTML = results.map(r => `
+    dropdown.innerHTML = itemsToRender.map(r => `
       <div class="search-result-item" data-line-id="${r.lineId}" data-stop-id="${r.stopId}" data-name="${r.stopName.replace(/"/g, '&quot;')}" data-lat="${r.lat}" data-lon="${r.lon}">
         <div class="search-result-left">
           <span class="search-result-badge" style="background:${r.lineColor};">${r.lineCode}</span>
@@ -1169,6 +1230,12 @@ class TransitApp {
     document.getElementById('btn-sound')?.addEventListener('click', (e) => { 
       e.preventDefault(); 
       this.toggleSound(); 
+    });
+
+    // Light / Dark Theme Toggle Button
+    document.getElementById('btn-theme-toggle')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.toggleTheme();
     });
 
     // Modal Close Button & Backdrop

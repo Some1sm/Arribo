@@ -9,7 +9,8 @@ class C10Map {
     this.busMarkersMap = new Map(); // tripId -> { marker, busData, subpath, currentBearing }
     this.routePolyline = null;
     this.activePolylineCoords = []; // Array of [lat, lon]
-    this.lastStopsFingerprint = null;
+    this.tileLayer = null;
+    this.currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
     this.initMap();
   }
 
@@ -25,12 +26,30 @@ class C10Map {
       scrollWheelZoom: true
     }).setView([41.54, 2.44], 13);
 
-    // High quality modern tile layer (CartoDB Voyager)
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    this.updateTileLayer();
+  }
+
+  updateTileLayer() {
+    if (!this.map) return;
+    if (this.tileLayer) {
+      this.map.removeLayer(this.tileLayer);
+    }
+    const isDark = this.currentTheme === 'dark';
+    const tileUrl = isDark
+      ? 'https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png'
+      : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+
+    this.tileLayer = L.tileLayer(tileUrl, {
       attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
       subdomains: 'abcd',
       maxZoom: 19
     }).addTo(this.map);
+  }
+
+  setTheme(theme) {
+    if (this.currentTheme === theme) return;
+    this.currentTheme = theme;
+    this.updateTileLayer();
   }
 
   // Distance in meters between two lat/lon points
