@@ -450,8 +450,20 @@ class TransitApp {
           ? (mins <= 0 ? 'Imminent' : (mins === 1 ? '1 min' : `${mins} min`))
           : (next.formattedStatus || clockTime);
 
+        const schedTime = next.aimedIso
+          ? new Date(next.aimedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+          : (next.departureTime || null);
+        const isDiff = schedTime && schedTime !== clockTime && (next.isRealTime || next.isEstimated);
+
         if (etaBigEl) etaBigEl.textContent = minsDisplay;
-        if (etaClockEl) etaClockEl.textContent = `Hora estimada: ${clockTime}`;
+        
+        if (etaClockEl) {
+          if (isDiff) {
+            etaClockEl.innerHTML = `Hora estimada: <strong>${clockTime}</strong> <span class="eta-sched-tag" title="Horari oficial programat">(Oficial: <strong>${schedTime}</strong>)</span>`;
+          } else {
+            etaClockEl.textContent = `Hora estimada: ${clockTime}`;
+          }
+        }
 
         if (etaPillEl && etaStatusText) {
           etaPillEl.className = 'eta-status-pill';
@@ -500,8 +512,16 @@ class TransitApp {
         ? new Date(dep.expectedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
         : (dep.departureTime || '--:--');
 
+      const schedTime = dep.aimedIso
+        ? new Date(dep.aimedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+        : (dep.isRealTime ? dep.departureTime : null);
+
       const isTomorrow = dep.isToday === false && !dep.isRealTime && !dep.isEstimated;
       const isFirstMorning = (dep.isFirstOfDay === true || (idx === 0 && isTomorrow)) && !dep.isRealTime && !dep.isEstimated;
+      const isDiff = schedTime && schedTime !== clockTime;
+      const delayText = dep.delayMins !== undefined && dep.delayMins !== 0
+        ? (dep.delayMins > 0 ? `+${dep.delayMins} min retard` : `${dep.delayMins} min avançat`)
+        : 'Puntual';
 
       const minsText = isFirstMorning
         ? `🌅 Demà ${dep.departureTime || clockTime}`
@@ -526,6 +546,7 @@ class TransitApp {
           <div class="dep-time-group">
             <div class="dep-time-row">
               <span class="dep-clock">${clockTime}</span>
+              ${isDiff ? `<span class="dep-sched-pill" title="Horari oficial teòric">Oficial: ${schedTime}</span>` : ''}
               <span class="dep-tag-sub ${isFirstMorning ? 'first-service' : ''}">${tagLabel}</span>
             </div>
             <div class="dep-dest">
@@ -534,7 +555,11 @@ class TransitApp {
             <div class="dep-time-sub">
               ${isFirstMorning
                 ? `<span>📅 Primer autobús del matí (${dep.departureTime || clockTime})</span>`
-                : (isTomorrow ? `<span>📅 Horari teòric: ${dep.departureTime || clockTime}</span>` : `<span>📅 Horari previst</span>`)}
+                : (isTomorrow
+                    ? `<span>📅 Horari teòric: <strong class="sched-strong">${dep.departureTime || clockTime}</strong></span>`
+                    : (schedTime
+                        ? `<span>📅 Horari oficial: <strong class="sched-strong">${schedTime}</strong> <span class="dep-delay-note ${dep.delayMins > 0 ? 'delay' : (dep.delayMins < 0 ? 'early' : '')}">(${delayText})</span></span>`
+                        : `<span>📅 Horari previst</span>`))}
             </div>
           </div>
           <div class="dep-status">
@@ -917,6 +942,7 @@ class TransitApp {
               <div class="dep-time-group">
                 <div class="dep-time-row">
                   <span class="dep-clock">${estTime}</span>
+                  ${isDiff ? `<span class="dep-sched-pill" title="Horari oficial teòric">Oficial: ${schedTime}</span>` : ''}
                   <span class="dep-tag-sub ${isFirstMorning ? 'first-service' : ''}">${tagLabel}</span>
                 </div>
                 
@@ -929,11 +955,10 @@ class TransitApp {
                   ${isFirstMorning ? `
                     <span>📅 Primer autobús del matí (${d.departureTime || estTime})</span>
                   ` : (isTomorrow ? `
-                    <span>📅 Horari teòric: <strong class="dep-sched-time">${d.departureTime || estTime}</strong></span>
+                    <span>📅 Horari teòric: <strong class="sched-strong">${d.departureTime || estTime}</strong></span>
                   ` : (schedTime ? `
-                    <span>📅 Horari teòric: <strong class="dep-sched-time">${schedTime}</strong></span>
-                    ${isDiff ? `<span>•</span> <span style="color:${d.delayMins > 2 ? '#f87171' : '#34d399'}; font-weight:600;">${delayText}</span>` : `<span>•</span> <span style="color:#34d399; font-weight:600;">Puntual</span>`}
-                  ` : ''))}
+                    <span>📅 Horari oficial: <strong class="sched-strong">${schedTime}</strong> <span class="dep-delay-note ${d.delayMins > 0 ? 'delay' : (d.delayMins < 0 ? 'early' : '')}">(${delayText})</span></span>
+                  ` : `<span>📅 Horari previst</span>`))}
                 </div>
               </div>
 

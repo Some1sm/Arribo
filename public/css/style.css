@@ -1158,6 +1158,48 @@ body {
   background: rgba(245, 158, 11, 0.15);
 }
 
+.dep-sched-pill {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-strong);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+}
+
+.sched-strong {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.dep-delay-note {
+  font-weight: 600;
+}
+
+.dep-delay-note.delay {
+  color: var(--accent-danger);
+  font-weight: 700;
+}
+
+.dep-delay-note.early {
+  color: var(--accent-warning);
+  font-weight: 700;
+}
+
+.eta-sched-tag {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  margin-left: 0.35rem;
+}
+
+.eta-sched-tag strong {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
 .dep-dest {
   font-size: 0.85rem;
   color: var(--text-secondary);
