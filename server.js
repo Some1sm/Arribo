@@ -38,9 +38,13 @@ app.use('/api', (req, res, next) => {
 function getTrackerForLine(lineId) {
   const cleanId = String(lineId).toLowerCase().trim();
   if (cleanId === 'c10' || cleanId === 'c-10') return { type: 'c10', tracker: corridorTracker };
+
+  // Mataró urban bus L1..L8 must be checked before AMB since AMB also has numeric codes
+  const mataroId = cleanId.replace(/^l(?=[1-8]$)/, ''); // strip leading 'l' from l1..l8
+  if (/^[1-8]$/.test(mataroId)) return { type: 'mataro', tracker: mataroTracker };
+
   if (maresmeTracker.resolveLine(cleanId)) return { type: 'maresme', tracker: maresmeTracker };
   if (rodaliesTracker.resolveLine(cleanId)) return { type: 'rodalies', tracker: rodaliesTracker };
-  if (mataroTracker.resolveLineConfig(cleanId)) return { type: 'mataro', tracker: mataroTracker };
   if (ambTracker.resolveLine(cleanId)) return { type: 'amb', tracker: ambTracker };
   if (sagalesTracker.resolveLineConfig(cleanId)) return { type: 'sagales', tracker: sagalesTracker };
   if (cataloniaTracker.resolveLine(cleanId)) return { type: 'catalonia', tracker: cataloniaTracker };
