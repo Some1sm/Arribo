@@ -333,6 +333,8 @@ class TransitApp {
     const subtitle = document.getElementById('header-subtitle');
     const mapTitle = document.getElementById('map-line-title');
 
+    const code = lData.code || lData.id || 'C-10';
+    const color = lData.color || '#009485';
     const isMataroUrban = lData.group === 'mataro' || ['1','2','3','4','5','6','7','8'].includes(String(lData.id));
     let modeText = lData.mode;
     if (!modeText) {
