@@ -65,6 +65,23 @@ class HistoryDatabase {
 
           CREATE INDEX IF NOT EXISTS idx_delay_line ON delay_logs(line_code, timestamp);
           CREATE INDEX IF NOT EXISTS idx_delay_stop ON delay_logs(stop_id, timestamp);
+
+          -- Option B: Hourly Aggregated Rollup Table (Kept indefinitely with <1 MB/day footprint)
+          CREATE TABLE IF NOT EXISTS hourly_line_stats (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            line_code TEXT NOT NULL,
+            agency TEXT,
+            date_hour TEXT NOT NULL,
+            sample_count INTEGER DEFAULT 0,
+            avg_delay_mins REAL DEFAULT 0,
+            max_delay_mins INTEGER DEFAULT 0,
+            on_time_count INTEGER DEFAULT 0,
+            late_count INTEGER DEFAULT 0,
+            timestamp INTEGER NOT NULL,
+            UNIQUE(line_code, date_hour)
+          );
+
+          CREATE INDEX IF NOT EXISTS idx_hourly_stats ON hourly_line_stats(line_code, date_hour);
         `);
         console.log('[HistoryDB] SQLite Database Initialized successfully at', this.dbPath);
       } catch (err) {
@@ -315,15 +332,54 @@ class HistoryDatabase {
     }
   }
 
-  pruneOldRecords(daysRetention = 7) {
+  // Option B: Aggregate raw delay logs into persistent hourly rollups
+  aggregateHourlyStats(hoursBack = 48) {
     if (!this.db) return;
     try {
+      const cutoff = Date.now() - hoursBack * 3600 * 1000;
+      const stmt = this.db.prepare(`
+        INSERT INTO hourly_line_stats (line_code, agency, date_hour, sample_count, avg_delay_mins, max_delay_mins, on_time_count, late_count, timestamp)
+        SELECT 
+          line_code,
+          agency,
+          strftime('%Y-%m-%d %H:00', datetime(timestamp / 1000, 'unixepoch', 'localtime')) as date_hour,
+          COUNT(*) as sample_count,
+          ROUND(AVG(delay_mins), 2) as avg_delay_mins,
+          MAX(delay_mins) as max_delay_mins,
+          SUM(CASE WHEN delay_mins <= 3 THEN 1 ELSE 0 END) as on_time_count,
+          SUM(CASE WHEN delay_mins > 3 THEN 1 ELSE 0 END) as late_count,
+          MIN(timestamp) as timestamp
+        FROM delay_logs
+        WHERE timestamp >= ?
+        GROUP BY line_code, agency, date_hour
+        ON CONFLICT(line_code, date_hour) DO UPDATE SET
+          sample_count = excluded.sample_count,
+          avg_delay_mins = excluded.avg_delay_mins,
+          max_delay_mins = excluded.max_delay_mins,
+          on_time_count = excluded.on_time_count,
+          late_count = excluded.late_count,
+          timestamp = excluded.timestamp
+      `);
+      stmt.run(cutoff);
+    } catch (e) {
+      console.error('[HistoryDB] aggregateHourlyStats error:', e.message);
+    }
+  }
+
+  // Retention cleanup: roll up stats first, then prune raw logs older than daysRetention
+  pruneOldRecords(daysRetention = 30) {
+    if (!this.db) return;
+    try {
+      // 1. Ensure all historical data is aggregated into hourly rollups first
+      this.aggregateHourlyStats(daysRetention * 24);
+
+      // 2. Delete raw records older than retention window (default 30 days)
       const cutoff = Date.now() - daysRetention * 86400 * 1000;
       this.db.prepare(`DELETE FROM vehicle_snapshots WHERE timestamp < ?`).run(cutoff);
       this.db.prepare(`DELETE FROM delay_logs WHERE timestamp < ?`).run(cutoff);
-      console.log(`[HistoryDB] Pruned records older than ${daysRetention} days.`);
+      console.log(`[HistoryDB] Pruned raw records older than ${daysRetention} days (hourly stats preserved).`);
     } catch (e) {
-      // Ignore
+      console.error('[HistoryDB] pruneOldRecords error:', e.message);
     }
   }
 }
