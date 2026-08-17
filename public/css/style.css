@@ -1895,11 +1895,48 @@ body {
 }
 
 /* Custom Live Bus Marker Pin */
-.live-bus-marker {
+.live-bus-marker-wrap {
   position: relative;
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  cursor: pointer;
+}
+
+.live-bus-marker-wrap.selected {
+  z-index: 5000 !important;
+}
+
+.live-bus-marker-wrap.selected .live-bus-pin {
+  transform: scale(1.35);
+  border: 2.5px solid #ffffff;
+  box-shadow: 0 0 0 4px rgba(251, 191, 36, 0.9), 0 0 25px rgba(251, 191, 36, 0.9), 0 8px 20px rgba(0, 0, 0, 0.5);
+  animation: selected-bus-pulse 1.8s infinite;
+}
+
+@keyframes selected-bus-pulse {
+  0% { box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.9), 0 0 16px rgba(251, 191, 36, 0.9); }
+  50% { box-shadow: 0 0 0 8px rgba(251, 191, 36, 0.3), 0 0 30px rgba(251, 191, 36, 1); }
+  100% { box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.9), 0 0 16px rgba(251, 191, 36, 0.9); }
+}
+
+.bus-selection-ring {
+  position: absolute;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  border: 2.5px dashed #fbbf24;
+  animation: rotate-selection-ring 5s linear infinite;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+
+@keyframes rotate-selection-ring {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .live-bus-pin {
@@ -1911,7 +1948,22 @@ body {
   justify-content: center;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
   border: 2px solid #ffffff;
-  transition: transform 0.2s ease;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease;
+}
+
+.bus-status-dot {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid #ffffff;
+  background: #10b981;
+}
+
+.bus-status-dot.estimated {
+  background: #f59e0b;
 }
 
 .bus-icon-inner {

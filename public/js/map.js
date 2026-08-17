@@ -457,9 +457,46 @@ class C10Map {
   }
 
   // Update active bus markers and attach road subpaths
+  isBusSelected(bus, selectedId = this.selectedVehicleId) {
+    if (!selectedId || !bus) return false;
+    const s = String(selectedId).trim();
+    return String(bus.tripId || '').trim() === s || 
+           String(bus.vehicleId || '').trim() === s || 
+           String(bus.id || '').trim() === s;
+  }
+
+  highlightBus(selectedVehicleId, shouldPan = false) {
+    this.selectedVehicleId = selectedVehicleId;
+    let targetLatLng = null;
+
+    for (const [tId, obj] of this.busMarkersMap.entries()) {
+      const isSel = this.isBusSelected(obj.busData, selectedVehicleId);
+      const el = obj.marker.getElement();
+      if (el) {
+        const wrapEl = el.querySelector('.live-bus-marker-wrap');
+        if (wrapEl) {
+          wrapEl.classList.toggle('selected', isSel);
+          const ringEl = el.querySelector('.bus-selection-ring');
+          if (ringEl) ringEl.style.display = isSel ? 'block' : 'none';
+        }
+        obj.marker.setZIndexOffset(isSel ? 5000 : 2000);
+      }
+      if (isSel) {
+        targetLatLng = obj.marker.getLatLng();
+      }
+    }
+
+    if (shouldPan && targetLatLng && this.map) {
+      this.map.panTo(targetLatLng, { animate: true, duration: 0.6 });
+    }
+  }
+
   // Update active bus markers and attach road subpaths
-  updateBusMarkers(activeBuses, lineColor = '#009485', secondaryColor = '#38bdf8') {
+  updateBusMarkers(activeBuses, lineColor = '#009485', secondaryColor = '#38bdf8', selectedVehicleId = null, onBusClick = null) {
     if (!this.map) return;
+    if (selectedVehicleId !== null) {
+      this.selectedVehicleId = selectedVehicleId;
+    }
 
     const now = Date.now();
     const currentTripIds = new Set(activeBuses.map(b => b.tripId));
@@ -491,6 +528,7 @@ class C10Map {
     activeBuses.forEach(bus => {
       if (!bus.lat || !bus.lon) return;
 
+      const isSelected = this.isBusSelected(bus, this.selectedVehicleId);
       const isSecDir = String(bus.direction) === '1' && secondaryCoords && secondaryCoords.length > 1;
       const targetPolyline = isSecDir ? secondaryCoords : (this.activePolylineCoords || []);
       const busColor = isSecDir ? secondaryColor : lineColor;
@@ -605,9 +643,15 @@ class C10Map {
           obj.marker.setLatLng([snapped.lat, snapped.lon]);
         }
 
-        // Dynamically update pin background and status dot to restore live colors immediately upon GPS reconnection
+        // Dynamically update pin background, selection state, and status dot
         const el = obj.marker.getElement();
         if (el) {
+          const wrapEl = el.querySelector('.live-bus-marker-wrap');
+          if (wrapEl) {
+            wrapEl.classList.toggle('selected', isSelected);
+            const ringEl = el.querySelector('.bus-selection-ring');
+            if (ringEl) ringEl.style.display = isSelected ? 'block' : 'none';
+          }
           const pinEl = el.querySelector('.live-bus-pin');
           if (pinEl) {
             pinEl.style.background = pinBg;
@@ -616,17 +660,20 @@ class C10Map {
           if (dotEl) {
             dotEl.className = `bus-status-dot ${isEst ? 'estimated' : 'live'}`;
           }
+          obj.marker.setZIndexOffset(isSelected ? 5000 : 2000);
         }
       } else {
         const isHeadingWest = bearingAngle > 180 && bearingAngle < 360;
         const busHtml = bus.isTerminalLayover ? `
-          <div class="live-bus-marker-wrap">
+          <div class="live-bus-marker-wrap ${isSelected ? 'selected' : ''}">
+            <div class="bus-selection-ring" style="${isSelected ? '' : 'display:none;'}"></div>
             <div class="live-bus-pin" style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);">
               <span class="bus-icon-inner">🅿️</span>
             </div>
           </div>
         ` : `
-          <div class="live-bus-marker-wrap">
+          <div class="live-bus-marker-wrap ${isSelected ? 'selected' : ''}">
+            <div class="bus-selection-ring" style="${isSelected ? '' : 'display:none;'}"></div>
             <div class="bus-heading-cone" style="transform: rotate(${bearingAngle}deg);">
               <div class="bus-heading-arrow"></div>
             </div>
@@ -646,10 +693,15 @@ class C10Map {
 
         const marker = L.marker([snapped.lat, snapped.lon], {
           icon: busIcon,
-          zIndexOffset: 2000
+          zIndexOffset: isSelected ? 5000 : 2000
         }).addTo(this.map);
 
         marker.bindPopup(popupHtml);
+
+        if (onBusClick) {
+          marker.on('click', () => onBusClick(bus));
+        }
+
         this.busMarkersMap.set(bus.tripId, {
           marker,
           busData: bus,

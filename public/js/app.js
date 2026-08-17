@@ -265,7 +265,17 @@ class TransitApp {
           secondaryStops,
           secondaryColor
         );
-        this.mapController.updateBusMarkers(this.activeBuses, lineColor);
+        this.mapController.updateBusMarkers(
+          this.activeBuses, 
+          lineColor, 
+          secondaryColor, 
+          this.selectedVehicleId,
+          (bus) => {
+            this.selectedVehicleId = bus.tripId || bus.vehicleId;
+            this.renderTelemetryCockpit(lData, etaRes.data);
+            this.mapController?.highlightBus(this.selectedVehicleId, false);
+          }
+        );
         this.checkArrivalAlerts(lData, activeTargetId);
       }
 
@@ -558,6 +568,7 @@ class TransitApp {
             e.preventDefault();
             this.selectedVehicleId = btn.getAttribute('data-bus-trip');
             this.renderTelemetryCockpit(lineData, targetData);
+            this.mapController?.highlightBus(this.selectedVehicleId, true);
           });
         });
       }
