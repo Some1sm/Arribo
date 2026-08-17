@@ -668,13 +668,25 @@ app.get('*', (req, res) => {
 });
 
 if (require.main === module) {
-  app.listen(PORT, () => {
+  const runningServer = app.listen(PORT, () => {
     console.log(`====================================================`);
     console.log(`🚌 Bad AMB Bus Tracker Platform Running!`);
-    console.log(`🌐 Lines: C-10 + Mataró Bus L1..L8`);
+    console.log(`🌐 Full Catalonia Multi-Provider Realtime Network`);
     console.log(`📍 Local URL: http://localhost:${PORT}`);
     console.log(`====================================================`);
   });
+
+  const gracefulShutdown = (signal) => {
+    console.log(`[Server] Received ${signal}. Shutting down gracefully...`);
+    ingestionDaemon.stop();
+    runningServer.close(() => {
+      console.log('[Server] HTTP server closed.');
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 }
 
 module.exports = app;

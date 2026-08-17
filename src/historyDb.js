@@ -10,15 +10,16 @@ try {
 
 class HistoryDatabase {
   constructor() {
-    this.dbPath = path.join(__dirname, '..', 'data', 'transit_history.db');
+    const customDataDir = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
+    this.dbPath = process.env.DB_PATH || path.join(customDataDir, 'transit_history.db');
     this.db = null;
     this.init();
   }
 
   init() {
-    const dataDir = path.join(__dirname, '..', 'data');
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true });
+    const dir = path.dirname(this.dbPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
     }
 
     if (DatabaseSync) {

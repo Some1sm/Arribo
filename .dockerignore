@@ -1,0 +1,8 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+.env
+data/transit_history.db-shm
+data/transit_history.db-wal
+*.log
