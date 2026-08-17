@@ -20,7 +20,7 @@ class MataroSiriClient {
         path: this.path,
         method: 'POST',
         rejectUnauthorized: false,
-        timeout: 6000,
+        timeout: 10000,
         headers: {
           'Content-Type': 'text/xml; charset=utf-8',
           'SOAPAction': `http://tempuri.org/${action}`,
@@ -146,7 +146,11 @@ class MataroSiriClient {
       this.cache.set(cacheKey, { ts: Date.now(), data: vehicles });
       return vehicles;
     } catch (err) {
-      console.error(`[SIRI Error] GetVehicleMonitoring(${lineRef}):`, err.message);
+      if (err.message.includes('timeout') || err.message.includes('ECONNRESET') || err.message.includes('ECONNREFUSED')) {
+        console.warn(`[SIRI] GetVehicleMonitoring(${lineRef}): unreachable from this host, using cached data`);
+      } else {
+        console.error(`[SIRI Error] GetVehicleMonitoring(${lineRef}):`, err.message);
+      }
       return cached ? cached.data : [];
     }
   }
@@ -238,7 +242,11 @@ class MataroSiriClient {
       this.cache.set(cacheKey, { ts: Date.now(), data: arrivals });
       return arrivals;
     } catch (err) {
-      console.error(`[SIRI Error] GetStopMonitoring(${stopId}):`, err.message);
+      if (err.message.includes('timeout') || err.message.includes('ECONNRESET') || err.message.includes('ECONNREFUSED')) {
+        console.warn(`[SIRI] GetStopMonitoring(${stopId}): unreachable from this host, using cached data`);
+      } else {
+        console.error(`[SIRI Error] GetStopMonitoring(${stopId}):`, err.message);
+      }
       return cached ? cached.data : [];
     }
   }
