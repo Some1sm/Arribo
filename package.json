@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test": "node test/e2e_multiline_test.js"
+    "test": "node test/e2e_multiline_test.js && node test/e2e_flight_recorder_test.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

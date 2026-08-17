@@ -810,6 +810,28 @@ class C10Map {
     }
   }
 
+  renderVehicleTrail(trailPoints = [], color = '#00f2fe') {
+    this.clearVehicleTrail();
+    if (!this.map || !Array.isArray(trailPoints) || trailPoints.length < 2) return;
+
+    const latlngs = trailPoints.map(p => [p.lat, p.lon]);
+    this.vehicleTrailPolyline = L.polyline(latlngs, {
+      color: color || '#38bdf8',
+      weight: 4,
+      opacity: 0.85,
+      dashArray: '6, 6',
+      lineCap: 'round',
+      lineJoin: 'round'
+    }).addTo(this.map);
+  }
+
+  clearVehicleTrail() {
+    if (this.vehicleTrailPolyline && this.map) {
+      this.map.removeLayer(this.vehicleTrailPolyline);
+      this.vehicleTrailPolyline = null;
+    }
+  }
+
   focusTargetStop(lat, lon) {
     if (!this.map || !lat || !lon) return;
     this.map.flyTo([lat, lon], 15, { duration: 1.2 });

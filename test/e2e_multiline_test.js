@@ -153,7 +153,10 @@ async function runTests() {
 
     console.log('\n🎉 ALL MULTI-LINE & MULTI-PROVIDER E2E TESTS PASSED SUCCESSFULLY! 🎉\n');
   } finally {
+    const ingestionDaemon = require('../src/ingestionDaemon');
+    ingestionDaemon.stop();
     server.close();
+    process.exit(0);
   }
 }
 

@@ -220,6 +220,19 @@ class TransitApp {
     // Highlight marker and zoom/pan to it
     this.mapController?.highlightBus(vehicleId, true, coords);
 
+    // Fetch and render historical GPS breadcrumb trail for this bus
+    if (vehicleId) {
+      fetch(`/api/vehicle/${encodeURIComponent(vehicleId)}/trail`)
+        .then(r => r.json())
+        .then(res => {
+          if (res.success && res.trail && res.trail.length > 1) {
+            const lineColor = this.activeLineData?.color || '#38bdf8';
+            this.mapController?.renderVehicleTrail(res.trail, lineColor);
+          }
+        })
+        .catch(() => {});
+    }
+
     // Scroll viewport to map container smoothly
     const mapSection = document.getElementById('map-container') || document.querySelector('.explorer-grid');
     if (mapSection) {
@@ -495,6 +508,146 @@ class TransitApp {
         <div class="disruption-body-text">${this.decodeHtml(d.description)}</div>
       </div>
     `).join('');
+  }
+
+  // ==========================================
+  // 1.5 JOURNALISM & HISTORICAL DELAY ANALYTICS
+  // ==========================================
+
+  async openJournalismModal(hours = 24) {
+    const backdrop = document.getElementById('journalism-modal-backdrop');
+    const container = document.getElementById('journalism-content-container');
+    if (!backdrop || !container) return;
+
+    backdrop.classList.add('active');
+    container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);">Analitzant dades de retards i puntualitat del servidor central...</div>';
+
+    try {
+      const res = await fetch(`/api/analytics/journalism?hours=${hours}`).then(r => r.json());
+      if (res.success && res.report) {
+        this.renderJournalismReport(res.report);
+      } else {
+        container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);">No hi ha prou dades de retards registrades encara. El servidor està capturant la telemetria contínua.</div>';
+      }
+    } catch(err) {
+      container.innerHTML = `<div style="text-align:center; padding:2rem; color:var(--danger);">Error en carregar informe de periodisme: ${err.message}</div>`;
+    }
+  }
+
+  closeJournalismModal() {
+    const backdrop = document.getElementById('journalism-modal-backdrop');
+    if (backdrop) backdrop.classList.remove('active');
+  }
+
+  renderJournalismReport(report) {
+    const container = document.getElementById('journalism-content-container');
+    if (!container) return;
+
+    const s = report.summary || {};
+    const mostDelayed = report.rankingMostDelayed || [];
+    const mostPunctual = report.rankingBestPunctuality || [];
+    const agencies = report.agencyStats || [];
+
+    let html = `
+      <!-- KPI Stats Grid -->
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.75rem; margin-bottom:1.25rem;">
+        <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
+          <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Arribades Analitzades</div>
+          <div style="font-size:1.6rem; font-weight:700; color:var(--brand-primary); margin-top:0.2rem;">${(s.totalRecordedArrivals || 0).toLocaleString()}</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">${s.monitoredLinesCount || 0} línies monitorades</div>
+        </div>
+
+        <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
+          <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Puntualitat Global</div>
+          <div style="font-size:1.6rem; font-weight:700; color:${s.networkPunctualityPct >= 85 ? '#10b981' : '#f59e0b'}; margin-top:0.2rem;">${s.networkPunctualityPct || 100}%</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">Arribades en &le; 3 min de marge</div>
+        </div>
+
+        <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
+          <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Retard Mitjà Xarxa</div>
+          <div style="font-size:1.6rem; font-weight:700; color:#38bdf8; margin-top:0.2rem;">+${s.networkAvgDelay || 0} min</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">Puntualitat de referència</div>
+        </div>
+
+        <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
+          <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Retard Màxim Registrat</div>
+          <div style="font-size:1.6rem; font-weight:700; color:#ef4444; margin-top:0.2rem;">+${s.networkMaxDelay || 0} min</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">Afectació puntual extrema</div>
+        </div>
+      </div>
+
+      <!-- Ranking: Most Delayed Lines -->
+      <div style="margin-bottom:1.5rem;">
+        <h4 style="font-size:0.95rem; font-weight:700; margin-bottom:0.6rem; display:flex; align-items:center; gap:0.4rem;">
+          <span>🚨 Línies amb Més Retard Acumulat (Top 10)</span>
+        </h4>
+        ${mostDelayed.length === 0 ? '<div style="color:var(--text-muted); font-size:0.85rem;">Sense retards significatius registrats en aquest període.</div>' : `
+          <div style="border:1px solid var(--border-subtle); border-radius:10px; overflow:hidden;">
+            <table style="width:100%; border-collapse:collapse; font-size:0.83rem; text-align:left;">
+              <thead>
+                <tr style="background:var(--bg-surface); border-bottom:1px solid var(--border-subtle); color:var(--text-muted); font-size:0.72rem; text-transform:uppercase;">
+                  <th style="padding:0.6rem 0.8rem;">Línia</th>
+                  <th style="padding:0.6rem 0.8rem;">Operador</th>
+                  <th style="padding:0.6rem 0.8rem;">Retard Mitjà</th>
+                  <th style="padding:0.6rem 0.8rem;">Retard Màx.</th>
+                  <th style="padding:0.6rem 0.8rem;">% Expedicions Tardanes</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${mostDelayed.map((l, i) => `
+                  <tr style="border-bottom:1px solid var(--border-subtle); background:${i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'};">
+                    <td style="padding:0.6rem 0.8rem; font-weight:700; color:var(--brand-primary);">${l.lineCode}</td>
+                    <td style="padding:0.6rem 0.8rem; color:var(--text-muted);">${l.agency}</td>
+                    <td style="padding:0.6rem 0.8rem; font-weight:700; color:#ef4444;">+${l.avgDelay} min</td>
+                    <td style="padding:0.6rem 0.8rem; color:var(--text-muted);">+${l.maxDelay} min</td>
+                    <td style="padding:0.6rem 0.8rem;">
+                      <span style="background:rgba(239,68,68,0.15); color:#f87171; padding:0.15rem 0.45rem; border-radius:6px; font-weight:600;">${l.latePercentage}%</span>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        `}
+      </div>
+
+      <!-- Ranking: Operators Performance -->
+      <div style="margin-bottom:1.5rem;">
+        <h4 style="font-size:0.95rem; font-weight:700; margin-bottom:0.6rem; display:flex; align-items:center; gap:0.4rem;">
+          <span>🏢 Comparativa de Puntualitat per Empresa Operadora</span>
+        </h4>
+        ${agencies.length === 0 ? '<div style="color:var(--text-muted); font-size:0.85rem;">Recopilant mostres d\'operadors...</div>' : `
+          <div style="border:1px solid var(--border-subtle); border-radius:10px; overflow:hidden;">
+            <table style="width:100%; border-collapse:collapse; font-size:0.83rem; text-align:left;">
+              <thead>
+                <tr style="background:var(--bg-surface); border-bottom:1px solid var(--border-subtle); color:var(--text-muted); font-size:0.72rem; text-transform:uppercase;">
+                  <th style="padding:0.6rem 0.8rem;">Empresa</th>
+                  <th style="padding:0.6rem 0.8rem;">Línies</th>
+                  <th style="padding:0.6rem 0.8rem;">Mostres</th>
+                  <th style="padding:0.6rem 0.8rem;">Retard Mitjà</th>
+                  <th style="padding:0.6rem 0.8rem;">Índex de Puntualitat</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${agencies.map((a, i) => `
+                  <tr style="border-bottom:1px solid var(--border-subtle); background:${i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'};">
+                    <td style="padding:0.6rem 0.8rem; font-weight:600;">${a.agency}</td>
+                    <td style="padding:0.6rem 0.8rem; color:var(--text-muted);">${a.linesCount}</td>
+                    <td style="padding:0.6rem 0.8rem; color:var(--text-muted);">${a.totalSamples}</td>
+                    <td style="padding:0.6rem 0.8rem; font-weight:700; color:${a.avgDelay > 3 ? '#ef4444' : '#10b981'};">+${a.avgDelay} min</td>
+                    <td style="padding:0.6rem 0.8rem;">
+                      <span style="background:${a.onTimePct >= 85 ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)'}; color:${a.onTimePct >= 85 ? '#34d399' : '#fbbf24'}; padding:0.15rem 0.45rem; border-radius:6px; font-weight:600;">${a.onTimePct}%</span>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        `}
+      </div>
+    `;
+
+    container.innerHTML = html;
   }
 
   renderDirectionButtons(directions, currentDir) {
@@ -1525,6 +1678,7 @@ class TransitApp {
     this.setupLinePicker();
     this.setupConnectionMenu();
     this.setupDisruptionsModal();
+    this.setupJournalismModal();
   }
 
   // ==========================================
@@ -1556,6 +1710,47 @@ class TransitApp {
       if (e.target === backdrop) {
         backdrop.classList.remove('active');
       }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && backdrop?.classList.contains('active')) {
+        backdrop.classList.remove('active');
+      }
+    });
+  }
+
+  // ==========================================
+  // JOURNALISM & HISTORICAL DELAY MODAL
+  // ==========================================
+
+  setupJournalismModal() {
+    const openBtn = document.getElementById('btn-open-journalism');
+    const backdrop = document.getElementById('journalism-modal-backdrop');
+    const closeBtn = document.getElementById('journalism-modal-close-btn');
+
+    openBtn?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.openJournalismModal(24);
+    });
+
+    closeBtn?.addEventListener('click', () => {
+      backdrop?.classList.remove('active');
+    });
+
+    backdrop?.addEventListener('click', (e) => {
+      if (e.target === backdrop) {
+        backdrop.classList.remove('active');
+      }
+    });
+
+    document.querySelectorAll('#journalism-timeframe-tabs button').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        document.querySelectorAll('#journalism-timeframe-tabs button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const hours = parseInt(btn.getAttribute('data-hours') || '24', 10);
+        this.openJournalismModal(hours);
+      });
     });
 
     document.addEventListener('keydown', (e) => {

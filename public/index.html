@@ -102,6 +102,12 @@
           <span id="incidents-count-text">Avisos</span>
         </button>
 
+        <!-- Journalism & Delay Analytics Button -->
+        <button type="button" class="btn-incidents-chip" id="btn-open-journalism" title="Veure anàlisi de retards històrics, puntualitat i dades per periodisme" style="background:rgba(56, 189, 248, 0.12); color:#38bdf8; border:1px solid rgba(56, 189, 248, 0.3);">
+          <span class="incident-icon">📊</span>
+          <span>Dades & Retards</span>
+        </button>
+
         <button type="button" class="btn-icon btn-theme-toggle" id="btn-theme-toggle" title="Canviar tema clar / fosc" aria-label="Canviar tema clar o fosc">
           <svg class="theme-icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="5"></circle>
@@ -482,6 +488,37 @@
       <!-- Scrollable Disruptions List -->
       <div class="modal-body" id="disruptions-list-container" style="overflow-y:auto; padding-right:0.25rem; flex:1; min-height:200px;">
         <div style="text-align:center; padding:2rem; color:var(--text-muted);">Carregant incidències en temps real...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Journalism & Historical Delay Analytics Modal Drawer -->
+  <div class="modal-backdrop" id="journalism-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="journalism-modal-title">
+    <div class="modal-card" style="max-width: 860px; max-height: 88vh;">
+      <button type="button" class="modal-close-btn" id="journalism-modal-close-btn" aria-label="Tancar">&times;</button>
+
+      <div class="line-picker-header" style="margin-bottom:0.75rem;">
+        <div class="target-badge" style="background:rgba(56, 189, 248, 0.15); color:#38bdf8; border:1px solid rgba(56, 189, 248, 0.35);">📊 Periodisme de Dades & Flight Recorder</div>
+        <h3 class="line-picker-title" id="journalism-modal-title">Observatori de Retards i Puntualitat</h3>
+        <p class="line-picker-subtitle">Dades històriques registrades pel nostre servidor central de telemetria</p>
+      </div>
+
+      <!-- Timeframe Toggle & CSV Export Row -->
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-bottom:1rem;">
+        <div class="line-picker-filter-tabs" style="margin-bottom:0;" id="journalism-timeframe-tabs">
+          <button type="button" class="line-filter-tab active" data-hours="24">⏱️ Darreres 24h</button>
+          <button type="button" class="line-filter-tab" data-hours="48">📅 48 hores</button>
+          <button type="button" class="line-filter-tab" data-hours="168">🗓️ 7 dies</button>
+        </div>
+        <a href="/api/analytics/export/csv" class="btn-primary" style="display:inline-flex; align-items:center; gap:0.4rem; padding:0.45rem 0.9rem; font-size:0.82rem; text-decoration:none; border-radius:8px;" download>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Descarregar CSV per Excel
+        </a>
+      </div>
+
+      <!-- Journalism Content Dynamic Container -->
+      <div class="modal-body" id="journalism-content-container" style="overflow-y:auto; padding-right:0.25rem; flex:1; min-height:300px;">
+        <div style="text-align:center; padding:2rem; color:var(--text-muted);">Carregant estadístiques de retards...</div>
       </div>
     </div>
   </div>

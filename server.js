@@ -8,6 +8,8 @@ const ambTracker = require('./src/ambTracker');
 const rodaliesTracker = require('./src/rodaliesTracker');
 const maresmeTracker = require('./src/maresmeTracker');
 const cataloniaTracker = require('./src/cataloniaTracker');
+const flightRecorder = require('./src/flightRecorder');
+const ingestionDaemon = require('./src/ingestionDaemon');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -16,13 +18,14 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Pre-initialize async trackers
+// Pre-initialize async trackers and launch Autonomous Ingestion Daemon
 Promise.allSettled([
   ambTracker.init(),
   rodaliesTracker.init(),
   cataloniaTracker.init()
 ]).then(() => {
   console.log('[TransitPlatform] All Multi-Provider Trackers Initialized.');
+  ingestionDaemon.start();
 });
 
 // Request logger middleware
@@ -589,6 +592,65 @@ app.get('/api/disruptions', async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, error: err.message, disruptions: [] });
   }
+});
+
+// ==========================================
+// 4. CENTRALIZED FLIGHT RECORDER & JOURNALISM ANALYTICS
+// ==========================================
+
+// Global fleet snapshot across all monitored lines in Catalonia
+app.get('/api/fleet/live', (req, res) => {
+  const vehicles = flightRecorder.getAllVehicles();
+  res.json({
+    success: true,
+    count: vehicles.length,
+    timestamp: Date.now(),
+    vehicles
+  });
+});
+
+// GPS breadcrumb trail history for a specific vehicle
+app.get('/api/vehicle/:vehicleId/trail', (req, res) => {
+  const { vehicleId } = req.params;
+  const trail = flightRecorder.getVehicleTrail(vehicleId);
+  res.json({
+    success: true,
+    vehicleId,
+    pointsCount: trail.length,
+    trail
+  });
+});
+
+// Real-time & 24h delay statistics and punctuality score for a line
+app.get('/api/line/:lineId/stats', (req, res) => {
+  const { lineId } = req.params;
+  const cleanCode = lineId.replace('cat_gen_', '').replace(/.*_/, '').toUpperCase();
+  const stats = flightRecorder.getLineStats(cleanCode);
+  res.json({
+    success: true,
+    lineId,
+    lineCode: cleanCode,
+    stats
+  });
+});
+
+// Journalism Investigation Report across all lines & operators
+app.get('/api/analytics/journalism', (req, res) => {
+  const hours = parseInt(req.query.hours || '24', 10);
+  const report = flightRecorder.getJournalismReport(hours);
+  res.json({
+    success: true,
+    report
+  });
+});
+
+// CSV Export for spreadsheet / investigative journalism analysis
+app.get('/api/analytics/export/csv', (req, res) => {
+  const hours = parseInt(req.query.hours || '48', 10);
+  const csvData = flightRecorder.exportCsv(hours);
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="bad_amb_transit_delays_${Date.now()}.csv"`);
+  res.send(csvData);
 });
 
 app.get('/api/health', (req, res) => {
