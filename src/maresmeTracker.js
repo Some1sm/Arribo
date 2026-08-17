@@ -606,14 +606,16 @@ class MaresmeTracker {
           if (!seenTimes.has(timeStr)) {
             seenTimes.add(timeStr);
             const depSec = timeUtils.timeToSec(st.dep);
-            stopSchedTimes.push({ timeStr, depSec });
+            const originDepStr = (stList[0]?.dep || st.dep).substring(0, 5);
+            const tripKey = `${lineConfig.code}_${originDepStr.replace(':', '')}`;
+            stopSchedTimes.push({ timeStr, depSec, tripKey });
           }
         }
       }
 
       stopSchedTimes.sort((a, b) => a.depSec - b.depSec);
 
-      stopSchedTimes.forEach(({ timeStr, depSec }) => {
+      stopSchedTimes.forEach(({ timeStr, depSec, tripKey }) => {
         let diffSec = depSec - currentSec;
         let dayOffset = 0;
 
@@ -637,6 +639,7 @@ class MaresmeTracker {
             expectedIso: depUtc.toISOString(),
             aimedIso: depUtc.toISOString(),
             minutesAway: Math.max(0, diffMin),
+            tripId: tripKey,
             isRealTime: false,
             isEstimated: false,
             isToday: dayOffset === 0,
@@ -659,44 +662,20 @@ class MaresmeTracker {
       }
     }
 
-    // Associate active circulating vehicles with upcoming departures and guarantee delayed in-flight buses are never dropped
+    // Strictly match active circulating vehicles with their corresponding GTFS trip
     if (lineConfig) {
       const activeBuses = this.calculateActiveBuses(lineConfig, dir, lDetails?.stops || [], lDetails?.coords || []);
-      const stopList = lDetails?.stops || [];
-      const stopIdx = stopList.findIndex(s => String(s.id) === sIdStr || String(s.mouteStopId) === sIdStr);
 
-      activeBuses.forEach(bus => {
-        // If bus has not yet arrived at/passed this stop, ensure it is in the departure list
-        if (stopIdx === -1 || (bus.fromSeq || 1) <= (stopIdx + 1)) {
-          const matchedDep = departures.find(d => d.tripId === bus.tripId || d.vehicleId === bus.vehicleId);
-          if (matchedDep) {
-            matchedDep.vehicleId = bus.vehicleId;
-            matchedDep.tripId = bus.tripId;
-            matchedDep.busCoords = { lat: bus.lat, lon: bus.lon };
-            if (!matchedDep.isRealTime) {
-              matchedDep.isEstimated = true;
-            }
-          }
-        }
-      });
-
-      departures.forEach((dep, idx) => {
-        let matchedBus = activeBuses.find(b => b.tripId && dep.tripId && b.tripId === dep.tripId);
-        
-        if (!matchedBus && activeBuses.length > 0 && (dep.minutesAway <= 60 || idx === 0)) {
-          matchedBus = activeBuses[idx] || activeBuses[0];
-        }
-
+      departures.forEach((dep) => {
+        const matchedBus = activeBuses.find(b => b.tripId && dep.tripId && b.tripId === dep.tripId);
         if (matchedBus) {
           dep.vehicleId = matchedBus.vehicleId;
           dep.tripId = matchedBus.tripId;
           dep.busCoords = { lat: matchedBus.lat, lon: matchedBus.lon };
           if (!dep.isRealTime) {
             dep.isEstimated = true;
-            if (!dep.delayBadgeText || dep.delayBadgeText === 'Programat') {
-              dep.delayBadgeText = '⚡ En ruta';
-              dep.delayStatus = 'estimated';
-            }
+            dep.delayBadgeText = '⚡ En ruta';
+            dep.delayStatus = 'estimated';
           }
         }
       });
