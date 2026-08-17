@@ -7,7 +7,7 @@ WORKDIR /app
 # Set environment
 ENV NODE_ENV=production
 ENV PORT=3000
-ENV NODE_OPTIONS="--max-old-space-size=256 --optimize-for-size"
+ENV NODE_OPTIONS="--max-old-space-size=256"
 
 # Copy package manifests first for efficient caching
 COPY package*.json ./
@@ -25,4 +25,4 @@ RUN mkdir -p /app/data /app/data/cache
 EXPOSE 3000
 
 # Start server
-CMD ["node", "server.js"]
+CMD ["node", "--optimize-for-size", "server.js"]

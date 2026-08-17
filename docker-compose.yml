@@ -9,7 +9,7 @@ services:
       - NODE_ENV=production
       - PORT=3000
       - TZ=Europe/Madrid
-      - NODE_OPTIONS=--max-old-space-size=256 --optimize-for-size
+      - NODE_OPTIONS=--max-old-space-size=256
     deploy:
       resources:
         limits:
