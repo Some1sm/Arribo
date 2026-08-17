@@ -881,7 +881,7 @@ class MataroTracker {
     }
 
     if (!chosenStop && routeStops.length > 0) {
-      chosenStop = routeStops[Math.floor(routeStops.length / 2)] || routeStops[0];
+      chosenStop = routeStops[0];
     }
 
     if (!chosenStop) {

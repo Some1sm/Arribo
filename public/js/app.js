@@ -206,20 +206,27 @@ class TransitApp {
 
     try {
       const lId = this.activeLineId;
-      const targetStopId = this.targetStopsByLine[lId] || null;
       const dir = this.activeDirection;
+      const routeKey = `${lId}_${dir}`;
+      const savedStopId = this.targetStopsByLine[routeKey] || null;
 
       // 1. Unified Line details & active buses
       const lineRes = await fetch(`/api/line/${lId}?direction=${dir}`).then(r => r.json());
-
-      // 2. Unified Target Stop ETA
-      const etaRes = await fetch(`/api/line/${lId}/target-eta?direction=${dir}${targetStopId ? `&stopId=${targetStopId}` : ''}`).then(r => r.json());
 
       if (lineRes.success && lineRes.data) {
         const lData = lineRes.data;
         this.activeLineData = lData;
         this.allStops = lData.stops || [];
         this.activeBuses = lData.activeBuses || [];
+
+        // Validate if savedStopId is in current route's stops; if not (or if not set), default to the 1st stop
+        const isSavedValid = savedStopId && this.allStops.some(s => String(s.id || s.mouteStopId || s.code) === String(savedStopId));
+        const activeTargetId = isSavedValid 
+          ? savedStopId 
+          : (this.allStops[0]?.id || this.allStops[0]?.mouteStopId || this.allStops[0]?.code || null);
+
+        // 2. Unified Target Stop ETA for the active target stop
+        const etaRes = await fetch(`/api/line/${lId}/target-eta?direction=${dir}${activeTargetId ? `&stopId=${activeTargetId}` : ''}`).then(r => r.json());
 
         // 1. Update Header & Banner
         this.updateHeaderBrand(lData);
@@ -230,7 +237,6 @@ class TransitApp {
         this.renderDirectionButtons(lineMeta.directions || lData.directions || [], this.activeDirection);
 
         // 3. Render Target Card
-        const activeTargetId = targetStopId || (etaRes.data?.targetStop?.id || etaRes.data?.targetStop?.mouteStopId || this.allStops[0]?.id || this.allStops[0]?.mouteStopId);
         this.populateSelect('target-stop-select', this.allStops, activeTargetId);
         
         if (etaRes.success && etaRes.data) {
@@ -742,6 +748,8 @@ class TransitApp {
   }
 
   setTargetStop(stopId) {
+    const routeKey = `${this.activeLineId}_${this.activeDirection}`;
+    this.targetStopsByLine[routeKey] = String(stopId);
     this.targetStopsByLine[this.activeLineId] = String(stopId);
     localStorage.setItem('bad_amb_target_stops', JSON.stringify(this.targetStopsByLine));
     this.refreshAllData(false);
