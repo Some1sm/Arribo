@@ -198,6 +198,12 @@ class TransitApp {
   }
 
   focusBusOnMap(vehicleId, coords = null) {
+    if (!vehicleId && !coords && this.activeLineData?.activeBuses?.length > 0) {
+      const firstBus = this.activeLineData.activeBuses[0];
+      vehicleId = firstBus.vehicleId || firstBus.tripId;
+      coords = { lat: firstBus.lat, lon: firstBus.lon };
+    }
+
     if (!vehicleId && !coords) return;
     this.selectedVehicleId = vehicleId;
 
@@ -548,7 +554,7 @@ class TransitApp {
         ? (dep.delayMins > 0 ? `+${dep.delayMins} min retard` : `${dep.delayMins} min avançat`)
         : 'Puntual';
 
-      const hasActiveBus = Boolean(dep.vehicleId || dep.busCoords);
+      const hasActiveBus = Boolean(dep.vehicleId || dep.busCoords || dep.tripId || dep.isRealTime || dep.isEstimated || (this.activeLineData?.activeBuses?.length > 0 && dep.minutesAway <= 60));
 
       const minsText = isFirstMorning
         ? `🌅 Demà ${dep.departureTime || clockTime}`
@@ -956,7 +962,7 @@ class TransitApp {
             ? (d.delayMins > 0 ? `+${d.delayMins} min retard` : `${d.delayMins} min avançat`)
             : 'Puntual';
 
-          const hasActiveBus = Boolean(d.vehicleId || d.busCoords);
+          const hasActiveBus = Boolean(d.vehicleId || d.busCoords || d.tripId || d.isRealTime || d.isEstimated || (this.activeLineData?.activeBuses?.length > 0 && d.minutesAway <= 60));
 
           const minsText = isFirstMorning
             ? `🌅 Demà ${d.departureTime || estTime}`

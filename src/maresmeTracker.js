@@ -494,6 +494,7 @@ class MaresmeTracker {
     const dir = String(direction || '0');
     const sIdStr = String(stopId);
     const stopObj = this.stopsMap.get(sIdStr) || { id: sIdStr, name: 'Parada Maresme' };
+    const lDetails = lineDetails || (lineConfig ? await this.getLineDetails(lineConfig.id, dir) : null);
 
     const dirObj = lineConfig?.directions?.find(d => String(d.dirId) === String(dir)) || lineConfig?.directions?.[0];
     const defaultDest = dirObj ? dirObj.name : (lineConfig ? lineConfig.name : 'Destí');
@@ -609,6 +610,30 @@ class MaresmeTracker {
           departures[0].delayBadgeText = '🌅 1r Servei';
         }
       }
+    }
+
+    // Associate active circulating vehicles with upcoming departures so users can click to track them
+    if (lineConfig) {
+      const activeBuses = this.calculateActiveBuses(lineConfig, dir, lDetails?.stops || [], lDetails?.coords || []);
+      
+      departures.forEach((dep, idx) => {
+        let matchedBus = activeBuses.find(b => b.tripId && dep.tripId && b.tripId === dep.tripId);
+        
+        if (!matchedBus && activeBuses.length > 0 && (dep.minutesAway <= 60 || idx === 0)) {
+          matchedBus = activeBuses[idx] || activeBuses[0];
+        }
+
+        if (matchedBus) {
+          dep.vehicleId = matchedBus.vehicleId;
+          dep.tripId = matchedBus.tripId;
+          dep.busCoords = { lat: matchedBus.lat, lon: matchedBus.lon };
+          if (!dep.isRealTime) {
+            dep.isEstimated = true;
+            dep.delayBadgeText = '⚡ En ruta';
+            dep.delayStatus = 'estimated';
+          }
+        }
+      });
     }
 
     departures.sort((a, b) => (a.minutesAway || 0) - (b.minutesAway || 0));
