@@ -54,6 +54,9 @@ class AmbTracker {
     this.realtimeCache = new Map(); // stopCode -> { timestamp, data }
     this.cacheTtlMs = 10000; // 10s TTL
     this.isInitialized = false;
+    this.lineDocumentsMap = new Map();
+    this.disruptionsCache = { timestamp: 0, data: [] };
+    this.vehiclesCache = { timestamp: 0, data: [] };
   }
 
   async fetchAmbApi(path) {
@@ -211,6 +214,52 @@ class AmbTracker {
     return this.routesMap.get(lineId) || this.routesMap.get(`amb_${key}`) || this.routesMap.get(key);
   }
 
+  async getDisruptions(lineCode = null) {
+    const now = Date.now();
+    if (this.disruptionsCache.data.length > 0 && (now - this.disruptionsCache.timestamp < 60000)) {
+      if (!lineCode) return this.disruptionsCache.data;
+      const codeUpper = String(lineCode).toUpperCase();
+      return this.disruptionsCache.data.filter(d => (d.affectedLines || '').toUpperCase().includes(codeUpper));
+    }
+
+    try {
+      const res = await this.fetchAmbApi('/bus/disruptions');
+      const list = res.data?._embedded?.disruptions || [];
+      const formatted = list.map(d => ({
+        id: d.id,
+        title: d.title || 'Avís de servei',
+        affectedLines: d.affectedLines || '',
+        affectedCities: d.affectedCities || '',
+        affectedStops: d.affectedStops || '',
+        description: (d.description || '').replace(/<[^>]*>?/gm, '').trim(),
+        htmlDescription: d.description || '',
+        date: d.date || ''
+      }));
+      this.disruptionsCache = { timestamp: now, data: formatted };
+      if (!lineCode) return formatted;
+      const codeUpper = String(lineCode).toUpperCase();
+      return formatted.filter(d => (d.affectedLines || '').toUpperCase().includes(codeUpper));
+    } catch(e) {
+      return this.disruptionsCache.data || [];
+    }
+  }
+
+  async getLiveVehicles() {
+    const now = Date.now();
+    if (this.vehiclesCache.data.length > 0 && (now - this.vehiclesCache.timestamp < 10000)) {
+      return this.vehiclesCache.data;
+    }
+
+    try {
+      const res = await this.fetchAmbApi('/bus/vehicles');
+      const list = Array.isArray(res.data) ? res.data : [];
+      this.vehiclesCache = { timestamp: now, data: list };
+      return list;
+    } catch(e) {
+      return this.vehiclesCache.data || [];
+    }
+  }
+
   async getShapeCoords(shapeId) {
     if (!shapeId) return [];
     if (this.shapesCache.has(shapeId)) return this.shapesCache.get(shapeId);
@@ -302,51 +351,96 @@ class AmbTracker {
       polylineCoords = stops.map(s => [s.lat, s.lon]);
     }
 
-    // Discover active buses on the route by polling strategic checkpoints
+    // 1. Discover real-time vehicles for this route directly from live AMB vehicle fleet
+    const liveFleet = await this.getLiveVehicles();
+    const routeCodeUpper = String(route.code).toUpperCase();
+    const matchingVehicles = liveFleet.filter(v => String(v.line).toUpperCase() === routeCodeUpper);
+
     const activeBuses = [];
-    const checkStops = stops.filter((s, i) => i === 0 || i === Math.floor(stops.length / 2) || i === stops.length - 1 || i % 4 === 0);
+    matchingVehicles.forEach((v, vIdx) => {
+      const lat = parseFloat(v.latitude);
+      const lon = parseFloat(v.longitude);
+      if (lat && lon) {
+        // Extract real physical fleet number, e.g. "2974PA2" -> "#2974"
+        const fleetNum = String(v.id).replace(/[a-zA-Z]/g, '') || String(v.id);
+        const nextStop = stops.find(s => String(s.id) === String(v.nextStopId) || String(s.code) === String(v.nextStopId));
+        const stopSeq = nextStop ? nextStop.seq : (stops.length > 1 ? Math.min(stops.length, vIdx + 1) : 1);
+        const progress = stops.length > 1 ? Math.min(95, Math.max(5, Math.round((stopSeq / stops.length) * 100))) : 50;
 
-    const foundVehicles = new Set();
-    const now = Date.now();
+        activeBuses.push({
+          vehicleId: `AMB-${fleetNum}`,
+          fleetNumber: fleetNum,
+          tripId: String(v.tripId || `amb_${route.code}_${fleetNum}`),
+          lineId: route.id,
+          lineCode: route.code,
+          lineName: route.code,
+          destination: dirObj.name,
+          lat,
+          lon,
+          bearing: 0,
+          speedKmh: 32,
+          currentStopSeq: stopSeq,
+          fromStop: stops[Math.max(0, stopSeq - 2)]?.name || 'Origen',
+          toStop: nextStop ? nextStop.name : (stops[Math.min(stops.length - 1, stopSeq)]?.name || 'Destí'),
+          secondsToNextStop: 180,
+          totalProgress: progress,
+          isRealTime: true,
+          isEstimated: false,
+          coordinatesFormatted: `${lat.toFixed(5)}° N, ${lon.toFixed(5)}° E`,
+          compass: { code: 'N', label: 'Nord (N) ⬆️' },
+          statusText: `🟢 Bus #${fleetNum} • Senyal GPS en Directe`
+        });
+      }
+    });
 
-    for (const stop of checkStops.slice(0, 5)) {
-      const times = await this.getStopRealtime(stop.code);
-      times.forEach(t => {
-        if (String(t.lineCode).toUpperCase() === String(route.code).toUpperCase()) {
-          const vKey = `${t.lineCode}_${t.destination}_${Math.round(t.time / 60000)}`;
-          if (!foundVehicles.has(vKey)) {
-            foundVehicles.add(vKey);
+    // Fallback: If live vehicle endpoint had 0 for this line, poll stops
+    if (activeBuses.length === 0) {
+      const checkStops = stops.filter((s, i) => i === 0 || i === Math.floor(stops.length / 2) || i === stops.length - 1 || i % 4 === 0);
+      const foundVehicles = new Set();
+      const now = Date.now();
 
-            const lat = parseFloat(t.latitude) || stop.lat;
-            const lon = parseFloat(t.longitude) || stop.lon;
-            const minsAway = Math.max(0, Math.round((t.time - now) / 60000));
+      for (const stop of checkStops.slice(0, 5)) {
+        const times = await this.getStopRealtime(stop.code);
+        times.forEach(t => {
+          if (String(t.lineCode).toUpperCase() === routeCodeUpper) {
+            const vKey = `${t.lineCode}_${t.destination}_${Math.round(t.time / 60000)}`;
+            if (!foundVehicles.has(vKey)) {
+              foundVehicles.add(vKey);
+              const lat = parseFloat(t.latitude) || stop.lat;
+              const lon = parseFloat(t.longitude) || stop.lon;
+              const minsAway = Math.max(0, Math.round((t.time - now) / 60000));
 
-            activeBuses.push({
-              vehicleId: `amb_${activeBuses.length + 1}`,
-              tripId: `trip_${t.lineCode}_${activeBuses.length}`,
-              lineId: route.id,
-              lineName: route.code,
-              destination: t.destination || dirObj.name,
-              lat,
-              lon,
-              bearing: 0,
-              speedKmh: 28,
-              currentStopSeq: stop.seq,
-              fromStop: stop.name,
-              toStop: stop.name,
-              secondsToNextStop: Math.max(0, Math.round((t.time - now) / 1000)),
-              totalProgress: stops.length > 1 ? Math.min(95, Math.max(5, Math.round((stop.seq / stops.length) * 100))) : 50,
-              isRealTime: true,
-              isEstimated: false,
-              isTerminalLayover: minsAway === 0 && stop.seq === 1,
-              coordinatesFormatted: `${lat.toFixed(5)}° N, ${lon.toFixed(5)}° E`,
-              compass: { code: 'E', label: 'Est (E) ➡️' },
-              statusText: '🟢 Senyal GPS AMB en Directe'
-            });
+              activeBuses.push({
+                vehicleId: `AMB-${1000 + activeBuses.length}`,
+                tripId: `trip_${t.lineCode}_${activeBuses.length}`,
+                lineId: route.id,
+                lineCode: route.code,
+                lineName: route.code,
+                destination: t.destination || dirObj.name,
+                lat,
+                lon,
+                bearing: 0,
+                speedKmh: 28,
+                currentStopSeq: stop.seq,
+                fromStop: stop.name,
+                toStop: stop.name,
+                secondsToNextStop: Math.max(0, Math.round((t.time - now) / 1000)),
+                totalProgress: stops.length > 1 ? Math.min(95, Math.max(5, Math.round((stop.seq / stops.length) * 100))) : 50,
+                isRealTime: true,
+                isEstimated: false,
+                isTerminalLayover: minsAway === 0 && stop.seq === 1,
+                coordinatesFormatted: `${lat.toFixed(5)}° N, ${lon.toFixed(5)}° E`,
+                compass: { code: 'E', label: 'Est (E) ➡️' },
+                statusText: '🟢 Senyal GPS AMB en Directe'
+              });
+            }
           }
-        }
-      });
+        });
+      }
     }
+
+    // Live route disruptions & alerts
+    const disruptions = await this.getDisruptions(route.code);
 
     // Checkpoints
     const stepInterval = Math.max(1, Math.floor(stops.length / 8));
@@ -373,6 +467,8 @@ class AmbTracker {
       polyline: polylineCoords,
       activeBuses,
       checkpoints,
+      disruptions,
+      totalDisruptions: disruptions.length,
       totalActiveBuses: activeBuses.length,
       serviceStatus: {
         isOperating: activeBuses.length > 0 || (new Date().getHours() >= 6 && new Date().getHours() < 22),

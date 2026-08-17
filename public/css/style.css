@@ -2467,3 +2467,138 @@ body {
     padding: 0.35rem 0.75rem;
   }
 }
+
+/* ======================================================== */
+/* 20. TRANSIT DISRUPTIONS & SERVICE INCIDENT ALERTS        */
+/* ======================================================== */
+
+.btn-incidents-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+  background: rgba(245, 158, 11, 0.14);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 9999px;
+  color: #fbbf24;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.btn-incidents-chip:hover {
+  background: rgba(245, 158, 11, 0.25);
+  border-color: #fbbf24;
+  transform: translateY(-1px);
+}
+
+.disruption-banner-card {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.75rem 1.15rem;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(220, 38, 38, 0.1) 100%);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: var(--radius-md);
+  margin-bottom: 0.85rem;
+  animation: fadeIn 0.3s ease;
+}
+
+.disruption-banner-icon {
+  font-size: 1.3rem;
+  flex-shrink: 0;
+}
+
+.disruption-banner-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.disruption-banner-content strong {
+  color: #fbbf24;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.disruption-banner-content span {
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.disruption-banner-btn {
+  padding: 0.35rem 0.75rem;
+  background: rgba(245, 158, 11, 0.2);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: var(--radius-sm);
+  color: #fff;
+  font-size: 0.74rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--transition-fast);
+}
+
+.disruption-banner-btn:hover {
+  background: rgba(245, 158, 11, 0.35);
+}
+
+.disruption-item-card {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  margin-bottom: 0.85rem;
+  transition: all var(--transition-fast);
+}
+
+.disruption-item-card:hover {
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.disruption-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.disruption-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.disruption-tag {
+  display: inline-block;
+  padding: 2px 7px;
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.disruption-lines-badge {
+  font-size: 0.75rem;
+  color: var(--c10-primary);
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+
+.disruption-body-text {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+

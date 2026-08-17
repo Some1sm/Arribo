@@ -534,6 +534,21 @@ app.get('/api/diagnostics/test', async (req, res) => {
   }
 });
 
+// Live Transit Disruptions & Service Alerts API
+app.get('/api/disruptions', async (req, res) => {
+  try {
+    const lineCode = req.query.line || null;
+    const disruptions = await ambTracker.getDisruptions(lineCode);
+    res.json({
+      success: true,
+      count: disruptions.length,
+      disruptions
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message, disruptions: [] });
+  }
+});
+
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',

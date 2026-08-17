@@ -262,6 +262,7 @@ class TransitApp {
         // 1. Update Header & Banner
         this.updateHeaderBrand(lData);
         this.renderLineBanner(lData);
+        this.renderDisruptionsBanner(lData);
 
         // 2. Render Direction Buttons
         const lineMeta = this.availableLines.find(l => String(l.id) === String(lId)) || lData;
@@ -394,6 +395,89 @@ class TransitApp {
     if (title) {
       title.textContent = `${code} — ${lData.name || ''}`;
     }
+  }
+
+  renderDisruptionsBanner(lData) {
+    const banner = document.getElementById('route-disruption-banner');
+    const titleEl = document.getElementById('disruption-banner-title');
+    const descEl = document.getElementById('disruption-banner-desc');
+    const chipCount = document.getElementById('incidents-count-text');
+
+    const disruptions = lData.disruptions || [];
+
+    if (chipCount) {
+      chipCount.textContent = disruptions.length > 0 ? `${disruptions.length} Avisos` : 'Avisos';
+    }
+
+    if (!banner || !titleEl || !descEl) return;
+
+    if (disruptions.length > 0) {
+      const d = disruptions[0];
+      titleEl.textContent = `⚠️ Avís de servei (${disruptions.length}): ${d.title}`;
+      descEl.textContent = d.description || d.affectedStops || 'Afectacions al recorregut habitual d\'aquesta línia.';
+      banner.style.display = 'flex';
+    } else {
+      banner.style.display = 'none';
+    }
+  }
+
+  async openDisruptionsModal(filterQuery = '') {
+    const backdrop = document.getElementById('disruptions-modal-backdrop');
+    const container = document.getElementById('disruptions-list-container');
+    const searchInput = document.getElementById('disruptions-search-input');
+    if (!backdrop || !container) return;
+
+    backdrop.classList.add('active');
+    if (searchInput && filterQuery) {
+      searchInput.value = filterQuery;
+    }
+
+    try {
+      container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);">Carregant avisos de servei en temps real...</div>';
+      const res = await fetch('/api/disruptions').then(r => r.json());
+      const disruptions = res.disruptions || [];
+
+      this.renderDisruptionsList(disruptions, searchInput ? searchInput.value : '');
+
+      if (searchInput) {
+        searchInput.oninput = (e) => {
+          this.renderDisruptionsList(disruptions, e.target.value);
+        };
+      }
+    } catch(err) {
+      container.innerHTML = `<div style="text-align:center; padding:2rem; color:var(--text-muted);">Error en carregar incidències: ${err.message}</div>`;
+    }
+  }
+
+  renderDisruptionsList(disruptions, query = '') {
+    const container = document.getElementById('disruptions-list-container');
+    if (!container) return;
+
+    const q = (query || '').toLowerCase().trim();
+    const filtered = disruptions.filter(d => {
+      if (!q) return true;
+      return (d.title || '').toLowerCase().includes(q) ||
+             (d.affectedLines || '').toLowerCase().includes(q) ||
+             (d.affectedCities || '').toLowerCase().includes(q) ||
+             (d.description || '').toLowerCase().includes(q);
+    });
+
+    if (filtered.length === 0) {
+      container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);">No s\'ha trobat cap incidència amb aquest filtre.</div>';
+      return;
+    }
+
+    container.innerHTML = filtered.map(d => `
+      <div class="disruption-item-card">
+        <div class="disruption-header-row">
+          <span class="disruption-title">⚠️ ${d.title}</span>
+          ${d.affectedCities ? `<span class="disruption-tag">📍 ${d.affectedCities.trim()}</span>` : ''}
+        </div>
+        ${d.affectedLines ? `<div class="disruption-lines-badge">🚌 ${d.affectedLines}</div>` : ''}
+        ${d.affectedStops ? `<div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:0.4rem;">🚏 ${d.affectedStops}</div>` : ''}
+        <div class="disruption-body-text">${d.description}</div>
+      </div>
+    `).join('');
   }
 
   renderDirectionButtons(directions, currentDir) {
@@ -1419,6 +1503,45 @@ class TransitApp {
     this.setupGlobalSearch();
     this.setupLinePicker();
     this.setupConnectionMenu();
+    this.setupDisruptionsModal();
+  }
+
+  // ==========================================
+  // DISRUPTIONS & SERVICE ALERTS MODAL
+  // ==========================================
+
+  setupDisruptionsModal() {
+    const openBtn = document.getElementById('btn-open-incidents');
+    const bannerBtn = document.getElementById('btn-view-disruption-details');
+    const backdrop = document.getElementById('disruptions-modal-backdrop');
+    const closeBtn = document.getElementById('disruptions-modal-close-btn');
+
+    openBtn?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.openDisruptionsModal('');
+    });
+
+    bannerBtn?.addEventListener('click', (e) => {
+      e.preventDefault();
+      const code = this.activeLineData?.code || this.activeLineData?.id || '';
+      this.openDisruptionsModal(code);
+    });
+
+    closeBtn?.addEventListener('click', () => {
+      backdrop?.classList.remove('active');
+    });
+
+    backdrop?.addEventListener('click', (e) => {
+      if (e.target === backdrop) {
+        backdrop.classList.remove('active');
+      }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && backdrop?.classList.contains('active')) {
+        backdrop.classList.remove('active');
+      }
+    });
   }
 
   // ==========================================
