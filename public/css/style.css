@@ -1997,6 +1997,36 @@ body {
   color: var(--text-secondary);
 }
 
+/* Modal Set Target Stop Button */
+.btn-set-favorite-target {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--bg-surface-elevated);
+  border: 1.5px solid var(--c10-primary);
+  color: var(--c10-primary-light);
+  padding: 0.55rem 1.1rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.btn-set-favorite-target:hover {
+  background: var(--c10-primary);
+  color: #ffffff;
+  border-color: var(--c10-primary);
+  box-shadow: 0 4px 14px var(--c10-primary-glow);
+  transform: translateY(-1px);
+}
+
+.btn-set-favorite-target:active {
+  transform: translateY(0);
+}
+
 /* ===================================================================
    10. LEAFLET MAP THEME & POPUP STYLING
    =================================================================== */

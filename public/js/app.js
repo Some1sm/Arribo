@@ -893,7 +893,7 @@ class TransitApp {
 
           const pillLabel = isFirstMorning
             ? '1r Servei'
-            : (isTomorrow ? 'Programat' : (d.isEstimated ? `⚡ Estimat ${d.vehicleId ? `#${dep.vehicleId}` : ''}` : (d.delayBadgeText || 'Puntual')));
+            : (isTomorrow ? 'Programat' : (d.isEstimated ? `⚡ Estimat ${d.vehicleId ? `#${d.vehicleId}` : ''}` : (d.delayBadgeText || 'Puntual')));
 
           const pillClass = isTomorrow ? 'scheduled' : (d.delayStatus || 'on-time');
 

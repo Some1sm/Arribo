@@ -697,23 +697,28 @@ class MataroTracker {
       .filter(d => d.minutesAway !== undefined && d.minutesAway <= 120)
       .sort((a, b) => a.minutesAway - b.minutesAway);
 
-    // 4. If zero live/estimated arrivals (e.g. night time / off-peak), inject full theoretical scheduled departures with exact passing times
+    // 4. If zero live/estimated arrivals (e.g. night time / off-peak or no live bus in range), inject scheduled theoretical departures
     if (finalDepartures.length === 0) {
       const routesForStop = this.findRoutesServingStop(sId, lineId);
+      const now = new Date();
+      const networkNow = timeUtils.getNetworkTime(this.agencyTimezone, now);
+      const nowSec = timeUtils.timeToSec(networkNow.timeStr);
+      const dayTypeToday = (networkNow.dayOfWeek >= 1 && networkNow.dayOfWeek <= 5) ? 'weekday' : (networkNow.dayOfWeek === 6 ? 'saturday' : 'sunday');
+
       const tomorrow = new Date(Date.now() + 24 * 3600 * 1000);
       const networkTomorrow = timeUtils.getNetworkTime(this.agencyTimezone, tomorrow);
-      const dayType = (networkTomorrow.dayOfWeek >= 1 && networkTomorrow.dayOfWeek <= 5) ? 'weekday' : (networkTomorrow.dayOfWeek === 6 ? 'saturday' : 'sunday');
+      const dayTypeTomorrow = (networkTomorrow.dayOfWeek >= 1 && networkTomorrow.dayOfWeek <= 5) ? 'weekday' : (networkTomorrow.dayOfWeek === 6 ? 'saturday' : 'sunday');
 
       routesForStop.forEach(r => {
         const lIdStr = String(r.id_linea || lineId || '1');
-        const lineSched = MATARO_LINE_SCHEDULES[lIdStr]?.[dayType] || {
+        const lineSchedToday = MATARO_LINE_SCHEDULES[lIdStr]?.[dayTypeToday] || {
           inicio: r.horario?.inicio || '06:45',
           fin: r.horario?.fin || '22:00',
           headwayMins: 20
         };
 
-        const startSec = timeUtils.timeToSec(lineSched.inicio);
-        const endSec = timeUtils.timeToSec(lineSched.fin);
+        const startSecToday = timeUtils.timeToSec(lineSchedToday.inicio);
+        const endSecToday = timeUtils.timeToSec(lineSchedToday.fin);
         const routeStops = r.stops || [];
         const stopIdx = routeStops.findIndex(s => String(s.id) === sId);
 
@@ -738,40 +743,87 @@ class MataroTracker {
           travelSec = Math.round((cumDist / 4.8) + (stopIdx * 25));
         }
 
-        const headwaySec = (lineSched.headwayMins || 20) * 60;
+        const headwaySec = (lineSchedToday.headwayMins || 20) * 60;
+        const isOperatingToday = nowSec >= startSecToday && nowSec <= endSecToday + travelSec;
 
-        let tripCount = 0;
-        for (let depSec = startSec; depSec <= endSec && tripCount < 10; depSec += headwaySec) {
-          const passingSec = depSec + travelSec;
-          const passHour = Math.floor(passingSec / 3600) % 24;
-          const passMin = Math.floor((passingSec % 3600) / 60);
-          const passingTimeStr = `${String(passHour).padStart(2, '0')}:${String(passMin).padStart(2, '0')}`;
+        if (isOperatingToday) {
+          // Generate departures for today from now onwards
+          let tripCount = 0;
+          for (let depSec = startSecToday; depSec <= endSecToday && tripCount < 10; depSec += headwaySec) {
+            const passingSec = depSec + travelSec;
+            if (passingSec < nowSec - 60) continue;
 
-          const depUtcDate = timeUtils.localTimeToUtcDate(networkTomorrow.year, networkTomorrow.month, networkTomorrow.day, passHour, passMin, 0, this.agencyTimezone);
-          const diffMs = depUtcDate.getTime() - Date.now();
-          const diffMin = Math.max(1, Math.round(diffMs / 60000));
-          const isFirst = tripCount === 0;
+            const passHour = Math.floor(passingSec / 3600) % 24;
+            const passMin = Math.floor((passingSec % 3600) / 60);
+            const passingTimeStr = `${String(passHour).padStart(2, '0')}:${String(passMin).padStart(2, '0')}`;
 
-          finalDepartures.push({
-            lineId: lIdStr,
-            lineName: r.lineName || `Línia ${lIdStr}`,
-            destination: r.name,
-            departureTime: passingTimeStr,
-            departureDate: depUtcDate.toISOString(),
-            expectedIso: depUtcDate.toISOString(),
-            aimedIso: depUtcDate.toISOString(),
-            minutesAway: diffMin,
-            isRealTime: false,
-            isEstimated: false,
-            isToday: false,
-            isFirstOfDay: isFirst,
-            isNextService: isFirst,
-            delayStatus: 'scheduled',
-            delayBadgeText: isFirst ? '🌅 1r Servei del matí' : 'Programat',
-            comparisonText: isFirst ? `📅 Pas teòric previst demà a les ${passingTimeStr}` : `📅 Horari teòric: ${passingTimeStr}`,
-            formattedStatus: `${passingTimeStr}`
-          });
-          tripCount++;
+            const depUtcDate = timeUtils.localTimeToUtcDate(networkNow.year, networkNow.month, networkNow.day, passHour, passMin, 0, this.agencyTimezone);
+            const diffMs = depUtcDate.getTime() - Date.now();
+            const diffMin = Math.max(1, Math.round(diffMs / 60000));
+
+            finalDepartures.push({
+              lineId: lIdStr,
+              lineName: r.lineName || `Línia ${lIdStr}`,
+              destination: r.name,
+              departureTime: passingTimeStr,
+              departureDate: depUtcDate.toISOString(),
+              expectedIso: depUtcDate.toISOString(),
+              aimedIso: depUtcDate.toISOString(),
+              minutesAway: diffMin,
+              isRealTime: false,
+              isEstimated: false,
+              isToday: true,
+              isFirstOfDay: false,
+              isNextService: tripCount === 0,
+              delayStatus: 'scheduled',
+              delayBadgeText: 'Horari teòric',
+              comparisonText: `📅 Horari teòric: ${passingTimeStr}`,
+              formattedStatus: `${passingTimeStr}`
+            });
+            tripCount++;
+          }
+        }
+
+        // If still empty (e.g. night time after fin or before morning start), generate tomorrow morning departures
+        if (finalDepartures.length === 0) {
+          const lineSchedTomorrow = MATARO_LINE_SCHEDULES[lIdStr]?.[dayTypeTomorrow] || lineSchedToday;
+          const startSecTomorrow = timeUtils.timeToSec(lineSchedTomorrow.inicio);
+          const endSecTomorrow = timeUtils.timeToSec(lineSchedTomorrow.fin);
+          const headwaySecTomorrow = (lineSchedTomorrow.headwayMins || 20) * 60;
+
+          let tripCount = 0;
+          for (let depSec = startSecTomorrow; depSec <= endSecTomorrow && tripCount < 10; depSec += headwaySecTomorrow) {
+            const passingSec = depSec + travelSec;
+            const passHour = Math.floor(passingSec / 3600) % 24;
+            const passMin = Math.floor((passingSec % 3600) / 60);
+            const passingTimeStr = `${String(passHour).padStart(2, '0')}:${String(passMin).padStart(2, '0')}`;
+
+            const depUtcDate = timeUtils.localTimeToUtcDate(networkTomorrow.year, networkTomorrow.month, networkTomorrow.day, passHour, passMin, 0, this.agencyTimezone);
+            const diffMs = depUtcDate.getTime() - Date.now();
+            const diffMin = Math.max(1, Math.round(diffMs / 60000));
+            const isFirst = tripCount === 0;
+
+            finalDepartures.push({
+              lineId: lIdStr,
+              lineName: r.lineName || `Línia ${lIdStr}`,
+              destination: r.name,
+              departureTime: passingTimeStr,
+              departureDate: depUtcDate.toISOString(),
+              expectedIso: depUtcDate.toISOString(),
+              aimedIso: depUtcDate.toISOString(),
+              minutesAway: diffMin,
+              isRealTime: false,
+              isEstimated: false,
+              isToday: false,
+              isFirstOfDay: isFirst,
+              isNextService: isFirst,
+              delayStatus: 'scheduled',
+              delayBadgeText: isFirst ? '🌅 1r Servei del matí' : 'Programat',
+              comparisonText: isFirst ? `📅 Pas teòric previst demà a les ${passingTimeStr}` : `📅 Horari teòric: ${passingTimeStr}`,
+              formattedStatus: `${passingTimeStr}`
+            });
+            tripCount++;
+          }
         }
       });
     }
