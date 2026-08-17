@@ -697,6 +697,12 @@ class MataroTracker {
       .filter(d => d.minutesAway !== undefined && d.minutesAway <= 120)
       .sort((a, b) => a.minutesAway - b.minutesAway);
 
+    finalDepartures.forEach(d => {
+      if (d.isToday === undefined) d.isToday = true;
+      if (d.isFirstOfDay === undefined) d.isFirstOfDay = false;
+      if (d.isNextService === undefined) d.isNextService = false;
+    });
+
     // 4. If zero live/estimated arrivals (e.g. night time / off-peak or no live bus in range), inject scheduled theoretical departures
     if (finalDepartures.length === 0) {
       const routesForStop = this.findRoutesServingStop(sId, lineId);

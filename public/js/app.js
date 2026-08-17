@@ -427,16 +427,22 @@ class TransitApp {
         ? new Date(next.expectedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
         : (next.departureTime || '--:--');
 
-      const isNextServ = next.isNextService || !next.isToday;
-      if (isNextServ) {
+      // A departure is ONLY the first service of tomorrow / morning resumption if explicitly tomorrow & not live/estimated
+      const isTomorrowFirst = (next.isToday === false || next.isFirstOfDay === true) && !next.isRealTime && !next.isEstimated;
+      if (isTomorrowFirst) {
         if (etaBigEl) etaBigEl.textContent = `🌅 ${clockTime}`;
-        if (etaClockEl) etaClockEl.textContent = `1r pas previst: ${clockTime}`;
+        if (etaClockEl) etaClockEl.textContent = `1r pas previst demà: ${clockTime}`;
         if (etaPillEl && etaStatusText) {
           etaPillEl.className = 'eta-status-pill scheduled';
           etaStatusText.textContent = 'Represa al matí';
         }
       } else {
-        if (etaBigEl) etaBigEl.textContent = next.formattedStatus || `${next.minutesAway} min`;
+        const mins = next.minutesAway;
+        const minsDisplay = (mins !== undefined && mins !== null)
+          ? (mins <= 0 ? 'Imminent' : (mins === 1 ? '1 min' : `${mins} min`))
+          : (next.formattedStatus || clockTime);
+
+        if (etaBigEl) etaBigEl.textContent = minsDisplay;
         if (etaClockEl) etaClockEl.textContent = `Hora estimada: ${clockTime}`;
 
         if (etaPillEl && etaStatusText) {
@@ -451,7 +457,7 @@ class TransitApp {
             etaStatusText.textContent = `Avançat (${cleanEarly})`;
           } else {
             etaPillEl.classList.add('live');
-            etaStatusText.textContent = next.isRealTime ? 'Temps Real Actiu' : 'Horari Teòric';
+            etaStatusText.textContent = next.isRealTime ? 'Temps Real Actiu' : (next.isEstimated ? 'Estimació en Circuit' : 'Horari Teòric');
           }
         }
       }
@@ -486,15 +492,15 @@ class TransitApp {
         ? new Date(dep.expectedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
         : (dep.departureTime || '--:--');
 
-      const isFirstMorning = Boolean(dep.isFirstOfDay || dep.isNextService || (idx === 0 && dep.isToday === false));
-      const isTomorrow = dep.isToday === false;
+      const isTomorrow = dep.isToday === false && !dep.isRealTime && !dep.isEstimated;
+      const isFirstMorning = (dep.isFirstOfDay === true || (idx === 0 && isTomorrow)) && !dep.isRealTime && !dep.isEstimated;
 
       const minsText = isFirstMorning
         ? `🌅 Demà ${dep.departureTime || clockTime}`
         : (isTomorrow
             ? `Demà ${dep.departureTime || clockTime}`
             : ((dep.minutesAway !== undefined && dep.minutesAway >= 0 && dep.minutesAway <= 180)
-                ? (dep.minutesAway === 0 ? 'Ara' : `${dep.minutesAway} min`)
+                ? (dep.minutesAway <= 0 ? 'Ara' : (dep.minutesAway === 1 ? '1 min' : `${dep.minutesAway} min`))
                 : `${clockTime}`));
 
       const tagLabel = isFirstMorning
@@ -871,8 +877,8 @@ class TransitApp {
             ? new Date(d.aimedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
             : (d.isEstimated ? estTime : null);
 
-          const isFirstMorning = Boolean(d.isFirstOfDay || d.isNextService || (idx === 0 && d.isToday === false));
-          const isTomorrow = d.isToday === false;
+          const isTomorrow = d.isToday === false && !d.isRealTime && !d.isEstimated;
+          const isFirstMorning = (d.isFirstOfDay === true || (idx === 0 && isTomorrow)) && !d.isRealTime && !d.isEstimated;
 
           const isDiff = schedTime && schedTime !== estTime;
           const delayText = d.delayMins !== undefined && d.delayMins !== 0
@@ -884,7 +890,7 @@ class TransitApp {
             : (isTomorrow
                 ? `Demà ${d.departureTime || estTime}`
                 : ((d.minutesAway !== undefined && d.minutesAway >= 0 && d.minutesAway <= 180)
-                    ? (d.minutesAway === 0 ? 'Imminent' : `${d.minutesAway} min`)
+                    ? (d.minutesAway <= 0 ? 'Imminent' : (d.minutesAway === 1 ? '1 min' : `${d.minutesAway} min`))
                     : `${estTime}`));
 
           const tagLabel = isFirstMorning
