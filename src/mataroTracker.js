@@ -115,8 +115,8 @@ class MataroTracker {
   }
 
   resolveLineConfig(lineId) {
-    const cleanId = String(lineId).replace('mataro_', '').replace('line-', '').replace('linia-', '').trim();
-    return this.linesData.find(l => String(l.id) === cleanId) || null;
+    const cleanId = String(lineId).toLowerCase().replace(/^mataro_?/, '').replace(/^line-?/, '').replace(/^linia-?/, '').replace(/^l(?=[1-8]$)/, '').trim();
+    return this.linesData.find(l => String(l.id).toLowerCase() === cleanId) || null;
   }
 
   // Deterministically match a SIRI live vehicle to route index (0 = Anada, 1 = Tornada)
