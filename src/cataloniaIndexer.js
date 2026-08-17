@@ -2,6 +2,25 @@ const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 
+function parseCsvLine(line) {
+  const result = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === ',' && !inQuotes) {
+      result.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  result.push(current.trim());
+  return result;
+}
+
 class CataloniaIndexer {
   constructor() {
     this.gtfsDir = path.join(__dirname, '..', 'data', 'atm_gtfs');
@@ -25,7 +44,7 @@ class CataloniaIndexer {
     const aStream = fs.createReadStream(path.join(this.gtfsDir, 'agency.txt'));
     const aRl = readline.createInterface({ input: aStream, crlfDelay: Infinity });
     for await (const line of aRl) {
-      const parts = line.split(',');
+      const parts = parseCsvLine(line);
       if (parts[0] !== 'agency_id') {
         agencies.set(parts[0], (parts[1] || 'Interurbà').replace(/"/g, '').trim());
       }
@@ -36,14 +55,16 @@ class CataloniaIndexer {
     const sStream = fs.createReadStream(path.join(this.gtfsDir, 'stops.txt'));
     const sRl = readline.createInterface({ input: sStream, crlfDelay: Infinity });
     for await (const line of sRl) {
-      const parts = line.split(',');
+      const parts = parseCsvLine(line);
       if (parts[0] !== 'stop_id') {
+        const lat = parseFloat(parts[4]);
+        const lon = parseFloat(parts[5]);
         stopsMap.set(parts[0], {
           id: parts[0],
           code: parts[1] || parts[0],
           name: (parts[2] || '').replace(/"/g, '').trim(),
-          lat: parseFloat(parts[4]),
-          lon: parseFloat(parts[5]),
+          lat: (!isNaN(lat) && lat > 35 && lat < 45) ? lat : 41.3851,
+          lon: (!isNaN(lon) && lon > 0 && lon < 5) ? lon : 2.1734,
           zone: parts[6] || 'Catalunya'
         });
       }
@@ -55,7 +76,7 @@ class CataloniaIndexer {
     const rStream = fs.createReadStream(path.join(this.gtfsDir, 'routes.txt'));
     const rRl = readline.createInterface({ input: rStream, crlfDelay: Infinity });
     for await (const line of rRl) {
-      const parts = line.split(',');
+      const parts = parseCsvLine(line);
       if (parts[0] !== 'agency_id') {
         const agencyId = parts[0];
         const routeId = parts[1];
@@ -142,7 +163,7 @@ class CataloniaIndexer {
     const tStream = fs.createReadStream(path.join(this.gtfsDir, 'trips.txt'));
     const tRl = readline.createInterface({ input: tStream, crlfDelay: Infinity });
     for await (const line of tRl) {
-      const parts = line.split(',');
+      const parts = parseCsvLine(line);
       if (parts[0] !== 'route_id') {
         const routeId = parts[0];
         const tripId = parts[1];
