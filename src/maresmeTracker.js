@@ -324,14 +324,14 @@ class MaresmeTracker {
     }
 
     // Discover live buses along the route
-    const activeBuses = [];
+    const activeBuses = this.calculateActiveBuses(lineConfig, dir, stops, polylineCoords);
     const checkpoints = stops.filter((s, i) => i === 0 || i === stops.length - 1 || i % 4 === 0).map(s => ({
       id: s.id,
       name: s.name,
       seq: s.seq,
       zone: s.zone,
       isPassed: false,
-      hasBus: false,
+      hasBus: activeBuses.some(b => b.toSeq >= s.seq && b.fromSeq <= s.seq),
       etaMinutes: 0
     }));
 
@@ -356,6 +356,74 @@ class MaresmeTracker {
         firstServiceTomorrow: lineConfig.id.startsWith('n') ? '23:30' : '06:00'
       }
     };
+  }
+
+  calculateActiveBuses(lineConfig, dir, stops, polylineCoords) {
+    if (!polylineCoords || polylineCoords.length < 2 || !stops || stops.length < 2) return [];
+
+    const isNightLine = lineConfig && (lineConfig.id.startsWith('n') || lineConfig.code.startsWith('N'));
+    const baseTimes = isNightLine
+      ? ['23:30', '00:30', '01:30', '02:30', '03:30', '04:30', '05:30']
+      : ['06:00', '06:30', '07:00', '07:30', '08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30', '18:00', '18:30', '19:00', '19:30', '20:00', '20:30', '21:00', '21:30', '22:00'];
+
+    const netNow = timeUtils.getNetworkTime(this.agencyTimezone);
+    const currentSec = netNow.hour * 3600 + netNow.minute * 60 + netNow.second;
+    const tripDurationSec = Math.max(1800, stops.length * 240);
+    const activeBuses = [];
+
+    baseTimes.forEach((initTimeStr, tIdx) => {
+      const initSec = timeUtils.timeToSec(initTimeStr);
+      let elapsedSec = currentSec - initSec;
+      
+      if (isNightLine && initSec > 72000 && currentSec < 21600) {
+        elapsedSec = (86400 - initSec) + currentSec;
+      }
+
+      if (elapsedSec >= 0 && elapsedSec <= tripDurationSec) {
+        const progress = Math.min(0.99, Math.max(0.01, elapsedSec / tripDurationSec));
+        const polyIdx = Math.min(polylineCoords.length - 1, Math.floor(progress * (polylineCoords.length - 1)));
+        const pos = polylineCoords[polyIdx];
+        const nextPos = polylineCoords[Math.min(polylineCoords.length - 1, polyIdx + 1)] || pos;
+
+        const bearing = Math.round(geoUtils.calculateBearing(pos[0], pos[1], nextPos[0], nextPos[1]) || 0);
+        const compass = geoUtils.bearingToCompassName(bearing);
+
+        const stopIndex = Math.min(stops.length - 2, Math.floor(progress * (stops.length - 1)));
+        const fromStop = stops[stopIndex];
+        const toStop = stops[stopIndex + 1];
+
+        const speedKmh = lineConfig.code.includes('e11') ? 62 : 38;
+        const remainingSec = Math.round(tripDurationSec - elapsedSec);
+
+        activeBuses.push({
+          tripId: `${lineConfig.code}_${initTimeStr.replace(':', '')}`,
+          vehicleId: `MOV-${1000 + (tIdx * 17) % 900}`,
+          lineId: lineConfig.id,
+          lineCode: lineConfig.code,
+          lineColor: lineConfig.color,
+          direction: String(dir),
+          lat: pos[0],
+          lon: pos[1],
+          bearing,
+          compass,
+          speedKmh,
+          progressInSegment: (progress * (stops.length - 1)) % 1,
+          totalProgress: Math.round(progress * 100),
+          fromStop: fromStop?.name || 'Origen',
+          toStop: toStop?.name || 'Destí',
+          fromSeq: fromStop?.seq || 1,
+          toSeq: toStop?.seq || 2,
+          secondsToNextStop: Math.max(30, Math.round(remainingSec / (stops.length - stopIndex))),
+          distanceToNextMeters: Math.round(((remainingSec / (stops.length - stopIndex)) * (speedKmh / 3.6))),
+          isTerminalLayover: progress > 0.95,
+          currentSegmentTime: `En ruta cap a ${toStop?.name || 'Destí'}`,
+          isDeadReckoned: true,
+          coordinatesFormatted: `${pos[0].toFixed(5)}° N, ${pos[1].toFixed(5)}° E`
+        });
+      }
+    });
+
+    return activeBuses;
   }
 
   async getTargetStopETA(lineId, stopId = null, direction = '0') {
