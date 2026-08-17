@@ -210,8 +210,8 @@ class MataroTracker {
       const vehs0 = liveVehicles.filter(v => this.matchVehicleToRouteIndex(v, routes) === 0);
       const vehs1 = liveVehicles.filter(v => this.matchVehicleToRouteIndex(v, routes) === 1);
 
-      const buses0 = this.processBusesWithDeadReckoning(vehs0, routes[0], allDirections[0].stops, '0');
-      const buses1 = this.processBusesWithDeadReckoning(vehs1, routes[1], allDirections[1].stops, '1');
+      const buses0 = this.processBusesWithDeadReckoning(vehs0, routes[0], allDirections[0].stops, '0', liveVehicles);
+      const buses1 = this.processBusesWithDeadReckoning(vehs1, routes[1], allDirections[1].stops, '1', liveVehicles);
 
       processedBuses = [...buses0, ...buses1];
     } else {
@@ -219,8 +219,23 @@ class MataroTracker {
         ? liveVehicles.filter(v => this.matchVehicleToRouteIndex(v, routes) === dirIdx)
         : liveVehicles;
 
-      processedBuses = this.processBusesWithDeadReckoning(vehsForDir, selectedRoute, stops, String(dirIdx));
+      processedBuses = this.processBusesWithDeadReckoning(vehsForDir, selectedRoute, stops, String(dirIdx), liveVehicles);
     }
+
+    // Strict deduplication by vehicleId (Live GPS strictly takes precedence over estimated dead-reckoning)
+    const uniqueBusesMap = new Map();
+    processedBuses.forEach(b => {
+      const vId = String(b.vehicleId || b.tripId);
+      if (!uniqueBusesMap.has(vId)) {
+        uniqueBusesMap.set(vId, b);
+      } else {
+        const existing = uniqueBusesMap.get(vId);
+        if (existing.isEstimated && !b.isEstimated) {
+          uniqueBusesMap.set(vId, b);
+        }
+      }
+    });
+    processedBuses = Array.from(uniqueBusesMap.values());
 
     return {
       lineId: lId,
@@ -238,7 +253,8 @@ class MataroTracker {
       secondaryColor: '#38bdf8',
       allDirections,
       activeBuses: processedBuses,
-      totalActiveBuses: processedBuses.length
+      totalActiveBuses: processedBuses.length,
+      totalVehiclesInCircuit: processedBuses.length
     };
   }
 
@@ -287,7 +303,7 @@ class MataroTracker {
   }
 
   // Dead-Zone Position Estimation (Dead-Reckoning along Polyline)
-  processBusesWithDeadReckoning(liveBuses, route, stops, dirId = '0') {
+  processBusesWithDeadReckoning(liveBuses, route, stops, dirId = '0', allLineLiveVehicles = liveBuses) {
     const now = Date.now();
     const result = [];
     const polyCoords = (route.coords || []).map(c => ({ lat: parseFloat(c.Latitude), lon: parseFloat(c.Longitude) }));
@@ -301,7 +317,7 @@ class MataroTracker {
       const roadBearing = snapped.bearing || b.bearing || 0;
 
       // Record to vehicle history
-      this.vehicleHistory.set(b.vehicleId, {
+      this.vehicleHistory.set(String(b.vehicleId), {
         vehicleId: b.vehicleId,
         lineId: b.lineId,
         direction: dirId,
@@ -353,11 +369,12 @@ class MataroTracker {
     // 2. Dead-Reckoning: Check if any recently tracked vehicles lost signal in dead zones
     for (const [vId, hist] of this.vehicleHistory.entries()) {
       if (String(hist.lineId) !== String(route.id_linea)) continue;
+      if (String(hist.direction) !== String(dirId)) continue; // Only dead-reckon on the matching direction
       const elapsedSec = (now - hist.lastSeen) / 1000;
 
-      // If missing between 15s and 180s, extrapolate position along polyline
-      const isCurrentlyActive = liveBuses.some(b => b.vehicleId === vId);
-      if (!isCurrentlyActive && elapsedSec >= 12 && elapsedSec <= 180) {
+      // If vehicle is live on ANY direction of this line, do not dead-reckon it
+      const isCurrentlyActive = (allLineLiveVehicles || liveBuses).some(b => String(b.vehicleId) === String(vId));
+      if (!isCurrentlyActive && elapsedSec >= 15 && elapsedSec <= 120) {
         const estPos = this.extrapolatePolylinePosition(hist, elapsedSec, polyCoords);
         if (estPos) {
           const segInfo = this.findNearestSegment(estPos.lat, estPos.lon, stops, polyCoords);
@@ -366,6 +383,7 @@ class MataroTracker {
             tripId: `mataro_${vId}`,
             vehicleId: vId,
             lineId: hist.lineId,
+            direction: dirId,
             lat: estPos.lat,
             lon: estPos.lon,
             bearing: estPos.bearing,
