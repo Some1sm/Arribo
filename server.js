@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const compression = require('compression');
 const path = require('path');
 const corridorTracker = require('./src/corridorTracker');
 const mataroTracker = require('./src/mataroTracker');
@@ -15,6 +16,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
+app.use(compression());
 app.use(express.json());
 
 // Strict Read-Only Security Guard: Reject any write requests from clients
@@ -25,7 +27,10 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), {
+  maxAge: process.env.NODE_ENV === 'production' ? '1d' : '1h',
+  etag: true
+}));
 
 // Pre-initialize async trackers and launch Autonomous Ingestion Daemon
 Promise.allSettled([

@@ -7,6 +7,7 @@ WORKDIR /app
 # Set environment
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV NODE_OPTIONS="--max-old-space-size=256 --optimize-for-size"
 
 # Copy package manifests first for efficient caching
 COPY package*.json ./

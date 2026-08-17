@@ -153,76 +153,116 @@ class MaresmeTracker {
   loadData() {
     if (this.isLoaded) return;
     try {
+      const cachePath = path.join(__dirname, '..', 'data', 'cache', 'maresme_cache.json');
+      const stopsCachePath = path.join(__dirname, '..', 'data', 'cache', 'stops.json');
       const atmDir = path.join(__dirname, '..', 'data', 'atm_gtfs');
-      if (!fs.existsSync(atmDir)) return;
 
-      // 1. Stops
-      const stopsPath = path.join(atmDir, 'stops.txt');
-      if (fs.existsSync(stopsPath)) {
-        fs.readFileSync(stopsPath, 'utf8').split('\n').slice(1).filter(Boolean).forEach(l => {
-          const parts = l.split(',');
-          const id = parts[0];
-          const mouteId = id.replace('GEN_PF', '').replace(/^0+/, '');
-          const stopObj = {
-            id,
-            mouteStopId: mouteId,
-            code: parts[1] || mouteId,
-            name: parts[2]?.replace(/"/g, '') || `Parada ${id}`,
-            lat: parseFloat(parts[4]),
-            lon: parseFloat(parts[5]),
-            zone: 'Zona Maresme'
-          };
-          this.stopsMap.set(id, stopObj);
-          this.stopsMap.set(mouteId, stopObj);
+      if (fs.existsSync(cachePath)) {
+        const cached = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+        Object.entries(cached.tripsMap || {}).forEach(([k, v]) => this.tripsMap.set(k, v));
+        Object.entries(cached.shapesMap || {}).forEach(([k, v]) => {
+          this.shapesMap.set(k, v.map((pt, i) => ({ lat: pt[0], lon: pt[1], seq: i })));
         });
-      }
+        Object.entries(cached.stopTimesByTrip || {}).forEach(([k, v]) => this.stopTimesByTrip.set(k, v));
 
-      // 2. Shapes
-      const shapesPath = path.join(atmDir, 'shapes.txt');
-      if (fs.existsSync(shapesPath)) {
-        fs.readFileSync(shapesPath, 'utf8').split('\n').slice(1).filter(Boolean).forEach(l => {
-          const parts = l.split(',');
-          const sId = parts[0];
-          if (!this.shapesMap.has(sId)) this.shapesMap.set(sId, []);
-          this.shapesMap.get(sId).push({
-            lat: parseFloat(parts[1]),
-            lon: parseFloat(parts[2]),
-            seq: parseInt(parts[3], 10)
+        if (fs.existsSync(stopsCachePath)) {
+          const stopsList = JSON.parse(fs.readFileSync(stopsCachePath, 'utf8'));
+          stopsList.forEach(s => {
+            const mouteId = String(s.code || s.id).replace('GEN_PF', '').replace(/^0+/, '');
+            const stopObj = {
+              id: s.id,
+              mouteStopId: mouteId,
+              code: mouteId,
+              name: s.name,
+              lat: s.lat,
+              lon: s.lon,
+              zone: 'Zona Maresme'
+            };
+            this.stopsMap.set(s.id, stopObj);
+            this.stopsMap.set(mouteId, stopObj);
           });
-        });
-        this.shapesMap.forEach(pts => pts.sort((a, b) => a.seq - b.seq));
-      }
+        }
+      } else if (fs.existsSync(atmDir)) {
+        const targetRouteIds = new Set(this.lines.map(l => l.routeId));
+        const targetTripIds = new Set();
+        const targetShapeIds = new Set();
 
-      // 3. Trips
-      const tripsPath = path.join(atmDir, 'trips.txt');
-      if (fs.existsSync(tripsPath)) {
-        fs.readFileSync(tripsPath, 'utf8').split('\n').slice(1).filter(Boolean).forEach(l => {
-          const p = l.split(',');
-          const routeId = p[0];
-          const tripId = p[1];
-          const dirId = p[4] || '0';
-          const shapeId = p[6] || '';
-          if (!this.tripsMap.has(routeId)) this.tripsMap.set(routeId, []);
-          this.tripsMap.get(routeId).push({ tripId, routeId, dirId, shapeId });
-        });
-      }
-
-      // 4. Stop Times
-      const stPath = path.join(atmDir, 'stop_times.txt');
-      if (fs.existsSync(stPath)) {
-        fs.readFileSync(stPath, 'utf8').split('\n').slice(1).filter(Boolean).forEach(l => {
-          const p = l.split(',');
-          const tripId = p[0];
-          if (!this.stopTimesByTrip.has(tripId)) this.stopTimesByTrip.set(tripId, []);
-          this.stopTimesByTrip.get(tripId).push({
-            tripId,
-            arr: p[1],
-            dep: p[2],
-            stopId: p[3],
-            seq: parseInt(p[4], 10)
+        // 1. Filtered Trips
+        const tripsPath = path.join(atmDir, 'trips.txt');
+        if (fs.existsSync(tripsPath)) {
+          fs.readFileSync(tripsPath, 'utf8').split('\n').slice(1).filter(Boolean).forEach(l => {
+            const p = l.split(',');
+            const routeId = p[0];
+            if (targetRouteIds.has(routeId)) {
+              const tripId = p[1];
+              const dirId = p[4] || '0';
+              const shapeId = p[6] || '';
+              if (!this.tripsMap.has(routeId)) this.tripsMap.set(routeId, []);
+              this.tripsMap.get(routeId).push({ tripId, routeId, dirId, shapeId });
+              targetTripIds.add(tripId);
+              if (shapeId) targetShapeIds.add(shapeId);
+            }
           });
-        });
-        this.stopTimesByTrip.forEach(arr => arr.sort((a, b) => a.seq - b.seq));
+        }
+
+        // 2. Filtered Shapes
+        const shapesPath = path.join(atmDir, 'shapes.txt');
+        if (fs.existsSync(shapesPath)) {
+          fs.readFileSync(shapesPath, 'utf8').split('\n').slice(1).filter(Boolean).forEach(l => {
+            const parts = l.split(',');
+            const sId = parts[0];
+            if (targetShapeIds.has(sId)) {
+              if (!this.shapesMap.has(sId)) this.shapesMap.set(sId, []);
+              this.shapesMap.get(sId).push({
+                lat: parseFloat(parts[1]),
+                lon: parseFloat(parts[2]),
+                seq: parseInt(parts[3], 10)
+              });
+            }
+          });
+          this.shapesMap.forEach(pts => pts.sort((a, b) => a.seq - b.seq));
+        }
+
+        // 3. Filtered Stop Times
+        const stPath = path.join(atmDir, 'stop_times.txt');
+        if (fs.existsSync(stPath)) {
+          fs.readFileSync(stPath, 'utf8').split('\n').slice(1).filter(Boolean).forEach(l => {
+            const p = l.split(',');
+            const tripId = p[0];
+            if (targetTripIds.has(tripId)) {
+              if (!this.stopTimesByTrip.has(tripId)) this.stopTimesByTrip.set(tripId, []);
+              this.stopTimesByTrip.get(tripId).push({
+                tripId,
+                arr: p[1],
+                dep: p[2],
+                stopId: p[3],
+                seq: parseInt(p[4], 10)
+              });
+            }
+          });
+          this.stopTimesByTrip.forEach(arr => arr.sort((a, b) => a.seq - b.seq));
+        }
+
+        // 4. Stops
+        const stopsPath = path.join(atmDir, 'stops.txt');
+        if (fs.existsSync(stopsPath)) {
+          fs.readFileSync(stopsPath, 'utf8').split('\n').slice(1).filter(Boolean).forEach(l => {
+            const parts = l.split(',');
+            const id = parts[0];
+            const mouteId = id.replace('GEN_PF', '').replace(/^0+/, '');
+            const stopObj = {
+              id,
+              mouteStopId: mouteId,
+              code: parts[1] || mouteId,
+              name: parts[2]?.replace(/"/g, '') || `Parada ${id}`,
+              lat: parseFloat(parts[4]),
+              lon: parseFloat(parts[5]),
+              zone: 'Zona Maresme'
+            };
+            this.stopsMap.set(id, stopObj);
+            this.stopsMap.set(mouteId, stopObj);
+          });
+        }
       }
 
       // 5. Index search stops

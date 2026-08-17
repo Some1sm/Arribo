@@ -28,6 +28,10 @@ class HistoryDatabase {
         this.db.exec(`
           PRAGMA journal_mode = WAL;
           PRAGMA synchronous = NORMAL;
+          PRAGMA cache_size = -2048;
+          PRAGMA wal_autocheckpoint = 200;
+          PRAGMA temp_store = MEMORY;
+          PRAGMA auto_vacuum = INCREMENTAL;
 
           CREATE TABLE IF NOT EXISTS vehicle_snapshots (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -400,7 +404,8 @@ class HistoryDatabase {
       const cutoff = Date.now() - daysRetention * 86400 * 1000;
       this.db.prepare(`DELETE FROM vehicle_snapshots WHERE timestamp < ?`).run(cutoff);
       this.db.prepare(`DELETE FROM delay_logs WHERE timestamp < ?`).run(cutoff);
-      console.log(`[HistoryDB] Pruned raw records older than ${daysRetention} days (hourly stats preserved).`);
+      this.db.exec(`PRAGMA incremental_vacuum; PRAGMA optimize;`);
+      console.log(`[HistoryDB] Pruned raw records older than ${daysRetention} days (hourly stats preserved, disk space reclaimed).`);
     } catch (e) {
       console.error('[HistoryDB] pruneOldRecords error:', e.message);
     }

@@ -86,8 +86,89 @@ class CorridorTracker {
 
   loadData() {
     try {
+      const cachePath = path.join(this.dataDir, 'cache', 'maresme_cache.json');
+      const stopsCachePath = path.join(this.dataDir, 'cache', 'stops.json');
       const atmDir = path.join(this.dataDir, 'atm_gtfs');
-      if (fs.existsSync(atmDir)) {
+
+      if (fs.existsSync(cachePath) && fs.existsSync(stopsCachePath)) {
+        const cached = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+        const stopsList = JSON.parse(fs.readFileSync(stopsCachePath, 'utf8'));
+        const stopsMap = new Map();
+        stopsList.forEach(s => {
+          const sId = s.id;
+          const mId = String(s.code || sId).replace('GEN_PF', '').replace(/^0+/, '');
+          stopsMap.set(sId, {
+            gtfsStopId: sId,
+            mouteStopId: mId,
+            name: s.name || `Parada ${sId}`,
+            lat: s.lat,
+            lon: s.lon,
+            city: 'Maresme'
+          });
+        });
+
+        const trips = cached.tripsMap['GEN_0498'] || [];
+        const stopTimesByTrip = cached.stopTimesByTrip || {};
+
+        const getStopsForTrip = (tripId) => {
+          const st = stopTimesByTrip[tripId] || [];
+          return st.map(p => {
+            const sObj = stopsMap.get(p.stopId);
+            return {
+              ...sObj,
+              seq: p.seq,
+              arr: p.arr,
+              dep: p.dep
+            };
+          }).sort((a, b) => a.seq - b.seq);
+        };
+
+        const trip0 = trips.find(t => t.dirId === '0') || trips[0];
+        const trip1 = trips.find(t => t.dirId === '1') || trips[0];
+
+        if (trip1) this.stopsDir1 = getStopsForTrip(trip1.tripId);
+        if (trip0) this.stopsDir0 = getStopsForTrip(trip0.tripId);
+
+        const schedDir1 = [];
+        const schedDir0 = [];
+        trips.forEach(t => {
+          const tId = t.tripId;
+          const dir = t.dirId || '0';
+          const sId = t.serviceId || '';
+          const tTimes = (stopTimesByTrip[tId] || []).slice().sort((a, b) => a.seq - b.seq);
+          if (tTimes.length > 0) {
+            const depTime = tTimes[0].dep;
+            const arrTime = tTimes[tTimes.length - 1].arr;
+            const entry = {
+              tripId: tId,
+              serviceId: sId,
+              departureTime: depTime.substring(0, 5),
+              arrivalTime: arrTime.substring(0, 5),
+              stops: tTimes.map(st => ({
+                stopId: st.stopId,
+                gtfsStopId: st.stopId,
+                seq: st.seq,
+                arr: st.arr,
+                dep: st.dep,
+                departureTime: st.dep.substring(0, 5),
+                arrivalTime: st.arr.substring(0, 5)
+              }))
+            };
+            if (dir === '1') schedDir1.push(entry);
+            else schedDir0.push(entry);
+          }
+        });
+
+        this.fullSchedule = { dir1: schedDir1, dir0: schedDir0 };
+        this.stopsMapDir1 = new Map();
+        this.stopsDir1.forEach(s => this.stopsMapDir1.set(s.gtfsStopId, s));
+        this.stopsMapDir0 = new Map();
+        this.stopsDir0.forEach(s => this.stopsMapDir0.set(s.gtfsStopId, s));
+
+        this.loadCalendarSync();
+        console.log(`[CorridorTracker] Dynamically loaded C-10 (${this.stopsDir1.length} stops dir 1, ${this.stopsDir0.length} stops dir 0) from cache!`);
+        return;
+      } else if (fs.existsSync(atmDir)) {
         const stopsPath = path.join(atmDir, 'stops.txt');
         const tripsPath = path.join(atmDir, 'trips.txt');
         const stopTimesPath = path.join(atmDir, 'stop_times.txt');
@@ -109,7 +190,16 @@ class CorridorTracker {
           });
 
           const trips = fs.readFileSync(tripsPath, 'utf8').split('\n').slice(1).filter(l => l.startsWith('GEN_0498,'));
-          const stopTimes = fs.readFileSync(stopTimesPath, 'utf8').split('\n').slice(1).filter(Boolean);
+          const c10TripIds = new Set(trips.map(t => t.split(',')[1]));
+          const stopTimes = fs.readFileSync(stopTimesPath, 'utf8')
+            .split('\n')
+            .slice(1)
+            .filter(l => {
+              const commaIdx = l.indexOf(',');
+              if (commaIdx === -1) return false;
+              const tId = l.substring(0, commaIdx);
+              return c10TripIds.has(tId);
+            });
 
           const getStopsForTrip = (tripId) => {
             return stopTimes
