@@ -556,6 +556,7 @@ class TransitApp {
     const s = report.summary || {};
     const mostDelayed = report.rankingMostDelayed || [];
     const mostPunctual = report.rankingBestPunctuality || [];
+    const worstStops = report.rankingWorstStops || [];
     const agencies = report.agencyStats || [];
 
     let html = `
@@ -612,6 +613,48 @@ class TransitApp {
                     <td style="padding:0.6rem 0.8rem; color:var(--text-muted);">+${l.maxDelay} min</td>
                     <td style="padding:0.6rem 0.8rem;">
                       <span style="background:rgba(239,68,68,0.15); color:#f87171; padding:0.15rem 0.45rem; border-radius:6px; font-weight:600;">${l.latePercentage}%</span>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        `}
+      </div>
+
+      <!-- Ranking: Worst Stops (Bottlenecks) -->
+      <div style="margin-bottom:1.5rem;">
+        <h4 style="font-size:0.95rem; font-weight:700; margin-bottom:0.6rem; display:flex; align-items:center; gap:0.4rem;">
+          <span>📍 Colls d'Ampolla: Parades amb Més Retard Acumulat (Top 10)</span>
+        </h4>
+        ${worstStops.length === 0 ? '<div style="color:var(--text-muted); font-size:0.85rem;">Sense punts negres de retards destacats en aquest període.</div>' : `
+          <div style="border:1px solid var(--border-subtle); border-radius:10px; overflow:hidden;">
+            <table style="width:100%; border-collapse:collapse; font-size:0.83rem; text-align:left;">
+              <thead>
+                <tr style="background:var(--bg-surface); border-bottom:1px solid var(--border-subtle); color:var(--text-muted); font-size:0.72rem; text-transform:uppercase;">
+                  <th style="padding:0.6rem 0.8rem;">Parada (Punt Negre)</th>
+                  <th style="padding:0.6rem 0.8rem;">Línia</th>
+                  <th style="padding:0.6rem 0.8rem;">Operador</th>
+                  <th style="padding:0.6rem 0.8rem;">Retard Mitjà</th>
+                  <th style="padding:0.6rem 0.8rem;">Retard Màx.</th>
+                  <th style="padding:0.6rem 0.8rem;">% Retards Greus (&ge;5 min)</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${worstStops.map((s, i) => `
+                  <tr style="border-bottom:1px solid var(--border-subtle); background:${i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'};">
+                    <td style="padding:0.6rem 0.8rem; font-weight:600; color:var(--text-primary);">
+                      <div style="display:flex; align-items:center; gap:0.4rem;">
+                        <span style="color:#f59e0b;">📍</span>
+                        <span>${s.stopName}</span>
+                      </div>
+                    </td>
+                    <td style="padding:0.6rem 0.8rem; font-weight:700; color:var(--brand-primary);">${s.lineCode}</td>
+                    <td style="padding:0.6rem 0.8rem; color:var(--text-muted);">${s.agency}</td>
+                    <td style="padding:0.6rem 0.8rem; font-weight:700; color:#ef4444;">+${s.avgDelay} min</td>
+                    <td style="padding:0.6rem 0.8rem; color:var(--text-muted);">+${s.maxDelay} min</td>
+                    <td style="padding:0.6rem 0.8rem;">
+                      <span style="background:${s.severeLatePct >= 30 ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.15)'}; color:${s.severeLatePct >= 30 ? '#f87171' : '#fbbf24'}; padding:0.15rem 0.45rem; border-radius:6px; font-weight:600;">${s.severeLatePct}%</span>
                     </td>
                   </tr>
                 `).join('')}

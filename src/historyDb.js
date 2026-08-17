@@ -280,6 +280,28 @@ class HistoryDatabase {
         avgDelay: Math.round((a.avgDelay || 0) * 10) / 10
       }));
 
+      // 5. Ranking of Worst Stops (Bottlenecks)
+      const worstStopsStmt = this.db.prepare(`
+        SELECT 
+          stop_name as stopName,
+          line_code as lineCode,
+          agency,
+          COUNT(*) as arrivalCount,
+          AVG(delay_mins) as avgDelay,
+          MAX(delay_mins) as maxDelay,
+          ROUND((SUM(CASE WHEN delay_mins >= 5 THEN 1.0 ELSE 0.0 END) / COUNT(*)) * 100, 1) as severeLatePct
+        FROM delay_logs
+        WHERE timestamp >= ?
+        GROUP BY stop_name, line_code, agency
+        HAVING arrivalCount >= 2
+        ORDER BY avgDelay DESC, maxDelay DESC
+        LIMIT 10
+      `);
+      const rankingWorstStops = worstStopsStmt.all(cutoff).map(r => ({
+        ...r,
+        avgDelay: Math.round((r.avgDelay || 0) * 10) / 10
+      }));
+
       return {
         summary: {
           totalRecordedArrivals: totalArrivals,
@@ -291,11 +313,12 @@ class HistoryDatabase {
         },
         rankingMostDelayed,
         rankingBestPunctuality,
+        rankingWorstStops,
         agencyStats
       };
     } catch (e) {
       console.error('[HistoryDB] getJournalismReport error:', e.message);
-      return { summary: {}, rankingMostDelayed: [], rankingBestPunctuality: [], agencyStats: [] };
+      return { summary: {}, rankingMostDelayed: [], rankingBestPunctuality: [], rankingWorstStops: [], agencyStats: [] };
     }
   }
 
