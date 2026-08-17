@@ -42,9 +42,58 @@
           <span id="header-active-buses-text"><strong>0</strong> busos</span>
         </div>
 
-        <div class="live-indicator" id="live-indicator" title="Estat de la connexió en temps real">
-          <span class="live-dot"></span>
-          <span id="live-text">En directe</span>
+        <!-- Live Connection Status & Diagnostic Menu -->
+        <div class="live-indicator-wrapper" id="live-indicator-wrapper">
+          <button type="button" class="live-indicator" id="live-indicator" title="Fes clic per veure i provar la connexió amb l'API" aria-expanded="false">
+            <span class="live-dot"></span>
+            <span id="live-text">En directe</span>
+            <svg class="live-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+
+          <!-- Connection Diagnostic Dropdown -->
+          <div class="connection-menu-dropdown" id="connection-menu-dropdown">
+            <div class="connection-menu-header">
+              <div class="conn-title-row">
+                <span class="live-dot" id="conn-menu-dot"></span>
+                <strong>Estat de la connexió API</strong>
+              </div>
+              <span class="conn-badge" id="conn-menu-badge">Actiu</span>
+            </div>
+
+            <div class="connection-menu-body">
+              <div class="conn-info-row">
+                <span class="conn-label">Línia activa:</span>
+                <strong class="conn-val" id="conn-line-name">C-10</strong>
+              </div>
+              <div class="conn-info-row">
+                <span class="conn-label">Proveïdor oficial:</span>
+                <strong class="conn-val" id="conn-provider-name">Generalitat Mou-te</strong>
+              </div>
+              <div class="conn-info-row">
+                <span class="conn-label">Passarel·la API:</span>
+                <span class="conn-val-mono" id="conn-api-host">moute.gencat.cat</span>
+              </div>
+              <div class="conn-info-row">
+                <span class="conn-label">Latència / Ping:</span>
+                <span class="conn-val-mono" id="conn-latency-val">-- ms</span>
+              </div>
+              <div class="conn-info-row">
+                <span class="conn-label">Darrera prova:</span>
+                <span class="conn-val" id="conn-last-tested">--</span>
+              </div>
+
+              <div class="conn-diagnostic-box" id="conn-diagnostic-box">
+                <span id="conn-diagnostic-text">Fes clic a "Provar connexió" per verificar la comunicació en temps real amb el servidor.</span>
+              </div>
+            </div>
+
+            <div class="connection-menu-footer">
+              <button type="button" class="btn-test-connection" id="btn-test-connection">
+                <svg id="test-icon-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                <span id="btn-test-conn-text">Provar connexió</span>
+              </button>
+            </div>
+          </div>
         </div>
 
         <button type="button" class="btn-icon btn-theme-toggle" id="btn-theme-toggle" title="Canviar tema clar / fosc" aria-label="Canviar tema clar o fosc">

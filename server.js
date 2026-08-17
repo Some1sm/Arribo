@@ -438,8 +438,101 @@ app.get('/api/mataro/stop/:stopId/departures', async (req, res) => {
 });
 
 // ==========================================
-// 4. HEALTH CHECK & SPA FALLBACK
+// 4. API CONNECTION DIAGNOSTICS & HEALTH
 // ==========================================
+
+// Diagnostic test for current line's upstream API
+app.get('/api/diagnostics/test', async (req, res) => {
+  const lineId = req.query.lineId || 'c10';
+  const { type, tracker } = getTrackerForLine(lineId);
+  const start = Date.now();
+
+  const providerMeta = {
+    c10: {
+      provider: 'Generalitat de Catalunya (Mou-te / ATM)',
+      host: 'moute.gencat.cat',
+      auth: 'HMAC-MD5 Token Authentication',
+      type: 'REST JSON / Nexus NextDepartures'
+    },
+    maresme: {
+      provider: 'Moventis / Casas (Generalitat Mou-te & ATM)',
+      host: 'moute.gencat.cat',
+      auth: 'HMAC-MD5 Token Authentication',
+      type: 'REST JSON / Nexus NextDepartures'
+    },
+    mataro: {
+      provider: 'Mataró Bus Urbà (Avanza SIRI Gateway)',
+      host: 'sirimataro.avanzagrupo.com',
+      auth: 'SIRI-Lite Protocol',
+      type: 'SOAP / XML VehicleMonitoring'
+    },
+    sagales: {
+      provider: 'Sagalés Real-Time Web Service',
+      host: 'www.sagales.com',
+      auth: 'Direct JSON Telemetry',
+      type: 'REST JSON Vehicle Entities'
+    },
+    amb: {
+      provider: 'Àrea Metropolitana de Barcelona (AMB Mobilitat)',
+      host: 'api.ambmobilitat.cat',
+      auth: 'API Key Header (x-api-key)',
+      type: 'REST JSON v2 GTFS & Realtime'
+    },
+    rodalies: {
+      provider: 'Renfe Rodalies de Catalunya (AMB Mobilitat)',
+      host: 'api.ambmobilitat.cat',
+      auth: 'API Key Header (x-api-key)',
+      type: 'REST JSON v2 GTFS-RT'
+    }
+  }[type] || {
+    provider: 'AMB Mobilitat',
+    host: 'api.ambmobilitat.cat',
+    auth: 'API Key Header',
+    type: 'REST API'
+  };
+
+  try {
+    let result = null;
+    if (type === 'c10') {
+      result = await corridorTracker.getCorridorLiveTracking('1');
+    } else {
+      result = await tracker.getLineDetails(lineId, '0');
+    }
+    const latencyMs = Date.now() - start;
+    const activeVehicles = result?.activeBuses?.length || result?.totalActiveBuses || 0;
+
+    res.json({
+      success: true,
+      lineId,
+      provider: providerMeta.provider,
+      host: providerMeta.host,
+      auth: providerMeta.auth,
+      type: providerMeta.type,
+      latencyMs,
+      status: latencyMs > 3000 ? 'slow' : 'online',
+      statusCode: 200,
+      activeVehicles,
+      message: `Connexió correcta amb ${providerMeta.host} (${latencyMs}ms). ${activeVehicles} vehicle${activeVehicles === 1 ? '' : 's'} actiu${activeVehicles === 1 ? '' : 's'}.`,
+      testedAt: new Date().toLocaleTimeString('ca-ES', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    });
+  } catch (err) {
+    const latencyMs = Date.now() - start;
+    res.json({
+      success: false,
+      lineId,
+      provider: providerMeta.provider,
+      host: providerMeta.host,
+      auth: providerMeta.auth,
+      type: providerMeta.type,
+      latencyMs,
+      status: 'offline',
+      statusCode: 502,
+      error: err.message,
+      message: `Error en connectar amb ${providerMeta.host}: ${err.message}`,
+      testedAt: new Date().toLocaleTimeString('ca-ES', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    });
+  }
+});
 
 app.get('/api/health', (req, res) => {
   res.json({
