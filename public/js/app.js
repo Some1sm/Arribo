@@ -401,6 +401,19 @@ class TransitApp {
     }
   }
 
+  decodeHtml(str) {
+    if (!str) return '';
+    const txt = document.createElement('textarea');
+    txt.innerHTML = str;
+    return txt.value
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&middot;/gi, '·')
+      .replace(/&#39;/g, "'")
+      .replace(/<[^>]*>?/gm, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
   renderDisruptionsBanner(lData) {
     const banner = document.getElementById('route-disruption-banner');
     const titleEl = document.getElementById('disruption-banner-title');
@@ -417,8 +430,8 @@ class TransitApp {
 
     if (disruptions.length > 0) {
       const d = disruptions[0];
-      titleEl.textContent = `⚠️ Avís de servei (${disruptions.length}): ${d.title}`;
-      descEl.textContent = d.description || d.affectedStops || 'Afectacions al recorregut habitual d\'aquesta línia.';
+      titleEl.textContent = `⚠️ Avís de servei (${disruptions.length}): ${this.decodeHtml(d.title)}`;
+      descEl.textContent = this.decodeHtml(d.description || d.affectedStops || 'Afectacions al recorregut habitual d\'aquesta línia.');
       banner.style.display = 'flex';
     } else {
       banner.style.display = 'none';
@@ -474,12 +487,12 @@ class TransitApp {
     container.innerHTML = filtered.map(d => `
       <div class="disruption-item-card">
         <div class="disruption-header-row">
-          <span class="disruption-title">⚠️ ${d.title}</span>
-          ${d.affectedCities ? `<span class="disruption-tag">📍 ${d.affectedCities.trim()}</span>` : ''}
+          <span class="disruption-title">⚠️ ${this.decodeHtml(d.title)}</span>
+          ${d.affectedCities ? `<span class="disruption-tag">📍 ${this.decodeHtml(d.affectedCities.trim())}</span>` : ''}
         </div>
-        ${d.affectedLines ? `<div class="disruption-lines-badge">🚌 ${d.affectedLines}</div>` : ''}
-        ${d.affectedStops ? `<div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:0.4rem;">🚏 ${d.affectedStops}</div>` : ''}
-        <div class="disruption-body-text">${d.description}</div>
+        ${d.affectedLines ? `<div class="disruption-lines-badge">🚌 ${this.decodeHtml(d.affectedLines)}</div>` : ''}
+        ${d.affectedStops ? `<div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:0.4rem;">🚏 ${this.decodeHtml(d.affectedStops)}</div>` : ''}
+        <div class="disruption-body-text">${this.decodeHtml(d.description)}</div>
       </div>
     `).join('');
   }

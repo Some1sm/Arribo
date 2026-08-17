@@ -214,6 +214,49 @@ class AmbTracker {
     return this.routesMap.get(lineId) || this.routesMap.get(`amb_${key}`) || this.routesMap.get(key);
   }
 
+  decodeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&middot;/gi, '·')
+      .replace(/&#39;/g, "'")
+      .replace(/&quot;/gi, '"')
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&ccedil;/g, 'ç')
+      .replace(/&Ccedil;/g, 'Ç')
+      .replace(/&Agrave;/g, 'À')
+      .replace(/&agrave;/g, 'à')
+      .replace(/&Aacute;/g, 'Á')
+      .replace(/&aacute;/g, 'á')
+      .replace(/&Egrave;/g, 'È')
+      .replace(/&egrave;/g, 'è')
+      .replace(/&Eacute;/g, 'É')
+      .replace(/&eacute;/g, 'é')
+      .replace(/&Igrave;/g, 'Ì')
+      .replace(/&igrave;/g, 'ì')
+      .replace(/&Iacute;/g, 'Í')
+      .replace(/&iacute;/g, 'í')
+      .replace(/&Ograve;/g, 'Ò')
+      .replace(/&ograve;/g, 'ò')
+      .replace(/&Oacute;/g, 'Ó')
+      .replace(/&oacute;/g, 'ó')
+      .replace(/&Ugrave;/g, 'Ù')
+      .replace(/&ugrave;/g, 'ù')
+      .replace(/&Uacute;/g, 'Ú')
+      .replace(/&uacute;/g, 'ú')
+      .replace(/&Uuml;/g, 'Ü')
+      .replace(/&uuml;/g, 'ü')
+      .replace(/&Ntilde;/g, 'Ñ')
+      .replace(/&ntilde;/g, 'ñ')
+      .replace(/&#(\d+);/g, (m, dec) => String.fromCharCode(dec))
+      .replace(/&#x([0-9a-fA-F]+);/g, (m, hex) => String.fromCharCode(parseInt(hex, 16)))
+      .replace(/<[^>]*>?/gm, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
   async getDisruptions(lineCode = null) {
     const now = Date.now();
     if (this.disruptionsCache.data.length > 0 && (now - this.disruptionsCache.timestamp < 60000)) {
@@ -227,11 +270,11 @@ class AmbTracker {
       const list = res.data?._embedded?.disruptions || [];
       const formatted = list.map(d => ({
         id: d.id,
-        title: d.title || 'Avís de servei',
-        affectedLines: d.affectedLines || '',
-        affectedCities: d.affectedCities || '',
-        affectedStops: d.affectedStops || '',
-        description: (d.description || '').replace(/<[^>]*>?/gm, '').trim(),
+        title: this.decodeHtml(d.title || 'Avís de servei'),
+        affectedLines: this.decodeHtml(d.affectedLines || ''),
+        affectedCities: this.decodeHtml(d.affectedCities || ''),
+        affectedStops: this.decodeHtml(d.affectedStops || ''),
+        description: this.decodeHtml(d.description || ''),
         htmlDescription: d.description || '',
         date: d.date || ''
       }));
