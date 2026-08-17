@@ -711,9 +711,58 @@ class MataroTracker {
     const combined = [...liveArrivals, ...estimatedArrivals];
     
     // Filter to 120-minute window and sort chronologically
-    let finalDepartures = combined
+    const sorted = combined
       .filter(d => d.minutesAway !== undefined && d.minutesAway <= 120)
       .sort((a, b) => a.minutesAway - b.minutesAway);
+
+    const cleanStopName = (stopInfo.name || '').toLowerCase().trim();
+    const filteredDepartures = [];
+
+    for (const dep of sorted) {
+      const vId = dep.vehicleId ? String(dep.vehicleId).trim() : null;
+      const destName = (dep.destination || '').toLowerCase().trim();
+      const isTerminatingHere = destName && (destName === cleanStopName || cleanStopName.startsWith(destName));
+
+      // 1. Same vehicleId deduplication within 7 minutes (e.g. terminal arrival + departure turnaround)
+      if (vId) {
+        const existingIdx = filteredDepartures.findIndex(x => 
+          x.vehicleId && String(x.vehicleId).trim() === vId && Math.abs(x.minutesAway - dep.minutesAway) <= 7
+        );
+
+        if (existingIdx !== -1) {
+          const existing = filteredDepartures[existingIdx];
+          const existingDest = (existing.destination || '').toLowerCase().trim();
+          const existingTerminating = existingDest && (existingDest === cleanStopName || cleanStopName.startsWith(existingDest));
+
+          // Prefer the outbound departure (going to the next destination) over the terminating arrival
+          if (existingTerminating && !isTerminatingHere) {
+            filteredDepartures[existingIdx] = dep;
+          } else if (existing.isEstimated && dep.isRealTime) {
+            filteredDepartures[existingIdx] = dep;
+          }
+          continue;
+        }
+      }
+
+      // 2. Duplicate line + destination within 3 minutes (prefer real-time over estimated)
+      const closeMatchIdx = filteredDepartures.findIndex(x =>
+        String(x.lineId) === String(dep.lineId) &&
+        (x.destination || '').toLowerCase().trim() === destName &&
+        Math.abs(x.minutesAway - dep.minutesAway) <= 3
+      );
+
+      if (closeMatchIdx !== -1) {
+        const match = filteredDepartures[closeMatchIdx];
+        if (match.isEstimated && dep.isRealTime) {
+          filteredDepartures[closeMatchIdx] = dep;
+        }
+        continue;
+      }
+
+      filteredDepartures.push(dep);
+    }
+
+    let finalDepartures = filteredDepartures;
 
     finalDepartures.forEach(d => {
       if (d.isToday === undefined) d.isToday = true;
