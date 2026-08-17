@@ -16,6 +16,15 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
+
+// Strict Read-Only Security Guard: Reject any write requests from clients
+app.use((req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    return res.status(405).json({ success: false, error: 'Method Not Allowed: This transit service is strictly read-only.' });
+  }
+  next();
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Pre-initialize async trackers and launch Autonomous Ingestion Daemon
