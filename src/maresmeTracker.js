@@ -474,6 +474,10 @@ class MaresmeTracker {
     const stopObj = this.stopsMap.get(sIdStr) || { id: sIdStr, name: 'Parada Maresme' };
     const lDetails = lineDetails || (lineConfig ? await this.getLineDetails(lineConfig.id, dir) : null);
 
+    const dirObj = lineConfig?.directions?.find(d => String(d.dirId) === String(dir)) || lineConfig?.directions?.[0];
+    const defaultDest = dirObj ? dirObj.name : (lineConfig ? lineConfig.name : 'Destí');
+    const displayLineId = lineConfig ? lineConfig.code : (lineId || 'Moventis');
+
     const departures = [];
     const now = Date.now();
 
@@ -490,11 +494,12 @@ class MaresmeTracker {
             const diffMs = depUtc.getTime() - now;
             const diffMin = Math.max(0, Math.round(diffMs / 60000));
             const clockStr = `${String(arrHour).padStart(2, '0')}:${String(arrMin).padStart(2, '0')}`;
+            const dest = s.direccio || s.destinacio || defaultDest;
 
             departures.push({
-              lineId: lineConfig ? lineConfig.id : 'moventis',
+              lineId: displayLineId,
               lineName: lineConfig ? lineConfig.code : 'Moventis',
-              destination: s.direccio || (lineConfig ? lineConfig.directions[dir]?.name : 'Destí'),
+              destination: dest,
               departureTime: clockStr,
               expectedIso: depUtc.toISOString(),
               aimedIso: depUtc.toISOString(),
@@ -572,9 +577,9 @@ class MaresmeTracker {
 
         if (diffMin >= -5) {
           departures.push({
-            lineId: lineConfig ? lineConfig.id : 'moventis',
+            lineId: displayLineId,
             lineName: lineConfig ? lineConfig.code : 'Moventis',
-            destination: lineConfig ? lineConfig.directions[dir]?.name : 'Destí',
+            destination: defaultDest,
             departureTime: passTimeStr,
             expectedIso: depUtc.toISOString(),
             aimedIso: depUtc.toISOString(),
