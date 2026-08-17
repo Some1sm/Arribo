@@ -81,40 +81,90 @@ class CorridorTracker {
 
   loadData() {
     try {
-      const getFilePath = (fileName) => {
-        const p1 = path.join(this.dataDir, fileName);
-        if (fs.existsSync(p1)) return p1;
-        const p2 = path.join(__dirname, '..', 'static_data', fileName);
-        if (fs.existsSync(p2)) return p2;
-        return p1;
-      };
+      const atmDir = path.join(this.dataDir, 'atm_gtfs');
+      if (fs.existsSync(atmDir)) {
+        const stopsPath = path.join(atmDir, 'stops.txt');
+        const tripsPath = path.join(atmDir, 'trips.txt');
+        const stopTimesPath = path.join(atmDir, 'stop_times.txt');
 
-      const dir1File = getFilePath('c10_matched_stops_dir1.json');
-      const dir0File = getFilePath('c10_matched_stops_dir0.json');
-      const routeFile = getFilePath('c10_route_stops.json');
-      const scheduleFile = getFilePath('c10_full_schedule.json');
+        if (fs.existsSync(stopsPath) && fs.existsSync(tripsPath) && fs.existsSync(stopTimesPath)) {
+          const stopsMap = new Map();
+          fs.readFileSync(stopsPath, 'utf8').split('\n').slice(1).filter(Boolean).forEach(l => {
+            const p = l.split(',');
+            const sId = p[0];
+            const mId = sId.replace('GEN_PF', '').replace(/^0+/, '');
+            stopsMap.set(sId, {
+              gtfsStopId: sId,
+              mouteStopId: mId,
+              name: (p[2] || '').replace(/"/g, '').replace(/ - \d+$/, ''),
+              lat: parseFloat(p[4]),
+              lon: parseFloat(p[5]),
+              city: 'Maresme'
+            });
+          });
 
-      if (fs.existsSync(dir1File)) this.stopsDir1 = JSON.parse(fs.readFileSync(dir1File, 'utf8'));
-      else this.stopsDir1 = [];
+          const trips = fs.readFileSync(tripsPath, 'utf8').split('\n').slice(1).filter(l => l.startsWith('GEN_0498,'));
+          const stopTimes = fs.readFileSync(stopTimesPath, 'utf8').split('\n').slice(1).filter(Boolean);
 
-      if (fs.existsSync(dir0File)) this.stopsDir0 = JSON.parse(fs.readFileSync(dir0File, 'utf8'));
-      else this.stopsDir0 = [];
+          const getStopsForTrip = (tripId) => {
+            return stopTimes
+              .filter(l => l.startsWith(tripId + ','))
+              .map(l => {
+                const p = l.split(',');
+                const sObj = stopsMap.get(p[3]);
+                return {
+                  ...sObj,
+                  seq: parseInt(p[4], 10),
+                  arr: p[1],
+                  dep: p[2]
+                };
+              })
+              .sort((a, b) => a.seq - b.seq);
+          };
 
-      if (fs.existsSync(routeFile)) this.routeInfo = JSON.parse(fs.readFileSync(routeFile, 'utf8'));
-      else this.routeInfo = null;
+          const trip0 = trips.find(t => t.split(',')[4] === '0') || trips[0];
+          const trip1 = trips.find(t => t.split(',')[4] === '1') || trips[0];
 
-      if (fs.existsSync(scheduleFile)) this.fullSchedule = JSON.parse(fs.readFileSync(scheduleFile, 'utf8'));
-      else this.fullSchedule = { dir1: [], dir0: [] };
+          if (trip1) this.stopsDir1 = getStopsForTrip(trip1.split(',')[1]);
+          if (trip0) this.stopsDir0 = getStopsForTrip(trip0.split(',')[1]);
 
-      this.stopsMapDir1 = new Map();
-      this.stopsDir1.forEach(s => this.stopsMapDir1.set(s.gtfsStopId, s));
+          // Build full schedule from trips
+          const schedDir1 = [];
+          const schedDir0 = [];
+          trips.forEach(t => {
+            const p = t.split(',');
+            const tId = p[1];
+            const dir = p[4] || '0';
+            const sId = p[9] || '';
+            const tTimes = stopTimes.filter(l => l.startsWith(tId + ',')).map(l => l.split(',')).sort((a,b) => parseInt(a[4],10) - parseInt(b[4],10));
+            if (tTimes.length > 0) {
+              const depTime = tTimes[0][2];
+              const arrTime = tTimes[tTimes.length - 1][1];
+              const entry = {
+                tripId: tId,
+                serviceId: sId,
+                departureTime: depTime.substring(0, 5),
+                arrivalTime: arrTime.substring(0, 5),
+                stops: tTimes.map(st => ({ gtfsStopId: st[3], departureTime: st[2].substring(0, 5) }))
+              };
+              if (dir === '1') schedDir1.push(entry);
+              else schedDir0.push(entry);
+            }
+          });
 
-      this.stopsMapDir0 = new Map();
-      this.stopsDir0.forEach(s => this.stopsMapDir0.set(s.gtfsStopId, s));
+          this.fullSchedule = { dir1: schedDir1, dir0: schedDir0 };
+          this.stopsMapDir1 = new Map();
+          this.stopsDir1.forEach(s => this.stopsMapDir1.set(s.gtfsStopId, s));
+          this.stopsMapDir0 = new Map();
+          this.stopsDir0.forEach(s => this.stopsMapDir0.set(s.gtfsStopId, s));
 
-      this.loadCalendarSync();
+          this.loadCalendarSync();
+          console.log(`[CorridorTracker] Dynamically loaded C-10 (${this.stopsDir1.length} stops dir 1, ${this.stopsDir0.length} stops dir 0) from ATM GTFS!`);
+          return;
+        }
+      }
     } catch (e) {
-      console.error('Error loading GTFS matched stops:', e.message);
+      console.error('[CorridorTracker] Error loading dynamic GTFS:', e.message);
     }
   }
 
