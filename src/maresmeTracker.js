@@ -361,26 +361,48 @@ class MaresmeTracker {
   calculateActiveBuses(lineConfig, dir, stops, polylineCoords) {
     if (!polylineCoords || polylineCoords.length < 2 || !stops || stops.length < 2) return [];
 
-    const isNightLine = lineConfig && (lineConfig.id.startsWith('n') || lineConfig.code.startsWith('N'));
-    const baseTimes = isNightLine
-      ? ['23:30', '00:30', '01:30', '02:30', '03:30', '04:30', '05:30']
-      : ['06:00', '06:30', '07:00', '07:30', '08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30', '18:00', '18:30', '19:00', '19:30', '20:00', '20:30', '21:00', '21:30', '22:00'];
-
+    const trips = (this.tripsMap.get(lineConfig.routeId) || []).filter(t => String(t.dirId) === String(dir));
     const netNow = timeUtils.getNetworkTime(this.agencyTimezone);
     const currentSec = netNow.hour * 3600 + netNow.minute * 60 + netNow.second;
-    const tripDurationSec = Math.max(1800, stops.length * 240);
     const activeBuses = [];
 
-    baseTimes.forEach((initTimeStr, tIdx) => {
-      const initSec = timeUtils.timeToSec(initTimeStr);
-      let elapsedSec = currentSec - initSec;
-      
-      if (isNightLine && initSec > 72000 && currentSec < 21600) {
-        elapsedSec = (86400 - initSec) + currentSec;
+    // Group unique departure times across trips for this route/direction
+    const scheduledRuns = [];
+    const seenTimes = new Set();
+
+    for (const trip of trips) {
+      const stList = this.stopTimesByTrip.get(trip.tripId) || [];
+      if (stList.length >= 2) {
+        const startStr = stList[0].dep || stList[0].arr;
+        const endStr = stList[stList.length - 1].arr || stList[stList.length - 1].dep;
+        if (startStr && endStr && !seenTimes.has(startStr)) {
+          seenTimes.add(startStr);
+          const startSec = timeUtils.timeToSec(startStr);
+          const endSec = timeUtils.timeToSec(endStr);
+          const durSec = Math.max(900, (endSec >= startSec ? endSec - startSec : (86400 - startSec + endSec)));
+          scheduledRuns.push({
+            tripId: trip.tripId,
+            startStr: startStr.substring(0, 5),
+            startSec,
+            endSec,
+            durSec,
+            stList
+          });
+        }
+      }
+    }
+
+    // Sort chronologically
+    scheduledRuns.sort((a, b) => a.startSec - b.startSec);
+
+    scheduledRuns.forEach((run, tIdx) => {
+      let elapsedSec = currentSec - run.startSec;
+      if (elapsedSec < 0 && run.startSec > 72000 && currentSec < 21600) {
+        elapsedSec = (86400 - run.startSec) + currentSec;
       }
 
-      if (elapsedSec >= 0 && elapsedSec <= tripDurationSec) {
-        const progress = Math.min(0.99, Math.max(0.01, elapsedSec / tripDurationSec));
+      if (elapsedSec >= 0 && elapsedSec <= run.durSec) {
+        const progress = Math.min(0.99, Math.max(0.01, elapsedSec / run.durSec));
         const polyIdx = Math.min(polylineCoords.length - 1, Math.floor(progress * (polylineCoords.length - 1)));
         const pos = polylineCoords[polyIdx];
         const nextPos = polylineCoords[Math.min(polylineCoords.length - 1, polyIdx + 1)] || pos;
@@ -393,10 +415,10 @@ class MaresmeTracker {
         const toStop = stops[stopIndex + 1];
 
         const speedKmh = lineConfig.code.includes('e11') ? 62 : 38;
-        const remainingSec = Math.round(tripDurationSec - elapsedSec);
+        const remainingSec = Math.round(run.durSec - elapsedSec);
 
         activeBuses.push({
-          tripId: `${lineConfig.code}_${initTimeStr.replace(':', '')}`,
+          tripId: `${lineConfig.code}_${run.startStr.replace(':', '')}`,
           vehicleId: `MOV-${1000 + (tIdx * 17) % 900}`,
           lineId: lineConfig.id,
           lineCode: lineConfig.code,
@@ -461,7 +483,7 @@ class MaresmeTracker {
         seq: chosenStop.seq
       },
       direction: dir,
-      directionName: lineConfig.directions[dir]?.name || lineConfig.name,
+      directionName: lineConfig.directions.find(d => String(d.dirId) === dir)?.name || lineConfig.name,
       nextBus,
       upcomingDepartures: deps
     };
@@ -472,7 +494,6 @@ class MaresmeTracker {
     const dir = String(direction || '0');
     const sIdStr = String(stopId);
     const stopObj = this.stopsMap.get(sIdStr) || { id: sIdStr, name: 'Parada Maresme' };
-    const lDetails = lineDetails || (lineConfig ? await this.getLineDetails(lineConfig.id, dir) : null);
 
     const dirObj = lineConfig?.directions?.find(d => String(d.dirId) === String(dir)) || lineConfig?.directions?.[0];
     const defaultDest = dirObj ? dirObj.name : (lineConfig ? lineConfig.name : 'Destí');
@@ -520,67 +541,51 @@ class MaresmeTracker {
       }
     }
 
-    // If no live departures, calculate stop-specific passing times
-    if (departures.length === 0 && lDetails) {
-      const stops = lDetails.stops || [];
-      const stopIdx = stops.findIndex(s => String(s.id) === sIdStr || String(s.mouteStopId) === sIdStr);
+    // If no live departures, calculate stop-specific passing times from real GTFS timetable
+    if (departures.length === 0 && lineConfig) {
+      const trips = (this.tripsMap.get(lineConfig.routeId) || []).filter(t => String(t.dirId) === dir);
+      const netNow = timeUtils.getNetworkTime(this.agencyTimezone);
+      const currentSec = netNow.hour * 3600 + netNow.minute * 60;
 
-      let travelSec = 0;
-      if (stopIdx > 0) {
-        let cumDist = 0;
-        for (let i = 1; i <= stopIdx; i++) {
-          const s0 = stops[i - 1];
-          const s1 = stops[i];
-          if (s0.lat && s0.lon && s1.lat && s1.lon) {
-            cumDist += geoUtils.calculateDistanceMeters(s0.lat, s0.lon, s1.lat, s1.lon);
-          } else {
-            cumDist += 600;
+      const stopSchedTimes = [];
+      const seenTimes = new Set();
+
+      for (const trip of trips) {
+        const stList = this.stopTimesByTrip.get(trip.tripId) || [];
+        const st = stList.find(s => String(s.stopId) === sIdStr || String(s.stopId) === stopObj.id || String(s.stopId) === stopObj.mouteStopId);
+        if (st && st.dep) {
+          const timeStr = st.dep.substring(0, 5);
+          if (!seenTimes.has(timeStr)) {
+            seenTimes.add(timeStr);
+            const depSec = timeUtils.timeToSec(st.dep);
+            stopSchedTimes.push({ timeStr, depSec });
           }
         }
-        travelSec = Math.round((cumDist / 10.0) + (stopIdx * 30));
       }
 
-      const isNightLine = lineConfig && (lineConfig.id.startsWith('n') || lineConfig.code.startsWith('N'));
-      const netNow = timeUtils.getNetworkTime(this.agencyTimezone);
+      stopSchedTimes.sort((a, b) => a.depSec - b.depSec);
 
-      const baseTimes = isNightLine
-        ? ['23:30', '00:30', '01:30', '02:30', '03:30', '04:30', '05:30']
-        : ['06:00', '06:30', '07:00', '07:30', '08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30', '18:00', '18:30', '19:00', '19:30', '20:00', '20:30', '21:00', '21:30', '22:00'];
-
-      baseTimes.forEach((initTimeStr) => {
-        const initSec = timeUtils.timeToSec(initTimeStr);
-        const passSec = initSec + travelSec;
-        const passHour = Math.floor(passSec / 3600) % 24;
-        const passMin = Math.floor((passSec % 3600) / 60);
-        const passTimeStr = `${String(passHour).padStart(2, '0')}:${String(passMin).padStart(2, '0')}`;
-
+      stopSchedTimes.forEach(({ timeStr, depSec }) => {
+        let diffSec = depSec - currentSec;
         let dayOffset = 0;
-        if (isNightLine) {
-          const origH = Math.floor(initSec / 3600) % 24;
-          if (origH === 23 && netNow.hour < 12) {
-            dayOffset = -1;
-          } else if (origH < 12 && netNow.hour >= 12) {
-            dayOffset = 1;
-          }
-        } else {
-          const currentSec = netNow.hour * 3600 + netNow.minute * 60;
-          if (passSec < currentSec - 300) {
-            dayOffset = 1;
-          }
+
+        if (diffSec < -300) {
+          dayOffset = 1;
+          diffSec += 86400;
         }
 
         const dateTarget = new Date(now + dayOffset * 86400000);
         const netT = timeUtils.getNetworkTime(this.agencyTimezone, dateTarget);
-        const depUtc = timeUtils.localTimeToUtcDate(netT.year, netT.month, netT.day, passHour, passMin, 0, this.agencyTimezone);
-        const diffMs = depUtc.getTime() - now;
-        const diffMin = Math.round(diffMs / 60000);
+        const [passH, passM] = timeStr.split(':').map(Number);
+        const depUtc = timeUtils.localTimeToUtcDate(netT.year, netT.month, netT.day, passH, passM, 0, this.agencyTimezone);
+        const diffMin = Math.round(diffSec / 60);
 
-        if (diffMin >= -5) {
+        if (diffMin >= -5 && diffMin <= 1440) {
           departures.push({
             lineId: displayLineId,
             lineName: lineConfig ? lineConfig.code : 'Moventis',
             destination: defaultDest,
-            departureTime: passTimeStr,
+            departureTime: timeStr,
             expectedIso: depUtc.toISOString(),
             aimedIso: depUtc.toISOString(),
             minutesAway: Math.max(0, diffMin),
@@ -591,7 +596,7 @@ class MaresmeTracker {
             isNextService: false,
             delayStatus: 'scheduled',
             delayBadgeText: 'Programat',
-            comparisonText: `📅 Horari teòric: ${passTimeStr}`,
+            comparisonText: `📅 Horari teòric: ${timeStr}`,
             formattedStatus: diffMin <= 0 ? 'Imminent' : `${diffMin} min`
           });
         }
