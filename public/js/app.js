@@ -665,20 +665,19 @@ class TransitApp {
     const stops = lineData.stops || [];
     if (!container || stops.length === 0) return;
 
-    const stepInterval = Math.max(1, Math.floor(stops.length / 9));
-    const checkpoints = stops.filter((s, i) => i === 0 || i === stops.length - 1 || i % stepInterval === 0 || String(s.id || s.mouteStopId) === String(activeTargetId));
-    const activeBus = lineData.activeBuses?.[0] || null;
+    const activeBuses = lineData.activeBuses || [];
+    const primaryBus = activeBuses[0] || null;
 
-    container.innerHTML = checkpoints.map((s, idx) => {
+    container.innerHTML = stops.map((s, idx) => {
       const sId = String(s.id || s.mouteStopId || s.code);
       const isTarget = sId === String(activeTargetId);
-      const isPassed = activeBus && s.seq < (activeBus.fromSeq || 0);
-      const hasBus = activeBus && (s.seq === activeBus.fromSeq || s.seq === activeBus.toSeq);
+      const busOnStop = activeBuses.find(b => b.fromSeq === s.seq || b.toSeq === s.seq);
+      const isPassed = primaryBus && s.seq < (primaryBus.fromSeq || 0);
 
       let nodeClass = 'step-node';
-      let iconContent = `${idx + 1}`;
+      let iconContent = `${s.seq || idx + 1}`;
 
-      if (hasBus) {
+      if (busOnStop) {
         nodeClass += ' has-bus';
         iconContent = '🚌';
       } else if (isPassed) {
@@ -690,7 +689,7 @@ class TransitApp {
       }
 
       return `
-        <div class="corridor-step" data-target-id="${sId}" style="cursor:pointer;" title="Fixar ${s.name} com a parada principal">
+        <div class="corridor-step ${isPassed ? 'passed' : ''}" data-target-id="${sId}" style="cursor:pointer;" title="Fixar ${s.name} com a parada principal">
           <div class="${nodeClass}">
             <span>${iconContent}</span>
           </div>

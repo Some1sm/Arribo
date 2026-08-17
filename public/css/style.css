@@ -1424,16 +1424,36 @@ body {
   transition: width 0.5s ease;
 }
 
-/* Corridor Timeline */
+/* Corridor Timeline - Seamless Horizontal Linear Transit Track */
 .corridor-timeline {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  display: flex;
+  align-items: flex-start;
   gap: 0.5rem;
   overflow-x: auto;
-  padding: 0.5rem 0;
+  padding: 0.75rem 0.5rem 0.65rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+  position: relative;
+  -webkit-overflow-scrolling: touch;
+}
+
+.corridor-timeline::-webkit-scrollbar {
+  height: 4px;
+}
+
+.corridor-timeline::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.corridor-timeline::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 4px;
 }
 
 .corridor-step {
+  flex: 1 0 100px;
+  min-width: 95px;
+  max-width: 140px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1441,6 +1461,23 @@ body {
   gap: 0.45rem;
   position: relative;
   transition: transform var(--transition-fast);
+  padding: 0 0.25rem;
+}
+
+/* Connecting track line between nodes */
+.corridor-step:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  width: 100%;
+  height: 2px;
+  background: var(--border-strong);
+  z-index: 1;
+}
+
+.corridor-step.passed:not(:last-child)::after {
+  background: #10b981;
 }
 
 .corridor-step:hover {
@@ -1462,6 +1499,7 @@ body {
   font-family: var(--font-mono);
   transition: all var(--transition-fast);
   z-index: 2;
+  position: relative;
 }
 
 .step-node.has-bus {
@@ -1487,14 +1525,20 @@ body {
 .step-info {
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
+  gap: 0.15rem;
+  width: 100%;
 }
 
 .step-name {
-  font-size: 0.75rem;
+  font-size: 0.74rem;
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .step-zone {
