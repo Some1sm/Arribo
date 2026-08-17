@@ -7,6 +7,7 @@ const indexer = require('./cataloniaIndexer');
 
 class CataloniaTracker {
   constructor() {
+    this.bundledCacheDir = path.join(__dirname, '..', 'cache');
     this.cacheDir = path.join(__dirname, '..', 'data', 'cache');
     this.routes = [];
     this.routesMap = new Map();
@@ -21,9 +22,17 @@ class CataloniaTracker {
     if (this.isLoaded) return;
     const start = Date.now();
 
-    const routesCachePath = path.join(this.cacheDir, 'routes.json');
-    const stopsCachePath = path.join(this.cacheDir, 'stops.json');
-    const routeDetailsPath = path.join(this.cacheDir, 'route_details.json');
+    let activeCacheDir = this.cacheDir;
+    let routesCachePath = path.join(activeCacheDir, 'routes.json');
+    let stopsCachePath = path.join(activeCacheDir, 'stops.json');
+    let routeDetailsPath = path.join(activeCacheDir, 'route_details.json');
+
+    if (!fs.existsSync(routesCachePath) && fs.existsSync(path.join(this.bundledCacheDir, 'routes.json'))) {
+      activeCacheDir = this.bundledCacheDir;
+      routesCachePath = path.join(activeCacheDir, 'routes.json');
+      stopsCachePath = path.join(activeCacheDir, 'stops.json');
+      routeDetailsPath = path.join(activeCacheDir, 'route_details.json');
+    }
 
     if (!fs.existsSync(routesCachePath) || !fs.existsSync(routeDetailsPath)) {
       await indexer.buildIndex();
