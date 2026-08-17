@@ -1,0 +1,814 @@
+{
+  "route": {
+    "id": "GEN_0498",
+    "shortName": "C10",
+    "longName": "Mataró - Barcelona per la N-II",
+    "agency": "Empresa Casas (Moventis)",
+    "color": "#009485"
+  },
+  "targetStop": {
+    "stopId": "GEN_PF08121075",
+    "code": "121",
+    "name": "plaça Itàlia (A)",
+    "coords": {
+      "lat": 41.5468674,
+      "lon": 2.4321194
+    },
+    "direction": "Barcelona -> Mataró"
+  },
+  "directions": {
+    "0": {
+      "headsign": "",
+      "stops": [
+        {
+          "seq": 0,
+          "stopId": "GEN_PF08121097",
+          "code": "3525",
+          "name": "\"Hospital de Mataró (AH) (c. de Cirera",
+          "lat": null,
+          "lon": 41.5559959,
+          "scheduledTime": "05:30:58"
+        },
+        {
+          "seq": 1,
+          "stopId": "GEN_PF08121098",
+          "code": "7091",
+          "name": "Mataró Parc (c. Brussel·les) (AH)",
+          "lat": 41.5549011,
+          "lon": 2.431968,
+          "scheduledTime": "05:32:58"
+        },
+        {
+          "seq": 2,
+          "stopId": "GEN_PF08121036",
+          "code": "8369",
+          "name": "plaça França (D)",
+          "lat": 41.5489655,
+          "lon": 2.4314139,
+          "scheduledTime": "05:34:58"
+        },
+        {
+          "seq": 3,
+          "stopId": "GEN_PF08121041",
+          "code": "8371",
+          "name": "plaça Itàlia (D)",
+          "lat": 41.5466614,
+          "lon": 2.4316285,
+          "scheduledTime": "05:35:58"
+        },
+        {
+          "seq": 4,
+          "stopId": "GEN_PF08121037",
+          "code": "8372",
+          "name": "Via Europa - ptge. Angeleta Ferrer",
+          "lat": 41.5435219,
+          "lon": 2.4326067,
+          "scheduledTime": "05:37:58"
+        },
+        {
+          "seq": 5,
+          "stopId": "GEN_PF08121044",
+          "code": "8373",
+          "name": "pl. Granollers - Via Europa (D)",
+          "lat": 41.5411034,
+          "lon": 2.4350522,
+          "scheduledTime": "05:38:58"
+        },
+        {
+          "seq": 6,
+          "stopId": "GEN_PF08121051",
+          "code": "30",
+          "name": "rda. República - c. Miquel Biada (D)",
+          "lat": 41.5370598,
+          "lon": 2.4367707,
+          "scheduledTime": "05:40:58"
+        },
+        {
+          "seq": 7,
+          "stopId": "GEN_PF08121022",
+          "code": "11",
+          "name": "Camí Ral (Jutjats)",
+          "lat": 41.5336571,
+          "lon": 2.439702,
+          "scheduledTime": "05:42:58"
+        },
+        {
+          "seq": 8,
+          "stopId": "GEN_PF08121024",
+          "code": "12",
+          "name": "Camí Ral (Porta Laietana) (D)",
+          "lat": 41.5304337,
+          "lon": 2.4358335,
+          "scheduledTime": "05:44:58"
+        },
+        {
+          "seq": 9,
+          "stopId": "GEN_PF08121018",
+          "code": "6501",
+          "name": "av. Maresme - c. Remallaire (D)",
+          "lat": 41.5270615,
+          "lon": 2.4312887,
+          "scheduledTime": "05:46:58"
+        },
+        {
+          "seq": 10,
+          "stopId": "GEN_PF08121021",
+          "code": "19",
+          "name": "av. Cabrera (Incineradora) (D)",
+          "lat": 41.5233345,
+          "lon": 2.4251194,
+          "scheduledTime": "05:47:58"
+        },
+        {
+          "seq": 11,
+          "stopId": "GEN_PF08029020",
+          "code": "21",
+          "name": "Centre Comercial Carrefour (D) MB0272",
+          "lat": 41.5212517,
+          "lon": 2.4210391,
+          "scheduledTime": "05:48:58"
+        },
+        {
+          "seq": 12,
+          "stopId": "GEN_PF08029019",
+          "code": "22",
+          "name": "ctra. N-II (urb. Bonamar) (D) MB0273",
+          "lat": 41.5124321,
+          "lon": 2.4091752,
+          "scheduledTime": "05:50:58"
+        },
+        {
+          "seq": 13,
+          "stopId": "GEN_PF08029018",
+          "code": "23",
+          "name": "ctra. N-II - Riera de Cabrera",
+          "lat": 41.5110855,
+          "lon": 2.4073489,
+          "scheduledTime": "05:51:58"
+        },
+        {
+          "seq": 14,
+          "stopId": "GEN_PF08029052",
+          "code": "24",
+          "name": "ctra. N-II - av. Burriac (D)",
+          "lat": 41.5085411,
+          "lon": 2.4035149,
+          "scheduledTime": "05:52:58"
+        },
+        {
+          "seq": 15,
+          "stopId": "GEN_PF08219063",
+          "code": "25",
+          "name": "c. Canonge Almera - c. Enric Granados (D)",
+          "lat": 41.5055351,
+          "lon": 2.3990996,
+          "scheduledTime": "05:53:58"
+        },
+        {
+          "seq": 16,
+          "stopId": "GEN_PF08219036",
+          "code": "26",
+          "name": "pl. Ajuntament MB0274 PD",
+          "lat": 41.5021935,
+          "lon": 2.3927364,
+          "scheduledTime": "05:55:58"
+        },
+        {
+          "seq": 17,
+          "stopId": "GEN_PF08219007",
+          "code": "27",
+          "name": "ctra. N-II - Torrent d'en Cuiàs (D)",
+          "lat": 41.4976921,
+          "lon": 2.3833296,
+          "scheduledTime": "05:57:58"
+        },
+        {
+          "seq": 18,
+          "stopId": "GEN_PF08172004",
+          "code": "28",
+          "name": "Mercat de la Flor (Camp de Mar) (D) MB0646",
+          "lat": 41.4937668,
+          "lon": 2.3736267,
+          "scheduledTime": "05:59:58"
+        },
+        {
+          "seq": 19,
+          "stopId": "GEN_PF08172005",
+          "code": "29",
+          "name": "Camí Ral - c. Francesc Mas i Abril",
+          "lat": 41.4911842,
+          "lon": 2.3659844,
+          "scheduledTime": "06:00:58"
+        },
+        {
+          "seq": 20,
+          "stopId": "GEN_PF08172016",
+          "code": "31",
+          "name": "Camí Ral (Bellamar) (D)",
+          "lat": 41.4896545,
+          "lon": 2.3612192,
+          "scheduledTime": "06:01:58"
+        },
+        {
+          "seq": 21,
+          "stopId": "GEN_PF08172018",
+          "code": "32",
+          "name": "Estació de Rodalies de Premià (D) MB0268",
+          "lat": 41.4878998,
+          "lon": 2.3549242,
+          "scheduledTime": "06:02:58"
+        },
+        {
+          "seq": 22,
+          "stopId": "GEN_PF08118013",
+          "code": "34",
+          "name": "ctra. N-II Caprabo (Càmping Hispano) (D)",
+          "lat": 41.4828796,
+          "lon": 2.3354728,
+          "scheduledTime": "06:05:58"
+        },
+        {
+          "seq": 23,
+          "stopId": "GEN_PF08118014",
+          "code": "35",
+          "name": "pg. Prat de la Riba - av. Núria (D) MB0261",
+          "lat": 41.4804306,
+          "lon": 2.3250299,
+          "scheduledTime": "06:07:58"
+        },
+        {
+          "seq": 24,
+          "stopId": "GEN_PF08118015",
+          "code": "36",
+          "name": "Estació de Rodalies d'Ocata (D)",
+          "lat": 41.479248,
+          "lon": 2.3200231,
+          "scheduledTime": "06:09:58"
+        },
+        {
+          "seq": 25,
+          "stopId": "GEN_PF08118011",
+          "code": "3370",
+          "name": "Camí Ral - c. Mare de Déu del Carme",
+          "lat": 41.4782677,
+          "lon": 2.3156018,
+          "scheduledTime": "06:11:58"
+        },
+        {
+          "seq": 26,
+          "stopId": "GEN_PF08118041",
+          "code": "37",
+          "name": "Estació de Rodalies del Masnou (D) MNG",
+          "lat": 41.4772377,
+          "lon": 2.3105752,
+          "scheduledTime": "06:13:58"
+        },
+        {
+          "seq": 27,
+          "stopId": "GEN_PF08118016",
+          "code": "38",
+          "name": "ctra. N-II (Càmping Masnou) MNG",
+          "lat": 41.47509,
+          "lon": 2.3038385,
+          "scheduledTime": "06:15:58"
+        },
+        {
+          "seq": 28,
+          "stopId": "GEN_PF08126005",
+          "code": "39",
+          "name": "Laboratoris Cusí (D) MNG",
+          "lat": 41.4723816,
+          "lon": 2.2954714,
+          "scheduledTime": "06:16:58"
+        },
+        {
+          "seq": 29,
+          "stopId": "GEN_PF08126016",
+          "code": "5965",
+          "name": "Estació de Rodalies de Montgat Nord (D)",
+          "lat": 41.468998,
+          "lon": 2.2866769,
+          "scheduledTime": "06:18:58"
+        },
+        {
+          "seq": 30,
+          "stopId": "GEN_PF08126013",
+          "code": "63",
+          "name": "Camí Ral (Escoles)",
+          "lat": 41.4677658,
+          "lon": 2.2827399,
+          "scheduledTime": "06:19:58"
+        },
+        {
+          "seq": 31,
+          "stopId": "GEN_PF08126006",
+          "code": "4150",
+          "name": "la Colònia Argentina (Ajuntament) (D)",
+          "lat": 41.4665375,
+          "lon": 2.279304,
+          "scheduledTime": "06:20:58"
+        },
+        {
+          "seq": 32,
+          "stopId": "GEN_PF08126007",
+          "code": "42",
+          "name": "Estació de Rodalies de Montgat (D)",
+          "lat": 41.463398,
+          "lon": 2.2725265,
+          "scheduledTime": "06:22:58"
+        },
+        {
+          "seq": 33,
+          "stopId": "GEN_PF08015018",
+          "code": "43",
+          "name": "c. Marina - c. Velázquez",
+          "lat": 41.4603424,
+          "lon": 2.2672722,
+          "scheduledTime": "06:24:58"
+        },
+        {
+          "seq": 34,
+          "stopId": "GEN_PF08015019",
+          "code": "44",
+          "name": "c. Pomar de Baix - c. Jacinto Benavente",
+          "lat": 41.4560089,
+          "lon": 2.2583451,
+          "scheduledTime": "06:27:58"
+        },
+        {
+          "seq": 35,
+          "stopId": "GEN_PF08015016",
+          "code": "45",
+          "name": "c. Sant Bru - c. la Seu d'Urgell",
+          "lat": 41.453495,
+          "lon": 2.2514911,
+          "scheduledTime": "06:29:58"
+        },
+        {
+          "seq": 36,
+          "stopId": "GEN_PF08015024",
+          "code": "4070",
+          "name": "pl. Assemblea de Catalunya (Termes Romanes)",
+          "lat": 41.4525528,
+          "lon": 2.2485387,
+          "scheduledTime": "06:31:58"
+        },
+        {
+          "seq": 37,
+          "stopId": "GEN_PF08015025",
+          "code": "284",
+          "name": "c. Anselm Clavé (metro Pompeu Fabra)",
+          "lat": 41.4490891,
+          "lon": 2.2434824,
+          "scheduledTime": "06:33:58"
+        },
+        {
+          "seq": 38,
+          "stopId": "GEN_PF08015006",
+          "code": "4060",
+          "name": "c. Baldomer Solà - Torrent d'en Valls",
+          "lat": 41.4452705,
+          "lon": 2.2372146,
+          "scheduledTime": "06:35:58"
+        },
+        {
+          "seq": 39,
+          "stopId": "GEN_PF08015027",
+          "code": "8035",
+          "name": "av. Alfons XIII - c. Pau Claris",
+          "lat": 41.441021,
+          "lon": 2.2312255,
+          "scheduledTime": "06:37:58"
+        },
+        {
+          "seq": 40,
+          "stopId": "GEN_PF08015010",
+          "code": "47",
+          "name": "av. Alfons XIII - pg. la Salut",
+          "lat": 41.4394608,
+          "lon": 2.2282565,
+          "scheduledTime": "06:38:58"
+        },
+        {
+          "seq": 41,
+          "stopId": "GEN_PF08015009",
+          "code": "48",
+          "name": "av. Alfons XIII - c. Sagrada Família",
+          "lat": 41.4365768,
+          "lon": 2.2227845,
+          "scheduledTime": "06:40:58"
+        },
+        {
+          "seq": 42,
+          "stopId": "GEN_PF08194001",
+          "code": "49",
+          "name": "av. Pi i Margall - av. Catalunya (D)",
+          "lat": 41.4328651,
+          "lon": 2.21597,
+          "scheduledTime": "06:43:58"
+        },
+        {
+          "seq": 43,
+          "stopId": "GEN_PF08194002",
+          "code": "51",
+          "name": "rbla. Guipúscoa - Camí de la Verneda",
+          "lat": 41.4250832,
+          "lon": 2.2084532,
+          "scheduledTime": "06:45:58"
+        },
+        {
+          "seq": 44,
+          "stopId": "GEN_PF08019096",
+          "code": "4020",
+          "name": "rbla. Guipúscoa (Metro la Pau)",
+          "lat": 41.4233475,
+          "lon": 2.2061915,
+          "scheduledTime": "06:48:58"
+        }
+      ]
+    },
+    "1": {
+      "headsign": "",
+      "stops": [
+        {
+          "seq": 0,
+          "stopId": "GEN_PF08019096",
+          "code": "4020",
+          "name": "rbla. Guipúscoa (Metro la Pau)",
+          "lat": 41.4233475,
+          "lon": 2.2061915,
+          "scheduledTime": "07:45:35"
+        },
+        {
+          "seq": 1,
+          "stopId": "GEN_PF08019095",
+          "code": "4010",
+          "name": "rbla. Guipúscoa - c. Extremadura",
+          "lat": 41.4248161,
+          "lon": 2.2085872,
+          "scheduledTime": "07:47:35"
+        },
+        {
+          "seq": 2,
+          "stopId": "GEN_PF08194004",
+          "code": "4030",
+          "name": "av. Pi i Margall - av. Catalunya (A)",
+          "lat": 41.4327927,
+          "lon": 2.216064,
+          "scheduledTime": "07:50:35"
+        },
+        {
+          "seq": 3,
+          "stopId": "GEN_PF08015012",
+          "code": "4040",
+          "name": "av. Alfons XIII - c. Huelva",
+          "lat": 41.4365501,
+          "lon": 2.2229762,
+          "scheduledTime": "07:53:35"
+        },
+        {
+          "seq": 4,
+          "stopId": "GEN_PF08015011",
+          "code": "4050",
+          "name": "av. Alfons XIII - c. Sant Lluc",
+          "lat": 41.4393806,
+          "lon": 2.2283056,
+          "scheduledTime": "07:55:35"
+        },
+        {
+          "seq": 5,
+          "stopId": "GEN_PF08015037",
+          "code": "7723",
+          "name": "av. Marquès de Mont-roig - c. Antoni Bori",
+          "lat": 41.4409294,
+          "lon": 2.2343805,
+          "scheduledTime": "07:57:35"
+        },
+        {
+          "seq": 6,
+          "stopId": "GEN_PF08015038",
+          "code": "4090",
+          "name": "av. Marquès de Mont-roig (pl. Països Catalans)",
+          "lat": 41.4442482,
+          "lon": 2.2383876,
+          "scheduledTime": "07:58:35"
+        },
+        {
+          "seq": 7,
+          "stopId": "GEN_PF08015014",
+          "code": "4100",
+          "name": "c. Francesc Macià - av. Sant Ignasi de Loiola",
+          "lat": 41.4477806,
+          "lon": 2.2427499,
+          "scheduledTime": "08:00:35"
+        },
+        {
+          "seq": 8,
+          "stopId": "GEN_PF08015008",
+          "code": "4080",
+          "name": "c. Francesc Layret - c. Sant Francesc d'Assís",
+          "lat": 41.4507332,
+          "lon": 2.24826,
+          "scheduledTime": "08:02:35"
+        },
+        {
+          "seq": 9,
+          "stopId": "GEN_PF08015015",
+          "code": "4110",
+          "name": "c. Sant Bru - c. les Corts",
+          "lat": 41.4532585,
+          "lon": 2.251272,
+          "scheduledTime": "08:04:35"
+        },
+        {
+          "seq": 10,
+          "stopId": "GEN_PF08015033",
+          "code": "4128",
+          "name": "c. Pomar de Baix - Riera de Canyadó",
+          "lat": 41.4558868,
+          "lon": 2.2575338,
+          "scheduledTime": "08:07:35"
+        },
+        {
+          "seq": 11,
+          "stopId": "GEN_PF08015013",
+          "code": "4130",
+          "name": "c. Marina davant ptge. Cussó",
+          "lat": 41.4599533,
+          "lon": 2.2668691,
+          "scheduledTime": "08:09:35"
+        },
+        {
+          "seq": 12,
+          "stopId": "GEN_PF08126015",
+          "code": "4140",
+          "name": "Estació de Rodalies de Montgat (A)",
+          "lat": 41.4633522,
+          "lon": 2.2727306,
+          "scheduledTime": "08:12:35"
+        },
+        {
+          "seq": 13,
+          "stopId": "GEN_PF08126014",
+          "code": "5958",
+          "name": "la Colònia Argentina (Ajuntament) (A)",
+          "lat": 41.4664421,
+          "lon": 2.2792609,
+          "scheduledTime": "08:14:35"
+        },
+        {
+          "seq": 14,
+          "stopId": "GEN_PF08126002",
+          "code": "4160",
+          "name": "Camí Ral - Riera d'en Font",
+          "lat": 41.4681129,
+          "lon": 2.2841239,
+          "scheduledTime": "08:16:35"
+        },
+        {
+          "seq": 15,
+          "stopId": "GEN_PF08126004",
+          "code": "5979",
+          "name": "Estació de Rodalies de Montgat Nord (A)",
+          "lat": 41.469017,
+          "lon": 2.2870193,
+          "scheduledTime": "08:17:35"
+        },
+        {
+          "seq": 16,
+          "stopId": "GEN_PF08126012",
+          "code": "4170",
+          "name": "Laboratoris Cusí (A) MNG",
+          "lat": 41.4723854,
+          "lon": 2.2957397,
+          "scheduledTime": "08:19:35"
+        },
+        {
+          "seq": 17,
+          "stopId": "GEN_PF08118027",
+          "code": "3350",
+          "name": "Estació de Rodalies del Masnou (A)",
+          "lat": 41.4772224,
+          "lon": 2.3113251,
+          "scheduledTime": "08:22:35"
+        },
+        {
+          "seq": 18,
+          "stopId": "GEN_PF08118040",
+          "code": "3360",
+          "name": "Estació de Rodalies d'Ocata (A)",
+          "lat": 41.4790611,
+          "lon": 2.319577,
+          "scheduledTime": "08:24:35"
+        },
+        {
+          "seq": 19,
+          "stopId": "GEN_PF08118064",
+          "code": "260",
+          "name": "pg. Prat de la Riba - av. Núria (A)",
+          "lat": 41.4804192,
+          "lon": 2.3246,
+          "scheduledTime": "08:25:35"
+        },
+        {
+          "seq": 20,
+          "stopId": "GEN_PF08118039",
+          "code": "4190",
+          "name": "ctra. N-II (Càmping Hispano) (A)",
+          "lat": 41.4827957,
+          "lon": 2.335773,
+          "scheduledTime": "08:27:35"
+        },
+        {
+          "seq": 21,
+          "stopId": "GEN_PF08172022",
+          "code": "3750",
+          "name": "Estació de Rodalies de Premià (A)",
+          "lat": 41.4878387,
+          "lon": 2.3554115,
+          "scheduledTime": "08:29:35"
+        },
+        {
+          "seq": 22,
+          "stopId": "GEN_PF08172023",
+          "code": "3740",
+          "name": "Camí Ral (Bellamar) (A)",
+          "lat": 41.4895401,
+          "lon": 2.3611422,
+          "scheduledTime": "08:31:35"
+        },
+        {
+          "seq": 23,
+          "stopId": "GEN_PF08172003",
+          "code": "3730",
+          "name": "Camí Ral (Port)",
+          "lat": 41.491375,
+          "lon": 2.366785,
+          "scheduledTime": "08:32:35"
+        },
+        {
+          "seq": 24,
+          "stopId": "GEN_PF08172024",
+          "code": "3720",
+          "name": "Mercat de la Flor (Camp de Mar) (A)",
+          "lat": 41.493721,
+          "lon": 2.3739152,
+          "scheduledTime": "08:33:35"
+        },
+        {
+          "seq": 25,
+          "stopId": "GEN_PF08219064",
+          "code": "3710",
+          "name": "ctra. N-II - Torrent d'en Cuiàs (A)",
+          "lat": 41.4976311,
+          "lon": 2.3834751,
+          "scheduledTime": "08:34:35"
+        },
+        {
+          "seq": 26,
+          "stopId": "GEN_PF08219011",
+          "code": "3700",
+          "name": "Estació de Rodalies de Vilassar (A)",
+          "lat": 41.5008812,
+          "lon": 2.3904638,
+          "scheduledTime": "08:36:35"
+        },
+        {
+          "seq": 27,
+          "stopId": "GEN_PF08219006",
+          "code": "3690",
+          "name": "c. Canonge Almera - c. Enric Granados (A)",
+          "lat": 41.5048714,
+          "lon": 2.3981357,
+          "scheduledTime": "08:37:35"
+        },
+        {
+          "seq": 28,
+          "stopId": "GEN_PF08029017",
+          "code": "3680",
+          "name": "ctra. N-II - av. Burriac (A)",
+          "lat": 41.508873,
+          "lon": 2.4043918,
+          "scheduledTime": "08:38:35"
+        },
+        {
+          "seq": 29,
+          "stopId": "GEN_PF08029039",
+          "code": "3660",
+          "name": "ctra. N-II (urb. Bonamar) (A)",
+          "lat": 41.5127678,
+          "lon": 2.4097686,
+          "scheduledTime": "08:40:35"
+        },
+        {
+          "seq": 30,
+          "stopId": "GEN_PF08029016",
+          "code": "3665",
+          "name": "ctra. N-II (Nissan)",
+          "lat": 41.5180969,
+          "lon": 2.4165974,
+          "scheduledTime": "08:42:35"
+        },
+        {
+          "seq": 31,
+          "stopId": "GEN_PF08029040",
+          "code": "3640",
+          "name": "Centre Comercial Carrefour (A) MB0271",
+          "lat": 41.5208817,
+          "lon": 2.4209623,
+          "scheduledTime": "08:43:35"
+        },
+        {
+          "seq": 32,
+          "stopId": "GEN_PF08121082",
+          "code": "3527",
+          "name": "av. Cabrera (Incineradora) (A)",
+          "lat": 41.5236855,
+          "lon": 2.4265566,
+          "scheduledTime": "08:45:35"
+        },
+        {
+          "seq": 33,
+          "stopId": "GEN_PF08121087",
+          "code": "40",
+          "name": "av. Maresme - c. Remallaire (A)",
+          "lat": 41.5266266,
+          "lon": 2.4313843,
+          "scheduledTime": "08:47:35"
+        },
+        {
+          "seq": 34,
+          "stopId": "GEN_PF08121080",
+          "code": "3630",
+          "name": "Camí Ral (Porta Laietana) (A)",
+          "lat": 41.5305748,
+          "lon": 2.4362342,
+          "scheduledTime": "08:50:35"
+        },
+        {
+          "seq": 35,
+          "stopId": "GEN_PF08121062",
+          "code": "3620",
+          "name": "rda. República - Camí Ral",
+          "lat": 41.534481,
+          "lon": 2.4401255,
+          "scheduledTime": "08:52:35"
+        },
+        {
+          "seq": 36,
+          "stopId": "GEN_PF08121017",
+          "code": "4825",
+          "name": "rda. República - c. Miquel Biada (A)",
+          "lat": 41.5370255,
+          "lon": 2.4369676,
+          "scheduledTime": "08:54:35"
+        },
+        {
+          "seq": 37,
+          "stopId": "GEN_PF08121077",
+          "code": "102",
+          "name": "pl. Granollers - Via Europa (A)",
+          "lat": 41.5411568,
+          "lon": 2.4352505,
+          "scheduledTime": "08:56:35"
+        },
+        {
+          "seq": 38,
+          "stopId": "GEN_PF08121076",
+          "code": "119",
+          "name": "Via Europa - c. Esteve Albert",
+          "lat": 41.5431366,
+          "lon": 2.4331522,
+          "scheduledTime": "08:58:35"
+        },
+        {
+          "seq": 39,
+          "stopId": "GEN_PF08121075",
+          "code": "121",
+          "name": "plaça Itàlia (A)",
+          "lat": 41.5468674,
+          "lon": 2.4321194,
+          "scheduledTime": "09:00:35"
+        },
+        {
+          "seq": 40,
+          "stopId": "GEN_PF08121074",
+          "code": "62",
+          "name": "plaça França - rotonda Via Europa (Decathlon)                        Europa (A)",
+          "lat": 41.5498581,
+          "lon": 2.4316866,
+          "scheduledTime": "09:02:35"
+        },
+        {
+          "seq": 41,
+          "stopId": "GEN_PF08121097",
+          "code": "3525",
+          "name": "\"Hospital de Mataró (AH) (c. de Cirera",
+          "lat": null,
+          "lon": 41.5559959,
+          "scheduledTime": "09:05:35"
+        }
+      ]
+    }
+  }
+}

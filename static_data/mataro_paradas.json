@@ -1,0 +1,2352 @@
+{
+  "success": true,
+  "message": [
+    {
+      "id": "1001",
+      "name": "Hospital de Mataró - 1001",
+      "latitude": 41.5553,
+      "longitude": 2.42927,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        },
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        },
+        {
+          "id": "4",
+          "name": "Cirera-Molins",
+          "color": "#ff0000"
+        }
+      ]
+    },
+    {
+      "id": "1002",
+      "name": "Mataró Parc - 1002",
+      "latitude": 41.5546,
+      "longitude": 2.43132,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        },
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        },
+        {
+          "id": "4",
+          "name": "Cirera-Molins",
+          "color": "#ff0000"
+        },
+        {
+          "id": "5",
+          "name": "Rodalies-Hospital de Mataró",
+          "color": "#00ea00"
+        }
+      ]
+    },
+    {
+      "id": "1003",
+      "name": "Cirera - 1003",
+      "latitude": 41.55,
+      "longitude": 2.43502,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        }
+      ]
+    },
+    {
+      "id": "1004",
+      "name": "CAP Cirera-Molins - 1004",
+      "latitude": 41.5491,
+      "longitude": 2.43816,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        },
+        {
+          "id": "4",
+          "name": "Cirera-Molins",
+          "color": "#ff0000"
+        },
+        {
+          "id": "6",
+          "name": "Institut Català Salut - Ctra. de Mata",
+          "color": "#febf01"
+        }
+      ]
+    },
+    {
+      "id": "1005",
+      "name": "Sant Oleguer - 1005",
+      "latitude": 41.5511,
+      "longitude": 2.44095,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        },
+        {
+          "id": "6",
+          "name": "Institut Català Salut - Ctra. de Mata",
+          "color": "#febf01"
+        }
+      ]
+    },
+    {
+      "id": "1006",
+      "name": "Caputxins - 1006",
+      "latitude": 41.5511,
+      "longitude": 2.44606,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        },
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        },
+        {
+          "id": "6",
+          "name": "Institut Català Salut - Ctra. de Mata",
+          "color": "#febf01"
+        }
+      ]
+    },
+    {
+      "id": "1007",
+      "name": "Perú - 1007",
+      "latitude": 41.5505,
+      "longitude": 2.44785,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        }
+      ]
+    },
+    {
+      "id": "1008",
+      "name": "Pau Picasso - 1008",
+      "latitude": 41.5485,
+      "longitude": 2.44789,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        }
+      ]
+    },
+    {
+      "id": "1009",
+      "name": "Escola Freta - 1009",
+      "latitude": 41.5469,
+      "longitude": 2.44734,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        }
+      ]
+    },
+    {
+      "id": "1010",
+      "name": "Cabanellas - 1010",
+      "latitude": 41.5458,
+      "longitude": 2.44575,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        },
+        {
+          "id": "6",
+          "name": "Institut Català Salut - Ctra. de Mata",
+          "color": "#febf01"
+        }
+      ]
+    },
+    {
+      "id": "1011",
+      "name": "Parc Central - 1011",
+      "latitude": 41.5447,
+      "longitude": 2.44163,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        },
+        {
+          "id": "4",
+          "name": "Cirera-Molins",
+          "color": "#ff0000"
+        },
+        {
+          "id": "6",
+          "name": "Institut Català Salut - Ctra. de Mata",
+          "color": "#febf01"
+        },
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1012",
+      "name": "Caminet - 1012",
+      "latitude": 41.5412,
+      "longitude": 2.44243,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        },
+        {
+          "id": "4",
+          "name": "Cirera-Molins",
+          "color": "#ff0000"
+        }
+      ]
+    },
+    {
+      "id": "1013",
+      "name": "Muralla - 1013",
+      "latitude": 41.5396,
+      "longitude": 2.4425,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        },
+        {
+          "id": "4",
+          "name": "Cirera-Molins",
+          "color": "#ff0000"
+        }
+      ]
+    },
+    {
+      "id": "1014",
+      "name": "Santa Anna - 1014",
+      "latitude": 41.5379,
+      "longitude": 2.44541,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        },
+        {
+          "id": "4",
+          "name": "Cirera-Molins",
+          "color": "#ff0000"
+        }
+      ]
+    },
+    {
+      "id": "1015",
+      "name": "El Cargol - 1015",
+      "latitude": 41.5348,
+      "longitude": 2.44675,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        },
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        },
+        {
+          "id": "4",
+          "name": "Cirera-Molins",
+          "color": "#ff0000"
+        }
+      ]
+    },
+    {
+      "id": "1016",
+      "name": "Rodalies - 1016",
+      "latitude": 41.5333,
+      "longitude": 2.44474,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        },
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        },
+        {
+          "id": "4",
+          "name": "Cirera-Molins",
+          "color": "#ff0000"
+        }
+      ]
+    },
+    {
+      "id": "1017",
+      "name": "Ronda Barceló - 1017",
+      "latitude": 41.5323,
+      "longitude": 2.44272,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        },
+        {
+          "id": "4",
+          "name": "Cirera-Molins",
+          "color": "#ff0000"
+        }
+      ]
+    },
+    {
+      "id": "1018",
+      "name": "Pl. Doctor Fleming - 1018",
+      "latitude": 41.5338,
+      "longitude": 2.43963,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        },
+        {
+          "id": "4",
+          "name": "Cirera-Molins",
+          "color": "#ff0000"
+        }
+      ]
+    },
+    {
+      "id": "1019",
+      "name": "President Macià - 1019",
+      "latitude": 41.5339,
+      "longitude": 2.43706,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        }
+      ]
+    },
+    {
+      "id": "1020",
+      "name": "Sant Valentí - 1020",
+      "latitude": 41.5329,
+      "longitude": 2.43496,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        }
+      ]
+    },
+    {
+      "id": "1021",
+      "name": "Edif. Vidre - TecnoCampus - 1021",
+      "latitude": 41.5325,
+      "longitude": 2.43293,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        }
+      ]
+    },
+    {
+      "id": "1022",
+      "name": "Institut Català Salut - 1022",
+      "latitude": 41.537,
+      "longitude": 2.4305,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        },
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1023",
+      "name": "Gatassa - 1023",
+      "latitude": 41.5377,
+      "longitude": 2.42801,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        },
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1024",
+      "name": "Rosselló - 1024",
+      "latitude": 41.5377,
+      "longitude": 2.42547,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        }
+      ]
+    },
+    {
+      "id": "1025",
+      "name": "València - 1025",
+      "latitude": 41.5393,
+      "longitude": 2.42299,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        }
+      ]
+    },
+    {
+      "id": "1026",
+      "name": "Ronda Cerdanya - 1026",
+      "latitude": 41.5411,
+      "longitude": 2.42268,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        },
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1027",
+      "name": "Vallès - 1027",
+      "latitude": 41.5426,
+      "longitude": 2.42225,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        },
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1028",
+      "name": "Ample - 1028",
+      "latitude": 41.5437,
+      "longitude": 2.4226,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        },
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1029",
+      "name": "Roca Blanca - 1029",
+      "latitude": 41.5449,
+      "longitude": 2.42533,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        },
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1030",
+      "name": "Escola El Turó - 1030",
+      "latitude": 41.5434,
+      "longitude": 2.42893,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        },
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1031",
+      "name": "Euskadi - 1031",
+      "latitude": 41.5438,
+      "longitude": 2.43124,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        }
+      ]
+    },
+    {
+      "id": "1032",
+      "name": "Irlanda - 1032",
+      "latitude": 41.5461,
+      "longitude": 2.43073,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        }
+      ]
+    },
+    {
+      "id": "1033",
+      "name": "Parc La Llàntia - 1033",
+      "latitude": 41.5474,
+      "longitude": 2.42933,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        }
+      ]
+    },
+    {
+      "id": "1034",
+      "name": "Blanes - 1034",
+      "latitude": 41.5493,
+      "longitude": 2.42929,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        }
+      ]
+    },
+    {
+      "id": "1035",
+      "name": "La Llàntia - 1035",
+      "latitude": 41.5497,
+      "longitude": 2.42633,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        }
+      ]
+    },
+    {
+      "id": "1036",
+      "name": "Cementiri Les Valls - 1036",
+      "latitude": 41.5569,
+      "longitude": 2.42605,
+      "lineas": [
+        {
+          "id": "1",
+          "name": "Circular ",
+          "color": "#ff00ff"
+        }
+      ]
+    },
+    {
+      "id": "1037",
+      "name": "Cementiri Les Valls - 1037",
+      "latitude": 41.557,
+      "longitude": 2.42612,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        }
+      ]
+    },
+    {
+      "id": "1038",
+      "name": "La Llàntia - 1038",
+      "latitude": 41.5495,
+      "longitude": 2.4263,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        }
+      ]
+    },
+    {
+      "id": "1039",
+      "name": "Blanes - 1039",
+      "latitude": 41.5492,
+      "longitude": 2.42917,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        }
+      ]
+    },
+    {
+      "id": "1040",
+      "name": "Parc La Llàntia - 1040",
+      "latitude": 41.5473,
+      "longitude": 2.42918,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        }
+      ]
+    },
+    {
+      "id": "1041",
+      "name": "Irlanda - 1041",
+      "latitude": 41.5459,
+      "longitude": 2.43071,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        }
+      ]
+    },
+    {
+      "id": "1042",
+      "name": "Desviament - 1042",
+      "latitude": 41.548,
+      "longitude": 2.44159,
+      "lineas": [
+        {
+          "id": "4",
+          "name": "Cirera-Molins",
+          "color": "#ff0000"
+        }
+      ]
+    },
+    {
+      "id": "1043",
+      "name": "Escola El Turó - 1043",
+      "latitude": 41.5438,
+      "longitude": 2.4288,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        }
+      ]
+    },
+    {
+      "id": "1044",
+      "name": "Queralbs - 1044",
+      "latitude": 41.5425,
+      "longitude": 2.42601,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        }
+      ]
+    },
+    {
+      "id": "1045",
+      "name": "Pl. Gatassa - 1045",
+      "latitude": 41.5418,
+      "longitude": 2.42533,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        },
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1046",
+      "name": "Cerdanyola - 1046",
+      "latitude": 41.5404,
+      "longitude": 2.42401,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        },
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1047",
+      "name": "Pres.Tarradellas - 1047",
+      "latitude": 41.5382,
+      "longitude": 2.42089,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        }
+      ]
+    },
+    {
+      "id": "1048",
+      "name": "Plaça Andalusia - 1048",
+      "latitude": 41.5364,
+      "longitude": 2.42337,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        }
+      ]
+    },
+    {
+      "id": "1049",
+      "name": "Rosselló - 1049",
+      "latitude": 41.5376,
+      "longitude": 2.42575,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        }
+      ]
+    },
+    {
+      "id": "1050",
+      "name": "Gatassa - 1050",
+      "latitude": 41.538,
+      "longitude": 2.42712,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        },
+        {
+          "id": "6",
+          "name": "Institut Català Salut - Ctra. de Mata",
+          "color": "#febf01"
+        },
+        {
+          "id": "7",
+          "name": "Pl. Tereses - Cerdanyola",
+          "color": "#80ffff"
+        },
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1051",
+      "name": "Institut Català Salut - 1051",
+      "latitude": 41.5365,
+      "longitude": 2.43047,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        },
+        {
+          "id": "6",
+          "name": "Institut Català Salut - Ctra. de Mata",
+          "color": "#febf01"
+        },
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1052",
+      "name": "Edif. Vidre - TecnoCampus - 1052",
+      "latitude": 41.5326,
+      "longitude": 2.43263,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        },
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1053",
+      "name": "Sant Valentí - 1053",
+      "latitude": 41.533,
+      "longitude": 2.43546,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        },
+        {
+          "id": "4",
+          "name": "Cirera-Molins",
+          "color": "#ff0000"
+        }
+      ]
+    },
+    {
+      "id": "1054",
+      "name": "President Macià - 1054",
+      "latitude": 41.5333,
+      "longitude": 2.43752,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        }
+      ]
+    },
+    {
+      "id": "1055",
+      "name": "Jutjats - 1055",
+      "latitude": 41.5329,
+      "longitude": 2.43881,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        },
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1056",
+      "name": "Pl. Doctor Fleming - 1056",
+      "latitude": 41.5338,
+      "longitude": 2.4405,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        },
+        {
+          "id": "5",
+          "name": "Rodalies-Hospital de Mataró",
+          "color": "#00ea00"
+        },
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1057",
+      "name": "Ronda Barceló - 1057",
+      "latitude": 41.5322,
+      "longitude": 2.44275,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        },
+        {
+          "id": "5",
+          "name": "Rodalies-Hospital de Mataró",
+          "color": "#00ea00"
+        },
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1058",
+      "name": "Rodalies - 1058",
+      "latitude": 41.5331,
+      "longitude": 2.4449,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        },
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        },
+        {
+          "id": "5",
+          "name": "Rodalies-Hospital de Mataró",
+          "color": "#00ea00"
+        },
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1059",
+      "name": "Lepant - 1059",
+      "latitude": 41.5359,
+      "longitude": 2.4442,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        },
+        {
+          "id": "5",
+          "name": "Rodalies-Hospital de Mataró",
+          "color": "#00ea00"
+        }
+      ]
+    },
+    {
+      "id": "1060",
+      "name": "Pl. Tereses - 1060",
+      "latitude": 41.5383,
+      "longitude": 2.44241,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        },
+        {
+          "id": "4",
+          "name": "Cirera-Molins",
+          "color": "#ff0000"
+        },
+        {
+          "id": "5",
+          "name": "Rodalies-Hospital de Mataró",
+          "color": "#00ea00"
+        },
+        {
+          "id": "7",
+          "name": "Pl. Tereses - Cerdanyola",
+          "color": "#80ffff"
+        }
+      ]
+    },
+    {
+      "id": "1061",
+      "name": "Sant Isidor - 1061",
+      "latitude": 41.5409,
+      "longitude": 2.44005,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        },
+        {
+          "id": "4",
+          "name": "Cirera-Molins",
+          "color": "#ff0000"
+        }
+      ]
+    },
+    {
+      "id": "1062",
+      "name": "Parc Central - 1062",
+      "latitude": 41.5442,
+      "longitude": 2.44063,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        },
+        {
+          "id": "4",
+          "name": "Cirera-Molins",
+          "color": "#ff0000"
+        },
+        {
+          "id": "6",
+          "name": "Institut Català Salut - Ctra. de Mata",
+          "color": "#febf01"
+        }
+      ]
+    },
+    {
+      "id": "1063",
+      "name": "Cabanellas - 1063",
+      "latitude": 41.5457,
+      "longitude": 2.44593,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        }
+      ]
+    },
+    {
+      "id": "1064",
+      "name": "Escola Freta - 1064",
+      "latitude": 41.5469,
+      "longitude": 2.44744,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        }
+      ]
+    },
+    {
+      "id": "1065",
+      "name": "Pau Picasso - 1065",
+      "latitude": 41.5486,
+      "longitude": 2.44799,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        }
+      ]
+    },
+    {
+      "id": "1066",
+      "name": "Perú - 1066",
+      "latitude": 41.5509,
+      "longitude": 2.44798,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        }
+      ]
+    },
+    {
+      "id": "1067",
+      "name": "Escola Vista Alegre - 1067",
+      "latitude": 41.5514,
+      "longitude": 2.44657,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        },
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        }
+      ]
+    },
+    {
+      "id": "1068",
+      "name": "Salvador Espriu - 1068",
+      "latitude": 41.5514,
+      "longitude": 2.44408,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        },
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        }
+      ]
+    },
+    {
+      "id": "1069",
+      "name": "Sant Oleguer - 1069",
+      "latitude": 41.5512,
+      "longitude": 2.44078,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        }
+      ]
+    },
+    {
+      "id": "1070",
+      "name": "CAP Cirera-Molins - 1070",
+      "latitude": 41.549,
+      "longitude": 2.43747,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        },
+        {
+          "id": "4",
+          "name": "Cirera-Molins",
+          "color": "#ff0000"
+        }
+      ]
+    },
+    {
+      "id": "1071",
+      "name": "Pl. Joaquim Galí - 1071",
+      "latitude": 41.5365,
+      "longitude": 2.4338,
+      "lineas": [
+        {
+          "id": "4",
+          "name": "Cirera-Molins",
+          "color": "#ff0000"
+        }
+      ]
+    },
+    {
+      "id": "1073",
+      "name": "Hospital de Mataró - 1073",
+      "latitude": 41.5563,
+      "longitude": 2.42865,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        },
+        {
+          "id": "5",
+          "name": "Rodalies-Hospital de Mataró",
+          "color": "#00ea00"
+        }
+      ]
+    },
+    {
+      "id": "1074",
+      "name": "Mataró Parc - 1074",
+      "latitude": 41.5558,
+      "longitude": 2.43374,
+      "lineas": [
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        }
+      ]
+    },
+    {
+      "id": "1075",
+      "name": "Can Soleret - 1075",
+      "latitude": 41.5533,
+      "longitude": 2.4384,
+      "lineas": [
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        }
+      ]
+    },
+    {
+      "id": "1076",
+      "name": "Camí de la Serra - 1076",
+      "latitude": 41.5519,
+      "longitude": 2.44069,
+      "lineas": [
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        }
+      ]
+    },
+    {
+      "id": "1077",
+      "name": "Joan Oliver - 1077",
+      "latitude": 41.5548,
+      "longitude": 2.44278,
+      "lineas": [
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        }
+      ]
+    },
+    {
+      "id": "1078",
+      "name": "Montalt - 1078",
+      "latitude": 41.5547,
+      "longitude": 2.44544,
+      "lineas": [
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        }
+      ]
+    },
+    {
+      "id": "1079",
+      "name": "Vista Alegre - 1079",
+      "latitude": 41.5519,
+      "longitude": 2.44577,
+      "lineas": [
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        }
+      ]
+    },
+    {
+      "id": "1080",
+      "name": "Franck Marshall - 1080",
+      "latitude": 41.5512,
+      "longitude": 2.44961,
+      "lineas": [
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        },
+        {
+          "id": "6",
+          "name": "Institut Català Salut - Ctra. de Mata",
+          "color": "#febf01"
+        }
+      ]
+    },
+    {
+      "id": "1081",
+      "name": "Rafael Estrany - 1081",
+      "latitude": 41.5494,
+      "longitude": 2.45189,
+      "lineas": [
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        },
+        {
+          "id": "6",
+          "name": "Institut Català Salut - Ctra. de Mata",
+          "color": "#febf01"
+        }
+      ]
+    },
+    {
+      "id": "1082",
+      "name": "Cervantes - 1082",
+      "latitude": 41.5478,
+      "longitude": 2.45315,
+      "lineas": [
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        }
+      ]
+    },
+    {
+      "id": "1083",
+      "name": "Escorxador - 1083",
+      "latitude": 41.5434,
+      "longitude": 2.45498,
+      "lineas": [
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        }
+      ]
+    },
+    {
+      "id": "1084",
+      "name": "Sant Simó - 1084",
+      "latitude": 41.5412,
+      "longitude": 2.45589,
+      "lineas": [
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        }
+      ]
+    },
+    {
+      "id": "1085",
+      "name": "Pl. del Gas - 1085",
+      "latitude": 41.5387,
+      "longitude": 2.45226,
+      "lineas": [
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        }
+      ]
+    },
+    {
+      "id": "1086",
+      "name": "Iluro - 1086",
+      "latitude": 41.5343,
+      "longitude": 2.44067,
+      "lineas": []
+    },
+    {
+      "id": "1087",
+      "name": "La Rambla - 1087",
+      "latitude": 41.5367,
+      "longitude": 2.44375,
+      "lineas": [
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        },
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1088",
+      "name": "Sant Joan - 1088",
+      "latitude": 41.5385,
+      "longitude": 2.44764,
+      "lineas": [
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        },
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1089",
+      "name": "Can Marfà - 1089",
+      "latitude": 41.5396,
+      "longitude": 2.45039,
+      "lineas": [
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        },
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1090",
+      "name": "L´Havana - 1090",
+      "latitude": 41.5409,
+      "longitude": 2.45327,
+      "lineas": [
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        }
+      ]
+    },
+    {
+      "id": "1091",
+      "name": "Sant Simó - 1091",
+      "latitude": 41.5416,
+      "longitude": 2.45594,
+      "lineas": [
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        }
+      ]
+    },
+    {
+      "id": "1092",
+      "name": "Escorxador - 1092",
+      "latitude": 41.5434,
+      "longitude": 2.45524,
+      "lineas": [
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        }
+      ]
+    },
+    {
+      "id": "1093",
+      "name": "Euskadi - 1093",
+      "latitude": 41.544,
+      "longitude": 2.43022,
+      "lineas": [
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1094",
+      "name": "Rafael Estrany - 1094",
+      "latitude": 41.5496,
+      "longitude": 2.45209,
+      "lineas": [
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        }
+      ]
+    },
+    {
+      "id": "1095",
+      "name": "Frank Marshall - 1095",
+      "latitude": 41.5515,
+      "longitude": 2.45003,
+      "lineas": [
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        }
+      ]
+    },
+    {
+      "id": "1096",
+      "name": "Sant Oleguer - 1096",
+      "latitude": 41.5514,
+      "longitude": 2.44063,
+      "lineas": [
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        },
+        {
+          "id": "4",
+          "name": "Cirera-Molins",
+          "color": "#ff0000"
+        }
+      ]
+    },
+    {
+      "id": "1097",
+      "name": "Can Soleret - 1097",
+      "latitude": 41.5541,
+      "longitude": 2.43788,
+      "lineas": [
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        }
+      ]
+    },
+    {
+      "id": "1098",
+      "name": "Mataró Parc (nomès baixada d´usuaris) - 1098",
+      "latitude": 41.5555,
+      "longitude": 2.43211,
+      "lineas": [
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        }
+      ]
+    },
+    {
+      "id": "1099",
+      "name": "Cirera - 1099",
+      "latitude": 41.5502,
+      "longitude": 2.43483,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        },
+        {
+          "id": "4",
+          "name": "Cirera-Molins",
+          "color": "#ff0000"
+        }
+      ]
+    },
+    {
+      "id": "1100",
+      "name": "Joan Peiró - 1100",
+      "latitude": 41.5492,
+      "longitude": 2.43231,
+      "lineas": [
+        {
+          "id": "4",
+          "name": "Cirera-Molins",
+          "color": "#ff0000"
+        }
+      ]
+    },
+    {
+      "id": "1101",
+      "name": "Centre Cívic Cirera - 1101",
+      "latitude": 41.5467,
+      "longitude": 2.43277,
+      "lineas": [
+        {
+          "id": "4",
+          "name": "Cirera-Molins",
+          "color": "#ff0000"
+        }
+      ]
+    },
+    {
+      "id": "1102",
+      "name": "Pl. A. Machado - 1102",
+      "latitude": 41.5471,
+      "longitude": 2.43501,
+      "lineas": [
+        {
+          "id": "4",
+          "name": "Cirera-Molins",
+          "color": "#ff0000"
+        }
+      ]
+    },
+    {
+      "id": "1103",
+      "name": "Figuera Major - 1103",
+      "latitude": 41.5503,
+      "longitude": 2.44034,
+      "lineas": [
+        {
+          "id": "4",
+          "name": "Cirera-Molins",
+          "color": "#ff0000"
+        }
+      ]
+    },
+    {
+      "id": "1104",
+      "name": "Carles Padrós - 1104",
+      "latitude": 41.5474,
+      "longitude": 2.44147,
+      "lineas": [
+        {
+          "id": "4",
+          "name": "Cirera-Molins",
+          "color": "#ff0000"
+        }
+      ]
+    },
+    {
+      "id": "1105",
+      "name": "Pl.Granollers - 1105",
+      "latitude": 41.5405,
+      "longitude": 2.43498,
+      "lineas": [
+        {
+          "id": "7",
+          "name": "Pl. Tereses - Cerdanyola",
+          "color": "#80ffff"
+        }
+      ]
+    },
+    {
+      "id": "1106",
+      "name": "Alfons X - 1106",
+      "latitude": 41.5464,
+      "longitude": 2.45002,
+      "lineas": [
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        }
+      ]
+    },
+    {
+      "id": "1107",
+      "name": "Miquel Biada - 1107",
+      "latitude": 41.5376,
+      "longitude": 2.43696,
+      "lineas": [
+        {
+          "id": "4",
+          "name": "Cirera-Molins",
+          "color": "#ff0000"
+        },
+        {
+          "id": "7",
+          "name": "Pl. Tereses - Cerdanyola",
+          "color": "#80ffff"
+        }
+      ]
+    },
+    {
+      "id": "1108",
+      "name": "Carles Padrós - 1108",
+      "latitude": 41.5456,
+      "longitude": 2.44234,
+      "lineas": [
+        {
+          "id": "4",
+          "name": "Cirera-Molins",
+          "color": "#ff0000"
+        },
+        {
+          "id": "6",
+          "name": "Institut Català Salut - Ctra. de Mata",
+          "color": "#febf01"
+        }
+      ]
+    },
+    {
+      "id": "1109",
+      "name": "Figuera Major - 1109",
+      "latitude": 41.5495,
+      "longitude": 2.44082,
+      "lineas": [
+        {
+          "id": "4",
+          "name": "Cirera-Molins",
+          "color": "#ff0000"
+        }
+      ]
+    },
+    {
+      "id": "1112",
+      "name": "Pl. França - 1112",
+      "latitude": 41.5491,
+      "longitude": 2.43117,
+      "lineas": [
+        {
+          "id": "5",
+          "name": "Rodalies-Hospital de Mataró",
+          "color": "#00ea00"
+        }
+      ]
+    },
+    {
+      "id": "1113",
+      "name": "Pl. Itàlia - 1113",
+      "latitude": 41.5468,
+      "longitude": 2.43147,
+      "lineas": [
+        {
+          "id": "5",
+          "name": "Rodalies-Hospital de Mataró",
+          "color": "#00ea00"
+        }
+      ]
+    },
+    {
+      "id": "1114",
+      "name": "Via Europa - 1114",
+      "latitude": 41.5429,
+      "longitude": 2.43311,
+      "lineas": [
+        {
+          "id": "5",
+          "name": "Rodalies-Hospital de Mataró",
+          "color": "#00ea00"
+        }
+      ]
+    },
+    {
+      "id": "1115",
+      "name": "Pl. Granollers - 1115",
+      "latitude": 41.5409,
+      "longitude": 2.43517,
+      "lineas": [
+        {
+          "id": "5",
+          "name": "Rodalies-Hospital de Mataró",
+          "color": "#00ea00"
+        }
+      ]
+    },
+    {
+      "id": "1116",
+      "name": "Roca Blanca - 1116",
+      "latitude": 41.5451,
+      "longitude": 2.42526,
+      "lineas": [
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1117",
+      "name": "Jaume Isern - 1117",
+      "latitude": 41.5406,
+      "longitude": 2.43953,
+      "lineas": [
+        {
+          "id": "5",
+          "name": "Rodalies-Hospital de Mataró",
+          "color": "#00ea00"
+        },
+        {
+          "id": "7",
+          "name": "Pl. Tereses - Cerdanyola",
+          "color": "#80ffff"
+        }
+      ]
+    },
+    {
+      "id": "1118",
+      "name": "Pl. Granollers - 1118",
+      "latitude": 41.5411,
+      "longitude": 2.43517,
+      "lineas": [
+        {
+          "id": "5",
+          "name": "Rodalies-Hospital de Mataró",
+          "color": "#00ea00"
+        }
+      ]
+    },
+    {
+      "id": "1119",
+      "name": "Via Europa - 1119",
+      "latitude": 41.5432,
+      "longitude": 2.43303,
+      "lineas": [
+        {
+          "id": "5",
+          "name": "Rodalies-Hospital de Mataró",
+          "color": "#00ea00"
+        }
+      ]
+    },
+    {
+      "id": "1120",
+      "name": "Pl. Itàlia - 1120",
+      "latitude": 41.5469,
+      "longitude": 2.43179,
+      "lineas": [
+        {
+          "id": "5",
+          "name": "Rodalies-Hospital de Mataró",
+          "color": "#00ea00"
+        }
+      ]
+    },
+    {
+      "id": "1121",
+      "name": "Pl. França - 1121",
+      "latitude": 41.5498,
+      "longitude": 2.43165,
+      "lineas": [
+        {
+          "id": "5",
+          "name": "Rodalies-Hospital de Mataró",
+          "color": "#00ea00"
+        }
+      ]
+    },
+    {
+      "id": "1122",
+      "name": "Ctra. Mata - 1122",
+      "latitude": 41.5476,
+      "longitude": 2.45113,
+      "lineas": [
+        {
+          "id": "6",
+          "name": "Institut Català Salut - Ctra. de Mata",
+          "color": "#febf01"
+        }
+      ]
+    },
+    {
+      "id": "1123",
+      "name": "Alfons X - 1123",
+      "latitude": 41.5459,
+      "longitude": 2.44846,
+      "lineas": [
+        {
+          "id": "6",
+          "name": "Institut Català Salut - Ctra. de Mata",
+          "color": "#febf01"
+        }
+      ]
+    },
+    {
+      "id": "1124",
+      "name": "Geganta - 1124",
+      "latitude": 41.543,
+      "longitude": 2.4387,
+      "lineas": [
+        {
+          "id": "6",
+          "name": "Institut Català Salut - Ctra. de Mata",
+          "color": "#febf01"
+        },
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1126",
+      "name": "Salesians - 1126",
+      "latitude": 41.5406,
+      "longitude": 2.4312,
+      "lineas": [
+        {
+          "id": "6",
+          "name": "Institut Català Salut - Ctra. de Mata",
+          "color": "#febf01"
+        },
+        {
+          "id": "7",
+          "name": "Pl. Tereses - Cerdanyola",
+          "color": "#80ffff"
+        }
+      ]
+    },
+    {
+      "id": "1127",
+      "name": "Puig i Cadafalch - 1127",
+      "latitude": 41.5403,
+      "longitude": 2.42787,
+      "lineas": [
+        {
+          "id": "6",
+          "name": "Institut Català Salut - Ctra. de Mata",
+          "color": "#febf01"
+        },
+        {
+          "id": "7",
+          "name": "Pl. Tereses - Cerdanyola",
+          "color": "#80ffff"
+        }
+      ]
+    },
+    {
+      "id": "1128",
+      "name": "Parc Cerdanyola - 1128",
+      "latitude": 41.5398,
+      "longitude": 2.42556,
+      "lineas": [
+        {
+          "id": "6",
+          "name": "Institut Català Salut - Ctra. de Mata",
+          "color": "#febf01"
+        },
+        {
+          "id": "7",
+          "name": "Pl. Tereses - Cerdanyola",
+          "color": "#80ffff"
+        },
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1129",
+      "name": "Geganta - 1129",
+      "latitude": 41.5424,
+      "longitude": 2.43804,
+      "lineas": [
+        {
+          "id": "6",
+          "name": "Institut Català Salut - Ctra. de Mata",
+          "color": "#febf01"
+        }
+      ]
+    },
+    {
+      "id": "1130",
+      "name": "El Palau - 1130",
+      "latitude": 41.5456,
+      "longitude": 2.4531,
+      "lineas": [
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        }
+      ]
+    },
+    {
+      "id": "1131",
+      "name": "Institut A. Satorras - 1131",
+      "latitude": 41.5472,
+      "longitude": 2.43963,
+      "lineas": [
+        {
+          "id": "6",
+          "name": "Institut Català Salut - Ctra. de Mata",
+          "color": "#febf01"
+        }
+      ]
+    },
+    {
+      "id": "1132",
+      "name": "Galícia - 1132",
+      "latitude": 41.5469,
+      "longitude": 2.42689,
+      "lineas": [
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1133",
+      "name": "Poliesportiu Euskadi - 1133",
+      "latitude": 41.5444,
+      "longitude": 2.42893,
+      "lineas": [
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1134",
+      "name": "Euskadi - 1134",
+      "latitude": 41.5445,
+      "longitude": 2.43117,
+      "lineas": [
+        {
+          "id": "2",
+          "name": "Circular ",
+          "color": "#804000"
+        }
+      ]
+    },
+    {
+      "id": "1135",
+      "name": "Floridablanca - 1135",
+      "latitude": 41.5409,
+      "longitude": 2.45245,
+      "lineas": [
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1136",
+      "name": "Tarragona - 1136",
+      "latitude": 41.5434,
+      "longitude": 2.42476,
+      "lineas": [
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1138",
+      "name": "Pl. Fiveller - 1138",
+      "latitude": 41.5426,
+      "longitude": 2.45046,
+      "lineas": [
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1139",
+      "name": "La Coma - 1139",
+      "latitude": 41.5416,
+      "longitude": 2.44717,
+      "lineas": [
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1140",
+      "name": "La Riera - 1140",
+      "latitude": 41.5421,
+      "longitude": 2.44356,
+      "lineas": [
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1143",
+      "name": "O´ Donnell - 1143",
+      "latitude": 41.5401,
+      "longitude": 2.43433,
+      "lineas": [
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1144",
+      "name": "Biblioteca Pompeu Fabra - 1144",
+      "latitude": 41.5382,
+      "longitude": 2.43216,
+      "lineas": [
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1145",
+      "name": "Parc Cerdanyola - 1145",
+      "latitude": 41.5394,
+      "longitude": 2.42609,
+      "lineas": [
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1149",
+      "name": "Biblioteca Pompeu Fabra - 1149",
+      "latitude": 41.5393,
+      "longitude": 2.4335,
+      "lineas": [
+        {
+          "id": "6",
+          "name": "Institut Català Salut - Ctra. de Mata",
+          "color": "#febf01"
+        }
+      ]
+    },
+    {
+      "id": "1153",
+      "name": "Porta Laietana-TecnoCampus - 1153",
+      "latitude": 41.5305,
+      "longitude": 2.43578,
+      "lineas": [
+        {
+          "id": "4",
+          "name": "Cirera-Molins",
+          "color": "#ff0000"
+        }
+      ]
+    },
+    {
+      "id": "1161",
+      "name": "Porta Laietana-TecnoCampus - 1161",
+      "latitude": 41.5301,
+      "longitude": 2.43548,
+      "lineas": [
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1162",
+      "name": "Ctra. Mata - 1162",
+      "latitude": 41.5475,
+      "longitude": 2.45144,
+      "lineas": [
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        }
+      ]
+    },
+    {
+      "id": "1165",
+      "name": "CAN VILARDELL - 1165",
+      "latitude": 41.5599,
+      "longitude": 2.42795,
+      "lineas": []
+    },
+    {
+      "id": "1166",
+      "name": "Ronda de la República - 1166",
+      "latitude": 41.5372,
+      "longitude": 2.43654,
+      "lineas": [
+        {
+          "id": "5",
+          "name": "Rodalies-Hospital de Mataró",
+          "color": "#00ea00"
+        }
+      ]
+    },
+    {
+      "id": "1167",
+      "name": "Pl. Granollers - 1167",
+      "latitude": 41.5409,
+      "longitude": 2.43585,
+      "lineas": [
+        {
+          "id": "6",
+          "name": "Institut Català Salut - Ctra. de Mata",
+          "color": "#febf01"
+        },
+        {
+          "id": "8",
+          "name": "Rodalies - Galícia",
+          "color": "#008040"
+        }
+      ]
+    },
+    {
+      "id": "1168",
+      "name": "CAP Prim - 1168",
+      "latitude": 41.5387,
+      "longitude": 2.43575,
+      "lineas": [
+        {
+          "id": "5",
+          "name": "Rodalies-Hospital de Mataró",
+          "color": "#00ea00"
+        }
+      ]
+    },
+    {
+      "id": "1172",
+      "name": "Ronda Creu de Pedra - 1172",
+      "latitude": 41.5551,
+      "longitude": 2.44492,
+      "lineas": [
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        }
+      ]
+    },
+    {
+      "id": "1173",
+      "name": "TecnoCampus - 1173",
+      "latitude": 41.5287,
+      "longitude": 2.43332,
+      "lineas": [
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        }
+      ]
+    },
+    {
+      "id": "1174",
+      "name": "Les Hortes - 1174",
+      "latitude": 41.5268,
+      "longitude": 2.43105,
+      "lineas": [
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        }
+      ]
+    },
+    {
+      "id": "1175",
+      "name": "El Rengle - 1175",
+      "latitude": 41.5249,
+      "longitude": 2.42875,
+      "lineas": [
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        }
+      ]
+    },
+    {
+      "id": "1176",
+      "name": "Caldes d'Estrac - 1176",
+      "latitude": 41.5266,
+      "longitude": 2.43118,
+      "lineas": [
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        }
+      ]
+    },
+    {
+      "id": "1177",
+      "name": "TecnoCampus - 1177",
+      "latitude": 41.5289,
+      "longitude": 2.43402,
+      "lineas": [
+        {
+          "id": "3",
+          "name": "Camí de la Serra-Vista Alegre-Rocafonda",
+          "color": "#808080"
+        }
+      ]
+    },
+    {
+      "id": "1179",
+      "name": "Institut Català Salut - 1179",
+      "latitude": 41.5366,
+      "longitude": 2.43152,
+      "lineas": [
+        {
+          "id": "7",
+          "name": "Pl. Tereses - Cerdanyola",
+          "color": "#80ffff"
+        }
+      ]
+    }
+  ]
+}

@@ -81,10 +81,18 @@ class CorridorTracker {
 
   loadData() {
     try {
-      const dir1File = path.join(this.dataDir, 'c10_matched_stops_dir1.json');
-      const dir0File = path.join(this.dataDir, 'c10_matched_stops_dir0.json');
-      const routeFile = path.join(this.dataDir, 'c10_route_stops.json');
-      const scheduleFile = path.join(this.dataDir, 'c10_full_schedule.json');
+      const getFilePath = (fileName) => {
+        const p1 = path.join(this.dataDir, fileName);
+        if (fs.existsSync(p1)) return p1;
+        const p2 = path.join(__dirname, '..', 'static_data', fileName);
+        if (fs.existsSync(p2)) return p2;
+        return p1;
+      };
+
+      const dir1File = getFilePath('c10_matched_stops_dir1.json');
+      const dir0File = getFilePath('c10_matched_stops_dir0.json');
+      const routeFile = getFilePath('c10_route_stops.json');
+      const scheduleFile = getFilePath('c10_full_schedule.json');
 
       if (fs.existsSync(dir1File)) this.stopsDir1 = JSON.parse(fs.readFileSync(dir1File, 'utf8'));
       else this.stopsDir1 = [];

@@ -59,9 +59,17 @@ class MataroTracker {
 
   loadDatasets() {
     try {
-      const lineasPath = path.join(__dirname, '..', 'data', 'mataro_lineas.json');
-      const routesPath = path.join(__dirname, '..', 'data', 'mataro_routes_full.json');
-      const paradasPath = path.join(__dirname, '..', 'data', 'mataro_paradas.json');
+      const getFilePath = (fileName) => {
+        const p1 = path.join(__dirname, '..', 'data', fileName);
+        if (fs.existsSync(p1)) return p1;
+        const p2 = path.join(__dirname, '..', 'static_data', fileName);
+        if (fs.existsSync(p2)) return p2;
+        return p1;
+      };
+
+      const lineasPath = getFilePath('mataro_lineas.json');
+      const routesPath = getFilePath('mataro_routes_full.json');
+      const paradasPath = getFilePath('mataro_paradas.json');
 
       if (fs.existsSync(lineasPath)) {
         const raw = JSON.parse(fs.readFileSync(lineasPath, 'utf8'));

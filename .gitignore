@@ -8,6 +8,8 @@ yarn-error.log*
 .cache
 data/atm_gtfs/
 data/amb_gtfs/
+data/*.db*
+data/transit_history.db*
 scripts/matarobus.apk
 scripts/matarobus.zip
 scripts/apk_extracted/
