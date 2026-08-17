@@ -489,6 +489,33 @@ class MaresmeTracker {
     };
   }
 
+  findClosestScheduledTime(clockStr, stopId, routeId, dirId) {
+    if (!clockStr || !routeId) return null;
+    const trips = (this.tripsMap.get(routeId) || []).filter(t => String(t.dirId) === String(dirId));
+    const targetSec = timeUtils.timeToSec(clockStr);
+    let bestMatch = null;
+    let minDiffSec = Infinity;
+
+    for (const trip of trips) {
+      const stList = this.stopTimesByTrip.get(trip.tripId) || [];
+      const st = stList.find(s => String(s.stopId) === String(stopId) || String(s.stopId).includes(String(stopId)));
+      if (st && st.dep) {
+        const schedSec = timeUtils.timeToSec(st.dep);
+        const diffSec = Math.abs(targetSec - schedSec);
+        if (diffSec < minDiffSec && diffSec <= 2100) {
+          minDiffSec = diffSec;
+          const delayMins = Math.round((targetSec - schedSec) / 60);
+          bestMatch = {
+            scheduledTime: st.dep.substring(0, 5),
+            schedSec,
+            delayMins
+          };
+        }
+      }
+    }
+    return bestMatch;
+  }
+
   async getStopDepartures(stopId, lineId = null, direction = '0', lineDetails = null) {
     const lineConfig = lineId ? this.resolveLine(lineId) : null;
     const dir = String(direction || '0');
@@ -518,21 +545,41 @@ class MaresmeTracker {
             const clockStr = `${String(arrHour).padStart(2, '0')}:${String(arrMin).padStart(2, '0')}`;
             const dest = s.direccio || s.destinacio || defaultDest;
 
+            // Match against official GTFS timetable to calculate real delays
+            const schedMatch = lineConfig ? this.findClosestScheduledTime(clockStr, stopObj.id, lineConfig.routeId, dir) : null;
+            const delayMins = schedMatch ? schedMatch.delayMins : 0;
+            const schedTimeStr = schedMatch ? schedMatch.scheduledTime : clockStr;
+            
+            let delayStatus = 'on-time';
+            let delayBadgeText = 'Puntual';
+            if (delayMins >= 2) {
+              delayStatus = 'delayed';
+              delayBadgeText = `+${delayMins} min retard`;
+            } else if (delayMins <= -2) {
+              delayStatus = 'early';
+              delayBadgeText = `${Math.abs(delayMins)} min avançat`;
+            }
+
+            const aimedUtc = schedMatch
+              ? new Date(depUtc.getTime() - delayMins * 60000)
+              : depUtc;
+
             departures.push({
               lineId: displayLineId,
               lineName: lineConfig ? lineConfig.code : 'Moventis',
               destination: dest,
               departureTime: clockStr,
               expectedIso: depUtc.toISOString(),
-              aimedIso: depUtc.toISOString(),
+              aimedIso: aimedUtc.toISOString(),
               minutesAway: diffMin,
               isRealTime: Boolean(s.realtime),
               isEstimated: !s.realtime,
               isToday: true,
               isFirstOfDay: false,
-              delayStatus: 'on_time',
-              delayBadgeText: 'Puntual',
-              comparisonText: `Horari Mou-te (${clockStr})`,
+              delayMins,
+              delayStatus,
+              delayBadgeText,
+              comparisonText: schedMatch ? `Teòric: ${schedTimeStr} (${delayBadgeText})` : `Horari Mou-te (${clockStr})`,
               formattedStatus: diffMin === 0 ? 'Imminent' : `${diffMin} min`
             });
           });
