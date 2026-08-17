@@ -395,14 +395,27 @@ class MaresmeTracker {
     // Sort chronologically
     scheduledRuns.sort((a, b) => a.startSec - b.startSec);
 
+    // Peak-hour highway traffic congestion adjustment (Weekdays 07:30-09:30 and 17:30-19:45)
+    const isWeekday = (netNow.dayOfWeek >= 1 && netNow.dayOfWeek <= 5);
+    const isMorningPeak = isWeekday && ((netNow.hour === 7 && netNow.minute >= 30) || netNow.hour === 8 || (netNow.hour === 9 && netNow.minute <= 30));
+    const isEveningPeak = isWeekday && ((netNow.hour === 17 && netNow.minute >= 15) || netNow.hour === 18 || (netNow.hour === 19 && netNow.minute <= 45));
+    
+    let trafficDelaySec = 0;
+    if (isMorningPeak && String(dir) === '1') {
+      trafficDelaySec = 600; // +10 min morning inbound rush
+    } else if (isEveningPeak) {
+      trafficDelaySec = String(dir) === '1' ? 660 : 480; // +11 min evening inbound to BCN, +8 min evening outbound
+    }
+
     scheduledRuns.forEach((run, tIdx) => {
+      const adjustedDurSec = run.durSec + trafficDelaySec;
       let elapsedSec = currentSec - run.startSec;
       if (elapsedSec < 0 && run.startSec > 72000 && currentSec < 21600) {
         elapsedSec = (86400 - run.startSec) + currentSec;
       }
 
-      if (elapsedSec >= 0 && elapsedSec <= run.durSec) {
-        const progress = Math.min(0.99, Math.max(0.01, elapsedSec / run.durSec));
+      if (elapsedSec >= 0 && elapsedSec <= adjustedDurSec) {
+        const progress = Math.min(0.99, Math.max(0.01, elapsedSec / adjustedDurSec));
         const polyIdx = Math.min(polylineCoords.length - 1, Math.floor(progress * (polylineCoords.length - 1)));
         const pos = polylineCoords[polyIdx];
         const nextPos = polylineCoords[Math.min(polylineCoords.length - 1, polyIdx + 1)] || pos;
@@ -414,8 +427,8 @@ class MaresmeTracker {
         const fromStop = stops[stopIndex];
         const toStop = stops[stopIndex + 1];
 
-        const speedKmh = lineConfig.code.includes('e11') ? 62 : 38;
-        const remainingSec = Math.round(run.durSec - elapsedSec);
+        const speedKmh = lineConfig.code.includes('e11') ? (trafficDelaySec > 0 ? 46 : 62) : 34;
+        const remainingSec = Math.round(adjustedDurSec - elapsedSec);
 
         activeBuses.push({
           tripId: `${lineConfig.code}_${run.startStr.replace(':', '')}`,
@@ -429,6 +442,7 @@ class MaresmeTracker {
           bearing,
           compass,
           speedKmh,
+          trafficDelayMins: Math.round(trafficDelaySec / 60),
           progressInSegment: (progress * (stops.length - 1)) % 1,
           totalProgress: Math.round(progress * 100),
           fromStop: fromStop?.name || 'Origen',
