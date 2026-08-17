@@ -376,15 +376,15 @@ class CorridorTracker {
         const tripKey = `${schedTime}_${isDir1 ? 'R' : 'A'}`;
 
         if (!seenTodayTripKeys.has(tripKey) && !seenTodayTripKeys.has(schedTime)) {
-          // Check if this trip is genuinely active right now on the road
+          const stopSchedSec = timeUtils.timeToSec(stopEntry.dep || stopEntry.arr);
+          const thisStopSeq = stopSeq !== null ? stopSeq : (stopEntry.seq || 0);
+
+          // 1. Check if this trip is actively in transit right now
           const activeBusPos = this.interpolateBusPosition(trip, currentSec, stopsMap, stopsListCurrent, oppositeTrips);
           
           if (activeBusPos && !activeBusPos.isTerminalLayover) {
-            const thisStopSeq = stopSeq !== null ? stopSeq : (stopEntry.seq || 0);
-
-            // ONLY inject if the bus has NOT passed this stop yet
+            // Bus is in transit - inject if it hasn't passed this stop yet
             if (thisStopSeq >= activeBusPos.fromSeq) {
-              const stopSchedSec = timeToSec(stopEntry.dep || stopEntry.arr);
               const baseDelaySec = Math.max(0, currentSec - stopSchedSec + 120);
               const estimatedArrivalSec = Math.max(currentSec + 60, stopSchedSec + baseDelaySec);
               const diffSec = estimatedArrivalSec - currentSec;
@@ -392,9 +392,8 @@ class CorridorTracker {
               const estTimeStr = secToTime(estimatedArrivalSec).substring(0, 5);
               const delayMin = Math.max(0, Math.round((estimatedArrivalSec - stopSchedSec) / 60));
 
-              // Reject nonsensical delays (> 45 min)
               if (delayMin <= 45) {
-                results.unshift({
+                results.push({
                   lineId: '02498',
                   lineName: 'C-10',
                   tripId: trip.tripId,
@@ -402,6 +401,8 @@ class CorridorTracker {
                   directionId: isDir1 ? 'R' : 'A',
                   departureTime: estTimeStr,
                   departureDate: new Date(now.getTime() + diffSec * 1000).toISOString(),
+                  expectedIso: new Date(now.getTime() + diffSec * 1000).toISOString(),
+                  aimedIso: new Date(now.getTime() + (stopSchedSec - currentSec) * 1000).toISOString(),
                   minutesAway: diffMin,
                   isRealtime: true,
                   isToday: true,
@@ -415,6 +416,39 @@ class CorridorTracker {
                 seenTodayTripKeys.add(tripKey);
                 seenTodayTripKeys.add(schedTime);
               }
+            }
+          } else if (stopSchedSec >= currentSec - 60) {
+            // 2. Scheduled upcoming departure for today (starts later or approaching per timetable)
+            const diffSec = stopSchedSec - currentSec;
+            const diffMin = Math.max(0, Math.round(diffSec / 60));
+
+            // Include upcoming departures within 240 minutes
+            if (diffMin <= 240) {
+              const depUtcDate = new Date(now.getTime() + diffSec * 1000);
+              const depIso = depUtcDate.toISOString();
+
+              results.push({
+                lineId: '02498',
+                lineName: 'C-10',
+                tripId: trip.tripId,
+                destination: isDir1 ? 'Hospital de Mataró' : 'Barcelona (Metro la Pau)',
+                directionId: isDir1 ? 'R' : 'A',
+                departureTime: schedTime,
+                departureDate: depIso,
+                expectedIso: depIso,
+                aimedIso: depIso,
+                minutesAway: diffMin,
+                isRealtime: false,
+                isToday: true,
+                scheduledTime: schedTime,
+                delayMinutes: 0,
+                delayStatus: 'scheduled',
+                delayBadgeText: 'Programat',
+                comparisonText: `Horari teòric: ${schedTime}`,
+                formattedStatus: diffMin === 0 ? 'Imminent' : `${diffMin} min`
+              });
+              seenTodayTripKeys.add(tripKey);
+              seenTodayTripKeys.add(schedTime);
             }
           }
         }
