@@ -174,6 +174,7 @@ class TransitApp {
       window.history.replaceState(null, '', hash);
     }
 
+    this.mapController?.clearAllBusMarkers();
     this.refreshAllData(true);
   }
 
@@ -274,7 +275,8 @@ class TransitApp {
             this.selectedVehicleId = bus.tripId || bus.vehicleId;
             this.renderTelemetryCockpit(lData, etaRes.data);
             this.mapController?.highlightBus(this.selectedVehicleId, false);
-          }
+          },
+          lId
         );
         this.checkArrivalAlerts(lData, activeTargetId);
       }

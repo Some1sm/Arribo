@@ -243,6 +243,9 @@ class C10Map {
     const alreadyRendered = this.lastStopsFingerprint === stopsFingerprint && this.stopMarkers.length > 0;
 
     if (!alreadyRendered) {
+      // Clean up previous bus markers from previous line
+      this.clearAllBusMarkers();
+
       // Clean up previous markers & polylines
       this.stopMarkers.forEach(m => this.map.removeLayer(m));
       this.stopMarkers = [];
@@ -456,7 +459,17 @@ class C10Map {
     } catch(e) {}
   }
 
-  // Update active bus markers and attach road subpaths
+  clearAllBusMarkers() {
+    if (!this.map) return;
+    for (const [tId, obj] of this.busMarkersMap.entries()) {
+      if (obj.marker) {
+        this.map.removeLayer(obj.marker);
+      }
+    }
+    this.busMarkersMap.clear();
+    this.selectedVehicleId = null;
+  }
+
   isBusSelected(bus, selectedId = this.selectedVehicleId) {
     if (!selectedId || !bus) return false;
     const s = String(selectedId).trim();
@@ -492,8 +505,16 @@ class C10Map {
   }
 
   // Update active bus markers and attach road subpaths
-  updateBusMarkers(activeBuses, lineColor = '#009485', secondaryColor = '#38bdf8', selectedVehicleId = null, onBusClick = null) {
+  updateBusMarkers(activeBuses, lineColor = '#009485', secondaryColor = '#38bdf8', selectedVehicleId = null, onBusClick = null, lineId = null) {
     if (!this.map) return;
+
+    if (lineId && this.currentLineId && String(this.currentLineId) !== String(lineId)) {
+      this.clearAllBusMarkers();
+    }
+    if (lineId) {
+      this.currentLineId = String(lineId);
+    }
+
     if (selectedVehicleId !== null) {
       this.selectedVehicleId = selectedVehicleId;
     }
