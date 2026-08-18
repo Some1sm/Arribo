@@ -11,6 +11,7 @@ class IngestionDaemon {
   constructor() {
     this.isRunning = false;
     this.vehiclePollTimer = null;
+    this.ambLinesPollTimer = null;
     this.mataroPollTimer = null;
     this.corridorPollTimer = null;
     this.maresmePollTimer = null;
@@ -27,6 +28,7 @@ class IngestionDaemon {
 
     // 1. Initial Ingestion Run
     this.pollAmbVehicles();
+    this.pollAmbLines();
     this.pollMataroVehicles();
     this.pollCorridorDelays();
     this.pollMaresmeLines();
@@ -36,31 +38,35 @@ class IngestionDaemon {
     // 2. Schedule High-Frequency AMB Vehicle Fleet Ingestion (every 12 seconds)
     this.vehiclePollTimer = setInterval(() => this.pollAmbVehicles(), 12000);
 
-    // 3. Schedule Mataró Bus SIRI Ingestion (every 15 seconds)
+    // 3. Schedule AMB Lines Realtime Delay Ingestion (every 20 seconds)
+    this.ambLinesPollTimer = setInterval(() => this.pollAmbLines(), 20000);
+
+    // 4. Schedule Mataró Bus SIRI Ingestion (every 15 seconds)
     this.mataroPollTimer = setInterval(() => this.pollMataroVehicles(), 15000);
 
-    // 4. Schedule Active Corridor Delays Ingestion (every 20 seconds)
+    // 5. Schedule Active Corridor Delays Ingestion (every 20 seconds)
     this.corridorPollTimer = setInterval(() => this.pollCorridorDelays(), 20000);
 
-    // 5. Schedule Moventis Maresme Ingestion (every 25 seconds)
+    // 6. Schedule Moventis Maresme Ingestion (every 25 seconds)
     this.maresmePollTimer = setInterval(() => this.pollMaresmeLines(), 25000);
 
-    // 6. Schedule Rodalies Train Ingestion (every 30 seconds)
+    // 7. Schedule Rodalies Train Ingestion (every 30 seconds)
     this.rodaliesPollTimer = setInterval(() => this.pollRodaliesTrains(), 30000);
 
-    // 7. Schedule Sagalés Ingestion (every 30 seconds)
+    // 8. Schedule Sagalés Ingestion (every 30 seconds)
     this.sagalesPollTimer = setInterval(() => this.pollSagalesLines(), 30000);
 
-    // 8. Schedule Disruptions Ingestion (every 3 minutes)
+    // 9. Schedule Disruptions Ingestion (every 3 minutes)
     this.disruptionsTimer = setInterval(() => this.pollDisruptions(), 180000);
 
-    // 9. Schedule DB Pruning (every 12 hours)
+    // 10. Schedule DB Pruning (every 12 hours)
     this.pruneTimer = setInterval(() => historyDb.pruneOldRecords(30), 12 * 3600 * 1000);
   }
 
   stop() {
     this.isRunning = false;
     if (this.vehiclePollTimer) clearInterval(this.vehiclePollTimer);
+    if (this.ambLinesPollTimer) clearInterval(this.ambLinesPollTimer);
     if (this.mataroPollTimer) clearInterval(this.mataroPollTimer);
     if (this.corridorPollTimer) clearInterval(this.corridorPollTimer);
     if (this.maresmePollTimer) clearInterval(this.maresmePollTimer);
@@ -76,36 +82,65 @@ class IngestionDaemon {
       const vehicles = await ambTracker.getLiveVehicles();
       if (Array.isArray(vehicles) && vehicles.length > 0) {
         vehicles.forEach(v => {
-          const lCode = String(v.lineCode || v.lineName || '').toUpperCase();
+          const lCode = String(v.line || v.lineCode || v.lineName || '').toUpperCase();
+          if (!lCode) return;
+          const lat = parseFloat(v.latitude || v.lat);
+          const lon = parseFloat(v.longitude || v.lon);
+          if (isNaN(lat) || isNaN(lon)) return;
+
+          const route = ambTracker.resolveLine(lCode);
+          const agency = route?.agency || 'AMB Mobilitat';
+          const vehicleId = v.id || v.vehicleId || `amb_${lCode}_${v.tripId || Math.random()}`;
+
           flightRecorder.ingestVehicle({
-            vehicleId: v.vehicleId || v.id,
-            lineId: v.lineId || v.lineCode,
+            vehicleId,
+            lineId: route?.id || `amb_${lCode.toLowerCase()}`,
             lineCode: lCode,
-            agency: v.agency || 'AMB Mobilitat',
-            plateNumber: v.plate || v.vehicleId,
-            lat: v.lat,
-            lon: v.lon,
+            agency: agency,
+            plateNumber: v.plate || v.id || '',
+            lat,
+            lon,
             speedKmh: v.speedKmh || 30,
             bearing: v.bearing || 0,
             delayMins: v.delayMins || 0,
-            destination: v.destination || '',
+            destination: v.destination || route?.name || '',
             isRealTime: true
           });
+        });
+      }
+    } catch (e) {
+      // Upstream temporary hiccup
+    }
+  }
 
-          if (v.delayMins !== undefined && lCode) {
+  async pollAmbLines() {
+    try {
+      const targetAmbLines = ['b25', 'm28', 'l80', 'l82', 'a1', 'm30', 'b24', 'v15', 'h12', 'd20', 'pa2'];
+      for (const lId of targetAmbLines) {
+        try {
+          const eta = await ambTracker.getTargetStopETA(lId, null, '0');
+          const nb = eta?.nextBus;
+          if (nb && (nb.isRealTime || nb.isRealtime)) {
+            const delay = nb.expectedIso && nb.aimedIso
+              ? Math.max(0, Math.round((new Date(nb.expectedIso).getTime() - new Date(nb.aimedIso).getTime()) / 60000))
+              : (nb.delayMinutes || nb.delayMins || 0);
+
+            const route = ambTracker.resolveLine(lId);
             historyDb.recordDelayLog({
-              lineId: v.lineId || lCode,
-              lineCode: lCode,
-              agency: v.agency || 'AMB Mobilitat',
-              stopId: v.destination || 'Tram en línia',
-              stopName: v.destination || 'Tram en línia',
-              delayMins: v.delayMins,
-              scheduledTime: '',
-              actualTime: '',
+              lineId: route?.id || `amb_${lId}`,
+              lineCode: route?.code || lId.toUpperCase(),
+              agency: route?.agency || 'AMB Mobilitat',
+              stopId: eta.targetStop?.id || 'parada',
+              stopName: eta.targetStop?.name || 'Parada',
+              delayMins: delay,
+              scheduledTime: nb.departureTime || '',
+              actualTime: nb.departureTime || '',
               isRealTime: true
             });
           }
-        });
+        } catch (err) {
+          // Line-specific skip
+        }
       }
     } catch (e) {
       // Upstream temporary hiccup
@@ -174,19 +209,17 @@ class IngestionDaemon {
           isRealTime: true
         });
 
-        if (b.delayMins !== undefined) {
-          historyDb.recordDelayLog({
-            lineId: 'c10',
-            lineCode: 'C-10',
-            agency: 'Moventis / Casas',
-            stopId: c10Eta.targetStop?.id || '10037202',
-            stopName: c10Eta.targetStop?.name || "pl. Itàlia (A)",
-            delayMins: b.delayMins,
-            scheduledTime: b.scheduledTime || '',
-            actualTime: b.time || '',
-            isRealTime: true
-          });
-        }
+        historyDb.recordDelayLog({
+          lineId: 'c10',
+          lineCode: 'C-10',
+          agency: 'Moventis / Casas',
+          stopId: c10Eta.targetStop?.id || '10037202',
+          stopName: c10Eta.targetStop?.name || "pl. Itàlia (A)",
+          delayMins: b.delayMins || 0,
+          scheduledTime: b.scheduledTime || '',
+          actualTime: b.time || '',
+          isRealTime: true
+        });
       }
     } catch (e) {
       // Upstream temporary hiccup
@@ -195,21 +228,31 @@ class IngestionDaemon {
 
   async pollMaresmeLines() {
     try {
-      const lines = ['n80', 'n81', 'e111', 'e112', 'c20'];
+      const lines = ['e111', 'e112', 'c20', 'c3', 'c12', 'c14', 'c15', 'n80', 'n81'];
       for (const lId of lines) {
-        const eta = await maresmeTracker.getTargetStopETA(lId, '0');
-        if (eta && eta.nextBus && eta.nextBus.isRealtime) {
-          historyDb.recordDelayLog({
-            lineId: lId,
-            lineCode: eta.lineCode || lId.toUpperCase(),
-            agency: 'Moventis / Casas (Maresme)',
-            stopId: eta.targetStop?.id || 'parada',
-            stopName: eta.targetStop?.name || 'Parada',
-            delayMins: eta.nextBus.delayMinutes || 0,
-            scheduledTime: eta.nextBus.scheduledTime || '',
-            actualTime: eta.nextBus.departureTime || '',
-            isRealTime: true
-          });
+        try {
+          const eta = await maresmeTracker.getTargetStopETA(lId, '0');
+          const nb = eta?.nextBus;
+          if (nb) {
+            const isReal = nb.isRealTime !== false && nb.isRealtime !== false;
+            const delay = nb.expectedIso && nb.aimedIso
+              ? Math.max(0, Math.round((new Date(nb.expectedIso).getTime() - new Date(nb.aimedIso).getTime()) / 60000))
+              : (nb.delayMinutes || nb.delayMins || 0);
+
+            historyDb.recordDelayLog({
+              lineId: lId,
+              lineCode: eta.lineCode || lId.toUpperCase(),
+              agency: 'Moventis / Casas (Maresme)',
+              stopId: eta.targetStop?.id || 'parada',
+              stopName: eta.targetStop?.name || 'Parada',
+              delayMins: delay,
+              scheduledTime: nb.scheduledTime || nb.departureTime || '',
+              actualTime: nb.departureTime || '',
+              isRealTime: isReal
+            });
+          }
+        } catch (err) {
+          // Skip individual line
         }
       }
     } catch (e) {
@@ -219,21 +262,31 @@ class IngestionDaemon {
 
   async pollRodaliesTrains() {
     try {
-      const trains = ['r1', 'r2', 'r4'];
+      const trains = ['r1', 'r2', 'r2n', 'r2s', 'r3', 'r4', 'rg1', 'r11'];
       for (const tId of trains) {
-        const eta = await rodaliesTracker.getTargetStopETA(tId, '0');
-        if (eta && eta.nextBus && eta.nextBus.isRealtime) {
-          historyDb.recordDelayLog({
-            lineId: tId,
-            lineCode: eta.lineCode || tId.toUpperCase(),
-            agency: 'Renfe Rodalies de Catalunya',
-            stopId: eta.targetStop?.id || 'estacio',
-            stopName: eta.targetStop?.name || 'Estació',
-            delayMins: eta.nextBus.delayMinutes || 0,
-            scheduledTime: eta.nextBus.scheduledTime || '',
-            actualTime: eta.nextBus.departureTime || '',
-            isRealTime: true
-          });
+        try {
+          const eta = await rodaliesTracker.getTargetStopETA(tId, '0');
+          const nb = eta?.nextBus;
+          if (nb) {
+            const isReal = nb.isRealTime !== false && nb.isRealtime !== false;
+            const delay = nb.expectedIso && nb.aimedIso
+              ? Math.max(0, Math.round((new Date(nb.expectedIso).getTime() - new Date(nb.aimedIso).getTime()) / 60000))
+              : (nb.delayMinutes || nb.delayMins || 0);
+
+            historyDb.recordDelayLog({
+              lineId: tId,
+              lineCode: eta.lineCode || tId.toUpperCase(),
+              agency: 'Renfe Rodalies de Catalunya',
+              stopId: eta.targetStop?.id || 'estacio',
+              stopName: eta.targetStop?.name || 'Estació',
+              delayMins: delay,
+              scheduledTime: nb.scheduledTime || nb.departureTime || '',
+              actualTime: nb.departureTime || '',
+              isRealTime: isReal
+            });
+          }
+        } catch (err) {
+          // Skip individual line
         }
       }
     } catch (e) {
@@ -243,21 +296,31 @@ class IngestionDaemon {
 
   async pollSagalesLines() {
     try {
-      const sagalesLines = ['n82', '201', '400'];
+      const sagalesLines = ['603', 'n82', 'n83', 'n70', 'n71'];
       for (const sId of sagalesLines) {
-        const eta = await sagalesTracker.getTargetStopETA(sId, '0');
-        if (eta && eta.nextBus && eta.nextBus.isRealtime) {
-          historyDb.recordDelayLog({
-            lineId: sId,
-            lineCode: eta.lineCode || sId.toUpperCase(),
-            agency: 'Sagalés',
-            stopId: eta.targetStop?.id || 'parada',
-            stopName: eta.targetStop?.name || 'Parada',
-            delayMins: eta.nextBus.delayMinutes || 0,
-            scheduledTime: eta.nextBus.scheduledTime || '',
-            actualTime: eta.nextBus.departureTime || '',
-            isRealTime: true
-          });
+        try {
+          const eta = await sagalesTracker.getTargetStopETA(sId, '0');
+          const nb = eta?.nextBus;
+          if (nb) {
+            const isReal = nb.isRealTime !== false && nb.isRealtime !== false;
+            const delay = nb.expectedIso && nb.aimedIso
+              ? Math.max(0, Math.round((new Date(nb.expectedIso).getTime() - new Date(nb.aimedIso).getTime()) / 60000))
+              : (nb.delayMinutes || nb.delayMins || 0);
+
+            historyDb.recordDelayLog({
+              lineId: sId,
+              lineCode: eta.lineCode || sId.toUpperCase(),
+              agency: 'Sagalés',
+              stopId: eta.targetStop?.id || 'parada',
+              stopName: eta.targetStop?.name || 'Parada',
+              delayMins: delay,
+              scheduledTime: nb.scheduledTime || nb.departureTime || '',
+              actualTime: nb.departureTime || '',
+              isRealTime: isReal
+            });
+          }
+        } catch (err) {
+          // Skip individual line
         }
       }
     } catch (e) {
