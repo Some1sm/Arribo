@@ -157,8 +157,8 @@ class FlightRecorder {
     return historyDb.getLineDelayStats(lineCode, 24);
   }
 
-  getJournalismReport(hours = 24) {
-    return historyDb.getJournalismReport(hours);
+  getJournalismReport(hours = 24, allLinesCatalog = []) {
+    return historyDb.getJournalismReport(hours, allLinesCatalog);
   }
 
   exportCsv(hours = 48) {

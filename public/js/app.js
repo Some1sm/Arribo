@@ -583,25 +583,28 @@ class TransitApp {
       };
     }
     const filterText = (this.journalismFilterText || '').trim().toLowerCase();
+    const norm = (str) => String(str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const cleanFilter = norm(filterText);
 
     const s = report.summary || {};
     let mostDelayed = [...(report.rankingMostDelayed || [])];
     let worstStops = [...(report.rankingWorstStops || [])];
     let agencies = [...(report.agencyStats || [])];
 
-    // Apply text search filtering
+    // Apply text search filtering (with punctuation-agnostic matching e.g. c10 matches C-10)
     if (filterText) {
       mostDelayed = mostDelayed.filter(l =>
-        (l.lineCode && l.lineCode.toLowerCase().includes(filterText)) ||
-        (l.agency && l.agency.toLowerCase().includes(filterText))
+        (l.lineCode && (l.lineCode.toLowerCase().includes(filterText) || norm(l.lineCode).includes(cleanFilter))) ||
+        (l.agency && (l.agency.toLowerCase().includes(filterText) || norm(l.agency).includes(cleanFilter))) ||
+        (l.name && (l.name.toLowerCase().includes(filterText) || norm(l.name).includes(cleanFilter)))
       );
       worstStops = worstStops.filter(st =>
-        (st.stopName && st.stopName.toLowerCase().includes(filterText)) ||
-        (st.lineCode && st.lineCode.toLowerCase().includes(filterText)) ||
-        (st.agency && st.agency.toLowerCase().includes(filterText))
+        (st.stopName && (st.stopName.toLowerCase().includes(filterText) || norm(st.stopName).includes(cleanFilter))) ||
+        (st.lineCode && (st.lineCode.toLowerCase().includes(filterText) || norm(st.lineCode).includes(cleanFilter))) ||
+        (st.agency && (st.agency.toLowerCase().includes(filterText) || norm(st.agency).includes(cleanFilter)))
       );
       agencies = agencies.filter(a =>
-        (a.agency && a.agency.toLowerCase().includes(filterText))
+        (a.agency && (a.agency.toLowerCase().includes(filterText) || norm(a.agency).includes(cleanFilter)))
       );
     }
 

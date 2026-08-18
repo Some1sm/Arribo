@@ -69,10 +69,7 @@ function getTrackerForLine(lineId) {
 // 1. UNIVERSAL TRANSIT LINES & SEARCH
 // ==========================================
 
-// List all available transit lines across all providers
-app.get('/api/lines', async (req, res) => {
-  await Promise.allSettled([ambTracker.init(), rodaliesTracker.init(), cataloniaTracker.init()]);
-
+function getAllTransitLines() {
   const c10Line = {
     id: 'c10',
     code: 'C-10',
@@ -101,7 +98,7 @@ app.get('/api/lines', async (req, res) => {
 
   const extraCatLines = allCatLines.filter(l => !seenCodes.has(String(l.code).toLowerCase()));
 
-  const combinedLines = [
+  return [
     c10Line,
     ...maresmeLines,
     ...rodaliesLines,
@@ -110,6 +107,12 @@ app.get('/api/lines', async (req, res) => {
     ...mataroLines,
     ...extraCatLines
   ];
+}
+
+// List all available transit lines across all providers
+app.get('/api/lines', async (req, res) => {
+  await Promise.allSettled([ambTracker.init(), rodaliesTracker.init(), cataloniaTracker.init()]);
+  const combinedLines = getAllTransitLines();
 
   res.json({
     success: true,
@@ -653,9 +656,11 @@ app.get('/api/line/:lineId/stats', (req, res) => {
 });
 
 // Journalism Investigation Report across all lines & operators
-app.get('/api/analytics/journalism', (req, res) => {
+app.get('/api/analytics/journalism', async (req, res) => {
+  await Promise.allSettled([ambTracker.init(), rodaliesTracker.init(), cataloniaTracker.init()]);
   const hours = parseInt(req.query.hours || '24', 10);
-  const report = flightRecorder.getJournalismReport(hours);
+  const allLines = getAllTransitLines();
+  const report = flightRecorder.getJournalismReport(hours, allLines);
   res.json({
     success: true,
     report
