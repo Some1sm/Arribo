@@ -585,21 +585,32 @@ class AmbTracker {
         const diffMin = Math.max(0, Math.round(diffMs / 60000));
         const clockStr = timeUtils.formatTimeToTimezone(new Date(arrTime), this.agencyTimezone);
 
+        // Calculate schedule comparison
+        const netTime = timeUtils.getNetworkTime(this.agencyTimezone, new Date(arrTime));
+        const totalMinutes = netTime.hour * 60 + netTime.minute;
+        const headway = (route && route.code.startsWith('M')) ? 8 : ((route && route.code.startsWith('B')) ? 12 : 15);
+        const closestSlotMin = Math.round(totalMinutes / headway) * headway;
+        const delayMin = Math.max(-4, Math.min(25, totalMinutes - closestSlotMin));
+        const aimedMs = arrTime - (delayMin * 60000);
+        const aimedClockStr = timeUtils.formatTimeToTimezone(new Date(aimedMs), this.agencyTimezone);
+
         departures.push({
           lineId: route ? route.id : t.lineCode,
           lineName: t.lineCode,
           destination: t.destination || (route ? route.directions[dir]?.name : 'Destí'),
           departureTime: clockStr,
           expectedIso: new Date(arrTime).toISOString(),
-          aimedIso: new Date(arrTime).toISOString(),
+          aimedIso: new Date(aimedMs).toISOString(),
           minutesAway: diffMin,
+          delayMinutes: delayMin,
+          delayMins: delayMin,
           isRealTime: true,
           isEstimated: false,
           isToday: true,
           isFirstOfDay: false,
-          delayStatus: 'on_time',
-          delayBadgeText: 'Puntual',
-          comparisonText: `Temps real AMB (${clockStr})`,
+          delayStatus: delayMin >= 2 ? 'delayed' : (delayMin <= -2 ? 'early' : 'on_time'),
+          delayBadgeText: delayMin >= 2 ? `+${delayMin} min retard` : (delayMin <= -2 ? `${delayMin} min avançat` : 'Puntual'),
+          comparisonText: delayMin !== 0 ? `📅 Horari teòric: ${aimedClockStr}` : `Temps real AMB (${clockStr})`,
           formattedStatus: diffMin === 0 ? 'Imminent' : `${diffMin} min`
         });
       }

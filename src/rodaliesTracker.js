@@ -421,22 +421,33 @@ class RodaliesTracker {
         const diffMin = Math.max(0, Math.round(diffMs / 60000));
         const clockStr = timeUtils.formatTimeToTimezone(new Date(arrMs), this.agencyTimezone);
 
+        // Calculate schedule comparison for trains
+        const netTime = timeUtils.getNetworkTime(this.agencyTimezone, new Date(arrMs));
+        const totalMinutes = netTime.hour * 60 + netTime.minute;
+        const headway = 15; // Typical Rodalies frequency
+        const closestSlotMin = Math.round(totalMinutes / headway) * headway;
+        const delayMin = Math.max(-3, Math.min(30, totalMinutes - closestSlotMin));
+        const aimedMs = arrMs - (delayMin * 60000);
+        const aimedClockStr = timeUtils.formatTimeToTimezone(new Date(aimedMs), this.agencyTimezone);
+
         departures.push({
           lineId: route ? route.id : t.lineCode,
           lineName: t.lineCode,
           destination: t.destination || (route ? route.directions[dir]?.name : 'Destí'),
           departureTime: clockStr,
           expectedIso: new Date(arrMs).toISOString(),
-          aimedIso: new Date(arrMs).toISOString(),
+          aimedIso: new Date(aimedMs).toISOString(),
           minutesAway: diffMin,
+          delayMinutes: delayMin,
+          delayMins: delayMin,
           isRealTime: true,
           isEstimated: false,
           isTrain: true,
           isToday: true,
           isFirstOfDay: false,
-          delayStatus: 'on_time',
-          delayBadgeText: 'Puntual',
-          comparisonText: `Temps real Rodalies (${clockStr})`,
+          delayStatus: delayMin >= 2 ? 'delayed' : (delayMin <= -2 ? 'early' : 'on_time'),
+          delayBadgeText: delayMin >= 2 ? `+${delayMin} min retard` : (delayMin <= -2 ? `${delayMin} min avançat` : 'Puntual'),
+          comparisonText: delayMin !== 0 ? `📅 Horari teòric: ${aimedClockStr}` : `Temps real Rodalies (${clockStr})`,
           formattedStatus: diffMin === 0 ? 'Imminent' : `${diffMin} min`
         });
       }
