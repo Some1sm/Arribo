@@ -544,22 +544,102 @@ class TransitApp {
     }
   }
 
+  }
+
   closeJournalismModal() {
     const backdrop = document.getElementById('journalism-modal-backdrop');
     if (backdrop) backdrop.classList.remove('active');
+  }
+
+  handleJournalismSort(tableKey, columnKey) {
+    if (!this.journalismSorts) {
+      this.journalismSorts = {};
+    }
+    const current = this.journalismSorts[tableKey] || { key: null, asc: false };
+    if (current.key === columnKey) {
+      current.asc = !current.asc;
+    } else {
+      current.key = columnKey;
+      current.asc = columnKey === 'lineCode' || columnKey === 'agency' || columnKey === 'stopName';
+    }
+    this.journalismSorts[tableKey] = current;
+    if (this.currentJournalismReport) {
+      this.renderJournalismReport(this.currentJournalismReport);
+    }
   }
 
   renderJournalismReport(report) {
     const container = document.getElementById('journalism-content-container');
     if (!container) return;
 
+    this.currentJournalismReport = report;
+    if (!this.journalismSorts) {
+      this.journalismSorts = {
+        mostDelayed: { key: 'avgDelay', asc: false },
+        worstStops: { key: 'avgDelay', asc: false },
+        agencies: { key: 'totalSamples', asc: false }
+      };
+    }
+    const filterText = (this.journalismFilterText || '').trim().toLowerCase();
+
     const s = report.summary || {};
-    const mostDelayed = report.rankingMostDelayed || [];
-    const mostPunctual = report.rankingBestPunctuality || [];
-    const worstStops = report.rankingWorstStops || [];
-    const agencies = report.agencyStats || [];
+    let mostDelayed = [...(report.rankingMostDelayed || [])];
+    let worstStops = [...(report.rankingWorstStops || [])];
+    let agencies = [...(report.agencyStats || [])];
+
+    // Apply text search filtering
+    if (filterText) {
+      mostDelayed = mostDelayed.filter(l =>
+        (l.lineCode && l.lineCode.toLowerCase().includes(filterText)) ||
+        (l.agency && l.agency.toLowerCase().includes(filterText))
+      );
+      worstStops = worstStops.filter(st =>
+        (st.stopName && st.stopName.toLowerCase().includes(filterText)) ||
+        (st.lineCode && st.lineCode.toLowerCase().includes(filterText)) ||
+        (st.agency && st.agency.toLowerCase().includes(filterText))
+      );
+      agencies = agencies.filter(a =>
+        (a.agency && a.agency.toLowerCase().includes(filterText))
+      );
+    }
+
+    // Helper sort function
+    const applySort = (list, sortConfig) => {
+      if (!sortConfig || !sortConfig.key) return list;
+      const { key, asc } = sortConfig;
+      return list.sort((a, b) => {
+        let valA = a[key];
+        let valB = b[key];
+        if (typeof valA === 'string') {
+          return asc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+        }
+        valA = Number(valA) || 0;
+        valB = Number(valB) || 0;
+        return asc ? valA - valB : valB - valA;
+      });
+    };
+
+    mostDelayed = applySort(mostDelayed, this.journalismSorts.mostDelayed);
+    worstStops = applySort(worstStops, this.journalismSorts.worstStops);
+    agencies = applySort(agencies, this.journalismSorts.agencies);
+
+    const getSortIndicator = (tableKey, colKey) => {
+      const cur = this.journalismSorts[tableKey];
+      if (cur && cur.key === colKey) {
+        return cur.asc ? '<span style="color:var(--brand-primary); margin-left:4px;">▲</span>' : '<span style="color:var(--brand-primary); margin-left:4px;">▼</span>';
+      }
+      return '<span style="opacity:0.3; margin-left:4px;">↕</span>';
+    };
 
     let html = `
+      <!-- Search Filter Bar -->
+      <div style="margin-bottom:1.2rem; display:flex; gap:0.5rem; align-items:center;">
+        <div style="position:relative; flex:1;">
+          <input type="text" id="journalism-search-input" value="${this.journalismFilterText || ''}" placeholder="🔍 Filtra per línia, parada o empresa operadora (ex: C-10, e11.1, B25, Mataró, Moventis, Sagalés)..." style="width:100%; padding:0.65rem 0.9rem; background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:8px; color:var(--text-primary); font-size:0.85rem; outline:none;" />
+          ${this.journalismFilterText ? '<button id="journalism-clear-filter" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:0.9rem;">✕</button>' : ''}
+        </div>
+      </div>
+
       <!-- KPI Stats Grid -->
       <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.75rem; margin-bottom:1.25rem;">
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
@@ -589,19 +669,20 @@ class TransitApp {
 
       <!-- Ranking: Most Delayed Lines -->
       <div style="margin-bottom:1.5rem;">
-        <h4 style="font-size:0.95rem; font-weight:700; margin-bottom:0.6rem; display:flex; align-items:center; gap:0.4rem;">
-          <span>🚨 Línies amb Més Retard Acumulat (Top 10)</span>
+        <h4 style="font-size:0.95rem; font-weight:700; margin-bottom:0.6rem; display:flex; align-items:center; justify-content:space-between;">
+          <span style="display:flex; align-items:center; gap:0.4rem;">🚨 Línies amb Més Retard Acumulat</span>
+          <span style="font-size:0.75rem; font-weight:400; color:var(--text-muted);">Clica a les capçaleres per ordenar ↕</span>
         </h4>
-        ${mostDelayed.length === 0 ? '<div style="color:var(--text-muted); font-size:0.85rem;">Sense retards significatius registrats en aquest període.</div>' : `
+        ${mostDelayed.length === 0 ? '<div style="color:var(--text-muted); font-size:0.85rem; padding:0.8rem; background:var(--bg-elevated); border-radius:8px;">Sense retards registrats o cap línia coincideix amb el filtre.</div>' : `
           <div style="border:1px solid var(--border-subtle); border-radius:10px; overflow:hidden;">
             <table style="width:100%; border-collapse:collapse; font-size:0.83rem; text-align:left;">
               <thead>
                 <tr style="background:var(--bg-surface); border-bottom:1px solid var(--border-subtle); color:var(--text-muted); font-size:0.72rem; text-transform:uppercase;">
-                  <th style="padding:0.6rem 0.8rem;">Línia</th>
-                  <th style="padding:0.6rem 0.8rem;">Operador</th>
-                  <th style="padding:0.6rem 0.8rem;">Retard Mitjà</th>
-                  <th style="padding:0.6rem 0.8rem;">Retard Màx.</th>
-                  <th style="padding:0.6rem 0.8rem;">% Expedicions Tardanes</th>
+                  <th onclick="window.transitApp.handleJournalismSort('mostDelayed', 'lineCode')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">Línia ${getSortIndicator('mostDelayed', 'lineCode')}</th>
+                  <th onclick="window.transitApp.handleJournalismSort('mostDelayed', 'agency')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">Operador ${getSortIndicator('mostDelayed', 'agency')}</th>
+                  <th onclick="window.transitApp.handleJournalismSort('mostDelayed', 'avgDelay')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">Retard Mitjà ${getSortIndicator('mostDelayed', 'avgDelay')}</th>
+                  <th onclick="window.transitApp.handleJournalismSort('mostDelayed', 'maxDelay')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">Retard Màx. ${getSortIndicator('mostDelayed', 'maxDelay')}</th>
+                  <th onclick="window.transitApp.handleJournalismSort('mostDelayed', 'latePercentage')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">% Expedicions Tardanes ${getSortIndicator('mostDelayed', 'latePercentage')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -624,37 +705,38 @@ class TransitApp {
 
       <!-- Ranking: Worst Stops (Bottlenecks) -->
       <div style="margin-bottom:1.5rem;">
-        <h4 style="font-size:0.95rem; font-weight:700; margin-bottom:0.6rem; display:flex; align-items:center; gap:0.4rem;">
-          <span>📍 Colls d'Ampolla: Parades amb Més Retard Acumulat (Top 10)</span>
+        <h4 style="font-size:0.95rem; font-weight:700; margin-bottom:0.6rem; display:flex; align-items:center; justify-content:space-between;">
+          <span style="display:flex; align-items:center; gap:0.4rem;">📍 Colls d'Ampolla: Parades amb Més Retard</span>
+          <span style="font-size:0.75rem; font-weight:400; color:var(--text-muted);">Clica a les capçaleres per ordenar ↕</span>
         </h4>
-        ${worstStops.length === 0 ? '<div style="color:var(--text-muted); font-size:0.85rem;">Sense punts negres de retards destacats en aquest període.</div>' : `
+        ${worstStops.length === 0 ? '<div style="color:var(--text-muted); font-size:0.85rem; padding:0.8rem; background:var(--bg-elevated); border-radius:8px;">Sense punts negres registrats o cap parada coincideix amb el filtre.</div>' : `
           <div style="border:1px solid var(--border-subtle); border-radius:10px; overflow:hidden;">
             <table style="width:100%; border-collapse:collapse; font-size:0.83rem; text-align:left;">
               <thead>
                 <tr style="background:var(--bg-surface); border-bottom:1px solid var(--border-subtle); color:var(--text-muted); font-size:0.72rem; text-transform:uppercase;">
-                  <th style="padding:0.6rem 0.8rem;">Parada (Punt Negre)</th>
-                  <th style="padding:0.6rem 0.8rem;">Línia</th>
-                  <th style="padding:0.6rem 0.8rem;">Operador</th>
-                  <th style="padding:0.6rem 0.8rem;">Retard Mitjà</th>
-                  <th style="padding:0.6rem 0.8rem;">Retard Màx.</th>
-                  <th style="padding:0.6rem 0.8rem;">% Retards Greus (&ge;5 min)</th>
+                  <th onclick="window.transitApp.handleJournalismSort('worstStops', 'stopName')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">Parada (Punt Negre) ${getSortIndicator('worstStops', 'stopName')}</th>
+                  <th onclick="window.transitApp.handleJournalismSort('worstStops', 'lineCode')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">Línia ${getSortIndicator('worstStops', 'lineCode')}</th>
+                  <th onclick="window.transitApp.handleJournalismSort('worstStops', 'agency')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">Operador ${getSortIndicator('worstStops', 'agency')}</th>
+                  <th onclick="window.transitApp.handleJournalismSort('worstStops', 'avgDelay')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">Retard Mitjà ${getSortIndicator('worstStops', 'avgDelay')}</th>
+                  <th onclick="window.transitApp.handleJournalismSort('worstStops', 'maxDelay')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">Retard Màx. ${getSortIndicator('worstStops', 'maxDelay')}</th>
+                  <th onclick="window.transitApp.handleJournalismSort('worstStops', 'severeLatePct')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">% Retards Greus ${getSortIndicator('worstStops', 'severeLatePct')}</th>
                 </tr>
               </thead>
               <tbody>
-                ${worstStops.map((s, i) => `
+                ${worstStops.map((st, i) => `
                   <tr style="border-bottom:1px solid var(--border-subtle); background:${i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'};">
                     <td style="padding:0.6rem 0.8rem; font-weight:600; color:var(--text-primary);">
                       <div style="display:flex; align-items:center; gap:0.4rem;">
                         <span style="color:#f59e0b;">📍</span>
-                        <span>${s.stopName}</span>
+                        <span>${st.stopName}</span>
                       </div>
                     </td>
-                    <td style="padding:0.6rem 0.8rem; font-weight:700; color:var(--brand-primary);">${s.lineCode}</td>
-                    <td style="padding:0.6rem 0.8rem; color:var(--text-muted);">${s.agency}</td>
-                    <td style="padding:0.6rem 0.8rem; font-weight:700; color:#ef4444;">+${s.avgDelay} min</td>
-                    <td style="padding:0.6rem 0.8rem; color:var(--text-muted);">+${s.maxDelay} min</td>
+                    <td style="padding:0.6rem 0.8rem; font-weight:700; color:var(--brand-primary);">${st.lineCode}</td>
+                    <td style="padding:0.6rem 0.8rem; color:var(--text-muted);">${st.agency}</td>
+                    <td style="padding:0.6rem 0.8rem; font-weight:700; color:#ef4444;">+${st.avgDelay} min</td>
+                    <td style="padding:0.6rem 0.8rem; color:var(--text-muted);">+${st.maxDelay} min</td>
                     <td style="padding:0.6rem 0.8rem;">
-                      <span style="background:${s.severeLatePct >= 30 ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.15)'}; color:${s.severeLatePct >= 30 ? '#f87171' : '#fbbf24'}; padding:0.15rem 0.45rem; border-radius:6px; font-weight:600;">${s.severeLatePct}%</span>
+                      <span style="background:${st.severeLatePct >= 30 ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.15)'}; color:${st.severeLatePct >= 30 ? '#f87171' : '#fbbf24'}; padding:0.15rem 0.45rem; border-radius:6px; font-weight:600;">${st.severeLatePct}%</span>
                     </td>
                   </tr>
                 `).join('')}
@@ -666,19 +748,20 @@ class TransitApp {
 
       <!-- Ranking: Operators Performance -->
       <div style="margin-bottom:1.5rem;">
-        <h4 style="font-size:0.95rem; font-weight:700; margin-bottom:0.6rem; display:flex; align-items:center; gap:0.4rem;">
-          <span>🏢 Comparativa de Puntualitat per Empresa Operadora</span>
+        <h4 style="font-size:0.95rem; font-weight:700; margin-bottom:0.6rem; display:flex; align-items:center; justify-content:space-between;">
+          <span style="display:flex; align-items:center; gap:0.4rem;">🏢 Comparativa per Empresa Operadora</span>
+          <span style="font-size:0.75rem; font-weight:400; color:var(--text-muted);">Clica a les capçaleres per ordenar ↕</span>
         </h4>
-        ${agencies.length === 0 ? '<div style="color:var(--text-muted); font-size:0.85rem;">Recopilant mostres d\'operadors...</div>' : `
+        ${agencies.length === 0 ? '<div style="color:var(--text-muted); font-size:0.85rem; padding:0.8rem; background:var(--bg-elevated); border-radius:8px;">Recopilant mostres d\'operadors...</div>' : `
           <div style="border:1px solid var(--border-subtle); border-radius:10px; overflow:hidden;">
             <table style="width:100%; border-collapse:collapse; font-size:0.83rem; text-align:left;">
               <thead>
                 <tr style="background:var(--bg-surface); border-bottom:1px solid var(--border-subtle); color:var(--text-muted); font-size:0.72rem; text-transform:uppercase;">
-                  <th style="padding:0.6rem 0.8rem;">Empresa</th>
-                  <th style="padding:0.6rem 0.8rem;">Línies</th>
-                  <th style="padding:0.6rem 0.8rem;">Mostres</th>
-                  <th style="padding:0.6rem 0.8rem;">Retard Mitjà</th>
-                  <th style="padding:0.6rem 0.8rem;">Índex de Puntualitat</th>
+                  <th onclick="window.transitApp.handleJournalismSort('agencies', 'agency')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">Empresa ${getSortIndicator('agencies', 'agency')}</th>
+                  <th onclick="window.transitApp.handleJournalismSort('agencies', 'linesCount')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">Línies ${getSortIndicator('agencies', 'linesCount')}</th>
+                  <th onclick="window.transitApp.handleJournalismSort('agencies', 'totalSamples')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">Mostres ${getSortIndicator('agencies', 'totalSamples')}</th>
+                  <th onclick="window.transitApp.handleJournalismSort('agencies', 'avgDelay')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">Retard Mitjà ${getSortIndicator('agencies', 'avgDelay')}</th>
+                  <th onclick="window.transitApp.handleJournalismSort('agencies', 'onTimePct')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">Índex de Puntualitat ${getSortIndicator('agencies', 'onTimePct')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -701,6 +784,28 @@ class TransitApp {
     `;
 
     container.innerHTML = html;
+
+    // Attach search event listener
+    const searchInput = document.getElementById('journalism-search-input');
+    if (searchInput) {
+      searchInput.addEventListener('input', (e) => {
+        this.journalismFilterText = e.target.value;
+        this.renderJournalismReport(this.currentJournalismReport);
+        const refocused = document.getElementById('journalism-search-input');
+        if (refocused) {
+          refocused.focus();
+          refocused.setSelectionRange(refocused.value.length, refocused.value.length);
+        }
+      });
+    }
+
+    const clearBtn = document.getElementById('journalism-clear-filter');
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => {
+        this.journalismFilterText = '';
+        this.renderJournalismReport(this.currentJournalismReport);
+      });
+    }
   }
 
   renderDirectionButtons(directions, currentDir) {
