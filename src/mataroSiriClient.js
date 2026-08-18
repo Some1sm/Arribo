@@ -10,6 +10,7 @@ class MataroSiriClient {
     this.accountKey = 'Mataro*WS';
     this.cache = new Map();
     this.cacheTtlMs = 12000; // 12-second live cache
+    this.lastWarnTime = 0;
   }
 
   callSoap(action, soapXml) {
@@ -146,8 +147,12 @@ class MataroSiriClient {
       this.cache.set(cacheKey, { ts: Date.now(), data: vehicles });
       return vehicles;
     } catch (err) {
+      const now = Date.now();
       if (err.message.includes('timeout') || err.message.includes('ECONNRESET') || err.message.includes('ECONNREFUSED')) {
-        console.warn(`[SIRI] GetVehicleMonitoring(${lineRef}): unreachable from this host, using cached data`);
+        if (now - this.lastWarnTime > 60000) {
+          console.warn(`[SIRI] Avanza SIRI server transient issue (${err.message}). Using live cache & dead-reckoning fallback.`);
+          this.lastWarnTime = now;
+        }
       } else {
         console.error(`[SIRI Error] GetVehicleMonitoring(${lineRef}):`, err.message);
       }
@@ -242,8 +247,12 @@ class MataroSiriClient {
       this.cache.set(cacheKey, { ts: Date.now(), data: arrivals });
       return arrivals;
     } catch (err) {
+      const now = Date.now();
       if (err.message.includes('timeout') || err.message.includes('ECONNRESET') || err.message.includes('ECONNREFUSED')) {
-        console.warn(`[SIRI] GetStopMonitoring(${stopId}): unreachable from this host, using cached data`);
+        if (now - this.lastWarnTime > 60000) {
+          console.warn(`[SIRI] Avanza SIRI server transient issue (${err.message}). Using live cache & dead-reckoning fallback.`);
+          this.lastWarnTime = now;
+        }
       } else {
         console.error(`[SIRI Error] GetStopMonitoring(${stopId}):`, err.message);
       }
