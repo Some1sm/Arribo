@@ -504,7 +504,7 @@
       </div>
 
       <!-- Timeframe Toggle & CSV Export Row -->
-      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-bottom:1rem;">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.85rem;">
         <div class="line-picker-filter-tabs" style="margin-bottom:0;" id="journalism-timeframe-tabs">
           <button type="button" class="line-filter-tab active" data-hours="24">⏱️ Darreres 24h</button>
           <button type="button" class="line-filter-tab" data-hours="48">📅 48 hores</button>
@@ -514,6 +514,12 @@
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Descarregar CSV per Excel
         </a>
+      </div>
+
+      <!-- Dedicated Observatori Search Bar -->
+      <div class="line-picker-search-bar" style="margin-bottom: 1rem;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="journalism-search-input" class="line-picker-search-input" placeholder="🔍 Cerca per línia (ex: C-10, B25), parada (ex: Hospital, Tetuan) o empresa (ex: Moventis, Sagalés, TUSGSAL)..." autocomplete="off">
       </div>
 
       <!-- Journalism Content Dynamic Container -->

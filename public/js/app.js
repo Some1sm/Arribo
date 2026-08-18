@@ -634,14 +634,6 @@ class TransitApp {
     };
 
     let html = `
-      <!-- Search Filter Bar -->
-      <div style="margin-bottom:1.2rem; display:flex; gap:0.5rem; align-items:center;">
-        <div style="position:relative; flex:1;">
-          <input type="text" id="journalism-search-input" value="${this.journalismFilterText || ''}" placeholder="🔍 Filtra per línia, parada o empresa operadora (ex: C-10, e11.1, B25, Mataró, Moventis, Sagalés)..." style="width:100%; padding:0.65rem 0.9rem; background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:8px; color:var(--text-primary); font-size:0.85rem; outline:none;" />
-          ${this.journalismFilterText ? '<button id="journalism-clear-filter" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:0.9rem;">✕</button>' : ''}
-        </div>
-      </div>
-
       <!-- KPI Stats Grid -->
       <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.75rem; margin-bottom:1.25rem;">
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
@@ -786,28 +778,6 @@ class TransitApp {
     `;
 
     container.innerHTML = html;
-
-    // Attach search event listener
-    const searchInput = document.getElementById('journalism-search-input');
-    if (searchInput) {
-      searchInput.addEventListener('input', (e) => {
-        this.journalismFilterText = e.target.value;
-        this.renderJournalismReport(this.currentJournalismReport);
-        const refocused = document.getElementById('journalism-search-input');
-        if (refocused) {
-          refocused.focus();
-          refocused.setSelectionRange(refocused.value.length, refocused.value.length);
-        }
-      });
-    }
-
-    const clearBtn = document.getElementById('journalism-clear-filter');
-    if (clearBtn) {
-      clearBtn.addEventListener('click', () => {
-        this.journalismFilterText = '';
-        this.renderJournalismReport(this.currentJournalismReport);
-      });
-    }
   }
 
   renderDirectionButtons(directions, currentDir) {
@@ -1921,6 +1891,14 @@ class TransitApp {
         const hours = parseInt(btn.getAttribute('data-hours') || '24', 10);
         this.openJournalismModal(hours);
       });
+    });
+
+    const searchInput = document.getElementById('journalism-search-input');
+    searchInput?.addEventListener('input', (e) => {
+      this.journalismFilterText = e.target.value;
+      if (this.currentJournalismReport) {
+        this.renderJournalismReport(this.currentJournalismReport);
+      }
     });
 
     document.addEventListener('keydown', (e) => {
