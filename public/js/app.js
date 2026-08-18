@@ -544,8 +544,6 @@ class TransitApp {
     }
   }
 
-  }
-
   closeJournalismModal() {
     const backdrop = document.getElementById('journalism-modal-backdrop');
     if (backdrop) backdrop.classList.remove('active');
