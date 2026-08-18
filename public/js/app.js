@@ -346,11 +346,6 @@ class TransitApp {
   }
 
   updateHeaderBrand(lData) {
-    const badge = document.getElementById('header-line-badge');
-    const modeBadge = document.getElementById('header-mode-badge');
-    const subtitle = document.getElementById('header-subtitle');
-    const mapTitle = document.getElementById('map-line-title');
-
     const code = lData.code || lData.id || 'C-10';
     const color = lData.color || '#009485';
     const isMataroUrban = lData.group === 'mataro' || ['1','2','3','4','5','6','7','8'].includes(String(lData.id));
@@ -366,6 +361,15 @@ class TransitApp {
       else if (lData.group === 'moventis' || lData.id === 'c10' || code.startsWith('C-')) modeText = 'Interurbà Maresme';
       else modeText = lData.agency || 'Interurbà';
     }
+
+    const headerKey = `${code}_${color}_${modeText}_${lData.name || ''}`;
+    if (this._lastHeaderKey === headerKey) return;
+    this._lastHeaderKey = headerKey;
+
+    const badge = document.getElementById('header-line-badge');
+    const modeBadge = document.getElementById('header-mode-badge');
+    const subtitle = document.getElementById('header-subtitle');
+    const mapTitle = document.getElementById('map-line-title');
 
     if (badge) {
       badge.textContent = code;
@@ -2185,12 +2189,16 @@ class TransitApp {
 
     if (status === 'online') {
       dot.style.background = '#10b981';
+      dot.style.boxShadow = '0 0 8px rgba(16, 185, 129, 0.6)';
       text.textContent = 'En directe';
     } else if (status === 'syncing') {
       dot.style.background = '#38bdf8';
-      text.textContent = 'Sincronitzant...';
+      dot.style.boxShadow = '0 0 10px rgba(56, 189, 248, 0.8)';
+      // Keep label stable as 'En directe' so the header container never jumps or resizes
+      text.textContent = 'En directe';
     } else {
       dot.style.background = '#ef4444';
+      dot.style.boxShadow = 'none';
       text.textContent = 'Desconnectat';
     }
   }

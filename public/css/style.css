@@ -285,12 +285,14 @@ body {
   display: flex;
   align-items: center;
   gap: 0.65rem;
+  flex-shrink: 0;
 }
 
 /* Universal Global Stop Search */
 .global-search-container {
   position: relative;
-  width: 290px;
+  width: 280px;
+  flex-shrink: 0;
 }
 
 .search-icon-svg {
@@ -313,6 +315,7 @@ body {
   font-family: inherit;
   outline: none;
   transition: all var(--transition-fast);
+  box-sizing: border-box;
 }
 
 .global-search-input:focus {
@@ -401,6 +404,7 @@ body {
 .active-buses-chip {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.4rem;
   background: rgba(0, 148, 133, 0.12);
   border: 1px solid rgba(0, 148, 133, 0.35);
@@ -410,16 +414,21 @@ body {
   font-weight: 700;
   color: var(--c10-primary-light);
   white-space: nowrap;
+  min-width: 90px;
+  flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 /* Live Heartbeat Indicator & Diagnostic Popover */
 .live-indicator-wrapper {
   position: relative;
+  flex-shrink: 0;
 }
 
 .live-indicator {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.45rem;
   background: rgba(16, 185, 129, 0.12);
   border: 1px solid rgba(16, 185, 129, 0.3);
@@ -432,6 +441,9 @@ body {
   white-space: nowrap;
   cursor: pointer;
   transition: all var(--transition-fast);
+  min-width: 106px;
+  flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .live-indicator:hover {
