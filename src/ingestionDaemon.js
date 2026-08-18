@@ -115,7 +115,22 @@ class IngestionDaemon {
 
   async pollAmbLines() {
     try {
-      const targetAmbLines = ['b25', 'm28', 'l80', 'l82', 'a1', 'm30', 'b24', 'v15', 'h12', 'd20', 'pa2'];
+      const targetAmbLines = [
+        // TUSGSAL MetroBus (Barcelonès Nord)
+        'm1', 'm6', 'm19', 'm26', 'm27', 'm28', 'm30',
+        // Baix Llobregat & L'Hospitalet MetroBus
+        'm5', 'm12', 'm14', 'm15', 'm75',
+        // Key TUSGSAL urban & interurban B-lines
+        'b25', 'b24', 'b20', 'b21', 'b23', 'b29', 'b3', 'b18', 'b80', 'b1', 'b2',
+        // TUSGSAL NitBus
+        'n0', 'n1', 'n2', 'n9',
+        // Avanza Baix Llobregat
+        'l80', 'l82', 'l85', 'l86', 'l94', 'l95',
+        // Monbus Aerobús & Urbans
+        'a1', 'a2', 'pa2',
+        // TMB High Frequency Trunk Corridors
+        'v15', 'h12', 'd20', 'd40', 'h6', 'v21'
+      ];
       for (const lId of targetAmbLines) {
         try {
           const eta = await ambTracker.getTargetStopETA(lId, null, '0');
