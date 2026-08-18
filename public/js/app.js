@@ -1500,6 +1500,16 @@ class TransitApp {
       });
     }
 
+    const filterTabsContainer = document.getElementById('line-picker-filter-tabs');
+    if (filterTabsContainer) {
+      filterTabsContainer.addEventListener('wheel', (e) => {
+        if (e.deltaY !== 0) {
+          e.preventDefault();
+          filterTabsContainer.scrollLeft += e.deltaY;
+        }
+      }, { passive: false });
+    }
+
     document.querySelectorAll('.line-filter-tab').forEach(tab => {
       tab.addEventListener('click', (e) => {
         e.preventDefault();
