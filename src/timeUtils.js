@@ -143,7 +143,7 @@ function localTimeToUtcDate(year, monthIndex, day, hour, minute, second = 0, tim
 function formatTimeToTimezone(dateOrIso, timeZone = 'Europe/Madrid') {
   if (!dateOrIso) return '--:--';
   const d = typeof dateOrIso === 'string' ? new Date(dateOrIso) : dateOrIso;
-  if (isNaN(d.getTime())) return '--:--';
+  if (isNaN(d.getTime()) || d.getFullYear() < 2000) return '--:--';
   return d.toLocaleTimeString('en-GB', {
     timeZone,
     hour: '2-digit',

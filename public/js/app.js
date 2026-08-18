@@ -858,7 +858,7 @@ class TransitApp {
 
   renderEtaDisplay(next, etaBigEl, etaClockEl, etaPillEl, etaStatusText) {
     if (next) {
-      const clockTime = next.expectedIso
+      const clockTime = (next.expectedIso && !next.expectedIso.startsWith('0001-') && !next.expectedIso.startsWith('1970-'))
         ? new Date(next.expectedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
         : (next.departureTime || '--:--');
 
@@ -935,11 +935,11 @@ class TransitApp {
     }
 
     container.innerHTML = departures.slice(0, 8).map((dep, idx) => {
-      const clockTime = dep.expectedIso
+      const clockTime = (dep.expectedIso && !dep.expectedIso.startsWith('0001-') && !dep.expectedIso.startsWith('1970-'))
         ? new Date(dep.expectedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
         : (dep.departureTime || '--:--');
 
-      const schedTime = dep.aimedIso
+      const schedTime = (dep.aimedIso && !dep.aimedIso.startsWith('0001-') && !dep.aimedIso.startsWith('1970-'))
         ? new Date(dep.aimedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
         : (dep.isRealTime ? dep.departureTime : null);
 
@@ -1342,11 +1342,11 @@ class TransitApp {
         }
 
         listEl.innerHTML = deps.slice(0, 10).map((d, idx) => {
-          const estTime = d.expectedIso
+          const estTime = (d.expectedIso && !d.expectedIso.startsWith('0001-') && !d.expectedIso.startsWith('1970-'))
             ? new Date(d.expectedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
             : (d.departureTime || '--:--');
 
-          const schedTime = d.aimedIso
+          const schedTime = (d.aimedIso && !d.aimedIso.startsWith('0001-') && !d.aimedIso.startsWith('1970-'))
             ? new Date(d.aimedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
             : (d.isEstimated ? estTime : null);
 

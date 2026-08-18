@@ -236,9 +236,9 @@ class HistoryDatabase {
         FROM delay_logs
         WHERE timestamp >= ?
         GROUP BY line_code
-        HAVING sampleCount >= 3
+        HAVING sampleCount >= 1
         ORDER BY avgDelay DESC
-        LIMIT 15
+        LIMIT 1000
       `);
       const rankingMostDelayed = delayedStmt.all(cutoff).map(r => ({
         ...r,
@@ -256,9 +256,9 @@ class HistoryDatabase {
         FROM delay_logs
         WHERE timestamp >= ?
         GROUP BY line_code
-        HAVING sampleCount >= 3
+        HAVING sampleCount >= 1
         ORDER BY onTimePercentage DESC, avgDelay ASC
-        LIMIT 15
+        LIMIT 1000
       `);
       const rankingBestPunctuality = punctualStmt.all(cutoff).map(r => ({
         ...r,
@@ -276,7 +276,7 @@ class HistoryDatabase {
         FROM delay_logs
         WHERE timestamp >= ?
         GROUP BY agency
-        HAVING totalSamples >= 5
+        HAVING totalSamples >= 1
         ORDER BY avgDelay DESC
       `);
       const agencyStats = agencyStmt.all(cutoff).map(a => ({
@@ -297,9 +297,9 @@ class HistoryDatabase {
         FROM delay_logs
         WHERE timestamp >= ?
         GROUP BY stop_name, line_code, agency
-        HAVING arrivalCount >= 2
+        HAVING arrivalCount >= 1
         ORDER BY avgDelay DESC, maxDelay DESC
-        LIMIT 10
+        LIMIT 500
       `);
       const rankingWorstStops = worstStopsStmt.all(cutoff).map(r => ({
         ...r,

@@ -433,12 +433,17 @@ class SagalesTracker {
         // Check if this vehicle is serving the requested stop
         const match = stopUpdates.find(u => String(u.stopId) === sIdStr);
         if (match && match.arrival?.time) {
-          const arrTime = match.arrival.time;
+          const rawTime = Number(match.arrival.time);
+          const arrTime = rawTime > 1e11 ? rawTime : rawTime * 1000;
+          if (!arrTime || isNaN(arrTime) || arrTime < 946684800000) return;
           const diffMs = arrTime - now;
-          const diffMin = Math.max(0, Math.round(diffMs / 60000));
+          const diffMin = Math.round(diffMs / 60000);
+          if (diffMin < -5) return;
+          const safeDiffMin = Math.max(0, diffMin);
           const delayMin = Math.round((match.arrival.delay || 0) / 60);
 
           const clockStr = timeUtils.formatTimeToTimezone(new Date(arrTime), this.agencyTimezone);
+          if (clockStr === '--:--') return;
 
           departures.push({
             lineId: lineConfig.id,
@@ -447,7 +452,7 @@ class SagalesTracker {
             departureTime: clockStr,
             expectedIso: new Date(arrTime).toISOString(),
             aimedIso: new Date(arrTime - (match.arrival.delay || 0) * 1000).toISOString(),
-            minutesAway: diffMin,
+            minutesAway: safeDiffMin,
             vehicleId: v.vehicle?.id || null,
             isRealTime: true,
             isEstimated: false,
@@ -456,7 +461,7 @@ class SagalesTracker {
             delayStatus: delayMin >= 2 ? 'delayed' : 'on_time',
             delayBadgeText: delayMin >= 2 ? `+${delayMin} min retard` : 'Puntual',
             comparisonText: `Temps real Sagalés (${clockStr})`,
-            formattedStatus: diffMin === 0 ? 'Imminent' : `${diffMin} min`
+            formattedStatus: safeDiffMin === 0 ? 'Imminent' : `${safeDiffMin} min`
           });
         }
       });

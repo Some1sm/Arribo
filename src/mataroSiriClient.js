@@ -214,33 +214,44 @@ class MataroSiriClient {
 
         let minutesAway = 0;
         let formattedTime = '--:--';
+        let isValidArrival = false;
 
         if (expectedArr) {
           const arrDate = new Date(expectedArr);
-          const now = new Date();
-          const diffMs = arrDate.getTime() - now.getTime();
-          minutesAway = Math.max(0, Math.round(diffMs / 60000));
-          formattedTime = timeUtils.formatTimeToTimezone(arrDate, 'Europe/Madrid');
+          if (!isNaN(arrDate.getTime()) && arrDate.getFullYear() >= 2020) {
+            const now = new Date();
+            const diffMs = arrDate.getTime() - now.getTime();
+            const diffMin = Math.round(diffMs / 60000);
+            if (diffMin >= -2) {
+              minutesAway = Math.max(0, diffMin);
+              formattedTime = timeUtils.formatTimeToTimezone(arrDate, 'Europe/Madrid');
+              if (formattedTime !== '--:--') {
+                isValidArrival = true;
+              }
+            }
+          }
         }
 
-        arrivals.push({
-          lineId: line,
-          lineName,
-          directionName,
-          destination: dest,
-          vehicleId: vehicleRef,
-          distanceFromStop: dist,
-          departureTime: formattedTime,
-          expectedIso: expectedArr,
-          aimedIso: aimedArr,
-          minutesAway,
-          formattedStatus: minutesAway === 0 ? 'Imminent' : (minutesAway === 1 ? '1 min' : `${minutesAway} min`),
-          delayMins,
-          delayBadgeText: delayMins > 0 ? `+${delayMins} min retard` : (delayMins < 0 ? `${delayMins} min avançat` : 'Puntual'),
-          delayStatus: delayMins > 2 ? 'delayed' : (delayMins < -1 ? 'early' : 'on-time'),
-          isRealTime: true,
-          busCoords: lat && lon ? { lat, lon } : null
-        });
+        if (isValidArrival) {
+          arrivals.push({
+            lineId: line,
+            lineName,
+            directionName,
+            destination: dest,
+            vehicleId: vehicleRef,
+            distanceFromStop: dist,
+            departureTime: formattedTime,
+            expectedIso: expectedArr,
+            aimedIso: aimedArr,
+            minutesAway,
+            formattedStatus: minutesAway === 0 ? 'Imminent' : (minutesAway === 1 ? '1 min' : `${minutesAway} min`),
+            delayMins,
+            delayBadgeText: delayMins > 0 ? `+${delayMins} min retard` : (delayMins < 0 ? `${delayMins} min avançat` : 'Puntual'),
+            delayStatus: delayMins > 2 ? 'delayed' : (delayMins < -1 ? 'early' : 'on-time'),
+            isRealTime: true,
+            busCoords: lat && lon ? { lat, lon } : null
+          });
+        }
       }
 
       arrivals.sort((a, b) => a.minutesAway - b.minutesAway);

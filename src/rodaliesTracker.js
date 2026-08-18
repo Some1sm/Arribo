@@ -286,11 +286,12 @@ class RodaliesTracker {
         if (String(t.lineCode).toUpperCase() === String(route.code).toUpperCase()) {
           const tKey = `${t.lineCode}_${t.destination}_${t.arrivalTime}`;
           if (!foundTrains.has(tKey)) {
+            const arrMs = Number(t.arrivalTime) > 1e11 ? Number(t.arrivalTime) : Number(t.arrivalTime) * 1000;
+            if (!arrMs || isNaN(arrMs) || arrMs < 946684800000) return; // Year >= 2000
             foundTrains.add(tKey);
 
             const lat = parseFloat(t.latitude) || st.lat;
             const lon = parseFloat(t.longitude) || st.lon;
-            const arrMs = t.arrivalTime > 1e11 ? t.arrivalTime : t.arrivalTime * 1000;
             const minsAway = Math.max(0, Math.round((arrMs - now) / 60000));
 
             activeTrains.push({
@@ -416,10 +417,14 @@ class RodaliesTracker {
     const trainArrivals = await this.getStationRealtime(stationObj.code || sIdStr);
     trainArrivals.forEach(t => {
       if (!route || String(t.lineCode).toUpperCase() === String(route.code).toUpperCase()) {
-        const arrMs = t.arrivalTime > 1e11 ? t.arrivalTime : t.arrivalTime * 1000;
+        const arrMs = Number(t.arrivalTime) > 1e11 ? Number(t.arrivalTime) : Number(t.arrivalTime) * 1000;
+        if (!arrMs || isNaN(arrMs) || arrMs < 946684800000) return; // Drop invalid / pre-2000 timestamps
         const diffMs = arrMs - now;
-        const diffMin = Math.max(0, Math.round(diffMs / 60000));
+        const diffMin = Math.round(diffMs / 60000);
+        if (diffMin < -5) return; // Drop trains that departed more than 5 minutes ago
+        const safeDiffMin = Math.max(0, diffMin);
         const clockStr = timeUtils.formatTimeToTimezone(new Date(arrMs), this.agencyTimezone);
+        if (clockStr === '--:--') return;
 
         // Calculate schedule comparison for trains
         const netTime = timeUtils.getNetworkTime(this.agencyTimezone, new Date(arrMs));
@@ -437,7 +442,7 @@ class RodaliesTracker {
           departureTime: clockStr,
           expectedIso: new Date(arrMs).toISOString(),
           aimedIso: new Date(aimedMs).toISOString(),
-          minutesAway: diffMin,
+          minutesAway: safeDiffMin,
           delayMinutes: delayMin,
           delayMins: delayMin,
           isRealTime: true,
@@ -448,7 +453,7 @@ class RodaliesTracker {
           delayStatus: delayMin >= 2 ? 'delayed' : (delayMin <= -2 ? 'early' : 'on_time'),
           delayBadgeText: delayMin >= 2 ? `+${delayMin} min retard` : (delayMin <= -2 ? `${delayMin} min avançat` : 'Puntual'),
           comparisonText: delayMin !== 0 ? `📅 Horari teòric: ${aimedClockStr}` : `Temps real Rodalies (${clockStr})`,
-          formattedStatus: diffMin === 0 ? 'Imminent' : `${diffMin} min`
+          formattedStatus: safeDiffMin === 0 ? 'Imminent' : `${safeDiffMin} min`
         });
       }
     });

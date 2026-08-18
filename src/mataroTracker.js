@@ -720,9 +720,16 @@ class MataroTracker {
     // 3. Combine and deduplicate
     const combined = [...liveArrivals, ...estimatedArrivals];
     
-    // Filter to 120-minute window and sort chronologically
+    // Filter to 120-minute window and sort chronologically, ignoring invalid/malformed times
     const sorted = combined
-      .filter(d => d.minutesAway !== undefined && d.minutesAway <= 120)
+      .filter(d => {
+        if (d.minutesAway === undefined || d.minutesAway === null || d.minutesAway > 120) return false;
+        if (!d.departureTime || d.departureTime === '--:--') return false;
+        if (d.isRealTime && d.departureTime === '00:00' && d.minutesAway === 0) {
+          if (!d.expectedIso || d.expectedIso.startsWith('0001-') || d.expectedIso.startsWith('1970-')) return false;
+        }
+        return true;
+      })
       .sort((a, b) => a.minutesAway - b.minutesAway);
 
     const cleanStopName = (stopInfo.name || '').toLowerCase().trim();

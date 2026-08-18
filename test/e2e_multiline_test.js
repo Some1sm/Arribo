@@ -149,7 +149,31 @@ async function runTests() {
     const n80Eta = await request('/api/line/n80/target-eta?direction=0');
     assert.strictEqual(n80Eta.status, 200);
     assert(n80Eta.body.data.targetStop !== null);
-    console.log(`✅ Moventis N80 passed (${n80Line.body.data.stops.length} stops, ${n80Line.body.data.coords.length} polyline coords)`);
+    // 15. Stop 1001 (Mataró Hospital) Departures Validation (No 00:00 phantom times)
+    console.log('Test 15: Stop 1001 Departures Time Validation');
+    const stop1001 = await request('/api/mataro/stop/1001/departures');
+    assert.strictEqual(stop1001.status, 200);
+    const deps1001 = stop1001.body.data.departures || [];
+    assert(deps1001.length > 0, 'Should have upcoming departures for stop 1001');
+    deps1001.forEach(d => {
+      assert(d.departureTime !== '--:--', 'Departure time should not be --:--');
+      if (d.minutesAway === 0 && d.isRealTime) {
+        assert(d.departureTime !== '00:00', `Realtime imminent departure at 1001 should not be 00:00 (got: ${d.departureTime})`);
+      }
+      if (d.expectedIso) {
+        assert(!d.expectedIso.startsWith('0001-'), 'expectedIso should not be 0001-01-01');
+        assert(!d.expectedIso.startsWith('1970-'), 'expectedIso should not be epoch');
+      }
+    });
+    console.log(`✅ Stop 1001 verified (${deps1001.length} departures, zero 00:00 phantom times)`);
+
+    // 16. Journalism Analytics Endpoint Coverage
+    console.log('Test 16: Journalism Analytics Line Coverage');
+    const journalism = await request('/api/analytics/journalism?hours=24');
+    assert.strictEqual(journalism.status, 200);
+    assert(journalism.body.success === true);
+    assert(journalism.body.report.summary.monitoredLinesCount > 0, 'Should have monitored lines in report');
+    console.log(`✅ Journalism Analytics Coverage verified (${journalism.body.report.summary.monitoredLinesCount} monitored lines in report)`);
 
     console.log('\n🎉 ALL MULTI-LINE & MULTI-PROVIDER E2E TESTS PASSED SUCCESSFULLY! 🎉\n');
   } finally {

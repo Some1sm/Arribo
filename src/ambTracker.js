@@ -580,10 +580,16 @@ class AmbTracker {
     const times = await this.getStopRealtime(stopObj.code || sIdStr);
     times.forEach(t => {
       if (!route || String(t.lineCode).toUpperCase() === String(route.code).toUpperCase()) {
-        const arrTime = t.time || (now + (t.arrivalTime || 0) * 1000);
+        const rawTime = t.time || (t.arrivalTime !== undefined ? (t.arrivalTime > 1e11 ? t.arrivalTime : (now + t.arrivalTime * 1000)) : null);
+        if (!rawTime || isNaN(rawTime)) return;
+        const arrTime = Number(rawTime);
+        if (arrTime < 946684800000) return; // Year >= 2000
         const diffMs = arrTime - now;
-        const diffMin = Math.max(0, Math.round(diffMs / 60000));
+        const diffMin = Math.round(diffMs / 60000);
+        if (diffMin < -5) return; // Drop stale arrivals
+        const safeDiffMin = Math.max(0, diffMin);
         const clockStr = timeUtils.formatTimeToTimezone(new Date(arrTime), this.agencyTimezone);
+        if (clockStr === '--:--') return;
 
         // Calculate schedule comparison
         const netTime = timeUtils.getNetworkTime(this.agencyTimezone, new Date(arrTime));
@@ -601,7 +607,7 @@ class AmbTracker {
           departureTime: clockStr,
           expectedIso: new Date(arrTime).toISOString(),
           aimedIso: new Date(aimedMs).toISOString(),
-          minutesAway: diffMin,
+          minutesAway: safeDiffMin,
           delayMinutes: delayMin,
           delayMins: delayMin,
           isRealTime: true,
@@ -611,7 +617,7 @@ class AmbTracker {
           delayStatus: delayMin >= 2 ? 'delayed' : (delayMin <= -2 ? 'early' : 'on_time'),
           delayBadgeText: delayMin >= 2 ? `+${delayMin} min retard` : (delayMin <= -2 ? `${delayMin} min avançat` : 'Puntual'),
           comparisonText: delayMin !== 0 ? `📅 Horari teòric: ${aimedClockStr}` : `Temps real AMB (${clockStr})`,
-          formattedStatus: diffMin === 0 ? 'Imminent' : `${diffMin} min`
+          formattedStatus: safeDiffMin === 0 ? 'Imminent' : `${safeDiffMin} min`
         });
       }
     });

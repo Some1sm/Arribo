@@ -5,6 +5,7 @@ const corridorTracker = require('./corridorTracker');
 const maresmeTracker = require('./maresmeTracker');
 const rodaliesTracker = require('./rodaliesTracker');
 const sagalesTracker = require('./sagalesTracker');
+const cataloniaTracker = require('./cataloniaTracker');
 const historyDb = require('./historyDb');
 
 class IngestionDaemon {
@@ -17,6 +18,7 @@ class IngestionDaemon {
     this.maresmePollTimer = null;
     this.rodaliesPollTimer = null;
     this.sagalesPollTimer = null;
+    this.cataloniaPollTimer = null;
     this.disruptionsTimer = null;
     this.pruneTimer = null;
   }
@@ -34,6 +36,7 @@ class IngestionDaemon {
     this.pollMaresmeLines();
     this.pollRodaliesTrains();
     this.pollSagalesLines();
+    this.pollCataloniaLines();
 
     // 2. Schedule High-Frequency AMB Vehicle Fleet Ingestion (every 12 seconds)
     this.vehiclePollTimer = setInterval(() => this.pollAmbVehicles(), 12000);
@@ -56,6 +59,9 @@ class IngestionDaemon {
     // 8. Schedule Sagalés Ingestion (every 30 seconds)
     this.sagalesPollTimer = setInterval(() => this.pollSagalesLines(), 30000);
 
+    // 8b. Schedule Catalonia Interurban Ingestion (every 35 seconds)
+    this.cataloniaPollTimer = setInterval(() => this.pollCataloniaLines(), 35000);
+
     // 9. Schedule Disruptions Ingestion (every 3 minutes)
     this.disruptionsTimer = setInterval(() => this.pollDisruptions(), 180000);
 
@@ -72,6 +78,7 @@ class IngestionDaemon {
     if (this.maresmePollTimer) clearInterval(this.maresmePollTimer);
     if (this.rodaliesPollTimer) clearInterval(this.rodaliesPollTimer);
     if (this.sagalesPollTimer) clearInterval(this.sagalesPollTimer);
+    if (this.cataloniaPollTimer) clearInterval(this.cataloniaPollTimer);
     if (this.disruptionsTimer) clearInterval(this.disruptionsTimer);
     if (this.pruneTimer) clearInterval(this.pruneTimer);
     console.log('[IngestionDaemon] Stopped ingestion daemon.');
@@ -106,6 +113,21 @@ class IngestionDaemon {
             destination: v.destination || route?.name || '',
             isRealTime: true
           });
+
+          // Log delay record for all active AMB lines in the vehicle fleet
+          if (v.delayMins !== undefined) {
+            historyDb.recordDelayLog({
+              lineId: route?.id || `amb_${lCode.toLowerCase()}`,
+              lineCode: lCode,
+              agency: agency,
+              stopId: v.destination || 'Tram en línia',
+              stopName: v.destination || `${lCode} en circulació`,
+              delayMins: v.delayMins || 0,
+              scheduledTime: '',
+              actualTime: '',
+              isRealTime: true
+            });
+          }
         });
       }
     } catch (e) {
@@ -243,7 +265,8 @@ class IngestionDaemon {
 
   async pollMaresmeLines() {
     try {
-      const lines = ['e111', 'e112', 'c20', 'c3', 'c12', 'c14', 'c15', 'n80', 'n81'];
+      const allLines = maresmeTracker.getLines();
+      const lines = allLines.length > 0 ? allLines.map(l => l.id) : ['e111', 'e112', 'c20', 'c30', 'c3', 'c12', 'c14', 'c15', 'n80', 'n81'];
       for (const lId of lines) {
         try {
           for (const dir of ['0', '1']) {
@@ -319,7 +342,11 @@ class IngestionDaemon {
 
   async pollRodaliesTrains() {
     try {
-      const trains = ['r1', 'r2', 'r2n', 'r2s', 'r3', 'r4', 'rg1', 'r11'];
+      const trains = [
+        'r1', 'r2', 'r2n', 'r2s', 'r3', 'r4', 'r7', 'r8',
+        'rg1', 'r11', 'r13', 'r14', 'r15', 'r16', 'r17',
+        'rl3', 'rl4', 'rt1', 'rt2'
+      ];
       for (const tId of trains) {
         try {
           const lineDetails = await rodaliesTracker.getLineDetails(tId, '0');
@@ -357,7 +384,8 @@ class IngestionDaemon {
 
   async pollSagalesLines() {
     try {
-      const sagalesLines = ['603', 'n82', 'n83', 'n70', 'n71'];
+      const allLines = sagalesTracker.getLines();
+      const sagalesLines = allLines.length > 0 ? allLines.map(l => l.id) : ['603', 'n82', 'n83', 'n70', 'n71', 'n73'];
       for (const sId of sagalesLines) {
         try {
           const lineDetails = await sagalesTracker.getLineDetails(sId, '0');
@@ -390,6 +418,42 @@ class IngestionDaemon {
           }
         } catch (err) {
           // Skip individual line
+        }
+      }
+    } catch (e) {
+      // Upstream temporary hiccup
+    }
+  }
+
+  async pollCataloniaLines() {
+    try {
+      const sampleRoutes = cataloniaTracker.routes.slice(0, 40);
+      for (const r of sampleRoutes) {
+        try {
+          const details = cataloniaTracker.routeDetailsMap.get(r.id);
+          const stops = details?.stopsByDirection?.['0'] || [];
+          if (stops.length > 0) {
+            const targetStop = stops[Math.floor(stops.length / 2)] || stops[0];
+            const deps = await cataloniaTracker.getStopDepartures(targetStop.id, r.id, '0');
+            if (deps && deps.departures && deps.departures.length > 0) {
+              const next = deps.departures[0];
+              if (next && next.delayMins !== undefined) {
+                historyDb.recordDelayLog({
+                  lineId: r.id,
+                  lineCode: r.code || r.id,
+                  agency: r.agency || 'Interurbà Catalunya',
+                  stopId: targetStop.id,
+                  stopName: targetStop.name || 'Parada',
+                  delayMins: next.delayMins || 0,
+                  scheduledTime: next.departureTime || '',
+                  actualTime: next.departureTime || '',
+                  isRealTime: next.isRealTime
+                });
+              }
+            }
+          }
+        } catch (err) {
+          // Skip individual route
         }
       }
     } catch (e) {

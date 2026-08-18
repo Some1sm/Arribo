@@ -592,10 +592,17 @@ class MaresmeTracker {
           mouteData.sortides.sortida.forEach(s => {
             const arrHour = parseInt(s.hora, 10);
             const arrMin = parseInt(s.minuts, 10);
+            if (isNaN(arrHour) || isNaN(arrMin)) return;
             const netDate = timeUtils.getNetworkTime(this.agencyTimezone);
-            const depUtc = timeUtils.localTimeToUtcDate(netDate.year, netDate.month, netDate.day, arrHour, arrMin, 0, this.agencyTimezone);
+            let depUtc = timeUtils.localTimeToUtcDate(netDate.year, netDate.month, netDate.day, arrHour, arrMin, 0, this.agencyTimezone);
+            // Handle midnight rollover (e.g. at 22:00, 00:30 is tomorrow)
+            if (netDate.hour >= 18 && arrHour < 6) {
+              depUtc = new Date(depUtc.getTime() + 24 * 3600 * 1000);
+            }
             const diffMs = depUtc.getTime() - now;
-            const diffMin = Math.max(0, Math.round(diffMs / 60000));
+            const diffMin = Math.round(diffMs / 60000);
+            if (diffMin < -5) return;
+            const safeDiffMin = Math.max(0, diffMin);
             const clockStr = `${String(arrHour).padStart(2, '0')}:${String(arrMin).padStart(2, '0')}`;
             const dest = s.direccio || s.destinacio || defaultDest;
 
@@ -625,7 +632,7 @@ class MaresmeTracker {
               departureTime: clockStr,
               expectedIso: depUtc.toISOString(),
               aimedIso: aimedUtc.toISOString(),
-              minutesAway: diffMin,
+              minutesAway: safeDiffMin,
               isRealTime: Boolean(s.realtime),
               isEstimated: !s.realtime,
               isToday: true,
@@ -634,7 +641,7 @@ class MaresmeTracker {
               delayStatus,
               delayBadgeText,
               comparisonText: schedMatch ? `Teòric: ${schedTimeStr} (${delayBadgeText})` : `Horari Mou-te (${clockStr})`,
-              formattedStatus: diffMin === 0 ? 'Imminent' : `${diffMin} min`
+              formattedStatus: safeDiffMin === 0 ? 'Imminent' : `${safeDiffMin} min`
             });
           });
         }
