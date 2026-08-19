@@ -253,7 +253,7 @@ class CorridorTracker {
             const p = t.split(',');
             const tId = p[1];
             const dir = p[4] || '0';
-            const sId = p[9] || '';
+            const sId = (p[9] || '').trim();
             const tTimes = stopTimes.filter(l => l.startsWith(tId + ',')).map(l => l.split(',')).sort((a,b) => parseInt(a[4],10) - parseInt(b[4],10));
             if (tTimes.length > 0) {
               const depTime = tTimes[0][2];
@@ -298,7 +298,17 @@ class CorridorTracker {
     const atmDir = path.join(this.dataDir, 'atm_gtfs');
     if (!fs.existsSync(atmDir)) return;
 
-    const c10Services = new Set(['GEN_184910', 'GEN_185080', 'GEN_184749', 'GEN_185017']);
+    // GTFS service IDs change whenever the feed is regenerated. Derive them
+    // from the C-10 schedule we just loaded instead of relying only on the
+    // service IDs from one historical feed version.
+    const c10Services = new Set([
+      ...(this.fullSchedule?.dir0 || []),
+      ...(this.fullSchedule?.dir1 || [])
+    ].map(trip => trip.serviceId).filter(Boolean));
+
+    if (c10Services.size === 0) {
+      ['GEN_184910', 'GEN_185080', 'GEN_184749', 'GEN_185017'].forEach(id => c10Services.add(id));
+    }
 
     const datesFile = path.join(atmDir, 'calendar_dates.txt');
     if (fs.existsSync(datesFile)) {
