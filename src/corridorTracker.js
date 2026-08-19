@@ -109,7 +109,28 @@ class CorridorTracker {
           });
         });
 
-        const trips = cached.tripsMap['GEN_0498'] || [];
+        // The compact Maresme cache predates the corridor tracker and does not
+        // retain GTFS service_id. Restore it from the authoritative trips.txt
+        // file; without it every cached C-10 trip fails isServiceActiveOnDate()
+        // and the live corridor is always returned with zero buses.
+        const cachedTrips = cached.tripsMap['GEN_0498'] || [];
+        const serviceIdByTrip = new Map();
+        const tripsPath = path.join(atmDir, 'trips.txt');
+        if (fs.existsSync(tripsPath)) {
+          fs.readFileSync(tripsPath, 'utf8')
+            .split('\n')
+            .slice(1)
+            .filter(line => line.startsWith('GEN_0498,'))
+            .forEach(line => {
+              const fields = line.split(',');
+              if (fields[1]) serviceIdByTrip.set(fields[1], (fields[9] || '').trim());
+            });
+        }
+
+        const trips = cachedTrips.map(trip => ({
+          ...trip,
+          serviceId: trip.serviceId || serviceIdByTrip.get(trip.tripId) || ''
+        }));
         const stopTimesByTrip = cached.stopTimesByTrip || {};
 
         const getStopsForTrip = (tripId) => {
