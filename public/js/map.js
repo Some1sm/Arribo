@@ -8,8 +8,12 @@ class C10Map {
     this.stopMarkers = [];
     this.busMarkersMap = new Map(); // tripId -> { marker, busData, subpath, currentBearing }
     this.routePolyline = null;
+    this.secondaryRoutePolyline = null;
+    this.vehicleTrailPolyline = null;
     this.activePolylineCoords = []; // Array of [lat, lon]
     this.tileLayer = null;
+    this.renderer = null;
+    this.resizeObserver = null;
     this.currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
     this.initMap();
   }
@@ -20,13 +24,32 @@ class C10Map {
       return;
     }
 
+    // Extended SVG padding (1.5 = 150% margin beyond viewport) prevents vector clipping when container dimensions resize
+    this.renderer = L.svg({ padding: 1.5 });
+
     // Centered along the coastal corridor / Mataró
     this.map = L.map(this.containerId, {
       zoomControl: true,
-      scrollWheelZoom: true
+      scrollWheelZoom: true,
+      renderer: this.renderer
     }).setView([41.54, 2.44], 13);
 
     this.updateTileLayer();
+    this.setupResizeObserver();
+  }
+
+  setupResizeObserver() {
+    const el = document.getElementById(this.containerId);
+    if (!el || typeof ResizeObserver === 'undefined') return;
+
+    let rAFId = null;
+    this.resizeObserver = new ResizeObserver(() => {
+      if (rAFId) cancelAnimationFrame(rAFId);
+      rAFId = requestAnimationFrame(() => {
+        this.invalidateSize({ pan: false, debounceMoveend: true });
+      });
+    });
+    this.resizeObserver.observe(el);
   }
 
   updateTileLayer() {
@@ -398,7 +421,8 @@ class C10Map {
           weight: 4.5,
           opacity: 0.9,
           lineCap: 'round',
-          lineJoin: 'round'
+          lineJoin: 'round',
+          renderer: this.renderer
         }).addTo(this.map);
 
         // Add Directional Arrow Chevrons
@@ -414,7 +438,8 @@ class C10Map {
           opacity: 0.85,
           dashArray: '8, 8',
           lineCap: 'round',
-          lineJoin: 'round'
+          lineJoin: 'round',
+          renderer: this.renderer
         }).addTo(this.map);
 
         // Add Directional Arrow Chevrons for secondary direction
@@ -451,7 +476,8 @@ class C10Map {
       weight: 5,
       opacity: 0.85,
       lineCap: 'round',
-      lineJoin: 'round'
+      lineJoin: 'round',
+      renderer: this.renderer
     }).addTo(this.map);
 
     try {
@@ -821,7 +847,8 @@ class C10Map {
       opacity: 0.85,
       dashArray: '6, 6',
       lineCap: 'round',
-      lineJoin: 'round'
+      lineJoin: 'round',
+      renderer: this.renderer
     }).addTo(this.map);
   }
 
@@ -837,9 +864,25 @@ class C10Map {
     this.map.flyTo([lat, lon], 15, { duration: 1.2 });
   }
 
-  invalidateSize() {
+  invalidateSize(options = { pan: false, debounceMoveend: true }) {
     if (!this.map) return;
-    this.map.invalidateSize();
+    try {
+      this.map.invalidateSize(options);
+      if (this.renderer && typeof this.renderer._update === 'function') {
+        this.renderer._update();
+      }
+      if (this.routePolyline && typeof this.routePolyline.redraw === 'function') {
+        this.routePolyline.redraw();
+      }
+      if (this.secondaryRoutePolyline && typeof this.secondaryRoutePolyline.redraw === 'function') {
+        this.secondaryRoutePolyline.redraw();
+      }
+      if (this.vehicleTrailPolyline && typeof this.vehicleTrailPolyline.redraw === 'function') {
+        this.vehicleTrailPolyline.redraw();
+      }
+    } catch(e) {
+      console.warn('Map invalidateSize warning:', e);
+    }
   }
 }
 

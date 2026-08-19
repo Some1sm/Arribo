@@ -691,7 +691,7 @@ app.get('*', (req, res) => {
 });
 
 if (require.main === module) {
-  const runningServer = app.listen(PORT, () => {
+  const runningServer = app.listen(PORT, '0.0.0.0', () => {
     console.log(`====================================================`);
     console.log(`🚌 Bad AMB Bus Tracker Platform Running!`);
     console.log(`🌐 Full Catalonia Multi-Provider Realtime Network`);

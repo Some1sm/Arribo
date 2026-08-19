@@ -21,7 +21,7 @@ class MataroSiriClient {
         path: this.path,
         method: 'POST',
         rejectUnauthorized: false,
-        timeout: 2500,
+        timeout: 5000,
         headers: {
           'Content-Type': 'text/xml; charset=utf-8',
           'SOAPAction': `http://tempuri.org/${action}`,

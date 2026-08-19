@@ -150,14 +150,45 @@ class TransitApp {
   // ==========================================
 
   async fetchLines() {
-    try {
-      const res = await fetch('/api/lines');
-      const json = await res.json();
-      if (json.success && json.lines) {
-        this.availableLines = json.lines;
+    const defaultEmergencyLines = [
+      { id: 'c10', code: 'C-10', name: 'Barcelona ⇄ Mataró (per N-II)', color: '#009485', agency: 'Moventis / Casas (Interurbà Maresme)', group: 'moventis', directions: [{ dirId: '1', name: "Cap a Mataró (Hospital / Pl. d'Itàlia)" }, { dirId: '0', name: 'Cap a Barcelona (Metro la Pau)' }] },
+      { id: '1', code: 'L1', name: 'Línia 1 - Circular Mataró', color: '#00ea00', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Circular' }] },
+      { id: '2', code: 'L2', name: 'Línia 2 - Circular Mataró', color: '#ff00ff', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Circular' }] },
+      { id: '3', code: 'L3', name: 'Línia 3 - Camí de la Serra - Rocafonda', color: '#00bfff', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Sentit Anada' }, { dirId: '1', name: 'Sentit Tornada' }] },
+      { id: '4', code: 'L4', name: 'Línia 4 - Cirera - Molins', color: '#ffa500', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Sentit Anada' }, { dirId: '1', name: 'Sentit Tornada' }] },
+      { id: '5', code: 'L5', name: 'Línia 5 - Estació Rodalies - Hospital de Mataró', color: '#800080', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Cap a Hospital' }, { dirId: '1', name: 'Cap a Estació' }] },
+      { id: '6', code: 'L6', name: 'Línia 6 - Ctra. de Cirera - Institut Català Salut', color: '#ffff00', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Sentit Anada' }, { dirId: '1', name: 'Sentit Tornada' }] },
+      { id: '7', code: 'L7', name: 'Línia 7 - Pl. de les Tereses - Cerdanyola', color: '#a52a2a', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Sentit Anada' }, { dirId: '1', name: 'Sentit Tornada' }] },
+      { id: '8', code: 'L8', name: 'Línia 8 - Estació Rodalies - Galícia', color: '#ff1493', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Cap a Galícia' }, { dirId: '1', name: 'Cap a Estació' }] }
+    ];
+
+    if (!this.availableLines || this.availableLines.length === 0) {
+      this.availableLines = defaultEmergencyLines;
+    }
+
+    const maxRetries = 4;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6000);
+        const res = await fetch('/api/lines', { signal: controller.signal });
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && Array.isArray(json.lines) && json.lines.length > 0) {
+            this.availableLines = json.lines;
+            return;
+          }
+        }
+      } catch (e) {
+        if (attempt === maxRetries) {
+          console.warn('[TransitApp] Failed to fetch /api/lines after retries, continuing with fallback catalog:', e.message);
+        } else {
+          const delayMs = attempt * 500;
+          await new Promise(r => setTimeout(r, delayMs));
+        }
       }
-    } catch (e) {
-      console.error('Error fetching lines:', e);
     }
   }
 
@@ -202,11 +233,97 @@ class TransitApp {
     return `${(num >> 16) & 255}, ${(num >> 8) & 255}, ${num & 255}`;
   }
 
-  focusBusOnMap(vehicleId, coords = null) {
-    if (!vehicleId && !coords && this.activeLineData?.activeBuses?.length > 0) {
-      const firstBus = this.activeLineData.activeBuses[0];
-      vehicleId = firstBus.vehicleId || firstBus.tripId;
-      coords = { lat: firstBus.lat, lon: firstBus.lon };
+  resolveBusForDeparture(dep, stopSeq = null, stopId = null, depIndex = 0) {
+    const buses = this.activeLineData?.activeBuses || [];
+    if (buses.length === 0) return null;
+
+    // Resolve stop sequence from stops array if not given
+    if (stopSeq === null && stopId && this.activeLineData?.stops) {
+      const sIndex = this.activeLineData.stops.findIndex(s => 
+        String(s.id) === String(stopId) || 
+        String(s.gtfsStopId) === String(stopId) || 
+        String(s.code) === String(stopId) ||
+        String(s.mouteStopId) === String(stopId)
+      );
+      if (sIndex !== -1) {
+        stopSeq = this.activeLineData.stops[sIndex].seq || (sIndex + 1);
+      }
+    }
+
+    // 1. If explicit vehicleId / tripId is provided on departure:
+    if (dep?.vehicleId || dep?.tripId) {
+      const targetId = String(dep.vehicleId || dep.tripId).trim();
+      const explicitBus = buses.find(b => this.mapController?.isBusSelected(b, targetId));
+      if (explicitBus) {
+        const busSeq = explicitBus.fromSeq || explicitBus.currentStopSeq || null;
+        // Check if this vehicle has already passed this stop on this run
+        if (stopSeq !== null && busSeq !== null && busSeq > stopSeq) {
+          // Bus already passed the stop! Find an upstream approaching bus (before the stop in sequence)
+          const upstreamBuses = buses.filter(b => {
+            const bSeq = b.fromSeq || b.currentStopSeq || 0;
+            return bSeq <= stopSeq;
+          }).sort((a, b) => (b.fromSeq || b.currentStopSeq || 0) - (a.fromSeq || a.currentStopSeq || 0));
+
+          if (upstreamBuses.length > 0) {
+            const pickedIdx = Math.min(depIndex, upstreamBuses.length - 1);
+            return upstreamBuses[pickedIdx];
+          }
+        }
+        return explicitBus;
+      }
+    }
+
+    // 2. If coordinates are provided, find matching bus
+    if (dep?.busCoords?.lat && dep?.busCoords?.lon) {
+      const coordBus = buses.find(b => 
+        Math.abs(b.lat - dep.busCoords.lat) < 0.001 && 
+        Math.abs(b.lon - dep.busCoords.lon) < 0.001
+      );
+      if (coordBus) {
+        const busSeq = coordBus.fromSeq || coordBus.currentStopSeq || null;
+        if (stopSeq === null || busSeq === null || busSeq <= stopSeq) {
+          return coordBus;
+        }
+      }
+    }
+
+    // 3. Find all upstream approaching buses (stop sequence is ahead of bus)
+    if (stopSeq !== null) {
+      const upstreamBuses = buses.filter(b => {
+        const bSeq = b.fromSeq || b.currentStopSeq || 0;
+        return bSeq <= stopSeq;
+      }).sort((a, b) => (b.fromSeq || b.currentStopSeq || 0) - (a.fromSeq || a.currentStopSeq || 0));
+
+      if (upstreamBuses.length > 0) {
+        const pickedIdx = Math.min(depIndex, upstreamBuses.length - 1);
+        return upstreamBuses[pickedIdx];
+      }
+    }
+
+    // 4. Fallback: if all buses are downstream or stopSeq is unknown, pick nearest
+    return buses[Math.min(depIndex, buses.length - 1)] || buses[0];
+  }
+
+  focusBusOnMap(vehicleId, coords = null, stopSeq = null, stopId = null, depIndex = 0) {
+    const buses = this.activeLineData?.activeBuses || [];
+    let targetBus = null;
+
+    if (this.activeLineData) {
+      targetBus = this.resolveBusForDeparture(
+        { vehicleId, busCoords: coords }, 
+        stopSeq, 
+        stopId, 
+        depIndex
+      );
+    }
+
+    if (targetBus) {
+      vehicleId = targetBus.vehicleId || targetBus.tripId;
+      coords = { lat: targetBus.lat, lon: targetBus.lon };
+    } else if (!vehicleId && !coords && buses.length > 0) {
+      targetBus = buses[0];
+      vehicleId = targetBus.vehicleId || targetBus.tripId;
+      coords = { lat: targetBus.lat, lon: targetBus.lon };
     }
 
     if (!vehicleId && !coords) return;
@@ -949,6 +1066,9 @@ class TransitApp {
       return;
     }
 
+    const targetStopSeq = this.activeLineData?.targetStop?.seq || null;
+    const targetStopId = this.targetStopId || this.activeLineData?.targetStop?.id || null;
+
     container.innerHTML = departures.slice(0, 8).map((dep, idx) => {
       const clockTime = (dep.expectedIso && !dep.expectedIso.startsWith('0001-') && !dep.expectedIso.startsWith('1970-'))
         ? new Date(dep.expectedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
@@ -965,7 +1085,11 @@ class TransitApp {
         ? (dep.delayMins > 0 ? `+${dep.delayMins} min retard` : `${dep.delayMins} min avançat`)
         : 'Puntual';
 
-      const hasActiveBus = Boolean(dep.vehicleId || dep.busCoords || dep.tripId || dep.isRealTime || dep.isEstimated || (this.activeLineData?.activeBuses?.length > 0 && dep.minutesAway <= 60));
+      const matchedBus = this.resolveBusForDeparture(dep, targetStopSeq, targetStopId, idx);
+      const resolvedVehicleId = matchedBus?.vehicleId || matchedBus?.tripId || dep.vehicleId || '';
+      const resolvedLat = matchedBus?.lat || dep.busCoords?.lat || '';
+      const resolvedLon = matchedBus?.lon || dep.busCoords?.lon || '';
+      const hasActiveBus = Boolean(resolvedVehicleId || (resolvedLat && resolvedLon) || dep.tripId || dep.isRealTime || dep.isEstimated || (this.activeLineData?.activeBuses?.length > 0 && dep.minutesAway <= 60));
 
       const minsText = isFirstMorning
         ? `🌅 Demà ${dep.departureTime || clockTime}`
@@ -987,9 +1111,12 @@ class TransitApp {
 
       return `
         <div class="departure-item ${idx === 0 ? 'highlight-next' : ''} ${hasActiveBus ? 'clickable-bus-dep' : ''}"
-             data-vehicle-id="${dep.vehicleId || ''}"
-             data-bus-lat="${dep.busCoords?.lat || ''}"
-             data-bus-lon="${dep.busCoords?.lon || ''}"
+             data-vehicle-id="${resolvedVehicleId}"
+             data-bus-lat="${resolvedLat}"
+             data-bus-lon="${resolvedLon}"
+             data-stop-seq="${targetStopSeq || ''}"
+             data-stop-id="${targetStopId || ''}"
+             data-dep-index="${idx}"
              title="${hasActiveBus ? 'Fes clic per localitzar aquest autobús en directe al mapa' : ''}">
           <div class="dep-time-group">
             <div class="dep-time-row">
@@ -1356,6 +1483,9 @@ class TransitApp {
           return;
         }
 
+        const currStop = (currIndex >= 0 && stopsList) ? stopsList[currIndex] : null;
+        const stopSeq = currStop?.seq || (currIndex >= 0 ? currIndex + 1 : null);
+
         listEl.innerHTML = deps.slice(0, 10).map((d, idx) => {
           const estTime = (d.expectedIso && !d.expectedIso.startsWith('0001-') && !d.expectedIso.startsWith('1970-'))
             ? new Date(d.expectedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
@@ -1373,7 +1503,11 @@ class TransitApp {
             ? (d.delayMins > 0 ? `+${d.delayMins} min retard` : `${d.delayMins} min avançat`)
             : 'Puntual';
 
-          const hasActiveBus = Boolean(d.vehicleId || d.busCoords || d.tripId || d.isRealTime || d.isEstimated || (this.activeLineData?.activeBuses?.length > 0 && d.minutesAway <= 60));
+          const matchedBus = this.resolveBusForDeparture(d, stopSeq, stopId, idx);
+          const resolvedVehicleId = matchedBus?.vehicleId || matchedBus?.tripId || d.vehicleId || '';
+          const resolvedLat = matchedBus?.lat || d.busCoords?.lat || '';
+          const resolvedLon = matchedBus?.lon || d.busCoords?.lon || '';
+          const hasActiveBus = Boolean(resolvedVehicleId || (resolvedLat && resolvedLon) || d.tripId || d.isRealTime || d.isEstimated || (this.activeLineData?.activeBuses?.length > 0 && d.minutesAway <= 60));
 
           const minsText = isFirstMorning
             ? `🌅 Demà ${d.departureTime || estTime}`
@@ -1395,9 +1529,12 @@ class TransitApp {
 
           return `
             <div class="departure-item ${idx === 0 ? 'highlight-next' : ''} ${hasActiveBus ? 'clickable-bus-dep' : ''}"
-                 data-vehicle-id="${d.vehicleId || ''}"
-                 data-bus-lat="${d.busCoords?.lat || ''}"
-                 data-bus-lon="${d.busCoords?.lon || ''}"
+                 data-vehicle-id="${resolvedVehicleId}"
+                 data-bus-lat="${resolvedLat}"
+                 data-bus-lon="${resolvedLon}"
+                 data-stop-seq="${stopSeq || ''}"
+                 data-stop-id="${stopId || ''}"
+                 data-dep-index="${idx}"
                  title="${hasActiveBus ? 'Fes clic per localitzar aquest autobús en directe al mapa' : ''}">
               <div class="dep-time-group">
                 <div class="dep-time-row">
@@ -1768,10 +1905,12 @@ class TransitApp {
         const vId = depItem.getAttribute('data-vehicle-id');
         const lat = parseFloat(depItem.getAttribute('data-bus-lat'));
         const lon = parseFloat(depItem.getAttribute('data-bus-lon'));
+        const stopSeq = parseInt(depItem.getAttribute('data-stop-seq'), 10) || null;
+        const stopId = depItem.getAttribute('data-stop-id') || null;
+        const depIdx = parseInt(depItem.getAttribute('data-dep-index'), 10) || 0;
         const coords = (lat && lon && !isNaN(lat) && !isNaN(lon)) ? { lat, lon } : null;
-        if (vId || coords) {
-          this.focusBusOnMap(vId, coords);
-        }
+
+        this.focusBusOnMap(vId, coords, stopSeq, stopId, depIdx);
       }
     });
 
@@ -2081,13 +2220,28 @@ class TransitApp {
     const explorerGrid = document.querySelector('.explorer-grid');
     const resizeBar = document.getElementById('map-resize-bar');
 
+    const animateResize = (durationMs = 400) => {
+      const startTime = performance.now();
+      const tick = (now) => {
+        this.mapController?.invalidateSize();
+        if (now - startTime < durationMs) {
+          requestAnimationFrame(tick);
+        } else {
+          this.mapController?.invalidateSize();
+        }
+      };
+      requestAnimationFrame(tick);
+    };
+
     let isTall = false;
     expandHeightBtn?.addEventListener('click', (e) => {
       e.preventDefault();
       isTall = !isTall;
-      mapContainer.style.height = isTall ? '580px' : '380px';
+      if (mapContainer) {
+        mapContainer.style.height = isTall ? '580px' : '380px';
+      }
       if (heightLabel) heightLabel.textContent = isTall ? 'Normal' : 'Gran';
-      this.mapController.invalidateSize();
+      animateResize(380);
     });
 
     let isFullWidth = false;
@@ -2096,7 +2250,15 @@ class TransitApp {
       isFullWidth = !isFullWidth;
       explorerGrid?.classList.toggle('expanded-width', isFullWidth);
       expandWidthBtn.classList.toggle('active', isFullWidth);
-      this.mapController.invalidateSize();
+      animateResize(380);
+    });
+
+    mapContainer?.addEventListener('transitionend', () => {
+      this.mapController?.invalidateSize();
+    });
+
+    explorerGrid?.addEventListener('transitionend', () => {
+      this.mapController?.invalidateSize();
     });
 
     if (resizeBar && mapContainer) {
@@ -2120,7 +2282,7 @@ class TransitApp {
         const delta = clientY - startY;
         const newHeight = Math.max(260, Math.min(800, startHeight + delta));
         mapContainer.style.height = `${newHeight}px`;
-        this.mapController.invalidateSize();
+        this.mapController?.invalidateSize();
       };
 
       const onEnd = () => {
@@ -2128,6 +2290,7 @@ class TransitApp {
           isDragging = false;
           resizeBar.classList.remove('dragging');
           document.body.style.cursor = '';
+          this.mapController?.invalidateSize();
         }
       };
 

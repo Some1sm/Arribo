@@ -52,7 +52,7 @@ class RodaliesTracker {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
           'Accept': 'application/json'
         },
-        timeout: 2500
+        timeout: 5000
       };
 
       const req = https.request(options, (res) => {

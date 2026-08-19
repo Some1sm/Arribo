@@ -589,6 +589,8 @@ class MataroTracker {
 
           let totalTravelSec = 0;
 
+          const isUpstreamDirect = isSameDirection && vehStopIdx <= targetStopIdx;
+
           if (isSameDirection) {
             // Vehicle is on the same route direction
             const snapped = this.snapPointToPolyline(veh.lat, veh.lon, routePolyCoords);
@@ -646,10 +648,11 @@ class MataroTracker {
               minutesAway,
               formattedStatus: `${minutesAway} min`,
               delayMins: veh.delayMins || 0,
-              delayBadgeText: `⚡ Estimació en circuit (Bus #${veh.vehicleId})`,
+              delayBadgeText: isUpstreamDirect ? `⚡ En ruta (Bus #${veh.vehicleId})` : `⚡ Circuit complet (Bus #${veh.vehicleId})`,
               delayStatus: 'estimated',
               isRealTime: false,
               isEstimated: true,
+              isUpstreamDirect,
               busCoords: { lat: veh.lat, lon: veh.lon }
             });
 

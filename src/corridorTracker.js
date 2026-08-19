@@ -475,6 +475,7 @@ class CorridorTracker {
 
     return {
       scheduledTime,
+      bestTrip,
       realtimeTime: liveTimeStr,
       delayMinutes,
       delayStatus,
@@ -489,10 +490,13 @@ class CorridorTracker {
     const isDir1 = direction === '1';
     const scheduleTrips = isDir1 ? (this.fullSchedule?.dir1 || []) : (this.fullSchedule?.dir0 || []);
     const stopsList = isDir1 ? this.stopsDir1 : this.stopsDir0;
+    const stopsMap = isDir1 ? this.stopsMapDir1 : this.stopsMapDir0;
+    const oppositeScheduleTrips = isDir1 ? (this.fullSchedule?.dir0 || []) : (this.fullSchedule?.dir1 || []);
     const now = new Date();
     const networkNow = timeUtils.getNetworkTime(this.agencyTimezone, now);
     const currentSec = networkNow.currentSec;
     const todaysTrips = scheduleTrips.filter(trip => this.isServiceActiveOnDate(trip.serviceId, now));
+    const oppositeTrips = oppositeScheduleTrips.filter(t => this.isServiceActiveOnDate(t.serviceId, now));
 
     const sortides = data && data.sortides && data.sortides.sortida
       ? (Array.isArray(data.sortides.sortida) ? data.sortides.sortida : [data.sortides.sortida])
@@ -523,6 +527,19 @@ class CorridorTracker {
 
       const delayInfo = this.computeScheduledMatch(timeStr, isRealtime, stopGtfsId, direction, stopMouteId, stopSeq);
       
+      let matchedVehicleId = s.tripId || null;
+      let matchedCoords = null;
+      if (delayInfo.bestTrip) {
+        const activeBus = this.interpolateBusPosition(delayInfo.bestTrip, currentSec, stopsMap, stopsList, oppositeTrips);
+        if (activeBus && !activeBus.isTerminalLayover) {
+          const busFromSeq = activeBus.fromSeq || 0;
+          if (stopSeq === null || stopSeq >= busFromSeq) {
+            matchedVehicleId = activeBus.vehicleId || activeBus.tripId;
+            matchedCoords = { lat: activeBus.lat, lon: activeBus.lon };
+          }
+        }
+      }
+
       if (isToday) {
         seenTodayTripKeys.add(`${delayInfo.scheduledTime}_${s.direccioId || ''}`);
         seenTodayTripKeys.add(`${delayInfo.scheduledTime}`);
@@ -533,7 +550,9 @@ class CorridorTracker {
       results.push({
         lineId: s.liniaId || '02498',
         lineName: 'C-10',
-        tripId: s.tripId,
+        tripId: s.tripId || delayInfo.bestTrip?.tripId,
+        vehicleId: matchedVehicleId,
+        busCoords: matchedCoords,
         destination: s.direccio || (s.direccioId === 'R' ? 'Hospital de Mataró' : 'Barcelona'),
         directionId: s.direccioId,
         departureTime: timeStr,
@@ -558,10 +577,7 @@ class CorridorTracker {
 
     // CRITICAL: If an active trip is currently in transit today and this stop has dropped from Mou-te due to delay,
     // ensure the active trip is preserved ONLY if it is physically active and has NOT passed this stop yet!
-    const stopsMap = isDir1 ? this.stopsMapDir1 : this.stopsMapDir0;
     const stopsListCurrent = isDir1 ? this.stopsDir1 : this.stopsDir0;
-    const oppositeScheduleTrips = isDir1 ? (this.fullSchedule?.dir0 || []) : (this.fullSchedule?.dir1 || []);
-    const oppositeTrips = oppositeScheduleTrips.filter(t => this.isServiceActiveOnDate(t.serviceId, now));
 
     for (const trip of todaysTrips) {
       const stopEntry = trip.stops.find(s => (stopGtfsId && s.stopId === stopGtfsId) || (stopSeq !== null && s.seq === stopSeq));

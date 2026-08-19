@@ -30,7 +30,7 @@ class MouTeClient {
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2500); // 2.5s fast timeout
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
 
       const res = await fetch(url, {
         headers: {

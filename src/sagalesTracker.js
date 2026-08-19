@@ -132,7 +132,7 @@ class SagalesTracker {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           'Accept': 'application/json, text/plain, */*'
         },
-        timeout: 2500
+        timeout: 6000
       }, (res) => {
         let data = '';
         res.on('data', chunk => data += chunk);
@@ -167,10 +167,12 @@ class SagalesTracker {
     try {
       const url = `https://www.sagales.com/real-time-bus/${sagalesRouteId}/${dir}`;
       const json = await this.fetchJson(url);
-      this.cache.set(cacheKey, { timestamp: now, data: json });
+      if (json) {
+        this.cache.set(cacheKey, { timestamp: now, data: json });
+      }
       return json;
     } catch (err) {
-      console.error(`[SagalesTracker] Error fetching ${sagalesRouteId}/${dir}:`, err.message);
+      console.warn(`[SagalesTracker] Notice: Upstream feed unavailable for ${sagalesRouteId}/${dir} (${err.message})`);
       if (cached) return cached.data; // Fallback to stale cache
       return null;
     }

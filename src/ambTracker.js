@@ -2,7 +2,7 @@ const https = require('https');
 const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
 
-const AMB_API_KEY = '28EbLJtP0A6CtrWeXp6zE1zy3kp4RzmnaA2sy8JM';
+const AMB_API_KEY = process.env.AMB_API_KEY || '28EbLJtP0A6CtrWeXp6zE1zy3kp4RzmnaA2sy8JM';
 const AMB_BASE_HOST = 'api.ambmobilitat.cat';
 
 // Agency Mapping Rules
@@ -70,7 +70,7 @@ class AmbTracker {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
           'Accept': 'application/json'
         },
-        timeout: 2500
+        timeout: 5000
       };
 
       const req = https.request(options, (res) => {

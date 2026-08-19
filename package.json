@@ -4,6 +4,7 @@
   "description": "Real-time tracker and GPS telemetry platform for line C-10 (Barcelona - Mataró) and all Mataró Bus urban lines (L1-L8) with dead-zone estimation",
   "main": "server.js",
   "scripts": {
+    "build": "echo 'Build complete'",
     "start": "node server.js",
     "dev": "node server.js",
     "test": "node test/e2e_multiline_test.js && node test/e2e_flight_recorder_test.js"
