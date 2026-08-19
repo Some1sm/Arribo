@@ -5,6 +5,10 @@ class FlightRecorder {
     this.vehicles = new Map(); // vehicleId -> VehicleState
     this.lineIndex = new Map(); // lineCodeUpper -> Set(vehicleId)
     this.maxMemoryBreadcrumbs = 60;
+    const snapshotIntervalMs = Number.parseInt(process.env.VEHICLE_SNAPSHOT_INTERVAL_MS || '60000', 10);
+    this.snapshotIntervalMs = Number.isFinite(snapshotIntervalMs) && snapshotIntervalMs > 0
+      ? snapshotIntervalMs
+      : 60000;
     this.deadReckonInterval = null;
     this.init();
   }
@@ -40,6 +44,7 @@ class FlightRecorder {
         isRealTime: snap.isRealTime !== false,
         status: 'active',
         lastSeen: now,
+        lastPersistedAt: 0,
         history: []
       };
       this.vehicles.set(vId, v);
@@ -74,21 +79,26 @@ class FlightRecorder {
       this.lineIndex.get(lineCode).add(vId);
     }
 
-    // Persist to SQLite
-    historyDb.recordVehicleSnapshot({
-      vehicleId: v.vehicleId,
-      lineId: v.lineId,
-      lineCode: v.lineCode,
-      agency: v.agency,
-      lat: v.lat,
-      lon: v.lon,
-      speedKmh: v.speedKmh,
-      bearing: v.bearing,
-      delayMins: v.delayMins,
-      isRealTime: v.isRealTime,
-      status: v.status,
-      timestamp: now
-    });
+    // Persist live state independently of the polling frequency. The frontend
+    // still receives every poll in memory, but one-minute sampling is enough
+    // for the historical trail and prevents raw GPS rows dominating the DB.
+    if (!v.lastPersistedAt || now - v.lastPersistedAt >= this.snapshotIntervalMs) {
+      historyDb.recordVehicleSnapshot({
+        vehicleId: v.vehicleId,
+        lineId: v.lineId,
+        lineCode: v.lineCode,
+        agency: v.agency,
+        lat: v.lat,
+        lon: v.lon,
+        speedKmh: v.speedKmh,
+        bearing: v.bearing,
+        delayMins: v.delayMins,
+        isRealTime: v.isRealTime,
+        status: v.status,
+        timestamp: now
+      });
+      v.lastPersistedAt = now;
+    }
   }
 
   recordArrivalDelay(entry) {

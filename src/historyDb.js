@@ -12,6 +12,16 @@ class HistoryDatabase {
   constructor() {
     const customDataDir = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
     this.dbPath = process.env.DB_PATH || path.join(customDataDir, 'transit_history.db');
+    // Raw vehicle positions are only needed for the recent trail endpoint. Keep
+    // this configurable so deployments can trade trail history for disk usage.
+    const snapshotRetentionHours = Number.parseFloat(process.env.SNAPSHOT_RETENTION_HOURS || '2');
+    this.snapshotRetentionHours = Number.isFinite(snapshotRetentionHours) && snapshotRetentionHours > 0
+      ? snapshotRetentionHours
+      : 2;
+    const delayRetentionDays = Number.parseInt(process.env.DELAY_RETENTION_DAYS || '30', 10);
+    this.delayRetentionDays = Number.isFinite(delayRetentionDays) && delayRetentionDays > 0
+      ? delayRetentionDays
+      : 30;
     this.db = null;
     this.init();
   }
@@ -446,22 +456,31 @@ class HistoryDatabase {
     }
   }
 
-  // Retention cleanup: roll up stats first, then prune raw logs older than daysRetention
-  pruneOldRecords(daysRetention = 30) {
+  // Retention cleanup: roll up stats first, then prune raw logs and snapshots.
+  pruneOldRecords(daysRetention = this.delayRetentionDays) {
     if (!this.db) return;
     try {
       // 1. Ensure all historical data is aggregated into hourly rollups first
       this.aggregateHourlyStats(daysRetention * 24);
 
-      // 2. Delete raw vehicle snapshots older than 2 days (for trails/cockpit)
-      const snapshotCutoff = Date.now() - 2 * 86400 * 1000;
-      this.db.prepare(`DELETE FROM vehicle_snapshots WHERE timestamp < ?`).run(snapshotCutoff);
+      // 2. Delete raw vehicle snapshots outside the recent trail window.
+      const snapshotCutoff = Date.now() - this.snapshotRetentionHours * 3600 * 1000;
+      const deletedSnapshots = this.db
+        .prepare(`DELETE FROM vehicle_snapshots WHERE timestamp < ?`)
+        .run(snapshotCutoff);
 
       // 3. Delete raw delay logs older than retention window (default 30 days)
       const cutoff = Date.now() - daysRetention * 86400 * 1000;
-      this.db.prepare(`DELETE FROM delay_logs WHERE timestamp < ?`).run(cutoff);
-      this.db.exec(`PRAGMA optimize;`);
-      console.log(`[HistoryDB] Pruned old records (snapshots: 2d, delays: ${daysRetention}d, hourly stats preserved).`);
+      const deletedDelays = this.db
+        .prepare(`DELETE FROM delay_logs WHERE timestamp < ?`)
+        .run(cutoff);
+
+      // optimize() does not return pages to the filesystem. Since the database
+      // uses incremental auto-vacuum, explicitly reclaim pages after pruning.
+      this.db.exec(`PRAGMA optimize; PRAGMA incremental_vacuum;`);
+      const snapshotChanges = deletedSnapshots?.changes || 0;
+      const delayChanges = deletedDelays?.changes || 0;
+      console.log(`[HistoryDB] Pruned old records (snapshots: ${this.snapshotRetentionHours}h, delays: ${daysRetention}d, deleted: ${snapshotChanges + delayChanges}, hourly stats preserved).`);
     } catch (e) {
       console.error('[HistoryDB] pruneOldRecords error:', e.message);
     }

@@ -10,6 +10,10 @@ services:
       - PORT=3000
       - TZ=Europe/Madrid
       - NODE_OPTIONS=--max-old-space-size=256
+      # Storage controls for the persistent SQLite flight recorder
+      - SNAPSHOT_RETENTION_HOURS=2
+      - VEHICLE_SNAPSHOT_INTERVAL_MS=60000
+      - DELAY_RETENTION_DAYS=30
     deploy:
       resources:
         limits:

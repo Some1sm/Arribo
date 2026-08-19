@@ -28,6 +28,10 @@ class IngestionDaemon {
     this.isRunning = true;
     console.log('[IngestionDaemon] 🚀 Starting Autonomous Centralized Ingestion Server...');
 
+    // Apply retention immediately so a restart cannot leave the previous
+    // retention window on disk until the first scheduled maintenance pass.
+    historyDb.pruneOldRecords();
+
     // 1. Initial Ingestion Run
     this.pollAmbVehicles();
     this.pollAmbLines();
@@ -65,8 +69,9 @@ class IngestionDaemon {
     // 9. Schedule Disruptions Ingestion (every 3 minutes)
     this.disruptionsTimer = setInterval(() => this.pollDisruptions(), 180000);
 
-    // 10. Schedule DB Pruning (every 12 hours)
-    this.pruneTimer = setInterval(() => historyDb.pruneOldRecords(30), 12 * 3600 * 1000);
+    // 10. Schedule DB pruning (every hour) to keep the short raw snapshot
+    // window bounded even when the service runs continuously.
+    this.pruneTimer = setInterval(() => historyDb.pruneOldRecords(), 3600 * 1000);
   }
 
   stop() {
@@ -446,4 +451,3 @@ class IngestionDaemon {
 }
 
 module.exports = new IngestionDaemon();
-

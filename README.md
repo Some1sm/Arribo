@@ -101,6 +101,14 @@ npm start
 # Server will run on http://localhost:3000
 ```
 
+### Storage controls
+
+The flight recorder keeps live polling at its normal frequency but stores only
+one vehicle snapshot per minute. Raw GPS snapshots are retained for two hours,
+which is longer than the historical trail endpoint needs. These values can be
+changed with `VEHICLE_SNAPSHOT_INTERVAL_MS`, `SNAPSHOT_RETENTION_HOURS`, and
+`DELAY_RETENTION_DAYS`.
+
 ---
 
 ## 🌐 Free Cloud Deployment
