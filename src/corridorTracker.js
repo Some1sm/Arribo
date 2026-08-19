@@ -82,6 +82,8 @@ class CorridorTracker {
       { id: '10025777', name: 'Badalona - Pompeu Fabra', zone: 'AMB', seq: 37, gtfsStopId: 'GEN_PF08015025' },
       { id: '10008500', name: 'Barcelona - Metro la Pau', zone: 'AMB', seq: 44, gtfsStopId: 'GEN_PF08019096' }
     ];
+
+    this.liveTrackingCache = new Map(); // dir -> { data, timestamp }
   }
 
   loadData() {
@@ -1004,6 +1006,12 @@ class CorridorTracker {
   }
 
   async getCorridorLiveTracking(direction = '1') {
+    const cached = this.liveTrackingCache.get(direction);
+    const nowMs = Date.now();
+    if (cached && (nowMs - cached.timestamp < 15000)) {
+      return cached.data;
+    }
+
     const isDir1 = direction === '1';
     const checkpoints = isDir1 ? this.checkpointsDir1 : this.checkpointsDir0;
     const scheduleTrips = isDir1 ? (this.fullSchedule?.dir1 || []) : (this.fullSchedule?.dir0 || []);
@@ -1034,124 +1042,64 @@ class CorridorTracker {
     const nextUpcomingTrip = todaysTrips.find(t => timeToSec(t.stops[t.stops.length - 1].arr) >= currentSec) || todaysTrips[0] || null;
     const targetTripToTrack = primaryActiveTrip || nextUpcomingTrip;
 
-    const promises = checkpoints.map(async cp => {
-      try {
-        const data = await mouteClient.getNextDepartures(cp.id, true, 'ca_ES');
-        const deps = this.parseDepartures(data, cp.gtfsStopId, direction, cp.id, cp.seq);
+    const checkpointResults = checkpoints.map(cp => {
+      const stopEntry = targetTripToTrack?.stops?.find(s => s.stopId === cp.gtfsStopId || s.seq === cp.seq);
+      const stopSchedTime = stopEntry ? (stopEntry.dep || stopEntry.arr || '').substring(0, 5) : null;
+      let next = null;
 
-        let next = null;
-
-        if (primaryBus && targetTripToTrack) {
-          // If an active bus is traveling:
-          const stopEntry = targetTripToTrack.stops.find(s => s.stopId === cp.gtfsStopId || s.seq === cp.seq);
-          const stopSchedTime = stopEntry ? (stopEntry.dep || stopEntry.arr || '').substring(0, 5) : null;
-
-          if (cp.seq <= primaryBus.fromSeq) {
-            // 1. Upstream checkpoint already passed by the active bus
-            next = {
-              lineId: '02498',
-              lineName: 'C-10',
-              destination: isDir1 ? 'Hospital de Mataró' : 'Barcelona (Metro la Pau)',
-              departureTime: stopSchedTime || '--:--',
-              scheduledTime: stopSchedTime || '--:--',
-              delayMinutes: 0,
-              delayStatus: 'passed',
-              delayBadgeText: 'Passat ✓',
-              isRealtime: true,
-              isPassed: true,
-              minutesAway: -1,
-              formattedStatus: 'Passat ✓'
-            };
-          } else {
-            // 2. Downstream checkpoint upcoming for this active bus
-            const matchedDep = deps.find(d => d.tripId === targetTripToTrack.tripId || d.scheduledTime === stopSchedTime);
-            if (matchedDep) {
-              next = matchedDep;
-            } else if (stopSchedTime) {
-              const [h, m] = stopSchedTime.split(':').map(Number);
-              const schedSec = h * 3600 + m * 60;
-              const diffSec = schedSec - currentSec;
-              const diffMin = Math.max(1, Math.round(diffSec / 60));
-              const depIso = new Date(now.getTime() + diffSec * 1000).toISOString();
-
-              next = {
-                lineId: '02498',
-                lineName: 'C-10',
-                destination: isDir1 ? 'Hospital de Mataró' : 'Barcelona (Metro la Pau)',
-                departureTime: stopSchedTime,
-                departureDate: depIso,
-                expectedIso: depIso,
-                aimedIso: depIso,
-                minutesAway: diffMin,
-                isRealtime: false,
-                isToday: true,
-                scheduledTime: stopSchedTime,
-                delayMinutes: 0,
-                delayStatus: 'scheduled',
-                delayBadgeText: 'Horari teòric',
-                formattedStatus: `${diffMin} min`
-              };
-            }
-          }
-        } else if (targetTripToTrack) {
-          // No bus currently active on corridor: track next scheduled trip consistently
-          const stopEntry = targetTripToTrack.stops.find(s => s.stopId === cp.gtfsStopId || s.seq === cp.seq);
-          if (stopEntry) {
-            const timeStr = (stopEntry.dep || stopEntry.arr || '').substring(0, 5);
-            const [h, m] = timeStr.split(':').map(Number);
-            const schedSec = h * 3600 + m * 60;
-            const diffSec = schedSec - currentSec;
-            const diffMin = Math.max(1, Math.round(diffSec / 60));
-            const depIso = new Date(now.getTime() + diffSec * 1000).toISOString();
-
-            next = {
-              lineId: '02498',
-              lineName: 'C-10',
-              destination: isDir1 ? 'Hospital de Mataró' : 'Barcelona (Metro la Pau)',
-              departureTime: timeStr,
-              departureDate: depIso,
-              expectedIso: depIso,
-              aimedIso: depIso,
-              scheduledTime: timeStr,
-              delayMinutes: 0,
-              delayStatus: 'scheduled',
-              delayBadgeText: 'Horari teòric',
-              isRealtime: false,
-              isPassed: diffSec < -120,
-              minutesAway: diffMin,
-              formattedStatus: diffMin <= 0 ? 'Imminent' : `${diffMin} min`
-            };
-          }
-        }
-
-        if (!next) {
-          next = deps.find(d => d.minutesAway >= -1) || deps[0] || null;
-        }
-
-        return {
-          id: cp.id,
-          name: cp.name,
-          zone: cp.zone,
-          seq: cp.seq,
-          nextBus: next,
-          allDepartures: deps.slice(0, 3)
+      if (primaryBus && targetTripToTrack && cp.seq <= primaryBus.fromSeq) {
+        next = {
+          lineId: '02498',
+          lineName: 'C-10',
+          destination: isDir1 ? 'Hospital de Mataró' : 'Barcelona (Metro la Pau)',
+          departureTime: stopSchedTime || '--:--',
+          scheduledTime: stopSchedTime || '--:--',
+          delayMinutes: 0,
+          delayStatus: 'passed',
+          delayBadgeText: 'Passat ✓',
+          isRealtime: true,
+          isPassed: true,
+          minutesAway: -1,
+          formattedStatus: 'Passat ✓'
         };
-      } catch (e) {
-        return {
-          id: cp.id,
-          name: cp.name,
-          zone: cp.zone,
-          seq: cp.seq,
-          nextBus: null,
-          error: e.message
+      } else if (stopSchedTime) {
+        const [h, m] = stopSchedTime.split(':').map(Number);
+        const schedSec = h * 3600 + m * 60;
+        const diffSec = schedSec - currentSec;
+        const diffMin = Math.max(1, Math.round(diffSec / 60));
+        const depIso = new Date(now.getTime() + diffSec * 1000).toISOString();
+
+        next = {
+          lineId: '02498',
+          lineName: 'C-10',
+          destination: isDir1 ? 'Hospital de Mataró' : 'Barcelona (Metro la Pau)',
+          departureTime: stopSchedTime,
+          departureDate: depIso,
+          expectedIso: depIso,
+          aimedIso: depIso,
+          minutesAway: diffMin,
+          isRealtime: false,
+          isToday: true,
+          scheduledTime: stopSchedTime,
+          delayMinutes: 0,
+          delayStatus: 'scheduled',
+          delayBadgeText: 'Horari teòric',
+          formattedStatus: `${diffMin} min`
         };
       }
+
+      return {
+        id: cp.id,
+        gtfsStopId: cp.gtfsStopId,
+        name: cp.name,
+        zone: cp.zone,
+        seq: cp.seq,
+        nextBus: next
+      };
     });
 
-    const checkpointResults = await Promise.all(promises);
-    checkpointResults.sort((a, b) => a.seq - b.seq);
 
-    return {
+    const result = {
       direction: direction,
       currentSec: currentSec,
       activeServiceCount: todaysTrips.length,
@@ -1161,6 +1109,9 @@ class CorridorTracker {
       targetStop: this.targetStop,
       lastUpdated: new Date().toISOString()
     };
+
+    this.liveTrackingCache.set(direction, { data: result, timestamp: Date.now() });
+    return result;
   }
 }
 

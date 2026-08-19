@@ -453,12 +453,15 @@ class HistoryDatabase {
       // 1. Ensure all historical data is aggregated into hourly rollups first
       this.aggregateHourlyStats(daysRetention * 24);
 
-      // 2. Delete raw records older than retention window (default 30 days)
+      // 2. Delete raw vehicle snapshots older than 2 days (for trails/cockpit)
+      const snapshotCutoff = Date.now() - 2 * 86400 * 1000;
+      this.db.prepare(`DELETE FROM vehicle_snapshots WHERE timestamp < ?`).run(snapshotCutoff);
+
+      // 3. Delete raw delay logs older than retention window (default 30 days)
       const cutoff = Date.now() - daysRetention * 86400 * 1000;
-      this.db.prepare(`DELETE FROM vehicle_snapshots WHERE timestamp < ?`).run(cutoff);
       this.db.prepare(`DELETE FROM delay_logs WHERE timestamp < ?`).run(cutoff);
-      this.db.exec(`PRAGMA incremental_vacuum; PRAGMA optimize;`);
-      console.log(`[HistoryDB] Pruned raw records older than ${daysRetention} days (hourly stats preserved, disk space reclaimed).`);
+      this.db.exec(`PRAGMA optimize;`);
+      console.log(`[HistoryDB] Pruned old records (snapshots: 2d, delays: ${daysRetention}d, hourly stats preserved).`);
     } catch (e) {
       console.error('[HistoryDB] pruneOldRecords error:', e.message);
     }

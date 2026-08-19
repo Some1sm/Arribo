@@ -137,23 +137,8 @@ class IngestionDaemon {
 
   async pollAmbLines() {
     try {
-      const targetAmbLines = [
-        // TUSGSAL MetroBus (Barcelonès Nord)
-        'm1', 'm6', 'm19', 'm26', 'm27', 'm28', 'm30',
-        // Baix Llobregat & L'Hospitalet MetroBus
-        'm5', 'm12', 'm14', 'm15', 'm75',
-        // Key TUSGSAL urban & interurban B-lines
-        'b25', 'b24', 'b20', 'b21', 'b23', 'b29', 'b3', 'b18', 'b80', 'b1', 'b2',
-        // TUSGSAL NitBus
-        'n0', 'n1', 'n2', 'n9',
-        // Avanza Baix Llobregat
-        'l80', 'l82', 'l85', 'l86', 'l94', 'l95',
-        // Monbus Aerobús & Urbans
-        'a1', 'a2', 'pa2',
-        // TMB High Frequency Trunk Corridors
-        'v15', 'h12', 'd20', 'd40', 'h6', 'v21'
-      ];
-      for (const lId of targetAmbLines) {
+      const targetAmbLines = ['m1', 'm6', 'm19', 'm26', 'm28', 'b25', 'b24', 'l80', 'a1', 'v15', 'h12', 'd20'];
+      await Promise.allSettled(targetAmbLines.map(async (lId) => {
         try {
           const eta = await ambTracker.getTargetStopETA(lId, null, '0');
           const nb = eta?.nextBus;
@@ -176,9 +161,9 @@ class IngestionDaemon {
             });
           }
         } catch (err) {
-          // Line-specific skip
+          // Skip individual line
         }
-      }
+      }));
     } catch (e) {
       // Upstream temporary hiccup
     }
@@ -342,19 +327,12 @@ class IngestionDaemon {
 
   async pollRodaliesTrains() {
     try {
-      const trains = [
-        'r1', 'r2', 'r2n', 'r2s', 'r3', 'r4', 'r7', 'r8',
-        'rg1', 'r11', 'r13', 'r14', 'r15', 'r16', 'r17',
-        'rl3', 'rl4', 'rt1', 'rt2'
-      ];
-      for (const tId of trains) {
+      const trains = ['r1', 'r2', 'r2n', 'r3', 'r4', 'rg1', 'r11'];
+      await Promise.allSettled(trains.map(async (tId) => {
         try {
           const lineDetails = await rodaliesTracker.getLineDetails(tId, '0');
           const stations = lineDetails?.stops || [];
-          const sampleStations = [
-            stations[Math.floor(stations.length / 2)],
-            stations[stations.length - 1]
-          ].filter(Boolean);
+          const sampleStations = [stations[Math.floor(stations.length / 2)]].filter(Boolean);
 
           for (const st of sampleStations) {
             const eta = await rodaliesTracker.getTargetStopETA(tId, st.id, '0');
@@ -376,7 +354,7 @@ class IngestionDaemon {
         } catch (err) {
           // Skip individual train
         }
-      }
+      }));
     } catch (e) {
       // Upstream temporary hiccup
     }
@@ -386,14 +364,11 @@ class IngestionDaemon {
     try {
       const allLines = sagalesTracker.getLines();
       const sagalesLines = allLines.length > 0 ? allLines.map(l => l.id) : ['603', 'n82', 'n83', 'n70', 'n71', 'n73'];
-      for (const sId of sagalesLines) {
+      await Promise.allSettled(sagalesLines.map(async (sId) => {
         try {
           const lineDetails = await sagalesTracker.getLineDetails(sId, '0');
           const stops = lineDetails?.stops || [];
-          const sampleStops = [
-            stops[Math.floor(stops.length / 2)],
-            stops[stops.length - 1]
-          ].filter(Boolean);
+          const sampleStops = [stops[Math.floor(stops.length / 2)]].filter(Boolean);
 
           for (const st of sampleStops) {
             const eta = await sagalesTracker.getTargetStopETA(sId, st.id, '0');
@@ -419,7 +394,7 @@ class IngestionDaemon {
         } catch (err) {
           // Skip individual line
         }
-      }
+      }));
     } catch (e) {
       // Upstream temporary hiccup
     }
@@ -427,8 +402,8 @@ class IngestionDaemon {
 
   async pollCataloniaLines() {
     try {
-      const sampleRoutes = cataloniaTracker.routes.slice(0, 40);
-      for (const r of sampleRoutes) {
+      const sampleRoutes = cataloniaTracker.routes.slice(0, 10);
+      await Promise.allSettled(sampleRoutes.map(async (r) => {
         try {
           const details = cataloniaTracker.routeDetailsMap.get(r.id);
           const stops = details?.stopsByDirection?.['0'] || [];
@@ -455,7 +430,7 @@ class IngestionDaemon {
         } catch (err) {
           // Skip individual route
         }
-      }
+      }));
     } catch (e) {
       // Upstream temporary hiccup
     }

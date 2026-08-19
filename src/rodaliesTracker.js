@@ -52,7 +52,7 @@ class RodaliesTracker {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
           'Accept': 'application/json'
         },
-        timeout: 10000
+        timeout: 2500
       };
 
       const req = https.request(options, (res) => {
@@ -280,9 +280,12 @@ class RodaliesTracker {
     const foundTrains = new Set();
     const now = Date.now();
 
-    for (const st of checkStations.slice(0, 4)) {
-      const trainArrivals = await this.getStationRealtime(st.code);
-      trainArrivals.forEach(t => {
+    const stationArrivalsList = await Promise.all(
+      checkStations.slice(0, 4).map(st => this.getStationRealtime(st.code).then(arrs => ({ st, arrs })).catch(() => ({ st, arrs: [] })))
+    );
+
+    stationArrivalsList.forEach(({ st, arrs }) => {
+      arrs.forEach(t => {
         if (String(t.lineCode).toUpperCase() === String(route.code).toUpperCase()) {
           const tKey = `${t.lineCode}_${t.destination}_${t.arrivalTime}`;
           if (!foundTrains.has(tKey)) {
@@ -320,7 +323,7 @@ class RodaliesTracker {
           }
         }
       });
-    }
+    });
 
     // Checkpoints
     const stepInterval = Math.max(1, Math.floor(stations.length / 8));

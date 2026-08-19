@@ -4,7 +4,8 @@ class MouTeClient {
   constructor() {
     this.baseUrl = 'https://mou-te.gencat.cat/MouteAPI/rest/';
     this.cache = new Map(); // key -> { data, timestamp }
-    this.cacheTTL = 15 * 1000; // 15 seconds cache
+    this.cacheTTL = 30 * 1000; // 30 seconds fresh cache
+    this.staleTTL = 120 * 1000; // 2 minutes stale fallback
   }
 
   getAuthHeader() {
@@ -28,13 +29,19 @@ class MouTeClient {
     const url = `${this.baseUrl}${endpoint}`;
 
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500); // 2.5s fast timeout
+
       const res = await fetch(url, {
         headers: {
           'AT': at,
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           'Accept': 'application/json, text/plain, */*'
-        }
+        },
+        signal: controller.signal
       });
+
+      clearTimeout(timeoutId);
 
       if (!res.ok) {
         throw new Error(`Mou-te API HTTP ${res.status}: ${res.statusText}`);
@@ -51,12 +58,11 @@ class MouTeClient {
       }
       return data;
     } catch (err) {
-      console.error(`[MouTeClient Error] Failed to fetch ${endpoint}:`, err.message);
       // Return cached entry if available even if stale
       if (this.cache.has(cacheKey)) {
         return this.cache.get(cacheKey).data;
       }
-      throw err;
+      return null;
     }
   }
 
@@ -68,12 +74,20 @@ class MouTeClient {
 
   async getStopLines(stopId, language = 'ca_ES') {
     const endpoint = `infrastructure/stop/linesNEW?paradaId=${stopId}&language=${language}`;
-    return await this.fetchWithAuth(endpoint);
+    const data = await this.fetchWithAuth(endpoint);
+    return data;
   }
 
-  async getNearbyTransports(lat, lon, radius = 200, language = 'ca_ES') {
-    const endpoint = `infrastructure/nearbyotp?coordX=${lon}&coordY=${lat}&radius=${radius}&language=${language}`;
-    return await this.fetchWithAuth(endpoint, true);
+  async getLineDetails(lineId, useRealTime = true, language = 'ca_ES') {
+    const endpoint = `infrastructure/line/detailsNEW?lineId=${lineId}&useRealTime=${useRealTime}&language=${language}`;
+    const data = await this.fetchWithAuth(endpoint);
+    return data;
+  }
+
+  async getLineAlerts(lineId, language = 'ca_ES') {
+    const endpoint = `alerts/lineNEW?lineId=${lineId}&language=${language}`;
+    const data = await this.fetchWithAuth(endpoint);
+    return data;
   }
 }
 
