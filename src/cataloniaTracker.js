@@ -358,7 +358,7 @@ class CataloniaTracker {
       console.warn(`[CataloniaTracker] getStopDepartures Mou-te fetch failed:`, e.message);
     }
 
-    // 2. If no real-time departures, load authoritative GTFS timetable for today
+    // 2. If no real-time departures, load authoritative GTFS timetable
     if (departures.length === 0) {
       const now = new Date();
       const scheduledTrips = this.getScheduledDeparturesForDate(route, dirIdx, now);
@@ -376,11 +376,47 @@ class CataloniaTracker {
           formattedStatus: t.minsAway <= 1 ? 'Imminent' : (t.minsAway < 60 ? `${t.minsAway} min` : t.departureTime),
           isRealTime: false,
           isEstimated: false,
+          isToday: true,
           delayMins: 0,
           delayStatus: 'scheduled',
           delayBadgeText: 'Horari teòric'
         });
       });
+
+      // If no trips remain today (e.g. at night), load tomorrow's schedule (or next active day)
+      if (departures.length === 0) {
+        for (let dayOffset = 1; dayOffset <= 7; dayOffset++) {
+          const nextDate = new Date(now.getTime() + dayOffset * 86400000);
+          const nextTrips = this.getScheduledDeparturesForDate(route, dirIdx, nextDate);
+          if (nextTrips.length > 0) {
+            const isTomorrow = dayOffset === 1;
+            const daysOfWeek = ['Dg.', 'Dl.', 'Dt.', 'Dc.', 'Dj.', 'Dv.', 'Ds.'];
+            const dowName = daysOfWeek[nextDate.getDay()];
+            const prefix = isTomorrow ? 'Demà' : dowName;
+
+            nextTrips.slice(0, 10).forEach((t, idx) => {
+              departures.push({
+                lineId: route.id,
+                lineCode: route.code,
+                lineName: route.code,
+                destination: dirMeta.name,
+                departureTime: t.departureTime,
+                minutesAway: null,
+                etaFormatted: idx === 0 ? `🌅 ${t.departureTime}` : t.departureTime,
+                formattedStatus: `${prefix} ${t.departureTime}`,
+                isRealTime: false,
+                isEstimated: false,
+                isToday: false,
+                isFirstOfDay: idx === 0,
+                delayMins: 0,
+                delayStatus: 'scheduled',
+                delayBadgeText: idx === 0 ? (isTomorrow ? '1r pas previst demà' : `1r pas ${dowName}`) : 'Programat'
+              });
+            });
+            break;
+          }
+        }
+      }
     }
 
     return {
@@ -453,6 +489,7 @@ class CataloniaTracker {
             etaFormatted: arrMins <= 1 ? 'Imminent' : `${arrMins} min`,
             destination: item.destinacio || dirMeta.name,
             isRealTime: !!item.esTempsReal,
+            isToday: true,
             delayText: item.retard ? `+${item.retard} min retard` : 'Puntual',
             delayMins: parseInt(item.retard || '0', 10),
             delayBadgeClass: 'ontime'
@@ -474,7 +511,7 @@ class CataloniaTracker {
       console.warn(`[CataloniaTracker] Mou-te live departure fetch for stop ${targetStopId} failed:`, e.message);
     }
 
-    // 2. If no real-time arrivals found, load authoritative GTFS timetable for today
+    // 2. If no real-time arrivals found, load authoritative GTFS timetable
     if (liveArrivals.length === 0) {
       const now = new Date();
       const scheduledTrips = this.getScheduledDeparturesForDate(route, dirIdx, now);
@@ -488,11 +525,43 @@ class CataloniaTracker {
           etaFormatted: t.minsAway <= 1 ? 'Imminent' : (t.minsAway < 60 ? `${t.minsAway} min` : t.departureTime),
           destination: dirMeta.name,
           isRealTime: false,
+          isToday: true,
           delayText: 'Horari teòric',
           delayMins: 0,
           delayBadgeClass: 'scheduled'
         });
       });
+
+      // If no trips remain today (e.g. at night), load tomorrow's schedule (or next active day)
+      if (liveArrivals.length === 0) {
+        for (let dayOffset = 1; dayOffset <= 7; dayOffset++) {
+          const nextDate = new Date(now.getTime() + dayOffset * 86400000);
+          const nextTrips = this.getScheduledDeparturesForDate(route, dirIdx, nextDate);
+          if (nextTrips.length > 0) {
+            const isTomorrow = dayOffset === 1;
+            const daysOfWeek = ['Dg.', 'Dl.', 'Dt.', 'Dc.', 'Dj.', 'Dv.', 'Ds.'];
+            const dowName = daysOfWeek[nextDate.getDay()];
+            const prefix = isTomorrow ? 'Demà' : dowName;
+
+            nextTrips.forEach((t, idx) => {
+              liveArrivals.push({
+                time: t.departureTime,
+                timeFormatted: `${prefix} a les ${t.departureTime}`,
+                minsAway: null,
+                etaFormatted: idx === 0 ? `🌅 ${t.departureTime}` : t.departureTime,
+                destination: dirMeta.name,
+                isRealTime: false,
+                isToday: false,
+                isFirstOfDay: idx === 0,
+                delayText: idx === 0 ? (isTomorrow ? '1r pas previst demà' : `1r pas ${dowName}`) : 'Programat',
+                delayMins: 0,
+                delayBadgeClass: 'scheduled'
+              });
+            });
+            break;
+          }
+        }
+      }
     }
 
     const hasService = liveArrivals.length > 0;
@@ -503,14 +572,15 @@ class CataloniaTracker {
       lineCode: route.code,
       lineName: route.code,
       destination: primaryArrival.destination || dirMeta.name,
-      departureTime: primaryArrival.timeFormatted || primaryArrival.time || '--:--',
+      departureTime: primaryArrival.time,
       minutesAway: primaryArrival.minsAway,
-      formattedStatus: primaryArrival.etaFormatted || `${primaryArrival.minsAway} min`,
+      formattedStatus: primaryArrival.timeFormatted || primaryArrival.etaFormatted || `${primaryArrival.minsAway} min`,
       isRealtime: primaryArrival.isRealTime,
-      isToday: true,
+      isToday: primaryArrival.isToday !== false,
+      isFirstOfDay: !!primaryArrival.isFirstOfDay,
       delayMinutes: primaryArrival.delayMins || 0,
       delayStatus: primaryArrival.isRealTime ? (primaryArrival.delayMins > 0 ? 'delayed' : 'ontime') : 'scheduled',
-      delayBadgeText: primaryArrival.isRealTime ? (primaryArrival.delayMins > 0 ? `+${primaryArrival.delayMins} min retard` : 'Temps real') : 'Horari teòric'
+      delayBadgeText: primaryArrival.isRealTime ? (primaryArrival.delayMins > 0 ? `+${primaryArrival.delayMins} min retard` : 'Temps real') : (primaryArrival.isToday === false ? '🌅 1r Servei del matí' : 'Horari teòric')
     } : {
       lineId: route.id,
       lineCode: route.code,
@@ -518,12 +588,12 @@ class CataloniaTracker {
       destination: dirMeta.name,
       departureTime: '--:--',
       minutesAway: null,
-      formattedStatus: 'Sense més servei avui',
+      formattedStatus: 'Sense servei programat',
       isRealtime: false,
       isToday: false,
       delayMinutes: 0,
       delayStatus: 'scheduled',
-      delayBadgeText: 'Sense servei avui'
+      delayBadgeText: 'Sense servei'
     };
 
     const upcomingDepartures = liveArrivals.map(arr => ({
@@ -533,12 +603,13 @@ class CataloniaTracker {
       destination: arr.destination || dirMeta.name,
       departureTime: arr.timeFormatted || arr.time,
       minutesAway: arr.minsAway,
-      formattedStatus: arr.etaFormatted || `${arr.minsAway} min`,
+      formattedStatus: arr.timeFormatted || arr.etaFormatted || (arr.minsAway !== null ? `${arr.minsAway} min` : arr.time),
       isRealtime: arr.isRealTime,
-      isToday: true,
+      isToday: arr.isToday !== false,
+      isFirstOfDay: !!arr.isFirstOfDay,
       delayMinutes: arr.delayMins || 0,
       delayStatus: arr.isRealTime ? (arr.delayMins > 0 ? 'delayed' : 'ontime') : 'scheduled',
-      delayBadgeText: arr.isRealTime ? 'Temps real' : 'Horari teòric'
+      delayBadgeText: arr.isRealTime ? 'Temps real' : (arr.isToday === false ? 'Programat' : 'Horari teòric')
     }));
 
     return {
@@ -563,18 +634,18 @@ class CataloniaTracker {
       upcomingDepartures,
       eta: primaryArrival ? {
         minutes: primaryArrival.minsAway,
-        formatted: primaryArrival.etaFormatted,
+        formatted: primaryArrival.isToday === false ? `🌅 ${primaryArrival.time}` : primaryArrival.etaFormatted,
         time: primaryArrival.timeFormatted,
-        isImminent: primaryArrival.minsAway <= 2,
+        isImminent: primaryArrival.minsAway !== null && primaryArrival.minsAway <= 2,
         isRealTime: primaryArrival.isRealTime,
-        statusText: primaryArrival.isRealTime ? '🟢 Temps Real (Mou-te)' : '⏱️ Horari Teòric'
+        statusText: primaryArrival.isRealTime ? '🟢 Temps Real (Mou-te)' : (primaryArrival.isToday === false ? '⏱️ Represa al matí (Horari oficial)' : '⏱️ Horari Teòric')
       } : {
         minutes: null,
-        formatted: 'Sense servei avui',
+        formatted: 'Sense servei',
         time: '--:--',
         isImminent: false,
         isRealTime: false,
-        statusText: '⏱️ Sense sortides pendents avui'
+        statusText: '⏱️ Sense sortides programades'
       },
       closestBus: null,
       departures: liveArrivals.slice(0, 8),

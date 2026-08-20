@@ -313,7 +313,7 @@ class CataloniaIndexer {
 
     // 6. Index Route Stops & Departure Timetables from stop_times.txt
     const routeStopsMap = new Map(); // routeId_dirId -> stopId -> seq
-    const routeSchedulesMap = new Map(); // routeId -> dirId -> Array of { tripId, serviceId, departureTime }
+    const tripFirstStop = new Map(); // tripId -> { seq, depTime }
     const stStream = fs.createReadStream(path.join(this.gtfsDir, 'stop_times.txt'));
     const stRl = readline.createInterface({ input: stStream, crlfDelay: Infinity });
     for await (const line of stRl) {
@@ -334,27 +334,35 @@ class CataloniaIndexer {
             sMap.set(stopId, seq);
           }
 
-          // First stop of the trip = trip departure timetable
-          if (seq === 0 || seq === 1) {
-            if (!routeSchedulesMap.has(meta.routeId)) {
-              routeSchedulesMap.set(meta.routeId, new Map());
-            }
-            const rDirMap = routeSchedulesMap.get(meta.routeId);
-            if (!rDirMap.has(meta.dirId)) {
-              rDirMap.set(meta.dirId, []);
-            }
-            const sList = rDirMap.get(meta.dirId);
-            if (depTime && !sList.some(t => t.tripId === tripId)) {
-              sList.push({
-                tripId,
-                serviceId: meta.serviceId,
-                departureTime: depTime
-              });
+          if (depTime) {
+            if (!tripFirstStop.has(tripId) || seq < tripFirstStop.get(tripId).seq) {
+              tripFirstStop.set(tripId, { seq, depTime });
             }
           }
         }
       }
     }
+
+    // Populate routeSchedulesMap from all indexed trip first stops
+    const routeSchedulesMap = new Map(); // routeId -> dirId -> Array of { tripId, serviceId, departureTime }
+    tripFirstStop.forEach((val, tripId) => {
+      const meta = tripToRoute.get(tripId);
+      if (meta) {
+        if (!routeSchedulesMap.has(meta.routeId)) {
+          routeSchedulesMap.set(meta.routeId, new Map());
+        }
+        const rDirMap = routeSchedulesMap.get(meta.routeId);
+        if (!rDirMap.has(meta.dirId)) {
+          rDirMap.set(meta.dirId, []);
+        }
+        const sList = rDirMap.get(meta.dirId);
+        sList.push({
+          tripId,
+          serviceId: meta.serviceId,
+          departureTime: val.depTime
+        });
+      }
+    });
 
     // Build route details lookup
     const routeDetails = {};
