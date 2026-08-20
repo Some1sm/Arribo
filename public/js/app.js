@@ -216,8 +216,14 @@ class TransitApp {
 
     if (this.mapController) {
       this.mapController.invalidateSize();
-      setTimeout(() => this.mapController?.invalidateSize(), 80);
-      setTimeout(() => this.mapController?.invalidateSize(), 250);
+      setTimeout(() => {
+        this.mapController?.invalidateSize();
+        this.mapController?.fitRouteBounds();
+      }, 100);
+      setTimeout(() => {
+        this.mapController?.invalidateSize();
+        this.mapController?.fitRouteBounds();
+      }, 350);
     }
   }
 
@@ -281,6 +287,7 @@ class TransitApp {
   switchLine(lineId, direction = null) {
     this.activeLineId = String(lineId);
     this.selectedVehicleId = null;
+    this.activeLineData = null;
 
     const lineObj = this.availableLines.find(l => String(l.id) === String(lineId));
     if (direction !== null) {
@@ -297,7 +304,7 @@ class TransitApp {
     }
 
     this.showActiveLineView();
-    this.mapController?.clearAllBusMarkers();
+    this.mapController?.clearAll();
     this.refreshAllData(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -685,7 +692,9 @@ class TransitApp {
           coords,
           secondaryCoords,
           secondaryStops,
-          secondaryColor
+          secondaryColor,
+          lId,
+          dir
         );
         this.mapController.updateBusMarkers(
           this.activeBuses, 

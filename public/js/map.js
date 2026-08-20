@@ -257,10 +257,10 @@ class C10Map {
   }
 
   // Render stops and road polyline on map (with support for both directions simultaneously)
-  renderStops(stops, targetStopId = '', onStopClick = null, shouldFitBounds = false, lineColor = '#009485', customPolyline = null, secondaryPolyline = null, secondaryStops = null, secondaryColor = '#38bdf8') {
+  renderStops(stops, targetStopId = '', onStopClick = null, shouldFitBounds = false, lineColor = '#009485', customPolyline = null, secondaryPolyline = null, secondaryStops = null, secondaryColor = '#38bdf8', lineId = '', direction = '') {
     if (!this.map) return;
 
-    const stopsFingerprint = `${stops.length}_${targetStopId}_${lineColor}_${customPolyline ? customPolyline.length : 0}_${secondaryPolyline ? secondaryPolyline.length : 0}`;
+    const stopsFingerprint = `${lineId}_${direction}_${stops.length}_${targetStopId}_${lineColor}_${customPolyline ? customPolyline.length : 0}_${secondaryPolyline ? secondaryPolyline.length : 0}`;
     const alreadyRendered = this.lastStopsFingerprint === stopsFingerprint && this.stopMarkers.length > 0;
 
     if (!alreadyRendered) {
@@ -446,23 +446,39 @@ class C10Map {
       // 6. Fit Map Bounds
       if (shouldFitBounds || !this._hasFittedInitialBounds) {
         this._hasFittedInitialBounds = true;
-        const boundsGroup = [];
-        if (this.routePolyline) boundsGroup.push(this.routePolyline);
-        if (this.secondaryRoutePolyline) boundsGroup.push(this.secondaryRoutePolyline);
-
-        if (boundsGroup.length > 0) {
-          const group = new L.featureGroup(boundsGroup);
-          try {
-            this.map.fitBounds(group.getBounds(), { padding: [35, 35], maxZoom: 15 });
-          } catch(e) {}
-        } else if (latLngs.length > 0) {
-          try {
-            this.map.fitBounds(L.latLngBounds(latLngs), { padding: [35, 35], maxZoom: 15 });
-          } catch(e) {}
-        }
+        this.fitRouteBounds();
       }
 
       this.lastStopsFingerprint = stopsFingerprint;
+    }
+  }
+
+  fitRouteBounds() {
+    if (!this.map) return;
+    this.map.invalidateSize({ pan: false });
+    const size = this.map.getSize();
+    if (!size || size.x === 0 || size.y === 0) {
+      setTimeout(() => this.fitRouteBounds(), 100);
+      return;
+    }
+
+    const boundsGroup = [];
+    if (this.routePolyline && this.routePolyline.getLatLngs() && this.routePolyline.getLatLngs().length > 0) {
+      boundsGroup.push(this.routePolyline);
+    }
+    if (this.secondaryRoutePolyline && this.secondaryRoutePolyline.getLatLngs() && this.secondaryRoutePolyline.getLatLngs().length > 0) {
+      boundsGroup.push(this.secondaryRoutePolyline);
+    }
+
+    if (boundsGroup.length > 0) {
+      const group = new L.featureGroup(boundsGroup);
+      try {
+        this.map.fitBounds(group.getBounds(), { padding: [35, 35], maxZoom: 15 });
+      } catch(e) {}
+    } else if (this.activePolylineCoords && this.activePolylineCoords.length > 0) {
+      try {
+        this.map.fitBounds(L.latLngBounds(this.activePolylineCoords), { padding: [35, 35], maxZoom: 15 });
+      } catch(e) {}
     }
   }
 
@@ -485,6 +501,31 @@ class C10Map {
     try {
       this.map.fitBounds(this.routePolyline.getBounds(), { padding: [30, 30], maxZoom: 15 });
     } catch(e) {}
+  }
+
+  clearAll() {
+    if (!this.map) return;
+    this.clearAllBusMarkers();
+    this.stopMarkers.forEach(m => this.map.removeLayer(m));
+    this.stopMarkers = [];
+    if (this.secondaryStopMarkers) {
+      this.secondaryStopMarkers.forEach(m => this.map.removeLayer(m));
+      this.secondaryStopMarkers = [];
+    }
+    if (this.directionalArrowMarkers) {
+      this.directionalArrowMarkers.forEach(m => this.map.removeLayer(m));
+      this.directionalArrowMarkers = [];
+    }
+    if (this.routePolyline) {
+      this.map.removeLayer(this.routePolyline);
+      this.routePolyline = null;
+    }
+    if (this.secondaryRoutePolyline) {
+      this.map.removeLayer(this.secondaryRoutePolyline);
+      this.secondaryRoutePolyline = null;
+    }
+    this.lastStopsFingerprint = null;
+    this._hasFittedInitialBounds = false;
   }
 
   clearAllBusMarkers() {
