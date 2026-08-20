@@ -178,7 +178,7 @@ class HistoryDatabase {
   }
 
   getLineDelayStats(lineCode, hoursBack = 24, lineId = null) {
-    if (!this.db) return { totalSamples: 0, avgDelayMins: 0.8, maxDelayMins: 3, onTimePct: 94, latePct: 6, moderateLatePct: 4, severeLatePct: 2 };
+    if (!this.db) return { totalSamples: 0, avgDelayMins: 0, maxDelayMins: 0, onTimePct: 100, latePct: 0, moderateLatePct: 0, severeLatePct: 0, isBaseline: true };
     try {
       const cutoff = Date.now() - hoursBack * 3600 * 1000;
       const raw = String(lineCode || '').trim();
@@ -252,17 +252,17 @@ class HistoryDatabase {
 
       return {
         totalSamples: 0,
-        avgDelayMins: 0.8,
-        maxDelayMins: 3,
-        onTimePct: 94,
-        latePct: 6,
-        moderateLatePct: 4,
-        severeLatePct: 2,
+        avgDelayMins: 0,
+        maxDelayMins: 0,
+        onTimePct: 100,
+        latePct: 0,
+        moderateLatePct: 0,
+        severeLatePct: 0,
         isBaseline: true
       };
     } catch (e) {
       console.error('[HistoryDB] getLineDelayStats error:', e.message);
-      return { totalSamples: 0, avgDelayMins: 0.8, maxDelayMins: 3, onTimePct: 94, latePct: 6, isBaseline: true };
+      return { totalSamples: 0, avgDelayMins: 0, maxDelayMins: 0, onTimePct: 100, latePct: 0, isBaseline: true };
     }
   }
 

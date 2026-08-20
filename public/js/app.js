@@ -817,11 +817,11 @@ class TransitApp {
       }
     }
 
-    const latePct = (stats && typeof stats.latePct === 'number') ? stats.latePct : 5;
-    const avgDelay = (stats && typeof stats.avgDelayMins === 'number') ? stats.avgDelayMins : 0.8;
+    const latePct = (stats && typeof stats.latePct === 'number') ? stats.latePct : 0;
+    const avgDelay = (stats && typeof stats.avgDelayMins === 'number' && stats.totalSamples > 0) ? `${stats.avgDelayMins} min` : '-- min';
 
     delayValEl.textContent = `${latePct}%`;
-    if (avgValEl) avgValEl.textContent = `${avgDelay} min`;
+    if (avgValEl) avgValEl.textContent = avgDelay;
 
     if (pillEl) {
       pillEl.classList.remove('moderate', 'severe');
