@@ -21,6 +21,64 @@ function parseCsvLine(line) {
   return result;
 }
 
+const AGENCY_INFO_MAP = {
+  'montferri': {
+    officialName: 'E. MONTFERRI HNOS., S.L.',
+    website: 'https://montferri.com/linies-regulars/',
+    notice: 'Horaris regulars i modificacions de servei oficials a montferri.com'
+  },
+  'sagales': {
+    officialName: 'Sagalés',
+    website: 'https://www.sagales.com',
+    notice: 'Xarxa d\'autobusos interurbans de Catalunya'
+  },
+  'moventis': {
+    officialName: 'Moventis / Casas',
+    website: 'https://www.moventis.es',
+    notice: 'Línies interurbanes del Maresme i Catalunya'
+  },
+  'plana': {
+    officialName: 'Empresa Plana',
+    website: 'https://www.busplana.com',
+    notice: 'Línies Camp de Tarragona i Costa Daurada'
+  },
+  'hife': {
+    officialName: 'HIFE',
+    website: 'https://www.hife.es',
+    notice: 'Línies Terres de l\'Ebre i connexions'
+  },
+  'teisa': {
+    officialName: 'TEISA',
+    website: 'https://www.teisa-bus.com',
+    notice: 'Línies Comarques Gironines'
+  },
+  'soler': {
+    officialName: 'Soler i Sauret',
+    website: 'https://www.solerisauret.com',
+    notice: 'Línies Baix Llobregat'
+  },
+  'tusgsal': {
+    officialName: 'DIREXIS TUSGSAL',
+    website: 'https://www.tusgsal.cat',
+    notice: 'Xarxa Barcelonès Nord'
+  },
+  'avanza': {
+    officialName: 'Avanza (Baix Llobregat)',
+    website: 'https://barcelona.avanzagrupo.com',
+    notice: 'Xarxa Baix Llobregat'
+  },
+  'monbus': {
+    officialName: 'Monbus',
+    website: 'https://www.monbus.es',
+    notice: 'Línies Igualadina i Aerobús'
+  },
+  'tgo': {
+    officialName: 'DIREXIS TGO',
+    website: 'https://www.tgocables.com',
+    notice: 'Línies Vallès i Montserrat'
+  }
+};
+
 class CataloniaIndexer {
   constructor() {
     this.gtfsDir = path.join(__dirname, '..', 'data', 'atm_gtfs');
@@ -28,7 +86,7 @@ class CataloniaIndexer {
   }
 
   async buildIndex() {
-    console.log('[CataloniaIndexer] Building unified Catalonia GTFS index...');
+    console.log('[CataloniaIndexer] Building unified Catalonia GTFS index with calendars & real timetables...');
     const start = Date.now();
 
     if (!fs.existsSync(this.cacheDir)) {
@@ -38,8 +96,54 @@ class CataloniaIndexer {
     const routesCachePath = path.join(this.cacheDir, 'routes.json');
     const stopsCachePath = path.join(this.cacheDir, 'stops.json');
     const routeDetailsPath = path.join(this.cacheDir, 'route_details.json');
+    const calendarCachePath = path.join(this.cacheDir, 'calendar.json');
+    const calendarDatesCachePath = path.join(this.cacheDir, 'calendar_dates.json');
 
-    // 1. Index Agencies
+    // 1. Index Calendar & Calendar Dates
+    const calendar = {};
+    const calFile = path.join(this.gtfsDir, 'calendar.txt');
+    if (fs.existsSync(calFile)) {
+      const calStream = fs.createReadStream(calFile);
+      const calRl = readline.createInterface({ input: calStream, crlfDelay: Infinity });
+      for await (const line of calRl) {
+        const parts = line.split(',');
+        if (parts[0] !== 'service_id' && parts[0].trim()) {
+          calendar[parts[0].trim()] = {
+            monday: parts[1] === '1',
+            tuesday: parts[2] === '1',
+            wednesday: parts[3] === '1',
+            thursday: parts[4] === '1',
+            friday: parts[5] === '1',
+            saturday: parts[6] === '1',
+            sunday: parts[7] === '1',
+            startDate: parts[8]?.trim() || '20250101',
+            endDate: parts[9]?.trim() || '20301231'
+          };
+        }
+      }
+    }
+
+    const calendarExceptions = {}; // dateStr -> { active: [], inactive: [] }
+    const calDatesFile = path.join(this.gtfsDir, 'calendar_dates.txt');
+    if (fs.existsSync(calDatesFile)) {
+      const cdStream = fs.createReadStream(calDatesFile);
+      const cdRl = readline.createInterface({ input: cdStream, crlfDelay: Infinity });
+      for await (const line of cdRl) {
+        const parts = line.split(',');
+        if (parts[0] !== 'service_id' && parts[0].trim()) {
+          const sId = parts[0].trim();
+          const dStr = parts[1]?.trim();
+          const excType = parts[2]?.trim();
+          if (dStr && excType) {
+            if (!calendarExceptions[dStr]) calendarExceptions[dStr] = { active: [], inactive: [] };
+            if (excType === '1') calendarExceptions[dStr].active.push(sId);
+            if (excType === '2') calendarExceptions[dStr].inactive.push(sId);
+          }
+        }
+      }
+    }
+
+    // 2. Index Agencies
     const agencies = new Map();
     const aStream = fs.createReadStream(path.join(this.gtfsDir, 'agency.txt'));
     const aRl = readline.createInterface({ input: aStream, crlfDelay: Infinity });
@@ -50,7 +154,7 @@ class CataloniaIndexer {
       }
     }
 
-    // 2. Index Stops (23,291 stops)
+    // 3. Index Stops
     const stopsMap = new Map();
     const sStream = fs.createReadStream(path.join(this.gtfsDir, 'stops.txt'));
     const sRl = readline.createInterface({ input: sStream, crlfDelay: Infinity });
@@ -70,7 +174,7 @@ class CataloniaIndexer {
       }
     }
 
-    // 3. Index Routes (1,610 routes)
+    // 4. Index Routes
     const routes = [];
     const routeMetaMap = new Map();
     const rStream = fs.createReadStream(path.join(this.gtfsDir, 'routes.txt'));
@@ -87,8 +191,16 @@ class CataloniaIndexer {
 
         let group = 'interurba';
         let mode = 'Interurbà';
+        let operatorInfo = null;
         const aLower = agencyName.toLowerCase();
         const sLower = (shortName || '').toLowerCase();
+
+        for (const [k, info] of Object.entries(AGENCY_INFO_MAP)) {
+          if (aLower.includes(k)) {
+            operatorInfo = info;
+            break;
+          }
+        }
 
         if (sLower.startsWith('e') || sLower.startsWith('expres') || aLower.includes('exprés') || aLower.includes('expres')) {
           group = 'expres';
@@ -149,6 +261,8 @@ class CataloniaIndexer {
           agency: agencyName,
           group,
           mode,
+          operatorWebsite: operatorInfo?.website || null,
+          operatorNotice: operatorInfo?.notice || null,
           directions: []
         };
 
@@ -157,7 +271,7 @@ class CataloniaIndexer {
       }
     }
 
-    // 4. Index Trips & Shape Associations
+    // 5. Index Trips & Direction Associations
     const tripToRoute = new Map();
     const routeTrips = new Map();
     const tStream = fs.createReadStream(path.join(this.gtfsDir, 'trips.txt'));
@@ -170,8 +284,9 @@ class CataloniaIndexer {
         const headsign = (parts[2] || '').replace(/"/g, '').trim();
         const dirId = parts[4] || '0';
         const shapeId = parts[6];
+        const serviceId = parts[9] || parts[1];
 
-        tripToRoute.set(tripId, { routeId, dirId, headsign, shapeId });
+        tripToRoute.set(tripId, { routeId, dirId, headsign, shapeId, serviceId });
         if (!routeTrips.has(routeId)) routeTrips.set(routeId, new Map());
         const dirMap = routeTrips.get(routeId);
         if (!dirMap.has(dirId)) {
@@ -196,14 +311,16 @@ class CataloniaIndexer {
       }
     });
 
-    // 5. Index Route Stops & Sequences
-    const routeStopsMap = new Map(); // routeId_dirId -> stopId[]
+    // 6. Index Route Stops & Departure Timetables from stop_times.txt
+    const routeStopsMap = new Map(); // routeId_dirId -> stopId -> seq
+    const routeSchedulesMap = new Map(); // routeId -> dirId -> Array of { tripId, serviceId, departureTime }
     const stStream = fs.createReadStream(path.join(this.gtfsDir, 'stop_times.txt'));
     const stRl = readline.createInterface({ input: stStream, crlfDelay: Infinity });
     for await (const line of stRl) {
       const parts = line.split(',');
       if (parts[0] !== 'trip_id') {
         const tripId = parts[0];
+        const depTime = (parts[2] || '').trim().substring(0, 5);
         const stopId = parts[3];
         const seq = parseInt(parts[4] || '0', 10);
         const meta = tripToRoute.get(tripId);
@@ -216,6 +333,25 @@ class CataloniaIndexer {
           if (!sMap.has(stopId)) {
             sMap.set(stopId, seq);
           }
+
+          // First stop of the trip = trip departure timetable
+          if (seq === 0 || seq === 1) {
+            if (!routeSchedulesMap.has(meta.routeId)) {
+              routeSchedulesMap.set(meta.routeId, new Map());
+            }
+            const rDirMap = routeSchedulesMap.get(meta.routeId);
+            if (!rDirMap.has(meta.dirId)) {
+              rDirMap.set(meta.dirId, []);
+            }
+            const sList = rDirMap.get(meta.dirId);
+            if (depTime && !sList.some(t => t.tripId === tripId)) {
+              sList.push({
+                tripId,
+                serviceId: meta.serviceId,
+                departureTime: depTime
+              });
+            }
+          }
         }
       }
     }
@@ -224,12 +360,13 @@ class CataloniaIndexer {
     const routeDetails = {};
     routes.forEach(r => {
       const dirStops = {};
+      const schedulesByDirection = {};
       ['0', '1'].forEach(dId => {
         const key = `${r.routeId}_${dId}`;
         const sMap = routeStopsMap.get(key);
         if (sMap) {
           const sortedStops = Array.from(sMap.entries())
-            .sort((a,b) => a[1] - b[1])
+            .sort((a, b) => a[1] - b[1])
             .map(([sId, seq], idx) => {
               const sObj = stopsMap.get(sId);
               if (!sObj) return null;
@@ -247,20 +384,29 @@ class CataloniaIndexer {
             .filter(Boolean);
           dirStops[dId] = sortedStops;
         }
+
+        const rSchedDir = routeSchedulesMap.get(r.routeId);
+        const schedList = rSchedDir ? (rSchedDir.get(dId) || []) : [];
+        // Sort timetable chronologically
+        schedulesByDirection[dId] = schedList.sort((a, b) => a.departureTime.localeCompare(b.departureTime));
       });
+
       routeDetails[r.id] = {
         ...r,
-        stopsByDirection: dirStops
+        stopsByDirection: dirStops,
+        schedulesByDirection
       };
     });
 
     // Save JSON caches
+    fs.writeFileSync(calendarCachePath, JSON.stringify(calendar));
+    fs.writeFileSync(calendarDatesCachePath, JSON.stringify(calendarExceptions));
     fs.writeFileSync(routesCachePath, JSON.stringify(routes));
     fs.writeFileSync(stopsCachePath, JSON.stringify(Array.from(stopsMap.values())));
     fs.writeFileSync(routeDetailsPath, JSON.stringify(routeDetails));
 
-    console.log(`[CataloniaIndexer] Finished in ${Date.now() - start}ms! ${routes.length} routes, ${stopsMap.size} stops indexed.`);
-    return { routes, stops: Array.from(stopsMap.values()), routeDetails };
+    console.log(`[CataloniaIndexer] Finished in ${Date.now() - start}ms! ${routes.length} routes, ${stopsMap.size} stops, full calendar & timetables indexed.`);
+    return { routes, stops: Array.from(stopsMap.values()), routeDetails, calendar, calendarExceptions };
   }
 }
 

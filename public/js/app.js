@@ -758,7 +758,12 @@ class TransitApp {
     }
 
     if (city) {
-      city.textContent = calTag ? `${lData.agency || 'Xarxa de Transport'} • 📅 ${calTag}` : (lData.agency || 'Xarxa de Transport');
+      const text = calTag ? `${lData.agency || 'Xarxa de Transport'} • 📅 ${calTag}` : (lData.agency || 'Xarxa de Transport');
+      if (lData.operatorWebsite) {
+        city.innerHTML = `${text} • <a href="${lData.operatorWebsite}" target="_blank" rel="noopener" style="color:var(--brand-primary, #38bdf8); text-decoration:underline; font-weight:600;" title="Consultar horaris PDF oficials">📄 Web PDF oficial ↗</a>`;
+      } else {
+        city.textContent = text;
+      }
     }
 
     if (title) {
