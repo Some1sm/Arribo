@@ -3297,11 +3297,8 @@ body {
     flex-shrink: 0;
   }
 
-  .live-indicator {
-    padding: 0.3rem 0.5rem;
-    font-size: 0.72rem;
-    min-width: unset;
-    flex-shrink: 0;
+  .live-indicator-wrapper {
+    display: none !important;
   }
 
   .btn-icon {
@@ -3403,18 +3400,6 @@ body {
     width: 30px;
     height: 30px;
     justify-content: center;
-  }
-
-  .live-indicator {
-    padding: 0.3rem 0.45rem;
-    border-radius: 50%;
-    width: 30px;
-    height: 30px;
-    justify-content: center;
-  }
-
-  .live-indicator .live-chevron {
-    display: none;
   }
 
   .global-search-input {
