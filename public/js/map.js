@@ -38,17 +38,14 @@ class C10Map {
     const el = document.getElementById(this.containerId);
     if (!el || typeof ResizeObserver === 'undefined') return;
 
-    let rAFId = null;
     this.resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        if (entry.contentRect && (entry.contentRect.width === 0 || entry.contentRect.height === 0)) {
-          return;
+        if (entry.contentRect && entry.contentRect.width > 0 && entry.contentRect.height > 0) {
+          if (this.map) {
+            this.map.invalidateSize({ pan: false, debounceMoveend: true });
+          }
         }
       }
-      if (rAFId) cancelAnimationFrame(rAFId);
-      rAFId = requestAnimationFrame(() => {
-        this.invalidateSize({ pan: false, debounceMoveend: true });
-      });
     });
     this.resizeObserver.observe(el);
   }
@@ -447,14 +444,21 @@ class C10Map {
       }
 
       // 6. Fit Map Bounds
-      if (shouldFitBounds) {
+      if (shouldFitBounds || !this._hasFittedInitialBounds) {
+        this._hasFittedInitialBounds = true;
         const boundsGroup = [];
         if (this.routePolyline) boundsGroup.push(this.routePolyline);
         if (this.secondaryRoutePolyline) boundsGroup.push(this.secondaryRoutePolyline);
 
         if (boundsGroup.length > 0) {
           const group = new L.featureGroup(boundsGroup);
-          this.map.fitBounds(group.getBounds(), { padding: [35, 35] });
+          try {
+            this.map.fitBounds(group.getBounds(), { padding: [35, 35], maxZoom: 15 });
+          } catch(e) {}
+        } else if (latLngs.length > 0) {
+          try {
+            this.map.fitBounds(L.latLngBounds(latLngs), { padding: [35, 35], maxZoom: 15 });
+          } catch(e) {}
         }
       }
 
@@ -492,6 +496,8 @@ class C10Map {
     }
     this.busMarkersMap.clear();
     this.selectedVehicleId = null;
+    this.lastStopsFingerprint = null;
+    this._hasFittedInitialBounds = false;
   }
 
   isBusSelected(bus, selectedId = this.selectedVehicleId) {
