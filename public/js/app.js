@@ -767,7 +767,14 @@ class TransitApp {
     }
 
     if (title) {
-      title.textContent = `${code} — ${lData.name || ''}`;
+      const name = lData.name || '';
+      if (!name || name.toLowerCase() === code.toLowerCase()) {
+        title.textContent = code;
+      } else if (name.toLowerCase().startsWith(code.toLowerCase())) {
+        title.textContent = name;
+      } else {
+        title.textContent = `${code} — ${name}`;
+      }
     }
 
     // Render 24h Delay & Reliability Telemetry Metric

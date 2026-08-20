@@ -188,7 +188,17 @@ class CataloniaTracker {
     // Filter trips active on this date
     const activeTrips = schedules.filter(trip => this.isServiceActiveOnDate(trip.serviceId, dateObj));
 
-    return activeTrips.map(trip => {
+    // Deduplicate trips with identical departure times (e.g. overlapping GTFS calendar variations)
+    const seenTimes = new Set();
+    const uniqueTrips = [];
+    activeTrips.forEach(trip => {
+      if (!seenTimes.has(trip.departureTime)) {
+        seenTimes.add(trip.departureTime);
+        uniqueTrips.push(trip);
+      }
+    });
+
+    return uniqueTrips.map(trip => {
       const [tH, tM] = trip.departureTime.split(':').map(Number);
       const tripMinutes = tH * 60 + tM;
       const minsAway = tripMinutes - nowMinutes;
