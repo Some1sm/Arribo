@@ -2715,20 +2715,44 @@ class TransitApp {
     const liveBtn = document.getElementById('live-indicator');
     const wrapper = document.getElementById('live-indicator-wrapper');
     const dropdown = document.getElementById('connection-menu-dropdown');
+    const backdrop = document.getElementById('connection-modal-backdrop');
+    const closeBtn = document.getElementById('conn-menu-close-btn');
     const testBtn = document.getElementById('btn-test-connection');
 
     if (!liveBtn || !dropdown) return;
 
+    const openMenu = () => {
+      dropdown.classList.add('active');
+      backdrop?.classList.add('active');
+      wrapper?.classList.add('active');
+      liveBtn.setAttribute('aria-expanded', 'true');
+      this.updateConnectionMenuDetails();
+    };
+
+    const closeMenu = () => {
+      dropdown.classList.remove('active');
+      backdrop?.classList.remove('active');
+      wrapper?.classList.remove('active');
+      liveBtn.setAttribute('aria-expanded', 'false');
+    };
+
     liveBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const isActive = dropdown.classList.toggle('active');
-      wrapper?.classList.toggle('active', isActive);
-      liveBtn.setAttribute('aria-expanded', String(isActive));
-
-      if (isActive) {
-        this.updateConnectionMenuDetails();
+      if (dropdown.classList.contains('active')) {
+        closeMenu();
+      } else {
+        openMenu();
       }
+    });
+
+    closeBtn?.addEventListener('click', (e) => {
+      e.preventDefault();
+      closeMenu();
+    });
+
+    backdrop?.addEventListener('click', () => {
+      closeMenu();
     });
 
     testBtn?.addEventListener('click', (e) => {
@@ -2736,21 +2760,10 @@ class TransitApp {
       this.testApiConnection();
     });
 
-    // Close on click outside
-    document.addEventListener('click', (e) => {
-      if (dropdown.classList.contains('active') && !dropdown.contains(e.target) && !liveBtn.contains(e.target)) {
-        dropdown.classList.remove('active');
-        wrapper?.classList.remove('active');
-        liveBtn.setAttribute('aria-expanded', 'false');
-      }
-    });
-
     // Close on Escape
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && dropdown.classList.contains('active')) {
-        dropdown.classList.remove('active');
-        wrapper?.classList.remove('active');
-        liveBtn.setAttribute('aria-expanded', 'false');
+        closeMenu();
       }
     });
   }

@@ -541,24 +541,30 @@ body {
 }
 
 .connection-menu-dropdown {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  width: 330px;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.95);
+  width: 90%;
+  max-width: 420px;
   background: var(--bg-surface);
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg);
-  padding: 1.1rem;
-  z-index: 1200;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-2xl);
+  padding: 1.25rem;
+  z-index: 3000;
   display: none;
   flex-direction: column;
   gap: 0.9rem;
-  animation: dropdown-appear 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
 }
 
 .connection-menu-dropdown.active {
   display: flex;
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
 }
 
 .connection-menu-header {
@@ -573,7 +579,7 @@ body {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   color: var(--text-primary);
 }
 
@@ -3203,7 +3209,7 @@ body {
 
 @media (max-width: 768px) {
   .app-header {
-    padding: 0.6rem 0.85rem;
+    padding: 0.55rem 0.75rem;
     width: 100%;
     max-width: 100vw;
     box-sizing: border-box;
@@ -3215,7 +3221,7 @@ body {
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 0.45rem;
+    gap: 0.4rem;
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
@@ -3226,31 +3232,34 @@ body {
     justify-content: flex-start;
     min-width: 0;
     flex: 0 0 auto;
+    gap: 0.45rem;
   }
 
-  .app-title-group {
-    min-width: 0;
-    overflow: hidden;
+  .logo-brand-badge {
+    width: 32px;
+    height: 32px;
+    font-size: 1.15rem;
   }
 
   .app-title-group h1 {
-    font-size: 1rem;
+    font-size: 0.95rem;
     letter-spacing: -0.3px;
     white-space: nowrap;
   }
 
+  .app-version-pill {
+    display: none;
+  }
+
   .app-subtitle {
-    font-size: 0.72rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    display: none;
   }
 
   .global-search-container {
     width: 100%;
     max-width: 100%;
     order: 3;
-    margin-top: 0.15rem;
+    margin-top: 0.2rem;
     box-sizing: border-box;
   }
 
@@ -3261,21 +3270,21 @@ body {
   .header-actions {
     display: flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: 0.3rem;
     width: auto;
     flex: 0 0 auto;
     box-sizing: border-box;
-    overflow-x: visible;
+    flex-wrap: nowrap;
   }
 
   .btn-header-nav {
-    padding: 0.32rem 0.55rem;
-    font-size: 0.74rem;
+    padding: 0.3rem 0.5rem;
+    font-size: 0.72rem;
     flex-shrink: 0;
   }
 
   .live-indicator {
-    padding: 0.32rem 0.55rem;
+    padding: 0.3rem 0.5rem;
     font-size: 0.72rem;
     min-width: unset;
     flex-shrink: 0;
@@ -3283,18 +3292,13 @@ body {
 
   .btn-icon {
     flex-shrink: 0;
-    width: 32px;
-    height: 32px;
+    width: 30px;
+    height: 30px;
   }
 
-  .connection-menu-dropdown {
-    position: fixed;
-    top: 64px;
-    left: 0.85rem;
-    right: 0.85rem;
-    width: auto;
-    max-width: calc(100vw - 1.7rem);
-    z-index: 2200;
+  .btn-icon svg {
+    width: 14px;
+    height: 14px;
   }
 
   .app-main {
@@ -3375,50 +3379,33 @@ body {
 }
 
 @media (max-width: 480px) {
-  .app-header {
-    padding: 0.45rem 0.65rem;
-  }
-
-  .app-title-group h1 {
-    font-size: 0.95rem;
-  }
-
-  .app-subtitle {
-    display: none;
-  }
-
-  .logo-brand-badge {
-    width: 32px;
-    height: 32px;
-    font-size: 1.15rem;
-  }
-
-  .btn-header-nav {
-    padding: 0.28rem 0.45rem;
-    font-size: 0.72rem;
-  }
-
   .btn-header-nav span:not(.nav-icon) {
     display: none;
   }
 
-  .live-indicator {
-    padding: 0.28rem 0.45rem;
-  }
-
-  .btn-icon {
+  .btn-header-nav {
+    padding: 0.3rem 0.45rem;
+    border-radius: 50%;
     width: 30px;
     height: 30px;
+    justify-content: center;
   }
 
-  .btn-icon svg {
-    width: 14px;
-    height: 14px;
+  .live-indicator {
+    padding: 0.3rem 0.45rem;
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    justify-content: center;
+  }
+
+  .live-indicator .live-chevron {
+    display: none;
   }
 
   .global-search-input {
-    padding: 0.42rem 0.75rem 0.42rem 2rem;
-    font-size: 0.78rem;
+    padding: 0.45rem 0.75rem 0.45rem 2rem;
+    font-size: 0.8rem;
   }
 
   .hide-on-mobile-sm {

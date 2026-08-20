@@ -63,14 +63,18 @@
             <svg class="live-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
 
-          <!-- Connection Diagnostic Dropdown -->
-          <div class="connection-menu-dropdown" id="connection-menu-dropdown">
+          <!-- Connection Diagnostic Modal Dialog -->
+          <div class="modal-backdrop" id="connection-modal-backdrop"></div>
+          <div class="connection-menu-dropdown" id="connection-menu-dropdown" role="dialog" aria-modal="true" aria-labelledby="conn-modal-title">
             <div class="connection-menu-header">
               <div class="conn-title-row">
                 <span class="live-dot" id="conn-menu-dot"></span>
-                <strong>Estat de la connexió API</strong>
+                <strong id="conn-modal-title">Estat de la connexió API</strong>
               </div>
-              <span class="conn-badge" id="conn-menu-badge">Actiu</span>
+              <div style="display:flex; align-items:center; gap:0.5rem;">
+                <span class="conn-badge" id="conn-menu-badge">Actiu</span>
+                <button type="button" class="modal-close-btn" id="conn-menu-close-btn" style="position:static; width:28px; height:28px; font-size:1.2rem; display:flex; align-items:center; justify-content:center;" aria-label="Tancar">&times;</button>
+              </div>
             </div>
 
             <div class="connection-menu-body">
