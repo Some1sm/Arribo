@@ -211,30 +211,34 @@ body {
   transition: transform var(--transition-fast), opacity var(--transition-fast);
 }
 
+.logo-group {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  cursor: pointer;
+  user-select: none;
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+  text-decoration: none;
+}
+
 .logo-group:hover {
-  opacity: 0.95;
+  opacity: 0.92;
   transform: translateY(-1px);
 }
 
-.line-badge {
-  background: var(--c10-primary);
+.logo-brand-badge {
+  width: 38px;
+  height: 38px;
+  background: linear-gradient(135deg, var(--c10-primary) 0%, #0d9488 100%);
   color: #ffffff;
-  font-weight: 800;
-  font-size: 1.25rem;
-  padding: 0.35rem 0.85rem;
-  border-radius: var(--radius-sm);
-  letter-spacing: -0.5px;
-  box-shadow: 0 4px 12px var(--c10-primary-glow);
-  display: inline-flex;
+  font-size: 1.35rem;
+  border-radius: var(--radius-md);
+  display: flex;
   align-items: center;
   justify-content: center;
-  font-family: var(--font-sans);
-  white-space: nowrap !important;
-  word-break: keep-all !important;
-  flex-shrink: 0 !important;
-  min-width: max-content;
-  text-align: center;
-  line-height: 1;
+  box-shadow: 0 4px 12px var(--c10-primary-glow);
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
 .app-title-group h1 {
@@ -243,56 +247,45 @@ body {
   color: var(--text-primary);
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
+  gap: 0.45rem;
   letter-spacing: -0.3px;
-}
-
-.header-mode-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.7rem;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  padding: 3px 9px;
-  border-radius: var(--radius-full);
+  margin: 0;
   line-height: 1.2;
-  white-space: nowrap;
-  box-shadow: var(--shadow-sm);
 }
 
-.header-mode-badge.interurba {
-  background: rgba(0, 148, 133, 0.15);
-  color: var(--c10-primary-light);
-  border: 1px solid rgba(0, 148, 133, 0.4);
-}
-
-.header-mode-badge.urba {
-  background: rgba(59, 130, 246, 0.15);
-  color: #60a5fa;
-  border: 1px solid rgba(59, 130, 246, 0.4);
+.app-version-pill {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 0.12rem 0.45rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: var(--text-muted);
+  letter-spacing: 0.03em;
 }
 
 .app-subtitle {
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 /* Header Action Controls */
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.5rem;
   flex-shrink: 0;
 }
 
 /* Universal Global Stop Search */
 .global-search-container {
   position: relative;
-  width: 280px;
-  flex-shrink: 0;
+  flex: 1 1 240px;
+  max-width: 440px;
+  min-width: 180px;
 }
 
 .search-icon-svg {
@@ -306,16 +299,109 @@ body {
 
 .global-search-input {
   width: 100%;
-  background: var(--bg-input);
+  background: var(--bg-surface-elevated);
   border: 1px solid var(--border-subtle);
   color: var(--text-primary);
-  padding: 0.5rem 0.85rem 0.5rem 2.25rem;
+  padding: 0.48rem 3.2rem 0.48rem 2.25rem;
   border-radius: var(--radius-full);
   font-size: 0.82rem;
   font-family: inherit;
   outline: none;
   transition: all var(--transition-fast);
   box-sizing: border-box;
+}
+
+.global-search-input:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--c10-primary-glow);
+  background: var(--bg-surface);
+}
+
+.global-search-input::placeholder {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.search-shortcut-hint {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.search-shortcut-hint kbd {
+  font-size: 0.65rem;
+  font-family: var(--font-mono);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 1px 4px;
+  color: var(--text-muted);
+}
+
+/* Header Nav Buttons */
+.btn-header-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.38rem 0.75rem;
+  border-radius: var(--radius-full);
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-family: inherit;
+  background: var(--bg-surface-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.btn-header-nav:hover {
+  background: var(--bg-surface);
+  border-color: var(--border-focus);
+  transform: translateY(-1px);
+}
+
+.btn-header-nav .nav-icon {
+  font-size: 0.9rem;
+}
+
+.btn-header-nav.journalism-btn {
+  background: rgba(56, 189, 248, 0.1);
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.25);
+}
+
+.btn-header-nav.journalism-btn:hover {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: rgba(56, 189, 248, 0.45);
+}
+
+.btn-header-nav.incidents-btn {
+  background: rgba(245, 158, 11, 0.1);
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.25);
+}
+
+.btn-header-nav.incidents-btn:hover {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: rgba(245, 158, 11, 0.45);
+}
+
+/* Utility Action Cluster */
+.header-util-group {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: var(--bg-surface-elevated);
+  padding: 2px 4px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle);
 }
 
 .global-search-input:focus {

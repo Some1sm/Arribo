@@ -736,59 +736,7 @@ class TransitApp {
 
   updateHeaderBrand(lData) {
     const code = lData.code || lData.id || 'C-10';
-    const color = lData.color || '#009485';
-    const isMataroUrban = lData.group === 'mataro' || ['1','2','3','4','5','6','7','8'].includes(String(lData.id));
-    let modeText = lData.mode;
-    if (!modeText) {
-      if (lData.isTrain || lData.group === 'rodalies') modeText = 'Tren Rodalies';
-      else if (isMataroUrban) modeText = 'Urbà Mataró';
-      else if (code.startsWith('e') || code.startsWith('E')) modeText = 'Exprés.cat';
-      else if (code.startsWith('N') || code.startsWith('n')) modeText = 'NitBus';
-      else if (code.startsWith('A') && (lData.agency?.includes('Aerobús') || lData.agency?.includes('Monbus'))) modeText = 'Aerobús BCN';
-      else if (lData.agency?.includes('TUSGSAL')) modeText = 'DIREXIS TUSGSAL';
-      else if (lData.agency?.includes('Avanza')) modeText = 'Avanza Baix Llob.';
-      else if (lData.group === 'moventis' || lData.id === 'c10' || code.startsWith('C-')) modeText = 'Interurbà Maresme';
-      else modeText = lData.agency || 'Interurbà';
-    }
-
-    const headerKey = `${code}_${color}_${modeText}_${lData.name || ''}`;
-    if (this._lastHeaderKey === headerKey) return;
-    this._lastHeaderKey = headerKey;
-
-    const badge = document.getElementById('header-line-badge');
-    const modeBadge = document.getElementById('header-mode-badge');
-    const subtitle = document.getElementById('header-subtitle');
     const mapTitle = document.getElementById('map-line-title');
-
-    if (badge) {
-      badge.textContent = code;
-      badge.style.background = color;
-      badge.style.color = this.getContrastColor(color);
-      if (code.length >= 6) {
-        badge.style.fontSize = '0.9rem';
-        badge.style.padding = '0.35rem 0.6rem';
-      } else if (code.length >= 4) {
-        badge.style.fontSize = '1.05rem';
-        badge.style.padding = '0.35rem 0.7rem';
-      } else {
-        badge.style.fontSize = '1.25rem';
-        badge.style.padding = '0.35rem 0.85rem';
-      }
-    }
-
-    if (modeBadge) {
-      modeBadge.textContent = modeText;
-      modeBadge.className = `header-mode-badge ${isMataroUrban ? 'urba' : 'interurba'}`;
-      modeBadge.style.background = `rgba(${this.hexToRgb(color)}, 0.22)`;
-      modeBadge.style.color = '#ffffff';
-      modeBadge.style.borderColor = color;
-      modeBadge.style.boxShadow = `0 2px 8px rgba(0, 0, 0, 0.25)`;
-    }
-
-    if (subtitle) {
-      subtitle.textContent = `${lData.agency || 'Transport'} • ${lData.name || code}`;
-    }
-
     if (mapTitle) {
       mapTitle.textContent = `Traçat ${code} i parades en temps real`;
     }

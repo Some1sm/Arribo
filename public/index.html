@@ -20,39 +20,46 @@
   <!-- Top Navigation Header -->
   <header class="app-header">
     <div class="header-container">
-      <div class="logo-group" id="header-logo-group" title="Arribo! - Tornar a l'inici o cercar línia">
-        <div class="line-badge logo-brand-badge" id="header-line-badge" style="background:var(--c10-primary);">🚌</div>
+      <div class="logo-group" id="header-logo-group" title="Arribo! - Tornar a l'inici" role="button" tabindex="0">
+        <div class="logo-brand-badge" id="header-line-badge">🚌</div>
         <div class="app-title-group">
-          <h1>Arribo! <span class="header-mode-badge universal" id="header-mode-badge">Temps Real</span> <span style="font-size:0.68rem; font-weight:600; padding:0.15rem 0.45rem; background:rgba(255,255,255,0.08); border-radius:6px; color:var(--text-muted); letter-spacing:0.02em;">v3.0</span></h1>
-          <p class="app-subtitle" id="header-subtitle">Telemetria de busos en directe a Catalunya</p>
+          <h1>Arribo! <span class="app-version-pill">v3.0</span></h1>
+          <p class="app-subtitle" id="header-subtitle">Telemetria de busos en directe</p>
         </div>
+      </div>
+
+      <!-- Universal Stop & Line Search Input -->
+      <div class="global-search-container">
+        <svg class="search-icon-svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="global-search-input" class="global-search-input" placeholder="Cercar línia o parada (ex: B25, Tetuan, C-10, L1)..." autocomplete="off">
+        <span class="search-shortcut-hint"><kbd>⌘</kbd><kbd>K</kbd></span>
+        <div class="search-results-dropdown" id="search-results-dropdown"></div>
       </div>
 
       <div class="header-actions">
         <!-- Home / Line Explorer Navigation Button -->
-        <button type="button" class="btn-incidents-chip" id="btn-header-home" title="Veure totes les línies i tornar a l'inici" style="background:rgba(16, 185, 129, 0.12); color:#10b981; border:1px solid rgba(16, 185, 129, 0.3);">
-          <span class="incident-icon">🗺️</span>
-          <span><span class="hide-on-mobile-sm">Totes les </span>Línies</span>
+        <button type="button" class="btn-header-nav" id="btn-header-home" title="Veure totes les línies i tornar a l'inici">
+          <span class="nav-icon">🗺️</span>
+          <span>Línies</span>
         </button>
 
-        <!-- Universal Stop Search Input -->
-        <div class="global-search-container">
-          <svg class="search-icon-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input type="text" id="global-search-input" class="global-search-input" placeholder="Cercar parada o línia (ex: Tetuan, B25, Hospital)..." autocomplete="off">
-          <div class="search-results-dropdown" id="search-results-dropdown"></div>
-        </div>
+        <!-- Journalism & Delay Analytics Button -->
+        <button type="button" class="btn-header-nav journalism-btn" id="btn-open-journalism" title="Veure anàlisi de retards històrics, puntualitat i dades">
+          <span class="nav-icon">📊</span>
+          <span>Dades</span>
+        </button>
 
-        <!-- Active Buses Counter Chip -->
-        <div class="active-buses-chip" id="header-active-buses-chip" title="Nombre de busos circulant actualment a la xarxa">
-          <span class="active-buses-icon">🚌</span>
-          <span id="header-active-buses-text"><strong>0</strong> busos</span>
-        </div>
+        <!-- Live Incidents / Disruptions Button -->
+        <button type="button" class="btn-header-nav incidents-btn" id="btn-open-incidents" title="Veure avisos de servei i incidències en temps real">
+          <span class="nav-icon">⚠️</span>
+          <span id="incidents-count-text">Avisos</span>
+        </button>
 
         <!-- Live Connection Status & Diagnostic Menu -->
         <div class="live-indicator-wrapper" id="live-indicator-wrapper">
-          <button type="button" class="live-indicator" id="live-indicator" title="Fes clic per veure i provar la connexió amb l'API" aria-expanded="false">
+          <button type="button" class="live-indicator" id="live-indicator" title="Estat de la connexió API" aria-expanded="false">
             <span class="live-dot"></span>
-            <span id="live-text">En directe</span>
+            <span id="live-text" class="hide-on-mobile-sm">En directe</span>
             <svg class="live-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
 
@@ -102,52 +109,43 @@
           </div>
         </div>
 
-        <!-- Live Incidents / Disruptions Button -->
-        <button type="button" class="btn-incidents-chip" id="btn-open-incidents" title="Veure avisos de servei i incidències en temps real">
-          <span class="incident-icon">⚠️</span>
-          <span id="incidents-count-text">Avisos</span>
-        </button>
+        <!-- Utility Action Cluster -->
+        <div class="header-util-group">
+          <button type="button" class="btn-icon btn-theme-toggle" id="btn-theme-toggle" title="Canviar tema clar / fosc" aria-label="Canviar tema clar o fosc">
+            <svg class="theme-icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="5"></circle>
+              <line x1="12" y1="1" x2="12" y2="3"></line>
+              <line x1="12" y1="21" x2="12" y2="23"></line>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+              <line x1="1" y1="12" x2="3" y2="12"></line>
+              <line x1="21" y1="12" x2="23" y2="12"></line>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+            </svg>
+            <svg class="theme-icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+            </svg>
+          </button>
 
-        <!-- Journalism & Delay Analytics Button -->
-        <button type="button" class="btn-incidents-chip" id="btn-open-journalism" title="Veure anàlisi de retards històrics, puntualitat i dades per periodisme" style="background:rgba(56, 189, 248, 0.12); color:#38bdf8; border:1px solid rgba(56, 189, 248, 0.3);">
-          <span class="incident-icon">📊</span>
-          <span>Dades<span class="hide-on-mobile-sm"> & Retards</span></span>
-        </button>
+          <button type="button" class="btn-icon" id="btn-sound" title="Activar avis sonor d'arribada" aria-label="Alarma sonora">
+            <svg id="sound-icon-off" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+              <line x1="23" y1="9" x2="17" y2="15"></line>
+              <line x1="17" y1="9" x2="23" y2="15"></line>
+            </svg>
+            <svg id="sound-icon-on" style="display:none;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+            </svg>
+          </button>
 
-        <button type="button" class="btn-icon btn-theme-toggle" id="btn-theme-toggle" title="Canviar tema clar / fosc" aria-label="Canviar tema clar o fosc">
-          <svg class="theme-icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="5"></circle>
-            <line x1="12" y1="1" x2="12" y2="3"></line>
-            <line x1="12" y1="21" x2="12" y2="23"></line>
-            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-            <line x1="1" y1="12" x2="3" y2="12"></line>
-            <line x1="21" y1="12" x2="23" y2="12"></line>
-            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-          </svg>
-          <svg class="theme-icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-          </svg>
-        </button>
-
-        <button type="button" class="btn-icon" id="btn-refresh" title="Actualitzar ara" aria-label="Actualitzar dades">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
-          </svg>
-        </button>
-
-        <button type="button" class="btn-icon" id="btn-sound" title="Activar avis sonor d'arribada" aria-label="Alarma sonora">
-          <svg id="sound-icon-off" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-            <line x1="23" y1="9" x2="17" y2="15"></line>
-            <line x1="17" y1="9" x2="23" y2="15"></line>
-          </svg>
-          <svg id="sound-icon-on" style="display:none;" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
-          </svg>
-        </button>
+          <button type="button" class="btn-icon" id="btn-refresh" title="Actualitzar ara" aria-label="Actualitzar dades">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+            </svg>
+          </button>
+        </div>
       </div>
     </div>
   </header>
