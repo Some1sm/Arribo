@@ -100,235 +100,30 @@ class CorridorTracker {
 
   loadData() {
     try {
-      const cachePath = path.join(this.dataDir, 'cache', 'maresme_cache.json');
-      const stopsCachePath = path.join(this.dataDir, 'cache', 'stops.json');
-      const atmDir = path.join(this.dataDir, 'atm_gtfs');
+      const c10Static = require('./c10StaticData');
+      this.stopsDir1 = c10Static.C10_STOPS_DIR1.map(s => ({
+        ...s,
+        id: s.mouteStopId || s.gtfsStopId,
+        code: s.code || s.mouteStopId
+      }));
+      this.stopsDir0 = c10Static.C10_STOPS_DIR0.map(s => ({
+        ...s,
+        id: s.mouteStopId || s.gtfsStopId,
+        code: s.code || s.mouteStopId
+      }));
+      this.routePolylineDir1 = [...c10Static.C10_POLYLINE_DIR1];
+      this.routePolylineDir0 = [...c10Static.C10_POLYLINE_DIR0];
+      this.fullSchedule = { dir1: [...c10Static.C10_TRIPS_DIR1], dir0: [...c10Static.C10_TRIPS_DIR0] };
 
-      if (fs.existsSync(cachePath) && fs.existsSync(stopsCachePath)) {
-        const cached = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
-        const stopsList = JSON.parse(fs.readFileSync(stopsCachePath, 'utf8'));
-        const stopsMap = new Map();
-        stopsList.forEach(s => {
-          const sId = s.id;
-          const mId = String(s.code || sId).replace('GEN_PF', '').replace(/^0+/, '');
-          stopsMap.set(sId, {
-            id: sId,
-            code: mId,
-            gtfsStopId: sId,
-            mouteStopId: mId,
-            name: s.name || `Parada ${sId}`,
-            lat: s.lat,
-            lon: s.lon,
-            city: s.city || 'Maresme',
-            zone: s.zone || 'Maresme'
-          });
-        });
+      this.stopsMapDir1 = new Map();
+      this.stopsDir1.forEach(s => this.stopsMapDir1.set(s.gtfsStopId, s));
+      this.stopsMapDir0 = new Map();
+      this.stopsDir0.forEach(s => this.stopsMapDir0.set(s.gtfsStopId, s));
 
-        // The compact Maresme cache predates the corridor tracker and does not
-        // retain GTFS service_id. Restore it from the authoritative trips.txt
-        // file; without it every cached C-10 trip fails isServiceActiveOnDate()
-        // and the live corridor is always returned with zero buses.
-        const cachedTrips = cached.tripsMap['GEN_0498'] || [];
-        const serviceIdByTrip = new Map();
-        const tripsPath = path.join(atmDir, 'trips.txt');
-        if (fs.existsSync(tripsPath)) {
-          fs.readFileSync(tripsPath, 'utf8')
-            .split('\n')
-            .slice(1)
-            .filter(line => line.startsWith('GEN_0498,'))
-            .forEach(line => {
-              const fields = line.split(',');
-              if (fields[1]) serviceIdByTrip.set(fields[1], (fields[9] || '').trim());
-            });
-        }
-
-        const trips = cachedTrips.map(trip => ({
-          ...trip,
-          serviceId: trip.serviceId || serviceIdByTrip.get(trip.tripId) || ''
-        }));
-        const stopTimesByTrip = cached.stopTimesByTrip || {};
-
-        const getStopsForTrip = (tripId) => {
-          const st = stopTimesByTrip[tripId] || [];
-          return st.map(p => {
-            const sObj = stopsMap.get(p.stopId);
-            return {
-              id: sObj?.id || p.stopId,
-              code: sObj?.code || p.stopId,
-              mouteStopId: sObj?.mouteStopId || p.stopId,
-              gtfsStopId: p.stopId,
-              name: sObj?.name || `Parada ${p.stopId}`,
-              lat: sObj?.lat || 41.5,
-              lon: sObj?.lon || 2.4,
-              city: sObj?.city || 'Maresme',
-              zone: sObj?.zone || 'Maresme',
-              seq: p.seq,
-              arr: p.arr,
-              dep: p.dep
-            };
-          }).sort((a, b) => a.seq - b.seq);
-        };
-
-        const trip0 = trips.find(t => t.dirId === '0') || trips[0];
-        const trip1 = trips.find(t => t.dirId === '1') || trips[0];
-
-        if (trip1) this.stopsDir1 = getStopsForTrip(trip1.tripId);
-        if (trip0) this.stopsDir0 = getStopsForTrip(trip0.tripId);
-
-        const schedDir1 = [];
-        const schedDir0 = [];
-        trips.forEach(t => {
-          const tId = t.tripId;
-          const dir = t.dirId || '0';
-          const sId = t.serviceId || '';
-          const tTimes = (stopTimesByTrip[tId] || []).slice().sort((a, b) => a.seq - b.seq);
-          if (tTimes.length > 0) {
-            const depTime = tTimes[0].dep;
-            const arrTime = tTimes[tTimes.length - 1].arr;
-            const entry = {
-              tripId: tId,
-              serviceId: sId,
-              departureTime: depTime.substring(0, 5),
-              arrivalTime: arrTime.substring(0, 5),
-              stops: tTimes.map(st => ({
-                stopId: st.stopId,
-                gtfsStopId: st.stopId,
-                seq: st.seq,
-                arr: st.arr,
-                dep: st.dep,
-                departureTime: st.dep.substring(0, 5),
-                arrivalTime: st.arr.substring(0, 5)
-              }))
-            };
-            if (dir === '1') schedDir1.push(entry);
-            else schedDir0.push(entry);
-          }
-        });
-
-        const c10Static = require('./c10StaticData');
-        if (schedDir1.length === 0 && schedDir0.length === 0) {
-          this.stopsDir1 = c10Static.C10_STOPS_DIR1;
-          this.stopsDir0 = c10Static.C10_STOPS_DIR0;
-          this.fullSchedule = { dir1: c10Static.C10_TRIPS_DIR1, dir0: c10Static.C10_TRIPS_DIR0 };
-        } else {
-          this.fullSchedule = { dir1: schedDir1, dir0: schedDir0 };
-        }
-
-        if (this.stopsDir1 && this.stopsDir1.length > 0 && c10Static.generateCorridorPolyline) {
-          this.routePolylineDir1 = c10Static.generateCorridorPolyline(this.stopsDir1);
-        }
-        if (this.stopsDir0 && this.stopsDir0.length > 0 && c10Static.generateCorridorPolyline) {
-          this.routePolylineDir0 = c10Static.generateCorridorPolyline(this.stopsDir0);
-        }
-
-        this.stopsMapDir1 = new Map();
-        this.stopsDir1.forEach(s => this.stopsMapDir1.set(s.gtfsStopId, s));
-        this.stopsMapDir0 = new Map();
-        this.stopsDir0.forEach(s => this.stopsMapDir0.set(s.gtfsStopId, s));
-
-        this.loadCalendarSync();
-        console.log(`[CorridorTracker] Dynamically loaded C-10 (${this.stopsDir1.length} stops dir 1, ${this.stopsDir0.length} stops dir 0, ${this.fullSchedule.dir1.length + this.fullSchedule.dir0.length} trips) from cache!`);
-        return;
-      } else if (fs.existsSync(atmDir)) {
-        const stopsPath = path.join(atmDir, 'stops.txt');
-        const tripsPath = path.join(atmDir, 'trips.txt');
-        const stopTimesPath = path.join(atmDir, 'stop_times.txt');
-
-        if (fs.existsSync(stopsPath) && fs.existsSync(tripsPath) && fs.existsSync(stopTimesPath)) {
-          const stopsMap = new Map();
-          fs.readFileSync(stopsPath, 'utf8').split('\n').slice(1).filter(Boolean).forEach(l => {
-            const p = l.split(',');
-            const sId = p[0];
-            const mId = sId.replace('GEN_PF', '').replace(/^0+/, '');
-            stopsMap.set(sId, {
-              gtfsStopId: sId,
-              mouteStopId: mId,
-              name: (p[2] || '').replace(/"/g, '').replace(/ - \d+$/, ''),
-              lat: parseFloat(p[4]),
-              lon: parseFloat(p[5]),
-              city: 'Maresme'
-            });
-          });
-
-          const trips = fs.readFileSync(tripsPath, 'utf8').split('\n').slice(1).filter(l => l.startsWith('GEN_0498,'));
-          const c10TripIds = new Set(trips.map(t => t.split(',')[1]));
-          const stopTimes = fs.readFileSync(stopTimesPath, 'utf8')
-            .split('\n')
-            .slice(1)
-            .filter(l => {
-              const commaIdx = l.indexOf(',');
-              if (commaIdx === -1) return false;
-              const tId = l.substring(0, commaIdx);
-              return c10TripIds.has(tId);
-            });
-
-          const getStopsForTrip = (tripId) => {
-            return stopTimes
-              .filter(l => l.startsWith(tripId + ','))
-              .map(l => {
-                const p = l.split(',');
-                const sObj = stopsMap.get(p[3]);
-                return {
-                  ...sObj,
-                  seq: parseInt(p[4], 10),
-                  arr: p[1],
-                  dep: p[2]
-                };
-              })
-              .sort((a, b) => a.seq - b.seq);
-          };
-
-          const trip0 = trips.find(t => t.split(',')[4] === '0') || trips[0];
-          const trip1 = trips.find(t => t.split(',')[4] === '1') || trips[0];
-
-          if (trip1) this.stopsDir1 = getStopsForTrip(trip1.split(',')[1]);
-          if (trip0) this.stopsDir0 = getStopsForTrip(trip0.split(',')[1]);
-
-          // Build full schedule from trips
-          const schedDir1 = [];
-          const schedDir0 = [];
-          trips.forEach(t => {
-            const p = t.split(',');
-            const tId = p[1];
-            const dir = p[4] || '0';
-            const sId = (p[9] || '').trim();
-            const tTimes = stopTimes.filter(l => l.startsWith(tId + ',')).map(l => l.split(',')).sort((a,b) => parseInt(a[4],10) - parseInt(b[4],10));
-            if (tTimes.length > 0) {
-              const depTime = tTimes[0][2];
-              const arrTime = tTimes[tTimes.length - 1][1];
-              const entry = {
-                tripId: tId,
-                serviceId: sId,
-                departureTime: depTime.substring(0, 5),
-                arrivalTime: arrTime.substring(0, 5),
-                stops: tTimes.map(st => ({
-                  stopId: st[3],
-                  gtfsStopId: st[3],
-                  seq: parseInt(st[4], 10),
-                  arr: st[1],
-                  dep: st[2],
-                  departureTime: st[2].substring(0, 5),
-                  arrivalTime: st[1].substring(0, 5)
-                }))
-              };
-              if (dir === '1') schedDir1.push(entry);
-              else schedDir0.push(entry);
-            }
-          });
-
-          this.fullSchedule = { dir1: schedDir1, dir0: schedDir0 };
-          this.stopsMapDir1 = new Map();
-          this.stopsDir1.forEach(s => this.stopsMapDir1.set(s.gtfsStopId, s));
-          this.stopsMapDir0 = new Map();
-          this.stopsDir0.forEach(s => this.stopsMapDir0.set(s.gtfsStopId, s));
-
-          this.loadCalendarSync();
-          console.log(`[CorridorTracker] Dynamically loaded C-10 (${this.stopsDir1.length} stops dir 1, ${this.stopsDir0.length} stops dir 0) from ATM GTFS!`);
-          return;
-        }
-      }
+      this.loadCalendarSync();
+      console.log(`[CorridorTracker] Authoritatively loaded C-10 (${this.stopsDir1.length} stops dir 1, ${this.stopsDir0.length} stops dir 0, ${this.fullSchedule.dir1.length + this.fullSchedule.dir0.length} trips)!`);
     } catch (e) {
-      console.error('[CorridorTracker] Error loading dynamic GTFS:', e.message);
+      console.error('[CorridorTracker] Error loading static C-10 datasets:', e.message);
     }
   }
 
