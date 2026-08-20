@@ -772,22 +772,23 @@ class TransitApp {
   async renderLineDelayStats(lData) {
     const pillEl = document.getElementById('line-stat-pill');
     const delayValEl = document.getElementById('line-stat-delay-val');
-    const avgValEl = document.getElementById('line-stat-avg-val');
     const statsContainer = document.getElementById('line-selector-stats');
-
     if (!delayValEl) return;
 
-    if (statsContainer && !statsContainer._boundClick) {
-      statsContainer._boundClick = true;
-      statsContainer.addEventListener('click', () => {
-        this.openJournalismModal();
-      });
-      statsContainer.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          this.openJournalismModal();
-        }
-      });
+    if (statsContainer) {
+      statsContainer._currentLineQuery = lData?.code || lData?.id || this.activeLineId || 'C-10';
+      if (!statsContainer._boundClick) {
+        statsContainer._boundClick = true;
+        statsContainer.addEventListener('click', () => {
+          this.openJournalismModal(24, statsContainer._currentLineQuery);
+        });
+        statsContainer.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            this.openJournalismModal(24, statsContainer._currentLineQuery);
+          }
+        });
+      }
     }
 
     let stats = lData?.delayStats || null;
@@ -920,10 +921,18 @@ class TransitApp {
   // 1.5 JOURNALISM & HISTORICAL DELAY ANALYTICS
   // ==========================================
 
-  async openJournalismModal(hours = 24) {
+  async openJournalismModal(hours = 24, initialFilter = null) {
     const backdrop = document.getElementById('journalism-modal-backdrop');
     const container = document.getElementById('journalism-content-container');
+    const searchInput = document.getElementById('journalism-search-input');
     if (!backdrop || !container) return;
+
+    if (initialFilter !== null && initialFilter !== undefined) {
+      this.journalismFilterText = initialFilter;
+      if (searchInput) searchInput.value = initialFilter;
+    } else if (searchInput) {
+      this.journalismFilterText = searchInput.value || '';
+    }
 
     backdrop.classList.add('active');
     container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);">Analitzant dades de retards i puntualitat del servidor central...</div>';
@@ -940,6 +949,9 @@ class TransitApp {
       if (journalismData) {
         journalismData.snapshotInfo = snapshotsData;
         this.renderJournalismReport(journalismData);
+        if (initialFilter && searchInput) {
+          searchInput.focus();
+        }
       } else {
         container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);">No hi ha prou dades de retards registrades encara. El servidor està capturant la telemetria contínua.</div>';
       }
