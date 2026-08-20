@@ -395,7 +395,17 @@ class TransitApp {
       if (lineRes.success && lineRes.data) {
         const lData = lineRes.data;
         this.activeLineData = lData;
-        this.allStops = lData.stops || [];
+        const isBoth = this.activeDirection === 'both' || lData.direction === 'both';
+
+        // Set this.allStops properly to include all stops for accurate lookups and inspections
+        if (isBoth && lData.allDirections && lData.allDirections.length > 1) {
+          this.allStops = lData.allDirections.flatMap(d => d.stops || []);
+        } else if (isBoth && lData.secondaryStops && lData.secondaryStops.length > 0) {
+          this.allStops = [...(lData.stops || []), ...(lData.secondaryStops || [])];
+        } else {
+          this.allStops = lData.stops || [];
+        }
+
         this.activeBuses = lData.activeBuses || [];
         this.lineCache.set(routeKey, lData);
 
@@ -415,7 +425,7 @@ class TransitApp {
         this.renderDirectionButtons(lineMeta.directions || lData.directions || [], this.activeDirection);
 
         // 3. Render Target Card
-        this.populateSelect('target-stop-select', this.allStops, activeTargetId);
+        this.populateSelect('target-stop-select', lData, activeTargetId);
         
         if (etaRes.success && etaRes.data) {
           this.renderTargetCard(etaRes.data, lData);
@@ -427,20 +437,20 @@ class TransitApp {
         // 5. Render Route Progression Timeline
         this.renderRouteTimeline(lData, activeTargetId);
 
-        // 6. Render Stops Browser
-        this.renderStopsBrowser(this.allStops, lId);
+        // 6. Render Stops Browser (with both directions support)
+        this.renderStopsBrowser(lData, lId);
 
         // 7. Update Map
         this.updateActiveBusesCount(this.activeBuses.length);
         const lineColor = lData.color || '#009485';
-        const isBoth = this.activeDirection === 'both' || lData.direction === 'both';
         const coords = lData.coords || lData.polyline || lData.allDirections?.[0]?.coords || lData.allDirections?.[0]?.polyline || [];
         const secondaryCoords = isBoth ? (lData.secondaryCoords || lData.allDirections?.[1]?.coords || lData.allDirections?.[1]?.polyline || null) : null;
         const secondaryStops = isBoth ? (lData.secondaryStops || lData.allDirections?.[1]?.stops || null) : null;
         const secondaryColor = isBoth ? (lData.secondaryColor || '#38bdf8') : '#38bdf8';
+        const primaryStopsForMap = lData.stops || [];
 
         this.mapController.renderStops(
-          this.allStops, 
+          primaryStopsForMap, 
           activeTargetId, 
           (s) => this.inspectStop(s.id || s.mouteStopId, s.name), 
           shouldFitBounds, 
@@ -541,6 +551,7 @@ class TransitApp {
 
     const code = lData.code || lData.id || 'C-10';
     const color = lData.color || '#009485';
+    const calTag = lData.calendarInfo?.calendarTag || lData.serviceStatus?.calendarTag || '';
 
     if (badge) {
       badge.textContent = code;
@@ -549,7 +560,7 @@ class TransitApp {
     }
 
     if (city) {
-      city.textContent = lData.agency || 'Xarxa de Transport';
+      city.textContent = calTag ? `${lData.agency || 'Xarxa de Transport'} • 📅 ${calTag}` : (lData.agency || 'Xarxa de Transport');
     }
 
     if (title) {
@@ -912,40 +923,95 @@ class TransitApp {
     container.innerHTML = html;
   }
 
+  getDirectionsForLine(lineId, lineData) {
+    if (lineData && Array.isArray(lineData.directions) && lineData.directions.length > 0) {
+      return lineData.directions;
+    }
+    const meta = this.availableLines.find(l => String(l.id) === String(lineId));
+    if (meta && Array.isArray(meta.directions) && meta.directions.length > 0) {
+      return meta.directions;
+    }
+    if (String(lineId) === 'c10') {
+      return [
+        { dirId: '1', name: "Cap a Mataró (Hospital / Pl. d'Itàlia)" },
+        { dirId: '0', name: "Cap a Barcelona (Metro la Pau)" }
+      ];
+    }
+    return [];
+  }
+
   renderDirectionButtons(directions, currentDir) {
     const container = document.getElementById('direction-toggle-group');
-    if (!container) return;
+    const toolbarContainer = document.getElementById('stops-card-dir-toolbar');
+    const cardPillsContainer = document.getElementById('stops-card-dir-pills');
 
-    if (!directions || directions.length === 0) {
-      container.innerHTML = `
-        <button type="button" class="btn-direction active" data-dir-id="1">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m9 18 6-6-6-6"/></svg>
-          <span>Sentit Únic / Circular</span>
-        </button>
-      `;
-      return;
+    const resolvedDirs = (directions && directions.length > 0) 
+      ? directions 
+      : this.getDirectionsForLine(this.activeLineId, this.activeLineData);
+
+    if (container) {
+      if (!resolvedDirs || resolvedDirs.length === 0) {
+        container.innerHTML = `
+          <button type="button" class="btn-direction active" data-dir-id="1">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m9 18 6-6-6-6"/></svg>
+            <span>Sentit Únic / Circular</span>
+          </button>
+        `;
+      } else {
+        let html = resolvedDirs.map((d, i) => {
+          const dirId = String(d.dirId || d.id);
+          const isActive = dirId === String(currentDir);
+          return `
+            <button type="button" class="btn-direction ${isActive ? 'active' : ''}" data-dir-id="${dirId}">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="${i === 0 ? 'm9 18 6-6-6-6' : 'm15 18-6-6 6-6'}"/></svg>
+              <span>${d.name}</span>
+            </button>
+          `;
+        }).join('');
+
+        const isBothActive = String(currentDir) === 'both';
+        html += `
+          <button type="button" class="btn-direction ${isBothActive ? 'active' : ''}" data-dir-id="both" title="Mostrar tots dos sentits al mapa">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+            <span>Ambdós sentits</span>
+          </button>
+        `;
+
+        container.innerHTML = html;
+      }
     }
 
-    let html = directions.map((d, i) => {
-      const dirId = String(d.dirId || d.id);
-      const isActive = dirId === String(currentDir);
-      return `
-        <button type="button" class="btn-direction ${isActive ? 'active' : ''}" data-dir-id="${dirId}">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="${i === 0 ? 'm9 18 6-6-6-6' : 'm15 18-6-6 6-6'}"/></svg>
-          <span>${d.name}</span>
-        </button>
-      `;
-    }).join('');
+    if (toolbarContainer) {
+      if (!resolvedDirs || resolvedDirs.length === 0) {
+        toolbarContainer.style.display = 'none';
+        toolbarContainer.innerHTML = '';
+      } else {
+        let tabsHtml = resolvedDirs.map((d, i) => {
+          const dirId = String(d.dirId || d.id);
+          const isActive = dirId === String(currentDir);
+          const icon = i === 0 ? '➔' : '⬅';
+          return `
+            <button type="button" class="btn-stops-dir-tab ${isActive ? 'active' : ''}" data-dir-id="${dirId}" title="Veure parades de ${d.name.replace(/"/g, '&quot;')}">
+              <span>${icon} ${d.name}</span>
+            </button>
+          `;
+        }).join('');
 
-    const isBothActive = String(currentDir) === 'both';
-    html += `
-      <button type="button" class="btn-direction ${isBothActive ? 'active' : ''}" data-dir-id="both" title="Mostrar tots dos sentits al mapa">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-        <span>Ambdós sentits</span>
-      </button>
-    `;
+        const isBothActive = String(currentDir) === 'both';
+        tabsHtml += `
+          <button type="button" class="btn-stops-dir-tab ${isBothActive ? 'active' : ''}" data-dir-id="both" title="Veure parades de tots dos sentits dividides en blocs">
+            <span>⇄ Ambdós sentits</span>
+          </button>
+        `;
 
-    container.innerHTML = html;
+        toolbarContainer.style.display = 'flex';
+        toolbarContainer.innerHTML = tabsHtml;
+      }
+    }
+
+    if (cardPillsContainer) {
+      cardPillsContainer.innerHTML = '';
+    }
   }
 
   // ==========================================
@@ -970,7 +1036,13 @@ class TransitApp {
 
     if (titleEl) titleEl.textContent = stop.name || 'Parada';
     if (codeEl) codeEl.textContent = stop.code || stop.id || '--';
-    if (dirSubEl) dirSubEl.textContent = data.directionName || 'En servei';
+    if (dirSubEl) {
+      if (data.calendarInfo?.calendarTag) {
+        dirSubEl.innerHTML = `${data.directionName || 'En servei'} • <span style="color:#38bdf8; font-weight:600;">📅 ${data.calendarInfo.calendarTag}</span>`;
+      } else {
+        dirSubEl.textContent = data.directionName || 'En servei';
+      }
+    }
 
     if (lineTagEl) {
       lineTagEl.textContent = lData.code || lData.id || 'C-10';
@@ -1258,64 +1330,171 @@ class TransitApp {
   renderRouteTimeline(lineData, activeTargetId) {
     const container = document.getElementById('corridor-timeline-container');
     const titleEl = document.getElementById('corridor-title-text');
-    const zonePill = document.getElementById('corridor-zone-pill');
 
     if (titleEl) {
       titleEl.textContent = `Recorregut ${lineData.code || lineData.id || ''}: ${lineData.name || ''}`;
     }
 
-    if (zonePill) {
-      zonePill.textContent = lineData.agency || 'Xarxa de Transport';
-    }
+    if (!container) return;
 
-    const stops = lineData.stops || [];
-    if (!container || stops.length === 0) return;
+    const isBoth = this.activeDirection === 'both' || lineData.direction === 'both';
+    const allDirs = (isBoth && lineData.allDirections && lineData.allDirections.length > 1) 
+      ? lineData.allDirections 
+      : ((isBoth && lineData.secondaryStops && lineData.secondaryStops.length > 0)
+          ? [
+              { dirId: '1', name: lineData.directionName || 'Sentit 1', stops: lineData.stops || [] },
+              { dirId: '0', name: 'Sentit 2', stops: lineData.secondaryStops || [] }
+            ]
+          : null);
 
-    const activeBuses = lineData.activeBuses || [];
-    const primaryBus = activeBuses[0] || null;
+    if (isBoth && allDirs && allDirs.length > 1) {
+      container.classList.add('multi-dir-grid');
+      const activeBuses = lineData.activeBuses || [];
+      container.innerHTML = allDirs.map((d, dIdx) => {
+        const dirStops = d.stops || [];
+        const dirBuses = activeBuses.filter(b => String(b.direction) === String(d.dirId) || (b.destination && b.destination.toLowerCase().includes(d.name.toLowerCase().substring(0, 8))));
+        const primaryBus = dirBuses[0] || null;
 
-    container.innerHTML = stops.map((s, idx) => {
-      const sId = String(s.id || s.mouteStopId || s.code);
-      const isTarget = sId === String(activeTargetId);
-      const busOnStop = activeBuses.find(b => b.fromSeq === s.seq || b.toSeq === s.seq);
-      const isPassed = primaryBus && s.seq < (primaryBus.fromSeq || 0);
+        return `
+          <div class="timeline-dir-section">
+            <div class="timeline-dir-header">
+              <div class="timeline-dir-header-title">
+                <span class="timeline-dir-icon">${dIdx === 0 ? '➔' : '⬅'}</span>
+                <strong>${d.name}</strong>
+                <span class="timeline-dir-badge">${dirStops.length} parades</span>
+              </div>
+              <button type="button" class="btn-timeline-select-dir" data-dir-id="${d.dirId}" title="Veure i fixar només ${d.name.replace(/"/g, '&quot;')}">
+                <span>Veure només aquest sentit</span>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+            </div>
+            <div class="corridor-timeline-track">
+              ${dirStops.map((s, idx) => {
+                const sId = String(s.id || s.mouteStopId || s.code);
+                const isTarget = sId === String(activeTargetId);
+                const busOnStop = dirBuses.find(b => b.fromSeq === s.seq || b.toSeq === s.seq);
+                const isPassed = primaryBus && s.seq < (primaryBus.fromSeq || 0);
 
-      let nodeClass = 'step-node';
-      let iconContent = `${s.seq || idx + 1}`;
+                let nodeClass = 'step-node';
+                let iconContent = `${s.seq || idx + 1}`;
 
-      if (busOnStop) {
-        nodeClass += ' has-bus';
-        iconContent = '🚌';
-      } else if (isPassed) {
-        nodeClass += ' passed';
-        iconContent = '✓';
-      } else if (isTarget) {
-        nodeClass += ' target';
-        iconContent = '⭐';
-      }
+                if (busOnStop) {
+                  nodeClass += ' has-bus';
+                  iconContent = '🚌';
+                } else if (isPassed) {
+                  nodeClass += ' passed';
+                  iconContent = '✓';
+                } else if (isTarget) {
+                  nodeClass += ' target';
+                  iconContent = '⭐';
+                }
 
-      return `
-        <div class="corridor-step ${isPassed ? 'passed' : ''}" data-target-id="${sId}" style="cursor:pointer;" title="Fixar ${s.name} com a parada principal">
-          <div class="${nodeClass}">
-            <span>${iconContent}</span>
+                return `
+                  <div class="corridor-step ${isPassed ? 'passed' : ''}" data-target-id="${sId}" style="cursor:pointer;" title="Fixar ${s.name} com a parada principal">
+                    <div class="${nodeClass}">
+                      <span>${iconContent}</span>
+                    </div>
+                    <div class="step-info">
+                      <span class="step-name">${s.name}</span>
+                      <span class="step-zone">#${s.seq || idx + 1} • ${s.zone || 'Parada'}</span>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
           </div>
-          <div class="step-info">
-            <span class="step-name">${s.name}</span>
-            <span class="step-zone">#${s.seq || idx + 1} • ${s.zone || 'Parada'}</span>
-          </div>
+        `;
+      }).join('');
+    } else {
+      container.classList.remove('multi-dir-grid');
+      const stops = lineData.stops || [];
+      if (stops.length === 0) return;
+
+      const activeBuses = lineData.activeBuses || [];
+      const primaryBus = activeBuses[0] || null;
+
+      container.innerHTML = `
+        <div class="corridor-timeline-track">
+          ${stops.map((s, idx) => {
+            const sId = String(s.id || s.mouteStopId || s.code);
+            const isTarget = sId === String(activeTargetId);
+            const busOnStop = activeBuses.find(b => b.fromSeq === s.seq || b.toSeq === s.seq);
+            const isPassed = primaryBus && s.seq < (primaryBus.fromSeq || 0);
+
+            let nodeClass = 'step-node';
+            let iconContent = `${s.seq || idx + 1}`;
+
+            if (busOnStop) {
+              nodeClass += ' has-bus';
+              iconContent = '🚌';
+            } else if (isPassed) {
+              nodeClass += ' passed';
+              iconContent = '✓';
+            } else if (isTarget) {
+              nodeClass += ' target';
+              iconContent = '⭐';
+            }
+
+            return `
+              <div class="corridor-step ${isPassed ? 'passed' : ''}" data-target-id="${sId}" style="cursor:pointer;" title="Fixar ${s.name} com a parada principal">
+                <div class="${nodeClass}">
+                  <span>${iconContent}</span>
+                </div>
+                <div class="step-info">
+                  <span class="step-name">${s.name}</span>
+                  <span class="step-zone">#${s.seq || idx + 1} • ${s.zone || 'Parada'}</span>
+                </div>
+              </div>
+            `;
+          }).join('')}
         </div>
       `;
-    }).join('');
+    }
   }
 
   // ==========================================
   // 6. STOPS BROWSER & SELECTOR (UNIVERSAL)
   // ==========================================
 
-  populateSelect(selectId, stops, selectedId) {
+  populateSelect(selectId, lineDataOrStops, selectedId) {
     const select = document.getElementById(selectId);
     if (!select) return;
 
+    if (lineDataOrStops && typeof lineDataOrStops === 'object' && !Array.isArray(lineDataOrStops)) {
+      const lineData = lineDataOrStops;
+      const isBoth = this.activeDirection === 'both' || lineData.direction === 'both';
+      const allDirs = (isBoth && lineData.allDirections && lineData.allDirections.length > 1) 
+        ? lineData.allDirections 
+        : ((isBoth && lineData.secondaryStops && lineData.secondaryStops.length > 0)
+            ? [
+                { dirId: '1', name: lineData.directionName || 'Sentit 1', stops: lineData.stops || [] },
+                { dirId: '0', name: 'Sentit 2', stops: lineData.secondaryStops || [] }
+              ]
+            : null);
+
+      if (isBoth && allDirs) {
+        select.innerHTML = allDirs.map(d => {
+          const dirName = d.name || `Sentit ${d.dirId}`;
+          const options = (d.stops || []).map(s => {
+            const id = String(s.mouteStopId || s.id || s.code);
+            const isSel = id === String(selectedId);
+            return `<option value="${id}" ${isSel ? 'selected' : ''}>#${s.seq || ''} ${s.name}</option>`;
+          }).join('');
+          return `<optgroup label="${dirName}">${options}</optgroup>`;
+        }).join('');
+        return;
+      }
+
+      const stops = lineData.stops || [];
+      select.innerHTML = stops.map(s => {
+        const id = String(s.mouteStopId || s.id || s.code);
+        const isSel = id === String(selectedId);
+        return `<option value="${id}" ${isSel ? 'selected' : ''}>#${s.seq || ''} ${s.name}</option>`;
+      }).join('');
+      return;
+    }
+
+    const stops = Array.isArray(lineDataOrStops) ? lineDataOrStops : [];
     select.innerHTML = stops.map(s => {
       const id = String(s.mouteStopId || s.id || s.code);
       const isSel = id === String(selectedId);
@@ -1323,33 +1502,118 @@ class TransitApp {
     }).join('');
   }
 
-  renderStopsBrowser(stops, lineKey) {
+  renderStopsBrowser(lineDataOrStops, lineKey) {
     const container = document.getElementById('stops-list-scroll');
     const totalEl = document.getElementById('stops-total-count');
     if (!container) return;
 
-    if (totalEl) totalEl.textContent = stops.length;
+    // Handle either lineData object or flat stops array
+    const isLineDataObject = lineDataOrStops && typeof lineDataOrStops === 'object' && !Array.isArray(lineDataOrStops);
+    const lineData = isLineDataObject ? lineDataOrStops : null;
+    const isBoth = this.activeDirection === 'both' || lineData?.direction === 'both';
+    const currentTargetId = this.targetStopsByLine[lineKey] || this.targetStopsByLine[`${lineKey}_${this.activeDirection}`] || '';
 
-    const currentTargetId = this.targetStopsByLine[lineKey] || '';
+    // If "both directions" is active and we have direction definitions
+    const allDirs = (isBoth && lineData) ? (
+      (lineData.allDirections && lineData.allDirections.length > 1)
+        ? lineData.allDirections
+        : (lineData.secondaryStops && lineData.secondaryStops.length > 0
+            ? [
+                { dirId: '1', name: lineData.directionName || 'Sentit 1', stops: lineData.stops || [] },
+                { dirId: '0', name: 'Sentit 2', stops: lineData.secondaryStops || [] }
+              ]
+            : null)
+    ) : null;
 
-    container.innerHTML = stops.map((s, i) => {
-      const id = String(s.mouteStopId || s.id || s.code);
-      const isTarget = id === String(currentTargetId);
-      return `
-        <div class="stop-row-item ${isTarget ? 'target-stop' : ''}" data-stop-id="${id}" data-stop-name="${s.name.replace(/"/g, '&quot;')}">
-          <div class="stop-row-left">
-            <span class="stop-seq-badge">#${s.seq || i + 1}</span>
-            <div>
-              <div class="stop-row-name">${s.name} ${isTarget ? '⭐' : ''}</div>
-              <div class="stop-row-zone">${s.zone || 'Parada'} ${s.code ? `• Codi: ${s.code}` : ''}</div>
-            </div>
+    if (isBoth && allDirs && allDirs.length > 1) {
+      const totalStops = allDirs.reduce((acc, d) => acc + (d.stops?.length || 0), 0);
+      if (totalEl) {
+        totalEl.textContent = `${totalStops} (${allDirs.map(d => d.stops?.length || 0).join(' + ')})`;
+      }
+
+      // Render top direction jump bar + both direction sections stacked one below the other
+      let html = `
+        <div class="stops-directions-nav" id="stops-directions-nav">
+          <span class="stops-nav-label">Anar a:</span>
+          <div class="stops-nav-buttons">
+            ${allDirs.map((d, idx) => `
+              <button type="button" class="btn-dir-jump" data-dir-target="stops-group-${d.dirId}" title="Desplaçar a les parades de ${d.name.replace(/"/g, '&quot;')}">
+                <span>${idx === 0 ? '➔' : '⬅'} ${d.name}</span>
+                <span class="btn-dir-jump-badge">${d.stops?.length || 0}</span>
+              </button>
+            `).join('')}
           </div>
-          <button type="button" class="btn-icon btn-inspect-stop" style="width:34px; height:34px;" title="Veure arribades" data-stop-id="${id}" data-stop-name="${s.name.replace(/"/g, '&quot;')}">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-          </button>
         </div>
       `;
-    }).join('');
+
+      html += allDirs.map((d, dIdx) => {
+        const dirStops = d.stops || [];
+        const dirIcon = dIdx === 0 ? '➔' : '⬅';
+        return `
+          <div class="stops-dir-section" id="stops-group-${d.dirId}" data-dir-id="${d.dirId}">
+            <div class="stops-dir-header">
+              <div class="stops-dir-header-info">
+                <div class="stops-dir-header-title-row">
+                  <span class="stops-dir-icon">${dirIcon}</span>
+                  <strong class="stops-dir-name">${d.name}</strong>
+                  <span class="stops-dir-count-pill">${dirStops.length} parades</span>
+                </div>
+              </div>
+              <button type="button" class="btn-select-dir-view" data-dir-id="${d.dirId}" title="Seleccionar i filtrar només les parades d'aquest sentit">
+                <span>Filtrar aquest sentit</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+            </div>
+            
+            <div class="stops-dir-items-list">
+              ${dirStops.map((s, i) => {
+                const id = String(s.mouteStopId || s.id || s.code);
+                const isTarget = id === String(currentTargetId);
+                return `
+                  <div class="stop-row-item ${isTarget ? 'target-stop' : ''}" data-stop-id="${id}" data-stop-name="${s.name.replace(/"/g, '&quot;')}" data-dir-id="${d.dirId}">
+                    <div class="stop-row-left">
+                      <span class="stop-seq-badge">#${i + 1}</span>
+                      <div>
+                        <div class="stop-row-name">${s.name} ${isTarget ? '⭐' : ''}</div>
+                        <div class="stop-row-zone">${s.zone || 'Parada'} ${s.code ? `• Codi: ${s.code}` : ''}</div>
+                      </div>
+                    </div>
+                    <button type="button" class="btn-icon btn-inspect-stop" style="width:34px; height:34px;" title="Veure arribades" data-stop-id="${id}" data-stop-name="${s.name.replace(/"/g, '&quot;')}">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+                    </button>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      container.innerHTML = html;
+    } else {
+      // Single direction mode
+      const stops = Array.isArray(lineDataOrStops) ? lineDataOrStops : (lineData?.stops || []);
+      if (totalEl) totalEl.textContent = stops.length;
+
+      container.innerHTML = stops.map((s, i) => {
+        const id = String(s.mouteStopId || s.id || s.code);
+        const isTarget = id === String(currentTargetId);
+        return `
+          <div class="stop-row-item ${isTarget ? 'target-stop' : ''}" data-stop-id="${id}" data-stop-name="${s.name.replace(/"/g, '&quot;')}">
+            <div class="stop-row-left">
+              <span class="stop-seq-badge">#${i + 1}</span>
+              <div>
+                <div class="stop-row-name">${s.name} ${isTarget ? '⭐' : ''}</div>
+                <div class="stop-row-zone">${s.zone || 'Parada'} ${s.code ? `• Codi: ${s.code}` : ''}</div>
+              </div>
+            </div>
+            <button type="button" class="btn-icon btn-inspect-stop" style="width:34px; height:34px;" title="Veure arribades" data-stop-id="${id}" data-stop-name="${s.name.replace(/"/g, '&quot;')}">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+          </div>
+        `;
+      }).join('');
+    }
   }
 
   setTargetStop(stopId) {
@@ -1877,10 +2141,41 @@ class TransitApp {
       }
     });
 
+    // Direction selection action buttons delegation (from Stops Browser, Header Pills, Toolbar & Timeline)
+    document.addEventListener('click', (e) => {
+      const btn = e.target.closest('.btn-select-dir-view, .btn-timeline-select-dir, .btn-stops-card-pill, .btn-stops-dir-tab');
+      if (btn) {
+        e.preventDefault();
+        const dirId = btn.getAttribute('data-dir-id');
+        if (dirId && dirId !== this.activeDirection) {
+          this.activeDirection = dirId;
+          this.refreshAllData(true);
+        }
+      }
+    });
+
+    // Direction Jump Navigator Buttons delegation (smooth scroll inside stops browser)
+    document.addEventListener('click', (e) => {
+      const btn = e.target.closest('.btn-dir-jump');
+      if (btn) {
+        e.preventDefault();
+        const targetId = btn.getAttribute('data-dir-target');
+        if (targetId) {
+          const targetEl = document.getElementById(targetId);
+          if (targetEl) {
+            targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }
+      }
+    });
+
     // Stops Browser List delegation
     const stopsList = document.getElementById('stops-list-scroll');
     if (stopsList) {
       stopsList.addEventListener('click', (e) => {
+        // If clicking a direction action button or jump button, skip
+        if (e.target.closest('.btn-select-dir-view') || e.target.closest('.btn-dir-jump')) return;
+        
         const row = e.target.closest('.stop-row-item');
         if (!row) return;
         e.preventDefault();
@@ -1944,13 +2239,28 @@ class TransitApp {
       }
     });
 
-    // Filter Stops Browser Input
+    // Filter Stops Browser Input with smart multi-direction section support
     document.getElementById('stop-search-input')?.addEventListener('input', (e) => {
-      const q = e.target.value.toLowerCase();
-      document.querySelectorAll('#stops-list-scroll .stop-row-item').forEach(row => {
-        const text = row.textContent.toLowerCase();
-        row.style.display = text.includes(q) ? 'flex' : 'none';
-      });
+      const q = (e.target.value || '').toLowerCase().trim();
+      const sections = document.querySelectorAll('#stops-list-scroll .stops-dir-section');
+      
+      if (sections.length > 0) {
+        sections.forEach(sec => {
+          let visibleInSec = 0;
+          sec.querySelectorAll('.stop-row-item').forEach(row => {
+            const text = row.textContent.toLowerCase();
+            const matches = !q || text.includes(q);
+            row.style.display = matches ? 'flex' : 'none';
+            if (matches) visibleInSec++;
+          });
+          sec.style.display = (visibleInSec > 0 || !q) ? 'flex' : 'none';
+        });
+      } else {
+        document.querySelectorAll('#stops-list-scroll .stop-row-item').forEach(row => {
+          const text = row.textContent.toLowerCase();
+          row.style.display = (!q || text.includes(q)) ? 'flex' : 'none';
+        });
+      }
     });
 
     // Footer Quick Links

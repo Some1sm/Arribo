@@ -3,6 +3,14 @@ const path = require('path');
 const mouteClient = require('./mouteClient');
 const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
+const {
+  C10_STOPS_DIR1,
+  C10_STOPS_DIR0,
+  C10_POLYLINE_DIR1,
+  C10_POLYLINE_DIR0,
+  C10_TRIPS_DIR1,
+  C10_TRIPS_DIR0
+} = require('./c10StaticData');
 
 function timeToSec(timeStr) {
   return timeUtils.timeToSec(timeStr);
@@ -26,11 +34,15 @@ class CorridorTracker {
   constructor() {
     this.agencyTimezone = 'Europe/Madrid';
     this.dataDir = path.join(__dirname, '..', 'data');
-    this.stopsDir1 = [];
-    this.stopsDir0 = [];
+    this.stopsDir1 = [...C10_STOPS_DIR1];
+    this.stopsDir0 = [...C10_STOPS_DIR0];
+    this.routePolylineDir1 = [...C10_POLYLINE_DIR1];
+    this.routePolylineDir0 = [...C10_POLYLINE_DIR0];
     this.stopsMapDir1 = new Map();
     this.stopsMapDir0 = new Map();
-    this.fullSchedule = { dir1: [], dir0: [] };
+    this.stopsDir1.forEach(s => this.stopsMapDir1.set(s.gtfsStopId, s));
+    this.stopsDir0.forEach(s => this.stopsMapDir0.set(s.gtfsStopId, s));
+    this.fullSchedule = { dir1: [...C10_TRIPS_DIR1], dir0: [...C10_TRIPS_DIR0] };
     this.calendarExceptions = new Map();
     this.calendarWeekly = [];
     this.loadData();
@@ -353,21 +365,89 @@ class CorridorTracker {
     }
   }
 
-  isServiceActiveOnDate(serviceId, dateObj) {
-    const dateStr = formatDateToYYYYMMDD(dateObj);
+  getDateComponents(dateObj = new Date()) {
+    const d = (dateObj instanceof Date && !isNaN(dateObj.getTime()))
+      ? dateObj
+      : (typeof dateObj === 'string' ? new Date(dateObj) : new Date());
 
-    if (this.calendarExceptions.has(dateStr)) {
-      const entry = this.calendarExceptions.get(dateStr);
-      if (entry.active.has(serviceId)) return true;
-      if (entry.inactive.has(serviceId)) return false;
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: this.agencyTimezone || 'Europe/Madrid',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+    const parts = formatter.formatToParts(d);
+    let year = 2026, month = 8, day = 20;
+    for (const p of parts) {
+      if (p.type === 'year') year = parseInt(p.value, 10);
+      if (p.type === 'month') month = parseInt(p.value, 10);
+      if (p.type === 'day') day = parseInt(p.value, 10);
     }
-
-    const mmdd = dateStr.substring(4, 8);
-    const dayOfWeek = dateObj.getDay();
+    const utcDate = new Date(Date.UTC(year, month - 1, day));
+    const dayOfWeek = utcDate.getUTCDay();
     const isSunday = dayOfWeek === 0;
     const isSaturday = dayOfWeek === 6;
     const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
-    const isAugust = dateObj.getMonth() === 7;
+    const isAugust = month === 8;
+    const dateStr = `${year}${String(month).padStart(2, '0')}${String(day).padStart(2, '0')}`;
+    const mmdd = `${String(month).padStart(2, '0')}${String(day).padStart(2, '0')}`;
+
+    return { year, month, day, dayOfWeek, isSunday, isSaturday, isWeekday, isAugust, dateStr, mmdd };
+  }
+
+  getServiceCalendarInfo(dateObj = new Date()) {
+    const { isAugust, isSaturday, isSunday, isWeekday, year, month, day } = this.getDateComponents(dateObj);
+    const dateFormatted = `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`;
+
+    if (isSunday) {
+      return {
+        serviceId: 'GEN_184749',
+        name: 'Diumenges i festius',
+        frequency: 'Cada 120 minuts (2 hores)',
+        frequencyMinutes: 120,
+        isAugustSeason: isAugust,
+        isWeekend: true,
+        calendarTag: 'Diumenges i festius (cada 2h)',
+        periodLabel: 'Festius',
+        dateFormatted
+      };
+    }
+
+    if (isSaturday || (isWeekday && isAugust)) {
+      return {
+        serviceId: 'GEN_185080',
+        name: isSaturday ? 'Dissabtes' : "Feiners d'Agost",
+        frequency: 'Cada 90 minuts (1h 30m)',
+        frequencyMinutes: 90,
+        isAugustSeason: isAugust,
+        isWeekend: isSaturday,
+        calendarTag: isAugust ? "Horari d'estiu (Agost: cada 90 min)" : 'Dissabtes (cada 90 min)',
+        periodLabel: isAugust ? 'Estiu (Agost)' : 'Dissabte',
+        dateFormatted
+      };
+    }
+
+    return {
+      serviceId: 'GEN_184910',
+      name: "Feiners de dilluns a divendres (resta de l'any)",
+      frequency: 'Cada 45 minuts',
+      frequencyMinutes: 45,
+      isAugustSeason: false,
+      isWeekend: false,
+      calendarTag: 'Feiners habituals (cada 45 min)',
+      periodLabel: 'Feiners',
+      dateFormatted
+    };
+  }
+
+  isServiceActiveOnDate(serviceId, dateObj = new Date()) {
+    const { dateStr, mmdd, dayOfWeek, isSunday, isSaturday, isWeekday, isAugust } = this.getDateComponents(dateObj);
+
+    if (this.calendarExceptions.has(dateStr)) {
+      const entry = this.calendarExceptions.get(dateStr);
+      if (entry.active && entry.active.has(serviceId)) return true;
+      if (entry.inactive && entry.inactive.has(serviceId)) return false;
+    }
 
     // 1. Regular all-year Sundays & holidays
     if (serviceId === 'GEN_184749') {
@@ -385,7 +465,7 @@ class CorridorTracker {
       return isSaturday || (isWeekday && isAugust);
     }
 
-    // 4. Regular weekdays (non-August) ("Feiners de dilluns a divendres")
+    // 4. Regular weekdays (non-August) ("Feiners de dilluns a divendres excepte agost")
     if (serviceId === 'GEN_184910') {
       return isWeekday && !isAugust;
     }
@@ -678,10 +758,12 @@ class CorridorTracker {
     return results;
   }
 
-  async getTargetStopETA(direction = '1', customStopId = null) {
+  async getTargetStopETA(direction = '1', customStopId = null, targetDate = null) {
     const isDir1 = direction === '1';
     const defaultStopConfig = isDir1 ? this.targetStop.dir1 : this.targetStop.dir0;
     const stopsList = isDir1 ? this.stopsDir1 : this.stopsDir0;
+    const now = (targetDate && !isNaN(new Date(targetDate).getTime())) ? new Date(targetDate) : new Date();
+    const calendarInfo = this.getServiceCalendarInfo(now);
 
     let targetStopObj = null;
     if (customStopId) {
@@ -730,7 +812,6 @@ class CorridorTracker {
     if (departuresToUse.length === 0) {
       // If Mou-te single-pole only returned opposite direction, generate from GTFS schedule for this direction
       const scheduleTrips = isDir1 ? (this.fullSchedule?.dir1 || []) : (this.fullSchedule?.dir0 || []);
-      const now = new Date();
       const networkNow = timeUtils.getNetworkTime(this.agencyTimezone, now);
       const todaysTrips = scheduleTrips.filter(trip => this.isServiceActiveOnDate(trip.serviceId, now));
 
@@ -743,7 +824,7 @@ class CorridorTracker {
           const diffMs = depUtcDate.getTime() - now.getTime();
           const diffMin = Math.round(diffMs / 60000);
 
-          if (diffMin >= -5 && diffMin <= 120) {
+          if (diffMin >= -5 && diffMin <= 180) {
             const depIso = depUtcDate.toISOString();
             departuresToUse.push({
               lineId: '02498',
@@ -772,7 +853,7 @@ class CorridorTracker {
 
     if (departuresToUse.length === 0) {
       // If no departures left today, get full schedule of tomorrow
-      const tomorrow = new Date(Date.now() + 24 * 3600 * 1000);
+      const tomorrow = new Date(now.getTime() + 24 * 3600 * 1000);
       const networkTomorrow = timeUtils.getNetworkTime(this.agencyTimezone, tomorrow);
       const scheduleTrips = isDir1 ? (this.fullSchedule?.dir1 || []) : (this.fullSchedule?.dir0 || []);
       const tomorrowsTrips = scheduleTrips.filter(trip => this.isServiceActiveOnDate(trip.serviceId, tomorrow));
@@ -785,7 +866,7 @@ class CorridorTracker {
             const timeStr = (stopEntry.dep || stopEntry.arr || '').substring(0, 5);
             const [h, m] = timeStr.split(':').map(Number);
             const depUtcDate = timeUtils.localTimeToUtcDate(networkTomorrow.year, networkTomorrow.month, networkTomorrow.day, h, m, 0, this.agencyTimezone);
-            const diffMs = depUtcDate.getTime() - Date.now();
+            const diffMs = depUtcDate.getTime() - now.getTime();
             const diffMin = Math.max(1, Math.round(diffMs / 60000));
             const depIso = depUtcDate.toISOString();
             const isFirst = tIdx === 0;
@@ -842,24 +923,27 @@ class CorridorTracker {
       nextBus: nextBus,
       upcomingDepartures: departuresToUse.slice(0, 8),
       allDepartures: departuresToUse,
+      calendarInfo: calendarInfo,
       serviceStatus: {
         isOperating: departuresToUse.some(d => d.isToday && (d.isRealtime || d.minutesAway <= 120)),
         period: (new Date().getHours() >= 22 || new Date().getHours() < 6) ? 'night' : 'day',
         firstServiceTomorrow: firstTimeTomorrow,
         statusText: departuresToUse.some(d => d.isToday && (d.isRealtime || d.minutesAway <= 120))
-          ? 'Servei en funcionament'
+          ? `Servei en funcionament • ${calendarInfo.calendarTag}`
           : `Servei fora d'horari • Represa demà a les ${firstTimeTomorrow}`
       },
       lastUpdated: new Date().toISOString()
     };
   }
 
-  async getStopDepartures(stopId, direction = '1') {
+  async getStopDepartures(stopId, direction = '1', targetDate = null) {
     const isDir1 = direction === '1';
     const stopsList = direction === '0' ? this.stopsDir0 : this.stopsDir1;
     const stopObj = stopsList.find(s => s.mouteStopId === stopId) || {};
     const gtfsStopId = stopObj.gtfsStopId || null;
     const seq = stopObj.seq !== undefined ? stopObj.seq : null;
+    const now = (targetDate && !isNaN(new Date(targetDate).getTime())) ? new Date(targetDate) : new Date();
+    const calendarInfo = this.getServiceCalendarInfo(now);
 
     let departures = [];
     try {
@@ -871,7 +955,7 @@ class CorridorTracker {
     }
 
     if (departures.length === 0) {
-      const tomorrow = new Date(Date.now() + 24 * 3600 * 1000);
+      const tomorrow = new Date(now.getTime() + 24 * 3600 * 1000);
       const networkTomorrow = timeUtils.getNetworkTime(this.agencyTimezone, tomorrow);
       const scheduleTrips = isDir1 ? (this.fullSchedule?.dir1 || []) : (this.fullSchedule?.dir0 || []);
       const tomorrowsTrips = scheduleTrips.filter(trip => this.isServiceActiveOnDate(trip.serviceId, tomorrow));
@@ -884,7 +968,7 @@ class CorridorTracker {
             const timeStr = (stopEntry.dep || stopEntry.arr || '').substring(0, 5);
             const [h, m] = timeStr.split(':').map(Number);
             const depUtcDate = timeUtils.localTimeToUtcDate(networkTomorrow.year, networkTomorrow.month, networkTomorrow.day, h, m, 0, this.agencyTimezone);
-            const diffMs = depUtcDate.getTime() - Date.now();
+            const diffMs = depUtcDate.getTime() - now.getTime();
             const diffMin = Math.max(1, Math.round(diffMs / 60000));
             const depIso = depUtcDate.toISOString();
             const isFirst = tIdx === 0;
@@ -919,6 +1003,7 @@ class CorridorTracker {
       stopId: stopId,
       stopName: stopObj.name || '',
       departures: departures,
+      calendarInfo: calendarInfo,
       lastUpdated: new Date().toISOString()
     };
   }
@@ -1146,13 +1231,19 @@ class CorridorTracker {
     });
 
 
+    const polyline = isDir1 ? this.routePolylineDir1 : this.routePolylineDir0;
+
     const result = {
       direction: direction,
       currentSec: currentSec,
       activeServiceCount: todaysTrips.length,
       checkpoints: checkpointResults,
       activeBuses: activeBuses,
+      stops: stopsList,
+      routePolyline: polyline,
+      coords: polyline,
       trackedTripId: targetTripToTrack?.tripId || null,
+      calendarInfo: this.getServiceCalendarInfo(now),
       targetStop: this.targetStop,
       lastUpdated: new Date().toISOString()
     };

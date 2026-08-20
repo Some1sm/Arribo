@@ -588,14 +588,14 @@ class MataroTracker {
           const isSameDirection = (vehRouteIdx === routeIdx);
 
           let totalTravelSec = 0;
-
-          const isUpstreamDirect = isSameDirection && vehStopIdx <= targetStopIdx;
+          let isUpstreamDirect = false;
 
           if (isSameDirection) {
             // Vehicle is on the same route direction
             const snapped = this.snapPointToPolyline(veh.lat, veh.lon, routePolyCoords);
             const vehNearestStop = this.findNearestSegment(snapped.lat, snapped.lon, routeStops, routePolyCoords);
             const vehStopIdx = Math.max(0, (vehNearestStop.fromSeq || 1) - 1);
+            isUpstreamDirect = (vehStopIdx <= targetStopIdx);
 
             if (vehStopIdx <= targetStopIdx) {
               // Upstream: vehicle is approaching this stop directly on this run

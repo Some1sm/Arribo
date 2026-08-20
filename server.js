@@ -28,8 +28,8 @@ app.use((req, res, next) => {
 });
 
 app.use(express.static(path.join(__dirname, 'public'), {
-  maxAge: process.env.NODE_ENV === 'production' ? '1d' : '1h',
-  etag: true
+  maxAge: 0,
+  etag: false
 }));
 
 // Pre-initialize async trackers and launch Autonomous Ingestion Daemon
@@ -277,9 +277,11 @@ app.get('/api/search/stops', (req, res) => {
 app.get('/api/line/:lineId', async (req, res) => {
   const { lineId } = req.params;
   const direction = req.query.direction || '0';
+  const targetDate = req.query.date || null;
   try {
     const { type, tracker } = getTrackerForLine(lineId);
     if (type === 'c10') {
+      const calInfo = corridorTracker.getServiceCalendarInfo(targetDate ? new Date(targetDate) : new Date());
       if (direction === 'both') {
         const tracking1 = await corridorTracker.getCorridorLiveTracking('1');
         const tracking0 = await corridorTracker.getCorridorLiveTracking('0');
@@ -296,6 +298,10 @@ app.get('/api/line/:lineId', async (req, res) => {
             agency: 'Moventis / Casas (Interurbà Maresme)',
             direction: 'both',
             directionName: 'Ambdós sentits (Barcelona ⇄ Mataró)',
+            directions: [
+              { dirId: '1', name: "Cap a Mataró (Hospital / Pl. d'Itàlia)" },
+              { dirId: '0', name: "Cap a Barcelona (Metro la Pau)" }
+            ],
             stops: stops1,
             coords: tracking1.routePolyline || [],
             secondaryStops: stops0,
@@ -307,9 +313,11 @@ app.get('/api/line/:lineId', async (req, res) => {
             activeBuses: [ ...(tracking1.activeBuses || []), ...(tracking0.activeBuses || []) ],
             checkpoints: tracking1.checkpoints || [],
             totalVehiclesInCircuit: (tracking1.activeBuses?.length || 0) + (tracking0.activeBuses?.length || 0),
+            calendarInfo: calInfo,
             serviceStatus: {
               isOperating: ((tracking1.activeBuses?.length || 0) + (tracking0.activeBuses?.length || 0)) > 0,
-              firstServiceTomorrow: '06:45'
+              firstServiceTomorrow: '06:45',
+              calendarTag: calInfo.calendarTag
             }
           }
         });
@@ -326,14 +334,21 @@ app.get('/api/line/:lineId', async (req, res) => {
             color: '#009485',
             agency: 'Moventis / Casas (Interurbà Maresme)',
             direction: String(dir),
+            directionName: dir === '1' ? "Cap a Mataró (Hospital / Pl. d'Itàlia)" : "Cap a Barcelona (Metro la Pau)",
+            directions: [
+              { dirId: '1', name: "Cap a Mataró (Hospital / Pl. d'Itàlia)" },
+              { dirId: '0', name: "Cap a Barcelona (Metro la Pau)" }
+            ],
             stops: stops,
             coords: tracking.routePolyline || [],
             activeBuses: tracking.activeBuses || [],
             checkpoints: tracking.checkpoints || [],
             totalVehiclesInCircuit: tracking.activeBuses?.length || 0,
+            calendarInfo: calInfo,
             serviceStatus: {
               isOperating: (tracking.activeBuses?.length || 0) > 0,
-              firstServiceTomorrow: dir === '1' ? '08:15' : '06:45'
+              firstServiceTomorrow: dir === '1' ? '08:15' : '06:45',
+              calendarTag: calInfo.calendarTag
             }
           }
         });
@@ -352,11 +367,12 @@ app.get('/api/line/:lineId/target-eta', async (req, res) => {
   const { lineId } = req.params;
   const direction = req.query.direction || '0';
   const stopId = req.query.stopId || null;
+  const targetDate = req.query.date || null;
   try {
     const { type, tracker } = getTrackerForLine(lineId);
     if (type === 'c10') {
       const dir = direction === '0' ? '0' : '1';
-      const data = await corridorTracker.getTargetStopETA(dir, stopId);
+      const data = await corridorTracker.getTargetStopETA(dir, stopId, targetDate);
       res.json({ success: true, data });
     } else {
       const data = await tracker.getTargetStopETA(lineId, stopId, direction);
@@ -390,11 +406,12 @@ app.get('/api/line/:lineId/live', async (req, res) => {
 app.get('/api/line/:lineId/stop/:stopId/departures', async (req, res) => {
   const { lineId, stopId } = req.params;
   const direction = req.query.direction || '0';
+  const targetDate = req.query.date || null;
   try {
     const { type, tracker } = getTrackerForLine(lineId);
     if (type === 'c10') {
       const dir = direction === '0' ? '0' : '1';
-      const data = await corridorTracker.getStopDepartures(stopId, dir);
+      const data = await corridorTracker.getStopDepartures(stopId, dir, targetDate);
       res.json({ success: true, data });
     } else {
       const data = await tracker.getStopDepartures(stopId, lineId, direction);
@@ -413,8 +430,9 @@ app.get('/api/line/:lineId/stop/:stopId/departures', async (req, res) => {
 app.get('/api/c10/target-eta', async (req, res) => {
   const direction = req.query.direction === '0' ? '0' : '1';
   const stopId = req.query.stopId || null;
+  const targetDate = req.query.date || null;
   try {
-    const data = await corridorTracker.getTargetStopETA(direction, stopId);
+    const data = await corridorTracker.getTargetStopETA(direction, stopId, targetDate);
     res.json({ success: true, data });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -441,8 +459,9 @@ app.get('/api/c10/stops', (req, res) => {
 app.get('/api/c10/stop/:stopId/departures', async (req, res) => {
   const { stopId } = req.params;
   const direction = req.query.direction === '0' ? '0' : '1';
+  const targetDate = req.query.date || null;
   try {
-    const data = await corridorTracker.getStopDepartures(stopId, direction);
+    const data = await corridorTracker.getStopDepartures(stopId, direction, targetDate);
     res.json({ success: true, data });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
