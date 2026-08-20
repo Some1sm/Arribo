@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { DatabaseSync } = require('node:sqlite');
 const mouteClient = require('./mouteClient');
 const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
@@ -8,6 +9,9 @@ const indexer = require('./cataloniaIndexer');
 class CataloniaTracker {
   constructor() {
     this.cacheDir = path.join(__dirname, '..', 'data', 'cache');
+    this.shapesDbPath = path.join(__dirname, '..', 'data', 'shapes.db');
+    this.shapesDb = null;
+    this.getShapeStmt = null;
     this.routes = [];
     this.routesMap = new Map();
     this.routeDetailsMap = new Map();
@@ -15,7 +19,6 @@ class CataloniaTracker {
     this.allStopsMap = new Map();
     this.calendar = new Map();
     this.calendarExceptions = new Map(); // dateStr -> { active: Set, inactive: Set }
-    this.shapesCache = new Map();
     this.isLoaded = false;
   }
 
@@ -41,15 +44,18 @@ class CataloniaTracker {
       const stopsData = fs.existsSync(stopsCachePath) ? JSON.parse(fs.readFileSync(stopsCachePath, 'utf8')) : [];
       const calData = fs.existsSync(calendarPath) ? JSON.parse(fs.readFileSync(calendarPath, 'utf8')) : {};
       const calDatesData = fs.existsSync(calendarDatesPath) ? JSON.parse(fs.readFileSync(calendarDatesPath, 'utf8')) : {};
-      const shapesPath = path.join(activeCacheDir, 'shapes.json');
-      const shapesData = fs.existsSync(shapesPath) ? JSON.parse(fs.readFileSync(shapesPath, 'utf8')) : {};
 
       this.routes = routesData;
 
-      // Load shapes cache
-      Object.entries(shapesData).forEach(([sId, coords]) => {
-        this.shapesCache.set(sId, coords);
-      });
+      // Connect to SQLite shapes DB on demand
+      if (fs.existsSync(this.shapesDbPath)) {
+        try {
+          this.shapesDb = new DatabaseSync(this.shapesDbPath);
+          this.getShapeStmt = this.shapesDb.prepare('SELECT coords FROM shapes WHERE shape_id = ?');
+        } catch (e) {
+          console.warn('[CataloniaTracker] SQLite shapes init error:', e.message);
+        }
+      }
 
       // Load calendar maps
       Object.entries(calData).forEach(([sId, cal]) => {
@@ -198,6 +204,19 @@ class CataloniaTracker {
     });
   }
 
+  getShapeCoords(shapeId) {
+    if (!shapeId || !this.getShapeStmt) return null;
+    try {
+      const row = this.getShapeStmt.get(shapeId);
+      if (row?.coords) {
+        return JSON.parse(row.coords);
+      }
+    } catch (e) {
+      // ignore
+    }
+    return null;
+  }
+
   async getLineDetails(lineId, direction = '0') {
     await this.init();
     const route = this.resolveLine(lineId);
@@ -211,8 +230,8 @@ class CataloniaTracker {
       const details1 = await this.getLineDetails(lineId, '1');
       const shape0 = route.directions[0]?.shapeId;
       const shape1 = route.directions[1]?.shapeId;
-      const coords0 = (shape0 && this.shapesCache.get(shape0)) || details0.stops.map(s => [s.lat, s.lon]);
-      const coords1 = (shape1 && this.shapesCache.get(shape1)) || details1.stops.map(s => [s.lat, s.lon]);
+      const coords0 = this.getShapeCoords(shape0) || details0.stops.map(s => [s.lat, s.lon]);
+      const coords1 = this.getShapeCoords(shape1) || details1.stops.map(s => [s.lat, s.lon]);
       return {
         ...details0,
         direction: 'both',
@@ -242,7 +261,7 @@ class CataloniaTracker {
       ];
     }
     const dirMeta = route.directions.find(d => String(d.dirId) === dirIdx) || route.directions[0] || { name: 'Cap a Destí' };
-    const polylineCoords = (dirMeta.shapeId && this.shapesCache.get(dirMeta.shapeId)) || stops.map(s => [s.lat, s.lon]);
+    const polylineCoords = this.getShapeCoords(dirMeta.shapeId) || stops.map(s => [s.lat, s.lon]);
 
     // Check scheduled service for today
     const now = new Date();

@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
+const { DatabaseSync } = require('node:sqlite');
 
 function parseCsvLine(line) {
   const result = [];
@@ -83,10 +84,11 @@ class CataloniaIndexer {
   constructor() {
     this.gtfsDir = path.join(__dirname, '..', 'data', 'atm_gtfs');
     this.cacheDir = path.join(__dirname, '..', 'data', 'cache');
+    this.shapesDbPath = path.join(__dirname, '..', 'data', 'shapes.db');
   }
 
   async buildIndex() {
-    console.log('[CataloniaIndexer] Building unified Catalonia GTFS index with canonical stops & road shapes...');
+    console.log('[CataloniaIndexer] Building unified Catalonia GTFS index with canonical stops & SQLite road shapes...');
     const start = Date.now();
 
     if (!fs.existsSync(this.cacheDir)) {
@@ -98,7 +100,6 @@ class CataloniaIndexer {
     const routeDetailsPath = path.join(this.cacheDir, 'route_details.json');
     const calendarCachePath = path.join(this.cacheDir, 'calendar.json');
     const calendarDatesCachePath = path.join(this.cacheDir, 'calendar_dates.json');
-    const shapesCachePath = path.join(this.cacheDir, 'shapes.json');
 
     // 1. Index Calendar & Calendar Dates
     const calendar = {};
@@ -299,31 +300,44 @@ class CataloniaIndexer {
       }
     }
 
-    // 6. Index Shapes from shapes.txt (exact road polylines)
-    const shapesRawMap = new Map();
+    // 6. Index Shapes directly into SQLite shapes.db (zero memory footprint)
+    let indexedShapesCount = 0;
     const shapesFile = path.join(this.gtfsDir, 'shapes.txt');
     if (fs.existsSync(shapesFile)) {
-      const shStream = fs.createReadStream(shapesFile);
-      const shRl = readline.createInterface({ input: shStream, crlfDelay: Infinity });
-      for await (const line of shRl) {
-        const parts = line.split(',');
-        if (parts[0] !== 'shape_id') {
-          const sId = parts[0];
-          if (usedShapeIds.has(sId)) {
-            const lat = parseFloat(parts[1]);
-            const lon = parseFloat(parts[2]);
-            const seq = parseInt(parts[3] || '0', 10);
-            if (!shapesRawMap.has(sId)) shapesRawMap.set(sId, []);
-            shapesRawMap.get(sId).push({ seq, lat, lon });
+      try {
+        const db = new DatabaseSync(this.shapesDbPath);
+        db.exec('CREATE TABLE IF NOT EXISTS shapes (shape_id TEXT PRIMARY KEY, coords TEXT)');
+        const insertStmt = db.prepare('INSERT OR REPLACE INTO shapes (shape_id, coords) VALUES (?, ?)');
+
+        const shapesRawMap = new Map();
+        const shStream = fs.createReadStream(shapesFile);
+        const shRl = readline.createInterface({ input: shStream, crlfDelay: Infinity });
+        for await (const line of shRl) {
+          const parts = line.split(',');
+          if (parts[0] !== 'shape_id') {
+            const sId = parts[0];
+            if (usedShapeIds.has(sId)) {
+              const lat = parseFloat(parts[1]);
+              const lon = parseFloat(parts[2]);
+              const seq = parseInt(parts[3] || '0', 10);
+              if (!shapesRawMap.has(sId)) shapesRawMap.set(sId, []);
+              shapesRawMap.get(sId).push({ seq, lat, lon });
+            }
           }
         }
+
+        db.exec('BEGIN TRANSACTION');
+        shapesRawMap.forEach((pts, sId) => {
+          const coords = pts.sort((a, b) => a.seq - b.seq).map(p => [Number(p.lat.toFixed(5)), Number(p.lon.toFixed(5))]);
+          insertStmt.run(sId, JSON.stringify(coords));
+          indexedShapesCount++;
+        });
+        db.exec('COMMIT');
+        shapesRawMap.clear();
+      } catch (err) {
+        console.warn('[CataloniaIndexer] SQLite shapes indexing error:', err.message);
       }
     }
-
-    const shapesOutput = {};
-    shapesRawMap.forEach((pts, sId) => {
-      shapesOutput[sId] = pts.sort((a, b) => a.seq - b.seq).map(p => [Number(p.lat.toFixed(5)), Number(p.lon.toFixed(5))]);
-    });
 
     // 7. Index Route Stops & Departure Timetables from stop_times.txt
     const tripStopsMap = new Map(); // tripId -> Array of { seq, stopId, depTime }
@@ -426,13 +440,12 @@ class CataloniaIndexer {
     // Save JSON caches
     fs.writeFileSync(calendarCachePath, JSON.stringify(calendar));
     fs.writeFileSync(calendarDatesCachePath, JSON.stringify(calendarExceptions));
-    fs.writeFileSync(shapesCachePath, JSON.stringify(shapesOutput));
     fs.writeFileSync(routesCachePath, JSON.stringify(routes));
     fs.writeFileSync(stopsCachePath, JSON.stringify(Array.from(stopsMap.values())));
     fs.writeFileSync(routeDetailsPath, JSON.stringify(routeDetails));
 
-    console.log(`[CataloniaIndexer] Finished in ${Date.now() - start}ms! ${routes.length} routes, ${stopsMap.size} stops, ${Object.keys(shapesOutput).length} road shapes indexed.`);
-    return { routes, stops: Array.from(stopsMap.values()), routeDetails, shapes: shapesOutput };
+    console.log(`[CataloniaIndexer] Finished in ${Date.now() - start}ms! ${routes.length} routes, ${stopsMap.size} stops, ${indexedShapesCount} road shapes in SQLite.`);
+    return { routes, stops: Array.from(stopsMap.values()), routeDetails, calendar, calendarExceptions };
   }
 }
 
