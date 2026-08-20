@@ -23,6 +23,7 @@ class IngestionDaemon {
     this.disruptionsTimer = null;
     this.pruneTimer = null;
     this.dailySnapshotTimer = null;
+    this.cataloniaBatchOffset = 0;
   }
 
   start() {
@@ -420,7 +421,14 @@ class IngestionDaemon {
 
   async pollCataloniaLines() {
     try {
-      const sampleRoutes = cataloniaTracker.routes.slice(0, 10);
+      const allRoutes = cataloniaTracker.routes;
+      if (!allRoutes || allRoutes.length === 0) return;
+
+      const batchSize = 25;
+      const startIdx = this.cataloniaBatchOffset % allRoutes.length;
+      this.cataloniaBatchOffset = (startIdx + batchSize) % allRoutes.length;
+
+      const sampleRoutes = allRoutes.slice(startIdx, startIdx + batchSize);
       await Promise.allSettled(sampleRoutes.map(async (r) => {
         try {
           const details = cataloniaTracker.routeDetailsMap.get(r.id);
