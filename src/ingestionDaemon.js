@@ -69,8 +69,8 @@ class IngestionDaemon {
     // 8. Schedule Sagalés Ingestion (every 30 seconds)
     this.sagalesPollTimer = setInterval(() => this.pollSagalesLines(), 30000);
 
-    // 8b. Schedule Catalonia Interurban Ingestion (every 35 seconds)
-    this.cataloniaPollTimer = setInterval(() => this.pollCataloniaLines(), 35000);
+    // 8b. Schedule Catalonia Interurban Ingestion (every 30 seconds)
+    this.cataloniaPollTimer = setInterval(() => this.pollCataloniaLines(), 30000);
 
     // 9. Schedule Disruptions Ingestion (every 3 minutes)
     this.disruptionsTimer = setInterval(() => this.pollDisruptions(), 180000);
@@ -424,7 +424,7 @@ class IngestionDaemon {
       const allRoutes = cataloniaTracker.routes;
       if (!allRoutes || allRoutes.length === 0) return;
 
-      const batchSize = 25;
+      const batchSize = 100;
       const startIdx = this.cataloniaBatchOffset % allRoutes.length;
       this.cataloniaBatchOffset = (startIdx + batchSize) % allRoutes.length;
 
