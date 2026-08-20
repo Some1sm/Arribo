@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Bad AMB Bus Tracker | C-10 Interurbà & Mataró Bus Urbà</title>
-  <meta name="description" content="Plataforma de transport en temps real: Línia C-10 (Barcelona - Mataró) i xarxa urbana de Mataró Bus (L1-L8) amb telemetria GPS i estimació de zones sense cobertura.">
+  <title>Arribo! | Telemetria i Seguiment d'Autobusos en Temps Real</title>
+  <meta name="description" content="Arribo! Plataforma de telemetria GPS i seguiment d'arribades d'autobusos en temps real per a totes les línies d'autobús urbà i interurbà de Catalunya.">
   
   <!-- Favicon -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚌</text></svg>">
@@ -13,31 +13,37 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
   
   <!-- App Styles -->
-  <link rel="stylesheet" href="/css/style.css?v=2.4.0">
+  <link rel="stylesheet" href="/css/style.css?v=3.0.0">
 </head>
 <body>
 
   <!-- Top Navigation Header -->
   <header class="app-header">
     <div class="header-container">
-      <div class="logo-group" id="header-logo-group" title="Fes clic per canviar de línia (⌘K)">
-        <div class="line-badge" id="header-line-badge" style="background:#009485;">C10</div>
+      <div class="logo-group" id="header-logo-group" title="Arribo! - Tornar a l'inici o cercar línia">
+        <div class="line-badge logo-brand-badge" id="header-line-badge" style="background:var(--c10-primary);">🚌</div>
         <div class="app-title-group">
-          <h1>Bad AMB Bus Tracker <span class="header-mode-badge interurba" id="header-mode-badge">Interurbà</span> <span style="font-size:0.68rem; font-weight:600; padding:0.15rem 0.45rem; background:rgba(255,255,255,0.08); border-radius:6px; color:var(--text-muted); letter-spacing:0.02em;">v2.2.0</span></h1>
-          <p class="app-subtitle" id="header-subtitle">Seguiment en directe pel Maresme i Mataró</p>
+          <h1>Arribo! <span class="header-mode-badge universal" id="header-mode-badge">Temps Real</span> <span style="font-size:0.68rem; font-weight:600; padding:0.15rem 0.45rem; background:rgba(255,255,255,0.08); border-radius:6px; color:var(--text-muted); letter-spacing:0.02em;">v3.0</span></h1>
+          <p class="app-subtitle" id="header-subtitle">Telemetria de busos en directe a Catalunya</p>
         </div>
       </div>
 
       <div class="header-actions">
+        <!-- Home / Line Explorer Navigation Button -->
+        <button type="button" class="btn-incidents-chip" id="btn-header-home" title="Veure totes les línies i tornar a l'inici" style="background:rgba(16, 185, 129, 0.12); color:#10b981; border:1px solid rgba(16, 185, 129, 0.3);">
+          <span class="incident-icon">🗺️</span>
+          <span><span class="hide-on-mobile-sm">Totes les </span>Línies</span>
+        </button>
+
         <!-- Universal Stop Search Input -->
         <div class="global-search-container">
           <svg class="search-icon-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input type="text" id="global-search-input" class="global-search-input" placeholder="Cercar qualsevol parada (ex: Itàlia, Hospital, Rodalies, Premià)..." autocomplete="off">
+          <input type="text" id="global-search-input" class="global-search-input" placeholder="Cercar parada o línia (ex: Tetuan, B25, Hospital)..." autocomplete="off">
           <div class="search-results-dropdown" id="search-results-dropdown"></div>
         </div>
 
         <!-- Active Buses Counter Chip -->
-        <div class="active-buses-chip" id="header-active-buses-chip" title="Nombre de busos circulant actualment">
+        <div class="active-buses-chip" id="header-active-buses-chip" title="Nombre de busos circulant actualment a la xarxa">
           <span class="active-buses-icon">🚌</span>
           <span id="header-active-buses-text"><strong>0</strong> busos</span>
         </div>
@@ -63,11 +69,11 @@
             <div class="connection-menu-body">
               <div class="conn-info-row">
                 <span class="conn-label">Línia activa:</span>
-                <strong class="conn-val" id="conn-line-name">C-10</strong>
+                <strong class="conn-val" id="conn-line-name">Totes les línies</strong>
               </div>
               <div class="conn-info-row">
-                <span class="conn-label">Proveïdor oficial:</span>
-                <strong class="conn-val" id="conn-provider-name">Generalitat Mou-te</strong>
+                <span class="conn-label">Proveïdors oficials:</span>
+                <strong class="conn-val" id="conn-provider-name">Generalitat Mou-te, AMB & ATM</strong>
               </div>
               <div class="conn-info-row">
                 <span class="conn-label">Passarel·la API:</span>
@@ -150,28 +156,132 @@
   <main class="app-main">
 
     <!-- ======================================================== -->
-    <!-- DYNAMIC UNIVERSAL ACTIVE LINE VIEW                      -->
+    <!-- 0. ARRIBO! WELCOME & LINE DISCOVERY HUB (LANDING VIEW)   -->
     <!-- ======================================================== -->
-    <div class="page-view active" id="view-active-line">
+    <div class="page-view active" id="view-landing">
       
-      <!-- Multi-City Line Selector Bar -->
+      <!-- Landing Hero Card -->
+      <section class="landing-hero-card" aria-label="Benvinguda a Arribo!">
+        <div class="landing-hero-badge">✨ Tota la Xarxa de Catalunya en Directe</div>
+        <h2 class="landing-hero-title">Quin autobús vols seguir?</h2>
+        <p class="landing-hero-subtitle">
+          Cerca entre centenars de línies d'autobús urbà i interurbà amb telemetria GPS en directe, horaris reals i estimació de retards.
+        </p>
+
+        <!-- Big Hero Search Input -->
+        <div class="landing-hero-search-wrapper">
+          <svg class="landing-search-icon-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" id="landing-hero-search-input" class="landing-hero-search-input" placeholder="🔍 Cerca per línia (ex: B25, C-10, L95, e11.1, 7, M19, 603, A1), municipi o operador..." autocomplete="off">
+          <button type="button" class="landing-search-clear-btn" id="btn-landing-search-clear" aria-label="Netejar cerca" style="display:none;">&times;</button>
+        </div>
+
+        <!-- Network & Operator Filter Tabs -->
+        <div class="landing-filter-tabs" id="landing-filter-tabs">
+          <button type="button" class="landing-filter-tab active" data-filter="all">🌐 Totes les línies</button>
+          <button type="button" class="landing-filter-tab" data-filter="metrobus">🚇 Metrobús AMB</button>
+          <button type="button" class="landing-filter-tab" data-filter="expres">⚡ Exprés.cat</button>
+          <button type="button" class="landing-filter-tab" data-filter="sagales">🦉 Sagalés</button>
+          <button type="button" class="landing-filter-tab" data-filter="moventis">🌊 Moventis / Casas</button>
+          <button type="button" class="landing-filter-tab" data-filter="mataro">📍 Mataró Bus Urbà</button>
+          <button type="button" class="landing-filter-tab" data-filter="tusgsal">🟡 TUSGSAL (Barcelonès Nord)</button>
+          <button type="button" class="landing-filter-tab" data-filter="avanza">🔵 Avanza Baix & Garraf</button>
+          <button type="button" class="landing-filter-tab" data-filter="monbus">🟠 Monbus & Aerobús</button>
+          <button type="button" class="landing-filter-tab" data-filter="plana">🏖️ Empresa Plana</button>
+          <button type="button" class="landing-filter-tab" data-filter="teisa">🌲 TEISA</button>
+          <button type="button" class="landing-filter-tab" data-filter="hife">⚓ HIFE</button>
+          <button type="button" class="landing-filter-tab" data-filter="soler">🟢 Soler i Sauret</button>
+          <button type="button" class="landing-filter-tab" data-filter="interurba">🚌 Altres Interurbans</button>
+        </div>
+      </section>
+
+      <!-- Dynamic Categorized Lines Grid -->
+      <section class="landing-lines-section" aria-label="Llistat de línies disponibles">
+        <div id="landing-lines-container" class="landing-lines-container">
+          <div style="padding:2.5rem 1rem; text-align:center; color:var(--text-muted);">
+            <div style="font-size:1.8rem; margin-bottom:0.5rem;">🚌</div>
+            <div>Carregant catàleg de línies de transport...</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Platform Features & Live Status Highlights -->
+      <section class="landing-stats-grid" aria-label="Característiques de la plataforma">
+        <div class="landing-stat-card">
+          <div class="stat-icon-badge">🚌</div>
+          <div class="stat-card-text">
+            <strong>Centenars de Línies</strong>
+            <span>Tota la xarxa urbana i interurbana de Catalunya en una sola app</span>
+          </div>
+        </div>
+
+        <div class="landing-stat-card">
+          <div class="stat-icon-badge">🛰️</div>
+          <div class="stat-card-text">
+            <strong>Telemetria GPS en Directe</strong>
+            <span>Posició exacta dels autobusos i velocitat en temps real</span>
+          </div>
+        </div>
+
+        <div class="landing-stat-card">
+          <div class="stat-icon-badge">⏱️</div>
+          <div class="stat-card-text">
+            <strong>Temps d'Arribada Reals</strong>
+            <span>Minuts d'espera exactes calculats amb dades oficials de les operadores</span>
+          </div>
+        </div>
+
+        <div class="landing-stat-card">
+          <div class="stat-icon-badge">⚠️</div>
+          <div class="stat-card-text">
+            <strong>Avisos i Desviaments</strong>
+            <span>Incidències oficials i talls de trànsit al moment</span>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- 1. DYNAMIC UNIVERSAL ACTIVE LINE VIEW                    -->
+    <!-- ======================================================== -->
+    <div class="page-view" id="view-active-line" style="display:none;">
+      
+      <!-- Multi-City Line Selector Bar & Return to Hub -->
       <section class="line-selector-section" aria-label="Selector de línia i ciutat">
-        <div class="line-selector-card" id="open-line-picker-btn">
-          <div class="line-selector-current">
-            <span class="line-badge-hero" id="active-line-badge" style="background:#009485;">C10</span>
+        <div class="line-selector-card">
+          <div class="line-selector-current" id="line-selector-current-info" title="Fes clic per canviar de línia">
+            <span class="line-badge-hero" id="active-line-badge" style="background:var(--c10-primary);">--</span>
             <div class="line-selector-info">
               <div class="line-selector-city-tag">
                 <span class="city-dot"></span>
-                <span id="active-line-city-name">Corredor Interurbà Maresme</span>
+                <span id="active-line-city-name">Xarxa de Transport</span>
               </div>
-              <div class="line-selector-title" id="active-line-title">C-10 — Barcelona ⇄ Mataró (per N-II)</div>
+              <div class="line-selector-title" id="active-line-title">Carregant línia...</div>
+            </div>
+          </div>
+
+          <!-- 24h Delay & Reliability Telemetry Metric -->
+          <div class="line-selector-stats" id="line-selector-stats" role="button" tabindex="0" title="Retards i puntualitat de les últimes 24h (Fes clic per obrir l'Observatori de Retards)">
+            <div class="line-stat-pill" id="line-stat-pill">
+              <span class="stat-pulse-dot" id="line-stat-dot"></span>
+              <span class="stat-pill-label">Retard 24h:</span>
+              <strong class="stat-pill-val" id="line-stat-delay-val">--%</strong>
+            </div>
+            <div class="line-stat-details" id="line-stat-details">
+              <span class="line-stat-sub-item"><strong id="line-stat-avg-val">-- min</strong> mitjana</span>
             </div>
           </div>
           
-          <button type="button" class="btn-change-line" aria-label="Canviar línia o ciutat">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-            <span>Canviar línia</span>
-          </button>
+          <div class="line-selector-actions">
+            <button type="button" class="btn-back-to-landing" id="btn-back-to-landing" title="Tornar al catàleg complet de línies">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+              <span>Totes les línies</span>
+            </button>
+            <button type="button" class="btn-change-line" id="open-line-picker-btn" aria-label="Canviar línia o operadora">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+              <span>Canviar línia</span>
+            </button>
+          </div>
         </div>
       </section>
 
@@ -187,20 +297,7 @@
 
       <!-- Dynamic Direction Selector Bar -->
       <section class="direction-bar" aria-label="Selector de sentit">
-        <div class="direction-toggle-group" id="direction-toggle-group">
-          <button type="button" class="btn-direction active" data-dir-id="1">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m9 18 6-6-6-6"/></svg>
-            <span>Cap a Mataró (Hospital / Pl. d'Itàlia)</span>
-          </button>
-          <button type="button" class="btn-direction" data-dir-id="0">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m15 18-6-6 6-6"/></svg>
-            <span>Cap a Barcelona (Metro la Pau)</span>
-          </button>
-          <button type="button" class="btn-direction" data-dir-id="both" title="Mostrar tots dos sentits al mapa">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-            <span>Ambdós sentits</span>
-          </button>
-        </div>
+        <div class="direction-toggle-group" id="direction-toggle-group"></div>
 
         <div class="refresh-status">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -224,9 +321,9 @@
                   </select>
                 </div>
               </div>
-              <h2 class="target-name" id="target-stop-title">Plaça d'Itàlia (Mataró)</h2>
+              <h2 class="target-name" id="target-stop-title">Selecciona una parada</h2>
               <div class="target-subname">
-                <span>Codi: <strong id="target-stop-code">121</strong></span> • 
+                <span>Codi: <strong id="target-stop-code">--</strong></span> • 
                 <span id="target-direction-sub">Sentit</span>
               </div>
             </div>
@@ -248,7 +345,7 @@
           </div>
 
           <div class="target-meta">
-            <div><span>Línia: <strong id="target-line-tag" style="color:#009485;">C-10</strong></span></div>
+            <div><span>Línia: <strong id="target-line-tag" style="color:var(--c10-primary);">--</strong></span></div>
             <div><span>Destí: <strong id="next-bus-dest" style="color:#fff;">Destí</strong></span></div>
             <div><span>Operador: <strong id="target-operator-name">Operador</strong></span></div>
           </div>
@@ -333,75 +430,63 @@
         <div class="corridor-timeline" id="corridor-timeline-container"></div>
       </section>
 
-    </div>
-
-    <!-- ======================================================== -->
-    <!-- SHARED MAP AND STOPS EXPLORER GRID                      -->
-    <!-- ======================================================== -->
-    <section class="explorer-grid" aria-label="Mapa interactiu i explorador de parades">
-      
-      <!-- Interactive Leaflet Map -->
-      <div class="map-card" id="map-card">
-        <div class="map-header">
-          <div>
-            <h3 class="card-title" style="font-size:0.95rem;">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
-              <span id="map-line-title">Mapa en temps real</span>
-            </h3>
-            <span style="font-size:0.75rem; color:var(--text-secondary);">Fes clic sobre qualsevol parada per veure el temps</span>
-          </div>
-
-          <!-- Map Resize & View Controls -->
-          <div class="map-controls-group" style="display:flex; align-items:center; gap:0.4rem;">
-            <span class="map-bus-counter-tag" id="map-bus-counter-tag">🚌 0 actius</span>
-            <button type="button" class="btn-map-control" id="btn-map-expand-height" title="Augmentar / Reduir alçada del mapa">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="8 3 12 7 16 3"/><polyline points="8 21 12 17 16 21"/><line x1="12" y1="7" x2="12" y2="17"/></svg>
-              <span id="map-height-label">Gran</span>
-            </button>
-            <button type="button" class="btn-map-control" id="btn-map-expand-width" title="Ampliar mapa a tota l'amplada">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
-              <span>Ample</span>
-            </button>
-          </div>
-        </div>
-
-        <div id="map-container"></div>
-
-        <!-- Draggable Resize Bar -->
-        <div class="map-resize-bar" id="map-resize-bar" title="Arrossega amunt o avall per canviar l'alçada del mapa">
-          <span class="resize-handle-dots"></span>
-        </div>
-      </div>
-
-      <!-- Stops Browser List -->
-      <div class="stops-browser-card">
-        <div class="stops-card-header-row">
-          <h3 class="card-title" style="font-size:0.95rem; margin-bottom:0;">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-            Parades (<span id="stops-total-count">--</span>)
-          </h3>
-          <div class="stops-card-dir-pills" id="stops-card-dir-pills"></div>
-        </div>
-
-        <!-- Prominent Direction Buttons / Tabs directly inside Stops Card -->
-        <div class="stops-card-dir-toolbar" id="stops-card-dir-toolbar">
-          <button type="button" class="btn-stops-dir-tab active" data-dir-id="1" title="Veure parades cap a Mataró">
-            <span>➔ Cap a Mataró</span>
-          </button>
-          <button type="button" class="btn-stops-dir-tab" data-dir-id="0" title="Veure parades cap a Barcelona">
-            <span>⬅ Cap a Barcelona</span>
-          </button>
-          <button type="button" class="btn-stops-dir-tab" data-dir-id="both" title="Veure parades de tots dos sentits dividides en blocs">
-            <span>⇄ Ambdós sentits</span>
-          </button>
-        </div>
+      <!-- Shared Map and Stops Explorer Grid -->
+      <section class="explorer-grid" id="view-explorer-grid" aria-label="Mapa interactiu i explorador de parades">
         
-        <input type="text" id="stop-search-input" class="stops-search-input" placeholder="Filtrar parades de la línia...">
+        <!-- Interactive Leaflet Map -->
+        <div class="map-card" id="map-card">
+          <div class="map-header">
+            <div>
+              <h3 class="card-title" style="font-size:0.95rem;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
+                <span id="map-line-title">Mapa en temps real</span>
+              </h3>
+              <span style="font-size:0.75rem; color:var(--text-secondary);">Fes clic sobre qualsevol parada per veure el temps</span>
+            </div>
 
-        <div class="stops-list-scroll" id="stops-list-scroll"></div>
-      </div>
+            <!-- Map Resize & View Controls -->
+            <div class="map-controls-group" style="display:flex; align-items:center; gap:0.4rem;">
+              <span class="map-bus-counter-tag" id="map-bus-counter-tag">🚌 0 actius</span>
+              <button type="button" class="btn-map-control" id="btn-map-expand-height" title="Augmentar / Reduir alçada del mapa">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="8 3 12 7 16 3"/><polyline points="8 21 12 17 16 21"/><line x1="12" y1="7" x2="12" y2="17"/></svg>
+                <span id="map-height-label">Gran</span>
+              </button>
+              <button type="button" class="btn-map-control" id="btn-map-expand-width" title="Ampliar mapa a tota l'amplada">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                <span>Ample</span>
+              </button>
+            </div>
+          </div>
 
-    </section>
+          <div id="map-container"></div>
+
+          <!-- Draggable Resize Bar -->
+          <div class="map-resize-bar" id="map-resize-bar" title="Arrossega amunt o avall per canviar l'alçada del mapa">
+            <span class="resize-handle-dots"></span>
+          </div>
+        </div>
+
+        <!-- Stops Browser List -->
+        <div class="stops-browser-card">
+          <div class="stops-card-header-row">
+            <h3 class="card-title" style="font-size:0.95rem; margin-bottom:0;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+              Parades (<span id="stops-total-count">--</span>)
+            </h3>
+            <div class="stops-card-dir-pills" id="stops-card-dir-pills"></div>
+          </div>
+
+          <!-- Prominent Direction Buttons / Tabs directly inside Stops Card -->
+          <div class="stops-card-dir-toolbar" id="stops-card-dir-toolbar"></div>
+          
+          <input type="text" id="stop-search-input" class="stops-search-input" placeholder="Filtrar parades de la línia...">
+
+          <div class="stops-list-scroll" id="stops-list-scroll"></div>
+        </div>
+
+      </section>
+
+    </div>
 
   </main>
 
@@ -411,15 +496,15 @@
       <button type="button" class="modal-close-btn" id="line-picker-close-btn" aria-label="Tancar finestra">&times;</button>
       
       <div class="line-picker-header">
-        <div class="target-badge">Xarxa de Transport</div>
-        <h3 class="line-picker-title">Explorador de Línies i Ciutats</h3>
-        <p class="line-picker-subtitle">Accés instantani a centenars de línies de transport urbà i interurbà</p>
+        <div class="target-badge">Arribo! Xarxa de Transport</div>
+        <h3 class="line-picker-title">Explorador de Línies de Catalunya</h3>
+        <p class="line-picker-subtitle">Accés instantani a centenars de línies d'autobús urbà i interurbà</p>
       </div>
 
       <!-- Quick Search Filter in Modal -->
       <div class="line-picker-search-bar">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="text" id="line-picker-search-input" class="line-picker-search-input" placeholder="🔍 Cerca per número de línia, destí o ciutat (ex: 1, 7, C10, Hospital, Cirera)..." autocomplete="off">
+        <input type="text" id="line-picker-search-input" class="line-picker-search-input" placeholder="🔍 Cerca per codi, municipi o destí (ex: B25, C-10, L95, e11.1, 7, M19)..." autocomplete="off">
       </div>
 
       <!-- City & Network Filter Pills -->
@@ -431,13 +516,13 @@
         <button type="button" class="line-filter-tab" data-city="moventis">🌊 Moventis / Casas</button>
         <button type="button" class="line-filter-tab" data-city="mataro">📍 Mataró Bus Urbà</button>
         <button type="button" class="line-filter-tab" data-city="tusgsal">🟡 TUSGSAL (Barcelonès Nord)</button>
-        <button type="button" class="line-filter-tab" data-city="avanza">🔵 Avanza Baix</button>
+        <button type="button" class="line-filter-tab" data-city="avanza">🔵 Avanza Baix & Garraf</button>
         <button type="button" class="line-filter-tab" data-city="monbus">🟠 Monbus & Aerobús</button>
         <button type="button" class="line-filter-tab" data-city="plana">🏖️ Empresa Plana</button>
         <button type="button" class="line-filter-tab" data-city="teisa">🌲 TEISA</button>
         <button type="button" class="line-filter-tab" data-city="hife">⚓ HIFE</button>
         <button type="button" class="line-filter-tab" data-city="soler">🟢 Soler i Sauret</button>
-        <button type="button" class="line-filter-tab" data-city="rodalies">🚆 Rodalies</button>
+        <button type="button" class="line-filter-tab" data-city="interurba">🚌 Altres Interurbans</button>
       </div>
 
       <!-- Scrollable Lines Grid & Categories -->
@@ -508,7 +593,7 @@
       <!-- Quick Search Bar -->
       <div class="line-picker-search-bar" style="margin-bottom: 0.85rem;">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="text" id="disruptions-search-input" class="line-picker-search-input" placeholder="🔍 Cerca per línia (ex: L95, B25, e11.1) o municipi (ex: Badalona, Mataró)..." autocomplete="off">
+        <input type="text" id="disruptions-search-input" class="line-picker-search-input" placeholder="🔍 Cerca per línia (ex: L95, B25, e11.1) o municipi (ex: Badalona, Mataró, Barcelona)..." autocomplete="off">
       </div>
 
       <!-- Scrollable Disruptions List -->
@@ -524,7 +609,7 @@
       <button type="button" class="modal-close-btn" id="journalism-modal-close-btn" aria-label="Tancar">&times;</button>
 
       <div class="line-picker-header" style="margin-bottom:0.75rem;">
-        <div class="target-badge" style="background:rgba(56, 189, 248, 0.15); color:#38bdf8; border:1px solid rgba(56, 189, 248, 0.35);">📊 Periodisme de Dades & Flight Recorder</div>
+        <div class="target-badge" style="background:rgba(56, 189, 248, 0.15); color:#38bdf8; border:1px solid rgba(56, 189, 248, 0.35);">📊 Observatori de Puntualitat</div>
         <h3 class="line-picker-title" id="journalism-modal-title">Observatori de Retards i Puntualitat</h3>
         <p class="line-picker-subtitle">Dades històriques registrades pel nostre servidor central de telemetria</p>
       </div>
@@ -545,7 +630,7 @@
       <!-- Dedicated Observatori Search Bar -->
       <div class="line-picker-search-bar" style="margin-bottom: 1rem;">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="text" id="journalism-search-input" class="line-picker-search-input" placeholder="🔍 Cerca per línia (ex: C-10, B25), parada (ex: Hospital, Tetuan) o empresa (ex: Moventis, Sagalés, TUSGSAL)..." autocomplete="off">
+        <input type="text" id="journalism-search-input" class="line-picker-search-input" placeholder="🔍 Cerca per línia (ex: B25, L95, C-10, e11.1), parada o empresa..." autocomplete="off">
       </div>
 
       <!-- Journalism Content Dynamic Container -->
@@ -559,12 +644,12 @@
   <footer class="app-footer">
     <div class="footer-content">
       <div>
-        <span>🚌 Bad AMB Bus Tracker <strong>v2.2.0</strong> • Dades oficials en temps real: Generalitat de Catalunya (Mou-te / ATM), AMB Mobilitat i Mataró Bus (Avanza SIRI)</span>
+        <span>🚌 <strong>Arribo!</strong> • Dades oficials en temps real: Generalitat de Catalunya (Mou-te / ATM), AMB Mobilitat, TUSGSAL, Moventis, Sagalés, Avanza, Monbus, TEISA, Plana i operadores de transport</span>
       </div>
       <div class="footer-links">
-        <a href="#c10" id="footer-link-c10">Interurbà C-10</a>
-        <a href="#mataro" id="footer-link-mataro">Urbà Mataró</a>
-        <a href="https://mataro.avanzagrupo.com" target="_blank" rel="noopener noreferrer">Mataró Bus</a>
+        <a href="#" id="footer-link-home">Totes les línies</a>
+        <a href="#" id="footer-link-incidents">⚠️ Avisos de servei</a>
+        <a href="#" id="footer-link-journalism">📊 Observatori de retards</a>
       </div>
     </div>
   </footer>
@@ -573,7 +658,7 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   
   <!-- App Scripts -->
-  <script src="/js/map.js?v=2.4.0"></script>
-  <script src="/js/app.js?v=2.4.0"></script>
+  <script src="/js/map.js?v=3.0.0"></script>
+  <script src="/js/app.js?v=3.0.0"></script>
 </body>
 </html>

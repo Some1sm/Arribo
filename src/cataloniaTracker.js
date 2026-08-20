@@ -26,14 +26,14 @@ class CataloniaTracker {
     const stopsCachePath = path.join(activeCacheDir, 'stops.json');
     const routeDetailsPath = path.join(activeCacheDir, 'route_details.json');
 
-    if (!fs.existsSync(routesCachePath) || !fs.existsSync(routeDetailsPath)) {
+    if ((!fs.existsSync(routesCachePath) || !fs.existsSync(routeDetailsPath)) && fs.existsSync(path.join(__dirname, '..', 'data', 'atm_gtfs', 'agency.txt'))) {
       await indexer.buildIndex();
     }
 
     try {
-      const routesData = JSON.parse(fs.readFileSync(routesCachePath, 'utf8'));
-      const routeDetailsData = JSON.parse(fs.readFileSync(routeDetailsPath, 'utf8'));
-      const stopsData = JSON.parse(fs.readFileSync(stopsCachePath, 'utf8'));
+      const routesData = fs.existsSync(routesCachePath) ? JSON.parse(fs.readFileSync(routesCachePath, 'utf8')) : [];
+      const routeDetailsData = fs.existsSync(routeDetailsPath) ? JSON.parse(fs.readFileSync(routeDetailsPath, 'utf8')) : {};
+      const stopsData = fs.existsSync(stopsCachePath) ? JSON.parse(fs.readFileSync(stopsCachePath, 'utf8')) : [];
 
       this.routes = routesData;
 
@@ -347,6 +347,17 @@ class CataloniaTracker {
           });
         }
       });
+      // Deduplicate liveArrivals
+      const dedupedArrivals = [];
+      const seenTimes = new Set();
+      liveArrivals.forEach(arr => {
+        const key = `${arr.time}_${arr.destination}`;
+        if (!seenTimes.has(key)) {
+          seenTimes.add(key);
+          dedupedArrivals.push(arr);
+        }
+      });
+      liveArrivals = dedupedArrivals;
     } catch(e) {
       console.warn(`[CataloniaTracker] Mou-te live departure fetch for stop ${targetStopId} failed:`, e.message);
     }

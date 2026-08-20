@@ -584,66 +584,92 @@ class MaresmeTracker {
     const departures = [];
     const now = Date.now();
 
-    // Query Mou-te API
+    // Query Mou-te API with strict line matching and stop validation
     if (stopObj.mouteStopId) {
       try {
         const mouteData = await mouteClient.getNextDepartures(stopObj.mouteStopId, true);
         if (mouteData && mouteData.sortides && Array.isArray(mouteData.sortides.sortida)) {
-          mouteData.sortides.sortida.forEach(s => {
-            const arrHour = parseInt(s.hora, 10);
-            const arrMin = parseInt(s.minuts, 10);
-            if (isNaN(arrHour) || isNaN(arrMin)) return;
-            const netDate = timeUtils.getNetworkTime(this.agencyTimezone);
-            let depUtc = timeUtils.localTimeToUtcDate(netDate.year, netDate.month, netDate.day, arrHour, arrMin, 0, this.agencyTimezone);
-            // Handle midnight rollover (e.g. at 22:00, 00:30 is tomorrow)
-            if (netDate.hour >= 18 && arrHour < 6) {
-              depUtc = new Date(depUtc.getTime() + 24 * 3600 * 1000);
+          const rawLines = mouteData?.parada?.lineas?.linia;
+          const linesInStop = Array.isArray(rawLines) ? rawLines : (rawLines ? [rawLines] : []);
+          const normCode = lineConfig ? lineConfig.code.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
+          const matchingLineIds = new Set();
+
+          linesInStop.forEach(l => {
+            const nom = (l.nomLinia || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            const desc = (l.descripcioLinia || '').toLowerCase();
+            if (normCode && (nom.includes(normCode) || normCode.includes(nom))) {
+              matchingLineIds.add(String(l.idLinia));
+            } else if (lineConfig && desc.includes(lineConfig.name.toLowerCase())) {
+              matchingLineIds.add(String(l.idLinia));
             }
-            const diffMs = depUtc.getTime() - now;
-            const diffMin = Math.round(diffMs / 60000);
-            if (diffMin < -5) return;
-            const safeDiffMin = Math.max(0, diffMin);
-            const clockStr = `${String(arrHour).padStart(2, '0')}:${String(arrMin).padStart(2, '0')}`;
-            const dest = s.direccio || s.destinacio || defaultDest;
-
-            // Match against official GTFS timetable to calculate real delays
-            const schedMatch = lineConfig ? this.findClosestScheduledTime(clockStr, stopObj.id, lineConfig.routeId, dir) : null;
-            const delayMins = schedMatch ? schedMatch.delayMins : 0;
-            const schedTimeStr = schedMatch ? schedMatch.scheduledTime : clockStr;
-            
-            let delayStatus = 'on-time';
-            let delayBadgeText = 'Puntual';
-            if (delayMins >= 2) {
-              delayStatus = 'delayed';
-              delayBadgeText = `+${delayMins} min retard`;
-            } else if (delayMins <= -2) {
-              delayStatus = 'early';
-              delayBadgeText = `${Math.abs(delayMins)} min avançat`;
-            }
-
-            const aimedUtc = schedMatch
-              ? new Date(depUtc.getTime() - delayMins * 60000)
-              : depUtc;
-
-            departures.push({
-              lineId: displayLineId,
-              lineName: lineConfig ? lineConfig.code : 'Moventis',
-              destination: dest,
-              departureTime: clockStr,
-              expectedIso: depUtc.toISOString(),
-              aimedIso: aimedUtc.toISOString(),
-              minutesAway: safeDiffMin,
-              isRealTime: Boolean(s.realtime),
-              isEstimated: !s.realtime,
-              isToday: true,
-              isFirstOfDay: false,
-              delayMins,
-              delayStatus,
-              delayBadgeText,
-              comparisonText: schedMatch ? `Teòric: ${schedTimeStr} (${delayBadgeText})` : `Horari Mou-te (${clockStr})`,
-              formattedStatus: safeDiffMin === 0 ? 'Imminent' : `${safeDiffMin} min`
-            });
           });
+
+          // Only accept departures if Mou-te confirms this stop serves the requested line
+          if (lineConfig && matchingLineIds.size > 0) {
+            const seenClockTimes = new Set();
+            mouteData.sortides.sortida.forEach(s => {
+              if (s.liniaId && !matchingLineIds.has(String(s.liniaId))) {
+                return; // Discard departures from other lines at shared stops (e.g. Teià, Alella)
+              }
+
+              const arrHour = parseInt(s.hora, 10);
+              const arrMin = parseInt(s.minuts, 10);
+              if (isNaN(arrHour) || isNaN(arrMin)) return;
+              const clockStr = `${String(arrHour).padStart(2, '0')}:${String(arrMin).padStart(2, '0')}`;
+              if (seenClockTimes.has(clockStr)) return;
+              seenClockTimes.add(clockStr);
+
+              const netDate = timeUtils.getNetworkTime(this.agencyTimezone);
+              let depUtc = timeUtils.localTimeToUtcDate(netDate.year, netDate.month, netDate.day, arrHour, arrMin, 0, this.agencyTimezone);
+              // Handle midnight rollover (e.g. at 22:00, 00:30 is tomorrow)
+              if (netDate.hour >= 18 && arrHour < 6) {
+                depUtc = new Date(depUtc.getTime() + 24 * 3600 * 1000);
+              }
+              const diffMs = depUtc.getTime() - now;
+              const diffMin = Math.round(diffMs / 60000);
+              if (diffMin < -5) return;
+              const safeDiffMin = Math.max(0, diffMin);
+              const dest = defaultDest;
+
+              // Match against official GTFS timetable to calculate real delays
+              const schedMatch = lineConfig ? this.findClosestScheduledTime(clockStr, stopObj.id, lineConfig.routeId, dir) : null;
+              const delayMins = schedMatch ? schedMatch.delayMins : 0;
+              const schedTimeStr = schedMatch ? schedMatch.scheduledTime : clockStr;
+              
+              let delayStatus = 'on-time';
+              let delayBadgeText = 'Puntual';
+              if (delayMins >= 2) {
+                delayStatus = 'delayed';
+                delayBadgeText = `+${delayMins} min retard`;
+              } else if (delayMins <= -2) {
+                delayStatus = 'early';
+                delayBadgeText = `${Math.abs(delayMins)} min avançat`;
+              }
+
+              const aimedUtc = schedMatch
+                ? new Date(depUtc.getTime() - delayMins * 60000)
+                : depUtc;
+
+              departures.push({
+                lineId: displayLineId,
+                lineName: lineConfig ? lineConfig.code : 'Moventis',
+                destination: dest,
+                departureTime: clockStr,
+                expectedIso: depUtc.toISOString(),
+                aimedIso: aimedUtc.toISOString(),
+                minutesAway: safeDiffMin,
+                isRealTime: Boolean(s.realtime),
+                isEstimated: !s.realtime,
+                isToday: true,
+                isFirstOfDay: false,
+                delayMins,
+                delayStatus,
+                delayBadgeText,
+                comparisonText: schedMatch ? `Teòric: ${schedTimeStr} (${delayBadgeText})` : `Horari Mou-te (${clockStr})`,
+                formattedStatus: safeDiffMin === 0 ? 'Imminent' : `${safeDiffMin} min`
+              });
+            });
+          }
         }
       } catch(e) {
         // Mou-te transient error fallback
@@ -744,6 +770,17 @@ class MaresmeTracker {
 
     departures.sort((a, b) => (a.minutesAway || 0) - (b.minutesAway || 0));
 
+    // Deduplicate departures so each departure minute appears at most once
+    const finalDepartures = [];
+    const seenTimes = new Set();
+    departures.forEach(dep => {
+      const key = `${dep.departureTime}_${dep.destination}`;
+      if (!seenTimes.has(key)) {
+        seenTimes.add(key);
+        finalDepartures.push(dep);
+      }
+    });
+
     return {
       stop: {
         id: stopObj.id,
@@ -752,8 +789,8 @@ class MaresmeTracker {
         lon: stopObj.lon,
         zone: stopObj.zone || 'Maresme'
       },
-      departures,
-      totalDepartures: departures.length
+      departures: finalDepartures,
+      totalDepartures: finalDepartures.length
     };
   }
 }

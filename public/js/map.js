@@ -43,7 +43,12 @@ class C10Map {
     if (!el || typeof ResizeObserver === 'undefined') return;
 
     let rAFId = null;
-    this.resizeObserver = new ResizeObserver(() => {
+    this.resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect && (entry.contentRect.width === 0 || entry.contentRect.height === 0)) {
+          return;
+        }
+      }
       if (rAFId) cancelAnimationFrame(rAFId);
       rAFId = requestAnimationFrame(() => {
         this.invalidateSize({ pan: false, debounceMoveend: true });
@@ -840,8 +845,42 @@ class C10Map {
     this.clearVehicleTrail();
     if (!this.map || !Array.isArray(trailPoints) || trailPoints.length < 2) return;
 
-    const latlngs = trailPoints.map(p => [p.lat, p.lon]);
-    this.vehicleTrailPolyline = L.polyline(latlngs, {
+    // Filter valid coordinates
+    const validPoints = trailPoints.filter(p => p && typeof p.lat === 'number' && typeof p.lon === 'number');
+    if (validPoints.length < 2) return;
+
+    // Segment points to avoid connecting round trips or teleport jumps
+    const segments = [];
+    let currentSegment = [[validPoints[0].lat, validPoints[0].lon]];
+
+    for (let i = 1; i < validPoints.length; i++) {
+      const prev = validPoints[i - 1];
+      const curr = validPoints[i];
+
+      // Approximate distance between consecutive sampled points (degrees)
+      const dLat = curr.lat - prev.lat;
+      const dLon = curr.lon - prev.lon;
+      const distSq = dLat * dLat + dLon * dLon;
+
+      // If jump is greater than ~2km (0.02 deg), start a new segment (new trip / turn-around)
+      if (distSq > 0.0004) {
+        if (currentSegment.length > 1) {
+          segments.push(currentSegment);
+        }
+        currentSegment = [[curr.lat, curr.lon]];
+      } else {
+        currentSegment.push([curr.lat, curr.lon]);
+      }
+    }
+    if (currentSegment.length > 1) {
+      segments.push(currentSegment);
+    }
+
+    if (segments.length === 0) return;
+
+    // Show only the most recent trip segment or all clean segments
+    const latestSegment = segments[segments.length - 1];
+    this.vehicleTrailPolyline = L.polyline(latestSegment, {
       color: color || '#38bdf8',
       weight: 4,
       opacity: 0.85,
@@ -865,7 +904,13 @@ class C10Map {
   }
 
   invalidateSize(options = { pan: false, debounceMoveend: true }) {
-    if (!this.map) return;
+    if (!this.map || !this.map._loaded) return;
+    
+    const container = this.map.getContainer ? this.map.getContainer() : document.getElementById(this.containerId);
+    if (!container || !container.isConnected || container.offsetParent === null || container.clientWidth === 0 || container.clientHeight === 0) {
+      return;
+    }
+
     try {
       this.map.invalidateSize(options);
       if (this.renderer && typeof this.renderer._update === 'function') {
@@ -881,7 +926,7 @@ class C10Map {
         this.vehicleTrailPolyline.redraw();
       }
     } catch(e) {
-      console.warn('Map invalidateSize warning:', e);
+      // Benign layout timing exception during rapid container transitions
     }
   }
 }

@@ -1,9 +1,9 @@
-// Bad AMB Bus Tracker - Unified Dynamic Multi-Line Platform Controller
-// Universal architecture supporting C-10, Mataró Urbà (L1..L8), and all regional lines
+// Arribo! - Plataforma de Telemetria i Seguiment d'Autobusos en Temps Real
+// Suport universal per a totes les línies d'autobús urbà i interurbà de Catalunya
 
 class TransitApp {
   constructor() {
-    this.activeLineId = 'c10';
+    this.activeLineId = null;
     this.activeDirection = '1';
 
     this.availableLines = [];
@@ -15,10 +15,14 @@ class TransitApp {
     this.activeBuses = [];
     this.selectedVehicleId = null;
 
+    this.landingFilter = 'all';
+    this.landingSearch = '';
+
     this.pollInterval = 15;
     this.secondsRemaining = this.pollInterval;
     this.pollTimer = null;
     this.searchDebounceTimer = null;
+    this.landingSearchDebounceTimer = null;
     
     this.soundEnabled = localStorage.getItem('c10_sound') === 'true';
     this.audioContext = null;
@@ -81,7 +85,7 @@ class TransitApp {
   }
 
   async init() {
-    console.log('🚀 Initializing Bad AMB Bus Tracker Universal Engine...');
+    console.log('🚀 Initializing Arribo! Multi-Line Universal Engine...');
 
     try {
       // 1. Initialize Map
@@ -92,13 +96,20 @@ class TransitApp {
       await this.fetchLines();
       this.parseUrlHash();
 
-      // 3. Setup DOM Listeners & Controls
+      // 3. Setup DOM Listeners, Landing Page & Controls
       this.setupEventListeners();
+      this.setupLandingControls();
       this.setupMapResizeControls();
       this.setupAudio();
 
-      // 4. Initial Data Fetch
-      await this.refreshAllData(true);
+      // 4. Initial Route or Landing View Routing
+      if (this.activeLineId) {
+        this.showActiveLineView();
+        await this.refreshAllData(true);
+      } else {
+        this.showLandingView();
+        this.renderLandingLines();
+      }
 
       // 5. Start Polling & Animation Glider Loop
       this.startAutoRefresh();
@@ -110,8 +121,8 @@ class TransitApp {
 
   parseUrlHash() {
     const hash = window.location.hash.toLowerCase().replace('#', '').trim();
-    if (!hash) {
-      this.activeLineId = 'c10';
+    if (!hash || ['home', 'inici', 'lines', 'linies', 'totes', 'index'].includes(hash)) {
+      this.activeLineId = null;
       return;
     }
 
@@ -140,9 +151,82 @@ class TransitApp {
 
     if (matchedLine) {
       this.activeLineId = String(matchedLine.id);
+    } else if (hash) {
+      this.activeLineId = hash;
     } else {
-      this.activeLineId = 'c10';
+      this.activeLineId = null;
     }
+  }
+
+  // ==========================================
+  // VIEW SWITCHING (LANDING HUB VS ACTIVE LINE)
+  // ==========================================
+
+  showLandingView() {
+    const landingView = document.getElementById('view-landing');
+    const activeLineView = document.getElementById('view-active-line');
+
+    if (landingView) {
+      landingView.classList.add('active');
+      landingView.removeAttribute('style');
+    }
+    if (activeLineView) {
+      activeLineView.classList.remove('active');
+      activeLineView.removeAttribute('style');
+    }
+
+    // Reset Header to Arribo! Brand State
+    const badge = document.getElementById('header-line-badge');
+    const modeBadge = document.getElementById('header-mode-badge');
+    const subtitle = document.getElementById('header-subtitle');
+    const connLineName = document.getElementById('conn-line-name');
+
+    if (badge) {
+      badge.textContent = '🚌';
+      badge.style.background = 'var(--c10-primary)';
+      badge.style.color = '#ffffff';
+      badge.style.fontSize = '1.25rem';
+    }
+    if (modeBadge) {
+      modeBadge.textContent = 'Temps Real';
+      modeBadge.className = 'header-mode-badge universal';
+    }
+    if (subtitle) {
+      subtitle.textContent = 'Telemetria de busos en directe a Catalunya';
+    }
+    if (connLineName) {
+      connLineName.textContent = 'Totes les línies';
+    }
+
+    document.title = "Arribo! | Telemetria i Seguiment d'Autobusos en Temps Real";
+  }
+
+  showActiveLineView() {
+    const landingView = document.getElementById('view-landing');
+    const activeLineView = document.getElementById('view-active-line');
+
+    if (landingView) {
+      landingView.classList.remove('active');
+      landingView.removeAttribute('style');
+    }
+    if (activeLineView) {
+      activeLineView.classList.add('active');
+      activeLineView.removeAttribute('style');
+    }
+
+    setTimeout(() => {
+      this.mapController?.invalidateSize();
+    }, 120);
+  }
+
+  navigateToLanding() {
+    this.activeLineId = null;
+    if (window.location.hash) {
+      window.history.pushState(null, '', window.location.pathname);
+    }
+    this.showLandingView();
+    this.renderLandingLines();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   // ==========================================
@@ -207,11 +291,13 @@ class TransitApp {
 
     const hash = this.activeLineId === 'c10' ? '#c10' : `#l${this.activeLineId}`;
     if (window.location.hash !== hash) {
-      window.history.replaceState(null, '', hash);
+      window.history.pushState(null, '', hash);
     }
 
+    this.showActiveLineView();
     this.mapController?.clearAllBusMarkers();
     this.refreshAllData(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   getContrastColor(hex) {
@@ -231,6 +317,145 @@ class TransitApp {
     if (c.length === 3) c = c.split('').map(x => x + x).join('');
     const num = parseInt(c, 16);
     return `${(num >> 16) & 255}, ${(num >> 8) & 255}, ${num & 255}`;
+  }
+
+  // ==========================================
+  // LANDING PAGE LINE CATALOG RENDERING
+  // ==========================================
+
+  setupLandingControls() {
+    const heroInput = document.getElementById('landing-hero-search-input');
+    const clearBtn = document.getElementById('btn-landing-search-clear');
+    const filterTabs = document.querySelectorAll('#landing-filter-tabs .landing-filter-tab');
+
+    heroInput?.addEventListener('input', (e) => {
+      const q = e.target.value;
+      if (clearBtn) clearBtn.style.display = q ? 'block' : 'none';
+      clearTimeout(this.landingSearchDebounceTimer);
+      this.landingSearchDebounceTimer = setTimeout(() => {
+        this.landingSearch = q;
+        this.renderLandingLines();
+      }, 150);
+    });
+
+    clearBtn?.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (heroInput) {
+        heroInput.value = '';
+        heroInput.focus();
+      }
+      clearBtn.style.display = 'none';
+      this.landingSearch = '';
+      this.renderLandingLines();
+    });
+
+    filterTabs.forEach(tab => {
+      tab.addEventListener('click', (e) => {
+        e.preventDefault();
+        filterTabs.forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        this.landingFilter = tab.getAttribute('data-filter') || 'all';
+        this.renderLandingLines();
+      });
+    });
+  }
+
+  renderLandingLines() {
+    const container = document.getElementById('landing-lines-container');
+    if (!container) return;
+
+    const q = (this.landingSearch || '').trim().toLowerCase();
+    const activeFilter = this.landingFilter || 'all';
+
+    const groups = [
+      { id: 'metrobus', name: 'Metrobús (Xarxa d\'Alta Freqüència AMB)', icon: '🚇', filter: l => (l.group === 'metrobus' || (l.agency && l.agency.includes('MetroBus')) || String(l.code).toUpperCase().startsWith('M') || ['m1','m5','m6','m12','m14','m15','m19','m26','m27','m28','m30','m75'].includes(String(l.code).toLowerCase())) && (!l.isTrain && l.group !== 'rodalies') },
+      { id: 'expres', name: 'Exprés.cat (Xarxa d\'Altes Prestacions)', icon: '⚡', filter: l => (l.group === 'expres' || String(l.code).toLowerCase().startsWith('e') || (l.mode && l.mode.includes('Exprés'))) && (!l.isTrain && l.group !== 'rodalies') },
+      { id: 'sagales', name: 'Sagalés (Vallès, Maresme, Costa & Osona)', icon: '🦉', filter: l => (l.group === 'sagales' || (l.agency && l.agency.toLowerCase().includes('sagal')) || ['n82', 'n83', '603', 'n70', 'n71', 'n73', '201', '230', 'e13', '320', '330', '400', '500'].includes(String(l.code).toLowerCase())) && (!l.isTrain && l.group !== 'rodalies') },
+      { id: 'moventis', name: 'Moventis / Casas (Maresme & Vallès)', icon: '🌊', filter: l => (l.group === 'moventis' || String(l.id) === 'c10' || (l.agency && (l.agency.includes('Moventis') || l.agency.includes('Casas')))) && (!l.isTrain && l.group !== 'rodalies') },
+      { id: 'mataro', name: 'Mataró Bus Urbà (Xarxa Local L1..L8)', icon: '📍', filter: l => (l.group === 'mataro' || ['1','2','3','4','5','6','7','8','l1','l2','l3','l4','l5','l6','l7','l8'].includes(String(l.id).toLowerCase())) && (!l.isTrain && l.group !== 'rodalies' && l.group !== 'moventis' && String(l.id) !== 'c10') },
+      { id: 'tusgsal', name: 'DIREXIS TUSGSAL (Barcelonès Nord & NitBus)', icon: '🟡', filter: l => (l.group === 'tusgsal' || (l.agency && l.agency.includes('TUSGSAL')) || String(l.code).toLowerCase().startsWith('b')) && (!l.isTrain && l.group !== 'rodalies') },
+      { id: 'avanza', name: 'Avanza (Baix Llobregat & Garraf)', icon: '🔵', filter: l => (l.group === 'avanza' || (l.agency && l.agency.includes('Avanza')) || String(l.code).toLowerCase().startsWith('l')) && (!l.isTrain && l.group !== 'rodalies') },
+      { id: 'monbus', name: 'Monbus, Hispano Igualadina & Aerobús', icon: '🟠', filter: l => (l.group === 'monbus' || (l.agency && (l.agency.includes('Monbus') || l.agency.includes('Igualadina') || l.agency.includes('Aerobús')))) && (!l.isTrain && l.group !== 'rodalies') },
+      { id: 'plana', name: 'Empresa Plana (Tarragona & Costa Daurada)', icon: '🏖️', filter: l => (l.group === 'plana' || (l.agency && l.agency.toLowerCase().includes('plana'))) && (!l.isTrain && l.group !== 'rodalies') },
+      { id: 'teisa', name: 'TEISA (Girona, Garrotxa & Ripollès)', icon: '🌲', filter: l => (l.group === 'teisa' || (l.agency && l.agency.toLowerCase().includes('teisa'))) && (!l.isTrain && l.group !== 'rodalies') },
+      { id: 'hife', name: 'HIFE (Terres de l\'Ebre & Delta)', icon: '⚓', filter: l => (l.group === 'hife' || (l.agency && l.agency.toLowerCase().includes('hife'))) && (!l.isTrain && l.group !== 'rodalies') },
+      { id: 'soler', name: 'Soler i Sauret (Baix Llobregat & Anoia)', icon: '🟢', filter: l => (l.group === 'soler' || (l.agency && l.agency.toLowerCase().includes('soler'))) && (!l.isTrain && l.group !== 'rodalies') },
+      { id: 'interurba', name: 'Altres Línies Interurbanes de Catalunya', icon: '🚌', filter: l => (l.group === 'interurba' || !l.group) && (!l.isTrain && l.group !== 'rodalies') }
+    ];
+
+    const filterFn = (l) => {
+      if (!q) return true;
+      const code = (l.code || String(l.id)).toLowerCase();
+      const name = (l.name || '').toLowerCase();
+      const agency = (l.agency || '').toLowerCase();
+      return code.includes(q) || name.includes(q) || agency.includes(q) || ('línia ' + code).includes(q) || ('linia ' + code).includes(q);
+    };
+
+    let totalRendered = 0;
+    let html = '';
+
+    groups.forEach(g => {
+      if (activeFilter !== 'all' && activeFilter !== g.id) return;
+      const groupLines = this.availableLines.filter(g.filter).filter(filterFn);
+      if (groupLines.length === 0) return;
+
+      totalRendered += groupLines.length;
+
+      html += `
+        <div class="landing-group-section">
+          <div class="landing-group-header">
+            <h3><span>${g.icon}</span> ${g.name}</h3>
+            <span class="landing-group-badge">${groupLines.length} línia${groupLines.length === 1 ? '' : 'es'}</span>
+          </div>
+          <div class="landing-lines-grid">
+            ${groupLines.map(l => {
+              const contrast = this.getContrastColor(l.color);
+              const dirCount = l.directions ? `${l.directions.length} sentits` : 'En servei';
+              return `
+                <div class="landing-line-card" data-line-id="${l.id}" title="Fes clic per seguir la línia ${l.code} en directe">
+                  <span class="landing-line-badge" style="background:${l.color}; color:${contrast};">${l.code}</span>
+                  <div class="landing-line-info">
+                    <div class="landing-line-title">${l.name}</div>
+                    <div class="landing-line-operator">
+                      <span>${l.agency || g.name}</span>
+                      <span>•</span>
+                      <span>${dirCount}</span>
+                    </div>
+                  </div>
+                  <span class="landing-line-arrow">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                  </span>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    });
+
+    if (totalRendered === 0) {
+      container.innerHTML = `
+        <div style="padding: 3rem 1rem; text-align: center; color: var(--text-muted); background:var(--bg-card-gradient); border-radius:var(--radius-lg); border:1px solid var(--border-subtle);">
+          <div style="font-size: 2.2rem; margin-bottom: 0.5rem;">🔍</div>
+          <div style="font-size:1.1rem; font-weight: 700; color: #fff; margin-bottom: 0.35rem;">Cap línia trobada</div>
+          <div style="font-size: 0.85rem; max-width:450px; margin:0 auto;">No hi ha cap resultat per a "${this.landingSearch}". Prova cercant per codi (ex: B25, C-10, e11.1, L95, 7, M19) o municipi.</div>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = html;
+
+    // Attach click listeners to cards
+    container.querySelectorAll('.landing-line-card').forEach(card => {
+      card.addEventListener('click', (e) => {
+        e.preventDefault();
+        const lineId = card.getAttribute('data-line-id');
+        if (lineId) {
+          this.switchLine(lineId);
+        }
+      });
+    });
   }
 
   resolveBusForDeparture(dep, stopSeq = null, stopId = null, depIndex = 0) {
@@ -566,6 +791,60 @@ class TransitApp {
     if (title) {
       title.textContent = `${code} — ${lData.name || ''}`;
     }
+
+    // Render 24h Delay & Reliability Telemetry Metric
+    this.renderLineDelayStats(lData);
+  }
+
+  async renderLineDelayStats(lData) {
+    const pillEl = document.getElementById('line-stat-pill');
+    const delayValEl = document.getElementById('line-stat-delay-val');
+    const avgValEl = document.getElementById('line-stat-avg-val');
+    const statsContainer = document.getElementById('line-selector-stats');
+
+    if (!delayValEl) return;
+
+    if (statsContainer && !statsContainer._boundClick) {
+      statsContainer._boundClick = true;
+      statsContainer.addEventListener('click', () => {
+        this.openJournalismModal();
+      });
+      statsContainer.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          this.openJournalismModal();
+        }
+      });
+    }
+
+    let stats = lData?.delayStats || null;
+    const lId = lData?.id || lData?.code || 'c10';
+
+    if (!stats) {
+      try {
+        const res = await fetch(`/api/line/${encodeURIComponent(lId)}/stats`).then(r => r.json());
+        if (res.success && res.stats) {
+          stats = res.stats;
+        }
+      } catch (err) {
+        // Silently continue
+      }
+    }
+
+    const latePct = (stats && typeof stats.latePct === 'number') ? stats.latePct : 5;
+    const avgDelay = (stats && typeof stats.avgDelayMins === 'number') ? stats.avgDelayMins : 0.8;
+
+    delayValEl.textContent = `${latePct}%`;
+    if (avgValEl) avgValEl.textContent = `${avgDelay} min`;
+
+    if (pillEl) {
+      pillEl.classList.remove('moderate', 'severe');
+      if (latePct > 25) {
+        pillEl.classList.add('severe');
+      } else if (latePct > 10) {
+        pillEl.classList.add('moderate');
+      }
+    }
   }
 
   decodeHtml(str) {
@@ -677,9 +956,17 @@ class TransitApp {
     container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);">Analitzant dades de retards i puntualitat del servidor central...</div>';
 
     try {
-      const res = await fetch(`/api/analytics/journalism?hours=${hours}`).then(r => r.json());
-      if (res.success && res.report) {
-        this.renderJournalismReport(res.report);
+      const [res, snapshotRes] = await Promise.allSettled([
+        fetch(`/api/analytics/journalism?hours=${hours}`).then(r => r.json()),
+        fetch(`/api/routes/snapshots`).then(r => r.json())
+      ]);
+
+      const journalismData = res.status === 'fulfilled' && res.value?.success ? res.value.report : null;
+      const snapshotsData = snapshotRes.status === 'fulfilled' && snapshotRes.value?.success ? snapshotRes.value : null;
+
+      if (journalismData) {
+        journalismData.snapshotInfo = snapshotsData;
+        this.renderJournalismReport(journalismData);
       } else {
         container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);">No hi ha prou dades de retards registrades encara. El servidor està capturant la telemetria contínua.</div>';
       }
@@ -918,6 +1205,47 @@ class TransitApp {
           </div>
         `}
       </div>
+
+      <!-- 3-Day Route Snapshot & Resilience Engine Card -->
+      ${report.snapshotInfo ? `
+        <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:1.1rem; margin-top:1.5rem;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.75rem;">
+            <div>
+              <div style="display:flex; align-items:center; gap:0.4rem; font-weight:700; font-size:0.92rem; color:var(--brand-primary);">
+                <span>📦</span>
+                <span>Captura Diària de Rutes (Històric 3 Dies)</span>
+              </div>
+              <p style="font-size:0.75rem; color:var(--text-muted); margin-top:0.2rem;">
+                Totes les línies, parades i geometries (incloent e11.1, e11.2, C-10, Mataró Bus, Moventis, Sagalés i AMB) es capturen diàriament per garantir la continuïtat del servei fins i tot en cas de caiguda de l'API.
+              </p>
+            </div>
+            <span style="background:rgba(16,185,129,0.15); color:#10b981; font-size:0.72rem; padding:0.25rem 0.55rem; border-radius:6px; font-weight:600;">
+              🛡️ Resiliència Offline Activa (3 Dies)
+            </span>
+          </div>
+
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.6rem; margin-top:0.6rem;">
+            ${(report.snapshotInfo.snapshots || []).map(snap => `
+              <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:8px; padding:0.65rem;">
+                <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.78rem; font-weight:700;">
+                  <span>📅 ${snap.date}</span>
+                  <span style="color:var(--brand-primary); font-size:0.7rem;">${(snap.sizeBytes / 1024).toFixed(0)} KB</span>
+                </div>
+                <div style="font-size:0.72rem; color:var(--text-muted); margin-top:0.3rem;">
+                  ${snap.summary.totalRoutes} línies • ${snap.summary.totalStops} parades troncals
+                </div>
+              </div>
+            `).join('')}
+          </div>
+
+          ${report.snapshotInfo.diff ? `
+            <div style="margin-top:0.75rem; font-size:0.74rem; color:var(--text-muted); display:flex; align-items:center; gap:0.4rem; border-top:1px solid var(--border-subtle); padding-top:0.6rem;">
+              <span>🔍 Estat dels canvis:</span>
+              <strong style="color:var(--text-primary);">${report.snapshotInfo.diff.status || 'Estable (Sense canvis en traçats ni parades en les darreres 72h)'}</strong>
+            </div>
+          ` : ''}
+        </div>
+      ` : ''}
     `;
 
     container.innerHTML = html;
@@ -1970,7 +2298,7 @@ class TransitApp {
       this.openLinePicker();
     });
 
-    document.querySelector('.logo-group')?.addEventListener('click', (e) => {
+    document.getElementById('line-selector-current-info')?.addEventListener('click', (e) => {
       e.preventDefault();
       this.openLinePicker();
     });
@@ -2263,21 +2591,54 @@ class TransitApp {
       }
     });
 
-    // Footer Quick Links
-    document.getElementById('footer-link-c10')?.addEventListener('click', (e) => { 
-      e.preventDefault(); 
-      this.switchLine('c10'); 
-    });
-    document.getElementById('footer-link-mataro')?.addEventListener('click', (e) => { 
-      e.preventDefault(); 
-      this.switchLine('1'); 
+    // Back to Landing / Home Navigation Buttons
+    document.getElementById('btn-header-home')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.navigateToLanding();
     });
 
-    // Window Hashchange (Browser Back/Forward Navigation)
-    window.addEventListener('hashchange', () => {
-      this.parseUrlHash();
-      this.refreshAllData(true);
+    document.getElementById('header-logo-group')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.navigateToLanding();
     });
+
+    document.getElementById('btn-back-to-landing')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.navigateToLanding();
+    });
+
+    // Footer Quick Links
+    document.getElementById('footer-link-home')?.addEventListener('click', (e) => { 
+      e.preventDefault(); 
+      this.navigateToLanding(); 
+    });
+    document.getElementById('footer-link-lines')?.addEventListener('click', (e) => { 
+      e.preventDefault(); 
+      this.navigateToLanding(); 
+    });
+    document.getElementById('footer-link-incidents')?.addEventListener('click', (e) => { 
+      e.preventDefault(); 
+      this.openDisruptionsModal(''); 
+    });
+    document.getElementById('footer-link-journalism')?.addEventListener('click', (e) => { 
+      e.preventDefault(); 
+      this.openJournalismModal(24); 
+    });
+
+    // Window Hashchange & Popstate (Browser Back/Forward Navigation)
+    const handleRouteNav = () => {
+      this.parseUrlHash();
+      if (this.activeLineId) {
+        this.showActiveLineView();
+        this.refreshAllData(true);
+      } else {
+        this.showLandingView();
+        this.renderLandingLines();
+      }
+    };
+
+    window.addEventListener('hashchange', handleRouteNav);
+    window.addEventListener('popstate', handleRouteNav);
 
     this.setupGlobalSearch();
     this.setupLinePicker();

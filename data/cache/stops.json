@@ -1,0 +1,228 @@
+[
+  {
+    "seq": 1,
+    "id": "10008001",
+    "code": "10008001",
+    "mouteStopId": "10008001",
+    "name": "Barcelona - Rda. Universitat / Balmes",
+    "lat": 41.3872,
+    "lon": 2.1678,
+    "zone": "AMB",
+    "city": "Barcelona"
+  },
+  {
+    "seq": 2,
+    "id": "10008002",
+    "code": "10008002",
+    "mouteStopId": "10008002",
+    "name": "Barcelona - Gran Via / Pl. Tetuan",
+    "lat": 41.3951,
+    "lon": 2.1764,
+    "zone": "AMB",
+    "city": "Barcelona"
+  },
+  {
+    "seq": 3,
+    "id": "10008003",
+    "code": "10008003",
+    "mouteStopId": "10008003",
+    "name": "Barcelona - Gran Via / Marina",
+    "lat": 41.3998,
+    "lon": 2.1832,
+    "zone": "AMB",
+    "city": "Barcelona"
+  },
+  {
+    "seq": 4,
+    "id": "10037200",
+    "code": "10037200",
+    "mouteStopId": "10037200",
+    "name": "Mataró - Porta Laietana / Av. Maresme",
+    "lat": 41.5305,
+    "lon": 2.4365,
+    "zone": "Maresme",
+    "city": "Mataró"
+  },
+  {
+    "seq": 5,
+    "id": "10026720",
+    "code": "10026720",
+    "mouteStopId": "10026720",
+    "name": "Mataró - Estació Rodalies",
+    "lat": 41.5365,
+    "lon": 2.4468,
+    "zone": "Maresme",
+    "city": "Mataró"
+  },
+  {
+    "seq": 6,
+    "id": "10026730",
+    "code": "10026730",
+    "mouteStopId": "10026730",
+    "name": "Mataró - Camí Ral / La Rambla",
+    "lat": 41.5379,
+    "lon": 2.4452,
+    "zone": "Maresme",
+    "city": "Mataró"
+  },
+  {
+    "seq": 7,
+    "id": "10026735",
+    "code": "10026735",
+    "mouteStopId": "10026735",
+    "name": "Mataró - Plaça de les Tereses (Centre)",
+    "lat": 41.5398,
+    "lon": 2.4435,
+    "zone": "Maresme",
+    "city": "Mataró"
+  },
+  {
+    "seq": 2,
+    "id": "10026784",
+    "code": "10026784",
+    "mouteStopId": "10026784",
+    "name": "Mataró - Pl. Granollers",
+    "lat": 41.5412,
+    "lon": 2.4361,
+    "zone": "Maresme",
+    "city": "Mataró"
+  },
+  {
+    "seq": 3,
+    "id": "10026780",
+    "code": "10026780",
+    "mouteStopId": "10026780",
+    "name": "Mataró - Av. Jaume Recoder",
+    "lat": 41.5342,
+    "lon": 2.441,
+    "zone": "Maresme",
+    "city": "Mataró"
+  },
+  {
+    "seq": 4,
+    "id": "10037205",
+    "code": "10037205",
+    "mouteStopId": "10037205",
+    "name": "Mataró - Porta Laietana / N-II",
+    "lat": 41.5321,
+    "lon": 2.4385,
+    "zone": "Maresme",
+    "city": "Mataró"
+  },
+  {
+    "seq": 5,
+    "id": "10008004",
+    "code": "10008004",
+    "mouteStopId": "10008004",
+    "name": "Barcelona - Gran Via / Padilla",
+    "lat": 41.4012,
+    "lon": 2.1848,
+    "zone": "AMB",
+    "city": "Barcelona"
+  },
+  {
+    "seq": 6,
+    "id": "10008005",
+    "code": "10008005",
+    "mouteStopId": "10008005",
+    "name": "Barcelona - Gran Via / Pau Claris",
+    "lat": 41.3918,
+    "lon": 2.1695,
+    "zone": "AMB",
+    "city": "Barcelona"
+  },
+  {
+    "seq": 4,
+    "id": "10037202",
+    "code": "10037202",
+    "mouteStopId": "10037202",
+    "name": "Mataró - Plaça d'Itàlia (A)",
+    "lat": 41.5468,
+    "lon": 2.4321,
+    "zone": "Maresme",
+    "city": "Mataró"
+  },
+  {
+    "seq": 5,
+    "id": "10037204",
+    "code": "10037204",
+    "mouteStopId": "10037204",
+    "name": "Mataró - Via Europa / Itàlia",
+    "lat": 41.5485,
+    "lon": 2.4323,
+    "zone": "Maresme",
+    "city": "Mataró"
+  },
+  {
+    "seq": 6,
+    "id": "10037208",
+    "code": "10037208",
+    "mouteStopId": "10037208",
+    "name": "Mataró - Camí de la Serra / Cirera",
+    "lat": 41.551,
+    "lon": 2.4328,
+    "zone": "Maresme",
+    "city": "Mataró"
+  },
+  {
+    "seq": 7,
+    "id": "10037210",
+    "code": "10037210",
+    "mouteStopId": "10037210",
+    "name": "Mataró - Hospital de Mataró (Nord)",
+    "lat": 41.5543,
+    "lon": 2.4332,
+    "zone": "Maresme",
+    "city": "Mataró"
+  },
+  {
+    "seq": 4,
+    "id": "MAT_ITALIA_A",
+    "code": "MAT_ITALIA_A",
+    "name": "Mataró - Plaça d'Itàlia (A)",
+    "lat": 41.5468,
+    "lon": 2.4321,
+    "zone": "Maresme",
+    "city": "Mataró"
+  },
+  {
+    "seq": 5,
+    "id": "MAT_VIA_EUROPA",
+    "code": "MAT_VIA_EUROPA",
+    "name": "Mataró - Via Europa / Itàlia",
+    "lat": 41.5485,
+    "lon": 2.4323,
+    "zone": "Maresme",
+    "city": "Mataró"
+  },
+  {
+    "seq": 6,
+    "id": "MAT_SERRA",
+    "code": "MAT_SERRA",
+    "name": "Mataró - Camí de la Serra / Cirera",
+    "lat": 41.551,
+    "lon": 2.4328,
+    "zone": "Maresme",
+    "city": "Mataró"
+  },
+  {
+    "seq": 7,
+    "id": "MAT_HOSP_NORD",
+    "code": "MAT_HOSP_NORD",
+    "name": "Mataró - Hospital de Mataró (Nord)",
+    "lat": 41.5543,
+    "lon": 2.4332,
+    "zone": "Maresme",
+    "city": "Mataró"
+  },
+  {
+    "seq": 4,
+    "id": "MAT_ITALIA_D",
+    "code": "MAT_ITALIA_D",
+    "name": "Mataró - Plaça d'Itàlia (D)",
+    "lat": 41.5468,
+    "lon": 2.4321,
+    "zone": "Maresme",
+    "city": "Mataró"
+  }
+]

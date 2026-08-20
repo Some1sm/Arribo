@@ -9,6 +9,7 @@ const ambTracker = require('./src/ambTracker');
 const rodaliesTracker = require('./src/rodaliesTracker');
 const maresmeTracker = require('./src/maresmeTracker');
 const cataloniaTracker = require('./src/cataloniaTracker');
+const routeCacheService = require('./src/routeCacheService');
 const flightRecorder = require('./src/flightRecorder');
 const ingestionDaemon = require('./src/ingestionDaemon');
 
@@ -32,7 +33,9 @@ app.use(express.static(path.join(__dirname, 'public'), {
   etag: false
 }));
 
-// Pre-initialize async trackers and launch Autonomous Ingestion Daemon
+// Pre-initialize async trackers, daily route cache, and launch Autonomous Ingestion Daemon
+routeCacheService.initDailyCache();
+
 Promise.allSettled([
   ambTracker.init(),
   rodaliesTracker.init(),
@@ -318,7 +321,8 @@ app.get('/api/line/:lineId', async (req, res) => {
               isOperating: ((tracking1.activeBuses?.length || 0) + (tracking0.activeBuses?.length || 0)) > 0,
               firstServiceTomorrow: '06:45',
               calendarTag: calInfo.calendarTag
-            }
+            },
+            delayStats: flightRecorder.getLineStats('C-10', 'c10')
           }
         });
       } else {
@@ -349,12 +353,16 @@ app.get('/api/line/:lineId', async (req, res) => {
               isOperating: (tracking.activeBuses?.length || 0) > 0,
               firstServiceTomorrow: dir === '1' ? '08:15' : '06:45',
               calendarTag: calInfo.calendarTag
-            }
+            },
+            delayStats: flightRecorder.getLineStats('C-10', 'c10')
           }
         });
       }
     } else {
       const data = await tracker.getLineDetails(lineId, direction);
+      if (data) {
+        data.delayStats = flightRecorder.getLineStats(data.code || lineId, lineId);
+      }
       res.json({ success: true, data });
     }
   } catch (err) {
@@ -665,7 +673,7 @@ app.get('/api/vehicle/:vehicleId/trail', (req, res) => {
 app.get('/api/line/:lineId/stats', (req, res) => {
   const { lineId } = req.params;
   const cleanCode = lineId.replace('cat_gen_', '').replace(/.*_/, '').toUpperCase();
-  const stats = flightRecorder.getLineStats(cleanCode);
+  const stats = flightRecorder.getLineStats(cleanCode, lineId);
   res.json({
     success: true,
     lineId,
@@ -691,16 +699,61 @@ app.get('/api/analytics/export/csv', (req, res) => {
   const hours = parseInt(req.query.hours || '48', 10);
   const csvData = flightRecorder.exportCsv(hours);
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="bad_amb_transit_delays_${Date.now()}.csv"`);
+  res.setHeader('Content-Disposition', `attachment; filename="arribo_transit_delays_${Date.now()}.csv"`);
   res.send(csvData);
+});
+
+// ==========================================
+// 5. DAILY ROUTE SNAPSHOTS & 3-DAY RETENTION
+// ==========================================
+
+// Get list of daily route snapshots and change metadata (maintained for the last 3 days)
+app.get('/api/routes/snapshots', (req, res) => {
+  try {
+    const snapshots = routeCacheService.getSnapshotsList();
+    const diff = routeCacheService.get3DayDiff();
+    res.json({
+      success: true,
+      retentionDays: 3,
+      totalSnapshots: snapshots.length,
+      snapshots,
+      diff
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Get full route snapshot for a specific date
+app.get('/api/routes/snapshots/:date', (req, res) => {
+  try {
+    const { date } = req.params;
+    const snapshot = routeCacheService.getSnapshotByDate(date);
+    if (!snapshot) {
+      return res.status(404).json({ success: false, error: `Snapshot for date ${date} not found or pruned (retained for 3 days).` });
+    }
+    res.json({ success: true, snapshot });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Get 3-day changes and route topology diffs
+app.get('/api/routes/diff', (req, res) => {
+  try {
+    const diff = routeCacheService.get3DayDiff();
+    res.json({ success: true, diff });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
-    app: 'Bad AMB Bus Tracker',
-    version: '2.0.0',
-    supportedLines: ['C-10', 'L1', 'L2', 'L3', 'L4', 'L5', 'L6', 'L7', 'L8'],
+    app: 'Arribo!',
+    version: '3.0.0',
+    description: 'Universal Realtime Bus Telemetry & Schedule Platform for Catalonia',
     timestamp: new Date().toISOString()
   });
 });
@@ -712,8 +765,8 @@ app.get('*', (req, res) => {
 if (require.main === module) {
   const runningServer = app.listen(PORT, '0.0.0.0', () => {
     console.log(`====================================================`);
-    console.log(`🚌 Bad AMB Bus Tracker Platform Running!`);
-    console.log(`🌐 Full Catalonia Multi-Provider Realtime Network`);
+    console.log(`🚌 Arribo! Transit Telemetry Platform Running!`);
+    console.log(`🌐 Full Catalonia Multi-Provider Realtime Bus Network`);
     console.log(`📍 Local URL: http://localhost:${PORT}`);
     console.log(`====================================================`);
   });

@@ -685,6 +685,16 @@ class AmbTracker {
 
     departures.sort((a, b) => (a.minutesAway || 0) - (b.minutesAway || 0));
 
+    const finalDepartures = [];
+    const seenTimes = new Set();
+    departures.forEach(dep => {
+      const key = `${dep.departureTime}_${dep.destination}_${dep.isToday}`;
+      if (!seenTimes.has(key)) {
+        seenTimes.add(key);
+        finalDepartures.push(dep);
+      }
+    });
+
     return {
       stop: {
         id: stopObj.id,
@@ -693,8 +703,8 @@ class AmbTracker {
         lon: stopObj.lon,
         zone: stopObj.zone || 'AMB'
       },
-      departures,
-      totalDepartures: departures.length
+      departures: finalDepartures,
+      totalDepartures: finalDepartures.length
     };
   }
 }

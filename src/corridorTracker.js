@@ -478,7 +478,8 @@ class CorridorTracker {
       }
     }
 
-    return false;
+    // Safe fallback: enable all trips if serviceId is unknown or calendar is unpopulated
+    return true;
   }
 
   getStops(direction = '1') {
@@ -584,11 +585,12 @@ class CorridorTracker {
 
     const results = [];
     const seenTodayTripKeys = new Set();
+    const seenFinalTimes = new Set();
 
     for (const s of sortides) {
-      const isC10 = s.liniaId === '02498' || s.liniaId === 'C10' || (s.descripcioLinia && s.descripcioLinia.includes('C10'));
-      if (!isC10 && s.liniaId !== undefined) {
-        if (s.liniaId !== '02498') continue;
+      const isC10 = s.liniaId === '02498' || s.liniaId === 'C10' || s.nomLinia === 'C-10' || (s.descripcioLinia && s.descripcioLinia.includes('C10'));
+      if (!isC10) {
+        continue; // Discard any non-C10 departures from shared stops
       }
 
       const year = parseInt(s.any) || networkNow.year;
@@ -747,15 +749,26 @@ class CorridorTracker {
 
     results.sort((a, b) => new Date(a.departureDate).getTime() - new Date(b.departureDate).getTime());
 
-    const hasToday = results.some(r => r.isToday);
-    if (!hasToday && results.length > 0) {
-      results[0].isFirstOfDay = true;
-      results[0].isNextService = true;
-      results[0].delayBadgeText = '🌅 1r Servei del matí';
-      results[0].comparisonText = `📅 Pas teòric previst demà a les ${results[0].departureTime}`;
+    // Deduplicate results by departureTime and direction
+    const dedupedResults = [];
+    const seenTimes = new Set();
+    for (const r of results) {
+      const key = `${r.departureTime}_${r.directionId || ''}_${r.isToday}`;
+      if (!seenTimes.has(key)) {
+        seenTimes.add(key);
+        dedupedResults.push(r);
+      }
     }
 
-    return results;
+    const hasToday = dedupedResults.some(r => r.isToday);
+    if (!hasToday && dedupedResults.length > 0) {
+      dedupedResults[0].isFirstOfDay = true;
+      dedupedResults[0].isNextService = true;
+      dedupedResults[0].delayBadgeText = '🌅 1r Servei del matí';
+      dedupedResults[0].comparisonText = `📅 Pas teòric previst demà a les ${dedupedResults[0].departureTime}`;
+    }
+
+    return dedupedResults;
   }
 
   async getTargetStopETA(direction = '1', customStopId = null, targetDate = null) {

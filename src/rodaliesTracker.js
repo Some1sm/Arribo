@@ -522,6 +522,16 @@ class RodaliesTracker {
 
     departures.sort((a, b) => (a.minutesAway || 0) - (b.minutesAway || 0));
 
+    const finalDepartures = [];
+    const seenTimes = new Set();
+    departures.forEach(dep => {
+      const key = `${dep.departureTime}_${dep.destination}_${dep.isToday}`;
+      if (!seenTimes.has(key)) {
+        seenTimes.add(key);
+        finalDepartures.push(dep);
+      }
+    });
+
     return {
       stop: {
         id: stationObj.id,
@@ -530,8 +540,8 @@ class RodaliesTracker {
         lon: stationObj.lon,
         zone: stationObj.zone || 'Rodalies'
       },
-      departures,
-      totalDepartures: departures.length
+      departures: finalDepartures,
+      totalDepartures: finalDepartures.length
     };
   }
 }

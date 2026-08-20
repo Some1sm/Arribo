@@ -163,8 +163,8 @@ class FlightRecorder {
     return historyDb.getVehicleTrail(vehicleId, 60);
   }
 
-  getLineStats(lineCode) {
-    return historyDb.getLineDelayStats(lineCode, 24);
+  getLineStats(lineCode, lineId = null) {
+    return historyDb.getLineDelayStats(lineCode, 24, lineId);
   }
 
   getJournalismReport(hours = 24, allLinesCatalog = []) {

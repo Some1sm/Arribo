@@ -6,6 +6,7 @@ const maresmeTracker = require('./maresmeTracker');
 const rodaliesTracker = require('./rodaliesTracker');
 const sagalesTracker = require('./sagalesTracker');
 const cataloniaTracker = require('./cataloniaTracker');
+const routeCacheService = require('./routeCacheService');
 const historyDb = require('./historyDb');
 
 class IngestionDaemon {
@@ -21,6 +22,7 @@ class IngestionDaemon {
     this.cataloniaPollTimer = null;
     this.disruptionsTimer = null;
     this.pruneTimer = null;
+    this.dailySnapshotTimer = null;
   }
 
   start() {
@@ -31,6 +33,9 @@ class IngestionDaemon {
     // Apply retention immediately so a restart cannot leave the previous
     // retention window on disk until the first scheduled maintenance pass.
     historyDb.pruneOldRecords();
+
+    // Initialize daily route cache and snapshots
+    routeCacheService.initDailyCache();
 
     // 1. Initial Ingestion Run
     this.pollAmbVehicles();
@@ -72,6 +77,13 @@ class IngestionDaemon {
     // 10. Schedule DB pruning (every hour) to keep the short raw snapshot
     // window bounded even when the service runs continuously.
     this.pruneTimer = setInterval(() => historyDb.pruneOldRecords(), 3600 * 1000);
+
+    // 11. Schedule Daily Route Cache & Snapshot Pass (every 24 hours, keeping last 3 days)
+    this.dailySnapshotTimer = setInterval(() => {
+      console.log('[IngestionDaemon] 🔄 Running 24-hour route caching and 3-day snapshot maintenance...');
+      routeCacheService.takeDailySnapshot();
+      routeCacheService.pruneOldSnapshots();
+    }, 24 * 3600 * 1000);
   }
 
   stop() {
@@ -86,6 +98,7 @@ class IngestionDaemon {
     if (this.cataloniaPollTimer) clearInterval(this.cataloniaPollTimer);
     if (this.disruptionsTimer) clearInterval(this.disruptionsTimer);
     if (this.pruneTimer) clearInterval(this.pruneTimer);
+    if (this.dailySnapshotTimer) clearInterval(this.dailySnapshotTimer);
     console.log('[IngestionDaemon] Stopped ingestion daemon.');
   }
 
