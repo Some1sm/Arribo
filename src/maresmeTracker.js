@@ -382,6 +382,51 @@ class MaresmeTracker {
     }
 
     const dir = String(direction || '0');
+
+    // Dynamic GTFS Resolution via CataloniaTracker
+    try {
+      const cataloniaTracker = require('./cataloniaTracker');
+      const catRoute = cataloniaTracker.routes?.find(r => r.routeId === lineConfig.routeId || r.code?.toLowerCase() === lineConfig.code?.toLowerCase() || r.id.includes(lineConfig.id));
+      if (catRoute) {
+        const catDetails = await cataloniaTracker.getLineDetails(catRoute.id, dir);
+        if (catDetails && catDetails.stops?.length > 0) {
+          const activeBuses = this.calculateActiveBuses(lineConfig, dir, catDetails.stops, catDetails.coords || []);
+          return {
+            id: lineConfig.id,
+            code: lineConfig.code,
+            name: lineConfig.name,
+            color: lineConfig.color,
+            agency: lineConfig.agency,
+            direction: dir,
+            directions: catDetails.directions || lineConfig.directions,
+            stops: catDetails.stops,
+            coords: catDetails.coords || [],
+            polyline: catDetails.coords || [],
+            activeBuses,
+            checkpoints: catDetails.stops.filter((s, i) => i === 0 || i === catDetails.stops.length - 1 || i % 4 === 0).map(s => ({
+              id: s.id,
+              name: s.name,
+              seq: s.seq,
+              zone: s.zone,
+              isPassed: false,
+              hasBus: activeBuses.some(b => b.toSeq >= s.seq && b.fromSeq <= s.seq),
+              etaMinutes: 0
+            })),
+            totalActiveBuses: activeBuses.length,
+            serviceStatus: {
+              isOperating: lineConfig.id.startsWith('n')
+                ? (new Date().getHours() >= 23 || new Date().getHours() < 6)
+                : (new Date().getHours() >= 6 && new Date().getHours() < 23),
+              calendarTag: 'Feiners (de dilluns a divendres)',
+              firstServiceTomorrow: lineConfig.id.startsWith('n') ? '23:30' : '06:00'
+            }
+          };
+        }
+      }
+    } catch (e) {
+      // Fallback to local cache if cataloniaTracker is still initializing
+    }
+
     const lineTrips = this.tripsMap.get(lineConfig.routeId) || [];
     const dirTrips = lineTrips.filter(t => t.dirId === dir);
     const chosenTrip = dirTrips[0] || lineTrips[0];
