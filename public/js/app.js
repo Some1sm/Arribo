@@ -560,7 +560,21 @@ class TransitApp {
       coords = { lat: targetBus.lat, lon: targetBus.lon };
     }
 
-    if (!vehicleId && !coords) return;
+    if (!vehicleId && !coords) {
+      if (stopId && this.allStops) {
+        const sObj = this.allStops.find(s => String(s.id || s.mouteStopId || s.code) === String(stopId));
+        if (sObj?.lat && sObj?.lon) {
+          this.mapController?.focusTargetStop(sObj.lat, sObj.lon);
+        }
+      } else {
+        this.mapController?.fitRouteBounds();
+      }
+      const mapSection = document.getElementById('map-container') || document.querySelector('.explorer-grid');
+      if (mapSection) {
+        mapSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      return;
+    }
     this.selectedVehicleId = vehicleId;
 
     // If stop modal is currently open, close it cleanly

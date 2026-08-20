@@ -112,12 +112,15 @@ class CorridorTracker {
           const sId = s.id;
           const mId = String(s.code || sId).replace('GEN_PF', '').replace(/^0+/, '');
           stopsMap.set(sId, {
+            id: sId,
+            code: mId,
             gtfsStopId: sId,
             mouteStopId: mId,
             name: s.name || `Parada ${sId}`,
             lat: s.lat,
             lon: s.lon,
-            city: 'Maresme'
+            city: s.city || 'Maresme',
+            zone: s.zone || 'Maresme'
           });
         });
 
@@ -150,7 +153,15 @@ class CorridorTracker {
           return st.map(p => {
             const sObj = stopsMap.get(p.stopId);
             return {
-              ...sObj,
+              id: sObj?.id || p.stopId,
+              code: sObj?.code || p.stopId,
+              mouteStopId: sObj?.mouteStopId || p.stopId,
+              gtfsStopId: p.stopId,
+              name: sObj?.name || `Parada ${p.stopId}`,
+              lat: sObj?.lat || 41.5,
+              lon: sObj?.lon || 2.4,
+              city: sObj?.city || 'Maresme',
+              zone: sObj?.zone || 'Maresme',
               seq: p.seq,
               arr: p.arr,
               dep: p.dep
@@ -194,14 +205,22 @@ class CorridorTracker {
           }
         });
 
+        const c10Static = require('./c10StaticData');
         if (schedDir1.length === 0 && schedDir0.length === 0) {
-          const c10Static = require('./c10StaticData');
           this.stopsDir1 = c10Static.C10_STOPS_DIR1;
           this.stopsDir0 = c10Static.C10_STOPS_DIR0;
           this.fullSchedule = { dir1: c10Static.C10_TRIPS_DIR1, dir0: c10Static.C10_TRIPS_DIR0 };
         } else {
           this.fullSchedule = { dir1: schedDir1, dir0: schedDir0 };
         }
+
+        if (this.stopsDir1 && this.stopsDir1.length > 0 && c10Static.generateCorridorPolyline) {
+          this.routePolylineDir1 = c10Static.generateCorridorPolyline(this.stopsDir1);
+        }
+        if (this.stopsDir0 && this.stopsDir0.length > 0 && c10Static.generateCorridorPolyline) {
+          this.routePolylineDir0 = c10Static.generateCorridorPolyline(this.stopsDir0);
+        }
+
         this.stopsMapDir1 = new Map();
         this.stopsDir1.forEach(s => this.stopsMapDir1.set(s.gtfsStopId, s));
         this.stopsMapDir0 = new Map();

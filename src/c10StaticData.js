@@ -190,5 +190,6 @@ module.exports = {
   C10_POLYLINE_DIR1,
   C10_POLYLINE_DIR0,
   C10_TRIPS_DIR1,
-  C10_TRIPS_DIR0
+  C10_TRIPS_DIR0,
+  generateCorridorPolyline
 };
