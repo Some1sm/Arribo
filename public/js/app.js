@@ -214,9 +214,11 @@ class TransitApp {
       activeLineView.removeAttribute('style');
     }
 
-    setTimeout(() => {
-      this.mapController?.invalidateSize();
-    }, 120);
+    if (this.mapController) {
+      this.mapController.invalidateSize();
+      setTimeout(() => this.mapController?.invalidateSize(), 80);
+      setTimeout(() => this.mapController?.invalidateSize(), 250);
+    }
   }
 
   navigateToLanding() {

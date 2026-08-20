@@ -24,14 +24,10 @@ class C10Map {
       return;
     }
 
-    // Extended SVG padding (1.5 = 150% margin beyond viewport) prevents vector clipping when container dimensions resize
-    this.renderer = L.svg({ padding: 1.5 });
-
     // Centered along the coastal corridor / Mataró
     this.map = L.map(this.containerId, {
       zoomControl: true,
-      scrollWheelZoom: true,
-      renderer: this.renderer
+      scrollWheelZoom: true
     }).setView([41.54, 2.44], 13);
 
     this.updateTileLayer();
@@ -426,8 +422,7 @@ class C10Map {
           weight: 4.5,
           opacity: 0.9,
           lineCap: 'round',
-          lineJoin: 'round',
-          renderer: this.renderer
+          lineJoin: 'round'
         }).addTo(this.map);
 
         // Add Directional Arrow Chevrons
@@ -443,8 +438,7 @@ class C10Map {
           opacity: 0.85,
           dashArray: '8, 8',
           lineCap: 'round',
-          lineJoin: 'round',
-          renderer: this.renderer
+          lineJoin: 'round'
         }).addTo(this.map);
 
         // Add Directional Arrow Chevrons for secondary direction
@@ -481,8 +475,7 @@ class C10Map {
       weight: 5,
       opacity: 0.85,
       lineCap: 'round',
-      lineJoin: 'round',
-      renderer: this.renderer
+      lineJoin: 'round'
     }).addTo(this.map);
 
     try {
@@ -886,8 +879,7 @@ class C10Map {
       opacity: 0.85,
       dashArray: '6, 6',
       lineCap: 'round',
-      lineJoin: 'round',
-      renderer: this.renderer
+      lineJoin: 'round'
     }).addTo(this.map);
   }
 
