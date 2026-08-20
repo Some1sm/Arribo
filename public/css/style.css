@@ -540,38 +540,52 @@ body {
   transform: rotate(180deg);
 }
 
+#connection-modal-backdrop {
+  position: fixed !important;
+  inset: 0 !important;
+  background: rgba(0, 0, 0, 0.65) !important;
+  backdrop-filter: blur(6px) !important;
+  -webkit-backdrop-filter: blur(6px) !important;
+  z-index: 9998 !important;
+  display: none;
+}
+
+#connection-modal-backdrop.active {
+  display: block !important;
+}
+
 .connection-menu-dropdown {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%) scale(0.95);
-  width: 90%;
-  max-width: 420px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-2xl);
-  padding: 1.25rem;
-  z-index: 3000;
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) scale(0.95) !important;
+  width: min(92vw, 380px) !important;
+  max-height: 90vh !important;
+  background: var(--bg-surface) !important;
+  border: 1px solid var(--border-strong) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6) !important;
+  padding: 1.15rem !important;
+  z-index: 9999 !important;
   display: none;
   flex-direction: column;
-  gap: 0.9rem;
+  gap: 0.85rem;
   opacity: 0;
   transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   box-sizing: border-box;
 }
 
 .connection-menu-dropdown.active {
-  display: flex;
-  opacity: 1;
-  transform: translate(-50%, -50%) scale(1);
+  display: flex !important;
+  opacity: 1 !important;
+  transform: translate(-50%, -50%) scale(1) !important;
 }
 
 .connection-menu-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-bottom: 0.65rem;
+  padding-bottom: 0.6rem;
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -579,7 +593,7 @@ body {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   color: var(--text-primary);
 }
 
@@ -608,7 +622,7 @@ body {
 .connection-menu-body {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.45rem;
 }
 
 .conn-info-row {
