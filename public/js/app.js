@@ -760,7 +760,7 @@ class TransitApp {
     if (city) {
       const text = calTag ? `${lData.agency || 'Xarxa de Transport'} • 📅 ${calTag}` : (lData.agency || 'Xarxa de Transport');
       if (lData.operatorWebsite) {
-        city.innerHTML = `${text} • <a href="${lData.operatorWebsite}" target="_blank" rel="noopener" style="color:var(--brand-primary, #38bdf8); text-decoration:underline; font-weight:600;" title="Consultar horaris PDF oficials">📄 Web PDF oficial ↗</a>`;
+        city.innerHTML = `${text} • <a href="${lData.operatorWebsite}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--brand-primary, #38bdf8); text-decoration:underline; font-weight:600; cursor:pointer;" title="Consultar horaris PDF oficials">📄 Web PDF oficial ↗</a>`;
       } else {
         city.textContent = text;
       }
@@ -2289,6 +2289,9 @@ class TransitApp {
     });
 
     document.getElementById('line-selector-current-info')?.addEventListener('click', (e) => {
+      if (e.target.closest('a')) {
+        return; // Allow clicking links inside (e.g. PDF link) without opening picker
+      }
       e.preventDefault();
       this.openLinePicker();
     });
