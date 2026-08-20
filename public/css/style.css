@@ -205,20 +205,12 @@ body {
 .logo-group {
   display: flex;
   align-items: center;
-  gap: 0.85rem;
-  cursor: pointer;
-  user-select: none;
-  transition: transform var(--transition-fast), opacity var(--transition-fast);
-}
-
-.logo-group {
-  display: flex;
-  align-items: center;
   gap: 0.75rem;
   cursor: pointer;
   user-select: none;
   transition: opacity var(--transition-fast), transform var(--transition-fast);
   text-decoration: none;
+  flex-shrink: 0;
 }
 
 .logo-group:hover {
@@ -720,27 +712,34 @@ body {
   100% { transform: scale(0.9); opacity: 0.8; }
 }
 
-/* Icon Buttons & Theme Switcher */
+/* Sleek Circular Icon Buttons (Theme, Sound, Refresh) */
 .btn-icon {
   background: var(--bg-surface-elevated);
   border: 1px solid var(--border-subtle);
   color: var(--text-secondary);
-  width: 38px;
-  height: 38px;
-  border-radius: var(--radius-sm);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   transition: all var(--transition-fast);
   flex-shrink: 0;
+  padding: 0;
+  outline: none;
 }
 
 .btn-icon:hover {
-  background: var(--c10-primary);
-  color: #ffffff;
-  border-color: var(--c10-primary);
-  box-shadow: var(--shadow-sm);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border-color: var(--border-focus);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  transform: translateY(-1px);
+}
+
+.btn-icon:active {
+  transform: translateY(0);
 }
 
 /* Theme Icon Display Logic */
@@ -3204,7 +3203,7 @@ body {
 
 @media (max-width: 768px) {
   .app-header {
-    padding: 0.65rem 0.85rem;
+    padding: 0.6rem 0.85rem;
     width: 100%;
     max-width: 100vw;
     box-sizing: border-box;
@@ -3213,23 +3212,24 @@ body {
 
   .header-container {
     display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.5rem;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.45rem;
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
   }
 
   .logo-group {
-    width: 100%;
+    width: auto;
     justify-content: flex-start;
     min-width: 0;
+    flex: 0 0 auto;
   }
 
   .app-title-group {
     min-width: 0;
-    flex: 1;
     overflow: hidden;
   }
 
@@ -3237,8 +3237,6 @@ body {
     font-size: 1rem;
     letter-spacing: -0.3px;
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 
   .app-subtitle {
@@ -3251,33 +3249,35 @@ body {
   .global-search-container {
     width: 100%;
     max-width: 100%;
-    margin: 0;
+    order: 3;
+    margin-top: 0.15rem;
     box-sizing: border-box;
+  }
+
+  .search-shortcut-hint {
+    display: none;
   }
 
   .header-actions {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
-    width: 100%;
-    max-width: 100%;
+    gap: 0.35rem;
+    width: auto;
+    flex: 0 0 auto;
     box-sizing: border-box;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    padding-bottom: 2px;
-    flex-wrap: nowrap;
+    overflow-x: visible;
   }
 
-  .header-actions::-webkit-scrollbar {
-    display: none;
+  .btn-header-nav {
+    padding: 0.32rem 0.55rem;
+    font-size: 0.74rem;
+    flex-shrink: 0;
   }
 
-  .active-buses-chip,
-  .live-indicator,
-  .btn-incidents-chip {
-    padding: 0.32rem 0.65rem;
+  .live-indicator {
+    padding: 0.32rem 0.55rem;
     font-size: 0.72rem;
+    min-width: unset;
     flex-shrink: 0;
   }
 
@@ -3376,33 +3376,53 @@ body {
 
 @media (max-width: 480px) {
   .app-header {
-    padding: 0.5rem 0.65rem;
+    padding: 0.45rem 0.65rem;
   }
 
   .app-title-group h1 {
-    font-size: 0.92rem;
+    font-size: 0.95rem;
   }
 
   .app-subtitle {
     display: none;
   }
 
-  .header-mode-badge {
+  .logo-brand-badge {
+    width: 32px;
+    height: 32px;
+    font-size: 1.15rem;
+  }
+
+  .btn-header-nav {
+    padding: 0.28rem 0.45rem;
+    font-size: 0.72rem;
+  }
+
+  .btn-header-nav span:not(.nav-icon) {
     display: none;
+  }
+
+  .live-indicator {
+    padding: 0.28rem 0.45rem;
+  }
+
+  .btn-icon {
+    width: 30px;
+    height: 30px;
+  }
+
+  .btn-icon svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .global-search-input {
+    padding: 0.42rem 0.75rem 0.42rem 2rem;
+    font-size: 0.78rem;
   }
 
   .hide-on-mobile-sm {
     display: none !important;
-  }
-
-  .line-badge {
-    font-size: 1rem;
-    padding: 0.25rem 0.6rem;
-  }
-
-  .btn-incidents-chip {
-    padding: 0.28rem 0.55rem;
-    font-size: 0.7rem;
   }
 }
 
