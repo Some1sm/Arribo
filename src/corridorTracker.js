@@ -194,14 +194,21 @@ class CorridorTracker {
           }
         });
 
-        this.fullSchedule = { dir1: schedDir1, dir0: schedDir0 };
+        if (schedDir1.length === 0 && schedDir0.length === 0) {
+          const c10Static = require('./c10StaticData');
+          this.stopsDir1 = c10Static.C10_STOPS_DIR1;
+          this.stopsDir0 = c10Static.C10_STOPS_DIR0;
+          this.fullSchedule = { dir1: c10Static.C10_TRIPS_DIR1, dir0: c10Static.C10_TRIPS_DIR0 };
+        } else {
+          this.fullSchedule = { dir1: schedDir1, dir0: schedDir0 };
+        }
         this.stopsMapDir1 = new Map();
         this.stopsDir1.forEach(s => this.stopsMapDir1.set(s.gtfsStopId, s));
         this.stopsMapDir0 = new Map();
         this.stopsDir0.forEach(s => this.stopsMapDir0.set(s.gtfsStopId, s));
 
         this.loadCalendarSync();
-        console.log(`[CorridorTracker] Dynamically loaded C-10 (${this.stopsDir1.length} stops dir 1, ${this.stopsDir0.length} stops dir 0) from cache!`);
+        console.log(`[CorridorTracker] Dynamically loaded C-10 (${this.stopsDir1.length} stops dir 1, ${this.stopsDir0.length} stops dir 0, ${this.fullSchedule.dir1.length + this.fullSchedule.dir0.length} trips) from cache!`);
         return;
       } else if (fs.existsSync(atmDir)) {
         const stopsPath = path.join(atmDir, 'stops.txt');

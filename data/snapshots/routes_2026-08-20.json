@@ -1,11 +1,11 @@
 {
   "date": "2026-08-20",
-  "timestamp": 1787229836360,
-  "isoDate": "2026-08-20T12:43:56.360Z",
+  "timestamp": 1787254455213,
+  "isoDate": "2026-08-20T19:34:15.213Z",
   "totalRoutes": 1610,
-  "totalStops": 21,
-  "totalShapes": 22,
-  "totalTrips": 10,
+  "totalStops": 23309,
+  "totalShapes": 24,
+  "totalTrips": 11,
   "routes": [
     {
       "id": "cat_abr_1_urb",

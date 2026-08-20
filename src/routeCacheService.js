@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const c10StaticData = require('./c10StaticData');
 
 // Authoritative Stops and Polylines for Maresme & Exprés.cat lines
 const E11_1_STOPS_DIR0 = [
@@ -238,9 +239,17 @@ class RouteCacheService {
       Object.assign(stopTimesByTrip, s0.stopTimesMap, s1.stopTimesMap);
     });
 
+    // C-10 Coastal Corridor (Barcelona ⇄ Mataró per N-II)
+    shapesMap['SHAPE_GEN_0498_D1'] = c10StaticData.C10_POLYLINE_DIR1;
+    shapesMap['SHAPE_GEN_0498_D0'] = c10StaticData.C10_POLYLINE_DIR0;
+    tripsMap['GEN_0498'] = [...c10StaticData.C10_TRIPS_DIR1, ...c10StaticData.C10_TRIPS_DIR0];
+    [...c10StaticData.C10_TRIPS_DIR1, ...c10StaticData.C10_TRIPS_DIR0].forEach(t => {
+      stopTimesByTrip[t.tripId] = t.stops;
+    });
+
     // Consolidate Stops
     const seenStops = new Set();
-    [...E11_1_STOPS_DIR0, ...E11_1_STOPS_DIR1, ...E11_2_STOPS_DIR0, ...E11_2_STOPS_DIR1].forEach(s => {
+    [...E11_1_STOPS_DIR0, ...E11_1_STOPS_DIR1, ...E11_2_STOPS_DIR0, ...E11_2_STOPS_DIR1, ...c10StaticData.C10_STOPS_DIR1, ...c10StaticData.C10_STOPS_DIR0].forEach(s => {
       if (!seenStops.has(s.id)) {
         seenStops.add(s.id);
         allStops.push(s);

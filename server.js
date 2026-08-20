@@ -154,7 +154,7 @@ app.get('/api/search/stops', (req, res) => {
 
   // 2. Search Maresme Moventis / Casas stops (N80, N81, e11.1, e11.2, C-20, C-30, etc.)
   maresmeTracker.allStopsMap.forEach(s => {
-    if (results.length < 35 && (s.name.toLowerCase().includes(q) || (s.code && s.code.includes(q)))) {
+    if (results.length < 35 && s && ((s.name && s.name.toLowerCase().includes(q)) || (s.code && String(s.code).includes(q)))) {
       results.push({
         lineId: s.lineId,
         lineCode: s.lineCode,
@@ -173,7 +173,7 @@ app.get('/api/search/stops', (req, res) => {
   // 2. Search C-10 stops
   const c10Stops = corridorTracker.getStops('1');
   c10Stops.forEach(s => {
-    if (s.name.toLowerCase().includes(q) || (s.code && s.code.includes(q))) {
+    if (results.length < 35 && s && ((s.name && s.name.toLowerCase().includes(q)) || (s.code && String(s.code).includes(q)))) {
       results.push({
         lineId: 'c10',
         lineCode: 'C-10',
@@ -191,7 +191,7 @@ app.get('/api/search/stops', (req, res) => {
 
   // 3. Search Sagalés stops
   sagalesTracker.allStopsMap.forEach(s => {
-    if (s.name.toLowerCase().includes(q) || (s.code && s.code.includes(q))) {
+    if (results.length < 35 && s && ((s.name && s.name.toLowerCase().includes(q)) || (s.code && String(s.code).includes(q)))) {
       results.push({
         lineId: s.lineId || 'n82',
         lineCode: s.lineCode || 'N82',
@@ -209,7 +209,7 @@ app.get('/api/search/stops', (req, res) => {
 
   // 4. Search AMB Bus stops (TUSGSAL, Avanza, Monbus, Soler i Sauret, Baixbus, Moventis)
   ambTracker.allStopsMap.forEach(s => {
-    if (results.length < 35 && (s.name.toLowerCase().includes(q) || (s.code && s.code.includes(q)))) {
+    if (results.length < 35 && s && ((s.name && s.name.toLowerCase().includes(q)) || (s.code && String(s.code).includes(q)))) {
       results.push({
         lineId: s.lineId,
         lineCode: s.lineCode,
