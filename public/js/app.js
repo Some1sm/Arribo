@@ -1460,13 +1460,15 @@ class TransitApp {
     const targetStopId = this.targetStopId || this.activeLineData?.targetStop?.id || null;
 
     container.innerHTML = departures.slice(0, 8).map((dep, idx) => {
-      const clockTime = (dep.expectedIso && !dep.expectedIso.startsWith('0001-') && !dep.expectedIso.startsWith('1970-'))
+      const rawTime = (dep.expectedIso && !dep.expectedIso.startsWith('0001-') && !dep.expectedIso.startsWith('1970-'))
         ? new Date(dep.expectedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
         : (dep.departureTime || '--:--');
+      const clockTime = String(rawTime).replace(/^[A-Za-zÀ-ÿ\.]+\s*(a\s*les\s*)?/i, '').trim();
 
-      const schedTime = (dep.aimedIso && !dep.aimedIso.startsWith('0001-') && !dep.aimedIso.startsWith('1970-'))
+      const rawSched = (dep.aimedIso && !dep.aimedIso.startsWith('0001-') && !dep.aimedIso.startsWith('1970-'))
         ? new Date(dep.aimedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
         : (dep.isRealTime ? dep.departureTime : null);
+      const schedTime = rawSched ? String(rawSched).replace(/^[A-Za-zÀ-ÿ\.]+\s*(a\s*les\s*)?/i, '').trim() : null;
 
       const isTomorrow = dep.isToday === false && !dep.isRealTime && !dep.isEstimated;
       const isFirstMorning = (dep.isFirstOfDay === true || (idx === 0 && isTomorrow)) && !dep.isRealTime && !dep.isEstimated;
@@ -1482,9 +1484,9 @@ class TransitApp {
       const hasActiveBus = Boolean(resolvedVehicleId || (resolvedLat && resolvedLon) || dep.tripId || dep.isRealTime || dep.isEstimated || (this.activeLineData?.activeBuses?.length > 0 && dep.minutesAway <= 60));
 
       const minsText = isFirstMorning
-        ? `🌅 Demà ${dep.departureTime || clockTime}`
+        ? `🌅 Demà ${clockTime}`
         : (isTomorrow
-            ? `Demà ${dep.departureTime || clockTime}`
+            ? `Demà ${clockTime}`
             : ((dep.minutesAway !== undefined && dep.minutesAway >= 0 && dep.minutesAway <= 180)
                 ? (dep.minutesAway <= 0 ? 'Ara' : (dep.minutesAway === 1 ? '1 min' : `${dep.minutesAway} min`))
                 : `${clockTime}`));
@@ -1519,9 +1521,9 @@ class TransitApp {
             </div>
             <div class="dep-time-sub">
               ${isFirstMorning
-                ? `<span>📅 Primer autobús del matí (${dep.departureTime || clockTime})</span>`
+                ? `<span>📅 Primer autobús del matí (Demà a les ${clockTime})</span>`
                 : (isTomorrow
-                    ? `<span>📅 Horari teòric: <strong class="sched-strong">${dep.departureTime || clockTime}</strong></span>`
+                    ? `<span>📅 Horari teòric: <strong class="sched-strong">Demà a les ${clockTime}</strong></span>`
                     : (schedTime
                         ? `<span>📅 Horari oficial: <strong class="sched-strong">${schedTime}</strong> <span class="dep-delay-note ${dep.delayMins > 0 ? 'delay' : (dep.delayMins < 0 ? 'early' : '')}">(${delayText})</span></span>`
                         : `<span>📅 Horari previst</span>`))}
@@ -2069,13 +2071,15 @@ class TransitApp {
         const stopSeq = currStop?.seq || (currIndex >= 0 ? currIndex + 1 : null);
 
         listEl.innerHTML = deps.slice(0, 10).map((d, idx) => {
-          const estTime = (d.expectedIso && !d.expectedIso.startsWith('0001-') && !d.expectedIso.startsWith('1970-'))
+          const rawTime = (d.expectedIso && !d.expectedIso.startsWith('0001-') && !d.expectedIso.startsWith('1970-'))
             ? new Date(d.expectedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
             : (d.departureTime || '--:--');
+          const estTime = String(rawTime).replace(/^[A-Za-zÀ-ÿ\.]+\s*(a\s*les\s*)?/i, '').trim();
 
-          const schedTime = (d.aimedIso && !d.aimedIso.startsWith('0001-') && !d.aimedIso.startsWith('1970-'))
+          const rawSched = (d.aimedIso && !d.aimedIso.startsWith('0001-') && !d.aimedIso.startsWith('1970-'))
             ? new Date(d.aimedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
             : (d.isEstimated ? estTime : null);
+          const schedTime = rawSched ? String(rawSched).replace(/^[A-Za-zÀ-ÿ\.]+\s*(a\s*les\s*)?/i, '').trim() : null;
 
           const isTomorrow = d.isToday === false && !d.isRealTime && !d.isEstimated;
           const isFirstMorning = (d.isFirstOfDay === true || (idx === 0 && isTomorrow)) && !d.isRealTime && !d.isEstimated;
@@ -2092,9 +2096,9 @@ class TransitApp {
           const hasActiveBus = Boolean(resolvedVehicleId || (resolvedLat && resolvedLon) || d.tripId || d.isRealTime || d.isEstimated || (this.activeLineData?.activeBuses?.length > 0 && d.minutesAway <= 60));
 
           const minsText = isFirstMorning
-            ? `🌅 Demà ${d.departureTime || estTime}`
+            ? `🌅 Demà ${estTime}`
             : (isTomorrow
-                ? `Demà ${d.departureTime || estTime}`
+                ? `Demà ${estTime}`
                 : ((d.minutesAway !== undefined && d.minutesAway >= 0 && d.minutesAway <= 180)
                     ? (d.minutesAway <= 0 ? 'Imminent' : (d.minutesAway === 1 ? '1 min' : `${d.minutesAway} min`))
                     : `${estTime}`));
@@ -2132,9 +2136,9 @@ class TransitApp {
 
                 <div class="dep-time-sub">
                   ${isFirstMorning ? `
-                    <span>📅 Primer autobús del matí (${d.departureTime || estTime})</span>
+                    <span>📅 Primer autobús del matí (Demà a les ${estTime})</span>
                   ` : (isTomorrow ? `
-                    <span>📅 Horari teòric: <strong class="sched-strong">${d.departureTime || estTime}</strong></span>
+                    <span>📅 Horari teòric: <strong class="sched-strong">Demà a les ${estTime}</strong></span>
                   ` : (schedTime ? `
                     <span>📅 Horari oficial: <strong class="sched-strong">${schedTime}</strong> <span class="dep-delay-note ${d.delayMins > 0 ? 'delay' : (d.delayMins < 0 ? 'early' : '')}">(${delayText})</span></span>
                   ` : `<span>📅 Horari previst</span>`))}
