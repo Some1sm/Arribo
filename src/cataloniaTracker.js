@@ -41,8 +41,15 @@ class CataloniaTracker {
       const stopsData = fs.existsSync(stopsCachePath) ? JSON.parse(fs.readFileSync(stopsCachePath, 'utf8')) : [];
       const calData = fs.existsSync(calendarPath) ? JSON.parse(fs.readFileSync(calendarPath, 'utf8')) : {};
       const calDatesData = fs.existsSync(calendarDatesPath) ? JSON.parse(fs.readFileSync(calendarDatesPath, 'utf8')) : {};
+      const shapesPath = path.join(activeCacheDir, 'shapes.json');
+      const shapesData = fs.existsSync(shapesPath) ? JSON.parse(fs.readFileSync(shapesPath, 'utf8')) : {};
 
       this.routes = routesData;
+
+      // Load shapes cache
+      Object.entries(shapesData).forEach(([sId, coords]) => {
+        this.shapesCache.set(sId, coords);
+      });
 
       // Load calendar maps
       Object.entries(calData).forEach(([sId, cal]) => {
@@ -202,15 +209,21 @@ class CataloniaTracker {
     if (direction === 'both' && (stops0.length > 0 && stops1.length > 0)) {
       const details0 = await this.getLineDetails(lineId, '0');
       const details1 = await this.getLineDetails(lineId, '1');
+      const shape0 = route.directions[0]?.shapeId;
+      const shape1 = route.directions[1]?.shapeId;
+      const coords0 = (shape0 && this.shapesCache.get(shape0)) || details0.stops.map(s => [s.lat, s.lon]);
+      const coords1 = (shape1 && this.shapesCache.get(shape1)) || details1.stops.map(s => [s.lat, s.lon]);
       return {
         ...details0,
         direction: 'both',
+        coords: coords0,
+        polyline: coords0,
         secondaryStops: details1.stops,
-        secondaryCoords: details1.coords,
+        secondaryCoords: coords1,
         secondaryColor: '#38bdf8',
         allDirections: [
-          { dirId: '0', name: route.directions[0]?.name || 'Sentit 1', stops: details0.stops, coords: details0.coords },
-          { dirId: '1', name: route.directions[1]?.name || 'Sentit 2', stops: details1.stops, coords: details1.coords }
+          { dirId: '0', name: route.directions[0]?.name || 'Sentit 1', stops: details0.stops, coords: coords0 },
+          { dirId: '1', name: route.directions[1]?.name || 'Sentit 2', stops: details1.stops, coords: coords1 }
         ],
         activeBuses: [...(details0.activeBuses || []), ...(details1.activeBuses || [])],
         totalActiveBuses: (details0.activeBuses?.length || 0) + (details1.activeBuses?.length || 0)
@@ -229,7 +242,7 @@ class CataloniaTracker {
       ];
     }
     const dirMeta = route.directions.find(d => String(d.dirId) === dirIdx) || route.directions[0] || { name: 'Cap a Destí' };
-    const polylineCoords = stops.map(s => [s.lat, s.lon]);
+    const polylineCoords = (dirMeta.shapeId && this.shapesCache.get(dirMeta.shapeId)) || stops.map(s => [s.lat, s.lon]);
 
     // Check scheduled service for today
     const now = new Date();

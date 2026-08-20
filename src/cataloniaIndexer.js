@@ -86,7 +86,7 @@ class CataloniaIndexer {
   }
 
   async buildIndex() {
-    console.log('[CataloniaIndexer] Building unified Catalonia GTFS index with calendars & real timetables...');
+    console.log('[CataloniaIndexer] Building unified Catalonia GTFS index with canonical stops & road shapes...');
     const start = Date.now();
 
     if (!fs.existsSync(this.cacheDir)) {
@@ -98,6 +98,7 @@ class CataloniaIndexer {
     const routeDetailsPath = path.join(this.cacheDir, 'route_details.json');
     const calendarCachePath = path.join(this.cacheDir, 'calendar.json');
     const calendarDatesCachePath = path.join(this.cacheDir, 'calendar_dates.json');
+    const shapesCachePath = path.join(this.cacheDir, 'shapes.json');
 
     // 1. Index Calendar & Calendar Dates
     const calendar = {};
@@ -273,7 +274,8 @@ class CataloniaIndexer {
 
     // 5. Index Trips & Direction Associations
     const tripToRoute = new Map();
-    const routeTrips = new Map();
+    const routeTrips = new Map(); // routeId -> dirId -> Array of tripIds
+    const usedShapeIds = new Set();
     const tStream = fs.createReadStream(path.join(this.gtfsDir, 'trips.txt'));
     const tRl = readline.createInterface({ input: tStream, crlfDelay: Infinity });
     for await (const line of tRl) {
@@ -286,6 +288,7 @@ class CataloniaIndexer {
         const shapeId = parts[6];
         const serviceId = parts[9] || parts[1];
 
+        if (shapeId) usedShapeIds.add(shapeId);
         tripToRoute.set(tripId, { routeId, dirId, headsign, shapeId, serviceId });
         if (!routeTrips.has(routeId)) routeTrips.set(routeId, new Map());
         const dirMap = routeTrips.get(routeId);
@@ -296,9 +299,112 @@ class CataloniaIndexer {
       }
     }
 
-    // Attach directions to routes
+    // 6. Index Shapes from shapes.txt (exact road polylines)
+    const shapesRawMap = new Map();
+    const shapesFile = path.join(this.gtfsDir, 'shapes.txt');
+    if (fs.existsSync(shapesFile)) {
+      const shStream = fs.createReadStream(shapesFile);
+      const shRl = readline.createInterface({ input: shStream, crlfDelay: Infinity });
+      for await (const line of shRl) {
+        const parts = line.split(',');
+        if (parts[0] !== 'shape_id') {
+          const sId = parts[0];
+          if (usedShapeIds.has(sId)) {
+            const lat = parseFloat(parts[1]);
+            const lon = parseFloat(parts[2]);
+            const seq = parseInt(parts[3] || '0', 10);
+            if (!shapesRawMap.has(sId)) shapesRawMap.set(sId, []);
+            shapesRawMap.get(sId).push({ seq, lat, lon });
+          }
+        }
+      }
+    }
+
+    const shapesOutput = {};
+    shapesRawMap.forEach((pts, sId) => {
+      shapesOutput[sId] = pts.sort((a, b) => a.seq - b.seq).map(p => [Number(p.lat.toFixed(5)), Number(p.lon.toFixed(5))]);
+    });
+
+    // 7. Index Route Stops & Departure Timetables from stop_times.txt
+    const tripStopsMap = new Map(); // tripId -> Array of { seq, stopId, depTime }
+    const stStream = fs.createReadStream(path.join(this.gtfsDir, 'stop_times.txt'));
+    const stRl = readline.createInterface({ input: stStream, crlfDelay: Infinity });
+    for await (const line of stRl) {
+      const parts = line.split(',');
+      if (parts[0] !== 'trip_id') {
+        const tripId = parts[0];
+        const depTime = (parts[2] || '').trim().substring(0, 5);
+        const stopId = parts[3];
+        const seq = parseInt(parts[4] || '0', 10);
+
+        if (tripToRoute.has(tripId)) {
+          if (!tripStopsMap.has(tripId)) tripStopsMap.set(tripId, []);
+          tripStopsMap.get(tripId).push({ seq, stopId, depTime });
+        }
+      }
+    }
+
+    // Build route details lookup using canonical trip patterns
+    const routeDetails = {};
     routes.forEach(r => {
+      const dirStops = {};
+      const schedulesByDirection = {};
       const dirMap = routeTrips.get(r.routeId);
+
+      ['0', '1'].forEach(dId => {
+        const dMeta = dirMap?.get(dId);
+        const tripIds = dMeta?.trips || [];
+
+        if (tripIds.length > 0) {
+          // 1. Build schedule for this direction
+          const schedList = [];
+          tripIds.forEach(tId => {
+            const meta = tripToRoute.get(tId);
+            const stops = tripStopsMap.get(tId) || [];
+            if (stops.length > 0) {
+              const sorted = stops.sort((a, b) => a.seq - b.seq);
+              const originDep = sorted[0]?.depTime;
+              if (originDep) {
+                schedList.push({
+                  tripId: tId,
+                  serviceId: meta.serviceId,
+                  departureTime: originDep
+                });
+              }
+            }
+          });
+          schedulesByDirection[dId] = schedList.sort((a, b) => a.departureTime.localeCompare(b.departureTime));
+
+          // 2. Select canonical trip with the most complete stop sequence
+          let canonicalTripId = tripIds[0];
+          let maxStops = 0;
+          tripIds.forEach(tId => {
+            const count = tripStopsMap.get(tId)?.length || 0;
+            if (count > maxStops) {
+              maxStops = count;
+              canonicalTripId = tId;
+            }
+          });
+
+          const canonicalStops = (tripStopsMap.get(canonicalTripId) || []).sort((a, b) => a.seq - b.seq);
+          dirStops[dId] = canonicalStops.map((s, idx) => {
+            const sObj = stopsMap.get(s.stopId);
+            if (!sObj) return null;
+            return {
+              id: sObj.id,
+              code: sObj.code,
+              mouteStopId: sObj.id,
+              name: sObj.name,
+              lat: sObj.lat,
+              lon: sObj.lon,
+              seq: idx + 1,
+              zone: sObj.zone
+            };
+          }).filter(Boolean);
+        }
+      });
+
+      // Update directions list with accurate names and shape IDs
       if (dirMap) {
         r.directions = Array.from(dirMap.entries()).map(([dId, dMeta]) => ({
           dirId: String(dId),
@@ -309,95 +415,6 @@ class CataloniaIndexer {
       if (r.directions.length === 0) {
         r.directions = [{ dirId: '0', name: 'Cap a Destí', shapeId: null }];
       }
-    });
-
-    // 6. Index Route Stops & Departure Timetables from stop_times.txt
-    const routeStopsMap = new Map(); // routeId_dirId -> stopId -> seq
-    const tripFirstStop = new Map(); // tripId -> { seq, depTime }
-    const stStream = fs.createReadStream(path.join(this.gtfsDir, 'stop_times.txt'));
-    const stRl = readline.createInterface({ input: stStream, crlfDelay: Infinity });
-    for await (const line of stRl) {
-      const parts = line.split(',');
-      if (parts[0] !== 'trip_id') {
-        const tripId = parts[0];
-        const depTime = (parts[2] || '').trim().substring(0, 5);
-        const stopId = parts[3];
-        const seq = parseInt(parts[4] || '0', 10);
-        const meta = tripToRoute.get(tripId);
-        if (meta) {
-          const key = `${meta.routeId}_${meta.dirId}`;
-          if (!routeStopsMap.has(key)) {
-            routeStopsMap.set(key, new Map());
-          }
-          const sMap = routeStopsMap.get(key);
-          if (!sMap.has(stopId)) {
-            sMap.set(stopId, seq);
-          }
-
-          if (depTime) {
-            if (!tripFirstStop.has(tripId) || seq < tripFirstStop.get(tripId).seq) {
-              tripFirstStop.set(tripId, { seq, depTime });
-            }
-          }
-        }
-      }
-    }
-
-    // Populate routeSchedulesMap from all indexed trip first stops
-    const routeSchedulesMap = new Map(); // routeId -> dirId -> Array of { tripId, serviceId, departureTime }
-    tripFirstStop.forEach((val, tripId) => {
-      const meta = tripToRoute.get(tripId);
-      if (meta) {
-        if (!routeSchedulesMap.has(meta.routeId)) {
-          routeSchedulesMap.set(meta.routeId, new Map());
-        }
-        const rDirMap = routeSchedulesMap.get(meta.routeId);
-        if (!rDirMap.has(meta.dirId)) {
-          rDirMap.set(meta.dirId, []);
-        }
-        const sList = rDirMap.get(meta.dirId);
-        sList.push({
-          tripId,
-          serviceId: meta.serviceId,
-          departureTime: val.depTime
-        });
-      }
-    });
-
-    // Build route details lookup
-    const routeDetails = {};
-    routes.forEach(r => {
-      const dirStops = {};
-      const schedulesByDirection = {};
-      ['0', '1'].forEach(dId => {
-        const key = `${r.routeId}_${dId}`;
-        const sMap = routeStopsMap.get(key);
-        if (sMap) {
-          const sortedStops = Array.from(sMap.entries())
-            .sort((a, b) => a[1] - b[1])
-            .map(([sId, seq], idx) => {
-              const sObj = stopsMap.get(sId);
-              if (!sObj) return null;
-              return {
-                id: sObj.id,
-                code: sObj.code,
-                mouteStopId: sObj.id,
-                name: sObj.name,
-                lat: sObj.lat,
-                lon: sObj.lon,
-                seq: idx + 1,
-                zone: sObj.zone
-              };
-            })
-            .filter(Boolean);
-          dirStops[dId] = sortedStops;
-        }
-
-        const rSchedDir = routeSchedulesMap.get(r.routeId);
-        const schedList = rSchedDir ? (rSchedDir.get(dId) || []) : [];
-        // Sort timetable chronologically
-        schedulesByDirection[dId] = schedList.sort((a, b) => a.departureTime.localeCompare(b.departureTime));
-      });
 
       routeDetails[r.id] = {
         ...r,
@@ -409,12 +426,13 @@ class CataloniaIndexer {
     // Save JSON caches
     fs.writeFileSync(calendarCachePath, JSON.stringify(calendar));
     fs.writeFileSync(calendarDatesCachePath, JSON.stringify(calendarExceptions));
+    fs.writeFileSync(shapesCachePath, JSON.stringify(shapesOutput));
     fs.writeFileSync(routesCachePath, JSON.stringify(routes));
     fs.writeFileSync(stopsCachePath, JSON.stringify(Array.from(stopsMap.values())));
     fs.writeFileSync(routeDetailsPath, JSON.stringify(routeDetails));
 
-    console.log(`[CataloniaIndexer] Finished in ${Date.now() - start}ms! ${routes.length} routes, ${stopsMap.size} stops, full calendar & timetables indexed.`);
-    return { routes, stops: Array.from(stopsMap.values()), routeDetails, calendar, calendarExceptions };
+    console.log(`[CataloniaIndexer] Finished in ${Date.now() - start}ms! ${routes.length} routes, ${stopsMap.size} stops, ${Object.keys(shapesOutput).length} road shapes indexed.`);
+    return { routes, stops: Array.from(stopsMap.values()), routeDetails, shapes: shapesOutput };
   }
 }
 
