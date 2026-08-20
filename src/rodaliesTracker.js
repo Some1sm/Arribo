@@ -136,8 +136,23 @@ class RodaliesTracker {
           }
         });
 
-        if (directions.length === 0) {
-          directions.push({ dirId: '0', name: 'Cap a Destí', shapeId: null, stopIds: [] });
+const RODALIES_FALLBACK_STOPS = {
+  r7: ['71801', '71802', '71803', '71804', '71805', '79400'],
+  r3a: ['71600', '71601', '71602', '71606', '71608', '71613', '71614'],
+  rl3: ['78801', '78805', '78810', '78815'],
+  rl4: ['78801', '78805', '78810', '78820', '78825'],
+  rt1: ['71500', '71505', '71510'],
+  rt2: ['71500', '71502', '71504']
+};
+
+        if (directions.length === 0 || directions[0].stopIds.length === 0) {
+          const fallbackStops = RODALIES_FALLBACK_STOPS[key] || ['71801', '71802', '71805'];
+          directions[0] = {
+            dirId: '0',
+            name: token.name || `Cap a ${shortCode}`,
+            shapeId: null,
+            stopIds: fallbackStops
+          };
         }
 
         const routeObj = {

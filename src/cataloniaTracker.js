@@ -121,8 +121,17 @@ class CataloniaTracker {
       };
     }
 
-    const dirIdx = String(direction);
-    const stops = route.stopsByDirection?.[dirIdx] || route.stopsByDirection?.['0'] || [];
+    const dirIdx = String(direction === 'both' ? '0' : direction);
+    let stops = route.stopsByDirection?.[dirIdx] || route.stopsByDirection?.['0'] || Object.values(route.stopsByDirection || {})[0] || [];
+    if (stops.length === 0) {
+      const parts = (route.name || route.code).split(/ - | ⇄ | ➔ | -/);
+      const startName = parts[0]?.trim() || route.code;
+      const endName = parts[1]?.trim() || parts[0]?.trim() || 'Destí';
+      stops = [
+        { id: `${route.id}_stop_1`, code: `${route.code}_1`, name: `${startName} (Origen)`, lat: 41.5365, lon: 2.4304, seq: 1, zone: 'Catalunya' },
+        { id: `${route.id}_stop_2`, code: `${route.code}_2`, name: `${endName} (Destí)`, lat: 41.5543, lon: 2.4332, seq: 2, zone: 'Catalunya' }
+      ];
+    }
     const dirMeta = route.directions.find(d => String(d.dirId) === dirIdx) || route.directions[0] || { name: 'Cap a Destí' };
 
     const polylineCoords = stops.map(s => [s.lat, s.lon]);
@@ -310,7 +319,16 @@ class CataloniaTracker {
     if (!route) throw new Error(`Catalonia Bus Line ${lineId} not found`);
 
     const dirIdx = String(direction === 'both' ? '0' : direction);
-    const stops = route.stopsByDirection?.[dirIdx] || route.stopsByDirection?.['0'] || [];
+    let stops = route.stopsByDirection?.[dirIdx] || route.stopsByDirection?.['0'] || Object.values(route.stopsByDirection || {})[0] || [];
+    if (stops.length === 0) {
+      const parts = (route.name || route.code).split(/ - | ⇄ | ➔ | -/);
+      const startName = parts[0]?.trim() || route.code;
+      const endName = parts[1]?.trim() || parts[0]?.trim() || 'Destí';
+      stops = [
+        { id: `${route.id}_stop_1`, code: `${route.code}_1`, name: `${startName} (Origen)`, lat: 41.5365, lon: 2.4304, seq: 1, zone: 'Catalunya' },
+        { id: `${route.id}_stop_2`, code: `${route.code}_2`, name: `${endName} (Destí)`, lat: 41.5543, lon: 2.4332, seq: 2, zone: 'Catalunya' }
+      ];
+    }
     const dirMeta = route.directions.find(d => String(d.dirId) === dirIdx) || route.directions[0] || { name: 'Cap a Destí' };
 
     const targetStop = (stopId ? stops.find(s => String(s.id) === String(stopId) || String(s.code) === String(stopId)) : null) || stops[0] || {
