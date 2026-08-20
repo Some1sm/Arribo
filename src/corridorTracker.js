@@ -115,6 +115,26 @@ class CorridorTracker {
       this.routePolylineDir0 = [...c10Static.C10_POLYLINE_DIR0];
       this.fullSchedule = { dir1: [...c10Static.C10_TRIPS_DIR1], dir0: [...c10Static.C10_TRIPS_DIR0] };
 
+      // Load authoritative high-resolution road shapes from SQLite shapes database
+      const shapesDbPath = path.join(this.dataDir, 'shapes.db');
+      if (fs.existsSync(shapesDbPath)) {
+        try {
+          const sqlite = require('node:sqlite');
+          const shapesDb = new sqlite.DatabaseSync(shapesDbPath);
+          const stmt = shapesDb.prepare('SELECT coords FROM shapes WHERE shape_id = ?');
+          const row1 = stmt.get('GEN_24222');
+          if (row1?.coords) {
+            this.routePolylineDir1 = JSON.parse(row1.coords);
+          }
+          const row0 = stmt.get('GEN_22906');
+          if (row0?.coords) {
+            this.routePolylineDir0 = JSON.parse(row0.coords);
+          }
+        } catch (err) {
+          console.warn('[CorridorTracker] Could not load high-res shapes from SQLite:', err.message);
+        }
+      }
+
       this.stopsMapDir1 = new Map();
       this.stopsDir1.forEach(s => this.stopsMapDir1.set(s.gtfsStopId, s));
       this.stopsMapDir0 = new Map();

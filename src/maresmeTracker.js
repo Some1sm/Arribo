@@ -137,6 +137,27 @@ const MARESME_LINES_CONFIG = [
   }
 ];
 
+const MARESME_CANONICAL_SHAPES = {
+  'e111_0': 'GEN_24318',
+  'e111_1': 'GEN_23685',
+  'e112_0': 'GEN_18664',
+  'e112_1': 'GEN_18716',
+  'n80_0': 'GEN_31875',
+  'n80_1': 'GEN_31875',
+  'n81_0': 'GEN_23494',
+  'n81_1': 'GEN_23494',
+  'c20_0': 'GEN_25347',
+  'c20_1': 'GEN_22065',
+  'c30_0': 'GEN_23682',
+  'c30_1': 'GEN_22381',
+  'c3_0': 'GEN_17923',
+  'c3_1': 'GEN_22652',
+  'c12_0': 'GEN_18107',
+  'c12_1': 'GEN_18074',
+  'c14_0': 'GEN_17988',
+  'c14_1': 'GEN_22907'
+};
+
 class MaresmeTracker {
   constructor() {
     this.agencyTimezone = 'Europe/Madrid';
@@ -146,8 +167,33 @@ class MaresmeTracker {
     this.tripsMap = new Map();
     this.stopTimesByTrip = new Map();
     this.allStopsMap = new Map();
+    this.shapesDb = null;
+    this.getShapeStmt = null;
     this.isLoaded = false;
     this.loadData();
+  }
+
+  getShapeCoords(shapeId) {
+    if (!shapeId) return null;
+    if (!this.getShapeStmt) {
+      try {
+        const sqlite = require('node:sqlite');
+        const dbPath = path.join(__dirname, '..', 'data', 'shapes.db');
+        if (fs.existsSync(dbPath)) {
+          this.shapesDb = new sqlite.DatabaseSync(dbPath);
+          this.getShapeStmt = this.shapesDb.prepare('SELECT coords FROM shapes WHERE shape_id = ?');
+        }
+      } catch (e) {}
+    }
+    if (this.getShapeStmt) {
+      try {
+        const row = this.getShapeStmt.get(shapeId);
+        if (row?.coords) {
+          return JSON.parse(row.coords);
+        }
+      } catch (e) {}
+    }
+    return null;
   }
 
   loadData() {
@@ -356,7 +402,14 @@ class MaresmeTracker {
     });
 
     let polylineCoords = [];
-    if (chosenTrip?.shapeId && this.shapesMap.has(chosenTrip.shapeId)) {
+    const canonicalShape = MARESME_CANONICAL_SHAPES[`${lineConfig.id}_${dir}`] || chosenTrip?.shapeId;
+    if (canonicalShape) {
+      const sqliteCoords = this.getShapeCoords(canonicalShape);
+      if (sqliteCoords && sqliteCoords.length > 0) {
+        polylineCoords = sqliteCoords;
+      }
+    }
+    if (polylineCoords.length === 0 && chosenTrip?.shapeId && this.shapesMap.has(chosenTrip.shapeId)) {
       polylineCoords = this.shapesMap.get(chosenTrip.shapeId).map(p => [p.lat, p.lon]);
     }
     if (polylineCoords.length === 0 && stops.length > 0) {
