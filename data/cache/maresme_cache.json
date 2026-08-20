@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "createdAt": "2026-08-20T19:34:15.136Z",
+  "createdAt": "2026-08-20T19:38:47.720Z",
   "tripsMap": {
     "GEN_0496": [
       {
@@ -2058,8 +2058,346 @@
         "shapeId": "SHAPE_GEN_0497_D1"
       }
     ],
-    "GEN_0109": [],
-    "GEN_0147": [],
+    "GEN_0109": [
+      {
+        "tripId": "TRIP_GEN_0109_D0_2300",
+        "routeId": "GEN_0109",
+        "dirId": "0",
+        "shapeId": "SHAPE_GEN_0109_D0"
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_2330",
+        "routeId": "GEN_0109",
+        "dirId": "0",
+        "shapeId": "SHAPE_GEN_0109_D0"
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0000",
+        "routeId": "GEN_0109",
+        "dirId": "0",
+        "shapeId": "SHAPE_GEN_0109_D0"
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0030",
+        "routeId": "GEN_0109",
+        "dirId": "0",
+        "shapeId": "SHAPE_GEN_0109_D0"
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0100",
+        "routeId": "GEN_0109",
+        "dirId": "0",
+        "shapeId": "SHAPE_GEN_0109_D0"
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0130",
+        "routeId": "GEN_0109",
+        "dirId": "0",
+        "shapeId": "SHAPE_GEN_0109_D0"
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0200",
+        "routeId": "GEN_0109",
+        "dirId": "0",
+        "shapeId": "SHAPE_GEN_0109_D0"
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0230",
+        "routeId": "GEN_0109",
+        "dirId": "0",
+        "shapeId": "SHAPE_GEN_0109_D0"
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0300",
+        "routeId": "GEN_0109",
+        "dirId": "0",
+        "shapeId": "SHAPE_GEN_0109_D0"
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0330",
+        "routeId": "GEN_0109",
+        "dirId": "0",
+        "shapeId": "SHAPE_GEN_0109_D0"
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0400",
+        "routeId": "GEN_0109",
+        "dirId": "0",
+        "shapeId": "SHAPE_GEN_0109_D0"
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0430",
+        "routeId": "GEN_0109",
+        "dirId": "0",
+        "shapeId": "SHAPE_GEN_0109_D0"
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0500",
+        "routeId": "GEN_0109",
+        "dirId": "0",
+        "shapeId": "SHAPE_GEN_0109_D0"
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0530",
+        "routeId": "GEN_0109",
+        "dirId": "0",
+        "shapeId": "SHAPE_GEN_0109_D0"
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_2300",
+        "routeId": "GEN_0109",
+        "dirId": "1",
+        "shapeId": "SHAPE_GEN_0109_D1"
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_2330",
+        "routeId": "GEN_0109",
+        "dirId": "1",
+        "shapeId": "SHAPE_GEN_0109_D1"
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0000",
+        "routeId": "GEN_0109",
+        "dirId": "1",
+        "shapeId": "SHAPE_GEN_0109_D1"
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0030",
+        "routeId": "GEN_0109",
+        "dirId": "1",
+        "shapeId": "SHAPE_GEN_0109_D1"
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0100",
+        "routeId": "GEN_0109",
+        "dirId": "1",
+        "shapeId": "SHAPE_GEN_0109_D1"
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0130",
+        "routeId": "GEN_0109",
+        "dirId": "1",
+        "shapeId": "SHAPE_GEN_0109_D1"
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0200",
+        "routeId": "GEN_0109",
+        "dirId": "1",
+        "shapeId": "SHAPE_GEN_0109_D1"
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0230",
+        "routeId": "GEN_0109",
+        "dirId": "1",
+        "shapeId": "SHAPE_GEN_0109_D1"
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0300",
+        "routeId": "GEN_0109",
+        "dirId": "1",
+        "shapeId": "SHAPE_GEN_0109_D1"
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0330",
+        "routeId": "GEN_0109",
+        "dirId": "1",
+        "shapeId": "SHAPE_GEN_0109_D1"
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0400",
+        "routeId": "GEN_0109",
+        "dirId": "1",
+        "shapeId": "SHAPE_GEN_0109_D1"
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0430",
+        "routeId": "GEN_0109",
+        "dirId": "1",
+        "shapeId": "SHAPE_GEN_0109_D1"
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0500",
+        "routeId": "GEN_0109",
+        "dirId": "1",
+        "shapeId": "SHAPE_GEN_0109_D1"
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0530",
+        "routeId": "GEN_0109",
+        "dirId": "1",
+        "shapeId": "SHAPE_GEN_0109_D1"
+      }
+    ],
+    "GEN_0147": [
+      {
+        "tripId": "TRIP_GEN_0147_D0_2300",
+        "routeId": "GEN_0147",
+        "dirId": "0",
+        "shapeId": "SHAPE_GEN_0147_D0"
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_2330",
+        "routeId": "GEN_0147",
+        "dirId": "0",
+        "shapeId": "SHAPE_GEN_0147_D0"
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0000",
+        "routeId": "GEN_0147",
+        "dirId": "0",
+        "shapeId": "SHAPE_GEN_0147_D0"
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0030",
+        "routeId": "GEN_0147",
+        "dirId": "0",
+        "shapeId": "SHAPE_GEN_0147_D0"
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0100",
+        "routeId": "GEN_0147",
+        "dirId": "0",
+        "shapeId": "SHAPE_GEN_0147_D0"
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0130",
+        "routeId": "GEN_0147",
+        "dirId": "0",
+        "shapeId": "SHAPE_GEN_0147_D0"
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0200",
+        "routeId": "GEN_0147",
+        "dirId": "0",
+        "shapeId": "SHAPE_GEN_0147_D0"
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0230",
+        "routeId": "GEN_0147",
+        "dirId": "0",
+        "shapeId": "SHAPE_GEN_0147_D0"
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0300",
+        "routeId": "GEN_0147",
+        "dirId": "0",
+        "shapeId": "SHAPE_GEN_0147_D0"
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0330",
+        "routeId": "GEN_0147",
+        "dirId": "0",
+        "shapeId": "SHAPE_GEN_0147_D0"
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0400",
+        "routeId": "GEN_0147",
+        "dirId": "0",
+        "shapeId": "SHAPE_GEN_0147_D0"
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0430",
+        "routeId": "GEN_0147",
+        "dirId": "0",
+        "shapeId": "SHAPE_GEN_0147_D0"
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0500",
+        "routeId": "GEN_0147",
+        "dirId": "0",
+        "shapeId": "SHAPE_GEN_0147_D0"
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0530",
+        "routeId": "GEN_0147",
+        "dirId": "0",
+        "shapeId": "SHAPE_GEN_0147_D0"
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_2300",
+        "routeId": "GEN_0147",
+        "dirId": "1",
+        "shapeId": "SHAPE_GEN_0147_D1"
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_2330",
+        "routeId": "GEN_0147",
+        "dirId": "1",
+        "shapeId": "SHAPE_GEN_0147_D1"
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0000",
+        "routeId": "GEN_0147",
+        "dirId": "1",
+        "shapeId": "SHAPE_GEN_0147_D1"
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0030",
+        "routeId": "GEN_0147",
+        "dirId": "1",
+        "shapeId": "SHAPE_GEN_0147_D1"
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0100",
+        "routeId": "GEN_0147",
+        "dirId": "1",
+        "shapeId": "SHAPE_GEN_0147_D1"
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0130",
+        "routeId": "GEN_0147",
+        "dirId": "1",
+        "shapeId": "SHAPE_GEN_0147_D1"
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0200",
+        "routeId": "GEN_0147",
+        "dirId": "1",
+        "shapeId": "SHAPE_GEN_0147_D1"
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0230",
+        "routeId": "GEN_0147",
+        "dirId": "1",
+        "shapeId": "SHAPE_GEN_0147_D1"
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0300",
+        "routeId": "GEN_0147",
+        "dirId": "1",
+        "shapeId": "SHAPE_GEN_0147_D1"
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0330",
+        "routeId": "GEN_0147",
+        "dirId": "1",
+        "shapeId": "SHAPE_GEN_0147_D1"
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0400",
+        "routeId": "GEN_0147",
+        "dirId": "1",
+        "shapeId": "SHAPE_GEN_0147_D1"
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0430",
+        "routeId": "GEN_0147",
+        "dirId": "1",
+        "shapeId": "SHAPE_GEN_0147_D1"
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0500",
+        "routeId": "GEN_0147",
+        "dirId": "1",
+        "shapeId": "SHAPE_GEN_0147_D1"
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0530",
+        "routeId": "GEN_0147",
+        "dirId": "1",
+        "shapeId": "SHAPE_GEN_0147_D1"
+      }
+    ],
     "GEN_0501": [
       {
         "tripId": "TRIP_GEN_0501_D0_0700",
@@ -57208,6 +57546,2862 @@
         "tripId": "TRIP_GEN_0497_D1_2215",
         "arr": "22:48:00",
         "dep": "22:48:00",
+        "stopId": "10008001",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0109_D0_2300": [
+      {
+        "tripId": "TRIP_GEN_0109_D0_2300",
+        "arr": "23:00:00",
+        "dep": "23:00:00",
+        "stopId": "10008001",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_2300",
+        "arr": "23:03:00",
+        "dep": "23:03:00",
+        "stopId": "10008002",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_2300",
+        "arr": "23:06:00",
+        "dep": "23:06:00",
+        "stopId": "10008003",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_2300",
+        "arr": "23:24:00",
+        "dep": "23:24:00",
+        "stopId": "10037200",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_2300",
+        "arr": "23:27:00",
+        "dep": "23:27:00",
+        "stopId": "10026720",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_2300",
+        "arr": "23:30:00",
+        "dep": "23:30:00",
+        "stopId": "10026730",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_2300",
+        "arr": "23:33:00",
+        "dep": "23:33:00",
+        "stopId": "10026735",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0109_D0_2330": [
+      {
+        "tripId": "TRIP_GEN_0109_D0_2330",
+        "arr": "23:30:00",
+        "dep": "23:30:00",
+        "stopId": "10008001",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_2330",
+        "arr": "23:33:00",
+        "dep": "23:33:00",
+        "stopId": "10008002",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_2330",
+        "arr": "23:36:00",
+        "dep": "23:36:00",
+        "stopId": "10008003",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_2330",
+        "arr": "23:54:00",
+        "dep": "23:54:00",
+        "stopId": "10037200",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_2330",
+        "arr": "23:57:00",
+        "dep": "23:57:00",
+        "stopId": "10026720",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_2330",
+        "arr": "00:00:00",
+        "dep": "00:00:00",
+        "stopId": "10026730",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_2330",
+        "arr": "00:03:00",
+        "dep": "00:03:00",
+        "stopId": "10026735",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0109_D0_0000": [
+      {
+        "tripId": "TRIP_GEN_0109_D0_0000",
+        "arr": "00:00:00",
+        "dep": "00:00:00",
+        "stopId": "10008001",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0000",
+        "arr": "00:03:00",
+        "dep": "00:03:00",
+        "stopId": "10008002",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0000",
+        "arr": "00:06:00",
+        "dep": "00:06:00",
+        "stopId": "10008003",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0000",
+        "arr": "00:24:00",
+        "dep": "00:24:00",
+        "stopId": "10037200",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0000",
+        "arr": "00:27:00",
+        "dep": "00:27:00",
+        "stopId": "10026720",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0000",
+        "arr": "00:30:00",
+        "dep": "00:30:00",
+        "stopId": "10026730",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0000",
+        "arr": "00:33:00",
+        "dep": "00:33:00",
+        "stopId": "10026735",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0109_D0_0030": [
+      {
+        "tripId": "TRIP_GEN_0109_D0_0030",
+        "arr": "00:30:00",
+        "dep": "00:30:00",
+        "stopId": "10008001",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0030",
+        "arr": "00:33:00",
+        "dep": "00:33:00",
+        "stopId": "10008002",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0030",
+        "arr": "00:36:00",
+        "dep": "00:36:00",
+        "stopId": "10008003",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0030",
+        "arr": "00:54:00",
+        "dep": "00:54:00",
+        "stopId": "10037200",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0030",
+        "arr": "00:57:00",
+        "dep": "00:57:00",
+        "stopId": "10026720",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0030",
+        "arr": "01:00:00",
+        "dep": "01:00:00",
+        "stopId": "10026730",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0030",
+        "arr": "01:03:00",
+        "dep": "01:03:00",
+        "stopId": "10026735",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0109_D0_0100": [
+      {
+        "tripId": "TRIP_GEN_0109_D0_0100",
+        "arr": "01:00:00",
+        "dep": "01:00:00",
+        "stopId": "10008001",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0100",
+        "arr": "01:03:00",
+        "dep": "01:03:00",
+        "stopId": "10008002",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0100",
+        "arr": "01:06:00",
+        "dep": "01:06:00",
+        "stopId": "10008003",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0100",
+        "arr": "01:24:00",
+        "dep": "01:24:00",
+        "stopId": "10037200",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0100",
+        "arr": "01:27:00",
+        "dep": "01:27:00",
+        "stopId": "10026720",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0100",
+        "arr": "01:30:00",
+        "dep": "01:30:00",
+        "stopId": "10026730",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0100",
+        "arr": "01:33:00",
+        "dep": "01:33:00",
+        "stopId": "10026735",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0109_D0_0130": [
+      {
+        "tripId": "TRIP_GEN_0109_D0_0130",
+        "arr": "01:30:00",
+        "dep": "01:30:00",
+        "stopId": "10008001",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0130",
+        "arr": "01:33:00",
+        "dep": "01:33:00",
+        "stopId": "10008002",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0130",
+        "arr": "01:36:00",
+        "dep": "01:36:00",
+        "stopId": "10008003",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0130",
+        "arr": "01:54:00",
+        "dep": "01:54:00",
+        "stopId": "10037200",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0130",
+        "arr": "01:57:00",
+        "dep": "01:57:00",
+        "stopId": "10026720",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0130",
+        "arr": "02:00:00",
+        "dep": "02:00:00",
+        "stopId": "10026730",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0130",
+        "arr": "02:03:00",
+        "dep": "02:03:00",
+        "stopId": "10026735",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0109_D0_0200": [
+      {
+        "tripId": "TRIP_GEN_0109_D0_0200",
+        "arr": "02:00:00",
+        "dep": "02:00:00",
+        "stopId": "10008001",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0200",
+        "arr": "02:03:00",
+        "dep": "02:03:00",
+        "stopId": "10008002",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0200",
+        "arr": "02:06:00",
+        "dep": "02:06:00",
+        "stopId": "10008003",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0200",
+        "arr": "02:24:00",
+        "dep": "02:24:00",
+        "stopId": "10037200",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0200",
+        "arr": "02:27:00",
+        "dep": "02:27:00",
+        "stopId": "10026720",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0200",
+        "arr": "02:30:00",
+        "dep": "02:30:00",
+        "stopId": "10026730",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0200",
+        "arr": "02:33:00",
+        "dep": "02:33:00",
+        "stopId": "10026735",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0109_D0_0230": [
+      {
+        "tripId": "TRIP_GEN_0109_D0_0230",
+        "arr": "02:30:00",
+        "dep": "02:30:00",
+        "stopId": "10008001",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0230",
+        "arr": "02:33:00",
+        "dep": "02:33:00",
+        "stopId": "10008002",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0230",
+        "arr": "02:36:00",
+        "dep": "02:36:00",
+        "stopId": "10008003",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0230",
+        "arr": "02:54:00",
+        "dep": "02:54:00",
+        "stopId": "10037200",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0230",
+        "arr": "02:57:00",
+        "dep": "02:57:00",
+        "stopId": "10026720",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0230",
+        "arr": "03:00:00",
+        "dep": "03:00:00",
+        "stopId": "10026730",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0230",
+        "arr": "03:03:00",
+        "dep": "03:03:00",
+        "stopId": "10026735",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0109_D0_0300": [
+      {
+        "tripId": "TRIP_GEN_0109_D0_0300",
+        "arr": "03:00:00",
+        "dep": "03:00:00",
+        "stopId": "10008001",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0300",
+        "arr": "03:03:00",
+        "dep": "03:03:00",
+        "stopId": "10008002",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0300",
+        "arr": "03:06:00",
+        "dep": "03:06:00",
+        "stopId": "10008003",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0300",
+        "arr": "03:24:00",
+        "dep": "03:24:00",
+        "stopId": "10037200",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0300",
+        "arr": "03:27:00",
+        "dep": "03:27:00",
+        "stopId": "10026720",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0300",
+        "arr": "03:30:00",
+        "dep": "03:30:00",
+        "stopId": "10026730",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0300",
+        "arr": "03:33:00",
+        "dep": "03:33:00",
+        "stopId": "10026735",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0109_D0_0330": [
+      {
+        "tripId": "TRIP_GEN_0109_D0_0330",
+        "arr": "03:30:00",
+        "dep": "03:30:00",
+        "stopId": "10008001",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0330",
+        "arr": "03:33:00",
+        "dep": "03:33:00",
+        "stopId": "10008002",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0330",
+        "arr": "03:36:00",
+        "dep": "03:36:00",
+        "stopId": "10008003",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0330",
+        "arr": "03:54:00",
+        "dep": "03:54:00",
+        "stopId": "10037200",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0330",
+        "arr": "03:57:00",
+        "dep": "03:57:00",
+        "stopId": "10026720",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0330",
+        "arr": "04:00:00",
+        "dep": "04:00:00",
+        "stopId": "10026730",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0330",
+        "arr": "04:03:00",
+        "dep": "04:03:00",
+        "stopId": "10026735",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0109_D0_0400": [
+      {
+        "tripId": "TRIP_GEN_0109_D0_0400",
+        "arr": "04:00:00",
+        "dep": "04:00:00",
+        "stopId": "10008001",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0400",
+        "arr": "04:03:00",
+        "dep": "04:03:00",
+        "stopId": "10008002",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0400",
+        "arr": "04:06:00",
+        "dep": "04:06:00",
+        "stopId": "10008003",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0400",
+        "arr": "04:24:00",
+        "dep": "04:24:00",
+        "stopId": "10037200",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0400",
+        "arr": "04:27:00",
+        "dep": "04:27:00",
+        "stopId": "10026720",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0400",
+        "arr": "04:30:00",
+        "dep": "04:30:00",
+        "stopId": "10026730",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0400",
+        "arr": "04:33:00",
+        "dep": "04:33:00",
+        "stopId": "10026735",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0109_D0_0430": [
+      {
+        "tripId": "TRIP_GEN_0109_D0_0430",
+        "arr": "04:30:00",
+        "dep": "04:30:00",
+        "stopId": "10008001",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0430",
+        "arr": "04:33:00",
+        "dep": "04:33:00",
+        "stopId": "10008002",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0430",
+        "arr": "04:36:00",
+        "dep": "04:36:00",
+        "stopId": "10008003",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0430",
+        "arr": "04:54:00",
+        "dep": "04:54:00",
+        "stopId": "10037200",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0430",
+        "arr": "04:57:00",
+        "dep": "04:57:00",
+        "stopId": "10026720",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0430",
+        "arr": "05:00:00",
+        "dep": "05:00:00",
+        "stopId": "10026730",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0430",
+        "arr": "05:03:00",
+        "dep": "05:03:00",
+        "stopId": "10026735",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0109_D0_0500": [
+      {
+        "tripId": "TRIP_GEN_0109_D0_0500",
+        "arr": "05:00:00",
+        "dep": "05:00:00",
+        "stopId": "10008001",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0500",
+        "arr": "05:03:00",
+        "dep": "05:03:00",
+        "stopId": "10008002",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0500",
+        "arr": "05:06:00",
+        "dep": "05:06:00",
+        "stopId": "10008003",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0500",
+        "arr": "05:24:00",
+        "dep": "05:24:00",
+        "stopId": "10037200",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0500",
+        "arr": "05:27:00",
+        "dep": "05:27:00",
+        "stopId": "10026720",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0500",
+        "arr": "05:30:00",
+        "dep": "05:30:00",
+        "stopId": "10026730",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0500",
+        "arr": "05:33:00",
+        "dep": "05:33:00",
+        "stopId": "10026735",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0109_D0_0530": [
+      {
+        "tripId": "TRIP_GEN_0109_D0_0530",
+        "arr": "05:30:00",
+        "dep": "05:30:00",
+        "stopId": "10008001",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0530",
+        "arr": "05:33:00",
+        "dep": "05:33:00",
+        "stopId": "10008002",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0530",
+        "arr": "05:36:00",
+        "dep": "05:36:00",
+        "stopId": "10008003",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0530",
+        "arr": "05:54:00",
+        "dep": "05:54:00",
+        "stopId": "10037200",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0530",
+        "arr": "05:57:00",
+        "dep": "05:57:00",
+        "stopId": "10026720",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0530",
+        "arr": "06:00:00",
+        "dep": "06:00:00",
+        "stopId": "10026730",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D0_0530",
+        "arr": "06:03:00",
+        "dep": "06:03:00",
+        "stopId": "10026735",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0109_D1_2300": [
+      {
+        "tripId": "TRIP_GEN_0109_D1_2300",
+        "arr": "23:00:00",
+        "dep": "23:00:00",
+        "stopId": "10026735",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_2300",
+        "arr": "23:03:00",
+        "dep": "23:03:00",
+        "stopId": "10026784",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_2300",
+        "arr": "23:06:00",
+        "dep": "23:06:00",
+        "stopId": "10026780",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_2300",
+        "arr": "23:24:00",
+        "dep": "23:24:00",
+        "stopId": "10037205",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_2300",
+        "arr": "23:27:00",
+        "dep": "23:27:00",
+        "stopId": "10008004",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_2300",
+        "arr": "23:30:00",
+        "dep": "23:30:00",
+        "stopId": "10008005",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_2300",
+        "arr": "23:33:00",
+        "dep": "23:33:00",
+        "stopId": "10008001",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0109_D1_2330": [
+      {
+        "tripId": "TRIP_GEN_0109_D1_2330",
+        "arr": "23:30:00",
+        "dep": "23:30:00",
+        "stopId": "10026735",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_2330",
+        "arr": "23:33:00",
+        "dep": "23:33:00",
+        "stopId": "10026784",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_2330",
+        "arr": "23:36:00",
+        "dep": "23:36:00",
+        "stopId": "10026780",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_2330",
+        "arr": "23:54:00",
+        "dep": "23:54:00",
+        "stopId": "10037205",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_2330",
+        "arr": "23:57:00",
+        "dep": "23:57:00",
+        "stopId": "10008004",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_2330",
+        "arr": "00:00:00",
+        "dep": "00:00:00",
+        "stopId": "10008005",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_2330",
+        "arr": "00:03:00",
+        "dep": "00:03:00",
+        "stopId": "10008001",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0109_D1_0000": [
+      {
+        "tripId": "TRIP_GEN_0109_D1_0000",
+        "arr": "00:00:00",
+        "dep": "00:00:00",
+        "stopId": "10026735",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0000",
+        "arr": "00:03:00",
+        "dep": "00:03:00",
+        "stopId": "10026784",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0000",
+        "arr": "00:06:00",
+        "dep": "00:06:00",
+        "stopId": "10026780",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0000",
+        "arr": "00:24:00",
+        "dep": "00:24:00",
+        "stopId": "10037205",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0000",
+        "arr": "00:27:00",
+        "dep": "00:27:00",
+        "stopId": "10008004",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0000",
+        "arr": "00:30:00",
+        "dep": "00:30:00",
+        "stopId": "10008005",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0000",
+        "arr": "00:33:00",
+        "dep": "00:33:00",
+        "stopId": "10008001",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0109_D1_0030": [
+      {
+        "tripId": "TRIP_GEN_0109_D1_0030",
+        "arr": "00:30:00",
+        "dep": "00:30:00",
+        "stopId": "10026735",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0030",
+        "arr": "00:33:00",
+        "dep": "00:33:00",
+        "stopId": "10026784",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0030",
+        "arr": "00:36:00",
+        "dep": "00:36:00",
+        "stopId": "10026780",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0030",
+        "arr": "00:54:00",
+        "dep": "00:54:00",
+        "stopId": "10037205",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0030",
+        "arr": "00:57:00",
+        "dep": "00:57:00",
+        "stopId": "10008004",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0030",
+        "arr": "01:00:00",
+        "dep": "01:00:00",
+        "stopId": "10008005",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0030",
+        "arr": "01:03:00",
+        "dep": "01:03:00",
+        "stopId": "10008001",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0109_D1_0100": [
+      {
+        "tripId": "TRIP_GEN_0109_D1_0100",
+        "arr": "01:00:00",
+        "dep": "01:00:00",
+        "stopId": "10026735",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0100",
+        "arr": "01:03:00",
+        "dep": "01:03:00",
+        "stopId": "10026784",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0100",
+        "arr": "01:06:00",
+        "dep": "01:06:00",
+        "stopId": "10026780",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0100",
+        "arr": "01:24:00",
+        "dep": "01:24:00",
+        "stopId": "10037205",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0100",
+        "arr": "01:27:00",
+        "dep": "01:27:00",
+        "stopId": "10008004",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0100",
+        "arr": "01:30:00",
+        "dep": "01:30:00",
+        "stopId": "10008005",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0100",
+        "arr": "01:33:00",
+        "dep": "01:33:00",
+        "stopId": "10008001",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0109_D1_0130": [
+      {
+        "tripId": "TRIP_GEN_0109_D1_0130",
+        "arr": "01:30:00",
+        "dep": "01:30:00",
+        "stopId": "10026735",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0130",
+        "arr": "01:33:00",
+        "dep": "01:33:00",
+        "stopId": "10026784",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0130",
+        "arr": "01:36:00",
+        "dep": "01:36:00",
+        "stopId": "10026780",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0130",
+        "arr": "01:54:00",
+        "dep": "01:54:00",
+        "stopId": "10037205",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0130",
+        "arr": "01:57:00",
+        "dep": "01:57:00",
+        "stopId": "10008004",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0130",
+        "arr": "02:00:00",
+        "dep": "02:00:00",
+        "stopId": "10008005",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0130",
+        "arr": "02:03:00",
+        "dep": "02:03:00",
+        "stopId": "10008001",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0109_D1_0200": [
+      {
+        "tripId": "TRIP_GEN_0109_D1_0200",
+        "arr": "02:00:00",
+        "dep": "02:00:00",
+        "stopId": "10026735",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0200",
+        "arr": "02:03:00",
+        "dep": "02:03:00",
+        "stopId": "10026784",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0200",
+        "arr": "02:06:00",
+        "dep": "02:06:00",
+        "stopId": "10026780",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0200",
+        "arr": "02:24:00",
+        "dep": "02:24:00",
+        "stopId": "10037205",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0200",
+        "arr": "02:27:00",
+        "dep": "02:27:00",
+        "stopId": "10008004",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0200",
+        "arr": "02:30:00",
+        "dep": "02:30:00",
+        "stopId": "10008005",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0200",
+        "arr": "02:33:00",
+        "dep": "02:33:00",
+        "stopId": "10008001",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0109_D1_0230": [
+      {
+        "tripId": "TRIP_GEN_0109_D1_0230",
+        "arr": "02:30:00",
+        "dep": "02:30:00",
+        "stopId": "10026735",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0230",
+        "arr": "02:33:00",
+        "dep": "02:33:00",
+        "stopId": "10026784",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0230",
+        "arr": "02:36:00",
+        "dep": "02:36:00",
+        "stopId": "10026780",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0230",
+        "arr": "02:54:00",
+        "dep": "02:54:00",
+        "stopId": "10037205",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0230",
+        "arr": "02:57:00",
+        "dep": "02:57:00",
+        "stopId": "10008004",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0230",
+        "arr": "03:00:00",
+        "dep": "03:00:00",
+        "stopId": "10008005",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0230",
+        "arr": "03:03:00",
+        "dep": "03:03:00",
+        "stopId": "10008001",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0109_D1_0300": [
+      {
+        "tripId": "TRIP_GEN_0109_D1_0300",
+        "arr": "03:00:00",
+        "dep": "03:00:00",
+        "stopId": "10026735",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0300",
+        "arr": "03:03:00",
+        "dep": "03:03:00",
+        "stopId": "10026784",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0300",
+        "arr": "03:06:00",
+        "dep": "03:06:00",
+        "stopId": "10026780",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0300",
+        "arr": "03:24:00",
+        "dep": "03:24:00",
+        "stopId": "10037205",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0300",
+        "arr": "03:27:00",
+        "dep": "03:27:00",
+        "stopId": "10008004",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0300",
+        "arr": "03:30:00",
+        "dep": "03:30:00",
+        "stopId": "10008005",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0300",
+        "arr": "03:33:00",
+        "dep": "03:33:00",
+        "stopId": "10008001",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0109_D1_0330": [
+      {
+        "tripId": "TRIP_GEN_0109_D1_0330",
+        "arr": "03:30:00",
+        "dep": "03:30:00",
+        "stopId": "10026735",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0330",
+        "arr": "03:33:00",
+        "dep": "03:33:00",
+        "stopId": "10026784",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0330",
+        "arr": "03:36:00",
+        "dep": "03:36:00",
+        "stopId": "10026780",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0330",
+        "arr": "03:54:00",
+        "dep": "03:54:00",
+        "stopId": "10037205",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0330",
+        "arr": "03:57:00",
+        "dep": "03:57:00",
+        "stopId": "10008004",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0330",
+        "arr": "04:00:00",
+        "dep": "04:00:00",
+        "stopId": "10008005",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0330",
+        "arr": "04:03:00",
+        "dep": "04:03:00",
+        "stopId": "10008001",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0109_D1_0400": [
+      {
+        "tripId": "TRIP_GEN_0109_D1_0400",
+        "arr": "04:00:00",
+        "dep": "04:00:00",
+        "stopId": "10026735",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0400",
+        "arr": "04:03:00",
+        "dep": "04:03:00",
+        "stopId": "10026784",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0400",
+        "arr": "04:06:00",
+        "dep": "04:06:00",
+        "stopId": "10026780",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0400",
+        "arr": "04:24:00",
+        "dep": "04:24:00",
+        "stopId": "10037205",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0400",
+        "arr": "04:27:00",
+        "dep": "04:27:00",
+        "stopId": "10008004",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0400",
+        "arr": "04:30:00",
+        "dep": "04:30:00",
+        "stopId": "10008005",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0400",
+        "arr": "04:33:00",
+        "dep": "04:33:00",
+        "stopId": "10008001",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0109_D1_0430": [
+      {
+        "tripId": "TRIP_GEN_0109_D1_0430",
+        "arr": "04:30:00",
+        "dep": "04:30:00",
+        "stopId": "10026735",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0430",
+        "arr": "04:33:00",
+        "dep": "04:33:00",
+        "stopId": "10026784",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0430",
+        "arr": "04:36:00",
+        "dep": "04:36:00",
+        "stopId": "10026780",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0430",
+        "arr": "04:54:00",
+        "dep": "04:54:00",
+        "stopId": "10037205",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0430",
+        "arr": "04:57:00",
+        "dep": "04:57:00",
+        "stopId": "10008004",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0430",
+        "arr": "05:00:00",
+        "dep": "05:00:00",
+        "stopId": "10008005",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0430",
+        "arr": "05:03:00",
+        "dep": "05:03:00",
+        "stopId": "10008001",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0109_D1_0500": [
+      {
+        "tripId": "TRIP_GEN_0109_D1_0500",
+        "arr": "05:00:00",
+        "dep": "05:00:00",
+        "stopId": "10026735",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0500",
+        "arr": "05:03:00",
+        "dep": "05:03:00",
+        "stopId": "10026784",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0500",
+        "arr": "05:06:00",
+        "dep": "05:06:00",
+        "stopId": "10026780",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0500",
+        "arr": "05:24:00",
+        "dep": "05:24:00",
+        "stopId": "10037205",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0500",
+        "arr": "05:27:00",
+        "dep": "05:27:00",
+        "stopId": "10008004",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0500",
+        "arr": "05:30:00",
+        "dep": "05:30:00",
+        "stopId": "10008005",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0500",
+        "arr": "05:33:00",
+        "dep": "05:33:00",
+        "stopId": "10008001",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0109_D1_0530": [
+      {
+        "tripId": "TRIP_GEN_0109_D1_0530",
+        "arr": "05:30:00",
+        "dep": "05:30:00",
+        "stopId": "10026735",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0530",
+        "arr": "05:33:00",
+        "dep": "05:33:00",
+        "stopId": "10026784",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0530",
+        "arr": "05:36:00",
+        "dep": "05:36:00",
+        "stopId": "10026780",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0530",
+        "arr": "05:54:00",
+        "dep": "05:54:00",
+        "stopId": "10037205",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0530",
+        "arr": "05:57:00",
+        "dep": "05:57:00",
+        "stopId": "10008004",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0530",
+        "arr": "06:00:00",
+        "dep": "06:00:00",
+        "stopId": "10008005",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0109_D1_0530",
+        "arr": "06:03:00",
+        "dep": "06:03:00",
+        "stopId": "10008001",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0147_D0_2300": [
+      {
+        "tripId": "TRIP_GEN_0147_D0_2300",
+        "arr": "23:00:00",
+        "dep": "23:00:00",
+        "stopId": "10008001",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_2300",
+        "arr": "23:03:00",
+        "dep": "23:03:00",
+        "stopId": "10008002",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_2300",
+        "arr": "23:06:00",
+        "dep": "23:06:00",
+        "stopId": "10008003",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_2300",
+        "arr": "23:24:00",
+        "dep": "23:24:00",
+        "stopId": "10037200",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_2300",
+        "arr": "23:27:00",
+        "dep": "23:27:00",
+        "stopId": "10026720",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_2300",
+        "arr": "23:30:00",
+        "dep": "23:30:00",
+        "stopId": "10026730",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_2300",
+        "arr": "23:33:00",
+        "dep": "23:33:00",
+        "stopId": "10026735",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0147_D0_2330": [
+      {
+        "tripId": "TRIP_GEN_0147_D0_2330",
+        "arr": "23:30:00",
+        "dep": "23:30:00",
+        "stopId": "10008001",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_2330",
+        "arr": "23:33:00",
+        "dep": "23:33:00",
+        "stopId": "10008002",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_2330",
+        "arr": "23:36:00",
+        "dep": "23:36:00",
+        "stopId": "10008003",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_2330",
+        "arr": "23:54:00",
+        "dep": "23:54:00",
+        "stopId": "10037200",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_2330",
+        "arr": "23:57:00",
+        "dep": "23:57:00",
+        "stopId": "10026720",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_2330",
+        "arr": "00:00:00",
+        "dep": "00:00:00",
+        "stopId": "10026730",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_2330",
+        "arr": "00:03:00",
+        "dep": "00:03:00",
+        "stopId": "10026735",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0147_D0_0000": [
+      {
+        "tripId": "TRIP_GEN_0147_D0_0000",
+        "arr": "00:00:00",
+        "dep": "00:00:00",
+        "stopId": "10008001",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0000",
+        "arr": "00:03:00",
+        "dep": "00:03:00",
+        "stopId": "10008002",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0000",
+        "arr": "00:06:00",
+        "dep": "00:06:00",
+        "stopId": "10008003",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0000",
+        "arr": "00:24:00",
+        "dep": "00:24:00",
+        "stopId": "10037200",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0000",
+        "arr": "00:27:00",
+        "dep": "00:27:00",
+        "stopId": "10026720",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0000",
+        "arr": "00:30:00",
+        "dep": "00:30:00",
+        "stopId": "10026730",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0000",
+        "arr": "00:33:00",
+        "dep": "00:33:00",
+        "stopId": "10026735",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0147_D0_0030": [
+      {
+        "tripId": "TRIP_GEN_0147_D0_0030",
+        "arr": "00:30:00",
+        "dep": "00:30:00",
+        "stopId": "10008001",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0030",
+        "arr": "00:33:00",
+        "dep": "00:33:00",
+        "stopId": "10008002",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0030",
+        "arr": "00:36:00",
+        "dep": "00:36:00",
+        "stopId": "10008003",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0030",
+        "arr": "00:54:00",
+        "dep": "00:54:00",
+        "stopId": "10037200",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0030",
+        "arr": "00:57:00",
+        "dep": "00:57:00",
+        "stopId": "10026720",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0030",
+        "arr": "01:00:00",
+        "dep": "01:00:00",
+        "stopId": "10026730",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0030",
+        "arr": "01:03:00",
+        "dep": "01:03:00",
+        "stopId": "10026735",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0147_D0_0100": [
+      {
+        "tripId": "TRIP_GEN_0147_D0_0100",
+        "arr": "01:00:00",
+        "dep": "01:00:00",
+        "stopId": "10008001",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0100",
+        "arr": "01:03:00",
+        "dep": "01:03:00",
+        "stopId": "10008002",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0100",
+        "arr": "01:06:00",
+        "dep": "01:06:00",
+        "stopId": "10008003",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0100",
+        "arr": "01:24:00",
+        "dep": "01:24:00",
+        "stopId": "10037200",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0100",
+        "arr": "01:27:00",
+        "dep": "01:27:00",
+        "stopId": "10026720",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0100",
+        "arr": "01:30:00",
+        "dep": "01:30:00",
+        "stopId": "10026730",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0100",
+        "arr": "01:33:00",
+        "dep": "01:33:00",
+        "stopId": "10026735",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0147_D0_0130": [
+      {
+        "tripId": "TRIP_GEN_0147_D0_0130",
+        "arr": "01:30:00",
+        "dep": "01:30:00",
+        "stopId": "10008001",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0130",
+        "arr": "01:33:00",
+        "dep": "01:33:00",
+        "stopId": "10008002",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0130",
+        "arr": "01:36:00",
+        "dep": "01:36:00",
+        "stopId": "10008003",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0130",
+        "arr": "01:54:00",
+        "dep": "01:54:00",
+        "stopId": "10037200",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0130",
+        "arr": "01:57:00",
+        "dep": "01:57:00",
+        "stopId": "10026720",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0130",
+        "arr": "02:00:00",
+        "dep": "02:00:00",
+        "stopId": "10026730",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0130",
+        "arr": "02:03:00",
+        "dep": "02:03:00",
+        "stopId": "10026735",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0147_D0_0200": [
+      {
+        "tripId": "TRIP_GEN_0147_D0_0200",
+        "arr": "02:00:00",
+        "dep": "02:00:00",
+        "stopId": "10008001",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0200",
+        "arr": "02:03:00",
+        "dep": "02:03:00",
+        "stopId": "10008002",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0200",
+        "arr": "02:06:00",
+        "dep": "02:06:00",
+        "stopId": "10008003",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0200",
+        "arr": "02:24:00",
+        "dep": "02:24:00",
+        "stopId": "10037200",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0200",
+        "arr": "02:27:00",
+        "dep": "02:27:00",
+        "stopId": "10026720",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0200",
+        "arr": "02:30:00",
+        "dep": "02:30:00",
+        "stopId": "10026730",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0200",
+        "arr": "02:33:00",
+        "dep": "02:33:00",
+        "stopId": "10026735",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0147_D0_0230": [
+      {
+        "tripId": "TRIP_GEN_0147_D0_0230",
+        "arr": "02:30:00",
+        "dep": "02:30:00",
+        "stopId": "10008001",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0230",
+        "arr": "02:33:00",
+        "dep": "02:33:00",
+        "stopId": "10008002",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0230",
+        "arr": "02:36:00",
+        "dep": "02:36:00",
+        "stopId": "10008003",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0230",
+        "arr": "02:54:00",
+        "dep": "02:54:00",
+        "stopId": "10037200",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0230",
+        "arr": "02:57:00",
+        "dep": "02:57:00",
+        "stopId": "10026720",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0230",
+        "arr": "03:00:00",
+        "dep": "03:00:00",
+        "stopId": "10026730",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0230",
+        "arr": "03:03:00",
+        "dep": "03:03:00",
+        "stopId": "10026735",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0147_D0_0300": [
+      {
+        "tripId": "TRIP_GEN_0147_D0_0300",
+        "arr": "03:00:00",
+        "dep": "03:00:00",
+        "stopId": "10008001",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0300",
+        "arr": "03:03:00",
+        "dep": "03:03:00",
+        "stopId": "10008002",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0300",
+        "arr": "03:06:00",
+        "dep": "03:06:00",
+        "stopId": "10008003",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0300",
+        "arr": "03:24:00",
+        "dep": "03:24:00",
+        "stopId": "10037200",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0300",
+        "arr": "03:27:00",
+        "dep": "03:27:00",
+        "stopId": "10026720",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0300",
+        "arr": "03:30:00",
+        "dep": "03:30:00",
+        "stopId": "10026730",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0300",
+        "arr": "03:33:00",
+        "dep": "03:33:00",
+        "stopId": "10026735",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0147_D0_0330": [
+      {
+        "tripId": "TRIP_GEN_0147_D0_0330",
+        "arr": "03:30:00",
+        "dep": "03:30:00",
+        "stopId": "10008001",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0330",
+        "arr": "03:33:00",
+        "dep": "03:33:00",
+        "stopId": "10008002",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0330",
+        "arr": "03:36:00",
+        "dep": "03:36:00",
+        "stopId": "10008003",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0330",
+        "arr": "03:54:00",
+        "dep": "03:54:00",
+        "stopId": "10037200",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0330",
+        "arr": "03:57:00",
+        "dep": "03:57:00",
+        "stopId": "10026720",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0330",
+        "arr": "04:00:00",
+        "dep": "04:00:00",
+        "stopId": "10026730",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0330",
+        "arr": "04:03:00",
+        "dep": "04:03:00",
+        "stopId": "10026735",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0147_D0_0400": [
+      {
+        "tripId": "TRIP_GEN_0147_D0_0400",
+        "arr": "04:00:00",
+        "dep": "04:00:00",
+        "stopId": "10008001",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0400",
+        "arr": "04:03:00",
+        "dep": "04:03:00",
+        "stopId": "10008002",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0400",
+        "arr": "04:06:00",
+        "dep": "04:06:00",
+        "stopId": "10008003",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0400",
+        "arr": "04:24:00",
+        "dep": "04:24:00",
+        "stopId": "10037200",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0400",
+        "arr": "04:27:00",
+        "dep": "04:27:00",
+        "stopId": "10026720",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0400",
+        "arr": "04:30:00",
+        "dep": "04:30:00",
+        "stopId": "10026730",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0400",
+        "arr": "04:33:00",
+        "dep": "04:33:00",
+        "stopId": "10026735",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0147_D0_0430": [
+      {
+        "tripId": "TRIP_GEN_0147_D0_0430",
+        "arr": "04:30:00",
+        "dep": "04:30:00",
+        "stopId": "10008001",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0430",
+        "arr": "04:33:00",
+        "dep": "04:33:00",
+        "stopId": "10008002",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0430",
+        "arr": "04:36:00",
+        "dep": "04:36:00",
+        "stopId": "10008003",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0430",
+        "arr": "04:54:00",
+        "dep": "04:54:00",
+        "stopId": "10037200",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0430",
+        "arr": "04:57:00",
+        "dep": "04:57:00",
+        "stopId": "10026720",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0430",
+        "arr": "05:00:00",
+        "dep": "05:00:00",
+        "stopId": "10026730",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0430",
+        "arr": "05:03:00",
+        "dep": "05:03:00",
+        "stopId": "10026735",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0147_D0_0500": [
+      {
+        "tripId": "TRIP_GEN_0147_D0_0500",
+        "arr": "05:00:00",
+        "dep": "05:00:00",
+        "stopId": "10008001",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0500",
+        "arr": "05:03:00",
+        "dep": "05:03:00",
+        "stopId": "10008002",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0500",
+        "arr": "05:06:00",
+        "dep": "05:06:00",
+        "stopId": "10008003",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0500",
+        "arr": "05:24:00",
+        "dep": "05:24:00",
+        "stopId": "10037200",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0500",
+        "arr": "05:27:00",
+        "dep": "05:27:00",
+        "stopId": "10026720",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0500",
+        "arr": "05:30:00",
+        "dep": "05:30:00",
+        "stopId": "10026730",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0500",
+        "arr": "05:33:00",
+        "dep": "05:33:00",
+        "stopId": "10026735",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0147_D0_0530": [
+      {
+        "tripId": "TRIP_GEN_0147_D0_0530",
+        "arr": "05:30:00",
+        "dep": "05:30:00",
+        "stopId": "10008001",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0530",
+        "arr": "05:33:00",
+        "dep": "05:33:00",
+        "stopId": "10008002",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0530",
+        "arr": "05:36:00",
+        "dep": "05:36:00",
+        "stopId": "10008003",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0530",
+        "arr": "05:54:00",
+        "dep": "05:54:00",
+        "stopId": "10037200",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0530",
+        "arr": "05:57:00",
+        "dep": "05:57:00",
+        "stopId": "10026720",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0530",
+        "arr": "06:00:00",
+        "dep": "06:00:00",
+        "stopId": "10026730",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D0_0530",
+        "arr": "06:03:00",
+        "dep": "06:03:00",
+        "stopId": "10026735",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0147_D1_2300": [
+      {
+        "tripId": "TRIP_GEN_0147_D1_2300",
+        "arr": "23:00:00",
+        "dep": "23:00:00",
+        "stopId": "10026735",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_2300",
+        "arr": "23:03:00",
+        "dep": "23:03:00",
+        "stopId": "10026784",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_2300",
+        "arr": "23:06:00",
+        "dep": "23:06:00",
+        "stopId": "10026780",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_2300",
+        "arr": "23:24:00",
+        "dep": "23:24:00",
+        "stopId": "10037205",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_2300",
+        "arr": "23:27:00",
+        "dep": "23:27:00",
+        "stopId": "10008004",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_2300",
+        "arr": "23:30:00",
+        "dep": "23:30:00",
+        "stopId": "10008005",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_2300",
+        "arr": "23:33:00",
+        "dep": "23:33:00",
+        "stopId": "10008001",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0147_D1_2330": [
+      {
+        "tripId": "TRIP_GEN_0147_D1_2330",
+        "arr": "23:30:00",
+        "dep": "23:30:00",
+        "stopId": "10026735",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_2330",
+        "arr": "23:33:00",
+        "dep": "23:33:00",
+        "stopId": "10026784",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_2330",
+        "arr": "23:36:00",
+        "dep": "23:36:00",
+        "stopId": "10026780",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_2330",
+        "arr": "23:54:00",
+        "dep": "23:54:00",
+        "stopId": "10037205",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_2330",
+        "arr": "23:57:00",
+        "dep": "23:57:00",
+        "stopId": "10008004",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_2330",
+        "arr": "00:00:00",
+        "dep": "00:00:00",
+        "stopId": "10008005",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_2330",
+        "arr": "00:03:00",
+        "dep": "00:03:00",
+        "stopId": "10008001",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0147_D1_0000": [
+      {
+        "tripId": "TRIP_GEN_0147_D1_0000",
+        "arr": "00:00:00",
+        "dep": "00:00:00",
+        "stopId": "10026735",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0000",
+        "arr": "00:03:00",
+        "dep": "00:03:00",
+        "stopId": "10026784",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0000",
+        "arr": "00:06:00",
+        "dep": "00:06:00",
+        "stopId": "10026780",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0000",
+        "arr": "00:24:00",
+        "dep": "00:24:00",
+        "stopId": "10037205",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0000",
+        "arr": "00:27:00",
+        "dep": "00:27:00",
+        "stopId": "10008004",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0000",
+        "arr": "00:30:00",
+        "dep": "00:30:00",
+        "stopId": "10008005",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0000",
+        "arr": "00:33:00",
+        "dep": "00:33:00",
+        "stopId": "10008001",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0147_D1_0030": [
+      {
+        "tripId": "TRIP_GEN_0147_D1_0030",
+        "arr": "00:30:00",
+        "dep": "00:30:00",
+        "stopId": "10026735",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0030",
+        "arr": "00:33:00",
+        "dep": "00:33:00",
+        "stopId": "10026784",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0030",
+        "arr": "00:36:00",
+        "dep": "00:36:00",
+        "stopId": "10026780",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0030",
+        "arr": "00:54:00",
+        "dep": "00:54:00",
+        "stopId": "10037205",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0030",
+        "arr": "00:57:00",
+        "dep": "00:57:00",
+        "stopId": "10008004",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0030",
+        "arr": "01:00:00",
+        "dep": "01:00:00",
+        "stopId": "10008005",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0030",
+        "arr": "01:03:00",
+        "dep": "01:03:00",
+        "stopId": "10008001",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0147_D1_0100": [
+      {
+        "tripId": "TRIP_GEN_0147_D1_0100",
+        "arr": "01:00:00",
+        "dep": "01:00:00",
+        "stopId": "10026735",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0100",
+        "arr": "01:03:00",
+        "dep": "01:03:00",
+        "stopId": "10026784",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0100",
+        "arr": "01:06:00",
+        "dep": "01:06:00",
+        "stopId": "10026780",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0100",
+        "arr": "01:24:00",
+        "dep": "01:24:00",
+        "stopId": "10037205",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0100",
+        "arr": "01:27:00",
+        "dep": "01:27:00",
+        "stopId": "10008004",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0100",
+        "arr": "01:30:00",
+        "dep": "01:30:00",
+        "stopId": "10008005",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0100",
+        "arr": "01:33:00",
+        "dep": "01:33:00",
+        "stopId": "10008001",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0147_D1_0130": [
+      {
+        "tripId": "TRIP_GEN_0147_D1_0130",
+        "arr": "01:30:00",
+        "dep": "01:30:00",
+        "stopId": "10026735",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0130",
+        "arr": "01:33:00",
+        "dep": "01:33:00",
+        "stopId": "10026784",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0130",
+        "arr": "01:36:00",
+        "dep": "01:36:00",
+        "stopId": "10026780",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0130",
+        "arr": "01:54:00",
+        "dep": "01:54:00",
+        "stopId": "10037205",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0130",
+        "arr": "01:57:00",
+        "dep": "01:57:00",
+        "stopId": "10008004",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0130",
+        "arr": "02:00:00",
+        "dep": "02:00:00",
+        "stopId": "10008005",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0130",
+        "arr": "02:03:00",
+        "dep": "02:03:00",
+        "stopId": "10008001",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0147_D1_0200": [
+      {
+        "tripId": "TRIP_GEN_0147_D1_0200",
+        "arr": "02:00:00",
+        "dep": "02:00:00",
+        "stopId": "10026735",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0200",
+        "arr": "02:03:00",
+        "dep": "02:03:00",
+        "stopId": "10026784",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0200",
+        "arr": "02:06:00",
+        "dep": "02:06:00",
+        "stopId": "10026780",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0200",
+        "arr": "02:24:00",
+        "dep": "02:24:00",
+        "stopId": "10037205",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0200",
+        "arr": "02:27:00",
+        "dep": "02:27:00",
+        "stopId": "10008004",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0200",
+        "arr": "02:30:00",
+        "dep": "02:30:00",
+        "stopId": "10008005",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0200",
+        "arr": "02:33:00",
+        "dep": "02:33:00",
+        "stopId": "10008001",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0147_D1_0230": [
+      {
+        "tripId": "TRIP_GEN_0147_D1_0230",
+        "arr": "02:30:00",
+        "dep": "02:30:00",
+        "stopId": "10026735",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0230",
+        "arr": "02:33:00",
+        "dep": "02:33:00",
+        "stopId": "10026784",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0230",
+        "arr": "02:36:00",
+        "dep": "02:36:00",
+        "stopId": "10026780",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0230",
+        "arr": "02:54:00",
+        "dep": "02:54:00",
+        "stopId": "10037205",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0230",
+        "arr": "02:57:00",
+        "dep": "02:57:00",
+        "stopId": "10008004",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0230",
+        "arr": "03:00:00",
+        "dep": "03:00:00",
+        "stopId": "10008005",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0230",
+        "arr": "03:03:00",
+        "dep": "03:03:00",
+        "stopId": "10008001",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0147_D1_0300": [
+      {
+        "tripId": "TRIP_GEN_0147_D1_0300",
+        "arr": "03:00:00",
+        "dep": "03:00:00",
+        "stopId": "10026735",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0300",
+        "arr": "03:03:00",
+        "dep": "03:03:00",
+        "stopId": "10026784",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0300",
+        "arr": "03:06:00",
+        "dep": "03:06:00",
+        "stopId": "10026780",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0300",
+        "arr": "03:24:00",
+        "dep": "03:24:00",
+        "stopId": "10037205",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0300",
+        "arr": "03:27:00",
+        "dep": "03:27:00",
+        "stopId": "10008004",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0300",
+        "arr": "03:30:00",
+        "dep": "03:30:00",
+        "stopId": "10008005",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0300",
+        "arr": "03:33:00",
+        "dep": "03:33:00",
+        "stopId": "10008001",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0147_D1_0330": [
+      {
+        "tripId": "TRIP_GEN_0147_D1_0330",
+        "arr": "03:30:00",
+        "dep": "03:30:00",
+        "stopId": "10026735",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0330",
+        "arr": "03:33:00",
+        "dep": "03:33:00",
+        "stopId": "10026784",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0330",
+        "arr": "03:36:00",
+        "dep": "03:36:00",
+        "stopId": "10026780",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0330",
+        "arr": "03:54:00",
+        "dep": "03:54:00",
+        "stopId": "10037205",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0330",
+        "arr": "03:57:00",
+        "dep": "03:57:00",
+        "stopId": "10008004",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0330",
+        "arr": "04:00:00",
+        "dep": "04:00:00",
+        "stopId": "10008005",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0330",
+        "arr": "04:03:00",
+        "dep": "04:03:00",
+        "stopId": "10008001",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0147_D1_0400": [
+      {
+        "tripId": "TRIP_GEN_0147_D1_0400",
+        "arr": "04:00:00",
+        "dep": "04:00:00",
+        "stopId": "10026735",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0400",
+        "arr": "04:03:00",
+        "dep": "04:03:00",
+        "stopId": "10026784",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0400",
+        "arr": "04:06:00",
+        "dep": "04:06:00",
+        "stopId": "10026780",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0400",
+        "arr": "04:24:00",
+        "dep": "04:24:00",
+        "stopId": "10037205",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0400",
+        "arr": "04:27:00",
+        "dep": "04:27:00",
+        "stopId": "10008004",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0400",
+        "arr": "04:30:00",
+        "dep": "04:30:00",
+        "stopId": "10008005",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0400",
+        "arr": "04:33:00",
+        "dep": "04:33:00",
+        "stopId": "10008001",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0147_D1_0430": [
+      {
+        "tripId": "TRIP_GEN_0147_D1_0430",
+        "arr": "04:30:00",
+        "dep": "04:30:00",
+        "stopId": "10026735",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0430",
+        "arr": "04:33:00",
+        "dep": "04:33:00",
+        "stopId": "10026784",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0430",
+        "arr": "04:36:00",
+        "dep": "04:36:00",
+        "stopId": "10026780",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0430",
+        "arr": "04:54:00",
+        "dep": "04:54:00",
+        "stopId": "10037205",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0430",
+        "arr": "04:57:00",
+        "dep": "04:57:00",
+        "stopId": "10008004",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0430",
+        "arr": "05:00:00",
+        "dep": "05:00:00",
+        "stopId": "10008005",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0430",
+        "arr": "05:03:00",
+        "dep": "05:03:00",
+        "stopId": "10008001",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0147_D1_0500": [
+      {
+        "tripId": "TRIP_GEN_0147_D1_0500",
+        "arr": "05:00:00",
+        "dep": "05:00:00",
+        "stopId": "10026735",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0500",
+        "arr": "05:03:00",
+        "dep": "05:03:00",
+        "stopId": "10026784",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0500",
+        "arr": "05:06:00",
+        "dep": "05:06:00",
+        "stopId": "10026780",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0500",
+        "arr": "05:24:00",
+        "dep": "05:24:00",
+        "stopId": "10037205",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0500",
+        "arr": "05:27:00",
+        "dep": "05:27:00",
+        "stopId": "10008004",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0500",
+        "arr": "05:30:00",
+        "dep": "05:30:00",
+        "stopId": "10008005",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0500",
+        "arr": "05:33:00",
+        "dep": "05:33:00",
+        "stopId": "10008001",
+        "seq": 7
+      }
+    ],
+    "TRIP_GEN_0147_D1_0530": [
+      {
+        "tripId": "TRIP_GEN_0147_D1_0530",
+        "arr": "05:30:00",
+        "dep": "05:30:00",
+        "stopId": "10026735",
+        "seq": 1
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0530",
+        "arr": "05:33:00",
+        "dep": "05:33:00",
+        "stopId": "10026784",
+        "seq": 2
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0530",
+        "arr": "05:36:00",
+        "dep": "05:36:00",
+        "stopId": "10026780",
+        "seq": 3
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0530",
+        "arr": "05:54:00",
+        "dep": "05:54:00",
+        "stopId": "10037205",
+        "seq": 4
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0530",
+        "arr": "05:57:00",
+        "dep": "05:57:00",
+        "stopId": "10008004",
+        "seq": 5
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0530",
+        "arr": "06:00:00",
+        "dep": "06:00:00",
+        "stopId": "10008005",
+        "seq": 6
+      },
+      {
+        "tripId": "TRIP_GEN_0147_D1_0530",
+        "arr": "06:03:00",
+        "dep": "06:03:00",
         "stopId": "10008001",
         "seq": 7
       }

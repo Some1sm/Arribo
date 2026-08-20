@@ -394,6 +394,36 @@ class CataloniaTracker {
       isRealTime: false
     };
 
+    const nextBus = {
+      lineId: route.id,
+      lineCode: route.code,
+      lineName: route.code,
+      destination: primaryArrival.destination || dirMeta.name,
+      departureTime: primaryArrival.timeFormatted || primaryArrival.time || '--:--',
+      minutesAway: primaryArrival.minsAway,
+      formattedStatus: primaryArrival.etaFormatted || `${primaryArrival.minsAway} min`,
+      isRealtime: primaryArrival.isRealTime,
+      isToday: true,
+      delayMinutes: primaryArrival.delayMins || 0,
+      delayStatus: primaryArrival.isRealTime ? (primaryArrival.delayMins > 0 ? 'delayed' : 'ontime') : 'scheduled',
+      delayBadgeText: primaryArrival.isRealTime ? (primaryArrival.delayMins > 0 ? `+${primaryArrival.delayMins} min retard` : 'Temps real') : 'Horari teòric'
+    };
+
+    const upcomingDepartures = liveArrivals.map(arr => ({
+      lineId: route.id,
+      lineCode: route.code,
+      lineName: route.code,
+      destination: arr.destination || dirMeta.name,
+      departureTime: arr.timeFormatted || arr.time,
+      minutesAway: arr.minsAway,
+      formattedStatus: arr.etaFormatted || `${arr.minsAway} min`,
+      isRealtime: arr.isRealTime,
+      isToday: true,
+      delayMinutes: arr.delayMins || 0,
+      delayStatus: arr.isRealTime ? (arr.delayMins > 0 ? 'delayed' : 'ontime') : 'scheduled',
+      delayBadgeText: arr.isRealTime ? 'Temps real' : 'Horari teòric'
+    }));
+
     return {
       lineId: route.id,
       lineCode: route.code,
@@ -410,6 +440,8 @@ class CataloniaTracker {
         seq: targetStop.seq || 1,
         zone: targetStop.zone || 'Catalunya'
       },
+      nextBus,
+      upcomingDepartures,
       eta: {
         minutes: primaryArrival.minsAway,
         formatted: primaryArrival.etaFormatted,

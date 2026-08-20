@@ -104,16 +104,20 @@ function generateExpressPolyline(stops, isDir1 = false) {
   return interpolated;
 }
 
-// Generate full timetable stop times across the service day (06:00 to 22:30)
+// Generate full timetable stop times across the service day (06:00 to 22:30 or overnight 23:00 to 05:00)
 function generateServiceTimetable(routeId, dirId, stops, headways = 15, startHour = 6, endHour = 23) {
   const trips = [];
   const stopTimesMap = {};
 
+  const hoursList = startHour <= endHour
+    ? Array.from({ length: endHour - startHour + 1 }, (_, i) => startHour + i)
+    : [...Array.from({ length: 24 - startHour }, (_, i) => startHour + i), ...Array.from({ length: endHour + 1 }, (_, i) => i)];
+
   let tripCount = 0;
-  for (let h = startHour; h <= endHour; h++) {
+  for (const h of hoursList) {
     const interval = (h >= 7 && h <= 9) || (h >= 17 && h <= 19) ? 10 : headways;
     for (let m = 0; m < 60; m += interval) {
-      if (h === endHour && m > 15) break;
+      if (h === endHour && m > 15 && startHour <= endHour) break;
       tripCount++;
       const tripId = `TRIP_${routeId}_D${dirId}_${String(h).padStart(2, '0')}${String(m).padStart(2, '0')}`;
       trips.push({
