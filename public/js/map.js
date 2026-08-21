@@ -596,7 +596,7 @@ class C10Map {
     }
 
     const now = Date.now();
-    const currentTripIds = new Set(activeBuses.map(b => b.tripId));
+    const currentTripIds = new Set(activeBuses.map(b => String(b.tripId || b.vehicleId || `${b.lat}_${b.lon}`)));
 
     // Handle missing buses with 90-second client-side dead-reckoning hold buffer
     for (const [tId, obj] of this.busMarkersMap.entries()) {
@@ -738,8 +738,10 @@ class C10Map {
             ? 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)'
             : (busColor || 'linear-gradient(135deg, #10b981 0%, #059669 100%)'));
 
-      if (this.busMarkersMap.has(bus.tripId)) {
-        const obj = this.busMarkersMap.get(bus.tripId);
+      const markerKey = String(bus.tripId || bus.vehicleId || `${bus.lat}_${bus.lon}`);
+
+      if (this.busMarkersMap.has(markerKey)) {
+        const obj = this.busMarkersMap.get(markerKey);
         obj.busData = bus;
         obj.targetLat = snapped.lat;
         obj.targetLon = snapped.lon;
@@ -811,7 +813,7 @@ class C10Map {
           marker.on('click', () => onBusClick(bus));
         }
 
-        this.busMarkersMap.set(bus.tripId, {
+        this.busMarkersMap.set(markerKey, {
           marker,
           busData: bus,
           targetLat: snapped.lat,

@@ -493,10 +493,12 @@ class AmbTracker {
               const lat = parseFloat(t.latitude) || stop.lat;
               const lon = parseFloat(t.longitude) || stop.lon;
               const minsAway = Math.max(0, Math.round((t.time - now) / 60000));
+              const idxNum = activeBuses.length + 1;
 
               activeBuses.push({
-                vehicleId: `AMB-${1000 + activeBuses.length}`,
-                tripId: `trip_${t.lineCode}_${activeBuses.length}`,
+                vehicleId: `AMB-D${dirIdx}-${1000 + idxNum}`,
+                fleetNumber: `${1000 + dirIdx * 100 + idxNum}`,
+                tripId: `trip_${t.lineCode}_d${dirIdx}_${idxNum}`,
                 lineId: route.id,
                 lineCode: route.code,
                 lineName: route.code,
