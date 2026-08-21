@@ -233,9 +233,13 @@ class RouteCacheService {
     tripsMap['GEN_0496'] = [...sched111_0.trips, ...sched111_1.trips];
     Object.assign(stopTimesByTrip, sched111_0.stopTimesMap, sched111_1.stopTimesMap);
 
-    // E11.2 (GTFS Shape IDs: GEN_18664 / GEN_24319 & GEN_18716 / GEN_23686)
-    const poly112_0 = shapesMap['GEN_18664'] || shapesMap['GEN_24319'] || generateExpressPolyline(E11_2_STOPS_DIR0, false);
-    const poly112_1 = shapesMap['GEN_18716'] || shapesMap['GEN_23686'] || generateExpressPolyline(E11_2_STOPS_DIR1, true);
+    // E11.2 (GTFS Shape IDs: GEN_18664 + Mataró Urban Ring & GEN_18716)
+    const e112_dir1_shape = shapesMap['GEN_18716'] || generateExpressPolyline(E11_2_STOPS_DIR1, true);
+    const e112_mataro_ring = e112_dir1_shape.slice(0, 165);
+    const e112_dir0_highway = shapesMap['GEN_18664'] || generateExpressPolyline(E11_2_STOPS_DIR0, false);
+    const poly112_0 = [...e112_dir0_highway, ...e112_mataro_ring];
+    const poly112_1 = e112_dir1_shape;
+
     shapesMap['SHAPE_GEN_0497_D0'] = poly112_0;
     shapesMap['SHAPE_GEN_0497_D1'] = poly112_1;
     shapesMap['GEN_18664'] = poly112_0;
