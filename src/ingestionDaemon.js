@@ -507,7 +507,7 @@ class IngestionDaemon {
         ...ambTracker.getLines(),
         ...cataloniaTracker.getLines()
       ];
-      await reportCacheService.generateAndSaveReport(24, allLines);
+      await reportCacheService.generateAllReports(allLines);
     } catch (e) {
       console.error('[IngestionDaemon] Journalism report generation error:', e.message);
     }
