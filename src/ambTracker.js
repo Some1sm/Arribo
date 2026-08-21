@@ -483,15 +483,14 @@ class AmbTracker {
       }
     });
 
-    // Fallback: If live vehicle endpoint had 0 for this line, poll stops
+    // Fallback: If live vehicle endpoint had 0 for this line, poll ALL stops to discover real physical buses
     if (activeBuses.length === 0) {
-      const checkStops = stops.filter((s, i) => i === 0 || i === Math.floor(stops.length / 2) || i === stops.length - 1 || i % 4 === 0);
-      const foundStopLocations = new Set();
       const now = Date.now();
 
-      for (const stop of checkStops.slice(0, 5)) {
+      // Collect earliest arrival at EVERY stop on this direction
+      const stopArrivals = [];
+      for (const stop of stops) {
         const times = await this.getStopRealtime(stop.code);
-        // Find the earliest upcoming arrival for this line at this stop
         const lineTimes = times
           .filter(t => String(t.lineCode).toUpperCase() === routeCodeUpper)
           .sort((a, b) => (a.time || 0) - (b.time || 0));
@@ -499,43 +498,85 @@ class AmbTracker {
         if (lineTimes.length > 0) {
           const t = lineTimes[0];
           const minsAway = Math.max(0, Math.round((t.time - now) / 60000));
-          if (minsAway <= 35) {
-            const lat = parseFloat(t.latitude) || stop.lat;
-            const lon = parseFloat(t.longitude) || stop.lon;
-            const locKey = `${lat.toFixed(4)}_${lon.toFixed(4)}`;
-
-            if (!foundStopLocations.has(locKey)) {
-              foundStopLocations.add(locKey);
-              const idxNum = activeBuses.length + 1;
-
-              activeBuses.push({
-                vehicleId: `AMB-D${dirIdx}-${1000 + idxNum}`,
-                fleetNumber: `${1000 + dirIdx * 100 + idxNum}`,
-                tripId: `trip_${t.lineCode}_d${dirIdx}_${idxNum}`,
-                lineId: route.id,
-                lineCode: route.code,
-                lineName: route.code,
-                direction: String(dirIdx),
-                destination: t.destination || dirObj.name,
-                lat,
-                lon,
-                bearing: 0,
-                speedKmh: 28,
-                currentStopSeq: stop.seq,
-                fromStop: stop.name,
-                toStop: stop.name,
-                secondsToNextStop: Math.max(0, Math.round((t.time - now) / 1000)),
-                totalProgress: stops.length > 1 ? Math.min(95, Math.max(5, Math.round((stop.seq / stops.length) * 100))) : 50,
-                isRealTime: true,
-                isEstimated: false,
-                isTerminalLayover: minsAway === 0 && stop.seq === 1,
-                coordinatesFormatted: `${lat.toFixed(5)}° N, ${lon.toFixed(5)}° E`,
-                compass: { code: 'E', label: 'Est (E) ➡️' },
-                statusText: '🟢 Senyal GPS AMB en Directe'
-              });
-            }
+          if (minsAway <= 45) {
+            stopArrivals.push({
+              stopSeq: stop.seq,
+              stop,
+              minsAway,
+              destination: t.destination || dirObj.name,
+              arrivalTime: t.time
+            });
           }
         }
+      }
+
+      // Sort by stop sequence
+      stopArrivals.sort((a, b) => a.stopSeq - b.stopSeq);
+
+      // Group into physical buses: consecutive stops with increasing ETAs ~1-4 min apart = same bus
+      const busChains = [];
+      let currentChain = [];
+
+      for (const sa of stopArrivals) {
+        if (currentChain.length === 0) {
+          currentChain.push(sa);
+        } else {
+          const prev = currentChain[currentChain.length - 1];
+          const seqGap = sa.stopSeq - prev.stopSeq;
+          const timeGap = sa.minsAway - prev.minsAway;
+
+          // Same physical bus if: consecutive-ish stops (gap <= 3) AND time increases by 1-5 min per stop gap
+          if (seqGap >= 1 && seqGap <= 3 && timeGap >= 0 && timeGap <= seqGap * 5) {
+            currentChain.push(sa);
+          } else {
+            busChains.push(currentChain);
+            currentChain = [sa];
+          }
+        }
+      }
+      if (currentChain.length > 0) busChains.push(currentChain);
+
+      // Each chain = 1 physical bus, positioned at the nearest stop (lowest ETA)
+      const foundLocations = new Set();
+      for (const chain of busChains) {
+        // Pick the stop with the lowest ETA as the bus's current position
+        const nearest = chain.reduce((best, s) => s.minsAway < best.minsAway ? s : best, chain[0]);
+        const stop = nearest.stop;
+        const lat = stop.lat;
+        const lon = stop.lon;
+        const locKey = `${lat.toFixed(4)}_${lon.toFixed(4)}`;
+
+        if (foundLocations.has(locKey)) continue;
+        foundLocations.add(locKey);
+
+        const idxNum = activeBuses.length + 1;
+        const progress = stops.length > 1 ? Math.min(95, Math.max(5, Math.round((stop.seq / stops.length) * 100))) : 50;
+
+        activeBuses.push({
+          vehicleId: `AMB-D${dirIdx}-${1000 + idxNum}`,
+          fleetNumber: `${1000 + dirIdx * 100 + idxNum}`,
+          tripId: `trip_${route.code}_d${dirIdx}_${idxNum}`,
+          lineId: route.id,
+          lineCode: route.code,
+          lineName: route.code,
+          direction: String(dirIdx),
+          destination: nearest.destination,
+          lat,
+          lon,
+          bearing: 0,
+          speedKmh: 28,
+          currentStopSeq: stop.seq,
+          fromStop: stop.name,
+          toStop: stops[Math.min(stops.length - 1, stop.seq)]?.name || stop.name,
+          secondsToNextStop: Math.max(0, nearest.minsAway * 60),
+          totalProgress: progress,
+          isRealTime: true,
+          isEstimated: true,
+          isTerminalLayover: nearest.minsAway === 0 && stop.seq === 1,
+          coordinatesFormatted: `${lat.toFixed(5)}° N, ${lon.toFixed(5)}° E`,
+          compass: { code: 'E', label: 'Est (E) ➡️' },
+          statusText: `🟡 Bus estimat • ${nearest.minsAway} min (parada ${stop.seq}/${stops.length})`
+        });
       }
     }
 
