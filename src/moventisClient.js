@@ -120,8 +120,18 @@ class MoventisClient {
     const dStr = dateStr || this.getTodayDateStr();
     const cacheKey = `${moventisLineId}_${dStr}`;
     const cached = this.trayectosCache.get(cacheKey);
-    if (cached && Date.now() - cached.ts < 3600 * 1000) {
+    if (cached) {
       return cached.data;
+    }
+
+    const diskFile = path.join(this.cacheDir, `moventis_tray_${cacheKey}.json`);
+    if (fs.existsSync(diskFile)) {
+      try {
+        const raw = fs.readFileSync(diskFile, 'utf8');
+        const data = JSON.parse(raw);
+        this.trayectosCache.set(cacheKey, { ts: Date.now(), data });
+        return data;
+      } catch (e) {}
     }
 
     try {
@@ -129,6 +139,7 @@ class MoventisClient {
       const data = await this.fetchWithTimeout(url, 8000);
       if (Array.isArray(data)) {
         this.trayectosCache.set(cacheKey, { ts: Date.now(), data });
+        try { fs.writeFileSync(diskFile, JSON.stringify(data), 'utf8'); } catch (e) {}
         return data;
       }
     } catch (e) {
@@ -142,8 +153,18 @@ class MoventisClient {
     const dStr = dateStr || this.getTodayDateStr();
     const cacheKey = `${moventisLineId}_${trayectoId}_${dStr}`;
     const cached = this.paradasCache.get(cacheKey);
-    if (cached && Date.now() - cached.ts < 3600 * 1000) {
+    if (cached) {
       return cached.data;
+    }
+
+    const diskFile = path.join(this.cacheDir, `moventis_sched_${cacheKey}.json`);
+    if (fs.existsSync(diskFile)) {
+      try {
+        const raw = fs.readFileSync(diskFile, 'utf8');
+        const data = JSON.parse(raw);
+        this.paradasCache.set(cacheKey, { ts: Date.now(), data });
+        return data;
+      } catch (e) {}
     }
 
     try {
@@ -151,6 +172,7 @@ class MoventisClient {
       const data = await this.fetchWithTimeout(url, 8000);
       if (Array.isArray(data)) {
         this.paradasCache.set(cacheKey, { ts: Date.now(), data });
+        try { fs.writeFileSync(diskFile, JSON.stringify(data), 'utf8'); } catch (e) {}
         return data;
       }
     } catch (e) {

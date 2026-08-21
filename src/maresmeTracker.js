@@ -195,6 +195,7 @@ class MaresmeTracker {
     this.shapesDb = null;
     this.getShapeStmt = null;
     this.isLoaded = false;
+    this.baseLineDetailsCache = new Map();
     this.loadData();
   }
 
@@ -411,157 +412,174 @@ class MaresmeTracker {
     // Priority 1: Moventis Official API Resolution
     if (lineConfig.moventisLineId) {
       try {
-        const trayectos = await moventisClient.getLineTrayectos(lineConfig.moventisLineId);
-        if (trayectos && trayectos.length > 0) {
-          const targetSentido = (dir === '0') ? 'V' : 'I';
-          let matchingTrays = trayectos.filter(t => t.SENTIDO === targetSentido);
-          if (matchingTrays.length === 0) matchingTrays = trayectos;
-          matchingTrays.sort((a, b) => (b.TrayectosDet?.length || 0) - (a.TrayectosDet?.length || 0));
-          const chosenTray = matchingTrays[0] || trayectos[0];
+        const cacheKey = `${lineConfig.id}_${dir}`;
+        let baseData = this.baseLineDetailsCache.get(cacheKey);
 
-          if (chosenTray && chosenTray.TrayectosDet && chosenTray.TrayectosDet.length > 0) {
-            const stops = chosenTray.TrayectosDet.map((st, idx) => {
-              const p = st.Parada || {};
-              const idStr = String(p.ID_PARADA || p.COD_PARADA);
-              return {
-                id: idStr,
-                code: String(p.COD_PARADA || idStr),
-                moventisStopId: String(p.ID_PARADA || idStr),
-                mouteStopId: String(p.COD_PARADA || idStr),
-                name: p.DESC_PARADA || `Parada ${idStr}`,
-                lat: p.LATITUD || 41.5365,
-                lon: p.LONGITUD || 2.43047,
-                seq: idx + 1,
-                zone: p.MUNICIPIO || 'Zona Maresme'
+        if (!baseData) {
+          const trayectos = await moventisClient.getLineTrayectos(lineConfig.moventisLineId);
+          if (trayectos && trayectos.length > 0) {
+            const targetSentido = (dir === '0') ? 'V' : 'I';
+            let matchingTrays = trayectos.filter(t => t.SENTIDO === targetSentido);
+            if (matchingTrays.length === 0) matchingTrays = trayectos;
+            matchingTrays.sort((a, b) => (b.TrayectosDet?.length || 0) - (a.TrayectosDet?.length || 0));
+            const chosenTray = matchingTrays[0] || trayectos[0];
+
+            if (chosenTray && chosenTray.TrayectosDet && chosenTray.TrayectosDet.length > 0) {
+              const stops = chosenTray.TrayectosDet.map((st, idx) => {
+                const p = st.Parada || {};
+                const idStr = String(p.ID_PARADA || p.COD_PARADA);
+                return {
+                  id: idStr,
+                  code: String(p.COD_PARADA || idStr),
+                  moventisStopId: String(p.ID_PARADA || idStr),
+                  mouteStopId: String(p.COD_PARADA || idStr),
+                  name: p.DESC_PARADA || `Parada ${idStr}`,
+                  lat: p.LATITUD || 41.5365,
+                  lon: p.LONGITUD || 2.43047,
+                  seq: idx + 1,
+                  zone: p.MUNICIPIO || 'Zona Maresme'
+                };
+              });
+
+              stops.forEach(s => this.stopsMap.set(s.id, s));
+
+              let polylineCoords = [];
+              const canonicalShape = MARESME_CANONICAL_SHAPES[`${lineConfig.id}_${dir}`];
+              if (canonicalShape) {
+                const sqliteCoords = this.getShapeCoords(canonicalShape);
+                if (sqliteCoords && sqliteCoords.length > 0) {
+                  polylineCoords = sqliteCoords;
+                }
+              }
+              if (polylineCoords.length === 0 && stops.length > 0) {
+                polylineCoords = stops.map(s => [s.lat, s.lon]);
+              }
+
+              // Parallel timetable fetch across all matching trajectories
+              const allScheds = await Promise.all(
+                matchingTrays.map(t => moventisClient.getParadasTimetable(lineConfig.moventisLineId, t.ID_TRAYECTO))
+              );
+
+              const scheduledRuns = [];
+              const seenStartTimes = new Set();
+
+              allScheds.forEach(paradasSched => {
+                if (paradasSched && paradasSched.length > 0 && paradasSched[0].hora) {
+                  const startTimes = paradasSched[0].hora || [];
+                  const lastStopSched = paradasSched[paradasSched.length - 1];
+                  const lastTimes = lastStopSched?.hora || [];
+
+                  startTimes.forEach((startStr, tIdx) => {
+                    if (!seenStartTimes.has(startStr)) {
+                      seenStartTimes.add(startStr);
+                      const endStr = lastTimes[tIdx] || lastTimes[lastTimes.length - 1] || startStr;
+                      const startSec = timeUtils.timeToSec(startStr);
+                      const endSec = timeUtils.timeToSec(endStr);
+                      const durSec = Math.max(900, (endSec >= startSec ? endSec - startSec : (86400 - startSec + endSec)));
+                      scheduledRuns.push({ startSec, durSec, startStr });
+                    }
+                  });
+                }
+              });
+
+              baseData = {
+                stops,
+                polylineCoords,
+                scheduledRuns
               };
-            });
-
-            // Register in stopsMap for reverse lookups
-            stops.forEach(s => this.stopsMap.set(s.id, s));
-
-            let polylineCoords = [];
-            const canonicalShape = MARESME_CANONICAL_SHAPES[`${lineConfig.id}_${dir}`];
-            if (canonicalShape) {
-              const sqliteCoords = this.getShapeCoords(canonicalShape);
-              if (sqliteCoords && sqliteCoords.length > 0) {
-                polylineCoords = sqliteCoords;
-              }
+              this.baseLineDetailsCache.set(cacheKey, baseData);
             }
-            if (polylineCoords.length === 0 && stops.length > 0) {
-              polylineCoords = stops.map(s => [s.lat, s.lon]);
-            }
-
-            // Fetch official schedule from Moventis API across all matching direction trajectories
-            const scheduledRuns = [];
-            const seenStartTimes = new Set();
-
-            for (const t of matchingTrays) {
-              const paradasSched = await moventisClient.getParadasTimetable(lineConfig.moventisLineId, t.ID_TRAYECTO);
-              if (paradasSched && paradasSched.length > 0 && paradasSched[0].hora) {
-                const startTimes = paradasSched[0].hora || [];
-                const lastStopSched = paradasSched[paradasSched.length - 1];
-                const lastTimes = lastStopSched?.hora || [];
-
-                startTimes.forEach((startStr, tIdx) => {
-                  if (!seenStartTimes.has(startStr)) {
-                    seenStartTimes.add(startStr);
-                    const endStr = lastTimes[tIdx] || lastTimes[lastTimes.length - 1] || startStr;
-                    const startSec = timeUtils.timeToSec(startStr);
-                    const endSec = timeUtils.timeToSec(endStr);
-                    const durSec = Math.max(900, (endSec >= startSec ? endSec - startSec : (86400 - startSec + endSec)));
-                    scheduledRuns.push({ startSec, durSec, startStr });
-                  }
-                });
-              }
-            }
-
-            const netNow = timeUtils.getNetworkTime(this.agencyTimezone);
-            const currentSec = netNow.hour * 3600 + netNow.minute * 60 + netNow.second;
-            const activeBuses = [];
-
-            scheduledRuns.forEach((run, tIdx) => {
-              let elapsedSec = currentSec - run.startSec;
-              if (elapsedSec < 0 && run.startSec > 72000 && currentSec < 21600) {
-                elapsedSec = (86400 - run.startSec) + currentSec;
-              }
-
-              if (elapsedSec >= 0 && elapsedSec <= run.durSec) {
-                const progress = Math.min(0.99, Math.max(0.01, elapsedSec / run.durSec));
-                const polyIdx = Math.min(polylineCoords.length - 1, Math.floor(progress * (polylineCoords.length - 1)));
-                const pos = polylineCoords[polyIdx];
-                const nextPos = polylineCoords[Math.min(polylineCoords.length - 1, polyIdx + 1)] || pos;
-
-                const bearing = Math.round(geoUtils.calculateBearing(pos[0], pos[1], nextPos[0], nextPos[1]) || 0);
-                const compass = geoUtils.bearingToCompassName(bearing);
-
-                const stopIndex = Math.min(stops.length - 2, Math.floor(progress * (stops.length - 1)));
-                const fromStop = stops[stopIndex];
-                const toStop = stops[stopIndex + 1];
-
-                const speedKmh = lineConfig.code.includes('e11') ? 55 : 34;
-                const remainingSec = Math.round(run.durSec - elapsedSec);
-
-                activeBuses.push({
-                  tripId: `${lineConfig.code}_${run.startStr.replace(':', '')}`,
-                  vehicleId: `MOV-${1000 + (tIdx * 17) % 900}`,
-                  lineId: lineConfig.id,
-                  lineCode: lineConfig.code,
-                  lineColor: lineConfig.color,
-                  direction: String(dir),
-                  lat: pos[0],
-                  lon: pos[1],
-                  bearing,
-                  compass,
-                  speedKmh,
-                  progressInSegment: (progress * (stops.length - 1)) % 1,
-                  totalProgress: Math.round(progress * 100),
-                  fromStop: fromStop?.name || 'Origen',
-                  toStop: toStop?.name || 'Destí',
-                  fromSeq: fromStop?.seq || 1,
-                  toSeq: toStop?.seq || 2,
-                  secondsToNextStop: Math.max(30, Math.round(remainingSec / (stops.length - stopIndex))),
-                  distanceToNextMeters: Math.round(((remainingSec / (stops.length - stopIndex)) * (speedKmh / 3.6))),
-                  isTerminalLayover: progress > 0.95,
-                  currentSegmentTime: `En ruta cap a ${toStop?.name || 'Destí'}`,
-                  isDeadReckoned: true,
-                  coordinatesFormatted: `${pos[0].toFixed(5)}° N, ${pos[1].toFixed(5)}° E`
-                });
-              }
-            });
-
-            const checkpoints = stops.filter((s, i) => i === 0 || i === stops.length - 1 || i % 4 === 0).map(s => ({
-              id: s.id,
-              name: s.name,
-              seq: s.seq,
-              zone: s.zone,
-              isPassed: false,
-              hasBus: activeBuses.some(b => b.toSeq >= s.seq && b.fromSeq <= s.seq),
-              etaMinutes: 0
-            }));
-
-            return {
-              id: lineConfig.id,
-              code: lineConfig.code,
-              name: lineConfig.name,
-              color: lineConfig.color,
-              agency: lineConfig.agency,
-              direction: dir,
-              directions: lineConfig.directions,
-              stops,
-              coords: polylineCoords,
-              polyline: polylineCoords,
-              activeBuses,
-              checkpoints,
-              totalActiveBuses: activeBuses.length,
-              serviceStatus: {
-                isOperating: lineConfig.id.startsWith('n')
-                  ? (new Date().getHours() >= 23 || new Date().getHours() < 6)
-                  : (new Date().getHours() >= 6 && new Date().getHours() < 23),
-                calendarTag: 'Feiners (de dilluns a divendres)',
-                firstServiceTomorrow: lineConfig.id.startsWith('n') ? '23:30' : '06:00'
-              }
-            };
           }
+        }
+
+        if (baseData) {
+          const { stops, polylineCoords, scheduledRuns } = baseData;
+          const netNow = timeUtils.getNetworkTime(this.agencyTimezone);
+          const currentSec = netNow.hour * 3600 + netNow.minute * 60 + netNow.second;
+          const activeBuses = [];
+
+          scheduledRuns.forEach((run, tIdx) => {
+            let elapsedSec = currentSec - run.startSec;
+            if (elapsedSec < 0 && run.startSec > 72000 && currentSec < 21600) {
+              elapsedSec = (86400 - run.startSec) + currentSec;
+            }
+
+            if (elapsedSec >= 0 && elapsedSec <= run.durSec) {
+              const progress = Math.min(0.99, Math.max(0.01, elapsedSec / run.durSec));
+              const polyIdx = Math.min(polylineCoords.length - 1, Math.floor(progress * (polylineCoords.length - 1)));
+              const pos = polylineCoords[polyIdx];
+              const nextPos = polylineCoords[Math.min(polylineCoords.length - 1, polyIdx + 1)] || pos;
+
+              const bearing = Math.round(geoUtils.calculateBearing(pos[0], pos[1], nextPos[0], nextPos[1]) || 0);
+              const compass = geoUtils.bearingToCompassName(bearing);
+
+              const stopIndex = Math.min(stops.length - 2, Math.floor(progress * (stops.length - 1)));
+              const fromStop = stops[stopIndex];
+              const toStop = stops[stopIndex + 1];
+
+              const speedKmh = lineConfig.code.includes('e11') ? 55 : 34;
+              const remainingSec = Math.round(run.durSec - elapsedSec);
+
+              activeBuses.push({
+                tripId: `${lineConfig.code}_${run.startStr.replace(':', '')}`,
+                vehicleId: `MOV-${1000 + (tIdx * 17) % 900}`,
+                lineId: lineConfig.id,
+                lineCode: lineConfig.code,
+                lineColor: lineConfig.color,
+                direction: String(dir),
+                lat: pos[0],
+                lon: pos[1],
+                bearing,
+                compass,
+                speedKmh,
+                progressInSegment: (progress * (stops.length - 1)) % 1,
+                totalProgress: Math.round(progress * 100),
+                fromStop: fromStop?.name || 'Origen',
+                toStop: toStop?.name || 'Destí',
+                fromSeq: fromStop?.seq || 1,
+                toSeq: toStop?.seq || 2,
+                secondsToNextStop: Math.max(30, Math.round(remainingSec / (stops.length - stopIndex))),
+                distanceToNextMeters: Math.round(((remainingSec / (stops.length - stopIndex)) * (speedKmh / 3.6))),
+                isTerminalLayover: progress > 0.95,
+                currentSegmentTime: `En ruta cap a ${toStop?.name || 'Destí'}`,
+                isDeadReckoned: true,
+                coordinatesFormatted: `${pos[0].toFixed(5)}° N, ${pos[1].toFixed(5)}° E`
+              });
+            }
+          });
+
+          const checkpoints = stops.filter((s, i) => i === 0 || i === stops.length - 1 || i % 4 === 0).map(s => ({
+            id: s.id,
+            name: s.name,
+            seq: s.seq,
+            zone: s.zone,
+            isPassed: false,
+            hasBus: activeBuses.some(b => b.toSeq >= s.seq && b.fromSeq <= s.seq),
+            etaMinutes: 0
+          }));
+
+          return {
+            id: lineConfig.id,
+            code: lineConfig.code,
+            name: lineConfig.name,
+            color: lineConfig.color,
+            agency: lineConfig.agency,
+            direction: dir,
+            directions: lineConfig.directions,
+            stops,
+            coords: polylineCoords,
+            polyline: polylineCoords,
+            activeBuses,
+            checkpoints,
+            totalActiveBuses: activeBuses.length,
+            serviceStatus: {
+              isOperating: lineConfig.id.startsWith('n')
+                ? (new Date().getHours() >= 23 || new Date().getHours() < 6)
+                : (new Date().getHours() >= 6 && new Date().getHours() < 23),
+              calendarTag: 'Feiners (de dilluns a divendres)',
+              firstServiceTomorrow: lineConfig.id.startsWith('n') ? '23:30' : '06:00'
+            }
+          };
         }
       } catch (movErr) {
         console.warn(`[MaresmeTracker] Moventis API fallback for ${lineConfig.code}:`, movErr.message);

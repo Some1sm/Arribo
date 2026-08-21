@@ -287,7 +287,6 @@ class TransitApp {
   switchLine(lineId, direction = null) {
     this.activeLineId = String(lineId);
     this.selectedVehicleId = null;
-    this.activeLineData = null;
 
     const lineObj = this.availableLines.find(l => String(l.id) === String(lineId));
     if (direction !== null) {
@@ -304,7 +303,29 @@ class TransitApp {
     }
 
     this.showActiveLineView();
-    this.mapController?.clearAll();
+
+    // Instant optimistic render if line header info exists
+    if (lineObj) {
+      this.updateHeaderBrand(lineObj);
+      this.renderLineBanner(lineObj);
+      this.renderDirectionButtons(lineObj.directions || [], this.activeDirection);
+    }
+
+    const routeKey = `${this.activeLineId}_${this.activeDirection}`;
+    const cached = this.lineCache.get(routeKey);
+    if (cached) {
+      this.activeLineData = cached;
+      this.allStops = cached.stops || [];
+      const savedStopId = this.targetStopsByLine[routeKey] || null;
+      const activeTargetId = savedStopId || this.allStops[0]?.id || null;
+      this.populateSelect('target-stop-select', this.allStops, activeTargetId);
+      this.renderRouteTimeline(cached, activeTargetId);
+      this.renderStopsBrowser(cached, this.activeLineId);
+    } else {
+      this.mapController?.clearAll();
+      this.activeLineData = null;
+    }
+
     this.refreshAllData(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
