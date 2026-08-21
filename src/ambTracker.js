@@ -348,6 +348,16 @@ class AmbTracker {
     if (direction === 'both' && route.directions?.length > 1) {
       const details0 = await this.getLineDetails(lineId, '0');
       const details1 = await this.getLineDetails(lineId, '1');
+
+      const seenVehs = new Set();
+      const combinedActiveBuses = [];
+      [...(details0.activeBuses || []), ...(details1.activeBuses || [])].forEach(b => {
+        if (b && b.vehicleId && !seenVehs.has(b.vehicleId)) {
+          seenVehs.add(b.vehicleId);
+          combinedActiveBuses.push(b);
+        }
+      });
+
       return {
         ...details0,
         direction: 'both',
@@ -361,8 +371,8 @@ class AmbTracker {
           { dirId: '0', name: route.directions[0]?.name || 'Sentit 1', stops: details0.stops, coords: details0.coords },
           { dirId: '1', name: route.directions[1]?.name || 'Sentit 2', stops: details1.stops, coords: details1.coords }
         ],
-        activeBuses: [...(details0.activeBuses || []), ...(details1.activeBuses || [])],
-        totalActiveBuses: (details0.activeBuses?.length || 0) + (details1.activeBuses?.length || 0)
+        activeBuses: combinedActiveBuses,
+        totalActiveBuses: combinedActiveBuses.length
       };
     }
 
@@ -399,21 +409,38 @@ class AmbTracker {
     const routeCodeUpper = String(route.code).toUpperCase();
     const matchingVehicles = liveFleet.filter(v => String(v.line).toUpperCase() === routeCodeUpper);
 
+    // Build stop lookup sets for direction discrimination
+    const currentDirStopIds = new Set((dirObj.stopIds || []).map(String));
+    const otherDirs = (route.directions || []).filter((_, i) => i !== dirIdx);
+    const otherDirStopIds = new Set(otherDirs.flatMap(d => d.stopIds || []).map(String));
+
     const activeBuses = [];
     matchingVehicles.forEach((v, vIdx) => {
       const lat = parseFloat(v.latitude);
       const lon = parseFloat(v.longitude);
       if (lat && lon) {
-        // Extract real physical fleet number, e.g. "2974PA2" -> "#2974"
-        const fleetNum = String(v.id).replace(/[a-zA-Z]/g, '') || String(v.id);
-        const nextStop = stops.find(s => String(s.id) === String(v.nextStopId) || String(s.code) === String(v.nextStopId));
+        const nextStopIdStr = String(v.nextStopId || '');
+        const inCurrentDir = currentDirStopIds.has(nextStopIdStr);
+        const inOtherDir = otherDirStopIds.has(nextStopIdStr);
+
+        // If the bus is heading to a stop in the other direction, skip it for this direction
+        if (!inCurrentDir && inOtherDir) {
+          return;
+        }
+
+        // Extract real physical fleet number, e.g. "6492M27" -> "#6492", "2974PA2" -> "#2974"
+        const cleanFleetNum = String(v.id)
+          .replace(new RegExp(route.code + '$', 'i'), '')
+          .replace(/[^0-9]/g, '') || String(v.id).replace(/[^0-9]/g, '') || String(v.id);
+
+        const nextStop = stops.find(s => String(s.id) === nextStopIdStr || String(s.code) === nextStopIdStr);
         const stopSeq = nextStop ? nextStop.seq : (stops.length > 1 ? Math.min(stops.length, vIdx + 1) : 1);
         const progress = stops.length > 1 ? Math.min(95, Math.max(5, Math.round((stopSeq / stops.length) * 100))) : 50;
 
         activeBuses.push({
-          vehicleId: `AMB-${fleetNum}`,
-          fleetNumber: fleetNum,
-          tripId: String(v.tripId || `amb_${route.code}_${fleetNum}`),
+          vehicleId: `AMB-${cleanFleetNum}`,
+          fleetNumber: cleanFleetNum,
+          tripId: String(v.tripId || `amb_${route.code}_${cleanFleetNum}`),
           lineId: route.id,
           lineCode: route.code,
           lineName: route.code,
@@ -431,7 +458,7 @@ class AmbTracker {
           isEstimated: false,
           coordinatesFormatted: `${lat.toFixed(5)}° N, ${lon.toFixed(5)}° E`,
           compass: { code: 'N', label: 'Nord (N) ⬆️' },
-          statusText: `🟢 Bus #${fleetNum} • Senyal GPS en Directe`
+          statusText: `🟢 Bus #${cleanFleetNum} • Senyal GPS en Directe`
         });
       }
     });
