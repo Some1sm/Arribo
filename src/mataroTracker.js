@@ -6,12 +6,12 @@ const timeUtils = require('./timeUtils');
 
 const MATARO_LINE_SCHEDULES = {
   '1': {
-    weekday: { inicio: '06:30', fin: '22:30', headwayMins: 15 },
+    weekday: { inicio: '06:30', fin: '22:15', headwayMins: 15 },
     saturday: { inicio: '07:15', fin: '22:15', headwayMins: 20 },
     sunday: { inicio: '08:15', fin: '22:00', headwayMins: 30 }
   },
   '2': {
-    weekday: { inicio: '06:30', fin: '22:30', headwayMins: 15 },
+    weekday: { inicio: '06:30', fin: '22:15', headwayMins: 15 },
     saturday: { inicio: '07:15', fin: '22:15', headwayMins: 20 },
     sunday: { inicio: '07:55', fin: '22:00', headwayMins: 30 }
   },
@@ -21,19 +21,19 @@ const MATARO_LINE_SCHEDULES = {
     sunday: { inicio: '08:00', fin: '22:15', headwayMins: 30 }
   },
   '4': {
-    weekday: { inicio: '06:45', fin: '22:00', headwayMins: 18 },
-    saturday: { inicio: '07:30', fin: '22:00', headwayMins: 20 },
+    weekday: { inicio: '06:30', fin: '22:00', headwayMins: 18 },
+    saturday: { inicio: '07:15', fin: '22:00', headwayMins: 20 },
     sunday: { inicio: '08:30', fin: '21:57', headwayMins: 30 }
   },
   '5': {
-    weekday: { inicio: '06:30', fin: '22:00', headwayMins: 18 },
-    saturday: { inicio: '07:30', fin: '22:00', headwayMins: 20 },
+    weekday: { inicio: '06:40', fin: '21:40', headwayMins: 20 },
+    saturday: { inicio: '07:30', fin: '21:30', headwayMins: 30 },
     sunday: { inicio: '08:32', fin: '21:22', headwayMins: 30 }
   },
   '6': {
     weekday: { inicio: '06:45', fin: '22:15', headwayMins: 20 },
     saturday: { inicio: '07:30', fin: '22:15', headwayMins: 30 },
-    sunday: { inicio: '14:00', fin: '22:17', headwayMins: 30 }
+    sunday: { inicio: '14:00', fin: '22:17', headwayMins: 30, afternoonOnly: true }
   },
   '7': {
     weekday: { inicio: '06:30', fin: '22:00', headwayMins: 20 },
@@ -41,9 +41,9 @@ const MATARO_LINE_SCHEDULES = {
     sunday: { inicio: '08:30', fin: '21:27', headwayMins: 30 }
   },
   '8': {
-    weekday: { inicio: '06:45', fin: '22:00', headwayMins: 20 },
-    saturday: { inicio: '07:30', fin: '22:00', headwayMins: 30 },
-    sunday: { inicio: '14:04', fin: '21:35', headwayMins: 30 }
+    weekday: { inicio: '06:45', fin: '21:45', headwayMins: 25 },
+    saturday: { inicio: '14:04', fin: '21:35', headwayMins: 30, afternoonOnly: true },
+    sunday: { inicio: '14:04', fin: '21:35', headwayMins: 30, afternoonOnly: true }
   }
 };
 
@@ -55,6 +55,45 @@ class MataroTracker {
     this.allStopsMap = new Map();
     this.vehicleHistory = new Map(); // Vehicle tracking history for dead-zone estimation
     this.loadDatasets();
+  }
+
+  // Get authoritative schedule parameters for a line, route direction and day type
+  getScheduleForLine(lIdStr, routeId = null, dayType = 'weekday') {
+    const lId = String(lIdStr || '1');
+    if (lId === '8') {
+      if (dayType === 'saturday' || dayType === 'sunday') {
+        const isRoute11 = String(routeId) === '11';
+        return {
+          inicio: isRoute11 ? '14:45' : '14:04',
+          fin: isRoute11 ? '21:13' : '21:35',
+          headwayMins: 30,
+          afternoonOnly: true
+        };
+      }
+      return { inicio: '06:45', fin: '21:45', headwayMins: 25 };
+    }
+
+    if (lId === '6') {
+      if (dayType === 'sunday') {
+        const isRoute12 = String(routeId) === '12';
+        return {
+          inicio: isRoute12 ? '14:17' : '14:00',
+          fin: isRoute12 ? '22:17' : '22:03',
+          headwayMins: 30,
+          afternoonOnly: true
+        };
+      }
+      if (dayType === 'saturday') {
+        return { inicio: '07:30', fin: '22:15', headwayMins: 30 };
+      }
+      return { inicio: '06:45', fin: '22:15', headwayMins: 20 };
+    }
+
+    return MATARO_LINE_SCHEDULES[lId]?.[dayType] || {
+      inicio: '06:30',
+      fin: '22:00',
+      headwayMins: 20
+    };
   }
 
   loadDatasets() {
@@ -805,11 +844,7 @@ class MataroTracker {
 
       routesForStop.forEach(r => {
         const lIdStr = String(r.id_linea || lineId || '1');
-        const lineSchedToday = MATARO_LINE_SCHEDULES[lIdStr]?.[dayTypeToday] || {
-          inicio: r.horario?.inicio || '06:45',
-          fin: r.horario?.fin || '22:00',
-          headwayMins: 20
-        };
+        const lineSchedToday = this.getScheduleForLine(lIdStr, r.id, dayTypeToday);
 
         const startSecToday = timeUtils.timeToSec(lineSchedToday.inicio);
         const endSecToday = timeUtils.timeToSec(lineSchedToday.fin);
@@ -883,7 +918,7 @@ class MataroTracker {
 
         // If few departures remain (e.g. night time after fin or before morning start), generate tomorrow morning departures
         if (finalDepartures.length < 5) {
-          const lineSchedTomorrow = MATARO_LINE_SCHEDULES[lIdStr]?.[dayTypeTomorrow] || lineSchedToday;
+          const lineSchedTomorrow = this.getScheduleForLine(lIdStr, r.id, dayTypeTomorrow);
           const startSecTomorrow = timeUtils.timeToSec(lineSchedTomorrow.inicio);
           const endSecTomorrow = timeUtils.timeToSec(lineSchedTomorrow.fin);
           const headwaySecTomorrow = (lineSchedTomorrow.headwayMins || 20) * 60;
@@ -969,7 +1004,7 @@ class MataroTracker {
     const tomorrow = new Date(Date.now() + 24 * 3600 * 1000);
     const netTomorrow = timeUtils.getNetworkTime(this.agencyTimezone, tomorrow);
     const dayType = (netTomorrow.dayOfWeek >= 1 && netTomorrow.dayOfWeek <= 5) ? 'weekday' : (netTomorrow.dayOfWeek === 6 ? 'saturday' : 'sunday');
-    const lineSched = MATARO_LINE_SCHEDULES[lId]?.[dayType] || { inicio: '06:45' };
+    const lineSched = this.getScheduleForLine(lId, selectedRoute?.id, dayType);
     const firstTimeTomorrow = nextBus?.departureTime || lineSched.inicio;
 
     return {
