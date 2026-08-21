@@ -201,6 +201,12 @@ class MaresmeTracker {
 
   getShapeCoords(shapeId) {
     if (!shapeId) return null;
+    if (this.shapesMap.has(shapeId)) {
+      const pts = this.shapesMap.get(shapeId);
+      if (pts && pts.length > 0) {
+        return pts.map(p => Array.isArray(p) ? p : [p.lat, p.lon]);
+      }
+    }
     if (!this.getShapeStmt) {
       try {
         const sqlite = require('node:sqlite');
