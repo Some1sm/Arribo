@@ -655,12 +655,14 @@ class TransitApp {
         this.populateSelect('target-stop-select', this.allStops, savedStopId || this.allStops[0]?.id);
       }
 
-      // 1. Fetch Line details & Target Stop ETA in PARALLEL
-      const [lineRes, etaRes] = await Promise.all([
-        fetch(`/api/line/${lId}?direction=${dir}`).then(r => r.json()).catch(() => ({ success: false })),
-        fetch(`/api/line/${lId}/target-eta?direction=${dir}${savedStopId ? `&stopId=${savedStopId}` : ''}`).then(r => r.json()).catch(() => ({ success: false }))
-      ]);
+      // 1. Kick off Line details and Target ETA in parallel
+      const linePromise = fetch(`/api/line/${lId}?direction=${dir}`).then(r => r.json()).catch(() => ({ success: false }));
+      const etaPromise = fetch(`/api/line/${lId}/target-eta?direction=${dir}${savedStopId ? `&stopId=${savedStopId}` : ''}`).then(r => r.json()).catch(() => ({ success: false }));
 
+      // 2. Process Line details immediately (<5ms)
+      const lineRes = await linePromise;
+
+      let activeTargetId = null;
       if (lineRes.success && lineRes.data) {
         const lData = lineRes.data;
         this.activeLineData = lData;
@@ -680,36 +682,23 @@ class TransitApp {
 
         // Validate if savedStopId is in current route's stops; if not (or if not set), default to the 1st stop
         const isSavedValid = savedStopId && this.allStops.some(s => String(s.id || s.mouteStopId || s.code) === String(savedStopId));
-        const activeTargetId = isSavedValid 
+        activeTargetId = isSavedValid 
           ? savedStopId 
           : (this.allStops[0]?.id || this.allStops[0]?.mouteStopId || this.allStops[0]?.code || null);
 
-        // 1. Update Header & Banner
+        // 1. Update Header, Banner & Directions immediately
         this.updateHeaderBrand(lData);
         this.renderLineBanner(lData);
         this.renderDisruptionsBanner(lData);
 
-        // 2. Render Direction Buttons
         const lineMeta = this.availableLines.find(l => String(l.id) === String(lId)) || lData;
         this.renderDirectionButtons(lineMeta.directions || lData.directions || [], this.activeDirection);
-
-        // 3. Render Target Card
         this.populateSelect('target-stop-select', lData, activeTargetId);
-        
-        if (etaRes.success && etaRes.data) {
-          this.renderTargetCard(etaRes.data, lData);
-        }
-
-        // 4. Render Cockpit & Telemetry
-        this.renderTelemetryCockpit(lData, etaRes.data);
-
-        // 5. Render Route Progression Timeline
+        this.renderTelemetryCockpit(lData);
         this.renderRouteTimeline(lData, activeTargetId);
-
-        // 6. Render Stops Browser (with both directions support)
         this.renderStopsBrowser(lData, lId);
 
-        // 7. Update Map
+        // 2. Render Map Route & Bus Markers immediately
         this.updateActiveBusesCount(this.activeBuses.length);
         const lineColor = lData.color || '#009485';
         const coords = lData.coords || lData.polyline || lData.allDirections?.[0]?.coords || lData.allDirections?.[0]?.polyline || [];
@@ -738,13 +727,23 @@ class TransitApp {
           this.selectedVehicleId,
           (bus) => {
             this.selectedVehicleId = bus.tripId || bus.vehicleId;
-            this.renderTelemetryCockpit(lData, etaRes.data);
+            this.renderTelemetryCockpit(lData);
             this.mapController?.highlightBus(this.selectedVehicleId, false);
           },
           lId
         );
-        this.checkArrivalAlerts(lData, activeTargetId);
       }
+
+      this.setLiveStatus('online');
+
+      // 3. Asynchronously handle Target Stop ETA without delaying map transition
+      etaPromise.then(etaRes => {
+        if (etaRes.success && etaRes.data && this.activeLineId === lId && this.activeDirection === dir) {
+          this.renderTargetCard(etaRes.data, this.activeLineData);
+          this.renderTelemetryCockpit(this.activeLineData, etaRes.data);
+          this.checkArrivalAlerts(this.activeLineData, activeTargetId);
+        }
+      });
 
       this.setLiveStatus('online');
       this.secondsRemaining = this.pollInterval;
