@@ -2297,10 +2297,21 @@ class TransitApp {
     let totalRendered = 0;
     let html = '';
     const isNight = new Date().getHours() >= 22 || new Date().getHours() < 6;
+    const renderedLineIds = new Set();
 
     groups.forEach(g => {
       if (cityFilter !== 'all' && cityFilter !== g.id) return;
-      const groupLines = this.availableLines.filter(g.filter).filter(filterFn);
+      const groupLines = this.availableLines
+        .filter(g.filter)
+        .filter(filterFn)
+        .filter(l => {
+          if (cityFilter === 'all') {
+            if (renderedLineIds.has(String(l.id).toLowerCase())) return false;
+            renderedLineIds.add(String(l.id).toLowerCase());
+          }
+          return true;
+        });
+
       if (groupLines.length === 0) return;
 
       totalRendered += groupLines.length;

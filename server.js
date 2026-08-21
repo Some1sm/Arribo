@@ -75,6 +75,7 @@ function getTrackerForLine(lineId) {
 function getAllTransitLines() {
   const c10Line = {
     id: 'c10',
+    routeId: 'GEN_0498',
     code: 'C-10',
     name: 'Barcelona ⇄ Mataró (per N-II)',
     color: '#009485',
@@ -82,33 +83,67 @@ function getAllTransitLines() {
     group: 'moventis',
     directions: [
       { dirId: '1', name: "Cap a Mataró (Hospital / Pl. d'Itàlia)" },
-      { dirId: '0', name: 'Cap a Barcelona (Metro la Pau)' }
+      { dirId: '0', name: "Cap a Barcelona (Metro la Pau)" }
     ]
   };
 
   const maresmeLines = maresmeTracker.getLines();
+  const mataroLines = mataroTracker.getLines();
   const rodaliesLines = rodaliesTracker.getLines();
   const sagalesLines = sagalesTracker.getLines();
   const ambLines = ambTracker.getLines();
-  const mataroLines = mataroTracker.getLines();
   const allCatLines = cataloniaTracker.getLines();
 
   const seenIds = new Set();
+  const seenRouteIds = new Set();
+  const seenCodesByAgency = new Set();
   const allCombined = [];
 
   const addLine = (l) => {
-    if (l && l.id && !seenIds.has(String(l.id).toLowerCase())) {
-      seenIds.add(String(l.id).toLowerCase());
-      allCombined.push(l);
-    }
+    if (!l || !l.id) return;
+    const cleanId = String(l.id).toLowerCase();
+    const cleanRouteId = l.routeId ? String(l.routeId).toUpperCase() : '';
+    const normCode = (l.code || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const normAgency = (l.agency || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    // 1. Deduplicate by unique internal identifier
+    if (seenIds.has(cleanId)) return;
+
+    // 2. Deduplicate by official GTFS routeId (e.g. GEN_0496 for e11.1)
+    if (cleanRouteId && seenRouteIds.has(cleanRouteId)) return;
+
+    // 3. Deduplicate by normalized line code + operator keyword
+    const agencyKey = normAgency.includes('casas') || normAgency.includes('moventis') ? 'moventis'
+      : normAgency.includes('mataro') || normAgency.includes('avanza') ? 'mataro'
+      : normAgency.includes('sagales') ? 'sagales'
+      : normAgency.includes('tusgsal') ? 'tusgsal'
+      : normAgency.includes('renfe') || normAgency.includes('rodalies') ? 'rodalies'
+      : normAgency.includes('monbus') || normAgency.includes('igualadina') ? 'monbus'
+      : normAgency.slice(0, 8);
+    const agencyCodeKey = `${agencyKey}_${normCode}`;
+    if (seenCodesByAgency.has(agencyCodeKey)) return;
+
+    // 4. Special canonical deduplication for prominent lines
+    const isProminentLine = ['e111', 'e112', 'c10', 'c20', 'c30', 'c3', 'c12', 'c14', 'c15', 'n80', 'n81', '865', 'n82', 'n83', 'e13'].includes(normCode);
+    if (isProminentLine && seenCodesByAgency.has(`prominent_${normCode}`)) return;
+
+    seenIds.add(cleanId);
+    if (cleanRouteId) seenRouteIds.add(cleanRouteId);
+    seenCodesByAgency.add(agencyCodeKey);
+    if (isProminentLine) seenCodesByAgency.add(`prominent_${normCode}`);
+
+    allCombined.push(l);
   };
 
+  // 1. Authoritative Specialized Trackers have highest priority
   addLine(c10Line);
   maresmeLines.forEach(addLine);
   mataroLines.forEach(addLine);
   rodaliesLines.forEach(addLine);
   sagalesLines.forEach(addLine);
   ambLines.forEach(addLine);
+
+  // 2. Generic Catalonia Fallback Catalog
   allCatLines.forEach(addLine);
 
   return allCombined;
