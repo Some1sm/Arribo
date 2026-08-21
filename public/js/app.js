@@ -2397,46 +2397,68 @@ class TransitApp {
     }
 
     if (itemsToRender.length === 0) {
-      dropdown.innerHTML = '<div style="padding:0.75rem 1rem; color:var(--text-muted); font-size:0.8rem;">Cap parada trobada.</div>';
+      dropdown.innerHTML = '<div style="padding:0.75rem 1rem; color:var(--text-muted); font-size:0.8rem;">Cap línia ni parada trobada.</div>';
       dropdown.classList.add('active');
       return;
     }
 
-    dropdown.innerHTML = itemsToRender.map(r => `
-      <div class="search-result-item" data-line-id="${r.lineId}" data-stop-id="${r.stopId}" data-name="${r.stopName.replace(/"/g, '&quot;')}" data-lat="${r.lat}" data-lon="${r.lon}">
-        <div class="search-result-left">
-          <span class="search-result-badge" style="background:${r.lineColor};">${r.lineCode}</span>
-          <div>
-            <div class="search-result-name">${r.stopName}</div>
-            <div class="search-result-zone">${r.zone} • Codi: ${r.code}</div>
+    dropdown.innerHTML = itemsToRender.map(r => {
+      if (r.isLine) {
+        return `
+          <div class="search-result-item line-item" data-type="line" data-line-id="${r.lineId}" style="border-left:3px solid ${r.lineColor};">
+            <div class="search-result-left">
+              <span class="search-result-badge" style="background:${r.lineColor};">${r.lineCode}</span>
+              <div>
+                <div class="search-result-name" style="font-weight:700;">${r.lineName}</div>
+                <div class="search-result-zone">${r.zone || r.agency || 'Línia de transport'}</div>
+              </div>
+            </div>
+            <span style="font-size:0.75rem; color:var(--c10-primary); font-weight:700;">Canviar ➔</span>
           </div>
+        `;
+      }
+      return `
+        <div class="search-result-item stop-item" data-type="stop" data-line-id="${r.lineId}" data-stop-id="${r.stopId}" data-name="${(r.stopName || '').replace(/"/g, '&quot;')}" data-lat="${r.lat || ''}" data-lon="${r.lon || ''}">
+          <div class="search-result-left">
+            <span class="search-result-badge" style="background:${r.lineColor};">${r.lineCode}</span>
+            <div>
+              <div class="search-result-name">${r.stopName}</div>
+              <div class="search-result-zone">${r.zone}${r.code ? ` • Codi: ${r.code}` : ''}</div>
+            </div>
+          </div>
+          <span style="font-size:0.75rem; color:var(--c10-primary); font-weight:700;">Veure ➔</span>
         </div>
-        <span style="font-size:0.75rem; color:var(--c10-primary); font-weight:700;">Veure ➔</span>
-      </div>
-    `).join('');
+      `;
+    }).join('');
 
     dropdown.classList.add('active');
 
     dropdown.querySelectorAll('.search-result-item').forEach(item => {
       item.addEventListener('click', async (e) => {
         e.preventDefault();
+        const type = item.getAttribute('data-type');
         const lineId = item.getAttribute('data-line-id');
+        dropdown.classList.remove('active');
+        input.value = '';
+
+        if (type === 'line') {
+          this.switchLine(lineId);
+          return;
+        }
+
         const stopId = item.getAttribute('data-stop-id');
         const stopName = item.getAttribute('data-name');
         const lat = parseFloat(item.getAttribute('data-lat'));
         const lon = parseFloat(item.getAttribute('data-lon'));
 
-        dropdown.classList.remove('active');
-        input.value = '';
-
         this.switchLine(lineId);
-        this.setTargetStop(stopId);
-
-        if (lat && lon) {
-          this.mapController.focusTargetStop(lat, lon);
+        if (stopId) {
+          this.setTargetStop(stopId);
+          if (lat && lon) {
+            this.mapController.focusTargetStop(lat, lon);
+          }
+          this.inspectStop(stopId, stopName);
         }
-
-        this.inspectStop(stopId, stopName);
       });
     });
   }

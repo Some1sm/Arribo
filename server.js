@@ -124,19 +124,63 @@ app.get('/api/lines', async (req, res) => {
   });
 });
 
-// Universal Stop Searcher (Across all bus and train stops in Catalonia)
-app.get('/api/search/stops', (req, res) => {
+// Universal Stop & Line Searcher (Across all bus and train lines & stops in Catalonia)
+app.get('/api/search/stops', async (req, res) => {
+  await Promise.allSettled([ambTracker.init(), rodaliesTracker.init(), cataloniaTracker.init()]);
   const q = (req.query.q || '').trim().toLowerCase();
-  if (!q || q.length < 2) {
+  if (!q || q.length < 1) {
     return res.json({ success: true, results: [] });
   }
 
+  const normQ = q.replace(/[-_\s\.]/g, '');
   const results = [];
 
-  // 1. Search Rodalies train stations
+  // 1. Search Lines First (high priority matches)
+  const allLines = getAllTransitLines();
+  const matchingLines = allLines.filter(l => {
+    const code = String(l.code || '').toLowerCase();
+    const name = String(l.name || '').toLowerCase();
+    const id = String(l.id || '').toLowerCase();
+    const agency = String(l.agency || '').toLowerCase();
+    const normCode = code.replace(/[-_\s\.]/g, '');
+    const normId = id.replace(/[-_\s\.]/g, '');
+    return code.includes(q) || normCode.includes(normQ) || id.includes(q) || normId.includes(normQ) || name.includes(q) || agency.includes(q);
+  });
+
+  // Sort exact code matches to the top
+  matchingLines.sort((a, b) => {
+    const aCode = String(a.code || '').toLowerCase();
+    const bCode = String(b.code || '').toLowerCase();
+    const aExact = aCode === q || aCode.replace(/[-_\s\.]/g, '') === normQ;
+    const bExact = bCode === q || bCode.replace(/[-_\s\.]/g, '') === normQ;
+    if (aExact && !bExact) return -1;
+    if (!aExact && bExact) return 1;
+    const aStarts = aCode.startsWith(q) || aCode.replace(/[-_\s\.]/g, '').startsWith(normQ);
+    const bStarts = bCode.startsWith(q) || bCode.replace(/[-_\s\.]/g, '').startsWith(normQ);
+    if (aStarts && !bStarts) return -1;
+    if (!aStarts && bStarts) return 1;
+    return 0;
+  });
+
+  matchingLines.slice(0, 6).forEach(l => {
+    results.push({
+      type: 'line',
+      isLine: true,
+      lineId: l.id,
+      lineCode: l.code,
+      lineName: l.name,
+      lineColor: l.color || '#009485',
+      agency: l.agency || 'Xarxa de Transport',
+      zone: `🚌 Línia • ${l.agency || 'Transport'}`,
+      isTrain: l.group === 'rodalies' || l.group === 'renfe'
+    });
+  });
+
+  // 2. Search Rodalies train stations
   rodaliesTracker.allStopsMap.forEach(s => {
     if (s.name.toLowerCase().includes(q) || (s.cleanName && s.cleanName.toLowerCase().includes(q)) || s.id.includes(q)) {
       results.push({
+        type: 'stop',
         lineId: s.lineId || 'rodalies_r1',
         lineCode: s.lineCode || 'R1',
         lineName: s.name,
@@ -152,10 +196,11 @@ app.get('/api/search/stops', (req, res) => {
     }
   });
 
-  // 2. Search Maresme Moventis / Casas stops (N80, N81, e11.1, e11.2, C-20, C-30, etc.)
+  // 3. Search Maresme Moventis / Casas stops (N80, N81, e11.1, e11.2, C-20, C-30, etc.)
   maresmeTracker.allStopsMap.forEach(s => {
     if (results.length < 35 && s && ((s.name && s.name.toLowerCase().includes(q)) || (s.code && String(s.code).includes(q)))) {
       results.push({
+        type: 'stop',
         lineId: s.lineId,
         lineCode: s.lineCode,
         lineName: s.name,
@@ -170,11 +215,12 @@ app.get('/api/search/stops', (req, res) => {
     }
   });
 
-  // 2. Search C-10 stops
+  // 4. Search C-10 stops
   const c10Stops = corridorTracker.getStops('1');
   c10Stops.forEach(s => {
     if (results.length < 35 && s && ((s.name && s.name.toLowerCase().includes(q)) || (s.code && String(s.code).includes(q)))) {
       results.push({
+        type: 'stop',
         lineId: 'c10',
         lineCode: 'C-10',
         lineName: 'Barcelona ⇄ Mataró',
@@ -189,10 +235,11 @@ app.get('/api/search/stops', (req, res) => {
     }
   });
 
-  // 3. Search Sagalés stops
+  // 5. Search Sagalés stops
   sagalesTracker.allStopsMap.forEach(s => {
     if (results.length < 35 && s && ((s.name && s.name.toLowerCase().includes(q)) || (s.code && String(s.code).includes(q)))) {
       results.push({
+        type: 'stop',
         lineId: s.lineId || 'n82',
         lineCode: s.lineCode || 'N82',
         lineName: s.name,
@@ -207,10 +254,11 @@ app.get('/api/search/stops', (req, res) => {
     }
   });
 
-  // 4. Search AMB Bus stops (TUSGSAL, Avanza, Monbus, Soler i Sauret, Baixbus, Moventis)
+  // 6. Search AMB Bus stops (TUSGSAL, Avanza, Monbus, Soler i Sauret, Baixbus, Moventis)
   ambTracker.allStopsMap.forEach(s => {
     if (results.length < 35 && s && ((s.name && s.name.toLowerCase().includes(q)) || (s.code && String(s.code).includes(q)))) {
       results.push({
+        type: 'stop',
         lineId: s.lineId,
         lineCode: s.lineCode,
         lineName: s.name,
@@ -225,12 +273,13 @@ app.get('/api/search/stops', (req, res) => {
     }
   });
 
-  // 5. Search Mataró Bus stops
+  // 7. Search Mataró Bus stops
   mataroTracker.allStopsMap.forEach(s => {
     if (s.name.toLowerCase().includes(q) || s.id.includes(q)) {
       const lineCodes = s.lineas.map(l => `Línia ${l.id}`).join(', ') || 'Mataró Urbà';
       const firstLine = s.lineas[0] || { id: '1', color: '#ff00ff' };
       results.push({
+        type: 'stop',
         lineId: firstLine.id,
         lineCode: lineCodes,
         lineName: s.name,
@@ -245,11 +294,12 @@ app.get('/api/search/stops', (req, res) => {
     }
   });
 
-  // 6. Search All Catalonia Interurban Bus stops (Sagalés, Plana, Hife, Teisa, etc.)
+  // 8. Search All Catalonia Interurban Bus stops (Sagalés, Plana, Hife, Teisa, etc.)
   if (results.length < 35) {
     cataloniaTracker.allStopsMap.forEach(s => {
       if (results.length < 40 && (s.name.toLowerCase().includes(q) || (s.code && s.code.includes(q)))) {
         results.push({
+          type: 'stop',
           lineId: s.lineId,
           lineCode: s.lineCode,
           lineName: s.name,
