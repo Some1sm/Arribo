@@ -971,22 +971,6 @@ class CorridorTracker {
             };
           }).filter(st => st.lat && st.lon);
 
-        // Peak-hour highway & urban N-II traffic delay model (Weekdays 07:30-09:30 and 17:15-19:45)
-        const netNow = timeUtils.getNetworkTime(this.agencyTimezone);
-        const isWeekday = (netNow.dayOfWeek >= 1 && netNow.dayOfWeek <= 5);
-        const isMorningPeak = isWeekday && ((netNow.hour === 7 && netNow.minute >= 30) || netNow.hour === 8 || (netNow.hour === 9 && netNow.minute <= 30));
-        const isEveningPeak = isWeekday && ((netNow.hour === 17 && netNow.minute >= 15) || netNow.hour === 18 || (netNow.hour === 19 && netNow.minute <= 45));
-        
-        let trafficDelaySec = 0;
-        if (isMorningPeak) {
-          trafficDelaySec = (s1.seq <= 20) ? 660 : 480; // +11 min morning inbound / +8 min outbound
-        } else if (isEveningPeak) {
-          trafficDelaySec = (s1.seq <= 20) ? 720 : 540; // +12 min evening rush
-        } else if (netNow.hour >= 11 && netNow.hour <= 14) {
-          trafficDelaySec = 240; // +4 min midday traffic
-        }
-        const trafficDelayMins = Math.round(trafficDelaySec / 60);
-
         return {
           tripId: trip.tripId,
           vehicleId: `c10_${trip.tripId}`,
@@ -1003,9 +987,6 @@ class CorridorTracker {
           bearing: bearing,
           compass: compass,
           speedKmh: speedKmh,
-          trafficDelayMins: trafficDelayMins,
-          delayMinutes: trafficDelayMins,
-          delayMins: trafficDelayMins,
           distanceToNextMeters: distToNext,
           segmentDistanceMeters: segDist,
           fromCoords: { lat: stop1Data.lat, lon: stop1Data.lon },

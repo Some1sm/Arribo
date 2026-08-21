@@ -240,7 +240,6 @@ class IngestionDaemon {
         // Ingest active vehicles along the corridor
         if (liveCorridor && Array.isArray(liveCorridor.activeBuses)) {
           liveCorridor.activeBuses.forEach((b, idx) => {
-            const delay = b.trafficDelayMins || b.delayMinutes || b.delayMins || 0;
             flightRecorder.ingestVehicle({
               vehicleId: b.vehicleId || `c10_dir${dir}_${idx}`,
               lineId: 'c10',
@@ -250,28 +249,16 @@ class IngestionDaemon {
               lon: b.lon,
               speedKmh: b.speedKmh || 38,
               bearing: b.bearing || 45,
-              delayMins: delay,
+              delayMins: 0,
               destination: dir === '1' ? 'Mataró (Hospital)' : 'Barcelona (Metro la Pau)',
-              isRealTime: true
-            });
-
-            historyDb.recordDelayLog({
-              lineId: 'c10',
-              lineCode: 'C-10',
-              agency: 'Moventis / Casas (Interurbà Maresme)',
-              stopId: b.toStop || 'Tram en línia',
-              stopName: b.toStop || 'Tram C-10 en circulació',
-              delayMins: delay,
-              scheduledTime: '',
-              actualTime: '',
               isRealTime: true
             });
           });
         }
 
-        // Record next bus departure delay
+        // Record real-time departure delay when available
         const nb = c10Eta?.nextBus;
-        if (nb) {
+        if (nb && (nb.isRealtime || nb.isRealTime)) {
           const delay = (nb.delayMinutes !== undefined) ? nb.delayMinutes : (nb.delayMins || 0);
           historyDb.recordDelayLog({
             lineId: 'c10',
@@ -282,7 +269,7 @@ class IngestionDaemon {
             delayMins: delay,
             scheduledTime: nb.scheduledTime || nb.departureTime || '',
             actualTime: nb.departureTime || '',
-            isRealTime: nb.isRealtime || nb.isRealTime || false
+            isRealTime: true
           });
         }
       }
@@ -313,24 +300,10 @@ class IngestionDaemon {
                     lon: b.lon,
                     speedKmh: b.speedKmh || 45,
                     bearing: b.bearing || 0,
-                    delayMins: b.trafficDelayMins || 0,
+                    delayMins: 0,
                     destination: b.toStop || '',
                     isRealTime: true
                   });
-
-                  if (b.trafficDelayMins !== undefined) {
-                    historyDb.recordDelayLog({
-                      lineId: lId,
-                      lineCode: lineDetails.code || lId.toUpperCase(),
-                      agency: 'Moventis / Casas (Maresme)',
-                      stopId: b.toStop || 'Tram en línia',
-                      stopName: b.toStop || 'Tram en línia',
-                      delayMins: b.trafficDelayMins,
-                      scheduledTime: '',
-                      actualTime: '',
-                      isRealTime: true
-                    });
-                  }
                 });
               }
 
@@ -343,7 +316,7 @@ class IngestionDaemon {
               for (const st of sampleStops) {
                 const eta = await maresmeTracker.getTargetStopETA(lId, st.id, dir);
                 const nb = eta?.nextBus;
-                if (nb && nb.delayMins !== undefined) {
+                if (nb && (nb.isRealtime || nb.isRealTime) && nb.delayMins !== undefined) {
                   historyDb.recordDelayLog({
                     lineId: lId,
                     lineCode: eta.lineCode || lineDetails.code || lId.toUpperCase(),
