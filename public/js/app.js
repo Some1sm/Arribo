@@ -2365,7 +2365,7 @@ class TransitApp {
       clearTimeout(this.searchDebounceTimer);
       const q = input.value.trim();
 
-      if (q.length < 2) {
+      if (q.length < 1) {
         dropdown.classList.remove('active');
         dropdown.innerHTML = '';
         return;

@@ -144,6 +144,9 @@ app.get('/api/search/stops', async (req, res) => {
     const agency = String(l.agency || '').toLowerCase();
     const normCode = code.replace(/[-_\s\.]/g, '');
     const normId = id.replace(/[-_\s\.]/g, '');
+    if (q.length === 1) {
+      return code === q || normCode === normQ || code.startsWith(q) || normCode.startsWith(normQ);
+    }
     return code.includes(q) || normCode.includes(normQ) || id.includes(q) || normId.includes(normQ) || name.includes(q) || agency.includes(q);
   });
 
