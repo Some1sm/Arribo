@@ -1129,8 +1129,11 @@ class TransitApp {
               </thead>
               <tbody>
                 ${mostDelayed.map((l, i) => `
-                  <tr style="border-bottom:1px solid var(--border-subtle); background:${i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'};">
-                    <td style="padding:0.6rem 0.8rem; font-weight:700; color:var(--brand-primary);">${l.lineCode}</td>
+                  <tr onclick="window.transitApp.closeJournalismModal(); window.transitApp.switchLine('${l.lineId || l.lineCode}');" style="border-bottom:1px solid var(--border-subtle); background:${i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'}; cursor:pointer;" title="Clica per veure la línia ${l.lineCode} al mapa">
+                    <td style="padding:0.6rem 0.8rem; font-weight:700; color:var(--brand-primary);">
+                      <span style="background:${l.color || 'var(--brand-primary)'}; color:#fff; padding:0.15rem 0.45rem; border-radius:6px; margin-right:0.4rem; font-size:0.75rem; display:inline-block;">${l.lineCode}</span>
+                      <span style="font-size:0.78rem; color:var(--text-secondary); font-weight:500;">${l.name && l.name !== l.lineCode ? l.name : ''}</span>
+                    </td>
                     <td style="padding:0.6rem 0.8rem; color:var(--text-muted);">${l.agency}</td>
                     <td style="padding:0.6rem 0.8rem; font-weight:700; color:#ef4444;">+${l.avgDelay} min</td>
                     <td style="padding:0.6rem 0.8rem; color:var(--text-muted);">+${l.maxDelay} min</td>

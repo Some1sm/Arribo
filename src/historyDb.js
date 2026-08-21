@@ -308,19 +308,49 @@ class HistoryDatabase {
       }));
 
       const normKey = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-      const seenMap = new Map();
-      dbDelayed.forEach(r => {
-        seenMap.set(normKey(r.lineCode), r);
-        seenMap.set(String(r.lineCode).toUpperCase(), r);
-      });
+      const validCatalogMap = new Map();
+      if (Array.isArray(allLinesCatalog) && allLinesCatalog.length > 0) {
+        allLinesCatalog.forEach(line => {
+          if (!line) return;
+          const kCode = normKey(line.code);
+          const kId = normKey(line.id);
+          const rawCode = String(line.code || '').toUpperCase();
+          const rawId = String(line.id || '').toUpperCase();
+          if (kCode) validCatalogMap.set(kCode, line);
+          if (kId) validCatalogMap.set(kId, line);
+          if (rawCode) validCatalogMap.set(rawCode, line);
+          if (rawId) validCatalogMap.set(rawId, line);
+        });
+      }
 
-      const rankingMostDelayed = dbDelayed.filter(r => (r.sampleCount || 0) >= 1);
+      // Filter dbDelayed so ONLY lines that exist in the public bus searcher / catalog are kept!
+      const rankingMostDelayed = [];
+      dbDelayed.forEach(r => {
+        if (!r || (r.sampleCount || 0) < 1) return;
+        const cleanKey = normKey(r.lineCode);
+        const rawKey = String(r.lineCode || '').toUpperCase();
+
+        let catalogLine = validCatalogMap.get(cleanKey) || validCatalogMap.get(rawKey);
+        if (!catalogLine && validCatalogMap.size > 0) {
+          // Strictly drop lines that do not exist in the public bus searcher (e.g. internal depot codes)
+          return;
+        }
+
+        rankingMostDelayed.push({
+          ...r,
+          lineId: catalogLine ? catalogLine.id : r.lineCode,
+          lineCode: catalogLine ? catalogLine.code : r.lineCode,
+          name: catalogLine ? catalogLine.name : (r.name || r.lineCode),
+          color: catalogLine ? catalogLine.color : (r.color || '#009485'),
+          agency: catalogLine ? (catalogLine.agency || r.agency) : r.agency
+        });
+      });
 
       // Sort: most delayed first, then by sample count
       rankingMostDelayed.sort((a, b) => {
         if (b.avgDelay !== a.avgDelay) return b.avgDelay - a.avgDelay;
         if (b.sampleCount !== a.sampleCount) return b.sampleCount - a.sampleCount;
-        return a.lineCode.localeCompare(b.lineCode, undefined, { numeric: true });
+        return (a.lineCode || '').localeCompare(b.lineCode || '', undefined, { numeric: true });
       });
 
       // 3. Ranking of Most Punctual Lines (only with active samples)
@@ -373,10 +403,28 @@ class HistoryDatabase {
         ORDER BY avgDelay DESC, maxDelay DESC
         LIMIT 500
       `);
-      const rankingWorstStops = worstStopsStmt.all(cutoff).map(r => ({
-        ...r,
-        avgDelay: Math.round((r.avgDelay || 0) * 10) / 10
-      }));
+      const rankingWorstStops = worstStopsStmt.all(cutoff)
+        .map(r => ({
+          ...r,
+          avgDelay: Math.round((r.avgDelay || 0) * 10) / 10
+        }))
+        .filter(r => {
+          if (validCatalogMap.size === 0) return true;
+          const cleanKey = normKey(r.lineCode);
+          const rawKey = String(r.lineCode || '').toUpperCase();
+          return validCatalogMap.has(cleanKey) || validCatalogMap.has(rawKey);
+        })
+        .map(r => {
+          const cleanKey = normKey(r.lineCode);
+          const rawKey = String(r.lineCode || '').toUpperCase();
+          const catalogLine = validCatalogMap.get(cleanKey) || validCatalogMap.get(rawKey);
+          return {
+            ...r,
+            lineId: catalogLine ? catalogLine.id : r.lineCode,
+            lineCode: catalogLine ? catalogLine.code : r.lineCode,
+            agency: catalogLine ? (catalogLine.agency || r.agency) : r.agency
+          };
+        });
 
       const totalMonitoredCount = allLinesCatalog && allLinesCatalog.length > 0
         ? allLinesCatalog.length
