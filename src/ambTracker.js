@@ -210,8 +210,21 @@ class AmbTracker {
   }
 
   resolveLine(lineId) {
-    const key = String(lineId).toLowerCase().replace('amb_', '').replace('line-', '').replace('linia-', '');
-    return this.routesMap.get(lineId) || this.routesMap.get(`amb_${key}`) || this.routesMap.get(key);
+    if (!lineId) return null;
+    const raw = String(lineId).toLowerCase().trim();
+    if (this.routesMap.has(raw)) return this.routesMap.get(raw);
+    
+    // Strip common prefixes
+    const key = raw.replace('amb_', '').replace('line-', '').replace('linia-', '');
+    if (this.routesMap.has(key)) return this.routesMap.get(key);
+    if (this.routesMap.has(`amb_${key}`)) return this.routesMap.get(`amb_${key}`);
+
+    // If ID is from Catalonia GTFS (e.g. cat_amb_211_l95 or cat_tmb_2.95.2872_95), extract the line code suffix
+    const suffix = raw.split('_').pop();
+    if (suffix && this.routesMap.has(suffix)) return this.routesMap.get(suffix);
+    if (suffix && this.routesMap.has(`amb_${suffix}`)) return this.routesMap.get(`amb_${suffix}`);
+
+    return null;
   }
 
   decodeHtml(str) {
