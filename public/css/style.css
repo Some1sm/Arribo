@@ -1372,8 +1372,24 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  max-height: 320px;
+  max-height: 480px;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  padding-right: 4px;
+}
+
+.departures-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.departures-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.departures-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
 }
 
 .departure-item {

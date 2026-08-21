@@ -790,13 +790,14 @@ class MataroTracker {
       if (d.isNextService === undefined) d.isNextService = false;
     });
 
-    // 4. If zero live/estimated arrivals (e.g. night time / off-peak or no live bus in range), inject scheduled theoretical departures
-    if (finalDepartures.length === 0) {
+    // 4. Merge full daily scheduled timetable departures for this stop
+    {
       const routesForStop = this.findRoutesServingStop(sId, lineId);
       const now = new Date();
       const networkNow = timeUtils.getNetworkTime(this.agencyTimezone, now);
       const nowSec = timeUtils.timeToSec(networkNow.timeStr);
       const dayTypeToday = (networkNow.dayOfWeek >= 1 && networkNow.dayOfWeek <= 5) ? 'weekday' : (networkNow.dayOfWeek === 6 ? 'saturday' : 'sunday');
+      const seenTimes = new Set(finalDepartures.map(d => d.departureTime));
 
       const tomorrow = new Date(Date.now() + 24 * 3600 * 1000);
       const networkTomorrow = timeUtils.getNetworkTime(this.agencyTimezone, tomorrow);
@@ -842,13 +843,16 @@ class MataroTracker {
         if (isOperatingToday) {
           // Generate departures for today from now onwards
           let tripCount = 0;
-          for (let depSec = startSecToday; depSec <= endSecToday && tripCount < 10; depSec += headwaySec) {
+          for (let depSec = startSecToday; depSec <= endSecToday; depSec += headwaySec) {
             const passingSec = depSec + travelSec;
             if (passingSec < nowSec - 60) continue;
 
             const passHour = Math.floor(passingSec / 3600) % 24;
             const passMin = Math.floor((passingSec % 3600) / 60);
             const passingTimeStr = `${String(passHour).padStart(2, '0')}:${String(passMin).padStart(2, '0')}`;
+
+            if (seenTimes.has(passingTimeStr)) continue;
+            seenTimes.add(passingTimeStr);
 
             const depUtcDate = timeUtils.localTimeToUtcDate(networkNow.year, networkNow.month, networkNow.day, passHour, passMin, 0, this.agencyTimezone);
             const diffMs = depUtcDate.getTime() - Date.now();
@@ -867,7 +871,7 @@ class MataroTracker {
               isEstimated: false,
               isToday: true,
               isFirstOfDay: false,
-              isNextService: tripCount === 0,
+              isNextService: tripCount === 0 && finalDepartures.length === 0,
               delayStatus: 'scheduled',
               delayBadgeText: 'Horari teòric',
               comparisonText: `📅 Horari teòric: ${passingTimeStr}`,
@@ -877,8 +881,8 @@ class MataroTracker {
           }
         }
 
-        // If still empty (e.g. night time after fin or before morning start), generate tomorrow morning departures
-        if (finalDepartures.length === 0) {
+        // If few departures remain (e.g. night time after fin or before morning start), generate tomorrow morning departures
+        if (finalDepartures.length < 5) {
           const lineSchedTomorrow = MATARO_LINE_SCHEDULES[lIdStr]?.[dayTypeTomorrow] || lineSchedToday;
           const startSecTomorrow = timeUtils.timeToSec(lineSchedTomorrow.inicio);
           const endSecTomorrow = timeUtils.timeToSec(lineSchedTomorrow.fin);

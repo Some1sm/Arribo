@@ -400,13 +400,16 @@ class CataloniaTracker {
       console.warn(`[CataloniaTracker] getStopDepartures Mou-te fetch failed:`, e.message);
     }
 
-    // 2. If no real-time departures, load authoritative GTFS timetable
-    if (departures.length === 0) {
-      const now = new Date();
-      const scheduledTrips = this.getScheduledDeparturesForDate(route, dirIdx, now);
-      const upcoming = scheduledTrips.filter(t => !t.isPast);
+    // 2. Load authoritative GTFS timetable to provide full daily schedule for the stop
+    const now = new Date();
+    const scheduledTrips = this.getScheduledDeparturesForDate(route, dirIdx, now);
+    const upcoming = scheduledTrips.filter(t => !t.isPast);
 
-      upcoming.slice(0, 10).forEach(t => {
+    const seenTimes = new Set(departures.map(d => d.departureTime));
+
+    upcoming.forEach(t => {
+      if (!seenTimes.has(t.departureTime)) {
+        seenTimes.add(t.departureTime);
         departures.push({
           lineId: route.id,
           lineCode: route.code,
@@ -423,40 +426,40 @@ class CataloniaTracker {
           delayStatus: 'scheduled',
           delayBadgeText: 'Horari teòric'
         });
-      });
+      }
+    });
 
-      // If no trips remain today (e.g. at night), load tomorrow's schedule (or next active day)
-      if (departures.length === 0) {
-        for (let dayOffset = 1; dayOffset <= 7; dayOffset++) {
-          const nextDate = new Date(now.getTime() + dayOffset * 86400000);
-          const nextTrips = this.getScheduledDeparturesForDate(route, dirIdx, nextDate);
-          if (nextTrips.length > 0) {
-            const isTomorrow = dayOffset === 1;
-            const daysOfWeek = ['Dg.', 'Dl.', 'Dt.', 'Dc.', 'Dj.', 'Dv.', 'Ds.'];
-            const dowName = daysOfWeek[nextDate.getDay()];
-            const prefix = isTomorrow ? 'Demà' : dowName;
+    // If few trips remain today (e.g. night / off-peak), load next morning's schedule
+    if (departures.length < 5) {
+      for (let dayOffset = 1; dayOffset <= 7; dayOffset++) {
+        const nextDate = new Date(now.getTime() + dayOffset * 86400000);
+        const nextTrips = this.getScheduledDeparturesForDate(route, dirIdx, nextDate);
+        if (nextTrips.length > 0) {
+          const isTomorrow = dayOffset === 1;
+          const daysOfWeek = ['Dg.', 'Dl.', 'Dt.', 'Dc.', 'Dj.', 'Dv.', 'Ds.'];
+          const dowName = daysOfWeek[nextDate.getDay()];
+          const prefix = isTomorrow ? 'Demà' : dowName;
 
-            nextTrips.slice(0, 10).forEach((t, idx) => {
-              departures.push({
-                lineId: route.id,
-                lineCode: route.code,
-                lineName: route.code,
-                destination: dirMeta.name,
-                departureTime: t.departureTime,
-                minutesAway: null,
-                etaFormatted: idx === 0 ? `🌅 ${t.departureTime}` : t.departureTime,
-                formattedStatus: `${prefix} ${t.departureTime}`,
-                isRealTime: false,
-                isEstimated: false,
-                isToday: false,
-                isFirstOfDay: idx === 0,
-                delayMins: 0,
-                delayStatus: 'scheduled',
-                delayBadgeText: idx === 0 ? (isTomorrow ? '1r pas previst demà' : `1r pas ${dowName}`) : 'Programat'
-              });
+          nextTrips.slice(0, 20).forEach((t, idx) => {
+            departures.push({
+              lineId: route.id,
+              lineCode: route.code,
+              lineName: route.code,
+              destination: dirMeta.name,
+              departureTime: t.departureTime,
+              minutesAway: null,
+              etaFormatted: idx === 0 && departures.length === 0 ? `🌅 ${t.departureTime}` : t.departureTime,
+              formattedStatus: `${prefix} ${t.departureTime}`,
+              isRealTime: false,
+              isEstimated: false,
+              isToday: false,
+              isFirstOfDay: idx === 0,
+              delayMins: 0,
+              delayStatus: 'scheduled',
+              delayBadgeText: idx === 0 ? (isTomorrow ? '1r pas previst demà' : `1r pas ${dowName}`) : 'Programat'
             });
-            break;
-          }
+          });
+          break;
         }
       }
     }
@@ -553,13 +556,16 @@ class CataloniaTracker {
       console.warn(`[CataloniaTracker] Mou-te live departure fetch for stop ${targetStopId} failed:`, e.message);
     }
 
-    // 2. If no real-time arrivals found, load authoritative GTFS timetable
-    if (liveArrivals.length === 0) {
-      const now = new Date();
-      const scheduledTrips = this.getScheduledDeparturesForDate(route, dirIdx, now);
-      const upcoming = scheduledTrips.filter(t => !t.isPast);
+    // 2. Load authoritative GTFS timetable departures for the full daily schedule
+    const now = new Date();
+    const scheduledTrips = this.getScheduledDeparturesForDate(route, dirIdx, now);
+    const upcoming = scheduledTrips.filter(t => !t.isPast);
 
-      upcoming.forEach(t => {
+    const seenTimesEta = new Set(liveArrivals.map(a => a.time));
+
+    upcoming.forEach(t => {
+      if (!seenTimesEta.has(t.departureTime)) {
+        seenTimesEta.add(t.departureTime);
         liveArrivals.push({
           time: t.departureTime,
           timeFormatted: t.departureTime,
@@ -572,36 +578,36 @@ class CataloniaTracker {
           delayMins: 0,
           delayBadgeClass: 'scheduled'
         });
-      });
+      }
+    });
 
-      // If no trips remain today (e.g. at night), load tomorrow's schedule (or next active day)
-      if (liveArrivals.length === 0) {
-        for (let dayOffset = 1; dayOffset <= 7; dayOffset++) {
-          const nextDate = new Date(now.getTime() + dayOffset * 86400000);
-          const nextTrips = this.getScheduledDeparturesForDate(route, dirIdx, nextDate);
-          if (nextTrips.length > 0) {
-            const isTomorrow = dayOffset === 1;
-            const daysOfWeek = ['Dg.', 'Dl.', 'Dt.', 'Dc.', 'Dj.', 'Dv.', 'Ds.'];
-            const dowName = daysOfWeek[nextDate.getDay()];
-            const prefix = isTomorrow ? 'Demà' : dowName;
+    // If few trips remain today (e.g. at night), load tomorrow's schedule
+    if (liveArrivals.length < 5) {
+      for (let dayOffset = 1; dayOffset <= 7; dayOffset++) {
+        const nextDate = new Date(now.getTime() + dayOffset * 86400000);
+        const nextTrips = this.getScheduledDeparturesForDate(route, dirIdx, nextDate);
+        if (nextTrips.length > 0) {
+          const isTomorrow = dayOffset === 1;
+          const daysOfWeek = ['Dg.', 'Dl.', 'Dt.', 'Dc.', 'Dj.', 'Dv.', 'Ds.'];
+          const dowName = daysOfWeek[nextDate.getDay()];
+          const prefix = isTomorrow ? 'Demà' : dowName;
 
-            nextTrips.forEach((t, idx) => {
-              liveArrivals.push({
-                time: t.departureTime,
-                timeFormatted: `${prefix} a les ${t.departureTime}`,
-                minsAway: null,
-                etaFormatted: idx === 0 ? `🌅 ${t.departureTime}` : t.departureTime,
-                destination: dirMeta.name,
-                isRealTime: false,
-                isToday: false,
-                isFirstOfDay: idx === 0,
-                delayText: idx === 0 ? (isTomorrow ? '1r pas previst demà' : `1r pas ${dowName}`) : 'Programat',
-                delayMins: 0,
-                delayBadgeClass: 'scheduled'
-              });
+          nextTrips.slice(0, 20).forEach((t, idx) => {
+            liveArrivals.push({
+              time: t.departureTime,
+              timeFormatted: `${prefix} a les ${t.departureTime}`,
+              minsAway: null,
+              etaFormatted: idx === 0 && liveArrivals.length === 0 ? `🌅 ${t.departureTime}` : t.departureTime,
+              destination: dirMeta.name,
+              isRealTime: false,
+              isToday: false,
+              isFirstOfDay: idx === 0,
+              delayText: idx === 0 ? (isTomorrow ? '1r pas previst demà' : `1r pas ${dowName}`) : 'Programat',
+              delayMins: 0,
+              delayBadgeClass: 'scheduled'
             });
-            break;
-          }
+          });
+          break;
         }
       }
     }

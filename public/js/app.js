@@ -1577,7 +1577,7 @@ class TransitApp {
     const badge = document.getElementById(badgeId);
     if (!container) return;
 
-    if (badge) badge.textContent = `${departures.length} properes`;
+    if (badge) badge.textContent = `${departures.length} sortides`;
 
     if (!departures || departures.length === 0) {
       container.innerHTML = `
@@ -1591,7 +1591,7 @@ class TransitApp {
     const targetStopSeq = this.activeLineData?.targetStop?.seq || null;
     const targetStopId = this.targetStopId || this.activeLineData?.targetStop?.id || null;
 
-    container.innerHTML = departures.slice(0, 8).map((dep, idx) => {
+    const itemsHtml = departures.map((dep, idx) => {
       const rawTime = (dep.expectedIso && !dep.expectedIso.startsWith('0001-') && !dep.expectedIso.startsWith('1970-'))
         ? new Date(dep.expectedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
         : (dep.departureTime || '--:--');
@@ -1676,6 +1676,14 @@ class TransitApp {
         </div>
       `;
     }).join('');
+
+    const footerHint = departures.length > 5 ? `
+      <div class="dep-scroll-footer" style="text-align: center; padding: 0.6rem 0.5rem; font-size: 0.72rem; color: var(--text-muted); border-top: 1px dashed var(--border-subtle); margin-top: 0.25rem;">
+        📜 Mostrant tot l'horari teòric oficial del dia • Desplaça per consultar totes les sortides
+      </div>
+    ` : '';
+
+    container.innerHTML = itemsHtml + footerHint;
   }
 
   // ==========================================
@@ -2202,7 +2210,7 @@ class TransitApp {
         const currStop = (currIndex >= 0 && stopsList) ? stopsList[currIndex] : null;
         const stopSeq = currStop?.seq || (currIndex >= 0 ? currIndex + 1 : null);
 
-        listEl.innerHTML = deps.slice(0, 10).map((d, idx) => {
+        const modalItemsHtml = deps.map((d, idx) => {
           const rawTime = (d.expectedIso && !d.expectedIso.startsWith('0001-') && !d.expectedIso.startsWith('1970-'))
             ? new Date(d.expectedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
             : (d.departureTime || '--:--');
@@ -2290,6 +2298,14 @@ class TransitApp {
             </div>
           `;
         }).join('');
+
+        const modalFooterHint = deps.length > 5 ? `
+          <div class="dep-scroll-footer" style="text-align: center; padding: 0.6rem 0.5rem; font-size: 0.72rem; color: var(--text-muted); border-top: 1px dashed var(--border-subtle); margin-top: 0.25rem;">
+            📜 Mostrant tot l'horari teòric oficial del dia • Desplaça per consultar totes les sortides
+          </div>
+        ` : '';
+
+        listEl.innerHTML = modalItemsHtml + modalFooterHint;
       }
     } catch (e) {
       console.error('Stop departures fetch error:', e);

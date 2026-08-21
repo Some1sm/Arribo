@@ -720,8 +720,8 @@ class AmbTracker {
       }
     });
 
-    // If off-peak / night, generate calculated scheduled passing times
-    if (departures.length === 0 && lDetails) {
+    // 2. Generate calculated scheduled passing times for full daily timetable
+    if (lDetails) {
       const stops = lDetails.stops || [];
       const stopIdx = stops.findIndex(s => String(s.id) === sIdStr || String(s.code) === sIdStr);
 
@@ -740,45 +740,80 @@ class AmbTracker {
         travelSec = Math.round((cumDist / 8.0) + (stopIdx * 25));
       }
 
-      const tomorrow = new Date(Date.now() + 24 * 3600 * 1000);
-      const netTomorrow = timeUtils.getNetworkTime(this.agencyTimezone, tomorrow);
-      const isNightLine = route && (route.code.startsWith('N') || route.code.startsWith('n'));
+      const netNow = timeUtils.getNetworkTime(this.agencyTimezone);
+      const isNightLine = route && (String(route.code).toUpperCase().startsWith('N'));
+      const headway = (route && String(route.code).toUpperCase().startsWith('M')) ? 10 : 15;
 
-      const baseHours = isNightLine
-        ? ['23:30', '00:30', '01:30', '02:30', '03:30', '04:30']
-        : ['05:30', '06:00', '06:30', '07:00', '07:30', '08:00', '08:30', '09:00'];
+      const currentMinOfDay = netNow.hour * 60 + netNow.minute;
+      const endMinOfDay = isNightLine ? (5 * 60 + 30) : (23 * 60 + 30);
 
-      baseHours.forEach((initTimeStr, idx) => {
-        const initSec = timeUtils.timeToSec(initTimeStr);
-        const passSec = initSec + travelSec;
+      // Remaining scheduled trips for today
+      for (let m = Math.ceil((currentMinOfDay + 5) / headway) * headway; m <= endMinOfDay; m += headway) {
+        const h = Math.floor(m / 60) % 24;
+        const min = m % 60;
+        const passSec = (h * 3600 + min * 60) + travelSec;
         const passHour = Math.floor(passSec / 3600) % 24;
         const passMin = Math.floor((passSec % 3600) / 60);
         const passTimeStr = `${String(passHour).padStart(2, '0')}:${String(passMin).padStart(2, '0')}`;
-
-        const depUtc = timeUtils.localTimeToUtcDate(netTomorrow.year, netTomorrow.month, netTomorrow.day, passHour, passMin, 0, this.agencyTimezone);
-        const diffMs = depUtc.getTime() - now;
-        const diffMin = Math.max(1, Math.round(diffMs / 60000));
-        const isFirst = idx === 0;
+        const diffMin = Math.max(0, m - currentMinOfDay);
 
         departures.push({
           lineId: route ? route.id : 'amb_bus',
           lineName: route ? route.code : 'AMB',
           destination: route ? route.directions[dir]?.name : 'Destí',
           departureTime: passTimeStr,
-          expectedIso: depUtc.toISOString(),
-          aimedIso: depUtc.toISOString(),
           minutesAway: diffMin,
           isRealTime: false,
           isEstimated: false,
-          isToday: false,
-          isFirstOfDay: isFirst,
-          isNextService: isFirst,
+          isToday: true,
+          isFirstOfDay: false,
           delayStatus: 'scheduled',
-          delayBadgeText: isFirst ? '🌅 1r Servei' : 'Programat',
-          comparisonText: isFirst ? `📅 Pas teòric previst: ${passTimeStr}` : `📅 Horari teòric: ${passTimeStr}`,
+          delayBadgeText: 'Horari teòric',
+          comparisonText: `📅 Horari teòric: ${passTimeStr}`,
           formattedStatus: passTimeStr
         });
-      });
+      }
+
+      // If near end of day / off-peak, append tomorrow's first morning trips
+      if (departures.length < 5) {
+        const tomorrow = new Date(Date.now() + 24 * 3600 * 1000);
+        const netTomorrow = timeUtils.getNetworkTime(this.agencyTimezone, tomorrow);
+        const baseHours = isNightLine
+          ? ['23:30', '00:30', '01:30', '02:30', '03:30', '04:30']
+          : ['05:30', '06:00', '06:30', '07:00', '07:30', '08:00', '08:30', '09:00'];
+
+        baseHours.forEach((initTimeStr, idx) => {
+          const initSec = timeUtils.timeToSec(initTimeStr);
+          const passSec = initSec + travelSec;
+          const passHour = Math.floor(passSec / 3600) % 24;
+          const passMin = Math.floor((passSec % 3600) / 60);
+          const passTimeStr = `${String(passHour).padStart(2, '0')}:${String(passMin).padStart(2, '0')}`;
+
+          const depUtc = timeUtils.localTimeToUtcDate(netTomorrow.year, netTomorrow.month, netTomorrow.day, passHour, passMin, 0, this.agencyTimezone);
+          const diffMs = depUtc.getTime() - now;
+          const diffMin = Math.max(1, Math.round(diffMs / 60000));
+          const isFirst = idx === 0 && departures.length === 0;
+
+          departures.push({
+            lineId: route ? route.id : 'amb_bus',
+            lineName: route ? route.code : 'AMB',
+            destination: route ? route.directions[dir]?.name : 'Destí',
+            departureTime: passTimeStr,
+            expectedIso: depUtc.toISOString(),
+            aimedIso: depUtc.toISOString(),
+            minutesAway: diffMin,
+            isRealTime: false,
+            isEstimated: false,
+            isToday: false,
+            isFirstOfDay: isFirst,
+            isNextService: isFirst,
+            delayStatus: 'scheduled',
+            delayBadgeText: isFirst ? '🌅 1r Servei' : 'Programat demà',
+            comparisonText: isFirst ? `📅 Pas teòric previst: ${passTimeStr}` : `📅 Horari teòric: ${passTimeStr}`,
+            formattedStatus: passTimeStr
+          });
+        });
+      }
     }
 
     departures.sort((a, b) => (a.minutesAway || 0) - (b.minutesAway || 0));

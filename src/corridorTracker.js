@@ -787,7 +787,7 @@ class CorridorTracker {
         googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${targetStopObj.lat || this.targetStop.coords.lat},${targetStopObj.lon || this.targetStop.coords.lon}`
       },
       nextBus: nextBus,
-      upcomingDepartures: departuresToUse.slice(0, 8),
+      upcomingDepartures: departuresToUse,
       allDepartures: departuresToUse,
       calendarInfo: calendarInfo,
       serviceStatus: {
