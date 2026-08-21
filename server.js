@@ -93,23 +93,25 @@ function getAllTransitLines() {
   const mataroLines = mataroTracker.getLines();
   const allCatLines = cataloniaTracker.getLines();
 
-  // Deduplicate against lines already registered in specialized trackers
-  const seenCodes = new Set(['c-10', 'c10', '1', '2', '3', '4', '5', '6', '7', '8']);
-  maresmeLines.forEach(l => seenCodes.add(String(l.code).toLowerCase()));
-  ambLines.forEach(l => seenCodes.add(String(l.code).toLowerCase()));
-  rodaliesLines.forEach(l => seenCodes.add(String(l.code).toLowerCase()));
+  const seenIds = new Set();
+  const allCombined = [];
 
-  const extraCatLines = allCatLines.filter(l => !seenCodes.has(String(l.code).toLowerCase()));
+  const addLine = (l) => {
+    if (l && l.id && !seenIds.has(String(l.id).toLowerCase())) {
+      seenIds.add(String(l.id).toLowerCase());
+      allCombined.push(l);
+    }
+  };
 
-  return [
-    c10Line,
-    ...maresmeLines,
-    ...rodaliesLines,
-    ...sagalesLines,
-    ...ambLines,
-    ...mataroLines,
-    ...extraCatLines
-  ];
+  addLine(c10Line);
+  maresmeLines.forEach(addLine);
+  mataroLines.forEach(addLine);
+  rodaliesLines.forEach(addLine);
+  sagalesLines.forEach(addLine);
+  ambLines.forEach(addLine);
+  allCatLines.forEach(addLine);
+
+  return allCombined;
 }
 
 // List all available transit lines across all providers

@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const mouteClient = require('./mouteClient');
+const moventisClient = require('./moventisClient');
 const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
 
@@ -8,6 +9,7 @@ const MARESME_LINES_CONFIG = [
   {
     id: 'n80',
     routeId: 'GEN_0109',
+    moventisLineId: '68',
     code: 'N80',
     name: 'Barcelona (Pg. de Gràcia) ⇄ Mataró (NitBus)',
     color: '#009485',
@@ -21,6 +23,7 @@ const MARESME_LINES_CONFIG = [
   {
     id: 'n81',
     routeId: 'GEN_0147',
+    moventisLineId: '69',
     code: 'N81',
     name: 'Barcelona (Pg. de Gràcia) ⇄ Vilassar de Dalt (NitBus)',
     color: '#009485',
@@ -34,6 +37,7 @@ const MARESME_LINES_CONFIG = [
   {
     id: 'e111',
     routeId: 'GEN_0496',
+    moventisLineId: '47',
     code: 'e11.1',
     name: 'Barcelona (Rda. Universitat) ⇄ Mataró (Pl. Tereses - Exprés)',
     color: '#009485',
@@ -47,6 +51,7 @@ const MARESME_LINES_CONFIG = [
   {
     id: 'e112',
     routeId: 'GEN_0497',
+    moventisLineId: '48',
     code: 'e11.2',
     name: 'Barcelona (Rda. Universitat) ⇄ Mataró (Camí de la Serra / Nord - Exprés)',
     color: '#009485',
@@ -60,6 +65,7 @@ const MARESME_LINES_CONFIG = [
   {
     id: 'c20',
     routeId: 'GEN_0501',
+    moventisLineId: '57',
     code: 'C-20',
     name: 'Sant Vicenç de Montalt ⇄ Llavaneres ⇄ Mataró (Estació)',
     color: '#009485',
@@ -73,6 +79,7 @@ const MARESME_LINES_CONFIG = [
   {
     id: 'c30',
     routeId: 'GEN_0495',
+    moventisLineId: '59',
     code: 'C-30',
     name: 'Vilassar de Dalt ⇄ Premià ⇄ Cabrera ⇄ Mataró (Hospital)',
     color: '#009485',
@@ -86,6 +93,7 @@ const MARESME_LINES_CONFIG = [
   {
     id: 'c3',
     routeId: 'GEN_0831',
+    moventisLineId: '61',
     code: 'C-3',
     name: 'Vilassar de Dalt ⇄ Premià de Mar ⇄ Barcelona',
     color: '#009485',
@@ -99,6 +107,7 @@ const MARESME_LINES_CONFIG = [
   {
     id: 'c12',
     routeId: 'GEN_0832',
+    moventisLineId: '54',
     code: 'C-12',
     name: 'Cabrils ⇄ Vilassar de Mar (Estació Rodalies)',
     color: '#009485',
@@ -112,6 +121,7 @@ const MARESME_LINES_CONFIG = [
   {
     id: 'c14',
     routeId: 'GEN_0575',
+    moventisLineId: '55',
     code: 'C-14',
     name: 'Premià de Dalt ⇄ Premià de Mar (Estació Rodalies)',
     color: '#009485',
@@ -125,6 +135,7 @@ const MARESME_LINES_CONFIG = [
   {
     id: 'c15',
     routeId: 'GEN_0273',
+    moventisLineId: '56',
     code: 'C-15',
     name: 'Teià ⇄ El Masnou (Estació Rodalies)',
     color: '#009485',
@@ -133,6 +144,20 @@ const MARESME_LINES_CONFIG = [
     directions: [
       { dirId: '0', name: 'Cap a Teià' },
       { dirId: '1', name: 'Cap a El Masnou (Estació)' }
+    ]
+  },
+  {
+    id: '865',
+    routeId: 'GEN_0865',
+    moventisLineId: '51',
+    code: '865',
+    name: 'Mataró ⇄ Bellaterra (UAB)',
+    color: '#009485',
+    agency: 'Moventis / Casas (Universitat)',
+    group: 'moventis',
+    directions: [
+      { dirId: '0', name: 'Cap a Bellaterra (UAB)' },
+      { dirId: '1', name: 'Cap a Mataró' }
     ]
   }
 ];
@@ -382,6 +407,159 @@ class MaresmeTracker {
     }
 
     const dir = String(direction || '0');
+
+    // Priority 1: Moventis Official API Resolution
+    if (lineConfig.moventisLineId) {
+      try {
+        const trayectos = await moventisClient.getLineTrayectos(lineConfig.moventisLineId);
+        if (trayectos && trayectos.length > 0) {
+          const targetSentido = (dir === '0') ? 'V' : 'I';
+          let matchingTrays = trayectos.filter(t => t.SENTIDO === targetSentido);
+          if (matchingTrays.length === 0) matchingTrays = trayectos;
+          matchingTrays.sort((a, b) => (b.TrayectosDet?.length || 0) - (a.TrayectosDet?.length || 0));
+          const chosenTray = matchingTrays[0] || trayectos[0];
+
+          if (chosenTray && chosenTray.TrayectosDet && chosenTray.TrayectosDet.length > 0) {
+            const stops = chosenTray.TrayectosDet.map((st, idx) => {
+              const p = st.Parada || {};
+              const idStr = String(p.ID_PARADA || p.COD_PARADA);
+              return {
+                id: idStr,
+                code: String(p.COD_PARADA || idStr),
+                moventisStopId: String(p.ID_PARADA || idStr),
+                mouteStopId: String(p.COD_PARADA || idStr),
+                name: p.DESC_PARADA || `Parada ${idStr}`,
+                lat: p.LATITUD || 41.5365,
+                lon: p.LONGITUD || 2.43047,
+                seq: idx + 1,
+                zone: p.MUNICIPIO || 'Zona Maresme'
+              };
+            });
+
+            // Register in stopsMap for reverse lookups
+            stops.forEach(s => this.stopsMap.set(s.id, s));
+
+            let polylineCoords = [];
+            const canonicalShape = MARESME_CANONICAL_SHAPES[`${lineConfig.id}_${dir}`];
+            if (canonicalShape) {
+              const sqliteCoords = this.getShapeCoords(canonicalShape);
+              if (sqliteCoords && sqliteCoords.length > 0) {
+                polylineCoords = sqliteCoords;
+              }
+            }
+            if (polylineCoords.length === 0 && stops.length > 0) {
+              polylineCoords = stops.map(s => [s.lat, s.lon]);
+            }
+
+            // Fetch official schedule from Moventis API
+            const paradasSched = await moventisClient.getParadasTimetable(lineConfig.moventisLineId, chosenTray.ID_TRAYECTO);
+            const scheduledRuns = [];
+            if (paradasSched && paradasSched.length > 0 && paradasSched[0].hora) {
+              const startTimes = paradasSched[0].hora || [];
+              const lastStopSched = paradasSched[paradasSched.length - 1];
+              const lastTimes = lastStopSched?.hora || [];
+              
+              startTimes.forEach((startStr, tIdx) => {
+                const endStr = lastTimes[tIdx] || lastTimes[lastTimes.length - 1] || startStr;
+                const startSec = timeUtils.timeToSec(startStr);
+                const endSec = timeUtils.timeToSec(endStr);
+                const durSec = Math.max(900, (endSec >= startSec ? endSec - startSec : (86400 - startSec + endSec)));
+                scheduledRuns.push({ startSec, durSec, startStr });
+              });
+            }
+
+            const netNow = timeUtils.getNetworkTime(this.agencyTimezone);
+            const currentSec = netNow.hour * 3600 + netNow.minute * 60 + netNow.second;
+            const activeBuses = [];
+
+            scheduledRuns.forEach((run, tIdx) => {
+              let elapsedSec = currentSec - run.startSec;
+              if (elapsedSec < 0 && run.startSec > 72000 && currentSec < 21600) {
+                elapsedSec = (86400 - run.startSec) + currentSec;
+              }
+
+              if (elapsedSec >= 0 && elapsedSec <= run.durSec) {
+                const progress = Math.min(0.99, Math.max(0.01, elapsedSec / run.durSec));
+                const polyIdx = Math.min(polylineCoords.length - 1, Math.floor(progress * (polylineCoords.length - 1)));
+                const pos = polylineCoords[polyIdx];
+                const nextPos = polylineCoords[Math.min(polylineCoords.length - 1, polyIdx + 1)] || pos;
+
+                const bearing = Math.round(geoUtils.calculateBearing(pos[0], pos[1], nextPos[0], nextPos[1]) || 0);
+                const compass = geoUtils.bearingToCompassName(bearing);
+
+                const stopIndex = Math.min(stops.length - 2, Math.floor(progress * (stops.length - 1)));
+                const fromStop = stops[stopIndex];
+                const toStop = stops[stopIndex + 1];
+
+                const speedKmh = lineConfig.code.includes('e11') ? 55 : 34;
+                const remainingSec = Math.round(run.durSec - elapsedSec);
+
+                activeBuses.push({
+                  tripId: `${lineConfig.code}_${run.startStr.replace(':', '')}`,
+                  vehicleId: `MOV-${1000 + (tIdx * 17) % 900}`,
+                  lineId: lineConfig.id,
+                  lineCode: lineConfig.code,
+                  lineColor: lineConfig.color,
+                  direction: String(dir),
+                  lat: pos[0],
+                  lon: pos[1],
+                  bearing,
+                  compass,
+                  speedKmh,
+                  progressInSegment: (progress * (stops.length - 1)) % 1,
+                  totalProgress: Math.round(progress * 100),
+                  fromStop: fromStop?.name || 'Origen',
+                  toStop: toStop?.name || 'Destí',
+                  fromSeq: fromStop?.seq || 1,
+                  toSeq: toStop?.seq || 2,
+                  secondsToNextStop: Math.max(30, Math.round(remainingSec / (stops.length - stopIndex))),
+                  distanceToNextMeters: Math.round(((remainingSec / (stops.length - stopIndex)) * (speedKmh / 3.6))),
+                  isTerminalLayover: progress > 0.95,
+                  currentSegmentTime: `En ruta cap a ${toStop?.name || 'Destí'}`,
+                  isDeadReckoned: true,
+                  coordinatesFormatted: `${pos[0].toFixed(5)}° N, ${pos[1].toFixed(5)}° E`
+                });
+              }
+            });
+
+            const checkpoints = stops.filter((s, i) => i === 0 || i === stops.length - 1 || i % 4 === 0).map(s => ({
+              id: s.id,
+              name: s.name,
+              seq: s.seq,
+              zone: s.zone,
+              isPassed: false,
+              hasBus: activeBuses.some(b => b.toSeq >= s.seq && b.fromSeq <= s.seq),
+              etaMinutes: 0
+            }));
+
+            return {
+              id: lineConfig.id,
+              code: lineConfig.code,
+              name: lineConfig.name,
+              color: lineConfig.color,
+              agency: lineConfig.agency,
+              direction: dir,
+              directions: lineConfig.directions,
+              stops,
+              coords: polylineCoords,
+              polyline: polylineCoords,
+              activeBuses,
+              checkpoints,
+              totalActiveBuses: activeBuses.length,
+              serviceStatus: {
+                isOperating: lineConfig.id.startsWith('n')
+                  ? (new Date().getHours() >= 23 || new Date().getHours() < 6)
+                  : (new Date().getHours() >= 6 && new Date().getHours() < 23),
+                calendarTag: 'Feiners (de dilluns a divendres)',
+                firstServiceTomorrow: lineConfig.id.startsWith('n') ? '23:30' : '06:00'
+              }
+            };
+          }
+        }
+      } catch (movErr) {
+        console.warn(`[MaresmeTracker] Moventis API fallback for ${lineConfig.code}:`, movErr.message);
+      }
+    }
 
     // Dynamic GTFS Resolution via CataloniaTracker
     try {
@@ -667,6 +845,116 @@ class MaresmeTracker {
 
     const departures = [];
     const now = Date.now();
+
+    // Moventis Official API Real-Time SAE ETAs & Timetables
+    if (lineConfig?.moventisLineId) {
+      try {
+        const movStopId = stopObj.moventisStopId || stopObj.id || sIdStr;
+        const rtRaw = await moventisClient.getRealtimeStopETAs(movStopId, lineConfig.moventisLineId);
+
+        if (Array.isArray(rtRaw) && rtRaw.length > 0) {
+          const matchingItems = rtRaw.filter(li => String(li.idLinea) === String(lineConfig.moventisLineId) || li.selected === 1);
+          
+          matchingItems.forEach(lineItem => {
+            const trs = lineItem.trayectos || {};
+            for (const [destName, depList] of Object.entries(trs)) {
+              const list = Array.isArray(depList) ? depList : (typeof depList === 'object' ? Object.values(depList) : []);
+              list.forEach(dep => {
+                const minsAway = moventisClient.parseRealtimeMinutes(dep.minutos);
+                if (minsAway !== null && minsAway >= -5) {
+                  const safeMins = Math.max(0, Math.round(minsAway));
+                  const isRT = dep.real === 'S';
+                  const clockStr = dep.hora || timeUtils.secToTime(timeUtils.getNetworkTime(this.agencyTimezone).currentSec + safeMins * 60).substring(0, 5);
+                  
+                  const depUtc = new Date(Date.now() + safeMins * 60 * 1000);
+                  
+                  departures.push({
+                    lineId: displayLineId,
+                    lineName: lineConfig.code,
+                    destination: destName.includes('(') ? destName : (destName || defaultDest),
+                    departureTime: clockStr,
+                    expectedIso: depUtc.toISOString(),
+                    aimedIso: depUtc.toISOString(),
+                    minutesAway: safeMins,
+                    isRealTime: isRT,
+                    isEstimated: !isRT,
+                    isToday: true,
+                    isFirstOfDay: false,
+                    delayMins: 0,
+                    delayStatus: 'on-time',
+                    delayBadgeText: isRT ? 'En temps real (GPS)' : 'Horari teòric',
+                    comparisonText: isRT ? `En temps real (GPS Moventis)` : `Horari oficial (${clockStr})`,
+                    formattedStatus: safeMins === 0 ? 'Ara' : `${safeMins} min`
+                  });
+                }
+              });
+            }
+          });
+        }
+
+        // If no real-time departures, query stop timetable
+        if (departures.length === 0) {
+          const trayectos = await moventisClient.getLineTrayectos(lineConfig.moventisLineId);
+          const targetSentido = (dir === '0') ? 'V' : 'I';
+          let matchingTrays = (trayectos || []).filter(t => t.SENTIDO === targetSentido);
+          if (matchingTrays.length === 0) matchingTrays = trayectos || [];
+          matchingTrays.sort((a, b) => (b.TrayectosDet?.length || 0) - (a.TrayectosDet?.length || 0));
+          const chosenTray = matchingTrays[0] || (trayectos && trayectos[0]);
+
+          if (chosenTray) {
+            const paradasSched = await moventisClient.getParadasTimetable(lineConfig.moventisLineId, chosenTray.ID_TRAYECTO);
+            const stopEntry = paradasSched.find(p => String(p.COD_PARADA).startsWith(String(stopObj.code)) || String(p.COD_PARADA).startsWith(String(stopObj.id))) || paradasSched[0];
+            if (stopEntry && Array.isArray(stopEntry.hora)) {
+              const netNow = timeUtils.getNetworkTime(this.agencyTimezone);
+              const currentSec = netNow.currentSec;
+              stopEntry.hora.forEach(hStr => {
+                const sSec = timeUtils.timeToSec(hStr);
+                const diffSec = sSec - currentSec;
+                if (diffSec >= -300 && diffSec <= 28800) { // next 8 hours
+                  const mAway = Math.max(0, Math.round(diffSec / 60));
+                  const depUtc = new Date(Date.now() + diffSec * 1000);
+                  departures.push({
+                    lineId: displayLineId,
+                    lineName: lineConfig.code,
+                    destination: defaultDest,
+                    departureTime: hStr,
+                    expectedIso: depUtc.toISOString(),
+                    aimedIso: depUtc.toISOString(),
+                    minutesAway: mAway,
+                    isRealTime: false,
+                    isEstimated: true,
+                    isToday: true,
+                    isFirstOfDay: false,
+                    delayMins: 0,
+                    delayStatus: 'on-time',
+                    delayBadgeText: 'Programat',
+                    comparisonText: `Horari oficial Moventis (${hStr})`,
+                    formattedStatus: mAway === 0 ? 'Ara' : `${mAway} min`
+                  });
+                }
+              });
+            }
+          }
+        }
+
+        if (departures.length > 0) {
+          departures.sort((a, b) => a.minutesAway - b.minutesAway);
+          return {
+            stop: {
+              id: stopObj.id,
+              name: stopObj.name,
+              zone: stopObj.zone || 'Zona Maresme'
+            },
+            lineCode: lineConfig.code,
+            lineColor: lineConfig.color,
+            departures: departures.slice(0, 10),
+            totalDepartures: departures.length
+          };
+        }
+      } catch (err) {
+        console.warn(`[MaresmeTracker] Stop departures Moventis API fallback:`, err.message);
+      }
+    }
 
     // Query Mou-te API with strict line matching and stop validation
     if (stopObj.mouteStopId) {
