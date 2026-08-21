@@ -626,7 +626,19 @@ class C10Map {
       if (!bus.lat || !bus.lon) return;
 
       const isSelected = this.isBusSelected(bus, this.selectedVehicleId);
-      const isSecDir = String(bus.direction) === '1' && secondaryCoords && secondaryCoords.length > 1;
+      let isSecDir = (String(bus.direction) === '1' || bus.direction === 1) && secondaryCoords && secondaryCoords.length > 1;
+      
+      // Proximity check fallback: If bus.direction is not explicit, determine closest polyline
+      if (!isSecDir && secondaryCoords && secondaryCoords.length > 1 && this.activePolylineCoords && this.activePolylineCoords.length > 1) {
+        if (bus.direction === undefined || bus.direction === null || bus.direction === '') {
+          const snapPrimary = this.snapToPolyline(bus.lat, bus.lon, this.activePolylineCoords);
+          const snapSecondary = this.snapToPolyline(bus.lat, bus.lon, secondaryCoords);
+          if (snapSecondary.distanceMeters < snapPrimary.distanceMeters) {
+            isSecDir = true;
+          }
+        }
+      }
+
       const targetPolyline = isSecDir ? secondaryCoords : (this.activePolylineCoords || []);
       const busColor = isSecDir ? secondaryColor : lineColor;
 
