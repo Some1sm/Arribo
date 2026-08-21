@@ -196,9 +196,33 @@ class RouteCacheService {
     const shapesMap = {};
     const stopTimesByTrip = {};
 
-    // E11.1
-    const poly111_0 = generateExpressPolyline(E11_1_STOPS_DIR0, false);
-    const poly111_1 = generateExpressPolyline(E11_1_STOPS_DIR1, true);
+    // 0. Load Authoritative GTFS ATM Shapes
+    const atmShapesPath = path.join(__dirname, '..', 'data', 'atm_gtfs', 'shapes.txt');
+    if (fs.existsSync(atmShapesPath)) {
+      const content = fs.readFileSync(atmShapesPath, 'utf8');
+      const lines = content.split('\n');
+      const tempShapes = {};
+      for (let i = 1; i < lines.length; i++) {
+        const l = lines[i];
+        if (!l) continue;
+        const parts = l.split(',');
+        const sId = parts[0];
+        if (!tempShapes[sId]) tempShapes[sId] = [];
+        tempShapes[sId].push({
+          lat: parseFloat(parts[1]),
+          lon: parseFloat(parts[2]),
+          seq: parseInt(parts[3], 10)
+        });
+      }
+      Object.keys(tempShapes).forEach(k => {
+        tempShapes[k].sort((a, b) => a.seq - b.seq);
+        shapesMap[k] = tempShapes[k].map(p => [p.lat, p.lon]);
+      });
+    }
+
+    // E11.1 (GTFS Shape IDs: GEN_24318 & GEN_23685)
+    const poly111_0 = shapesMap['GEN_24318'] || generateExpressPolyline(E11_1_STOPS_DIR0, false);
+    const poly111_1 = shapesMap['GEN_23685'] || generateExpressPolyline(E11_1_STOPS_DIR1, true);
     shapesMap['SHAPE_GEN_0496_D0'] = poly111_0;
     shapesMap['SHAPE_GEN_0496_D1'] = poly111_1;
     shapesMap['GEN_24318'] = poly111_0;
@@ -209,11 +233,13 @@ class RouteCacheService {
     tripsMap['GEN_0496'] = [...sched111_0.trips, ...sched111_1.trips];
     Object.assign(stopTimesByTrip, sched111_0.stopTimesMap, sched111_1.stopTimesMap);
 
-    // E11.2
-    const poly112_0 = generateExpressPolyline(E11_2_STOPS_DIR0, false);
-    const poly112_1 = generateExpressPolyline(E11_2_STOPS_DIR1, true);
+    // E11.2 (GTFS Shape IDs: GEN_18664 / GEN_24319 & GEN_18716 / GEN_23686)
+    const poly112_0 = shapesMap['GEN_18664'] || shapesMap['GEN_24319'] || generateExpressPolyline(E11_2_STOPS_DIR0, false);
+    const poly112_1 = shapesMap['GEN_18716'] || shapesMap['GEN_23686'] || generateExpressPolyline(E11_2_STOPS_DIR1, true);
     shapesMap['SHAPE_GEN_0497_D0'] = poly112_0;
     shapesMap['SHAPE_GEN_0497_D1'] = poly112_1;
+    shapesMap['GEN_18664'] = poly112_0;
+    shapesMap['GEN_18716'] = poly112_1;
 
     const sched112_0 = generateServiceTimetable('GEN_0497', '0', E11_2_STOPS_DIR0, 15, 6, 22);
     const sched112_1 = generateServiceTimetable('GEN_0497', '1', E11_2_STOPS_DIR1, 15, 6, 22);
@@ -233,8 +259,8 @@ class RouteCacheService {
     ];
 
     otherMaresmeLines.forEach(l => {
-      const p0 = generateExpressPolyline(l.stops0, false);
-      const p1 = generateExpressPolyline(l.stops1, true);
+      const p0 = shapesMap[`SHAPE_${l.id}_D0`] || generateExpressPolyline(l.stops0, false);
+      const p1 = shapesMap[`SHAPE_${l.id}_D1`] || generateExpressPolyline(l.stops1, true);
       shapesMap[`SHAPE_${l.id}_D0`] = p0;
       shapesMap[`SHAPE_${l.id}_D1`] = p1;
       const s0 = generateServiceTimetable(l.id, '0', l.stops0, l.freq, l.sH, l.eH);
@@ -244,8 +270,10 @@ class RouteCacheService {
     });
 
     // C-10 Coastal Corridor (Barcelona ⇄ Mataró per N-II)
-    shapesMap['SHAPE_GEN_0498_D1'] = c10StaticData.C10_POLYLINE_DIR1;
-    shapesMap['SHAPE_GEN_0498_D0'] = c10StaticData.C10_POLYLINE_DIR0;
+    shapesMap['SHAPE_GEN_0498_D1'] = shapesMap['GEN_24222'] || c10StaticData.C10_POLYLINE_DIR1;
+    shapesMap['SHAPE_GEN_0498_D0'] = shapesMap['GEN_22906'] || c10StaticData.C10_POLYLINE_DIR0;
+    shapesMap['GEN_24222'] = shapesMap['SHAPE_GEN_0498_D1'];
+    shapesMap['GEN_22906'] = shapesMap['SHAPE_GEN_0498_D0'];
     tripsMap['GEN_0498'] = [...c10StaticData.C10_TRIPS_DIR1, ...c10StaticData.C10_TRIPS_DIR0];
     [...c10StaticData.C10_TRIPS_DIR1, ...c10StaticData.C10_TRIPS_DIR0].forEach(t => {
       stopTimesByTrip[t.tripId] = t.stops;
