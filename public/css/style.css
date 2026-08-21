@@ -3919,4 +3919,65 @@ body {
   }
 }
 
+/* ==========================================
+   MODERN LOADING SPINNER & SKELETON STATES
+   ========================================== */
+
+@keyframes spinner-rotate {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes pulse-opacity {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+.loading-spinner-inline {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: var(--c10-primary, #009485);
+  border-radius: 50%;
+  animation: spinner-rotate 0.75s linear infinite;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.eta-loading-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--text-secondary);
+  font-size: 1.6rem;
+  font-weight: 700;
+  animation: pulse-opacity 1.4s ease-in-out infinite;
+}
+
+.departures-loading-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 1.6rem 1rem;
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--border-subtle);
+  animation: pulse-opacity 1.4s ease-in-out infinite;
+}
+
+.cockpit-val-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  animation: pulse-opacity 1.2s ease-in-out infinite;
+}
+
+
 

@@ -309,6 +309,7 @@ class TransitApp {
       this.updateHeaderBrand(lineObj);
       this.renderLineBanner(lineObj);
       this.renderDirectionButtons(lineObj.directions || [], this.activeDirection);
+      this.renderTargetCardLoading(lineObj, 'Carregant parada...');
     }
 
     const routeKey = `${this.activeLineId}_${this.activeDirection}`;
@@ -1359,9 +1360,54 @@ class TransitApp {
     }
   }
 
-  // ==========================================
-  // 3. TARGET CARD & HERO ETA (UNIVERSAL)
-  // ==========================================
+  renderTargetCardLoading(lData, stopName = 'Parada seleccionada') {
+    const titleEl = document.getElementById('target-stop-title');
+    const codeEl = document.getElementById('target-stop-code');
+    const dirSubEl = document.getElementById('target-direction-sub');
+    const etaBigEl = document.getElementById('eta-big-display');
+    const etaClockEl = document.getElementById('eta-clock-display');
+    const etaPillEl = document.getElementById('eta-status-pill');
+    const etaStatusText = document.getElementById('eta-status-text');
+    const lineTagEl = document.getElementById('target-line-tag');
+    const destEl = document.getElementById('next-bus-dest');
+    const opEl = document.getElementById('target-operator-name');
+    const depContainer = document.getElementById('departures-list-container');
+    const depBadge = document.getElementById('dep-count-badge');
+
+    if (titleEl) titleEl.textContent = stopName;
+    if (codeEl) codeEl.textContent = '...';
+    if (dirSubEl) dirSubEl.textContent = 'Sincronitzant horaris...';
+    if (lineTagEl && lData) {
+      lineTagEl.textContent = lData.code || lData.id || 'C-10';
+      if (lData.color) lineTagEl.style.color = lData.color;
+    }
+    if (destEl) destEl.textContent = 'Sincronitzant...';
+    if (opEl && lData) opEl.textContent = lData.agency || 'Operador de Transport';
+
+    if (etaBigEl) {
+      etaBigEl.innerHTML = `<span class="eta-loading-box"><span class="loading-spinner-inline"></span> Sincronitzant...</span>`;
+    }
+    if (etaClockEl) {
+      etaClockEl.innerHTML = `<span class="cockpit-val-loading"><span class="loading-spinner-inline" style="width:10px;height:10px;border-width:1.5px;"></span> Calculant proper pas en temps real...</span>`;
+    }
+    if (etaPillEl && etaStatusText) {
+      etaPillEl.className = 'eta-status-pill';
+      etaPillEl.style.background = 'rgba(255,255,255,0.06)';
+      etaPillEl.style.color = 'var(--text-secondary)';
+      etaStatusText.innerHTML = `<span class="loading-spinner-inline" style="width:10px;height:10px;border-width:1.5px;margin-right:4px;"></span> Sincronitzant GPS`;
+    }
+    if (depContainer) {
+      depContainer.innerHTML = `
+        <div class="departures-loading-placeholder">
+          <span class="loading-spinner-inline"></span>
+          Sincronitzant properes sortides i horaris oficials...
+        </div>
+      `;
+    }
+    if (depBadge) {
+      depBadge.textContent = '...';
+    }
+  }
 
   renderTargetCard(data, lData) {
     const titleEl = document.getElementById('target-stop-title');
@@ -2017,8 +2063,8 @@ class TransitApp {
 
     if (titleEl) titleEl.textContent = displayName;
     if (subEl) subEl.textContent = `Codi identificador: ${displayCode}`;
-    if (countBadge) countBadge.textContent = 'Consultant...';
-    if (listEl) listEl.innerHTML = '<div style="color:var(--text-muted); font-size:0.85rem; padding:0.5rem;">Consultant temps real i horaris...</div>';
+    if (countBadge) countBadge.innerHTML = '<span class="loading-spinner-inline" style="width:10px;height:10px;border-width:1.5px;"></span>';
+    if (listEl) listEl.innerHTML = '<div class="departures-loading-placeholder"><span class="loading-spinner-inline"></span> Sincronitzant properes sortides i horaris oficials...</div>';
 
     if (seqBadge) {
       seqBadge.textContent = currIndex >= 0 ? `Parada #${currIndex + 1} / ${totalStops}` : 'Parada';
