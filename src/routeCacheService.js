@@ -300,7 +300,22 @@ class RouteCacheService {
       stopTimesByTrip
     };
 
-    fs.writeFileSync(maresmeCachePath, JSON.stringify(maresmeCache, null, 2), 'utf8');
+    // Resilient atomic-ish write: compact JSON, retry once, never crash boot on transient I/O errors
+    const serialized = JSON.stringify(maresmeCache);
+    const tmpPath = `${maresmeCachePath}.tmp`;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        fs.writeFileSync(tmpPath, serialized, 'utf8');
+        fs.renameSync(tmpPath, maresmeCachePath);
+        break;
+      } catch (e) {
+        console.warn(`[RouteCacheService] Maresme cache write attempt ${attempt} failed: ${e.message}`);
+        if (attempt === 2) {
+          console.warn('[RouteCacheService] Continuing with previous cached file (if any).');
+          try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch (_) {}
+        }
+      }
+    }
 
     // Merge or write stops.json
     let existingStops = [];

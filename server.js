@@ -13,6 +13,9 @@ const routeCacheService = require('./src/routeCacheService');
 const reportCacheService = require('./src/reportCacheService');
 const flightRecorder = require('./src/flightRecorder');
 const ingestionDaemon = require('./src/ingestionDaemon');
+const trackerRegistry = require('./src/core/TrackerRegistry');
+const calendarEngine = require('./src/core/time/calendarEngine');
+const delayEngine = require('./src/core/schedule/delayEngine');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -37,12 +40,9 @@ app.use(express.static(path.join(__dirname, 'public'), {
 // Pre-initialize async trackers, daily route cache, and launch Autonomous Ingestion Daemon
 routeCacheService.initDailyCache();
 
-Promise.allSettled([
-  ambTracker.init(),
-  rodaliesTracker.init(),
-  cataloniaTracker.init()
-]).then(() => {
+trackerRegistry.initAll().then(() => {
   console.log('[TransitPlatform] All Multi-Provider Trackers Initialized.');
+  trackerRegistry.cachedLines = null; // Rebuild catalog with fully initialized providers
   ingestionDaemon.start();
 });
 
@@ -53,106 +53,180 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
+// Centralized polymorphic line resolution via TrackerRegistry (src/core/TrackerRegistry.js)
 function getTrackerForLine(lineId) {
-  const cleanId = String(lineId).toLowerCase().trim();
-  if (cleanId === 'c10' || cleanId === 'c-10') return { type: 'c10', tracker: corridorTracker };
+  return trackerRegistry.getTrackerForLine(lineId);
+}
 
-  // Mataró urban bus L1..L8 must be checked before AMB since AMB also has numeric codes
-  const mataroId = cleanId.replace(/^l(?=[1-8]$)/, ''); // strip leading 'l' from l1..l8
-  if (/^[1-8]$/.test(mataroId)) return { type: 'mataro', tracker: mataroTracker };
+function buildDefaultCalendarInfo(date = new Date()) {
+  const dc = calendarEngine.getDateComponents(date, 'Europe/Madrid');
+  const dayType = dc.isSunday ? 'Diumenge / Festiu' : (dc.isSaturday ? 'Dissabte' : 'Feiner');
+  return {
+    serviceId: dc.isWeekend ? 'weekend' : 'weekday',
+    name: dayType,
+    frequency: 'Cada 15-30 min',
+    frequencyMinutes: 20,
+    isWeekend: dc.isWeekend,
+    calendarTag: `${dayType} (${dc.dateStr})`,
+    dateFormatted: dc.dateStr
+  };
+}
 
-  if (maresmeTracker.resolveLine(cleanId)) return { type: 'maresme', tracker: maresmeTracker };
-  if (rodaliesTracker.resolveLine(cleanId)) return { type: 'rodalies', tracker: rodaliesTracker };
-  if (ambTracker.resolveLine(cleanId)) return { type: 'amb', tracker: ambTracker };
-  if (sagalesTracker.resolveLineConfig(cleanId)) return { type: 'sagales', tracker: sagalesTracker };
-  if (cataloniaTracker.resolveLine(cleanId)) return { type: 'catalonia', tracker: cataloniaTracker };
-  return { type: 'catalonia', tracker: cataloniaTracker };
+function getCalendarInfoFor(tracker, date = new Date()) {
+  try {
+    if (tracker && typeof tracker.getServiceCalendarInfo === 'function') {
+      return tracker.getServiceCalendarInfo(date);
+    }
+  } catch (_) {}
+  return buildDefaultCalendarInfo(date);
+}
+
+// ==========================================
+// CANONICAL SCHEMA HARMONIZATION (M3)
+// Guarantees uniform JSON contracts across all 7 operator trackers
+// while preserving dual-cased compatibility fields.
+// ==========================================
+
+// Canonical Vehicle payload with dual-cased compatibility fields
+// (delayMinutes + delayMins, isRealTime + isRealtime, speedKmh + speed)
+function standardizeVehicle(raw = {}) {
+  const v = { ...(raw || {}) };
+
+  const rawDelay = v.delayMinutes !== undefined ? v.delayMinutes : v.delayMins;
+  const delay = Number.isFinite(Number(rawDelay)) ? Number(rawDelay) : 0;
+  v.delayMinutes = delay;
+  v.delayMins = delay;
+
+  const isReal = v.isRealTime !== undefined ? Boolean(v.isRealTime)
+    : (v.isRealtime !== undefined ? Boolean(v.isRealtime) : !v.isEstimated);
+  v.isRealTime = isReal;
+  v.isRealtime = isReal;
+
+  const rawSpeed = v.speedKmh !== undefined ? v.speedKmh : v.speed;
+  const speed = Number.isFinite(Number(rawSpeed)) ? Number(rawSpeed) : 0;
+  v.speedKmh = speed;
+  v.speed = speed;
+
+  if (!v.lastUpdate) {
+    v.lastUpdate = v.recordedAt || new Date().toISOString();
+  }
+  return v;
+}
+
+// Canonical Departure payload with dual-cased delay fields
+function harmonizeDeparture(dep = {}) {
+  const d = { ...(dep || {}) };
+
+  const rawDelay = d.delayMinutes !== undefined ? d.delayMinutes : d.delayMins;
+  const delay = Number.isFinite(Number(rawDelay)) ? Math.round(Number(rawDelay)) : 0;
+  d.delayMinutes = delay;
+  d.delayMins = delay;
+
+  const isRealTime = Boolean(d.isRealTime !== undefined ? d.isRealTime : d.isRealtime);
+  d.isRealTime = isRealTime;
+  d.isRealtime = isRealTime;
+
+  // Fill canonical status fields only when the tracker omitted them
+  if (!d.delayStatus) {
+    const evalStatus = delayEngine.computeDelayStatus(delay, isRealTime, {
+      scheduledTime: d.scheduledTime || d.departureTime,
+      isFirstOfDay: Boolean(d.isFirstOfDay),
+      isNextService: Boolean(d.isNextService),
+      isPassed: Boolean(d.isPassed),
+      isEstimated: Boolean(d.isEstimated)
+    });
+    d.delayStatus = evalStatus.delayStatus;
+    if (!d.delayBadgeText) d.delayBadgeText = evalStatus.delayBadgeText;
+    if (!d.delayFormatted) d.delayFormatted = evalStatus.delayFormatted;
+    if (!d.comparisonText) d.comparisonText = evalStatus.comparisonText;
+  }
+  if (!d.formattedStatus) d.formattedStatus = delayEngine.formatCountdownStatus(d.minutesAway);
+
+  return d;
+}
+
+// Canonical Stop Departures envelope:
+// { stopId, stopName, stop: { id, code, name, lat, lon, zone }, departures, totalDepartures, calendarInfo, lastUpdated }
+function harmonizeDeparturesEnvelope(data, tracker, lineId) {
+  if (!data || typeof data !== 'object') return data;
+
+  const stopRaw = data.stop || {};
+  const stopId = data.stopId || stopRaw.id || stopRaw.mouteStopId || stopRaw.gtfsStopId || null;
+  const stopName = data.stopName || stopRaw.name || '';
+  const departures = Array.isArray(data.departures) ? data.departures.map(harmonizeDeparture) : [];
+
+  const stop = {
+    id: stopRaw.id || stopId,
+    code: stopRaw.code || stopRaw.gtfsStopId || stopId,
+    name: stopName,
+    zone: stopRaw.zone || 'Zona Transit'
+  };
+  if (stopRaw.lat !== undefined) stop.lat = stopRaw.lat;
+  else if (typeof stopRaw.latitude === 'number') stop.lat = stopRaw.latitude;
+  if (stopRaw.lon !== undefined) stop.lon = stopRaw.lon;
+  else if (typeof stopRaw.longitude === 'number') stop.lon = stopRaw.longitude;
+
+  return {
+    ...data,
+    lineId: data.lineId || String(lineId || ''),
+    stopId,
+    stopName,
+    stop,
+    departures,
+    totalDepartures: typeof data.totalDepartures === 'number' ? data.totalDepartures : departures.length,
+    calendarInfo: data.calendarInfo || getCalendarInfoFor(tracker),
+    lastUpdated: data.lastUpdated || new Date().toISOString()
+  };
+}
+
+// Canonical Target ETA envelope:
+// { targetStop (flat coords + coords{lat,lon}), direction, directionName, nextBus, upcomingDepartures, allDepartures, calendarInfo, serviceStatus, lastUpdated }
+function harmonizeTargetEta(data, tracker, lineId, direction) {
+  if (!data || typeof data !== 'object') return data;
+
+  const tsRaw = data.targetStop || {};
+  const tsLat = tsRaw.lat !== undefined ? tsRaw.lat : (tsRaw.coords ? tsRaw.coords.lat : undefined);
+  const tsLon = tsRaw.lon !== undefined ? tsRaw.lon : (tsRaw.coords ? tsRaw.coords.lon : undefined);
+  const nestedCoords = { ...(tsRaw.coords || {}) };
+  if (tsLat !== undefined) nestedCoords.lat = tsLat;
+  if (tsLon !== undefined) nestedCoords.lon = tsLon;
+
+  const targetStop = { ...tsRaw };
+  if (tsLat !== undefined) targetStop.lat = tsLat;
+  if (tsLon !== undefined) targetStop.lon = tsLon;
+  if (nestedCoords.lat !== undefined || nestedCoords.lon !== undefined) targetStop.coords = nestedCoords;
+
+  const upcoming = Array.isArray(data.upcomingDepartures)
+    ? data.upcomingDepartures
+    : (Array.isArray(data.allDepartures) ? data.allDepartures : []);
+  const allDepartures = Array.isArray(data.allDepartures) ? data.allDepartures : upcoming;
+
+  return {
+    ...data,
+    targetStop,
+    direction: data.direction !== undefined ? String(data.direction) : String(direction || '0'),
+    directionName: data.directionName || null,
+    nextBus: data.nextBus ? harmonizeDeparture(data.nextBus) : null,
+    upcomingDepartures: upcoming.map(harmonizeDeparture),
+    allDepartures: allDepartures.map(harmonizeDeparture),
+    calendarInfo: data.calendarInfo || getCalendarInfoFor(tracker),
+    serviceStatus: data.serviceStatus || null,
+    lastUpdated: data.lastUpdated || new Date().toISOString()
+  };
 }
 
 // ==========================================
 // 1. UNIVERSAL TRANSIT LINES & SEARCH
 // ==========================================
 
+// Canonical multi-provider line catalog via TrackerRegistry (4-tier deduplication + 60s TTL cache)
 function getAllTransitLines() {
-  const c10Line = {
-    id: 'c10',
-    routeId: 'GEN_0498',
-    code: 'C-10',
-    name: 'Barcelona ⇄ Mataró (per N-II)',
-    color: '#009485',
-    agency: 'Moventis / Casas (Interurbà Maresme)',
-    group: 'moventis',
-    directions: [
-      { dirId: '1', name: "Cap a Mataró (Hospital / Pl. d'Itàlia)" },
-      { dirId: '0', name: "Cap a Barcelona (Metro la Pau)" }
-    ]
-  };
-
-  const maresmeLines = maresmeTracker.getLines();
-  const mataroLines = mataroTracker.getLines();
-  const rodaliesLines = rodaliesTracker.getLines();
-  const sagalesLines = sagalesTracker.getLines();
-  const ambLines = ambTracker.getLines();
-  const allCatLines = cataloniaTracker.getLines();
-
-  const seenIds = new Set();
-  const seenRouteIds = new Set();
-  const seenCodesByAgency = new Set();
-  const allCombined = [];
-
-  const addLine = (l) => {
-    if (!l || !l.id) return;
-    const cleanId = String(l.id).toLowerCase();
-    const cleanRouteId = l.routeId ? String(l.routeId).toUpperCase() : '';
-    const normCode = (l.code || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    const normAgency = (l.agency || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-
-    // 1. Deduplicate by unique internal identifier
-    if (seenIds.has(cleanId)) return;
-
-    // 2. Deduplicate by official GTFS routeId (e.g. GEN_0496 for e11.1)
-    if (cleanRouteId && seenRouteIds.has(cleanRouteId)) return;
-
-    // 3. Deduplicate by normalized line code + operator keyword
-    const agencyKey = normAgency.includes('casas') || normAgency.includes('moventis') ? 'moventis'
-      : normAgency.includes('mataro') || normAgency.includes('avanza') ? 'mataro'
-      : normAgency.includes('sagales') ? 'sagales'
-      : normAgency.includes('tusgsal') ? 'tusgsal'
-      : normAgency.includes('renfe') || normAgency.includes('rodalies') ? 'rodalies'
-      : normAgency.includes('monbus') || normAgency.includes('igualadina') ? 'monbus'
-      : normAgency.slice(0, 8);
-    const agencyCodeKey = `${agencyKey}_${normCode}`;
-    if (seenCodesByAgency.has(agencyCodeKey)) return;
-
-    // 4. Special canonical deduplication for prominent lines
-    const isProminentLine = ['e111', 'e112', 'c10', 'c20', 'c30', 'c3', 'c12', 'c14', 'c15', 'n80', 'n81', '865', 'n82', 'n83', 'e13'].includes(normCode);
-    if (isProminentLine && seenCodesByAgency.has(`prominent_${normCode}`)) return;
-
-    seenIds.add(cleanId);
-    if (cleanRouteId) seenRouteIds.add(cleanRouteId);
-    seenCodesByAgency.add(agencyCodeKey);
-    if (isProminentLine) seenCodesByAgency.add(`prominent_${normCode}`);
-
-    allCombined.push(l);
-  };
-
-  // 1. Authoritative Specialized Trackers have highest priority
-  addLine(c10Line);
-  maresmeLines.forEach(addLine);
-  mataroLines.forEach(addLine);
-  rodaliesLines.forEach(addLine);
-  sagalesLines.forEach(addLine);
-  ambLines.forEach(addLine);
-
-  // 2. Generic Catalonia Fallback Catalog
-  allCatLines.forEach(addLine);
-
-  return allCombined;
+  return trackerRegistry.getAllLines();
 }
 
 // List all available transit lines across all providers
 app.get('/api/lines', async (req, res) => {
-  await Promise.allSettled([ambTracker.init(), rodaliesTracker.init(), cataloniaTracker.init()]);
+  await trackerRegistry.initAll();
   const combinedLines = getAllTransitLines();
 
   res.json({
@@ -164,7 +238,7 @@ app.get('/api/lines', async (req, res) => {
 
 // Universal Stop & Line Searcher (Across all bus and train lines & stops in Catalonia)
 app.get('/api/search/stops', async (req, res) => {
-  await Promise.allSettled([ambTracker.init(), rodaliesTracker.init(), cataloniaTracker.init()]);
+  await trackerRegistry.initAll();
   const q = (req.query.q || '').trim().toLowerCase();
   if (!q || q.length < 1) {
     return res.json({ success: true, results: [] });
@@ -472,13 +546,43 @@ app.get('/api/line/:lineId/target-eta', async (req, res) => {
     if (type === 'c10') {
       const dir = direction === '0' ? '0' : '1';
       const data = await corridorTracker.getTargetStopETA(dir, stopId, targetDate);
-      res.json({ success: true, data });
+      res.json({ success: true, data: harmonizeTargetEta(data, corridorTracker, lineId, dir) });
     } else {
       const data = await tracker.getTargetStopETA(lineId, stopId, direction);
-      res.json({ success: true, data });
+      res.json({ success: true, data: harmonizeTargetEta(data, tracker, lineId, direction) });
     }
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Get canonical Live Vehicles for any line (uniform vehicle schema)
+app.get('/api/line/:lineId/vehicles', async (req, res) => {
+  const { lineId } = req.params;
+  const direction = req.query.direction || '0';
+  try {
+    const { type, tracker } = getTrackerForLine(lineId);
+    let details;
+    if (type === 'c10') {
+      const dir = direction === '0' ? '0' : '1';
+      details = await corridorTracker.getCorridorLiveTracking(dir);
+    } else {
+      details = await tracker.getLineDetails(lineId, direction);
+    }
+    const vehicles = (details?.activeBuses || []).map(standardizeVehicle);
+    res.json({
+      success: true,
+      lineId,
+      code: details?.code || String(lineId),
+      name: details?.name || null,
+      agency: details?.agency || null,
+      direction: String(direction),
+      totalVehicles: vehicles.length,
+      vehicles,
+      lastUpdated: new Date().toISOString()
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message, totalVehicles: 0, vehicles: [] });
   }
 });
 
@@ -511,10 +615,10 @@ app.get('/api/line/:lineId/stop/:stopId/departures', async (req, res) => {
     if (type === 'c10') {
       const dir = direction === '0' ? '0' : '1';
       const data = await corridorTracker.getStopDepartures(stopId, dir, targetDate);
-      res.json({ success: true, data });
+      res.json({ success: true, data: harmonizeDeparturesEnvelope(data, corridorTracker, lineId) });
     } else {
       const data = await tracker.getStopDepartures(stopId, lineId, direction);
-      res.json({ success: true, data });
+      res.json({ success: true, data: harmonizeDeparturesEnvelope(data, tracker, lineId) });
     }
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -748,6 +852,22 @@ app.get('/api/fleet/live', (req, res) => {
   });
 });
 
+// Canonical Global Live Vehicles API (uniform vehicle schema with dual-cased compatibility fields)
+app.get('/api/vehicles', (req, res) => {
+  const lineFilter = req.query.line ? String(req.query.line).toUpperCase() : null;
+  let vehicles = flightRecorder.getAllVehicles();
+  if (lineFilter) {
+    vehicles = vehicles.filter(v => String(v.lineCode || '').toUpperCase() === lineFilter);
+  }
+  const standardized = vehicles.map(standardizeVehicle);
+  res.json({
+    success: true,
+    count: standardized.length,
+    timestamp: Date.now(),
+    vehicles: standardized
+  });
+});
+
 // GPS breadcrumb trail history for a specific vehicle
 app.get('/api/vehicle/:vehicleId/trail', (req, res) => {
   const { vehicleId } = req.params;
@@ -773,8 +893,8 @@ app.get('/api/line/:lineId/stats', (req, res) => {
   });
 });
 
-// Journalism Investigation Report across all lines & operators (Instant Cache & 30-min background generation)
-app.get('/api/analytics/journalism', async (req, res) => {
+// Shared Journalism Report handler (Instant Cache & 30-min background generation)
+async function handleJournalismReport(req, res) {
   try {
     const hours = parseInt(req.query.hours || '24', 10);
     const report = await reportCacheService.getLatestReport(hours, () => getAllTransitLines());
@@ -785,16 +905,51 @@ app.get('/api/analytics/journalism', async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
-});
+}
 
-// CSV Export for spreadsheet / investigative journalism analysis
-app.get('/api/analytics/export/csv', (req, res) => {
+// Shared CSV Export handler for spreadsheet / investigative journalism analysis
+function handleAnalyticsCsv(req, res) {
   const hours = parseInt(req.query.hours || '48', 10);
   const csvData = flightRecorder.exportCsv(hours);
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="arribo_transit_delays_${Date.now()}.csv"`);
   res.send(csvData);
-});
+}
+
+// Shared Delay Ranking handler (canonical delay rankings across lines & stops)
+async function handleRankingReport(req, res) {
+  try {
+    const hours = parseInt(req.query.hours || '24', 10);
+    const limit = Math.min(500, Math.max(1, parseInt(req.query.limit || '25', 10)));
+    const report = await reportCacheService.getLatestReport(hours, () => getAllTransitLines());
+    res.json({
+      success: true,
+      timeframeHours: report?.meta?.timeframeHours || reportCacheService.normalizeHours(hours),
+      generatedAt: report?.meta?.generatedAt || null,
+      summary: report?.summary || {},
+      rankingMostDelayed: (report?.rankingMostDelayed || []).slice(0, limit),
+      rankingBestPunctuality: (report?.rankingBestPunctuality || []).slice(0, limit),
+      rankingWorstStops: (report?.rankingWorstStops || []).slice(0, limit),
+      agencyStats: report?.agencyStats || []
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+// Journalism Investigation Report across all lines & operators
+app.get('/api/analytics/journalism', handleJournalismReport);
+
+// Canonical Catalan alias namespace (/api/retards/*) mirroring /api/analytics/*
+app.get('/api/retards/journalism', handleJournalismReport);
+app.get('/api/retards/export/csv', handleAnalyticsCsv);
+app.get('/api/retards/ranking', handleRankingReport);
+
+// CSV Export for spreadsheet / investigative journalism analysis
+app.get('/api/analytics/export/csv', handleAnalyticsCsv);
+
+// Delay Ranking endpoint (mirrored at /api/retards/ranking)
+app.get('/api/analytics/ranking', handleRankingReport);
 
 // ==========================================
 // 5. DAILY ROUTE SNAPSHOTS & 3-DAY RETENTION

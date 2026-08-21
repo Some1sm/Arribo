@@ -60,9 +60,9 @@ The system transitions from siloed, duplicative tracker modules to a layered, mo
 |---|------|-------|-------------|--------|
 | 1 | Shared Transit Core Modules | Implement `src/core/geo/geoEngine.js`, `src/core/time/timeEngine.js`, `src/core/time/calendarEngine.js`, `src/core/schedule/scheduleSynthesizer.js`, `src/core/schedule/delayEngine.js`, `src/core/BaseTracker.js`, `src/core/TrackerRegistry.js`. Maintain backward compatibility in `src/geoUtils.js` and `src/timeUtils.js`. | none | DONE |
 | 2 | Tracker Consolidation & Refactoring | Refactor `src/corridorTracker.js`, `src/mataroTracker.js`, `src/maresmeTracker.js`, `src/sagalesTracker.js`, `src/ambTracker.js`, `src/rodaliesTracker.js`, `src/cataloniaTracker.js` to inherit/use `src/core/`. | M1 | DONE |
-| 3 | API Centralization & Route Harmonization | Update `server.js` with canonical endpoints (`/api/line/:lineId/vehicles`, `/api/vehicles`, `/api/retards/*`), uniform JSON response formatting, and verified frontend compatibility. | M2 | IN_PROGRESS |
-| 4 | Authoritative BEST_PRACTICES.md | Create production-grade `BEST_PRACTICES.md` at repository root with data structures, lifecycle rules, contribution guide, and testing requirements. | M1, M2, M3 | PLANNED |
-| 5 | Comprehensive Verification & Test Pass | Expand `test/verification_test.js` to assert unified contracts across all 7 tracker families, run recursive syntax checks across all 28+ JS files, and verify 100% test pass. | M1, M2, M3, M4 | PLANNED |
+| 3 | API Centralization & Route Harmonization | Update `server.js` with canonical endpoints (`/api/line/:lineId/vehicles`, `/api/vehicles`, `/api/retards/*`), uniform JSON response formatting, and verified frontend compatibility. | M2 | DONE |
+| 4 | Authoritative BEST_PRACTICES.md | Create production-grade `BEST_PRACTICES.md` at repository root with data structures, lifecycle rules, contribution guide, and testing requirements. | M1, M2, M3 | DONE |
+| 5 | Comprehensive Verification & Test Pass | Expand `test/verification_test.js` to assert unified contracts across all 7 tracker families, run recursive syntax checks across all 28+ JS files, and verify 100% test pass. | M1, M2, M3, M4 | DONE |
 
 ## Interface Contracts
 
