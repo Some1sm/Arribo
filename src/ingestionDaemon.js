@@ -7,6 +7,7 @@ const rodaliesTracker = require('./rodaliesTracker');
 const sagalesTracker = require('./sagalesTracker');
 const cataloniaTracker = require('./cataloniaTracker');
 const routeCacheService = require('./routeCacheService');
+const reportCacheService = require('./reportCacheService');
 const historyDb = require('./historyDb');
 
 class IngestionDaemon {
@@ -23,6 +24,7 @@ class IngestionDaemon {
     this.disruptionsTimer = null;
     this.pruneTimer = null;
     this.dailySnapshotTimer = null;
+    this.journalismReportTimer = null;
     this.cataloniaBatchOffset = 0;
     this.ambBatchOffset = 0;
     this.sagalesBatchOffset = 0;
@@ -88,6 +90,10 @@ class IngestionDaemon {
       routeCacheService.takeDailySnapshot();
       routeCacheService.pruneOldSnapshots();
     }, 24 * 3600 * 1000);
+
+    // 12. Schedule Periodic Journalism Report Generation (every 30 minutes, keeping max 2 reports on storage)
+    setTimeout(() => this.generateJournalismReport(), 3000);
+    this.journalismReportTimer = setInterval(() => this.generateJournalismReport(), 30 * 60 * 1000);
   }
 
   stop() {
@@ -103,6 +109,7 @@ class IngestionDaemon {
     if (this.disruptionsTimer) clearInterval(this.disruptionsTimer);
     if (this.pruneTimer) clearInterval(this.pruneTimer);
     if (this.dailySnapshotTimer) clearInterval(this.dailySnapshotTimer);
+    if (this.journalismReportTimer) clearInterval(this.journalismReportTimer);
     console.log('[IngestionDaemon] Stopped ingestion daemon.');
   }
 
@@ -487,6 +494,22 @@ class IngestionDaemon {
       await ambTracker.getDisruptions();
     } catch (e) {
       // Upstream temporary hiccup
+    }
+  }
+
+  async generateJournalismReport() {
+    try {
+      const allLines = [
+        ...maresmeTracker.getLines(),
+        ...mataroTracker.getLines(),
+        ...rodaliesTracker.getLines(),
+        ...sagalesTracker.getLines(),
+        ...ambTracker.getLines(),
+        ...cataloniaTracker.getLines()
+      ];
+      await reportCacheService.generateAndSaveReport(24, allLines);
+    } catch (e) {
+      console.error('[IngestionDaemon] Journalism report generation error:', e.message);
     }
   }
 }

@@ -954,7 +954,7 @@ class TransitApp {
   // 1.5 JOURNALISM & HISTORICAL DELAY ANALYTICS
   // ==========================================
 
-  async openJournalismModal(hours = 24, initialFilter = null) {
+  async openJournalismModal(hours = 24, initialFilter = null, forceRefresh = false) {
     const backdrop = document.getElementById('journalism-modal-backdrop');
     const container = document.getElementById('journalism-content-container');
     const searchInput = document.getElementById('journalism-search-input');
@@ -968,11 +968,14 @@ class TransitApp {
     }
 
     backdrop.classList.add('active');
-    container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);">Analitzant dades de retards i puntualitat del servidor central...</div>';
+    if (forceRefresh || !this.currentJournalismReport) {
+      container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);">Carregant informe de retards i puntualitat del servidor central...</div>';
+    }
 
     try {
+      const url = forceRefresh ? `/api/analytics/journalism?hours=${hours}&refresh=true` : `/api/analytics/journalism?hours=${hours}`;
       const [res, snapshotRes] = await Promise.allSettled([
-        fetch(`/api/analytics/journalism?hours=${hours}`).then(r => r.json()),
+        fetch(url).then(r => r.json()),
         fetch(`/api/routes/snapshots`).then(r => r.json())
       ]);
 
@@ -1082,6 +1085,20 @@ class TransitApp {
     };
 
     let html = `
+      <!-- Pre-generated 30-min Cache Banner -->
+      ${report.meta?.generatedAt ? `
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; background:rgba(0,148,133,0.08); border:1px solid rgba(0,148,133,0.22); border-radius:10px; padding:0.55rem 0.85rem; margin-bottom:1.1rem; font-size:0.76rem;">
+          <div style="display:flex; align-items:center; gap:0.4rem; color:var(--text-primary);">
+            <span>⚡</span>
+            <span><strong>Informe pregenerat</strong>: compilat a les <strong>${new Date(report.meta.generatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong> (actualització automàtica cada 30 min)</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:0.6rem;">
+            <span style="color:var(--brand-primary); font-weight:600; font-size:0.72rem;">⏱️ Càrrega instantània</span>
+            <button type="button" onclick="window.transitApp.openJournalismModal(${report.summary?.hoursAnalyzed || 24}, null, true)" style="background:var(--bg-elevated); border:1px solid var(--border-subtle); color:var(--text-primary); font-size:0.72rem; padding:0.2rem 0.55rem; border-radius:6px; cursor:pointer;" title="Força la regeneració de l'informe">🔄 Actualitzar ara</button>
+          </div>
+        </div>
+      ` : ''}
+
       <!-- KPI Stats Grid -->
       <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.75rem; margin-bottom:1.25rem;">
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">

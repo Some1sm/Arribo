@@ -10,6 +10,7 @@ const rodaliesTracker = require('./src/rodaliesTracker');
 const maresmeTracker = require('./src/maresmeTracker');
 const cataloniaTracker = require('./src/cataloniaTracker');
 const routeCacheService = require('./src/routeCacheService');
+const reportCacheService = require('./src/reportCacheService');
 const flightRecorder = require('./src/flightRecorder');
 const ingestionDaemon = require('./src/ingestionDaemon');
 
@@ -772,16 +773,19 @@ app.get('/api/line/:lineId/stats', (req, res) => {
   });
 });
 
-// Journalism Investigation Report across all lines & operators
+// Journalism Investigation Report across all lines & operators (Instant Cache & 30-min background generation)
 app.get('/api/analytics/journalism', async (req, res) => {
-  await Promise.allSettled([ambTracker.init(), rodaliesTracker.init(), cataloniaTracker.init()]);
-  const hours = parseInt(req.query.hours || '24', 10);
-  const allLines = getAllTransitLines();
-  const report = flightRecorder.getJournalismReport(hours, allLines);
-  res.json({
-    success: true,
-    report
-  });
+  try {
+    const hours = parseInt(req.query.hours || '24', 10);
+    const forceRefresh = req.query.refresh === 'true';
+    const report = await reportCacheService.getLatestReport(hours, () => getAllTransitLines(), forceRefresh);
+    res.json({
+      success: true,
+      report
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // CSV Export for spreadsheet / investigative journalism analysis
