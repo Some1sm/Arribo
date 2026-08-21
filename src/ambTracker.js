@@ -363,12 +363,18 @@ class AmbTracker {
       const details1 = await this.getLineDetails(lineId, '1');
 
       const seenVehs = new Set();
+      const seenLocations = new Set();
       const combinedActiveBuses = [];
+
       [...(details0.activeBuses || []), ...(details1.activeBuses || [])].forEach(b => {
-        if (b && b.vehicleId && !seenVehs.has(b.vehicleId)) {
-          seenVehs.add(b.vehicleId);
-          combinedActiveBuses.push(b);
-        }
+        if (!b) return;
+        const locKey = (typeof b.lat === 'number' && typeof b.lon === 'number') ? `${b.lat.toFixed(4)}_${b.lon.toFixed(4)}` : null;
+        if (b.vehicleId && seenVehs.has(b.vehicleId)) return;
+        if (locKey && seenLocations.has(locKey)) return;
+
+        if (b.vehicleId) seenVehs.add(b.vehicleId);
+        if (locKey) seenLocations.add(locKey);
+        combinedActiveBuses.push(b);
       });
 
       return {
@@ -480,19 +486,26 @@ class AmbTracker {
     // Fallback: If live vehicle endpoint had 0 for this line, poll stops
     if (activeBuses.length === 0) {
       const checkStops = stops.filter((s, i) => i === 0 || i === Math.floor(stops.length / 2) || i === stops.length - 1 || i % 4 === 0);
-      const foundVehicles = new Set();
+      const foundStopLocations = new Set();
       const now = Date.now();
 
       for (const stop of checkStops.slice(0, 5)) {
         const times = await this.getStopRealtime(stop.code);
-        times.forEach(t => {
-          if (String(t.lineCode).toUpperCase() === routeCodeUpper) {
-            const vKey = `${t.lineCode}_${t.destination}_${Math.round(t.time / 60000)}`;
-            if (!foundVehicles.has(vKey)) {
-              foundVehicles.add(vKey);
-              const lat = parseFloat(t.latitude) || stop.lat;
-              const lon = parseFloat(t.longitude) || stop.lon;
-              const minsAway = Math.max(0, Math.round((t.time - now) / 60000));
+        // Find the earliest upcoming arrival for this line at this stop
+        const lineTimes = times
+          .filter(t => String(t.lineCode).toUpperCase() === routeCodeUpper)
+          .sort((a, b) => (a.time || 0) - (b.time || 0));
+
+        if (lineTimes.length > 0) {
+          const t = lineTimes[0];
+          const minsAway = Math.max(0, Math.round((t.time - now) / 60000));
+          if (minsAway <= 35) {
+            const lat = parseFloat(t.latitude) || stop.lat;
+            const lon = parseFloat(t.longitude) || stop.lon;
+            const locKey = `${lat.toFixed(4)}_${lon.toFixed(4)}`;
+
+            if (!foundStopLocations.has(locKey)) {
+              foundStopLocations.add(locKey);
               const idxNum = activeBuses.length + 1;
 
               activeBuses.push({
@@ -522,7 +535,7 @@ class AmbTracker {
               });
             }
           }
-        });
+        }
       }
     }
 
