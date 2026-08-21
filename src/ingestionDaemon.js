@@ -24,6 +24,9 @@ class IngestionDaemon {
     this.pruneTimer = null;
     this.dailySnapshotTimer = null;
     this.cataloniaBatchOffset = 0;
+    this.ambBatchOffset = 0;
+    this.sagalesBatchOffset = 0;
+    this.maresmeBatchOffset = 0;
   }
 
   start() {
@@ -117,6 +120,7 @@ class IngestionDaemon {
           const route = ambTracker.resolveLine(lCode);
           const agency = route?.agency || 'AMB Mobilitat';
           const vehicleId = v.id || v.vehicleId || `amb_${lCode}_${v.tripId || Math.random()}`;
+          const delayMins = v.delayMins !== undefined ? v.delayMins : (v.delay !== undefined ? Math.round(v.delay / 60) : 0);
 
           flightRecorder.ingestVehicle({
             vehicleId,
@@ -128,25 +132,23 @@ class IngestionDaemon {
             lon,
             speedKmh: v.speedKmh || 30,
             bearing: v.bearing || 0,
-            delayMins: v.delayMins || 0,
+            delayMins,
             destination: v.destination || route?.name || '',
             isRealTime: true
           });
 
-          // Log delay record for all active AMB lines in the vehicle fleet
-          if (v.delayMins !== undefined) {
-            historyDb.recordDelayLog({
-              lineId: route?.id || `amb_${lCode.toLowerCase()}`,
-              lineCode: lCode,
-              agency: agency,
-              stopId: v.destination || 'Tram en línia',
-              stopName: v.destination || `${lCode} en circulació`,
-              delayMins: v.delayMins || 0,
-              scheduledTime: '',
-              actualTime: '',
-              isRealTime: true
-            });
-          }
+          // Log delay record for all active AMB lines in the live vehicle fleet
+          historyDb.recordDelayLog({
+            lineId: route?.id || `amb_${lCode.toLowerCase()}`,
+            lineCode: route?.code || lCode,
+            agency: agency,
+            stopId: v.destination || 'Tram en línia',
+            stopName: v.destination || `${lCode} en circulació`,
+            delayMins: delayMins,
+            scheduledTime: '',
+            actualTime: '',
+            isRealTime: true
+          });
         });
       }
     } catch (e) {
@@ -156,7 +158,14 @@ class IngestionDaemon {
 
   async pollAmbLines() {
     try {
-      const targetAmbLines = ['m1', 'm6', 'm19', 'm26', 'm28', 'b25', 'b24', 'l80', 'a1', 'v15', 'h12', 'd20'];
+      const allAmb = ambTracker.getLines();
+      if (!allAmb || allAmb.length === 0) return;
+
+      const batchSize = 35;
+      const startIdx = this.ambBatchOffset % allAmb.length;
+      this.ambBatchOffset = (startIdx + batchSize) % allAmb.length;
+      const targetAmbLines = allAmb.slice(startIdx, startIdx + batchSize).map(l => l.id);
+
       await Promise.allSettled(targetAmbLines.map(async (lId) => {
         try {
           const eta = await ambTracker.getTargetStopETA(lId, null, '0');
@@ -191,41 +200,45 @@ class IngestionDaemon {
   async pollMataroVehicles() {
     try {
       const activeLines = ['1', '2', '3', '4', '5', '6', '7', '8'];
-      for (const lId of activeLines) {
-        const details = await mataroTracker.getLineDetails(lId);
-        if (details && Array.isArray(details.activeBuses)) {
-          details.activeBuses.forEach(b => {
-            flightRecorder.ingestVehicle({
-              vehicleId: b.vehicleId || `mataro_${lId}_${b.plateNumber || 'bus'}`,
-              lineId: lId,
-              lineCode: `L${lId}`,
-              agency: 'Mataró Bus (Avanza)',
-              plateNumber: b.plateNumber || '',
-              lat: b.lat,
-              lon: b.lon,
-              speedKmh: b.speedKmh || 25,
-              bearing: b.bearing || 0,
-              delayMins: b.delayMins || 0,
-              destination: b.destination || '',
-              isRealTime: !b.isEstimated
-            });
-
-            if (b.delayMins !== undefined) {
-              historyDb.recordDelayLog({
+      await Promise.allSettled(activeLines.map(async (lId) => {
+        try {
+          const details = await mataroTracker.getLineDetails(lId);
+          if (details && Array.isArray(details.activeBuses)) {
+            details.activeBuses.forEach(b => {
+              flightRecorder.ingestVehicle({
+                vehicleId: b.vehicleId || `mataro_${lId}_${b.plateNumber || 'bus'}`,
                 lineId: lId,
                 lineCode: `L${lId}`,
                 agency: 'Mataró Bus (Avanza)',
-                stopId: b.toStop || 'Parada',
-                stopName: b.toStop || 'Parada',
-                delayMins: b.delayMins,
-                scheduledTime: '',
-                actualTime: '',
+                plateNumber: b.plateNumber || '',
+                lat: b.lat,
+                lon: b.lon,
+                speedKmh: b.speedKmh || 25,
+                bearing: b.bearing || 0,
+                delayMins: b.delayMins || 0,
+                destination: b.destination || '',
                 isRealTime: !b.isEstimated
               });
-            }
-          });
+
+              if (b.delayMins !== undefined) {
+                historyDb.recordDelayLog({
+                  lineId: lId,
+                  lineCode: `L${lId}`,
+                  agency: 'Mataró Bus (Avanza)',
+                  stopId: b.toStop || 'Parada',
+                  stopName: b.toStop || 'Parada',
+                  delayMins: b.delayMins,
+                  scheduledTime: '',
+                  actualTime: '',
+                  isRealTime: !b.isEstimated
+                });
+              }
+            });
+          }
+        } catch (err) {
+          // Skip individual line
         }
-      }
+      }));
     } catch (e) {
       // Upstream temporary hiccup
     }
@@ -282,7 +295,14 @@ class IngestionDaemon {
     try {
       const allLines = maresmeTracker.getLines();
       const lines = allLines.length > 0 ? allLines.map(l => l.id) : ['e111', 'e112', 'c20', 'c30', 'c3', 'c12', 'c14', 'c15', 'n80', 'n81'];
-      for (const lId of lines) {
+      if (!lines || lines.length === 0) return;
+
+      const batchSize = 4;
+      const startIdx = this.maresmeBatchOffset % lines.length;
+      this.maresmeBatchOffset = (startIdx + batchSize) % lines.length;
+      const batchLines = lines.slice(startIdx, startIdx + batchSize);
+
+      await Promise.allSettled(batchLines.map(async (lId) => {
         try {
           for (const dir of ['0', '1']) {
             const lineDetails = await maresmeTracker.getLineDetails(lId, dir);
@@ -307,22 +327,18 @@ class IngestionDaemon {
                 });
               }
 
-              // Sample intermediate checkpoint stop (bottleneck) and destination
-              const sampleStops = [
-                stops[Math.floor(stops.length / 2)],
-                stops[stops.length - 1]
-              ].filter(Boolean);
-
-              for (const st of sampleStops) {
-                const eta = await maresmeTracker.getTargetStopETA(lId, st.id, dir);
+              // Sample intermediate checkpoint stop (bottleneck)
+              const sampleStop = stops[Math.floor(stops.length / 2)] || stops[0];
+              if (sampleStop) {
+                const eta = await maresmeTracker.getTargetStopETA(lId, sampleStop.id, dir);
                 const nb = eta?.nextBus;
                 if (nb && (nb.isRealtime || nb.isRealTime) && nb.delayMins !== undefined) {
                   historyDb.recordDelayLog({
                     lineId: lId,
                     lineCode: eta.lineCode || lineDetails.code || lId.toUpperCase(),
                     agency: 'Moventis / Casas (Maresme)',
-                    stopId: st.id,
-                    stopName: st.name,
+                    stopId: sampleStop.id,
+                    stopName: sampleStop.name,
                     delayMins: nb.delayMins || 0,
                     scheduledTime: nb.scheduledTime || '',
                     actualTime: nb.departureTime || '',
@@ -335,7 +351,7 @@ class IngestionDaemon {
         } catch (err) {
           // Skip individual line
         }
-      }
+      }));
     } catch (e) {
       // Upstream temporary hiccup
     }
@@ -379,7 +395,14 @@ class IngestionDaemon {
   async pollSagalesLines() {
     try {
       const allLines = sagalesTracker.getLines();
-      const sagalesLines = allLines.length > 0 ? allLines.map(l => l.id) : ['603', 'n82', 'n83', 'n70', 'n71', 'n73'];
+      const allSagales = allLines.length > 0 ? allLines.map(l => l.id) : ['603', 'n82', 'n83', 'n70', 'n71', 'n73'];
+      if (!allSagales || allSagales.length === 0) return;
+
+      const batchSize = 15;
+      const startIdx = this.sagalesBatchOffset % allSagales.length;
+      this.sagalesBatchOffset = (startIdx + batchSize) % allSagales.length;
+      const sagalesLines = allSagales.slice(startIdx, startIdx + batchSize);
+
       await Promise.allSettled(sagalesLines.map(async (sId) => {
         try {
           const lineDetails = await sagalesTracker.getLineDetails(sId, '0');

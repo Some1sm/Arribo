@@ -1032,9 +1032,9 @@ class TransitApp {
     const cleanFilter = norm(filterText);
 
     const s = report.summary || {};
-    let mostDelayed = [...(report.rankingMostDelayed || [])];
-    let worstStops = [...(report.rankingWorstStops || [])];
-    let agencies = [...(report.agencyStats || [])];
+    let mostDelayed = [...(report.rankingMostDelayed || [])].filter(l => (l.sampleCount || 0) > 0 || (l.avgDelay || 0) > 0);
+    let worstStops = [...(report.rankingWorstStops || [])].filter(st => (st.arrivalCount || 0) > 0);
+    let agencies = [...(report.agencyStats || [])].filter(a => (a.totalSamples || 0) > 0);
 
     // Apply text search filtering (with punctuation-agnostic matching e.g. c10 matches C-10)
     if (filterText) {

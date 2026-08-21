@@ -314,37 +314,16 @@ class HistoryDatabase {
         seenMap.set(String(r.lineCode).toUpperCase(), r);
       });
 
-      const rankingMostDelayed = [...dbDelayed];
+      const rankingMostDelayed = dbDelayed.filter(r => (r.sampleCount || 0) >= 1);
 
-      // Merge all lines from catalog so every single line appears in the table
-      if (Array.isArray(allLinesCatalog) && allLinesCatalog.length > 0) {
-        allLinesCatalog.forEach(l => {
-          const code = l.code || String(l.id || '').toUpperCase();
-          const key = normKey(code);
-          if (!seenMap.has(key) && !seenMap.has(code.toUpperCase())) {
-            const entry = {
-              lineCode: code,
-              agency: l.agency || 'Operador de Transport',
-              name: l.name || '',
-              sampleCount: 0,
-              avgDelay: 0,
-              maxDelay: 0,
-              latePercentage: 0
-            };
-            seenMap.set(key, entry);
-            rankingMostDelayed.push(entry);
-          }
-        });
-      }
-
-      // Sort: most delayed first, then on-time/catalog lines alphabetically
+      // Sort: most delayed first, then by sample count
       rankingMostDelayed.sort((a, b) => {
         if (b.avgDelay !== a.avgDelay) return b.avgDelay - a.avgDelay;
         if (b.sampleCount !== a.sampleCount) return b.sampleCount - a.sampleCount;
         return a.lineCode.localeCompare(b.lineCode, undefined, { numeric: true });
       });
 
-      // 3. Ranking of Most Punctual Lines
+      // 3. Ranking of Most Punctual Lines (only with active samples)
       const rankingBestPunctuality = [...rankingMostDelayed]
         .sort((a, b) => {
           const onTimeA = 100 - (a.latePercentage || 0);
@@ -354,7 +333,7 @@ class HistoryDatabase {
         })
         .slice(0, 1000);
 
-      // 4. Operator / Agency Breakdown
+      // 4. Operator / Agency Breakdown (only with active samples)
       const agencyStmt = this.db.prepare(`
         SELECT 
           agency,
@@ -373,27 +352,9 @@ class HistoryDatabase {
         avgDelay: Math.round((a.avgDelay || 0) * 10) / 10
       }));
 
-      const agencyMap = new Map();
-      dbAgencies.forEach(a => agencyMap.set(a.agency, { ...a }));
-
-      if (Array.isArray(allLinesCatalog)) {
-        allLinesCatalog.forEach(l => {
-          const ag = l.agency || 'Operador de Transport';
-          if (!agencyMap.has(ag)) {
-            agencyMap.set(ag, {
-              agency: ag,
-              totalSamples: 0,
-              linesCount: 0,
-              avgDelay: 0,
-              onTimePct: 100
-            });
-          }
-          const existing = agencyMap.get(ag);
-          existing.linesCount = (existing.linesCount || 0) + 1;
-        });
-      }
-
-      const agencyStats = Array.from(agencyMap.values()).sort((a, b) => b.totalSamples - a.totalSamples);
+      const agencyStats = dbAgencies
+        .filter(a => (a.totalSamples || 0) >= 1)
+        .sort((a, b) => b.totalSamples - a.totalSamples);
 
       // 5. Ranking of Worst Stops (Bottlenecks)
       const worstStopsStmt = this.db.prepare(`
