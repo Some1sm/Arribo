@@ -995,7 +995,10 @@ class CorridorTracker {
           segEndSec: t2,
           secondsToNextStop: Math.max(0, t2 - currentSec),
           currentSegmentTime: `${secToTime(t1).substring(0, 5)} ➔ ${secToTime(t2).substring(0, 5)}`,
-          allStops: allStopsFormatted
+          allStops: allStopsFormatted,
+          isDeadReckoned: true,
+          isEstimated: true,
+          statusText: '⚡ Estimació de Posició (Dead-Reckoning)'
         };
         }
       }

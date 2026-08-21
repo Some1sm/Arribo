@@ -543,6 +543,8 @@ class MaresmeTracker {
                 isTerminalLayover: progress > 0.95,
                 currentSegmentTime: `En ruta cap a ${toStop?.name || 'Destí'}`,
                 isDeadReckoned: true,
+                isEstimated: true,
+                statusText: '⚡ Estimació de Posició (Dead-Reckoning)',
                 coordinatesFormatted: `${pos[0].toFixed(5)}° N, ${pos[1].toFixed(5)}° E`
               });
             }
@@ -781,6 +783,8 @@ class MaresmeTracker {
           isTerminalLayover: progress > 0.95,
           currentSegmentTime: `En ruta cap a ${toStop?.name || 'Destí'}`,
           isDeadReckoned: true,
+          isEstimated: true,
+          statusText: '⚡ Estimació de Posició (Dead-Reckoning)',
           coordinatesFormatted: `${pos[0].toFixed(5)}° N, ${pos[1].toFixed(5)}° E`
         });
       }
