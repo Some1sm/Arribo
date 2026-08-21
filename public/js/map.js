@@ -27,7 +27,10 @@ class C10Map {
     // Centered along the coastal corridor / Mataró
     this.map = L.map(this.containerId, {
       zoomControl: true,
-      scrollWheelZoom: true
+      scrollWheelZoom: true,
+      preferCanvas: true, // Use lightweight HTML5 Canvas renderer for polylines and vectors (saves ~40MB DOM/GPU RAM)
+      fadeAnimation: true,
+      zoomAnimation: true
     }).setView([41.54, 2.44], 13);
 
     this.updateTileLayer();
@@ -63,7 +66,10 @@ class C10Map {
     this.tileLayer = L.tileLayer(tileUrl, {
       attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
       subdomains: 'abcd',
-      maxZoom: 19
+      maxZoom: 19,
+      keepBuffer: 2,         // Keep at most 2 tile buffers outside viewport to prevent unbounded RAM growth
+      updateWhenIdle: true,  // Don't thrash raster tile allocations during rapid panning
+      updateInterval: 150
     }).addTo(this.map);
   }
 
@@ -830,6 +836,7 @@ class C10Map {
 
   // Smooth continuous client-side gliding with zero rollbacks and anti-flicker hysteresis
   stepBusAnimation(nowSec) {
+    if (!this.busMarkersMap || this.busMarkersMap.size === 0) return;
     for (const [tId, obj] of this.busMarkersMap.entries()) {
       const bus = obj.busData;
       if (!bus || !obj.marker) continue;

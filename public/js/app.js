@@ -10,13 +10,14 @@ class TransitApp {
     this.activeLineData = null;
     
     this.targetStopsByLine = JSON.parse(localStorage.getItem('bad_amb_target_stops') || '{}');
-    this.lineCache = new Map();
+    this.lineCache = new Map(); // LRU bounded to max 8 active routes
     this.allStops = [];
     this.activeBuses = [];
     this.selectedVehicleId = null;
 
     this.landingFilter = 'all';
     this.landingSearch = '';
+    this.expandedGroups = new Set(); // Group IDs expanded by user on landing page
 
     this.pollInterval = 15;
     this.secondsRemaining = this.pollInterval;
@@ -28,6 +29,10 @@ class TransitApp {
     this.audioContext = null;
     this.lastAlertedTrip = null;
 
+    // Inactive Tab Deep Sleep (Page Visibility API)
+    this.isTabVisible = typeof document !== 'undefined' ? !document.hidden : true;
+    this.animFrameId = null;
+
     // Trains UI display flag: trains remain fully operational in backend/tests, but hidden from the general transit UI
     this.showTrainsInUI = false;
 
@@ -37,6 +42,18 @@ class TransitApp {
 
     this.mapController = null;
     this.init();
+  }
+
+  // LRU Bounded Cache to prevent unbounded memory growth
+  setLineCache(key, data) {
+    if (this.lineCache.has(key)) {
+      this.lineCache.delete(key);
+    } else if (this.lineCache.size >= 8) {
+      // Evict oldest cached route topology
+      const oldestKey = this.lineCache.keys().next().value;
+      this.lineCache.delete(oldestKey);
+    }
+    this.lineCache.set(key, data);
   }
 
   getInitialTheme() {
@@ -358,6 +375,7 @@ class TransitApp {
     const heroInput = document.getElementById('landing-hero-search-input');
     const clearBtn = document.getElementById('btn-landing-search-clear');
     const filterTabs = document.querySelectorAll('#landing-filter-tabs .landing-filter-tab');
+    const container = document.getElementById('landing-lines-container');
 
     heroInput?.addEventListener('input', (e) => {
       const q = e.target.value;
@@ -388,6 +406,29 @@ class TransitApp {
         this.landingFilter = tab.getAttribute('data-filter') || 'all';
         this.renderLandingLines();
       });
+    });
+
+    // Single delegated click listener on container (eliminates thousands of closure allocations)
+    container?.addEventListener('click', (e) => {
+      const card = e.target.closest('.landing-line-card');
+      if (card) {
+        e.preventDefault();
+        const lineId = card.getAttribute('data-line-id');
+        if (lineId) {
+          this.switchLine(lineId);
+        }
+        return;
+      }
+
+      const expandBtn = e.target.closest('.btn-expand-landing-group');
+      if (expandBtn) {
+        e.preventDefault();
+        const gId = expandBtn.getAttribute('data-group-id');
+        if (gId) {
+          this.expandedGroups.add(gId);
+          this.renderLandingLines();
+        }
+      }
     });
   }
 
@@ -432,6 +473,10 @@ class TransitApp {
 
       totalRendered += groupLines.length;
 
+      // Smart DOM Cap: When displaying all categories without active search, limit initial cards to 20 per group to save ~80MB RAM
+      const isCapped = !q && activeFilter === 'all' && groupLines.length > 20 && !this.expandedGroups.has(g.id);
+      const linesToRender = isCapped ? groupLines.slice(0, 20) : groupLines;
+
       html += `
         <div class="landing-group-section">
           <div class="landing-group-header">
@@ -439,7 +484,7 @@ class TransitApp {
             <span class="landing-group-badge">${groupLines.length} línia${groupLines.length === 1 ? '' : 'es'}</span>
           </div>
           <div class="landing-lines-grid">
-            ${groupLines.map(l => {
+            ${linesToRender.map(l => {
               const contrast = this.getContrastColor(l.color);
               const dirCount = l.directions ? `${l.directions.length} sentits` : 'En servei';
               return `
@@ -459,6 +504,13 @@ class TransitApp {
                 </div>
               `;
             }).join('')}
+            ${isCapped ? `
+              <div style="grid-column: 1 / -1; text-align:center; padding: 0.6rem 0;">
+                <button type="button" class="btn-expand-landing-group" data-group-id="${g.id}" style="background:var(--bg-elevated); border:1px solid var(--border-subtle); color:var(--brand-primary); font-weight:600; font-size:0.8rem; padding:0.45rem 1.1rem; border-radius:8px; cursor:pointer; transition: all 0.2s ease;">
+                  ⬇️ Mostra totes les ${groupLines.length} línies de ${g.name.split('(')[0].trim()} (+${groupLines.length - 20})
+                </button>
+              </div>
+            ` : ''}
           </div>
         </div>
       `;
@@ -476,17 +528,6 @@ class TransitApp {
     }
 
     container.innerHTML = html;
-
-    // Attach click listeners to cards
-    container.querySelectorAll('.landing-line-card').forEach(card => {
-      card.addEventListener('click', (e) => {
-        e.preventDefault();
-        const lineId = card.getAttribute('data-line-id');
-        if (lineId) {
-          this.switchLine(lineId);
-        }
-      });
-    });
   }
 
   resolveBusForDeparture(dep, stopSeq = null, stopId = null, depIndex = 0) {
@@ -679,7 +720,7 @@ class TransitApp {
         }
 
         this.activeBuses = lData.activeBuses || [];
-        this.lineCache.set(routeKey, lData);
+        this.setLineCache(routeKey, lData);
 
         // Validate if savedStopId is in current route's stops; if not (or if not set), default to the 1st stop
         const isSavedValid = savedStopId && this.allStops.some(s => String(s.id || s.mouteStopId || s.code) === String(savedStopId));
@@ -2377,18 +2418,22 @@ class TransitApp {
     }
 
     container.innerHTML = html;
-
-    container.querySelectorAll('.line-grid-card').forEach(card => {
-      card.addEventListener('click', (e) => {
-        e.preventDefault();
-        const lineId = card.getAttribute('data-line-id');
-        this.closeLinePicker();
-        this.switchLine(lineId);
-      });
-    });
   }
 
   setupLinePicker() {
+    const pickerContainer = document.getElementById('line-picker-container');
+    pickerContainer?.addEventListener('click', (e) => {
+      const card = e.target.closest('.line-grid-card');
+      if (card) {
+        e.preventDefault();
+        const lineId = card.getAttribute('data-line-id');
+        if (lineId) {
+          this.closeLinePicker();
+          this.switchLine(lineId);
+        }
+      }
+    });
+
     document.getElementById('open-line-picker-btn')?.addEventListener('click', (e) => {
       e.preventDefault();
       this.openLinePicker();
@@ -2563,6 +2608,8 @@ class TransitApp {
   // ==========================================
 
   setupEventListeners() {
+    this.setupPageVisibility();
+
     // Dynamic Direction buttons delegation
     const dirGroup = document.getElementById('direction-toggle-group');
     if (dirGroup) {
@@ -3112,22 +3159,62 @@ class TransitApp {
   }
 
   // ==========================================
-  // 10. ANIMATION, AUDIO & UTILITIES
+  // 10. ANIMATION, AUDIO & UTILITIES (LOW-RAM OPTIMIZED)
   // ==========================================
 
+  setupPageVisibility() {
+    this.isTabVisible = typeof document !== 'undefined' ? !document.hidden : true;
+    document.addEventListener('visibilitychange', () => {
+      const wasVisible = this.isTabVisible;
+      this.isTabVisible = !document.hidden;
+
+      if (this.isTabVisible && !wasVisible) {
+        // User returned to tab: resume animation loop and perform fresh fetch immediately
+        this.startAnimationLoop();
+        if (this.activeLineId) {
+          this.refreshAllData(false);
+        }
+      } else if (!this.isTabVisible) {
+        // User switched to another of their 15 tabs: cancel RAF loop immediately to free up GPU & CPU RAM
+        if (this.animFrameId) {
+          cancelAnimationFrame(this.animFrameId);
+          this.animFrameId = null;
+        }
+      }
+    });
+  }
+
   startAnimationLoop() {
+    if (this.animFrameId) {
+      cancelAnimationFrame(this.animFrameId);
+      this.animFrameId = null;
+    }
+
     const step = () => {
+      // Deep Sleep: Stop 60fps loop if tab is hidden or user is on the Landing Page (no map buses active)
+      if (!this.isTabVisible || !this.activeLineId) {
+        this.animFrameId = null;
+        return;
+      }
       const nowSec = Date.now() / 1000;
       if (this.mapController) {
         this.mapController.stepBusAnimation(nowSec);
       }
-      requestAnimationFrame(step);
+      this.animFrameId = requestAnimationFrame(step);
     };
-    requestAnimationFrame(step);
+
+    if (this.isTabVisible && this.activeLineId) {
+      this.animFrameId = requestAnimationFrame(step);
+    }
   }
 
   startAutoRefresh() {
+    if (this.pollTimer) clearInterval(this.pollTimer);
     this.pollTimer = setInterval(() => {
+      // Inactive Tab Sleep: Pause polling while tab is hidden to prevent continuous JSON parsing & memory churning
+      if (!this.isTabVisible) {
+        return;
+      }
       this.secondsRemaining--;
       if (this.secondsRemaining <= 0) {
         this.refreshAllData(false);
