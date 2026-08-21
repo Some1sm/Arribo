@@ -451,21 +451,28 @@ class MaresmeTracker {
               polylineCoords = stops.map(s => [s.lat, s.lon]);
             }
 
-            // Fetch official schedule from Moventis API
-            const paradasSched = await moventisClient.getParadasTimetable(lineConfig.moventisLineId, chosenTray.ID_TRAYECTO);
+            // Fetch official schedule from Moventis API across all matching direction trajectories
             const scheduledRuns = [];
-            if (paradasSched && paradasSched.length > 0 && paradasSched[0].hora) {
-              const startTimes = paradasSched[0].hora || [];
-              const lastStopSched = paradasSched[paradasSched.length - 1];
-              const lastTimes = lastStopSched?.hora || [];
-              
-              startTimes.forEach((startStr, tIdx) => {
-                const endStr = lastTimes[tIdx] || lastTimes[lastTimes.length - 1] || startStr;
-                const startSec = timeUtils.timeToSec(startStr);
-                const endSec = timeUtils.timeToSec(endStr);
-                const durSec = Math.max(900, (endSec >= startSec ? endSec - startSec : (86400 - startSec + endSec)));
-                scheduledRuns.push({ startSec, durSec, startStr });
-              });
+            const seenStartTimes = new Set();
+
+            for (const t of matchingTrays) {
+              const paradasSched = await moventisClient.getParadasTimetable(lineConfig.moventisLineId, t.ID_TRAYECTO);
+              if (paradasSched && paradasSched.length > 0 && paradasSched[0].hora) {
+                const startTimes = paradasSched[0].hora || [];
+                const lastStopSched = paradasSched[paradasSched.length - 1];
+                const lastTimes = lastStopSched?.hora || [];
+
+                startTimes.forEach((startStr, tIdx) => {
+                  if (!seenStartTimes.has(startStr)) {
+                    seenStartTimes.add(startStr);
+                    const endStr = lastTimes[tIdx] || lastTimes[lastTimes.length - 1] || startStr;
+                    const startSec = timeUtils.timeToSec(startStr);
+                    const endSec = timeUtils.timeToSec(endStr);
+                    const durSec = Math.max(900, (endSec >= startSec ? endSec - startSec : (86400 - startSec + endSec)));
+                    scheduledRuns.push({ startSec, durSec, startStr });
+                  }
+                });
+              }
             }
 
             const netNow = timeUtils.getNetworkTime(this.agencyTimezone);
@@ -853,26 +860,50 @@ class MaresmeTracker {
         const rtRaw = await moventisClient.getRealtimeStopETAs(movStopId, lineConfig.moventisLineId);
 
         if (Array.isArray(rtRaw) && rtRaw.length > 0) {
-          const matchingItems = rtRaw.filter(li => String(li.idLinea) === String(lineConfig.moventisLineId) || li.selected === 1);
-          
+          const matchingItems = rtRaw.filter(li => String(li.idLinea) === String(lineConfig.moventisLineId));
+          const netNow = timeUtils.getNetworkTime(this.agencyTimezone);
+          const rawDeps = [];
+
           matchingItems.forEach(lineItem => {
             const trs = lineItem.trayectos || {};
             for (const [destName, depList] of Object.entries(trs)) {
               const list = Array.isArray(depList) ? depList : (typeof depList === 'object' ? Object.values(depList) : []);
               list.forEach(dep => {
-                const minsAway = moventisClient.parseRealtimeMinutes(dep.minutos);
-                if (minsAway !== null && minsAway >= -5) {
-                  const safeMins = Math.max(0, Math.round(minsAway));
-                  const isRT = dep.real === 'S';
-                  const clockStr = dep.hora || timeUtils.secToTime(timeUtils.getNetworkTime(this.agencyTimezone).currentSec + safeMins * 60).substring(0, 5);
-                  
+                const isRT = dep.real === 'S';
+                let safeMins = null;
+                let clockStr = dep.hora || null;
+
+                if (isRT) {
+                  const mins = moventisClient.parseRealtimeMinutes(dep.minutos);
+                  if (mins !== null) {
+                    safeMins = Math.max(0, Math.round(mins));
+                    clockStr = timeUtils.secToTime(netNow.currentSec + safeMins * 60).substring(0, 5);
+                  }
+                } else {
+                  if (dep.tiempo) {
+                    const matchH = String(dep.tiempo).match(/(\d+)\s*h\s*(\d+)\s*min/i);
+                    if (matchH) {
+                      safeMins = Math.max(0, parseInt(matchH[1], 10) * 60 + parseInt(matchH[2], 10));
+                    }
+                  }
+                  if (safeMins === null && dep.hora) {
+                    const sSec = timeUtils.timeToSec(dep.hora);
+                    let diffSec = sSec - netNow.currentSec;
+                    if (diffSec < -300 && netNow.hour >= 20 && timeUtils.timeToSec(dep.hora) < 21600) {
+                      diffSec += 86400;
+                    }
+                    safeMins = Math.max(0, Math.round(diffSec / 60));
+                  }
+                }
+
+                if (safeMins !== null && safeMins >= 0 && safeMins <= 1440) {
                   const depUtc = new Date(Date.now() + safeMins * 60 * 1000);
-                  
-                  departures.push({
+                  const cleanDest = destName.includes('(') ? destName : (destName || defaultDest);
+                  rawDeps.push({
                     lineId: displayLineId,
                     lineName: lineConfig.code,
-                    destination: destName.includes('(') ? destName : (destName || defaultDest),
-                    departureTime: clockStr,
+                    destination: cleanDest,
+                    departureTime: clockStr || timeUtils.secToTime(netNow.currentSec + safeMins * 60).substring(0, 5),
                     expectedIso: depUtc.toISOString(),
                     aimedIso: depUtc.toISOString(),
                     minutesAway: safeMins,
@@ -883,11 +914,31 @@ class MaresmeTracker {
                     delayMins: 0,
                     delayStatus: 'on-time',
                     delayBadgeText: isRT ? 'En temps real (GPS)' : 'Horari teòric',
-                    comparisonText: isRT ? `En temps real (GPS Moventis)` : `Horari oficial (${clockStr})`,
+                    comparisonText: isRT ? 'En temps real (GPS Moventis)' : `Horari oficial (${clockStr || dep.hora || ''})`,
                     formattedStatus: safeMins === 0 ? 'Ara' : `${safeMins} min`
                   });
                 }
               });
+            }
+          });
+
+          // Sort by minutesAway first, prioritizing real-time departures
+          rawDeps.sort((a, b) => {
+            if (a.minutesAway !== b.minutesAway) return a.minutesAway - b.minutesAway;
+            if (a.isRealTime && !b.isRealTime) return -1;
+            if (!a.isRealTime && b.isRealTime) return 1;
+            return 0;
+          });
+
+          // Deduplicate by departureTime and close real-time windows
+          const seenTimes = new Set();
+          rawDeps.forEach(item => {
+            if (!seenTimes.has(item.departureTime)) {
+              const isOverlapped = !item.isRealTime && departures.some(existing => existing.isRealTime && Math.abs(existing.minutesAway - item.minutesAway) <= 3);
+              if (!isOverlapped) {
+                seenTimes.add(item.departureTime);
+                departures.push(item);
+              }
             }
           });
         }
