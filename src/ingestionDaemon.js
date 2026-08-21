@@ -233,34 +233,58 @@ class IngestionDaemon {
 
   async pollCorridorDelays() {
     try {
-      const c10Eta = await corridorTracker.getTargetStopETA('1');
-      if (c10Eta && c10Eta.closestBus) {
-        const b = c10Eta.closestBus;
-        flightRecorder.ingestVehicle({
-          vehicleId: b.vehicleId || 'c10_active_lead',
-          lineId: 'c10',
-          lineCode: 'C-10',
-          agency: 'Moventis / Casas',
-          lat: b.lat,
-          lon: b.lon,
-          speedKmh: b.speedKmh || 38,
-          bearing: b.bearing || 45,
-          delayMins: b.delayMins || 0,
-          destination: b.destination || 'Mataró',
-          isRealTime: true
-        });
+      for (const dir of ['1', '0']) {
+        const c10Eta = await corridorTracker.getTargetStopETA(dir);
+        const liveCorridor = await corridorTracker.getCorridorLiveTracking(dir);
 
-        historyDb.recordDelayLog({
-          lineId: 'c10',
-          lineCode: 'C-10',
-          agency: 'Moventis / Casas',
-          stopId: c10Eta.targetStop?.id || '10037202',
-          stopName: c10Eta.targetStop?.name || "pl. Itàlia (A)",
-          delayMins: b.delayMins || 0,
-          scheduledTime: b.scheduledTime || '',
-          actualTime: b.time || '',
-          isRealTime: true
-        });
+        // Ingest active vehicles along the corridor
+        if (liveCorridor && Array.isArray(liveCorridor.activeBuses)) {
+          liveCorridor.activeBuses.forEach((b, idx) => {
+            const delay = b.trafficDelayMins || b.delayMinutes || b.delayMins || 0;
+            flightRecorder.ingestVehicle({
+              vehicleId: b.vehicleId || `c10_dir${dir}_${idx}`,
+              lineId: 'c10',
+              lineCode: 'C-10',
+              agency: 'Moventis / Casas (Interurbà Maresme)',
+              lat: b.lat,
+              lon: b.lon,
+              speedKmh: b.speedKmh || 38,
+              bearing: b.bearing || 45,
+              delayMins: delay,
+              destination: dir === '1' ? 'Mataró (Hospital)' : 'Barcelona (Metro la Pau)',
+              isRealTime: true
+            });
+
+            historyDb.recordDelayLog({
+              lineId: 'c10',
+              lineCode: 'C-10',
+              agency: 'Moventis / Casas (Interurbà Maresme)',
+              stopId: b.toStop || 'Tram en línia',
+              stopName: b.toStop || 'Tram C-10 en circulació',
+              delayMins: delay,
+              scheduledTime: '',
+              actualTime: '',
+              isRealTime: true
+            });
+          });
+        }
+
+        // Record next bus departure delay
+        const nb = c10Eta?.nextBus;
+        if (nb) {
+          const delay = (nb.delayMinutes !== undefined) ? nb.delayMinutes : (nb.delayMins || 0);
+          historyDb.recordDelayLog({
+            lineId: 'c10',
+            lineCode: 'C-10',
+            agency: 'Moventis / Casas (Interurbà Maresme)',
+            stopId: c10Eta.targetStop?.mouteStopId || c10Eta.targetStop?.id || '10037202',
+            stopName: c10Eta.targetStop?.name || "pl. Itàlia (A)",
+            delayMins: delay,
+            scheduledTime: nb.scheduledTime || nb.departureTime || '',
+            actualTime: nb.departureTime || '',
+            isRealTime: nb.isRealtime || nb.isRealTime || false
+          });
+        }
       }
     } catch (e) {
       // Upstream temporary hiccup

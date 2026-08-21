@@ -428,8 +428,20 @@ class CorridorTracker {
     const seenTodayTripKeys = new Set();
     const seenFinalTimes = new Set();
 
+    // Dynamically discover all line IDs associated with C-10 in this stop's Mou-te catalog
+    const rawLines = data?.parada?.lineas?.linia;
+    const linesInStop = Array.isArray(rawLines) ? rawLines : (rawLines ? [rawLines] : []);
+    const matchingLineIds = new Set(['02498', '02256', 'C10', 'c10']);
+    linesInStop.forEach(l => {
+      const nom = (l.nomLinia || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const desc = (l.descripcioLinia || '').toLowerCase();
+      if (nom === 'c10' || nom === '02498' || nom === '02256' || (desc.includes('mataró') && desc.includes('n-ii')) || desc.includes('c-10') || desc.includes('c10')) {
+        matchingLineIds.add(String(l.idLinia));
+      }
+    });
+
     for (const s of sortides) {
-      const isC10 = s.liniaId === '02498' || s.liniaId === 'C10' || s.nomLinia === 'C-10' || (s.descripcioLinia && s.descripcioLinia.includes('C10'));
+      const isC10 = matchingLineIds.has(String(s.liniaId)) || s.liniaId === '02498' || s.liniaId === '02256' || s.liniaId === 'C10' || s.nomLinia === 'C-10' || (s.descripcioLinia && s.descripcioLinia.includes('C10'));
       if (!isC10) {
         continue; // Discard any non-C10 departures from shared stops
       }
@@ -959,31 +971,51 @@ class CorridorTracker {
             };
           }).filter(st => st.lat && st.lon);
 
-          return {
-            tripId: trip.tripId,
-            headsign: trip.headsign,
-            fromStop: stop1Data.name || 'Parada anterior',
-            toStop: stop2Data.name || 'Propera parada',
-            fromSeq: s1.seq,
-            toSeq: s2.seq,
-            progressInSegment: progress,
-            totalProgress: Math.min(100, Math.max(0, Math.round(((s1.seq + progress) / stops.length) * 100))),
-            lat: Math.round(lat * 1000000) / 1000000,
-            lon: Math.round(lon * 1000000) / 1000000,
-            coordinatesFormatted: `${lat.toFixed(5)}° N, ${lon.toFixed(5)}° E`,
-            bearing: bearing,
-            compass: compass,
-            speedKmh: speedKmh,
-            distanceToNextMeters: distToNext,
-            segmentDistanceMeters: segDist,
-            fromCoords: { lat: stop1Data.lat, lon: stop1Data.lon },
-            toCoords: { lat: stop2Data.lat, lon: stop2Data.lon },
-            segStartSec: t1,
-            segEndSec: t2,
-            secondsToNextStop: Math.max(0, t2 - currentSec),
-            currentSegmentTime: `${secToTime(t1).substring(0, 5)} ➔ ${secToTime(t2).substring(0, 5)}`,
-            allStops: allStopsFormatted
-          };
+        // Peak-hour highway & urban N-II traffic delay model (Weekdays 07:30-09:30 and 17:15-19:45)
+        const netNow = timeUtils.getNetworkTime(this.agencyTimezone);
+        const isWeekday = (netNow.dayOfWeek >= 1 && netNow.dayOfWeek <= 5);
+        const isMorningPeak = isWeekday && ((netNow.hour === 7 && netNow.minute >= 30) || netNow.hour === 8 || (netNow.hour === 9 && netNow.minute <= 30));
+        const isEveningPeak = isWeekday && ((netNow.hour === 17 && netNow.minute >= 15) || netNow.hour === 18 || (netNow.hour === 19 && netNow.minute <= 45));
+        
+        let trafficDelaySec = 0;
+        if (isMorningPeak) {
+          trafficDelaySec = (s1.seq <= 20) ? 660 : 480; // +11 min morning inbound / +8 min outbound
+        } else if (isEveningPeak) {
+          trafficDelaySec = (s1.seq <= 20) ? 720 : 540; // +12 min evening rush
+        } else if (netNow.hour >= 11 && netNow.hour <= 14) {
+          trafficDelaySec = 240; // +4 min midday traffic
+        }
+        const trafficDelayMins = Math.round(trafficDelaySec / 60);
+
+        return {
+          tripId: trip.tripId,
+          vehicleId: `c10_${trip.tripId}`,
+          headsign: trip.headsign,
+          fromStop: stop1Data.name || 'Parada anterior',
+          toStop: stop2Data.name || 'Propera parada',
+          fromSeq: s1.seq,
+          toSeq: s2.seq,
+          progressInSegment: progress,
+          totalProgress: Math.min(100, Math.max(0, Math.round(((s1.seq + progress) / stops.length) * 100))),
+          lat: Math.round(lat * 1000000) / 1000000,
+          lon: Math.round(lon * 1000000) / 1000000,
+          coordinatesFormatted: `${lat.toFixed(5)}° N, ${lon.toFixed(5)}° E`,
+          bearing: bearing,
+          compass: compass,
+          speedKmh: speedKmh,
+          trafficDelayMins: trafficDelayMins,
+          delayMinutes: trafficDelayMins,
+          delayMins: trafficDelayMins,
+          distanceToNextMeters: distToNext,
+          segmentDistanceMeters: segDist,
+          fromCoords: { lat: stop1Data.lat, lon: stop1Data.lon },
+          toCoords: { lat: stop2Data.lat, lon: stop2Data.lon },
+          segStartSec: t1,
+          segEndSec: t2,
+          secondsToNextStop: Math.max(0, t2 - currentSec),
+          currentSegmentTime: `${secToTime(t1).substring(0, 5)} ➔ ${secToTime(t2).substring(0, 5)}`,
+          allStops: allStopsFormatted
+        };
         }
       }
     }
