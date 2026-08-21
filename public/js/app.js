@@ -954,7 +954,7 @@ class TransitApp {
   // 1.5 JOURNALISM & HISTORICAL DELAY ANALYTICS
   // ==========================================
 
-  async openJournalismModal(hours = 24, initialFilter = null, forceRefresh = false) {
+  async openJournalismModal(hours = 24, initialFilter = null) {
     const backdrop = document.getElementById('journalism-modal-backdrop');
     const container = document.getElementById('journalism-content-container');
     const searchInput = document.getElementById('journalism-search-input');
@@ -968,14 +968,13 @@ class TransitApp {
     }
 
     backdrop.classList.add('active');
-    if (forceRefresh || !this.currentJournalismReport) {
+    if (!this.currentJournalismReport) {
       container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);">Carregant informe de retards i puntualitat del servidor central...</div>';
     }
 
     try {
-      const url = forceRefresh ? `/api/analytics/journalism?hours=${hours}&refresh=true` : `/api/analytics/journalism?hours=${hours}`;
       const [res, snapshotRes] = await Promise.allSettled([
-        fetch(url).then(r => r.json()),
+        fetch(`/api/analytics/journalism?hours=${hours}`).then(r => r.json()),
         fetch(`/api/routes/snapshots`).then(r => r.json())
       ]);
 
@@ -1094,7 +1093,6 @@ class TransitApp {
           </div>
           <div style="display:flex; align-items:center; gap:0.6rem;">
             <span style="color:var(--brand-primary); font-weight:600; font-size:0.72rem;">⏱️ Càrrega instantània</span>
-            <button type="button" onclick="window.transitApp.openJournalismModal(${report.summary?.hoursAnalyzed || 24}, null, true)" style="background:var(--bg-elevated); border:1px solid var(--border-subtle); color:var(--text-primary); font-size:0.72rem; padding:0.2rem 0.55rem; border-radius:6px; cursor:pointer;" title="Força la regeneració de l'informe">🔄 Actualitzar ara</button>
           </div>
         </div>
       ` : ''}

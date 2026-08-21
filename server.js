@@ -777,8 +777,7 @@ app.get('/api/line/:lineId/stats', (req, res) => {
 app.get('/api/analytics/journalism', async (req, res) => {
   try {
     const hours = parseInt(req.query.hours || '24', 10);
-    const forceRefresh = req.query.refresh === 'true';
-    const report = await reportCacheService.getLatestReport(hours, () => getAllTransitLines(), forceRefresh);
+    const report = await reportCacheService.getLatestReport(hours, () => getAllTransitLines());
     res.json({
       success: true,
       report

@@ -136,13 +136,13 @@ class ReportCacheService {
     }
   }
 
-  async getLatestReport(hours = 24, allLinesCatalogSupplier = null, forceRefresh = false) {
-    // If we have a cached report and don't require force refresh, return immediately (< 1ms)!
-    if (!forceRefresh && this.cachedReport) {
+  async getLatestReport(hours = 24, allLinesCatalogSupplier = null) {
+    // Strictly serve the pre-generated report from memory cache (instant < 1ms)
+    if (this.cachedReport) {
       return this.cachedReport;
     }
 
-    // Otherwise generate now
+    // Only generate if cold boot before the background daemon creates the first report
     const catalog = typeof allLinesCatalogSupplier === 'function' ? allLinesCatalogSupplier() : allLinesCatalogSupplier;
     return await this.generateAndSaveReport(hours, catalog);
   }
