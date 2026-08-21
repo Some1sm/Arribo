@@ -368,7 +368,7 @@ class AmbTracker {
 
       [...(details0.activeBuses || []), ...(details1.activeBuses || [])].forEach(b => {
         if (!b) return;
-        const locKey = (typeof b.lat === 'number' && typeof b.lon === 'number') ? `${b.lat.toFixed(4)}_${b.lon.toFixed(4)}` : null;
+        const locKey = (b.isEstimated && typeof b.lat === 'number' && typeof b.lon === 'number') ? `${b.lat.toFixed(4)}_${b.lon.toFixed(4)}` : null;
         if (b.vehicleId && seenVehs.has(b.vehicleId)) return;
         if (locKey && seenLocations.has(locKey)) return;
 

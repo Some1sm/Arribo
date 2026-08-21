@@ -408,8 +408,32 @@ class MaresmeTracker {
           { dirId: String(lineConfig.directions[0].dirId || '0'), name: lineConfig.directions[0].name, stops: details0.stops, coords: details0.coords },
           { dirId: String(lineConfig.directions[1].dirId || '1'), name: lineConfig.directions[1].name, stops: details1.stops, coords: details1.coords }
         ],
-        activeBuses: [...(details0.activeBuses || []), ...(details1.activeBuses || [])],
-        totalActiveBuses: (details0.activeBuses?.length || 0) + (details1.activeBuses?.length || 0)
+        activeBuses: (() => {
+          const seen = new Set();
+          const list = [];
+          [...(details0.activeBuses || []), ...(details1.activeBuses || [])].forEach(b => {
+            if (!b) return;
+            const k = String(b.tripId || b.vehicleId || `${b.lat}_${b.lon}`);
+            if (!seen.has(k)) {
+              seen.add(k);
+              list.push(b);
+            }
+          });
+          return list;
+        })(),
+        totalActiveBuses: (() => {
+          const seen = new Set();
+          let cnt = 0;
+          [...(details0.activeBuses || []), ...(details1.activeBuses || [])].forEach(b => {
+            if (!b) return;
+            const k = String(b.tripId || b.vehicleId || `${b.lat}_${b.lon}`);
+            if (!seen.has(k)) {
+              seen.add(k);
+              cnt++;
+            }
+          });
+          return cnt;
+        })()
       };
     }
 

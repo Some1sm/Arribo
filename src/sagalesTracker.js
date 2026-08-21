@@ -204,8 +204,20 @@ class SagalesTracker {
     }
 
     if (direction === 'both' && lineConfig.directions?.length > 1) {
-      const details0 = await this.getLineDetails(lineId, '0');
-      const details1 = await this.getLineDetails(lineId, '1');
+      const details0 = await this.getLineDetails(lineConfig.id, '0');
+      const details1 = await this.getLineDetails(lineConfig.id, '1');
+
+      const seenVehs = new Set();
+      const combinedActiveBuses = [];
+      [...(details0.activeBuses || []), ...(details1.activeBuses || [])].forEach(b => {
+        if (!b) return;
+        const vKey = String(b.vehicleId || b.tripId || `${b.lat}_${b.lon}`);
+        if (!seenVehs.has(vKey)) {
+          seenVehs.add(vKey);
+          combinedActiveBuses.push(b);
+        }
+      });
+
       return {
         ...details0,
         direction: 'both',
@@ -219,8 +231,8 @@ class SagalesTracker {
           { dirId: '0', name: lineConfig.directions[0]?.name || 'Sentit 1', stops: details0.stops, coords: details0.coords },
           { dirId: '1', name: lineConfig.directions[1]?.name || 'Sentit 2', stops: details1.stops, coords: details1.coords }
         ],
-        activeBuses: [...(details0.activeBuses || []), ...(details1.activeBuses || [])],
-        totalActiveBuses: (details0.activeBuses?.length || 0) + (details1.activeBuses?.length || 0)
+        activeBuses: combinedActiveBuses,
+        totalActiveBuses: combinedActiveBuses.length
       };
     }
 
@@ -302,9 +314,10 @@ class SagalesTracker {
 
         return {
           vehicleId: v.vehicle?.id || `0${idx + 1}`,
-          tripId: trip.tripId || `sagales_${lineConfig.code}_${idx}`,
+          tripId: trip.tripId || `sagales_${lineConfig.code}_d${dir}_${idx}`,
           lineId: lineConfig.id,
           lineName: lineConfig.code,
+          direction: String(dir),
           destination: trip.headSign || (dir === '0' ? lineConfig.directions[0].name : lineConfig.directions[1].name),
           lat,
           lon,
