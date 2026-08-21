@@ -9,3 +9,5 @@ yarn-error.log*
 data/atm_gtfs/
 data/*.db*
 data/transit_history.db*
+data/cache/moventis_*
+data/snapshots/
