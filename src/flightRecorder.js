@@ -17,6 +17,9 @@ class FlightRecorder {
     // Start periodic dead-reckoning extrapolator every 5 seconds
     if (!this.deadReckonInterval) {
       this.deadReckonInterval = setInterval(() => this.extrapolateStaleVehicles(), 5000);
+      if (this.deadReckonInterval && typeof this.deadReckonInterval.unref === 'function') {
+        this.deadReckonInterval.unref();
+      }
     }
   }
 

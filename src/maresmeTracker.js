@@ -2,6 +2,11 @@ const fs = require('fs');
 const path = require('path');
 const mouteClient = require('./mouteClient');
 const moventisClient = require('./moventisClient');
+const geoEngine = require('./core/geo/geoEngine');
+const timeEngine = require('./core/time/timeEngine');
+const calendarEngine = require('./core/time/calendarEngine');
+const scheduleSynthesizer = require('./core/schedule/scheduleSynthesizer');
+const delayEngine = require('./core/schedule/delayEngine');
 const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
 
@@ -540,8 +545,8 @@ class MaresmeTracker {
               const pos = polylineCoords[polyIdx];
               const nextPos = polylineCoords[Math.min(polylineCoords.length - 1, polyIdx + 1)] || pos;
 
-              const bearing = Math.round(geoUtils.calculateBearing(pos[0], pos[1], nextPos[0], nextPos[1]) || 0);
-              const compass = geoUtils.bearingToCompassName(bearing);
+              const bearing = Math.round(geoEngine.calculateBearing(pos[0], pos[1], nextPos[0], nextPos[1]) || 0);
+              const compass = geoEngine.bearingToCompassName(bearing);
 
               const stopIndex = Math.min(stops.length - 2, Math.floor(progress * (stops.length - 1)));
               const fromStop = stops[stopIndex];
@@ -780,8 +785,8 @@ class MaresmeTracker {
         const pos = polylineCoords[polyIdx];
         const nextPos = polylineCoords[Math.min(polylineCoords.length - 1, polyIdx + 1)] || pos;
 
-        const bearing = Math.round(geoUtils.calculateBearing(pos[0], pos[1], nextPos[0], nextPos[1]) || 0);
-        const compass = geoUtils.bearingToCompassName(bearing);
+        const bearing = Math.round(geoEngine.calculateBearing(pos[0], pos[1], nextPos[0], nextPos[1]) || 0);
+        const compass = geoEngine.bearingToCompassName(bearing);
 
         const stopIndex = Math.min(stops.length - 2, Math.floor(progress * (stops.length - 1)));
         const fromStop = stops[stopIndex];
@@ -1111,15 +1116,9 @@ class MaresmeTracker {
               const delayMins = schedMatch ? schedMatch.delayMins : 0;
               const schedTimeStr = schedMatch ? schedMatch.scheduledTime : clockStr;
               
-              let delayStatus = 'on-time';
-              let delayBadgeText = 'Puntual';
-              if (delayMins >= 2) {
-                delayStatus = 'delayed';
-                delayBadgeText = `+${delayMins} min retard`;
-              } else if (delayMins <= -2) {
-                delayStatus = 'early';
-                delayBadgeText = `${Math.abs(delayMins)} min avançat`;
-              }
+              const delayInfo = delayEngine.computeDelayStatus(delayMins, Boolean(s.realtime), {
+                scheduledTime: schedTimeStr
+              });
 
               const aimedUtc = schedMatch
                 ? new Date(depUtc.getTime() - delayMins * 60000)
@@ -1138,9 +1137,10 @@ class MaresmeTracker {
                 isToday: true,
                 isFirstOfDay: false,
                 delayMins,
-                delayStatus,
-                delayBadgeText,
-                comparisonText: schedMatch ? `Teòric: ${schedTimeStr} (${delayBadgeText})` : `Horari Mou-te (${clockStr})`,
+                delayMinutes: delayMins,
+                delayStatus: delayInfo.delayStatus,
+                delayBadgeText: delayInfo.delayBadgeText,
+                comparisonText: schedMatch ? `Teòric: ${schedTimeStr} (${delayInfo.delayBadgeText})` : `Horari Mou-te (${clockStr})`,
                 formattedStatus: safeDiffMin === 0 ? 'Imminent' : `${safeDiffMin} min`
               });
             });

@@ -1,4 +1,9 @@
 const https = require('https');
+const geoEngine = require('./core/geo/geoEngine');
+const timeEngine = require('./core/time/timeEngine');
+const calendarEngine = require('./core/time/calendarEngine');
+const scheduleSynthesizer = require('./core/schedule/scheduleSynthesizer');
+const delayEngine = require('./core/schedule/delayEngine');
 const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
 
@@ -698,47 +703,39 @@ class AmbTracker {
         const aimedMs = arrTime - (delayMin * 60000);
         const aimedClockStr = timeUtils.formatTimeToTimezone(new Date(aimedMs), this.agencyTimezone);
 
-        departures.push({
-          lineId: route ? route.id : t.lineCode,
-          lineName: t.lineCode,
-          destination: t.destination || (route ? route.directions[dir]?.name : 'Destí'),
-          departureTime: clockStr,
-          expectedIso: new Date(arrTime).toISOString(),
-          aimedIso: new Date(aimedMs).toISOString(),
-          minutesAway: safeDiffMin,
-          delayMinutes: delayMin,
-          delayMins: delayMin,
-          isRealTime: true,
-          isEstimated: false,
-          isToday: true,
-          isFirstOfDay: false,
-          delayStatus: delayMin >= 2 ? 'delayed' : (delayMin <= -2 ? 'early' : 'on_time'),
-          delayBadgeText: delayMin >= 2 ? `+${delayMin} min retard` : (delayMin <= -2 ? `${delayMin} min avançat` : 'Puntual'),
-          comparisonText: delayMin !== 0 ? `📅 Horari teòric: ${aimedClockStr}` : `Temps real AMB (${clockStr})`,
-          formattedStatus: safeDiffMin === 0 ? 'Imminent' : `${safeDiffMin} min`
-        });
-      }
-    });
+          const delayInfo = delayEngine.computeDelayStatus(delayMin, true);
 
-    // 2. Generate calculated scheduled passing times for full daily timetable
-    if (lDetails) {
-      const stops = lDetails.stops || [];
-      const stopIdx = stops.findIndex(s => String(s.id) === sIdStr || String(s.code) === sIdStr);
-
-      let travelSec = 0;
-      if (stopIdx > 0) {
-        let cumDist = 0;
-        for (let i = 1; i <= stopIdx; i++) {
-          const s0 = stops[i - 1];
-          const s1 = stops[i];
-          if (s0.lat && s0.lon && s1.lat && s1.lon) {
-            cumDist += geoUtils.calculateDistanceMeters(s0.lat, s0.lon, s1.lat, s1.lon);
-          } else {
-            cumDist += 400;
-          }
+          departures.push({
+            lineId: route ? route.id : t.lineCode,
+            lineName: t.lineCode,
+            destination: t.destination || (route ? route.directions[dir]?.name : 'Destí'),
+            departureTime: clockStr,
+            expectedIso: new Date(arrTime).toISOString(),
+            aimedIso: new Date(aimedMs).toISOString(),
+            minutesAway: safeDiffMin,
+            delayMinutes: delayMin,
+            delayMins: delayMin,
+            isRealTime: true,
+            isEstimated: false,
+            isToday: true,
+            isFirstOfDay: false,
+            delayStatus: delayInfo.delayStatus,
+            delayBadgeText: delayInfo.delayBadgeText,
+            comparisonText: delayMin !== 0 ? `📅 Horari teòric: ${aimedClockStr}` : `Temps real AMB (${clockStr})`,
+            formattedStatus: safeDiffMin === 0 ? 'Imminent' : `${safeDiffMin} min`
+          });
         }
-        travelSec = Math.round((cumDist / 8.0) + (stopIdx * 25));
-      }
+      });
+
+      // 2. Generate calculated scheduled passing times for full daily timetable
+      if (lDetails) {
+        const stops = lDetails.stops || [];
+        const travelTimes = scheduleSynthesizer.estimateStopTravelTimes(stops, {
+          speedMps: 8.0,
+          dwellSecPerStop: 25,
+          defaultSegmentMeters: 400
+        });
+        const travelSec = scheduleSynthesizer.getTravelTimeToStop(travelTimes, sIdStr);
 
       const netNow = timeUtils.getNetworkTime(this.agencyTimezone);
       const isNightLine = route && (String(route.code).toUpperCase().startsWith('N'));

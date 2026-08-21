@@ -2,6 +2,11 @@ const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 const mouteClient = require('./mouteClient');
+const geoEngine = require('./core/geo/geoEngine');
+const timeEngine = require('./core/time/timeEngine');
+const calendarEngine = require('./core/time/calendarEngine');
+const scheduleSynthesizer = require('./core/schedule/scheduleSynthesizer');
+const delayEngine = require('./core/schedule/delayEngine');
 const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
 const indexer = require('./cataloniaIndexer');
@@ -128,54 +133,11 @@ class CataloniaTracker {
   }
 
   getDateComponents(dateObj = new Date()) {
-    const d = (dateObj instanceof Date && !isNaN(dateObj.getTime()))
-      ? dateObj
-      : (typeof dateObj === 'string' ? new Date(dateObj) : new Date());
-
-    const formatter = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Europe/Madrid',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false
-    });
-    const parts = formatter.formatToParts(d);
-    let year = 2026, month = 8, day = 20, hour = 0, minute = 0;
-    for (const p of parts) {
-      if (p.type === 'year') year = parseInt(p.value, 10);
-      if (p.type === 'month') month = parseInt(p.value, 10);
-      if (p.type === 'day') day = parseInt(p.value, 10);
-      if (p.type === 'hour') hour = parseInt(p.value, 10);
-      if (p.type === 'minute') minute = parseInt(p.value, 10);
-    }
-    const utcDate = new Date(Date.UTC(year, month - 1, day));
-    const dayOfWeek = utcDate.getUTCDay(); // 0=Sunday, 1=Monday, ..., 6=Saturday
-    const dateStr = `${year}${String(month).padStart(2, '0')}${String(day).padStart(2, '0')}`;
-    const timeStr = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
-
-    return { year, month, day, hour, minute, dayOfWeek, dateStr, timeStr };
+    return calendarEngine.getDateComponents(dateObj, 'Europe/Madrid');
   }
 
   isServiceActiveOnDate(serviceId, dateObj = new Date()) {
-    const { dateStr, dayOfWeek } = this.getDateComponents(dateObj);
-
-    if (this.calendarExceptions.has(dateStr)) {
-      const entry = this.calendarExceptions.get(dateStr);
-      if (entry.active.has(serviceId)) return true;
-      if (entry.inactive.has(serviceId)) return false;
-    }
-
-    const cal = this.calendar.get(serviceId);
-    if (!cal) return false;
-
-    if (dateStr < cal.startDate || dateStr > cal.endDate) return false;
-
-    const dayKeys = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-    const dayKey = dayKeys[dayOfWeek];
-    return !!cal[dayKey];
+    return calendarEngine.isServiceActiveOnDate(serviceId, this.calendar, this.calendarExceptions, dateObj, 'Europe/Madrid');
   }
 
   getScheduledDeparturesForDate(route, dirIdx, dateObj = new Date()) {

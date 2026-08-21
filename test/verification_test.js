@@ -73,7 +73,10 @@ async function verifyAll() {
   console.log('\n🎉 ALL VERIFICATION CHECKS PASSED PERFECTLY! 🎉\n');
 }
 
-verifyAll().catch(e => {
+verifyAll().then(() => {
+  process.exit(0);
+}).catch(e => {
   console.error('❌ Verification failed:', e);
   process.exit(1);
 });
+

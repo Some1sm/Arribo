@@ -1,6 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 const siriClient = require('./mataroSiriClient');
+const geoEngine = require('./core/geo/geoEngine');
+const timeEngine = require('./core/time/timeEngine');
+const calendarEngine = require('./core/time/calendarEngine');
+const scheduleSynthesizer = require('./core/schedule/scheduleSynthesizer');
+const delayEngine = require('./core/schedule/delayEngine');
 const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
 
@@ -309,46 +314,7 @@ class MataroTracker {
 
   // Snap a lat/lon point strictly to the closest street segment on polyline
   snapPointToPolyline(lat, lon, polyCoords) {
-    if (!polyCoords || polyCoords.length === 0) return { lat, lon, index: 0 };
-    if (polyCoords.length === 1) return { lat: polyCoords[0].lat, lon: polyCoords[0].lon, index: 0 };
-
-    let minDistance = Infinity;
-    let bestPoint = { lat: polyCoords[0].lat, lon: polyCoords[0].lon, index: 0 };
-
-    for (let i = 0; i < polyCoords.length - 1; i++) {
-      const p1 = polyCoords[i];
-      const p2 = polyCoords[i + 1];
-
-      const x1 = p1.lon, y1 = p1.lat;
-      const x2 = p2.lon, y2 = p2.lat;
-      const px = lon, py = lat;
-
-      const dx = x2 - x1;
-      const dy = y2 - y1;
-      const lenSq = dx * dx + dy * dy;
-
-      let t = 0;
-      if (lenSq > 0) {
-        t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lenSq));
-      }
-
-      const projX = x1 + t * dx;
-      const projY = y1 + t * dy;
-      const dist = geoUtils.calculateDistanceMeters(lat, lon, projY, projX);
-
-      if (dist < minDistance) {
-        minDistance = dist;
-        bestPoint = {
-          lat: projY,
-          lon: projX,
-          index: i,
-          bearing: geoUtils.calculateBearing(p1.lat, p1.lon, p2.lat, p2.lon),
-          dist
-        };
-      }
-    }
-
-    return bestPoint;
+    return geoEngine.snapPointToPolyline(lat, lon, polyCoords);
   }
 
   // Dead-Zone Position Estimation (Dead-Reckoning along Polyline)
@@ -504,73 +470,17 @@ class MataroTracker {
 
   // Extrapolate position along polyline for dead reckoning
   extrapolatePolylinePosition(hist, elapsedSec, polyCoords) {
-    if (!polyCoords || polyCoords.length < 2) return null;
-
-    // Find closest vertex on polyline
-    let bestIdx = 0;
-    let bestDist = Infinity;
-    for (let i = 0; i < polyCoords.length; i++) {
-      const d = geoUtils.calculateDistanceMeters(hist.lat, hist.lon, polyCoords[i].lat, polyCoords[i].lon);
-      if (d < bestDist) {
-        bestDist = d;
-        bestIdx = i;
-      }
-    }
-
-    // Advance along polyline by (speed * time)
-    const speedMps = Math.max(5, (hist.speedKmh || 30) / 3.6);
-    const advanceMeters = speedMps * elapsedSec;
-
-    let accumulated = 0;
-    let currIdx = bestIdx;
-
-    while (currIdx < polyCoords.length - 1 && accumulated < advanceMeters) {
-      const p1 = polyCoords[currIdx];
-      const p2 = polyCoords[currIdx + 1];
-      const segD = geoUtils.calculateDistanceMeters(p1.lat, p1.lon, p2.lat, p2.lon);
-      if (accumulated + segD >= advanceMeters) {
-        const frac = (advanceMeters - accumulated) / Math.max(1, segD);
-        const lat = p1.lat + frac * (p2.lat - p1.lat);
-        const lon = p1.lon + frac * (p2.lon - p1.lon);
-        const bearing = geoUtils.calculateBearing(p1.lat, p1.lon, p2.lat, p2.lon);
-        return { lat: Math.round(lat * 1000000) / 1000000, lon: Math.round(lon * 1000000) / 1000000, bearing };
-      }
-      accumulated += segD;
-      currIdx++;
-    }
-
-    const last = polyCoords[Math.min(polyCoords.length - 1, currIdx)];
-    return { lat: last.lat, lon: last.lon, bearing: hist.bearing || 0 };
+    return geoEngine.extrapolatePolylinePosition(hist, elapsedSec, hist.speedKmh || 30, polyCoords);
   }
 
   // Calculate distance in meters along polyline between two coordinates
   calculatePolylineDistanceBetween(polyCoords, lat1, lon1, lat2, lon2) {
-    if (!polyCoords || polyCoords.length < 2) {
-      return geoUtils.calculateDistanceMeters(lat1, lon1, lat2, lon2);
-    }
-
-    const p1 = this.snapPointToPolyline(lat1, lon1, polyCoords);
-    const p2 = this.snapPointToPolyline(lat2, lon2, polyCoords);
-
-    let startIdx = Math.min(p1.index, p2.index);
-    let endIdx = Math.max(p1.index, p2.index);
-
-    let totalDist = 0;
-    for (let i = startIdx; i < endIdx && i < polyCoords.length - 1; i++) {
-      totalDist += geoUtils.calculateDistanceMeters(polyCoords[i].lat, polyCoords[i].lon, polyCoords[i + 1].lat, polyCoords[i + 1].lon);
-    }
-
-    return Math.max(50, totalDist);
+    return geoEngine.calculatePolylineDistanceBetween(polyCoords, lat1, lon1, lat2, lon2);
   }
 
   // Calculate total distance of a route polyline
   calculateRouteTotalDistance(polyCoords) {
-    if (!polyCoords || polyCoords.length < 2) return 5000;
-    let dist = 0;
-    for (let i = 0; i < polyCoords.length - 1; i++) {
-      dist += geoUtils.calculateDistanceMeters(polyCoords[i].lat, polyCoords[i].lon, polyCoords[i + 1].lat, polyCoords[i + 1].lon);
-    }
-    return dist;
+    return geoEngine.calculateRouteTotalDistance(polyCoords);
   }
 
   // Estimate arrival ETA to stopId from active live vehicles along the route circuit
@@ -849,28 +759,12 @@ class MataroTracker {
         const startSecToday = timeUtils.timeToSec(lineSchedToday.inicio);
         const endSecToday = timeUtils.timeToSec(lineSchedToday.fin);
         const routeStops = r.stops || [];
-        const stopIdx = routeStops.findIndex(s => String(s.id) === sId);
-
-        let travelSec = 0;
-        if (stopIdx > 0) {
-          let cumDist = 0;
-          for (let i = 1; i <= stopIdx; i++) {
-            const p0 = routeStops[i - 1];
-            const p1 = routeStops[i];
-            if (p0 && p1) {
-              const lat0 = p0.latitude || p0.lat || 0;
-              const lon0 = p0.longitude || p0.lon || 0;
-              const lat1 = p1.latitude || p1.lat || 0;
-              const lon1 = p1.longitude || p1.lon || 0;
-              if (lat0 && lon0 && lat1 && lon1) {
-                cumDist += geoUtils.calculateDistanceMeters(lat0, lon0, lat1, lon1);
-              } else {
-                cumDist += 300;
-              }
-            }
-          }
-          travelSec = Math.round((cumDist / 4.8) + (stopIdx * 25));
-        }
+        const travelTimes = scheduleSynthesizer.estimateStopTravelTimes(routeStops, {
+          speedMps: 4.8,
+          dwellSecPerStop: 25,
+          defaultSegmentMeters: 300
+        });
+        const travelSec = scheduleSynthesizer.getTravelTimeToStop(travelTimes, sId);
 
         const headwaySec = (lineSchedToday.headwayMins || 20) * 60;
         const isOperatingToday = nowSec >= startSecToday && nowSec <= endSecToday + travelSec;

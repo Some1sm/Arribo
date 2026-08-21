@@ -1,37 +1,16 @@
 const https = require('https');
+const geoEngine = require('./core/geo/geoEngine');
+const timeEngine = require('./core/time/timeEngine');
+const calendarEngine = require('./core/time/calendarEngine');
+const scheduleSynthesizer = require('./core/schedule/scheduleSynthesizer');
+const delayEngine = require('./core/schedule/delayEngine');
 const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
 
-// Polyline decoder for Google Encoded Polylines
+// Polyline decoder using shared core geoEngine
 function decodePolyline(encoded) {
   if (!encoded) return [];
-  const points = [];
-  let index = 0, len = encoded.length;
-  let lat = 0, lng = 0;
-
-  while (index < len) {
-    let b, shift = 0, result = 0;
-    do {
-      b = encoded.charCodeAt(index++) - 63;
-      result |= (b & 0x1f) << shift;
-      shift += 5;
-    } while (b >= 0x20);
-    const dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
-    lat += dlat;
-
-    shift = 0;
-    result = 0;
-    do {
-      b = encoded.charCodeAt(index++) - 63;
-      result |= (b & 0x1f) << shift;
-      shift += 5;
-    } while (b >= 0x20);
-    const dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
-    lng += dlng;
-
-    points.push([lat / 1e5, lng / 1e5]);
-  }
-  return points;
+  return geoEngine.decodePolyline(encoded).map(p => [p.lat, p.lon]);
 }
 
 // Sagalés Lines Catalog
@@ -485,22 +464,12 @@ class SagalesTracker {
     // If no real-time trips found (or off-peak), generate scheduled departures with exact calculated passing time for this stop
     if (departures.length === 0) {
       const stops = lDetails.stops || [];
-      const stopIdx = stops.findIndex(s => String(s.id) === sIdStr || String(s.code) === sIdStr);
-
-      let travelSec = 0;
-      if (stopIdx > 0) {
-        let cumDist = 0;
-        for (let i = 1; i <= stopIdx; i++) {
-          const s0 = stops[i - 1];
-          const s1 = stops[i];
-          if (s0.lat && s0.lon && s1.lat && s1.lon) {
-            cumDist += geoUtils.calculateDistanceMeters(s0.lat, s0.lon, s1.lat, s1.lon);
-          } else {
-            cumDist += 600;
-          }
-        }
-        travelSec = Math.round((cumDist / 10.0) + (stopIdx * 30));
-      }
+      const travelTimes = scheduleSynthesizer.estimateStopTravelTimes(stops, {
+        speedMps: 10.0,
+        dwellSecPerStop: 30,
+        defaultSegmentMeters: 600
+      });
+      const travelSec = scheduleSynthesizer.getTravelTimeToStop(travelTimes, sIdStr);
 
       const tomorrow = new Date(Date.now() + 24 * 3600 * 1000);
       const networkTomorrow = timeUtils.getNetworkTime(this.agencyTimezone, tomorrow);

@@ -1,6 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 const mouteClient = require('./mouteClient');
+const geoEngine = require('./core/geo/geoEngine');
+const timeEngine = require('./core/time/timeEngine');
+const calendarEngine = require('./core/time/calendarEngine');
+const delayEngine = require('./core/schedule/delayEngine');
 const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
 const {
@@ -13,21 +17,19 @@ const {
 } = require('./c10StaticData');
 
 function timeToSec(timeStr) {
-  return timeUtils.timeToSec(timeStr);
+  return timeEngine.timeToSec(timeStr);
 }
 
 function secToTime(totalSec) {
-  return timeUtils.secToTime(totalSec);
+  return timeEngine.secToTime(totalSec);
 }
 
 function formatDateToYYYYMMDD(date, tz = 'Europe/Madrid') {
-  return timeUtils.getNetworkTime(tz, date).dateStr;
+  return timeEngine.getNetworkTime(tz, date).dateStr;
 }
 
 function timeToMin(timeStr) {
-  if (!timeStr) return 0;
-  const [h, m] = timeStr.split(':').map(Number);
-  return (h || 0) * 60 + (m || 0);
+  return timeEngine.timeToMin(timeStr);
 }
 
 class CorridorTracker {
@@ -207,37 +209,11 @@ class CorridorTracker {
   }
 
   getDateComponents(dateObj = new Date()) {
-    const d = (dateObj instanceof Date && !isNaN(dateObj.getTime()))
-      ? dateObj
-      : (typeof dateObj === 'string' ? new Date(dateObj) : new Date());
-
-    const formatter = new Intl.DateTimeFormat('en-CA', {
-      timeZone: this.agencyTimezone || 'Europe/Madrid',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit'
-    });
-    const parts = formatter.formatToParts(d);
-    let year = 2026, month = 8, day = 20;
-    for (const p of parts) {
-      if (p.type === 'year') year = parseInt(p.value, 10);
-      if (p.type === 'month') month = parseInt(p.value, 10);
-      if (p.type === 'day') day = parseInt(p.value, 10);
-    }
-    const utcDate = new Date(Date.UTC(year, month - 1, day));
-    const dayOfWeek = utcDate.getUTCDay();
-    const isSunday = dayOfWeek === 0;
-    const isSaturday = dayOfWeek === 6;
-    const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
-    const isAugust = month === 8;
-    const dateStr = `${year}${String(month).padStart(2, '0')}${String(day).padStart(2, '0')}`;
-    const mmdd = `${String(month).padStart(2, '0')}${String(day).padStart(2, '0')}`;
-
-    return { year, month, day, dayOfWeek, isSunday, isSaturday, isWeekday, isAugust, dateStr, mmdd };
+    return calendarEngine.getDateComponents(dateObj, this.agencyTimezone);
   }
 
   getServiceCalendarInfo(dateObj = new Date()) {
-    const { isAugust, isSaturday, isSunday, isWeekday, year, month, day } = this.getDateComponents(dateObj);
+    const { isAugust, isSaturday, isSunday, year, month, day } = this.getDateComponents(dateObj);
     const dateFormatted = `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`;
 
     if (isSunday) {
@@ -254,7 +230,7 @@ class CorridorTracker {
       };
     }
 
-    if (isSaturday || (isWeekday && isAugust)) {
+    if (isSaturday || (this.getDateComponents(dateObj).isWeekday && isAugust)) {
       return {
         serviceId: 'GEN_185080',
         name: isSaturday ? 'Dissabtes' : "Feiners d'Agost",
@@ -282,45 +258,7 @@ class CorridorTracker {
   }
 
   isServiceActiveOnDate(serviceId, dateObj = new Date()) {
-    const { dateStr, mmdd, dayOfWeek, isSunday, isSaturday, isWeekday, isAugust } = this.getDateComponents(dateObj);
-
-    if (this.calendarExceptions.has(dateStr)) {
-      const entry = this.calendarExceptions.get(dateStr);
-      if (entry.active && entry.active.has(serviceId)) return true;
-      if (entry.inactive && entry.inactive.has(serviceId)) return false;
-    }
-
-    // 1. Regular all-year Sundays & holidays
-    if (serviceId === 'GEN_184749') {
-      return isSunday;
-    }
-
-    // 2. Summer Sundays & holidays (Green departures between 15/06 and 15/09)
-    if (serviceId === 'GEN_185017') {
-      const isSummerSeason = mmdd >= '0615' && mmdd <= '0915';
-      return isSunday && isSummerSeason;
-    }
-
-    // 3. Saturdays and August weekdays ("Dissabtes i feiners d'agost")
-    if (serviceId === 'GEN_185080') {
-      return isSaturday || (isWeekday && isAugust);
-    }
-
-    // 4. Regular weekdays (non-August) ("Feiners de dilluns a divendres excepte agost")
-    if (serviceId === 'GEN_184910') {
-      return isWeekday && !isAugust;
-    }
-
-    const weekly = this.calendarWeekly.find(w => w.serviceId === serviceId);
-    if (weekly) {
-      if (dateStr >= weekly.startDate && dateStr <= weekly.endDate) {
-        const dayKeys = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-        return weekly[dayKeys[dayOfWeek]] === true;
-      }
-    }
-
-    // Safe fallback: enable all trips if serviceId is unknown or calendar is unpopulated
-    return true;
+    return calendarEngine.isServiceActiveOnDate(serviceId, this.calendarWeekly, this.calendarExceptions, dateObj, this.agencyTimezone);
   }
 
   getStops(direction = '1') {
@@ -378,33 +316,19 @@ class CorridorTracker {
 
     const schedMin = timeToMin(scheduledTime);
     const delayMinutes = isRealtime ? liveMin - schedMin : 0;
-
-    let delayStatus = 'scheduled';
-    let delayBadgeText = 'Programat';
-
-    if (isRealtime) {
-      if (delayMinutes >= 2) {
-        delayStatus = 'delayed';
-        delayBadgeText = `+${delayMinutes} min retard`;
-      } else if (delayMinutes <= -2) {
-        delayStatus = 'early';
-        delayBadgeText = `${Math.abs(delayMinutes)} min avançat`;
-      } else {
-        delayStatus = 'on_time';
-        delayBadgeText = "A l'hora (Puntual)";
-      }
-    }
+    const delayInfo = delayEngine.computeDelayStatus(delayMinutes, isRealtime, {
+      scheduledTime,
+      punctualStyle: 'long'
+    });
 
     return {
       scheduledTime,
       bestTrip,
       realtimeTime: liveTimeStr,
-      delayMinutes,
-      delayStatus,
-      delayBadgeText,
-      comparisonText: isRealtime
-        ? `Teòric: ${scheduledTime} (${delayBadgeText})`
-        : `Horari teòric: ${scheduledTime}`
+      delayMinutes: delayInfo.delayMinutes,
+      delayStatus: delayInfo.delayStatus,
+      delayBadgeText: delayInfo.delayBadgeText,
+      comparisonText: delayInfo.comparisonText
     };
   }
 
@@ -949,13 +873,14 @@ class CorridorTracker {
         const stop2Data = stopsMap.get(s2.stopId) || stopsList[i + 1] || {};
 
         if (stop1Data.lat && stop2Data.lat) {
-          const lat = stop1Data.lat + progress * (stop2Data.lat - stop1Data.lat);
-          const lon = stop1Data.lon + progress * (stop2Data.lon - stop1Data.lon);
+          const interp = geoEngine.interpolateCoordinate(stop1Data.lat, stop1Data.lon, stop2Data.lat, stop2Data.lon, progress);
+          const lat = interp.lat;
+          const lon = interp.lon;
 
-          const bearing = geoUtils.calculateBearing(stop1Data.lat, stop1Data.lon, stop2Data.lat, stop2Data.lon);
-          const compass = geoUtils.bearingToCompassName(bearing);
-          const distToNext = Math.round(geoUtils.calculateDistanceMeters(lat, lon, stop2Data.lat, stop2Data.lon));
-          const segDist = Math.round(geoUtils.calculateDistanceMeters(stop1Data.lat, stop1Data.lon, stop2Data.lat, stop2Data.lon));
+          const bearing = geoEngine.calculateBearing(stop1Data.lat, stop1Data.lon, stop2Data.lat, stop2Data.lon);
+          const compass = geoEngine.bearingToCompassName(bearing);
+          const distToNext = Math.round(geoEngine.calculateDistanceMeters(lat, lon, stop2Data.lat, stop2Data.lon));
+          const segDist = Math.round(geoEngine.calculateDistanceMeters(stop1Data.lat, stop1Data.lon, stop2Data.lat, stop2Data.lon));
           const speedKmh = segDuration > 0 ? Math.min(85, Math.max(15, Math.round((segDist / segDuration) * 3.6))) : 40;
 
           // Build lightweight allStops array for client-side multi-segment smooth gliding

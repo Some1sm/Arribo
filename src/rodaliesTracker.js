@@ -1,4 +1,9 @@
 const https = require('https');
+const geoEngine = require('./core/geo/geoEngine');
+const timeEngine = require('./core/time/timeEngine');
+const calendarEngine = require('./core/time/calendarEngine');
+const scheduleSynthesizer = require('./core/schedule/scheduleSynthesizer');
+const delayEngine = require('./core/schedule/delayEngine');
 const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
 
@@ -453,6 +458,8 @@ const RODALIES_FALLBACK_STOPS = {
         const aimedMs = arrMs - (delayMin * 60000);
         const aimedClockStr = timeUtils.formatTimeToTimezone(new Date(aimedMs), this.agencyTimezone);
 
+        const delayInfo = delayEngine.computeDelayStatus(delayMin, true);
+
         departures.push({
           lineId: route ? route.id : t.lineCode,
           lineName: t.lineCode,
@@ -468,8 +475,8 @@ const RODALIES_FALLBACK_STOPS = {
           isTrain: true,
           isToday: true,
           isFirstOfDay: false,
-          delayStatus: delayMin >= 2 ? 'delayed' : (delayMin <= -2 ? 'early' : 'on_time'),
-          delayBadgeText: delayMin >= 2 ? `+${delayMin} min retard` : (delayMin <= -2 ? `${delayMin} min avançat` : 'Puntual'),
+          delayStatus: delayInfo.delayStatus,
+          delayBadgeText: delayInfo.delayBadgeText,
           comparisonText: delayMin !== 0 ? `📅 Horari teòric: ${aimedClockStr}` : `Temps real Rodalies (${clockStr})`,
           formattedStatus: safeDiffMin === 0 ? 'Imminent' : `${safeDiffMin} min`
         });
@@ -479,22 +486,12 @@ const RODALIES_FALLBACK_STOPS = {
     // If night / off-peak, calculate scheduled train departure times
     if (departures.length === 0 && lDetails) {
       const stations = lDetails.stops || [];
-      const stopIdx = stations.findIndex(s => String(s.id) === sIdStr || String(s.code) === sIdStr);
-
-      let travelSec = 0;
-      if (stopIdx > 0) {
-        let cumDist = 0;
-        for (let i = 1; i <= stopIdx; i++) {
-          const s0 = stations[i - 1];
-          const s1 = stations[i];
-          if (s0.lat && s0.lon && s1.lat && s1.lon) {
-            cumDist += geoUtils.calculateDistanceMeters(s0.lat, s0.lon, s1.lat, s1.lon);
-          } else {
-            cumDist += 2000;
-          }
-        }
-        travelSec = Math.round((cumDist / 18.0) + (stopIdx * 45)); // Trains avg speed ~65 km/h
-      }
+      const travelTimes = scheduleSynthesizer.estimateStopTravelTimes(stations, {
+        speedMps: 18.0,
+        dwellSecPerStop: 45,
+        defaultSegmentMeters: 2000
+      });
+      const travelSec = scheduleSynthesizer.getTravelTimeToStop(travelTimes, sIdStr);
 
       const tomorrow = new Date(Date.now() + 24 * 3600 * 1000);
       const netTomorrow = timeUtils.getNetworkTime(this.agencyTimezone, tomorrow);
