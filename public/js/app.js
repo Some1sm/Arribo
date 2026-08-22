@@ -1641,9 +1641,10 @@ class TransitApp {
       const isFirstMorning = isTomorrow && (dep.isFirstOfDay === true || idx === 0) && !dep.isRealTime && !dep.isEstimated;
       const isFirstToday = dep.isToday === true && dep.isFirstOfDay === true && !dep.isRealTime && !dep.isEstimated;
       const isDiff = schedTime && schedTime !== clockTime;
-      const delayText = dep.delayMins !== undefined && dep.delayMins !== 0
-        ? (dep.delayMins > 0 ? `+${dep.delayMins} min retard` : `${dep.delayMins} min avançat`)
-        : 'Puntual';
+      const rawDelayMins = dep.delayMins !== undefined && dep.delayMins !== null ? Number(dep.delayMins) : 0;
+      const delayText = rawDelayMins >= 2
+        ? `+${rawDelayMins} min retard`
+        : (rawDelayMins <= -2 ? `${Math.abs(rawDelayMins)} min avançat` : 'Puntual');
 
       const matchedBus = this.resolveBusForDeparture(dep, targetStopSeq, targetStopId, idx);
       const resolvedVehicleId = matchedBus?.vehicleId || matchedBus?.tripId || dep.vehicleId || '';
@@ -1669,7 +1670,7 @@ class TransitApp {
         ? '1r Servei'
         : (isTomorrow ? 'Programat' : (dep.isEstimated ? '⚡ En ruta' : (dep.delayBadgeText || 'Puntual')));
 
-      const pillClass = (isTomorrow || isFirstToday) ? 'scheduled' : (dep.delayStatus || 'on-time');
+      const pillClass = (isTomorrow || isFirstToday) ? 'scheduled' : (rawDelayMins >= 2 ? 'delayed' : (rawDelayMins <= -2 ? 'early' : (dep.delayStatus || 'on-time')));
 
       return `
         <div class="departure-item ${idx === 0 ? 'highlight-next' : ''} ${hasActiveBus ? 'clickable-bus-dep' : ''}"
@@ -1697,7 +1698,7 @@ class TransitApp {
                     : (isTomorrow
                         ? `<span>📅 Horari teòric: <strong class="sched-strong">Demà a les ${clockTime}</strong></span>`
                         : (schedTime
-                            ? `<span>📅 Horari oficial: <strong class="sched-strong">${schedTime}</strong> <span class="dep-delay-note ${dep.delayMins > 0 ? 'delay' : (dep.delayMins < 0 ? 'early' : '')}">(${delayText})</span></span>`
+                            ? `<span>📅 Horari oficial: <strong class="sched-strong">${schedTime}</strong> <span class="dep-delay-note ${rawDelayMins >= 2 ? 'delay' : (rawDelayMins <= -2 ? 'early' : 'on-time')}">(${delayText})</span></span>`
                             : `<span>📅 Horari previst</span>`)))}
             </div>
           </div>
@@ -2293,9 +2294,10 @@ class TransitApp {
           const isFirstToday = d.isToday === true && d.isFirstOfDay === true && !d.isRealTime && !d.isEstimated;
 
           const isDiff = schedTime && schedTime !== estTime;
-          const delayText = d.delayMins !== undefined && d.delayMins !== 0
-            ? (d.delayMins > 0 ? `+${d.delayMins} min retard` : `${d.delayMins} min avançat`)
-            : 'Puntual';
+          const rawDelayMins = d.delayMins !== undefined && d.delayMins !== null ? Number(d.delayMins) : 0;
+          const delayText = rawDelayMins >= 2
+            ? `+${rawDelayMins} min retard`
+            : (rawDelayMins <= -2 ? `${Math.abs(rawDelayMins)} min avançat` : 'Puntual');
 
           const matchedBus = this.resolveBusForDeparture(d, stopSeq, stopId, idx);
           const resolvedVehicleId = matchedBus?.vehicleId || matchedBus?.tripId || d.vehicleId || '';
@@ -2321,7 +2323,7 @@ class TransitApp {
             ? '1r Servei'
             : (isTomorrow ? 'Programat' : (d.isEstimated ? '⚡ En ruta' : (d.delayBadgeText || 'Puntual')));
 
-          const pillClass = (isTomorrow || isFirstToday) ? 'scheduled' : (d.delayStatus || 'on-time');
+          const pillClass = (isTomorrow || isFirstToday) ? 'scheduled' : (rawDelayMins >= 2 ? 'delayed' : (rawDelayMins <= -2 ? 'early' : (d.delayStatus || 'on-time')));
 
           return `
             <div class="departure-item ${idx === 0 ? 'highlight-next' : ''} ${hasActiveBus ? 'clickable-bus-dep' : ''}"
@@ -2352,7 +2354,7 @@ class TransitApp {
                   ` : (isTomorrow ? `
                     <span>📅 Horari teòric: <strong class="sched-strong">Demà a les ${estTime}</strong></span>
                   ` : (schedTime ? `
-                    <span>📅 Horari oficial: <strong class="sched-strong">${schedTime}</strong> <span class="dep-delay-note ${d.delayMins > 0 ? 'delay' : (d.delayMins < 0 ? 'early' : '')}">(${delayText})</span></span>
+                    <span>📅 Horari oficial: <strong class="sched-strong">${schedTime}</strong> <span class="dep-delay-note ${rawDelayMins >= 2 ? 'delay' : (rawDelayMins <= -2 ? 'early' : 'on-time')}">(${delayText})</span></span>
                   ` : `<span>📅 Horari previst</span>`)))}
                 </div>
               </div>

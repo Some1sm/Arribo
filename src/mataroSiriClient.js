@@ -207,7 +207,16 @@ class MataroSiriClient {
         const expectedArr = this.extractTag(itemXml, 'ExpectedArrivalTime') || this.extractTag(itemXml, 'AimedArrivalTime') || '';
         const aimedArr = this.extractTag(itemXml, 'AimedArrivalTime') || expectedArr;
         const delayStr = this.extractTag(itemXml, 'Delay') || 'PT0M';
-        const delayMins = this.parseDurationMinutes(delayStr);
+        let delayMins = this.parseDurationMinutes(delayStr);
+
+        // Authoritatively compute delay from expected vs aimed arrival times if available
+        if (expectedArr && aimedArr) {
+          const expMs = new Date(expectedArr).getTime();
+          const aimMs = new Date(aimedArr).getTime();
+          if (!isNaN(expMs) && !isNaN(aimMs)) {
+            delayMins = Math.round((expMs - aimMs) / 60000);
+          }
+        }
 
         const lat = parseFloat(this.extractTag(itemXml, 'Latitude') || '0');
         const lon = parseFloat(this.extractTag(itemXml, 'Longitude') || '0');
@@ -246,8 +255,8 @@ class MataroSiriClient {
             minutesAway,
             formattedStatus: minutesAway === 0 ? 'Imminent' : (minutesAway === 1 ? '1 min' : `${minutesAway} min`),
             delayMins,
-            delayBadgeText: delayMins > 0 ? `+${delayMins} min retard` : (delayMins < 0 ? `${delayMins} min avançat` : 'Puntual'),
-            delayStatus: delayMins > 2 ? 'delayed' : (delayMins < -1 ? 'early' : 'on-time'),
+            delayBadgeText: delayMins >= 2 ? `+${delayMins} min retard` : (delayMins <= -2 ? `${Math.abs(delayMins)} min avançat` : 'Puntual'),
+            delayStatus: delayMins >= 2 ? 'delayed' : (delayMins <= -2 ? 'early' : 'on-time'),
             isRealTime: true,
             busCoords: lat && lon ? { lat, lon } : null
           });
