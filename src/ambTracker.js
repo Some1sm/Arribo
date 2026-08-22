@@ -163,9 +163,7 @@ class AmbTracker extends BaseTracker {
         color,
         agency: agencyInfo.agency,
         group: agencyInfo.group,
-        directions,
-        paths,
-        services: r.services || []
+        directions
       };
 
       this.routesMap.set(routeObj.id, routeObj);
@@ -230,7 +228,7 @@ class AmbTracker extends BaseTracker {
         try {
           const cacheDir = path.dirname(AMB_CACHE_FILE);
           if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
-          fs.writeFileSync(AMB_CACHE_FILE, JSON.stringify(res.data), 'utf8');
+          await fs.promises.writeFile(AMB_CACHE_FILE, JSON.stringify(res.data), 'utf8');
           console.log('[AmbTracker] 💾 Saved AMB catalog to local cache.');
         } catch (_) {}
       }
@@ -531,25 +529,31 @@ class AmbTracker extends BaseTracker {
 
       // Collect earliest arrival at EVERY stop on this direction
       const stopArrivals = [];
-      for (const stop of stops) {
-        const times = await this.getStopRealtime(stop.code);
-        const lineTimes = times
-          .filter(t => String(t.lineCode).toUpperCase() === routeCodeUpper)
-          .sort((a, b) => (a.time || 0) - (b.time || 0));
+      const REALTIME_POLL_CONCURRENCY = 8;
+      for (let i = 0; i < stops.length; i += REALTIME_POLL_CONCURRENCY) {
+        const chunk = stops.slice(i, i + REALTIME_POLL_CONCURRENCY);
+        // Bounded-concurrency batch poll; results are consumed in original stop order
+        const chunkTimes = await Promise.all(chunk.map(stop => this.getStopRealtime(stop.code)));
+        chunk.forEach((stop, j) => {
+          const times = chunkTimes[j];
+          const lineTimes = times
+            .filter(t => String(t.lineCode).toUpperCase() === routeCodeUpper)
+            .sort((a, b) => (a.time || 0) - (b.time || 0));
 
-        if (lineTimes.length > 0) {
-          const t = lineTimes[0];
-          const minsAway = Math.max(0, Math.round((t.time - now) / 60000));
-          if (minsAway <= 45) {
-            stopArrivals.push({
-              stopSeq: stop.seq,
-              stop,
-              minsAway,
-              destination: t.destination || dirObj.name,
-              arrivalTime: t.time
-            });
+          if (lineTimes.length > 0) {
+            const t = lineTimes[0];
+            const minsAway = Math.max(0, Math.round((t.time - now) / 60000));
+            if (minsAway <= 45) {
+              stopArrivals.push({
+                stopSeq: stop.seq,
+                stop,
+                minsAway,
+                destination: t.destination || dirObj.name,
+                arrivalTime: t.time
+              });
+            }
           }
-        }
+        });
       }
 
       // Sort by stop sequence
@@ -654,7 +658,10 @@ class AmbTracker extends BaseTracker {
       totalDisruptions: disruptions.length,
       totalActiveBuses: activeBuses.length,
       serviceStatus: {
-        isOperating: activeBuses.length > 0 || (new Date().getHours() >= 6 && new Date().getHours() < 22),
+        isOperating: activeBuses.length > 0 || (() => {
+          const localHour = calendarEngine.getDateComponents(new Date(), this.agencyTimezone).hour;
+          return localHour >= 6 && localHour < 22;
+        })(),
         firstServiceTomorrow: '05:30'
       }
     };
@@ -740,7 +747,7 @@ class AmbTracker extends BaseTracker {
         const aimedMs = arrTime - (delayMin * 60000);
         const aimedClockStr = timeUtils.formatTimeToTimezone(new Date(aimedMs), this.agencyTimezone);
 
-          const delayInfo = delayEngine.computeDelayStatus(delayMin, true);
+          const delayInfo = delayEngine.computeDelayStatus(delayMin, false);
 
           departures.push({
             lineId: route ? route.id : t.lineCode,
@@ -752,7 +759,7 @@ class AmbTracker extends BaseTracker {
             minutesAway: safeDiffMin,
             delayMinutes: delayMin,
             delayMins: delayMin,
-            isRealTime: true,
+            isRealTime: false,
             isEstimated: false,
             isToday: true,
             isFirstOfDay: false,

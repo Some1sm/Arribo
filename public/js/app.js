@@ -358,6 +358,9 @@ class TransitApp {
     this.secondsRemaining = this.pollInterval;
     this.updateCountdownLabel();
     this.refreshAllData(true);
+    // Restart the glider animation loop: it self-suspends on the Landing view,
+    // so navigating Landing -> Line needs an idempotent kick (cancels any prior rAF).
+    this.startAnimationLoop();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -747,9 +750,12 @@ class TransitApp {
 
     // Fetch and render historical GPS breadcrumb trail for this bus
     if (vehicleId) {
+      const requestedVehicleId = vehicleId;
       fetch(`/api/vehicle/${encodeURIComponent(vehicleId)}/trail`)
         .then(r => r.json())
         .then(res => {
+          // Discard stale trail responses if user switched vehicle or line meanwhile
+          if (this.selectedVehicleId !== requestedVehicleId || !this.activeLineId) return;
           if (res.success && res.trail && res.trail.length > 1) {
             const lineColor = this.activeLineData?.color || '#38bdf8';
             this.mapController?.renderVehicleTrail(res.trail, lineColor);
@@ -967,6 +973,7 @@ class TransitApp {
   async renderLineDelayStats(lData) {
     const pillEl = document.getElementById('line-stat-pill');
     const delayValEl = document.getElementById('line-stat-delay-val');
+    const avgValEl = document.getElementById('line-stat-avg-val');
     const statsContainer = document.getElementById('line-selector-stats');
     if (!delayValEl) return;
 
@@ -992,6 +999,8 @@ class TransitApp {
     if (!stats) {
       try {
         const res = await fetch(`/api/line/${encodeURIComponent(lId)}/stats`).then(r => r.json());
+        // Discard stale response if the user switched lines while fetching
+        if (String(this.activeLineId || '').toLowerCase() !== String(lId).toLowerCase()) return;
         if (res.success && res.stats) {
           stats = res.stats;
         }
@@ -1423,7 +1432,7 @@ class TransitApp {
               <tbody>
                 ${agencies.map((a, i) => `
                   <tr style="border-bottom:1px solid var(--border-subtle); background:${i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'};">
-                    <td style="padding:0.6rem 0.8rem; font-weight:600;">${a.agency}</td>
+                    <td style="padding:0.6rem 0.8rem; font-weight:600;">${this.esc(a.agency)}</td>
                     <td style="padding:0.6rem 0.8rem; color:var(--text-muted);">${a.linesCount}</td>
                     <td style="padding:0.6rem 0.8rem; color:var(--text-muted);">${a.totalSamples}</td>
                     <td style="padding:0.6rem 0.8rem; font-weight:700; color:${a.avgDelay > 3 ? '#ef4444' : '#10b981'};">+${a.avgDelay} min</td>
@@ -1524,7 +1533,7 @@ class TransitApp {
           return `
             <button type="button" class="btn-direction ${isActive ? 'active' : ''}" data-dir-id="${dirId}">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="${i === 0 ? 'm9 18 6-6-6-6' : 'm15 18-6-6 6-6'}"/></svg>
-              <span>${d.name}</span>
+              <span>${this.esc(d.name)}</span>
             </button>
           `;
         }).join('');
@@ -1551,8 +1560,8 @@ class TransitApp {
           const isActive = dirId === String(currentDir);
           const icon = i === 0 ? '➔' : '⬅';
           return `
-            <button type="button" class="btn-stops-dir-tab ${isActive ? 'active' : ''}" data-dir-id="${dirId}" title="Veure parades de ${d.name.replace(/"/g, '&quot;')}">
-              <span>${icon} ${d.name}</span>
+            <button type="button" class="btn-stops-dir-tab ${isActive ? 'active' : ''}" data-dir-id="${dirId}" title="Veure parades de ${this.esc(d.name)}">
+              <span>${icon} ${this.esc(d.name)}</span>
             </button>
           `;
         }).join('');
@@ -1804,9 +1813,9 @@ class TransitApp {
 
       return `
         <div class="departure-item ${idx === 0 ? 'highlight-next' : ''} ${hasActiveBus ? 'clickable-bus-dep' : ''}"
-             data-vehicle-id="${resolvedVehicleId}"
-             data-bus-lat="${resolvedLat}"
-             data-bus-lon="${resolvedLon}"
+             data-vehicle-id="${this.esc(resolvedVehicleId)}"
+             data-bus-lat="${this.esc(resolvedLat)}"
+             data-bus-lon="${this.esc(resolvedLon)}"
              data-stop-seq="${targetStopSeq || ''}"
              data-stop-id="${targetStopId || ''}"
              data-dep-index="${idx}"
@@ -1818,7 +1827,7 @@ class TransitApp {
               <span class="dep-tag-sub ${(isFirstMorning || isFirstToday) ? 'first-service' : ''}">${tagLabel}</span>
             </div>
             <div class="dep-dest">
-              Cap a <strong>${(dep.destination || 'Destí').replace(/^Cap a\s+/i, '')}</strong>
+              Cap a <strong>${this.esc((dep.destination || 'Destí').replace(/^Cap a\s+/i, ''))}</strong>
             </div>
             <div class="dep-time-sub">
               ${isFirstMorning
@@ -1991,10 +2000,10 @@ class TransitApp {
             <div class="timeline-dir-header">
               <div class="timeline-dir-header-title">
                 <span class="timeline-dir-icon">${dIdx === 0 ? '➔' : '⬅'}</span>
-                <strong>${d.name}</strong>
+                <strong>${this.esc(d.name)}</strong>
                 <span class="timeline-dir-badge">${dirStops.length} parades</span>
               </div>
-              <button type="button" class="btn-timeline-select-dir" data-dir-id="${d.dirId}" title="Veure i fixar només ${d.name.replace(/"/g, '&quot;')}">
+              <button type="button" class="btn-timeline-select-dir" data-dir-id="${d.dirId}" title="Veure i fixar només ${this.esc(d.name)}">
                 <span>Veure només aquest sentit</span>
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
               </button>
@@ -2021,12 +2030,12 @@ class TransitApp {
                 }
 
                 return `
-                  <div class="corridor-step ${isPassed ? 'passed' : ''}" data-target-id="${sId}" style="cursor:pointer;" title="Fixar ${s.name} com a parada principal">
+                  <div class="corridor-step ${isPassed ? 'passed' : ''}" data-target-id="${sId}" style="cursor:pointer;" title="Fixar ${this.esc(s.name)} com a parada principal">
                     <div class="${nodeClass}">
                       <span>${iconContent}</span>
                     </div>
                     <div class="step-info">
-                      <span class="step-name">${s.name}</span>
+                      <span class="step-name">${this.esc(s.name)}</span>
                       <span class="step-zone">#${s.seq || idx + 1} • ${s.zone || 'Parada'}</span>
                     </div>
                   </div>
@@ -2067,12 +2076,12 @@ class TransitApp {
             }
 
             return `
-              <div class="corridor-step ${isPassed ? 'passed' : ''}" data-target-id="${sId}" style="cursor:pointer;" title="Fixar ${s.name} com a parada principal">
+              <div class="corridor-step ${isPassed ? 'passed' : ''}" data-target-id="${sId}" style="cursor:pointer;" title="Fixar ${this.esc(s.name)} com a parada principal">
                 <div class="${nodeClass}">
                   <span>${iconContent}</span>
                 </div>
                 <div class="step-info">
-                  <span class="step-name">${s.name}</span>
+                  <span class="step-name">${this.esc(s.name)}</span>
                   <span class="step-zone">#${s.seq || idx + 1} • ${s.zone || 'Parada'}</span>
                 </div>
               </div>
@@ -2109,9 +2118,9 @@ class TransitApp {
           const options = (d.stops || []).map(s => {
             const id = String(s.mouteStopId || s.id || s.code);
             const isSel = id === String(selectedId);
-            return `<option value="${id}" ${isSel ? 'selected' : ''}>#${s.seq || ''} ${s.name}</option>`;
+            return `<option value="${id}" ${isSel ? 'selected' : ''}>#${s.seq || ''} ${this.esc(s.name)}</option>`;
           }).join('');
-          return `<optgroup label="${dirName}">${options}</optgroup>`;
+          return `<optgroup label="${this.esc(dirName)}">${options}</optgroup>`;
         }).join('');
         return;
       }
@@ -2120,7 +2129,7 @@ class TransitApp {
       select.innerHTML = stops.map(s => {
         const id = String(s.mouteStopId || s.id || s.code);
         const isSel = id === String(selectedId);
-        return `<option value="${id}" ${isSel ? 'selected' : ''}>#${s.seq || ''} ${s.name}</option>`;
+        return `<option value="${id}" ${isSel ? 'selected' : ''}>#${s.seq || ''} ${this.esc(s.name)}</option>`;
       }).join('');
       return;
     }
@@ -2129,7 +2138,7 @@ class TransitApp {
     select.innerHTML = stops.map(s => {
       const id = String(s.mouteStopId || s.id || s.code);
       const isSel = id === String(selectedId);
-      return `<option value="${id}" ${isSel ? 'selected' : ''}>#${s.seq || ''} ${s.name}</option>`;
+      return `<option value="${id}" ${isSel ? 'selected' : ''}>#${s.seq || ''} ${this.esc(s.name)}</option>`;
     }).join('');
   }
 
@@ -2168,8 +2177,8 @@ class TransitApp {
           <span class="stops-nav-label">Anar a:</span>
           <div class="stops-nav-buttons">
             ${allDirs.map((d, idx) => `
-              <button type="button" class="btn-dir-jump" data-dir-target="stops-group-${d.dirId}" title="Desplaçar a les parades de ${d.name.replace(/"/g, '&quot;')}">
-                <span>${idx === 0 ? '➔' : '⬅'} ${d.name}</span>
+              <button type="button" class="btn-dir-jump" data-dir-target="stops-group-${d.dirId}" title="Desplaçar a les parades de ${this.esc(d.name)}">
+                <span>${idx === 0 ? '➔' : '⬅'} ${this.esc(d.name)}</span>
                 <span class="btn-dir-jump-badge">${d.stops?.length || 0}</span>
               </button>
             `).join('')}
@@ -2186,7 +2195,7 @@ class TransitApp {
               <div class="stops-dir-header-info">
                 <div class="stops-dir-header-title-row">
                   <span class="stops-dir-icon">${dirIcon}</span>
-                  <strong class="stops-dir-name">${d.name}</strong>
+                  <strong class="stops-dir-name">${this.esc(d.name)}</strong>
                   <span class="stops-dir-count-pill">${dirStops.length} parades</span>
                 </div>
               </div>
@@ -2201,15 +2210,15 @@ class TransitApp {
                 const id = String(s.mouteStopId || s.id || s.code);
                 const isTarget = id === String(currentTargetId);
                 return `
-                  <div class="stop-row-item ${isTarget ? 'target-stop' : ''}" data-stop-id="${id}" data-stop-name="${s.name.replace(/"/g, '&quot;')}" data-dir-id="${d.dirId}">
+                  <div class="stop-row-item ${isTarget ? 'target-stop' : ''}" data-stop-id="${id}" data-stop-name="${this.esc(s.name)}" data-dir-id="${d.dirId}">
                     <div class="stop-row-left">
                       <span class="stop-seq-badge">#${i + 1}</span>
                       <div>
-                        <div class="stop-row-name">${s.name} ${isTarget ? '⭐' : ''}</div>
-                        <div class="stop-row-zone">${s.zone || 'Parada'} ${s.code ? `• Codi: ${s.code}` : ''}</div>
+                        <div class="stop-row-name">${this.esc(s.name)} ${isTarget ? '⭐' : ''}</div>
+                        <div class="stop-row-zone">${this.esc(s.zone || 'Parada')} ${s.code ? `• Codi: ${this.esc(s.code)}` : ''}</div>
                       </div>
                     </div>
-                    <button type="button" class="btn-icon btn-inspect-stop" style="width:34px; height:34px;" title="Veure arribades" data-stop-id="${id}" data-stop-name="${s.name.replace(/"/g, '&quot;')}">
+                    <button type="button" class="btn-icon btn-inspect-stop" style="width:34px; height:34px;" title="Veure arribades" data-stop-id="${id}" data-stop-name="${this.esc(s.name)}">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
                     </button>
                   </div>
@@ -2230,15 +2239,15 @@ class TransitApp {
         const id = String(s.mouteStopId || s.id || s.code);
         const isTarget = id === String(currentTargetId);
         return `
-          <div class="stop-row-item ${isTarget ? 'target-stop' : ''}" data-stop-id="${id}" data-stop-name="${s.name.replace(/"/g, '&quot;')}">
+          <div class="stop-row-item ${isTarget ? 'target-stop' : ''}" data-stop-id="${id}" data-stop-name="${this.esc(s.name)}">
             <div class="stop-row-left">
               <span class="stop-seq-badge">#${i + 1}</span>
               <div>
-                <div class="stop-row-name">${s.name} ${isTarget ? '⭐' : ''}</div>
-                <div class="stop-row-zone">${s.zone || 'Parada'} ${s.code ? `• Codi: ${s.code}` : ''}</div>
+                <div class="stop-row-name">${this.esc(s.name)} ${isTarget ? '⭐' : ''}</div>
+                <div class="stop-row-zone">${this.esc(s.zone || 'Parada')} ${s.code ? `• Codi: ${this.esc(s.code)}` : ''}</div>
               </div>
             </div>
-            <button type="button" class="btn-icon btn-inspect-stop" style="width:34px; height:34px;" title="Veure arribades" data-stop-id="${id}" data-stop-name="${s.name.replace(/"/g, '&quot;')}">
+            <button type="button" class="btn-icon btn-inspect-stop" style="width:34px; height:34px;" title="Veure arribades" data-stop-id="${id}" data-stop-name="${this.esc(s.name)}">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
             </button>
           </div>
@@ -2402,7 +2411,11 @@ class TransitApp {
       const res = await fetch(endpoint).then(r => r.json());
 
       if (res.success && res.data) {
-        // Save to cache for subsequent 0ms opens
+        // Save to cache for subsequent 0ms opens (bounded LRU-style, cap 50)
+        if (this.stopDeparturesCache.size >= 50) {
+          const oldestKey = this.stopDeparturesCache.keys().next().value;
+          if (oldestKey !== undefined) this.stopDeparturesCache.delete(oldestKey);
+        }
         this.stopDeparturesCache.set(stopCacheKey, { ts: Date.now(), data: res.data });
 
         // If modal is still open and displaying this stop, update seamlessly
@@ -2633,11 +2646,11 @@ class TransitApp {
               const isActive = String(l.id) === String(this.activeLineId);
               const contrast = this.getContrastColor(l.color);
               return `
-                <div class="line-grid-card ${isActive ? 'active' : ''}" data-line-id="${l.id}">
+                <div class="line-grid-card ${isActive ? 'active' : ''}" data-line-id="${this.esc(l.id)}">
                   <div class="line-card-left">
                     <span class="line-card-badge" style="background:${l.color}; color:${contrast};">${l.code}</span>
                     <div class="line-card-details">
-                      <div class="line-card-name">${l.isTrain ? `Tren ${l.code}` : l.code}: ${l.name}</div>
+                      <div class="line-card-name">${this.esc(l.isTrain ? `Tren ${l.code}` : l.code)}: ${this.esc(l.name)}</div>
                       <div class="line-card-sub">
                         <span>${l.agency || g.name}</span>
                         <span>•</span>
@@ -2858,17 +2871,6 @@ class TransitApp {
   setupEventListeners() {
     this.setupPageVisibility();
 
-    // Synchronize route view on browser back / forward navigation
-    window.addEventListener('popstate', () => {
-      const prevLineId = this.activeLineId;
-      this.parseUrlHash();
-      if (this.activeLineId && this.activeLineId !== prevLineId) {
-        this.switchLine(this.activeLineId);
-      } else if (!this.activeLineId) {
-        this.navigateToLanding();
-      }
-    });
-
     // Dynamic Direction buttons delegation
     const dirGroup = document.getElementById('direction-toggle-group');
     if (dirGroup) {
@@ -3063,7 +3065,6 @@ class TransitApp {
     };
 
     window.addEventListener('hashchange', handleRouteNav);
-    window.addEventListener('popstate', handleRouteNav);
 
     this.setupGlobalSearch();
     this.setupLinePicker();

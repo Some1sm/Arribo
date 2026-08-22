@@ -383,11 +383,18 @@ class CorridorTracker extends BaseTracker {
         continue; // Discard any non-C10 departures from shared stops
       }
 
-      const year = parseInt(s.any) || networkNow.year;
-      const month = (parseInt(s.mes) - 1) || networkNow.month;
-      const day = parseInt(s.dia) || networkNow.day;
-      const hour = parseInt(s.hora) || 0;
-      const minute = parseInt(s.minuts) || 0;
+      // Number.isFinite guards: 0/1 are legal values (January -> month index 0,
+      // midnight hour 0, minute 0) and must not be treated as falsy fallbacks.
+      const parsedYear = parseInt(s.any, 10);
+      const parsedMes = parseInt(s.mes, 10);
+      const parsedDay = parseInt(s.dia, 10);
+      const parsedHour = parseInt(s.hora, 10);
+      const parsedMinute = parseInt(s.minuts, 10);
+      const year = Number.isFinite(parsedYear) ? parsedYear : networkNow.year;
+      const month = Number.isFinite(parsedMes) ? parsedMes - 1 : networkNow.month;
+      const day = Number.isFinite(parsedDay) ? parsedDay : networkNow.day;
+      const hour = Number.isFinite(parsedHour) ? parsedHour : 0;
+      const minute = Number.isFinite(parsedMinute) ? parsedMinute : 0;
 
       const depUtcDate = timeUtils.localTimeToUtcDate(year, month, day, hour, minute, 0, this.agencyTimezone);
       const diffMs = depUtcDate.getTime() - now.getTime();

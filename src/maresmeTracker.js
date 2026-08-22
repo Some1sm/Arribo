@@ -618,9 +618,10 @@ class MaresmeTracker extends BaseTracker {
             checkpoints,
             totalActiveBuses: activeBuses.length,
             serviceStatus: {
-              isOperating: lineConfig.id.startsWith('n')
-                ? (new Date().getHours() >= 23 || new Date().getHours() < 6)
-                : (new Date().getHours() >= 6 && new Date().getHours() < 23),
+              isOperating: (() => {
+                const localHour = calendarEngine.getDateComponents(new Date(), this.agencyTimezone).hour;
+                return lineConfig.id.startsWith('n') ? (localHour >= 23 || localHour < 6) : (localHour >= 6 && localHour < 23);
+              })(),
               calendarTag: 'Feiners (de dilluns a divendres)',
               firstServiceTomorrow: lineConfig.id.startsWith('n') ? '23:30' : '06:00'
             }
@@ -662,9 +663,10 @@ class MaresmeTracker extends BaseTracker {
             })),
             totalActiveBuses: activeBuses.length,
             serviceStatus: {
-              isOperating: lineConfig.id.startsWith('n')
-                ? (new Date().getHours() >= 23 || new Date().getHours() < 6)
-                : (new Date().getHours() >= 6 && new Date().getHours() < 23),
+              isOperating: (() => {
+                const localHour = calendarEngine.getDateComponents(new Date(), this.agencyTimezone).hour;
+                return lineConfig.id.startsWith('n') ? (localHour >= 23 || localHour < 6) : (localHour >= 6 && localHour < 23);
+              })(),
               calendarTag: 'Feiners (de dilluns a divendres)',
               firstServiceTomorrow: lineConfig.id.startsWith('n') ? '23:30' : '06:00'
             }
@@ -736,9 +738,10 @@ class MaresmeTracker extends BaseTracker {
       checkpoints,
       totalActiveBuses: activeBuses.length,
       serviceStatus: {
-        isOperating: lineConfig.id.startsWith('n')
-          ? (new Date().getHours() >= 23 || new Date().getHours() < 6)
-          : (new Date().getHours() >= 6 && new Date().getHours() < 23),
+        isOperating: (() => {
+          const localHour = calendarEngine.getDateComponents(new Date(), this.agencyTimezone).hour;
+          return lineConfig.id.startsWith('n') ? (localHour >= 23 || localHour < 6) : (localHour >= 6 && localHour < 23);
+        })(),
         firstServiceTomorrow: lineConfig.id.startsWith('n') ? '23:30' : '06:00'
       }
     };

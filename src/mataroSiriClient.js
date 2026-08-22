@@ -63,14 +63,46 @@ class MataroSiriClient {
     return sign * Math.round(hours * 60 + mins + secs / 60);
   }
 
-  // Extract simple tag content from XML string
+  // Extract simple tag content from XML string, decoding XML entities
   extractTag(xml, tag) {
     const match = xml.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'i'));
-    return match ? match[1].trim() : null;
+    if (!match) return null;
+    return this.decodeXmlEntities(match[1].trim());
+  }
+
+  // Decode XML entities (&amp; &lt; &gt; &quot; &apos; and numeric refs) in extracted values
+  decodeXmlEntities(str) {
+    return str
+      .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+      .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(parseInt(d, 10)))
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'")
+      .replace(/&amp;/g, '&');
+  }
+
+  // Escape a value interpolated into a SOAP envelope (prevents XML injection)
+  xmlEscape(value) {
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+  }
+
+  // Reject early any input containing characters outside the safe SIRI ref alphabet
+  assertSafeRef(value, name) {
+    if (value && /[^A-Za-z0-9_.\-]/.test(String(value))) {
+      throw new Error(`[SIRI] Invalid characters in ${name}: ${String(value).slice(0, 40)}`);
+    }
   }
 
   // 1. Get Live GPS Telemetry for All Buses on a Line (or all lines)
   async getLiveVehicles(lineRef = '') {
+    this.assertSafeRef(lineRef, 'lineRef');
+
     const cacheKey = `veh_${lineRef}`;
     const cached = this.cache.get(cacheKey);
     if (cached && Date.now() - cached.ts < this.cacheTtlMs) {
@@ -92,7 +124,7 @@ class MataroSiriClient {
         <Request version="2.0">
           <siri:RequestTimestamp>${ts}</siri:RequestTimestamp>
           <siri:VehicleMonitoringRef></siri:VehicleMonitoringRef>
-          <siri:LineRef>${lineRef}</siri:LineRef>
+          <siri:LineRef>${this.xmlEscape(lineRef)}</siri:LineRef>
         </Request>
       </tem:request>
     </tem:GetVehicleMonitoring>
@@ -161,6 +193,9 @@ class MataroSiriClient {
 
   // 2. Get Real-Time Arrival Countdowns for a Specific Stop
   async getStopArrivals(stopId, lineRef = '') {
+    this.assertSafeRef(stopId, 'stopId');
+    this.assertSafeRef(lineRef, 'lineRef');
+
     const cacheKey = `stop_${stopId}_${lineRef}`;
     const cached = this.cache.get(cacheKey);
     if (cached && Date.now() - cached.ts < this.cacheTtlMs) {
@@ -180,8 +215,8 @@ class MataroSiriClient {
         </ServiceRequestInfo>
         <Request xmlns="">
           <RequestTimestamp xmlns="http://www.siri.org.uk/siri">${ts}</RequestTimestamp>
-          <MonitoringRef xmlns="http://www.siri.org.uk/siri">${stopId}</MonitoringRef>
-          <LineRef xmlns="http://www.siri.org.uk/siri">${lineRef}</LineRef>
+          <MonitoringRef xmlns="http://www.siri.org.uk/siri">${this.xmlEscape(stopId)}</MonitoringRef>
+          <LineRef xmlns="http://www.siri.org.uk/siri">${this.xmlEscape(lineRef)}</LineRef>
         </Request>
       </request>
     </GetStopMonitoring>
@@ -226,7 +261,8 @@ class MataroSiriClient {
 
         if (expectedArr) {
           const arrDate = new Date(expectedArr);
-          if (!isNaN(arrDate.getTime()) && arrDate.getFullYear() >= 2020) {
+          // Sanity check: timestamp must be valid and not older than 1 hour
+          if (!isNaN(arrDate.getTime()) && arrDate.getTime() >= Date.now() - 3600000) {
             const now = new Date();
             const diffMs = arrDate.getTime() - now.getTime();
             const diffMin = Math.round(diffMs / 60000);

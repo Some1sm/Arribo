@@ -280,7 +280,9 @@ class C10Map {
   renderStops(stops, targetStopId = '', onStopClick = null, shouldFitBounds = false, lineColor = '#009485', customPolyline = null, secondaryPolyline = null, secondaryStops = null, secondaryColor = '#38bdf8', lineId = '', direction = '') {
     if (!this.map) return;
 
-    const stopsFingerprint = `${lineId}_${direction}_${stops.length}_${targetStopId}_${lineColor}_${customPolyline ? customPolyline.length : 0}_${secondaryPolyline ? secondaryPolyline.length : 0}`;
+    // NOTE: targetStopId intentionally excluded from fingerprint so clicking a new
+    // target stop toggles styling on cached markers instead of rebuilding them all.
+    const stopsFingerprint = `${lineId}_${direction}_${stops.length}_${lineColor}_${customPolyline ? customPolyline.length : 0}_${secondaryPolyline ? secondaryPolyline.length : 0}`;
     const alreadyRendered = this.lastStopsFingerprint === stopsFingerprint && this.stopMarkers.length > 0;
 
     if (!alreadyRendered) {
@@ -374,6 +376,9 @@ class C10Map {
           }
         });
 
+        marker._stopMeta = { id: stopIdentifier, lineColor, maresme: isMaresme };
+        const dotRoot = marker.getElement();
+        marker._dotEl = dotRoot ? dotRoot.querySelector('.stop-marker-dot') : null;
         this.stopMarkers.push(marker);
       });
 
@@ -482,6 +487,33 @@ class C10Map {
 
       this.lastStopsFingerprint = stopsFingerprint;
     }
+
+    // Toggle target styling in place on cached markers (no marker rebuild)
+    this.applyStopTargetStyles(targetStopId);
+  }
+
+  // Applies/removes target styling on the cached stop markers by mutating the
+  // existing marker DOM instead of tearing down and rebuilding every marker.
+  applyStopTargetStyles(targetStopId = '') {
+    if (!this.stopMarkers || this.stopMarkers.length === 0) return;
+    const targetStr = String(targetStopId || '');
+    this.stopMarkers.forEach(marker => {
+      if (!marker || !marker._stopMeta) return;
+      const meta = marker._stopMeta;
+      const root = marker.getElement();
+      let dot = (marker._dotEl && root && root.contains(marker._dotEl)) ? marker._dotEl : null;
+      if (!dot && root) dot = root.querySelector('.stop-marker-dot');
+      marker._dotEl = dot || null;
+      if (!dot) return;
+
+      const isTarget = !!targetStr && meta.id === targetStr;
+      dot.classList.toggle('target', isTarget);
+      dot.style.width = isTarget ? '22px' : '14px';
+      dot.style.height = isTarget ? '22px' : '14px';
+      dot.style.backgroundColor = isTarget ? meta.lineColor : (meta.maresme ? '#06b6d4' : '#f97316');
+      dot.style.boxShadow = isTarget ? `0 0 10px ${meta.lineColor}` : '0 0 10px rgba(0,0,0,0.5)';
+      dot.style.animation = isTarget ? 'pulse-dot 1.5s infinite' : '';
+    });
   }
 
   fitRouteBounds() {
@@ -788,19 +820,20 @@ class C10Map {
         }
 
         // Dynamically update pin background, selection state, and status dot
+        // (uses cached DOM refs captured at marker creation; lazy re-query fallback)
         const el = obj.marker.getElement();
         if (el) {
-          const wrapEl = el.querySelector('.live-bus-marker-wrap');
+          const wrapEl = obj.wrapEl || (obj.wrapEl = el.querySelector('.live-bus-marker-wrap'));
           if (wrapEl) {
             wrapEl.classList.toggle('selected', isSelected);
-            const ringEl = el.querySelector('.bus-selection-ring');
+            const ringEl = obj.ringEl || (obj.ringEl = el.querySelector('.bus-selection-ring'));
             if (ringEl) ringEl.style.display = isSelected ? 'block' : 'none';
           }
-          const pinEl = el.querySelector('.live-bus-pin');
+          const pinEl = obj.pinEl || (obj.pinEl = el.querySelector('.live-bus-pin'));
           if (pinEl) {
             pinEl.style.background = pinBg;
           }
-          const dotEl = el.querySelector('.bus-status-dot');
+          const dotEl = obj.dotEl || (obj.dotEl = el.querySelector('.bus-status-dot'));
           if (dotEl) {
             dotEl.className = `bus-status-dot ${isEst ? 'estimated' : 'live'}`;
           }
@@ -846,6 +879,9 @@ class C10Map {
           marker.on('click', () => onBusClick(bus));
         }
 
+        // Cache per-marker DOM refs once so the 60fps animation loop and
+        // per-update refreshes never call getElement/querySelector per frame.
+        const busRoot = marker.getElement();
         this.busMarkersMap.set(markerKey, {
           marker,
           busData: bus,
@@ -855,7 +891,13 @@ class C10Map {
           currentBearing: bearingAngle,
           isFacingWest: isHeadingWest,
           lastUpdated: now,
-          subpath
+          subpath,
+          wrapEl: busRoot ? busRoot.querySelector('.live-bus-marker-wrap') : null,
+          ringEl: busRoot ? busRoot.querySelector('.bus-selection-ring') : null,
+          pinEl: busRoot ? busRoot.querySelector('.live-bus-pin') : null,
+          dotEl: busRoot ? busRoot.querySelector('.bus-status-dot') : null,
+          coneEl: busRoot ? busRoot.querySelector('.bus-heading-cone') : null,
+          iconEl: busRoot ? busRoot.querySelector('.bus-icon-inner') : null
         });
       }
     });
@@ -905,7 +947,7 @@ class C10Map {
 
         const el = obj.marker.getElement();
         if (el) {
-          const cone = el.querySelector('.bus-heading-cone');
+          const cone = obj.coneEl || (obj.coneEl = el.querySelector('.bus-heading-cone'));
           if (cone) {
             cone.style.transform = `rotate(${Math.round(currentBearing)}deg)`;
           }
@@ -920,7 +962,7 @@ class C10Map {
             obj.isFacingWest = false;
           }
 
-          const icon = el.querySelector('.bus-icon-inner');
+          const icon = obj.iconEl || (obj.iconEl = el.querySelector('.bus-icon-inner'));
           if (icon) {
             icon.style.transform = `scaleX(${obj.isFacingWest ? -1 : 1})`;
           }

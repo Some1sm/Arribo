@@ -25,6 +25,9 @@ class WorkerBridge extends EventEmitter {
     this.workerPid = null;
     this.startedAt = null;
     this.workerMetrics = null;
+    this._receivedReady = false;
+    this._pendingReplacement = false;
+    this._forceSpawnFallback = null;
 
     this.pingTimer = null;
     this.watchdogTimer = null;
@@ -58,6 +61,9 @@ class WorkerBridge extends EventEmitter {
 
   spawnWorker() {
     if (this.worker || this.isShuttingDown) return;
+    // A freshly forked child must prove liveness with WORKER_READY before the
+    // heartbeat watchdog may judge it hung.
+    this._receivedReady = false;
 
     try {
       this.worker = fork(this.workerPath, [], {
@@ -99,6 +105,7 @@ class WorkerBridge extends EventEmitter {
 
     switch (type) {
       case 'WORKER_READY':
+        this._receivedReady = true;
         this._isHealthy = true;
         this._lastHeartbeat = Date.now();
         this.lastHeartbeatAck = Date.now();
@@ -221,6 +228,10 @@ class WorkerBridge extends EventEmitter {
     this.watchdogTimer = setInterval(() => {
       if (!this.worker || this.isShuttingDown) return;
 
+      // Skip enforcement until the worker has announced WORKER_READY at least
+      // once — a slow-to-initialize child (GTFS catalog loads) is not hung.
+      if (!this._receivedReady) return;
+
       const timeSinceLastAck = Date.now() - (this.lastHeartbeatAck || this.startedAt || Date.now());
       if (timeSinceLastAck > this.pingTimeoutMs) {
         console.warn(`[WorkerBridge] ⚠️ Worker heartbeat timed out (${Math.round(timeSinceLastAck / 1000)}s without PONG). Restarting hung worker...`);
@@ -246,27 +257,66 @@ class WorkerBridge extends EventEmitter {
   }
 
   restartWorker(reason = 'Manual restart') {
+    if (this.isShuttingDown) return;
+
+    // A restart is already pending on the old child's exit — do not arm a second one.
+    if (this._pendingReplacement) return;
+
     if (this.worker) {
       const targetWorker = this.worker;
+      this._pendingReplacement = true;
+
       // Attempt a graceful SHUTDOWN first so the worker can flush its SQLite WAL
       // checkpoint and close the DB cleanly. Escalate to SIGKILL if it hangs.
       try {
         this.send('SHUTDOWN');
       } catch (e) {}
       const killTimer = setTimeout(() => {
-        try {
-          targetWorker.kill('SIGKILL');
-        } catch (e) {}
+        try { targetWorker.kill('SIGKILL'); } catch (e) {}
       }, 2000);
       if (killTimer && typeof killTimer.unref === 'function') killTimer.unref();
-      targetWorker.once('exit', () => clearTimeout(killTimer));
-    }
-    this._isHealthy = false;
-    this.worker = null;
-    this.workerPid = null;
-    this.scheduleRestart(reason);
-  }
 
+      const finishReplacement = () => {
+        clearTimeout(killTimer);
+        if (this._forceSpawnFallback) {
+          clearTimeout(this._forceSpawnFallback);
+          this._forceSpawnFallback = null;
+        }
+        this._pendingReplacement = false;
+        this._isHealthy = false;
+        this.worker = null;
+        this.workerPid = null;
+        // Fork the replacement only now that the old child is fully dead, so two
+        // ingestion daemons can never poll upstreams or write SQLite concurrently.
+        if (!this.isShuttingDown) {
+          this.scheduleRestart(reason);
+        }
+      };
+
+      // Primary path: spawn the successor from the old child's 'exit' event.
+      targetWorker.once('exit', finishReplacement);
+
+      // Backoff-independent fallback: if no exit fires within 5s, force SIGKILL.
+      // (handleWorkerExit / the exit listener then drives the actual respawn.)
+      this._forceSpawnFallback = setTimeout(() => {
+        this._forceSpawnFallback = null;
+        console.warn('[WorkerBridge] ⚠️ Old worker did not exit within 5s of restart; forcing SIGKILL...');
+        try { targetWorker.kill('SIGKILL'); } catch (e) {}
+        // Absolute fallback in case even SIGKILL produces no observable exit.
+        this._forceSpawnFallback = setTimeout(finishReplacement, 2000);
+        if (this._forceSpawnFallback && typeof this._forceSpawnFallback.unref === 'function') {
+          this._forceSpawnFallback.unref();
+        }
+      }, 5000);
+      if (this._forceSpawnFallback && typeof this._forceSpawnFallback.unref === 'function') {
+        this._forceSpawnFallback.unref();
+      }
+    } else {
+      // No live child to wait for — schedule the fork directly.
+      this._isHealthy = false;
+      this.scheduleRestart(reason);
+    }
+  }
   send(type, payload = {}) {
     if (!this.worker) return false;
     try {
@@ -297,6 +347,14 @@ class WorkerBridge extends EventEmitter {
     if (this.stabilityTimer) {
       clearTimeout(this.stabilityTimer);
       this.stabilityTimer = null;
+    }
+
+    // Cancel any pending worker-replacement machinery so nothing forks after
+    // shutdown has begun.
+    this._pendingReplacement = false;
+    if (this._forceSpawnFallback) {
+      clearTimeout(this._forceSpawnFallback);
+      this._forceSpawnFallback = null;
     }
 
     if (!this.worker) return true;

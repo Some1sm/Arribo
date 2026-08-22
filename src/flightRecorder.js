@@ -84,6 +84,9 @@ class FlightRecorder {
       if (snap.destination) v.destination = snap.destination;
       v.isRealTime = snap.isRealTime !== false;
       v.status = 'active';
+      // Fresh real GPS fix resets the dead-reckoning budget so vehicles that
+      // regain telemetry can extrapolate again during the next cellular shadow.
+      v.extrapolatedMs = 0;
       v.lastSeen = now;
       if (lineCode) v.lineCode = lineCode;
     }

@@ -26,6 +26,9 @@ class HistoryDatabase {
       ? delayRetentionDays
       : 30;
     this.db = null;
+    // Cached prepared statements for the high-frequency write paths
+    this._snapshotStmt = null;
+    this._delayStmt = null;
     this.init();
   }
 
@@ -82,11 +85,11 @@ class HistoryDatabase {
             timestamp INTEGER NOT NULL
           );
 
-          CREATE INDEX IF NOT EXISTS idx_delay_line ON delay_logs(line_code, timestamp);
+          -- idx_delay_line / idx_delay_line_timestamp (exact duplicates of each
+          -- other) and idx_delay_timestamp (prefix-covered by idx_delay_time_line)
+          -- removed as redundant.
           CREATE INDEX IF NOT EXISTS idx_delay_stop ON delay_logs(stop_id, timestamp);
-          CREATE INDEX IF NOT EXISTS idx_delay_timestamp ON delay_logs(timestamp);
           CREATE INDEX IF NOT EXISTS idx_delay_time_line ON delay_logs(timestamp, line_code);
-          CREATE INDEX IF NOT EXISTS idx_delay_line_timestamp ON delay_logs(line_code, timestamp);
           CREATE INDEX IF NOT EXISTS idx_delay_stop_timestamp ON delay_logs(stop_id, timestamp);
 
           -- Option B: Hourly Aggregated Rollup Table (Kept indefinitely with <1 MB/day footprint)
@@ -106,6 +109,14 @@ class HistoryDatabase {
 
           CREATE INDEX IF NOT EXISTS idx_hourly_stats ON hourly_line_stats(line_code, date_hour);
         `);
+        // Idempotent migration: drop legacy duplicate indexes present in
+        // pre-existing database files (superseded by idx_delay_time_line /
+        // idx_delay_stop / idx_delay_stop_timestamp).
+        this.db.exec(`
+          DROP INDEX IF EXISTS idx_delay_line;
+          DROP INDEX IF EXISTS idx_delay_timestamp;
+          DROP INDEX IF EXISTS idx_delay_line_timestamp;
+        `);
         console.log('[HistoryDB] SQLite Database Initialized successfully at', this.dbPath);
       } catch (err) {
         console.error('[HistoryDB] Failed to initialize SQLite:', err.message);
@@ -117,11 +128,14 @@ class HistoryDatabase {
   recordVehicleSnapshot(snap) {
     if (!this.db || !snap || !snap.vehicleId) return;
     try {
-      const stmt = this.db.prepare(`
-        INSERT INTO vehicle_snapshots 
-        (vehicle_id, line_id, line_code, agency, lat, lon, speed_kmh, bearing, delay_mins, is_realtime, status, timestamp)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
+      if (!this._snapshotStmt) {
+        this._snapshotStmt = this.db.prepare(`
+          INSERT INTO vehicle_snapshots
+          (vehicle_id, line_id, line_code, agency, lat, lon, speed_kmh, bearing, delay_mins, is_realtime, status, timestamp)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+      }
+      const stmt = this._snapshotStmt;
       stmt.run(
         String(snap.vehicleId),
         String(snap.lineId || ''),
@@ -144,11 +158,14 @@ class HistoryDatabase {
   recordDelayLog(entry) {
     if (!this.db || !entry || !entry.lineCode) return;
     try {
-      const stmt = this.db.prepare(`
-        INSERT INTO delay_logs
-        (line_id, line_code, agency, stop_id, stop_name, delay_mins, scheduled_time, actual_time, is_realtime, is_delayed, timestamp)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
+      if (!this._delayStmt) {
+        this._delayStmt = this.db.prepare(`
+          INSERT INTO delay_logs
+          (line_id, line_code, agency, stop_id, stop_name, delay_mins, scheduled_time, actual_time, is_realtime, is_delayed, timestamp)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+      }
+      const stmt = this._delayStmt;
       const delay = Number(entry.delayMins || 0);
       stmt.run(
         String(entry.lineId || ''),
@@ -577,6 +594,8 @@ class HistoryDatabase {
         console.error('[HistoryDB] close error:', e.message);
       } finally {
         this.db = null;
+        this._snapshotStmt = null;
+        this._delayStmt = null;
       }
     }
   }

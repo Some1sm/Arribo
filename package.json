@@ -1,6 +1,6 @@
 {
   "name": "bad-amb-bus-tracker",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Real-time tracker and GPS telemetry platform for line C-10 (Barcelona - Mataró) and all Mataró Bus urban lines (L1-L8) with dead-zone estimation",
   "main": "server.js",
   "engines": {
@@ -13,8 +13,14 @@
     "lint": "node --check server.js src/*.js src/core/*.js src/core/geo/*.js src/core/schedule/*.js src/core/time/*.js src/workers/*.js public/js/app.js public/js/map.js",
     "test:syntax": "node test/syntax_check.js",
     "test:core": "node test/verification_test.js && node test/core_transit_modules_test.js",
+    "test:unit": "node test/core_transit_modules_test.js",
+    "test:mataro": "node test/mataro_timetable_accuracy_test.js",
+    "test:edge": "node test/adversarial_audit_test.js && node test/challenger_geo_delay_test.js && node test/challenger_tracker_schedule_test.js",
+    "test:perf": "node test/startup_benchmark.js",
+    "test:infra": "node test/worker_bridge_test.js && node test/history_db_concurrency_test.js && node test/stop_cache_benchmark_test.js",
     "test:e2e": "node test/e2e_multiline_test.js && node test/e2e_flight_recorder_test.js",
-    "test": "npm run test:syntax && npm run test:core && npm run test:e2e"
+    "test:full": "npm run test:syntax && npm run test:unit && npm run test:core && npm run test:mataro && npm run test:edge && npm run test:e2e && npm run test:perf && npm run test:infra",
+    "test": "npm run test:syntax && npm run test:core && npm run test:mataro && npm run test:edge && npm run test:e2e"
   },
   "dependencies": {
     "compression": "^1.8.1",

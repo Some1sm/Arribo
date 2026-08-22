@@ -55,14 +55,22 @@ class MouTeClient {
       const data = JSON.parse(text);
       if (useCache) {
         this.cache.set(cacheKey, { data, timestamp: now });
+        // Opportunistic sweep: evict entries past staleTTL once the map grows large
+        if (this.cache.size > 2000) {
+          const cutoff = Date.now() - this.staleTTL;
+          for (const [key, e] of this.cache) {
+            if (e.timestamp < cutoff) this.cache.delete(key);
+          }
+        }
       }
       return data;
     } catch (err) {
-      // Return cached entry if available even if stale
-      if (this.cache.has(cacheKey)) {
-        return this.cache.get(cacheKey).data;
+      // Serve cached entry only while it is within the stale window (staleTTL)
+      const entry = this.cache.get(cacheKey);
+      if (entry && Date.now() - entry.timestamp < this.staleTTL) {
+        return entry.data;
       }
-      return null;
+      throw err;
     }
   }
 

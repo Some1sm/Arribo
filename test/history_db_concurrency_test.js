@@ -35,10 +35,12 @@ function runHistoryDbTests() {
   const indexes = historyDb.db.prepare("SELECT name, tbl_name FROM sqlite_master WHERE type = 'index'").all();
   const indexNames = indexes.map(i => i.name);
 
+  // idx_delay_timestamp and idx_delay_line_timestamp were removed as redundant
+  // (idx_delay_time_line(timestamp, line_code) prefix-covers both). The migration
+  // in historyDb.init() drops them from pre-existing databases.
   const requiredIndexes = [
-    'idx_delay_timestamp',
     'idx_delay_time_line',
-    'idx_delay_line_timestamp',
+    'idx_delay_stop',
     'idx_delay_stop_timestamp',
     'idx_veh_timestamp'
   ];
@@ -47,15 +49,20 @@ function runHistoryDbTests() {
     assert(indexNames.includes(req), `Index ${req} missing from database! Found: ${indexNames.join(', ')}`);
     console.log(`✓ Index ${req} verified.`);
   }
+  for (const dropped of ['idx_delay_timestamp', 'idx_delay_line_timestamp']) {
+    assert(!indexNames.includes(dropped), `Redundant index ${dropped} should have been dropped by migration! Found: ${indexNames.join(', ')}`);
+    console.log(`✓ Redundant index ${dropped} correctly absent.`);
+  }
 
   // 3. Verify Query Plan uses indexes
   console.log('\n3. Verifying EXPLAIN QUERY PLAN optimizations...');
   const cutoff = Date.now() - 24 * 3600 * 1000;
   
   const qpDelayTimestamp = historyDb.db.prepare('EXPLAIN QUERY PLAN SELECT COUNT(*) FROM delay_logs WHERE timestamp >= ?').all(cutoff);
-  const usesDelayTimestampIndex = qpDelayTimestamp.some(s => s.detail.includes('idx_delay_timestamp'));
-  assert(usesDelayTimestampIndex, `Expected query on timestamp to use idx_delay_timestamp, got: ${JSON.stringify(qpDelayTimestamp)}`);
-  console.log('✓ EXPLAIN QUERY PLAN confirms idx_delay_timestamp used for timestamp queries.');
+  // timestamp queries are served by the composite idx_delay_time_line (timestamp prefix)
+  const usesDelayTimestampIndex = qpDelayTimestamp.some(s => s.detail.includes('idx_delay_time_line'));
+  assert(usesDelayTimestampIndex, `Expected query on timestamp to use idx_delay_time_line, got: ${JSON.stringify(qpDelayTimestamp)}`);
+  console.log('✓ EXPLAIN QUERY PLAN confirms idx_delay_time_line used for timestamp queries.');
 
   const qpVehTimestamp = historyDb.db.prepare('EXPLAIN QUERY PLAN SELECT COUNT(*) FROM vehicle_snapshots WHERE timestamp >= ?').all(cutoff);
   const usesVehTimestampIndex = qpVehTimestamp.some(s => s.detail.includes('idx_veh_timestamp'));

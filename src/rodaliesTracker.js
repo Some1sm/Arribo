@@ -375,7 +375,10 @@ const RODALIES_FALLBACK_STOPS = {
       checkpoints,
       totalActiveBuses: activeTrains.length,
       serviceStatus: {
-        isOperating: activeTrains.length > 0 || (new Date().getHours() >= 5 && new Date().getHours() < 24),
+        isOperating: activeTrains.length > 0 || (() => {
+          const localHour = calendarEngine.getDateComponents(new Date(), this.agencyTimezone).hour;
+          return localHour >= 5 && localHour < 24;
+        })(),
         firstServiceTomorrow: '05:00'
       }
     };
@@ -460,7 +463,7 @@ const RODALIES_FALLBACK_STOPS = {
         const aimedMs = arrMs - (delayMin * 60000);
         const aimedClockStr = timeUtils.formatTimeToTimezone(new Date(aimedMs), this.agencyTimezone);
 
-        const delayInfo = delayEngine.computeDelayStatus(delayMin, true);
+        const delayInfo = delayEngine.computeDelayStatus(delayMin, false);
 
         departures.push({
           lineId: route ? route.id : t.lineCode,
@@ -472,7 +475,7 @@ const RODALIES_FALLBACK_STOPS = {
           minutesAway: safeDiffMin,
           delayMinutes: delayMin,
           delayMins: delayMin,
-          isRealTime: true,
+          isRealTime: false,
           isEstimated: false,
           isTrain: true,
           isToday: true,

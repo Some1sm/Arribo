@@ -17,6 +17,19 @@ const workerBridge = require('./src/core/WorkerBridge');
 const calendarEngine = require('./src/core/time/calendarEngine');
 const delayEngine = require('./src/core/schedule/delayEngine');
 
+// ==========================================
+// 0. PROCESS-LEVEL RESILIENCE TRAPS
+// Resilience-first transit tracker: log unexpected async/sync failures but
+// NEVER crash the HTTP process — keep serving cached data to riders.
+// ==========================================
+process.on('unhandledRejection', (reason) => {
+  console.error('[Process] Unhandled promise rejection:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[Process] Uncaught exception:', err);
+});
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -57,6 +70,13 @@ app.use('/api', (req, res, next) => {
   console.log(`[${time}] 🌐 ${req.method} ${req.originalUrl}`);
   next();
 });
+
+// Uniform internal-error responder: full error is logged server-side with the
+// route path; clients only ever receive a generic message (no stack/SQL/key leaks).
+function sendInternalError(req, res, err, extra = {}) {
+  console.error(`[API] 500 on ${req.method} ${req.originalUrl}:`, err);
+  res.status(500).json({ success: false, error: 'Internal server error', ...extra });
+}
 
 // Centralized polymorphic line resolution via TrackerRegistry (src/core/TrackerRegistry.js)
 function getTrackerForLine(lineId) {
@@ -395,7 +415,7 @@ app.get('/api/line/:lineId', async (req, res) => {
       res.json({ success: true, data });
     }
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(req, res, err);
   }
 });
 
@@ -416,7 +436,7 @@ app.get('/api/line/:lineId/target-eta', async (req, res) => {
       res.json({ success: true, data: harmonizeTargetEta(data, tracker, lineId, direction) });
     }
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(req, res, err);
   }
 });
 
@@ -453,7 +473,7 @@ app.get('/api/line/:lineId/vehicles', async (req, res) => {
       lastUpdated: new Date().toISOString()
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message, totalVehicles: 0, vehicles: [] });
+    sendInternalError(req, res, err, { totalVehicles: 0, vehicles: [] });
   }
 });
 
@@ -472,7 +492,7 @@ app.get('/api/line/:lineId/live', async (req, res) => {
       res.json({ success: true, data });
     }
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(req, res, err);
   }
 });
 
@@ -492,7 +512,7 @@ app.get('/api/line/:lineId/stop/:stopId/departures', async (req, res) => {
       res.json({ success: true, data: harmonizeDeparturesEnvelope(data, tracker, lineId) });
     }
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(req, res, err);
   }
 });
 
@@ -509,7 +529,7 @@ app.get('/api/c10/target-eta', async (req, res) => {
     const data = await corridorTracker.getTargetStopETA(direction, stopId, targetDate);
     res.json({ success: true, data });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(req, res, err);
   }
 });
 
@@ -525,7 +545,7 @@ app.get('/api/c10/stops', (req, res) => {
       stops
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(req, res, err);
   }
 });
 
@@ -538,7 +558,7 @@ app.get('/api/c10/stop/:stopId/departures', async (req, res) => {
     const data = await corridorTracker.getStopDepartures(stopId, direction, targetDate);
     res.json({ success: true, data });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(req, res, err);
   }
 });
 
@@ -549,7 +569,7 @@ app.get('/api/c10/live-corridor', async (req, res) => {
     const data = await corridorTracker.getCorridorLiveTracking(direction);
     res.json({ success: true, data });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(req, res, err);
   }
 });
 
@@ -567,7 +587,7 @@ app.get('/api/mataro/line/:lineId', async (req, res) => {
     const data = await mataroTracker.getLineDetails(lineId, direction);
     res.json({ success: true, data });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(req, res, err);
   }
 });
 
@@ -580,7 +600,7 @@ app.get('/api/mataro/target-eta', async (req, res) => {
     const data = await mataroTracker.getTargetStopETA(lineId, stopId, direction);
     res.json({ success: true, data });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(req, res, err);
   }
 });
 
@@ -592,7 +612,7 @@ app.get('/api/mataro/stop/:stopId/departures', async (req, res) => {
     const data = await mataroTracker.getStopDepartures(stopId, lineId);
     res.json({ success: true, data });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(req, res, err);
   }
 });
 
@@ -603,9 +623,24 @@ app.get('/api/mataro/stop/:stopId/departures', async (req, res) => {
 // Diagnostic test for current line's upstream API
 app.get('/api/diagnostics/test', async (req, res) => {
   const lineId = req.query.lineId || 'c10';
-  const { type, tracker } = getTrackerForLine(lineId);
   const start = Date.now();
 
+  // Tracker resolution happens INSIDE structured handling: an unknown line
+  // (the registry throws for unresolved IDs) must become a JSON 404 instead
+  // of escaping this handler as an unhandled rejection.
+  let type;
+  let tracker;
+  try {
+    const resolution = getTrackerForLine(lineId);
+    if (!resolution || !resolution.tracker) {
+      return res.status(404).json({ success: false, error: 'Unknown line' });
+    }
+    type = resolution.type;
+    tracker = resolution.tracker;
+  } catch (err) {
+    console.error(`[API] 404 on GET ${req.originalUrl} (lineId=${lineId}):`, err.message);
+    return res.status(404).json({ success: false, error: 'Unknown line' });
+  }
   const providerMeta = {
     c10: {
       provider: 'Generalitat de Catalunya (Mou-te / ATM)',
@@ -675,6 +710,7 @@ app.get('/api/diagnostics/test', async (req, res) => {
       testedAt: new Date().toLocaleTimeString('ca-ES', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit', second: '2-digit' })
     });
   } catch (err) {
+    console.error(`[API] Diagnostics upstream failure on ${req.originalUrl} (lineId=${lineId}):`, err);
     const latencyMs = Date.now() - start;
     res.json({
       success: false,
@@ -704,7 +740,7 @@ app.get('/api/disruptions', async (req, res) => {
       disruptions
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message, disruptions: [] });
+    sendInternalError(req, res, err, { disruptions: [] });
   }
 });
 
@@ -774,7 +810,7 @@ async function handleJournalismReport(req, res) {
       report
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(req, res, err);
   }
 }
 
@@ -804,7 +840,7 @@ async function handleRankingReport(req, res) {
       agencyStats: report?.agencyStats || []
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(req, res, err);
   }
 }
 
@@ -839,7 +875,7 @@ app.get('/api/routes/snapshots', (req, res) => {
       diff
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(req, res, err);
   }
 });
 
@@ -853,7 +889,7 @@ app.get('/api/routes/snapshots/:date', (req, res) => {
     }
     res.json({ success: true, snapshot });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(req, res, err);
   }
 });
 
@@ -863,7 +899,7 @@ app.get('/api/routes/diff', (req, res) => {
     const diff = routeCacheService.get3DayDiff();
     res.json({ success: true, diff });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    sendInternalError(req, res, err);
   }
 });
 

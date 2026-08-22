@@ -268,12 +268,17 @@ class SagalesTracker extends BaseTracker {
 
       activeBuses = entities.map((ent, idx) => {
         const v = ent.vehicle || {};
-        const pos = v.postion || {};
+        // Upstream Sagalés feed misspells the key as "postion" — read both defensively
+        const pos = v.position || v.postion || {};
         const trip = ent.tripUpdate?.trip || v.trip || {};
         const tripUpdates = ent.tripUpdate?.stopTimeUpdate || [];
 
-        const lat = pos.latitude || 0;
-        const lon = pos.longitude || 0;
+        const lat = Number(pos.latitude);
+        const lon = Number(pos.longitude);
+        // Skip vehicles without a valid, non-zero GPS fix instead of defaulting to (0, 0)
+        if (!Number.isFinite(lat) || !Number.isFinite(lon) || (lat === 0 && lon === 0)) {
+          return null;
+        }
         const speedKmh = Math.round((pos.speed || 0) * 3.6) || 0;
         const bearing = pos.bearing || 0;
 
@@ -316,7 +321,7 @@ class SagalesTracker extends BaseTracker {
           compass: geoUtils.bearingToCompassName(bearing),
           statusText: '🟢 Senyal GPS Sagalés en Directe'
         };
-      });
+      }).filter(Boolean);
     }
 
     // Generate Checkpoints
