@@ -462,6 +462,10 @@ class AmbTracker extends BaseTracker {
     if (polylineCoords.length === 0 && stops.length > 0) {
       polylineCoords = stops.map(s => [s.lat, s.lon]);
     }
+    if (polylineCoords.length > 1 && stops.length > 0) {
+      const composed = geoEngine.composeRouteWithStops(polylineCoords, stops);
+      if (composed.stitched > 0) polylineCoords = composed.coords;
+    }
 
     // 1. Discover real-time vehicles for this route directly from live AMB vehicle fleet
     const liveFleet = await this.getLiveVehicles();

@@ -5,6 +5,7 @@
  */
 
 const path = require('path');
+const fs = require('fs');
 const ingestionDaemon = require('../ingestionDaemon');
 const historyDb = require('../historyDb');
 const reportCacheService = require('../reportCacheService');
@@ -235,6 +236,12 @@ async function initWorker() {
     console.log('[IngestionWorker] All multi-provider trackers initialized.');
   } catch (err) {
     console.warn('[IngestionWorker] Non-fatal tracker initialization warning:', err.message);
+  }
+
+  // One-time geometry presence check: loud degradation notice for road-shape data
+  const shapesDbPath = path.join(__dirname, '..', '..', 'data', 'shapes.db');
+  if (!fs.existsSync(shapesDbPath)) {
+    console.warn('[IngestionWorker] ⚠️ data/shapes.db NOT FOUND — Maresme/Catalonia/AMB road geometry will degrade to straight stop-to-stop segments.');
   }
 
   // Start background pollers and timers

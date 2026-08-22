@@ -19,6 +19,7 @@ class CataloniaTracker extends BaseTracker {
     this.shapesDbPath = path.join(__dirname, '..', 'data', 'shapes.db');
     this.shapesDb = null;
     this.getShapeStmt = null;
+    this._shapeDbWarned = false;
     this.routes = [];
     this.routesMap = new Map();
     this.routeDetailsMap = new Map();
@@ -186,7 +187,10 @@ class CataloniaTracker extends BaseTracker {
         return JSON.parse(row.coords);
       }
     } catch (e) {
-      // ignore
+      if (!this._shapeDbWarned) {
+        this._shapeDbWarned = true;
+        console.warn('[CataloniaTracker] ⚠️ shapes.db unavailable or corrupted — routes fall back to straight segments between stops');
+      }
     }
     return null;
   }
@@ -204,8 +208,16 @@ class CataloniaTracker extends BaseTracker {
       const details1 = await this.getLineDetails(lineId, '1');
       const shape0 = route.directions[0]?.shapeId;
       const shape1 = route.directions[1]?.shapeId;
-      const coords0 = this.getShapeCoords(shape0) || details0.stops.map(s => [s.lat, s.lon]);
-      const coords1 = this.getShapeCoords(shape1) || details1.stops.map(s => [s.lat, s.lon]);
+      let coords0 = this.getShapeCoords(shape0) || details0.stops.map(s => [s.lat, s.lon]);
+      let coords1 = this.getShapeCoords(shape1) || details1.stops.map(s => [s.lat, s.lon]);
+      if (coords0.length > 1 && details0.stops.length > 0) {
+        const composed0 = geoEngine.composeRouteWithStops(coords0, details0.stops);
+        if (composed0.stitched > 0) coords0 = composed0.coords;
+      }
+      if (coords1.length > 1 && details1.stops.length > 0) {
+        const composed1 = geoEngine.composeRouteWithStops(coords1, details1.stops);
+        if (composed1.stitched > 0) coords1 = composed1.coords;
+      }
       return {
         ...details0,
         direction: 'both',
@@ -235,7 +247,11 @@ class CataloniaTracker extends BaseTracker {
       ];
     }
     const dirMeta = route.directions.find(d => String(d.dirId) === dirIdx) || route.directions[0] || { name: 'Cap a Destí' };
-    const polylineCoords = this.getShapeCoords(dirMeta.shapeId) || stops.map(s => [s.lat, s.lon]);
+    let polylineCoords = this.getShapeCoords(dirMeta.shapeId) || stops.map(s => [s.lat, s.lon]);
+    if (polylineCoords.length > 1 && stops.length > 0) {
+      const composed = geoEngine.composeRouteWithStops(polylineCoords, stops);
+      if (composed.stitched > 0) polylineCoords = composed.coords;
+    }
 
     // Check scheduled service for today
     const now = new Date();

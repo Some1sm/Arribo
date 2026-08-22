@@ -6,6 +6,53 @@
 
 ---
 
+## 0. Subagent Orchestration Policy
+
+How to use subagents when working on this repository. These rules are binding for
+any AI agent (or human) orchestrating delegated work.
+
+### 0.1 Persistent Watcher / Heartbeat Monitor
+
+- Spawn a dedicated supervisor agent running continuously in the background.
+- Poll active subagents every **60 seconds** to assess progress, check execution
+  states, and detect stalls, circular reasoning, or deadlocks.
+- If a subagent is stuck, unresponsive, or looping on the same error:
+  **terminate its process**, extract its current state logs, and reassign or pivot
+  the task autonomously.
+
+### 0.2 Architecture First
+
+Deploy subagents to map the codebase, dependency trees, and blast radius **before**
+modifying code. Never guess existing API contracts — verify them against source.
+
+### 0.3 Role Specialization
+
+| Role | Responsibility |
+|-------|----------------|
+| **Architect** | Formulates the implementation strategy and ensures architectural consistency. |
+| **Implementer** | Writes complete, production-ready code with zero stubs, placeholders, or `// TODO` comments. |
+| **Adversarial Reviewer** | Aggressive review pass hunting race conditions, edge cases, regression risks, and memory/performance bottlenecks. |
+| **Watcher** | The heartbeat monitor from §0.1; owns stall detection and task reassignment. |
+
+### 0.4 Autonomous Test & Fix Loop
+
+Generate exhaustive test suites covering happy paths, edge cases, and failure modes.
+Compile the project, execute tests, inspect outputs, and **self-heal any failures**
+before concluding. A run is not finished while a suite is red.
+
+### 0.5 Guaranteed User-Facing Output (Zero Silent Exits)
+
+Never terminate silently. Every execution run must strictly end with a final,
+structured output printed directly to the user:
+
+- **On success** — an itemized delivery report: files modified, rationale, and
+  validation test results.
+- **On unrecoverable error or timeout** — a clear failure post-mortem detailing the
+  exact blocker, attempted fixes, and recommended next steps instead of ending
+  without output.
+
+---
+
 ## 1. What This Project Is
 
 **Arribo!** is a real-time bus and train tracking platform for Catalonia, Spain.

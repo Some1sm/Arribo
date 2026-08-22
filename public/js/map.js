@@ -15,6 +15,35 @@ function escHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
+
+/**
+ * Projects a stop position onto the nearest vertex of a route polyline using a
+ * local equirectangular approximation. Returns [lat, lon] of the nearest
+ * polyline vertex if within maxSnapM metres, otherwise null (keep true coords).
+ * Pure helper — does not mutate any stop objects.
+ */
+function snapStopToPolyline(stopLat, stopLon, polyCoords, maxSnapM = 120) {
+  if (!Array.isArray(polyCoords) || polyCoords.length < 10) return null;
+  let bestD2 = Infinity;
+  let bestLat = null;
+  let bestLon = null;
+  for (let i = 0; i < polyCoords.length; i++) {
+    const p = polyCoords[i];
+    if (!p || typeof p[0] !== 'number' || typeof p[1] !== 'number') continue;
+    const meanLat = (stopLat + p[0]) / 2;
+    const dLat = (p[0] - stopLat) * 111320;
+    const dLon = (p[1] - stopLon) * 111320 * Math.cos(meanLat * Math.PI / 180);
+    const d2 = dLat * dLat + dLon * dLon;
+    if (d2 < bestD2) {
+      bestD2 = d2;
+      bestLat = p[0];
+      bestLon = p[1];
+    }
+  }
+  if (bestLat === null || Math.sqrt(bestD2) > maxSnapM) return null;
+  return [bestLat, bestLon];
+}
+
 class C10Map {
   constructor(containerId) {
     this.containerId = containerId;
@@ -324,6 +353,10 @@ class C10Map {
       stops.forEach((stop, index) => {
         if (!stop.lat || !stop.lon) return;
 
+        // Display coords: snap marker onto road polyline when close enough.
+        // latLngs keeps true coords so bounds/polyline fallback stay faithful.
+        const snapped = snapStopToPolyline(stop.lat, stop.lon, customPolyline, 120);
+        const markerLatLng = snapped || [stop.lat, stop.lon];
         const latLng = [stop.lat, stop.lon];
         latLngs.push(latLng);
 
@@ -352,7 +385,7 @@ class C10Map {
           iconAnchor: [isTarget ? 11 : 7, isTarget ? 11 : 7]
         });
 
-        const marker = L.marker(latLng, { icon: customIcon }).addTo(this.map);
+        const marker = L.marker(markerLatLng, { icon: customIcon }).addTo(this.map);
 
         // Hover tooltip
         marker.bindTooltip(`
@@ -392,6 +425,9 @@ class C10Map {
           const stopIdentifier = String(stop.mouteStopId || stop.id || stop.code || '');
           const coordKey = `${stop.lat.toFixed(5)},${stop.lon.toFixed(5)}`;
 
+          // Snap secondary-direction markers onto the road polyline too
+          const secSnapped = snapStopToPolyline(stop.lat, stop.lon, customPolyline, 120);
+
           // Avoid rendering duplicate marker on top of an identical primary stop
           if (primaryStopIds.has(stopIdentifier) && primaryCoords.has(coordKey)) {
             return;
@@ -419,7 +455,7 @@ class C10Map {
             iconAnchor: [6, 6]
           });
 
-          const marker = L.marker([stop.lat, stop.lon], { icon: customIcon }).addTo(this.map);
+          const marker = L.marker(secSnapped || [stop.lat, stop.lon], { icon: customIcon }).addTo(this.map);
 
           marker.bindTooltip(`
             <div style="display:flex; align-items:center; gap:6px;">

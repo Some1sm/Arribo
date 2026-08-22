@@ -356,6 +356,78 @@ function decodePolyline(encodedString) {
   return points;
 }
 
+/**
+ * Composes a route polyline so that it visually connects every stop while
+ * keeping real road geometry wherever a GTFS shape provides it.
+ *
+ * Strategy (GTFS shapes frequently omit urban terminus deviations):
+ *  - Stops within `thresholdM` of the shape are considered covered — no change.
+ *  - A contiguous run of UNCOVERED stops at the START of the stop sequence is
+ *    prepended to the shape (in stop order) as an access leg.
+ *  - A contiguous run at the END is appended after the shape.
+ *  - Isolated mid-route uncovered stops are spliced into the shape at their
+ *    nearest point, but only when the detour is <= maxSpliceM (avoids huge V-spurs).
+ *
+ * @param {Array<[number,number]>} coords road-shape coordinates [lat, lon]
+ * @param {Array<{lat:number, lon:number}>} stops ordered stop list
+ * @param {{thresholdM?:number, maxSpliceM?:number}} opts
+ * @returns {{coords: Array<[number,number]>, stitched: number}} new coords + how many stops were stitched in
+ */
+function composeRouteWithStops(coords, stops, opts = {}) {
+  const thresholdM = opts.thresholdM ?? 150;
+  const maxSpliceM = opts.maxSpliceM ?? 400;
+  if (!Array.isArray(coords) || coords.length < 2 || !Array.isArray(stops) || stops.length === 0) {
+    return { coords: Array.isArray(coords) ? coords : [], stitched: 0 };
+  }
+
+  // Local equirectangular distance (metres) — fine at city/regional scales.
+  const distM = (a, b) => {
+    const dLat = (a[0] - b[0]) * 111320;
+    const dLon = (a[1] - b[1]) * 111320 * Math.cos(((a[0] + b[0]) / 2) * Math.PI / 180);
+    return Math.sqrt(dLat * dLat + dLon * dLon);
+  };
+
+  // Nearest shape index + distance for each stop.
+  const proj = stops.map(s => {
+    let bestIdx = -1, bestDist = Infinity;
+    for (let i = 0; i < coords.length; i++) {
+      const d = distM([s.lat, s.lon], coords[i]);
+      if (d < bestDist) { bestDist = d; bestIdx = i; }
+    }
+    return { idx: bestIdx, dist: bestDist, covered: bestDist <= thresholdM };
+  });
+
+  // Contiguous uncovered runs at the head and tail of the stop sequence.
+  let leadEnd = 0;
+  while (leadEnd < stops.length && !proj[leadEnd].covered) leadEnd++;
+  let tailStart = stops.length - 1;
+  while (tailStart >= leadEnd && !proj[tailStart].covered) tailStart--;
+
+  const out = [];
+  let stitched = 0;
+
+  for (let i = leadEnd - 1; i >= 0; i--) {
+    out.push([stops[i].lat, stops[i].lon]);
+    stitched++;
+  }
+  for (const c of coords) out.push(c);
+  for (let i = tailStart + 1; i < stops.length; i++) {
+    out.push([stops[i].lat, stops[i].lon]);
+    stitched++;
+  }
+
+  // Mid-route isolated outliers: splice at nearest index when detour is small.
+  for (let s = leadEnd; s <= tailStart; s++) {
+    if (proj[s].covered || proj[s].dist > maxSpliceM || proj[s].idx < 0) continue;
+    const insertAt = Math.min(out.length, proj[s].idx + 1 + (leadEnd > 0 ? leadEnd : 0));
+    out.splice(insertAt, 0, [stops[s].lat, stops[s].lon]);
+    stitched++;
+  }
+
+  if (stitched === 0) return { coords: out, stitched: 0 };
+  return { coords: out, stitched };
+}
+
 module.exports = {
   normalizeCoord,
   calculateDistanceMeters,
@@ -367,5 +439,6 @@ module.exports = {
   calculatePolylineDistanceBetween,
   calculateRouteTotalDistance,
   extrapolatePolylinePosition,
+  composeRouteWithStops,
   decodePolyline
 };

@@ -203,6 +203,7 @@ class MaresmeTracker extends BaseTracker {
     this.getShapeStmt = null;
     this.isLoaded = false;
     this.baseLineDetailsCache = new Map();
+    this._shapeDbWarned = false;
   }
 
   async init() {
@@ -228,7 +229,12 @@ class MaresmeTracker extends BaseTracker {
           this.shapesDb = new sqlite.DatabaseSync(dbPath);
           this.getShapeStmt = this.shapesDb.prepare('SELECT coords FROM shapes WHERE shape_id = ?');
         }
-      } catch (e) {}
+      } catch (e) {
+        if (!this._shapeDbWarned) {
+          this._shapeDbWarned = true;
+          console.warn('[MaresmeTracker] ⚠️ shapes.db unavailable or corrupted — routes fall back to straight segments between stops');
+        }
+      }
     }
     if (this.getShapeStmt) {
       try {
@@ -236,7 +242,12 @@ class MaresmeTracker extends BaseTracker {
         if (row?.coords) {
           return JSON.parse(row.coords);
         }
-      } catch (e) {}
+      } catch (e) {
+        if (!this._shapeDbWarned) {
+          this._shapeDbWarned = true;
+          console.warn('[MaresmeTracker] ⚠️ shapes.db unavailable or corrupted — routes fall back to straight segments between stops');
+        }
+      }
     }
     return null;
   }
@@ -497,6 +508,10 @@ class MaresmeTracker extends BaseTracker {
               if (polylineCoords.length === 0 && stops.length > 0) {
                 polylineCoords = stops.map(s => [s.lat, s.lon]);
               }
+              if (polylineCoords.length > 1 && stops.length > 0) {
+                const composed = geoEngine.composeRouteWithStops(polylineCoords, stops);
+                if (composed.stitched > 0) polylineCoords = composed.coords;
+              }
 
               // Parallel timetable fetch across all matching trajectories
               const allScheds = await Promise.all(
@@ -709,6 +724,10 @@ class MaresmeTracker extends BaseTracker {
     }
     if (polylineCoords.length === 0 && stops.length > 0) {
       polylineCoords = stops.map(s => [s.lat, s.lon]);
+    }
+    if (polylineCoords.length > 1 && stops.length > 0) {
+      const composed = geoEngine.composeRouteWithStops(polylineCoords, stops);
+      if (composed.stitched > 0) polylineCoords = composed.coords;
     }
 
     // Discover live buses along the route
