@@ -355,6 +355,8 @@ class TransitApp {
       this.activeLineData = null;
     }
 
+    this.secondsRemaining = this.pollInterval;
+    this.updateCountdownLabel();
     this.refreshAllData(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -801,8 +803,8 @@ class TransitApp {
       // 2. Process Line details immediately (<5ms)
       const lineRes = await linePromise;
 
-      // Guard: Discard stale network responses from previous lines or directions
-      if (this.activeRequestSeq !== reqSeq || this.activeLineId !== lId || this.activeDirection !== dir) {
+      // Guard: Discard stale responses only if user navigated to a different line or direction
+      if (this.activeLineId !== lId || this.activeDirection !== dir) {
         return;
       }
 
@@ -899,7 +901,7 @@ class TransitApp {
 
       // 3. Asynchronously handle Target Stop ETA without delaying map transition
       etaPromise.then(etaRes => {
-        if (etaRes.success && etaRes.data && this.activeRequestSeq === reqSeq && this.activeLineId === lId && this.activeDirection === dir) {
+        if (etaRes.success && etaRes.data && this.activeLineId === lId && this.activeDirection === dir) {
           this.renderTargetCard(etaRes.data, this.activeLineData);
           this.renderTelemetryCockpit(this.activeLineData, etaRes.data);
           this.checkArrivalAlerts(this.activeLineData, activeTargetId);
