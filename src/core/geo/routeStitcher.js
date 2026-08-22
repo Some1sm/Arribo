@@ -17,6 +17,8 @@
 const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
+const { fetchRoadRoute } = require('./osrmClient');
+const { composeRouteWithStops } = require('./geoEngine');
 
 const dbHandles = new Map();   // dbPath -> DatabaseSync
 const coordCache = new Map(); // shapeId -> [[lat,lon]] (only shapes actually selected)
@@ -254,4 +256,74 @@ function discoverShapeForStops({ stops, dbPath, thresholdM = 150, minCoverage = 
   return { coords: best.coords, source: best.id };
 }
 
-module.exports = { stitchShapeGaps, discoverShapeForStops };
+/**
+ * Unified geometry-resolution chain for a line's polyline.
+ *
+ * Resolution order (first success wins):
+ *   1. Provided coords are stitched/composed so every stop sits on the road.
+ *      - stitchShapeGaps first (sibling-shape splicing from shapes.db),
+ *      - then geoEngine.composeRouteWithStops (splice/chord fallback),
+ *      - else the raw shape as-is.
+ *   2. No coords: discoverShapeForStops scans shapes.db for a full-coverage sibling.
+ *   3. Still nothing: OSRM public router builds a road route through the stops
+ *      (disk-cached; see osrmClient.js).
+ *   4. Total failure → null (caller draws straight stop-to-stop chords).
+ *
+ * @param {object} params
+ * @param {Array<[number,number]>|null} [params.coords]     existing shape polyline [lat,lon]
+ * @param {Array<{lat:number, lon:number, id?:string}>} [params.stops] ordered stops
+ * @param {string}  [params.dbPath]           path to shapes.db
+ * @param {string}  [params.primaryShapeId]   primary shape id (stitch cache key)
+ * @param {number}  [params.thresholdM=150]   coverage tolerance in metres
+ * @param {boolean} [params.useOsrm=true]     allow OSRM fallback when no shape is found
+ * @returns {Promise<{coords:Array<[number,number]>, stitched:number,
+ *                     source?:string, method:string}|null>}
+ *          method ∈ 'stitched-shape' | 'composed' | 'shape' | 'discovered' | 'osrm'
+ */
+async function resolveRouteGeometry({
+  coords = null,
+  stops = [],
+  dbPath = '',
+  primaryShapeId = '',
+  thresholdM = 150,
+  useOsrm = true
+} = {}) {
+  if (!Array.isArray(stops) || stops.length < 2) return null;
+
+  // --- Chain 1: valid provided coords → stitch or compose onto them. ---
+  if (Array.isArray(coords) && coords.length > 1) {
+    const stitched = stitchShapeGaps({ coords, stops, dbPath, primaryShapeId, thresholdM });
+    if (stitched && Array.isArray(stitched.coords) && stitched.coords.length > 1) {
+      return { ...stitched, method: 'stitched-shape' };
+    }
+    const composed = composeRouteWithStops(coords, stops, { thresholdM });
+    if (composed && composed.stitched > 0 && Array.isArray(composed.coords) && composed.coords.length > 1) {
+      return { coords: composed.coords, stitched: composed.stitched, method: 'composed' };
+    }
+    return { coords, stitched: 0, method: 'shape' };
+  }
+
+  // --- Chain 2: no usable coords → discover a covering sibling shape. ---
+  const discovered = discoverShapeForStops({ stops, dbPath, thresholdM });
+  if (discovered && Array.isArray(discovered.coords) && discovered.coords.length > 1) {
+    return {
+      coords: discovered.coords,
+      stitched: 0,
+      source: discovered.source,
+      method: 'discovered'
+    };
+  }
+
+  // --- Chain 3: last resort → OSRM road route through the stops. ---
+  if (useOsrm) {
+    const osrmCoords = await fetchRoadRoute(stops);
+    if (osrmCoords && osrmCoords.length > 1) {
+      return { coords: osrmCoords, stitched: 0, source: 'osrm', method: 'osrm' };
+    }
+  }
+
+  // --- Chain 4: nothing worked. ---
+  return null;
+}
+
+module.exports = { stitchShapeGaps, discoverShapeForStops, resolveRouteGeometry };

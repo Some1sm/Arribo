@@ -6,7 +6,7 @@ const geoEngine = require('./core/geo/geoEngine');
 const timeEngine = require('./core/time/timeEngine');
 const calendarEngine = require('./core/time/calendarEngine');
 const scheduleSynthesizer = require('./core/schedule/scheduleSynthesizer');
-const { stitchShapeGaps } = require('./core/geo/routeStitcher');
+const { resolveRouteGeometry } = require('./core/geo/routeStitcher');
 const delayEngine = require('./core/schedule/delayEngine');
 const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
@@ -513,17 +513,14 @@ class MaresmeTracker extends BaseTracker {
                 // Prefer stitching a sibling road shape from shapes.db (keeps
                 // real streets); fall back to chord composition when no
                 // candidate exists.
-                const stitched = stitchShapeGaps({
+                const geom = await resolveRouteGeometry({
                   coords: polylineCoords,
                   stops,
                   dbPath: path.join(__dirname, '..', 'data', 'shapes.db'),
                   primaryShapeId: canonicalShape || '',
                 });
-                if (stitched) {
-                  polylineCoords = stitched.coords;
-                } else {
-                  const composed = geoEngine.composeRouteWithStops(polylineCoords, stops);
-                  if (composed.stitched > 0) polylineCoords = composed.coords;
+                if (geom) {
+                  polylineCoords = geom.coords;
                 }
               }
 
@@ -740,17 +737,14 @@ class MaresmeTracker extends BaseTracker {
       polylineCoords = stops.map(s => [s.lat, s.lon]);
     }
     if (polylineCoords.length > 1 && stops.length > 0) {
-      const stitched = stitchShapeGaps({
+      const geom = await resolveRouteGeometry({
         coords: polylineCoords,
         stops,
         dbPath: path.join(__dirname, '..', 'data', 'shapes.db'),
         primaryShapeId: chosenTrip?.shapeId || canonicalShape || '',
       });
-      if (stitched) {
-        polylineCoords = stitched.coords;
-      } else {
-        const composed = geoEngine.composeRouteWithStops(polylineCoords, stops);
-        if (composed.stitched > 0) polylineCoords = composed.coords;
+      if (geom) {
+        polylineCoords = geom.coords;
       }
     }
 

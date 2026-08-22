@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const geoEngine = require('./core/geo/geoEngine');
-const { stitchShapeGaps } = require('./core/geo/routeStitcher');
+const { resolveRouteGeometry } = require('./core/geo/routeStitcher');
 const timeEngine = require('./core/time/timeEngine');
 const calendarEngine = require('./core/time/calendarEngine');
 const scheduleSynthesizer = require('./core/schedule/scheduleSynthesizer');
@@ -475,23 +475,13 @@ class AmbTracker extends BaseTracker {
       }
     }
 
-    if (polylineCoords.length === 0 && stops.length > 0) {
-      polylineCoords = stops.map(s => [s.lat, s.lon]);
-    }
-    if (polylineCoords.length > 1 && stops.length > 0) {
-      const stitched = stitchShapeGaps({
-        coords: polylineCoords,
-        stops,
-        dbPath: path.join(__dirname, '..', 'data', 'shapes.db'),
-        primaryShapeId: dirObj.shapeId || '',
-      });
-      if (stitched) {
-        polylineCoords = stitched.coords;
-      } else {
-        const composed = geoEngine.composeRouteWithStops(polylineCoords, stops);
-        if (composed.stitched > 0) polylineCoords = composed.coords;
-      }
-    }
+    const geom = await resolveRouteGeometry({
+      coords: (polylineCoords && polylineCoords.length > 1) ? polylineCoords : null,
+      stops,
+      dbPath: path.join(__dirname, '..', 'data', 'shapes.db'),
+      primaryShapeId: dirObj.shapeId || '',
+    });
+    polylineCoords = (geom && geom.coords) || polylineCoords || stops.map(s => [s.lat, s.lon]);
 
     // 1. Discover real-time vehicles for this route directly from live AMB vehicle fleet
     const liveFleet = await this.getLiveVehicles();
