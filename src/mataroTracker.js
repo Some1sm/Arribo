@@ -489,7 +489,27 @@ class MataroTracker {
               const remainingStops = targetStopIdx - vehStopIdx;
               const remainingMeters = this.calculatePolylineDistanceBetween(routePolyCoords, snapped.lat, snapped.lon, targetStopObj.latitude || veh.lat, targetStopObj.longitude || veh.lon);
               const speedMps = Math.max(4.5, (veh.speedKmh || 22) / 3.6);
-              totalTravelSec = Math.round(remainingMeters / speedMps) + (remainingStops * 25);
+              let transitTravelSec = Math.round(remainingMeters / speedMps) + (remainingStops * 25);
+
+              // If vehicle is parked/regulating at the origin terminal (first stop, speed <= 5):
+              // Factor in the scheduled departure time so downstream stops don't show phantom early arrivals
+              if (vehStopIdx === 0 && (veh.speedKmh === 0 || veh.speedKmh <= 5)) {
+                const netNow = timeEngine.getNetworkTime(this.agencyTimezone, new Date(now));
+                const currentSec = netNow.hour * 3600 + netNow.minute * 60 + netNow.second;
+                const dateComp = calendarEngine.getDateComponents(new Date(now), this.agencyTimezone);
+                const dayType = dateComp.isSunday ? 'sunday' : (dateComp.isSaturday ? 'saturday' : 'weekday');
+                const dirSched = mataroSchedules.getDirectionSchedule(lId, String(route.id || '0'), dayType);
+                if (dirSched && Array.isArray(dirSched.departures)) {
+                  const nextTrip = dirSched.departures.find(t => timeEngine.timeToSec(t) >= currentSec - 60);
+                  if (nextTrip) {
+                    const nextSec = timeEngine.timeToSec(nextTrip);
+                    const regWaitSec = Math.max(0, nextSec - currentSec);
+                    transitTravelSec = Math.max(transitTravelSec, regWaitSec + transitTravelSec);
+                  }
+                }
+              }
+
+              totalTravelSec = transitTravelSec;
             } else {
               // Downstream on loop: vehicle passed this stop, will loop through other direction & come back
               const otherRoute = routes[1 - routeIdx] || routes[0];
