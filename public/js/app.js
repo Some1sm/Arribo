@@ -720,9 +720,26 @@ class TransitApp {
 
         // Set this.allStops properly to include all stops for accurate lookups and inspections
         if (isBoth && lData.allDirections && lData.allDirections.length > 1) {
-          this.allStops = lData.allDirections.flatMap(d => d.stops || []);
+          const merged = [];
+          for (const dir of lData.allDirections) {
+            for (const s of (dir.stops || [])) {
+              const last = merged[merged.length - 1];
+              // Avoid inserting duplicate consecutive turnaround stops
+              if (!last || String(last.id || last.mouteStopId || last.code) !== String(s.id || s.mouteStopId || s.code)) {
+                merged.push(s);
+              }
+            }
+          }
+          this.allStops = merged.map((s, idx) => ({ ...s, seq: idx + 1 }));
         } else if (isBoth && lData.secondaryStops && lData.secondaryStops.length > 0) {
-          this.allStops = [...(lData.stops || []), ...(lData.secondaryStops || [])];
+          const merged = [...(lData.stops || [])];
+          for (const s of lData.secondaryStops) {
+            const last = merged[merged.length - 1];
+            if (!last || String(last.id || last.mouteStopId || last.code) !== String(s.id || s.mouteStopId || s.code)) {
+              merged.push(s);
+            }
+          }
+          this.allStops = merged.map((s, idx) => ({ ...s, seq: idx + 1 }));
         } else {
           this.allStops = lData.stops || [];
         }
@@ -2111,7 +2128,7 @@ class TransitApp {
   // 7. STOP INSPECTION MODAL (UNIVERSAL)
   // ==========================================
 
-  async inspectStop(stopId, stopName) {
+  async inspectStop(stopId, stopName, stopSeq = null) {
     const modal = document.getElementById('stop-modal-backdrop');
     const titleEl = document.getElementById('modal-stop-title');
     const subEl = document.getElementById('modal-stop-subtitle');
@@ -2129,7 +2146,13 @@ class TransitApp {
     if (!modal) return;
 
     let stopsList = this.allStops || [];
-    let currIndex = stopsList.findIndex(s => String(s.id || s.mouteStopId || s.code) === String(stopId));
+    let currIndex = -1;
+
+    if (stopSeq !== null && stopSeq !== undefined && Number.isInteger(stopSeq) && stopSeq >= 1 && stopSeq <= stopsList.length) {
+      currIndex = stopSeq - 1;
+    } else {
+      currIndex = stopsList.findIndex(s => String(s.id || s.mouteStopId || s.code) === String(stopId));
+    }
 
     if (currIndex === -1 && this.availableLines) {
       for (const line of this.availableLines) {
@@ -2161,11 +2184,32 @@ class TransitApp {
     }
 
     let prevStop = null;
+    let prevSeq = null;
     let nextStop = null;
+    let nextSeq = null;
 
     if (totalStops > 1 && currIndex >= 0) {
-      prevStop = currIndex > 0 ? stopsList[currIndex - 1] : stopsList[totalStops - 1];
-      nextStop = currIndex < totalStops - 1 ? stopsList[currIndex + 1] : stopsList[0];
+      // Find previous distinct stop
+      for (let i = 1; i < totalStops; i++) {
+        const pIdx = (currIndex - i + totalStops) % totalStops;
+        const cand = stopsList[pIdx];
+        if (cand && String(cand.id || cand.mouteStopId || cand.code) !== String(stopId)) {
+          prevStop = cand;
+          prevSeq = pIdx + 1;
+          break;
+        }
+      }
+
+      // Find next distinct stop
+      for (let i = 1; i < totalStops; i++) {
+        const nIdx = (currIndex + i) % totalStops;
+        const cand = stopsList[nIdx];
+        if (cand && String(cand.id || cand.mouteStopId || cand.code) !== String(stopId)) {
+          nextStop = cand;
+          nextSeq = nIdx + 1;
+          break;
+        }
+      }
     }
 
     if (prevBtn && prevName) {
@@ -2175,7 +2219,7 @@ class TransitApp {
         prevBtn.onclick = (e) => {
           e.preventDefault();
           const pId = prevStop.id || prevStop.mouteStopId || prevStop.code;
-          this.inspectStop(pId, prevStop.name);
+          this.inspectStop(pId, prevStop.name, prevSeq);
           if (prevStop.lat && prevStop.lon) this.mapController.focusTargetStop(prevStop.lat, prevStop.lon);
         };
       } else {
@@ -2192,7 +2236,7 @@ class TransitApp {
         nextBtn.onclick = (e) => {
           e.preventDefault();
           const nId = nextStop.id || nextStop.mouteStopId || nextStop.code;
-          this.inspectStop(nId, nextStop.name);
+          this.inspectStop(nId, nextStop.name, nextSeq);
           if (nextStop.lat && nextStop.lon) this.mapController.focusTargetStop(nextStop.lat, nextStop.lon);
         };
       } else {

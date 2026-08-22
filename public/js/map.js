@@ -364,9 +364,19 @@ class C10Map {
 
       // 2. Render Secondary Direction Stops (if showing both directions)
       if (secondaryStops && secondaryStops.length > 0) {
+        const primaryStopIds = new Set(stops.map(s => String(s.mouteStopId || s.id || s.code || '')));
+        const primaryCoords = new Set(stops.map(s => `${(s.lat || 0).toFixed(5)},${(s.lon || 0).toFixed(5)}`));
+
         secondaryStops.forEach((stop, index) => {
           if (!stop.lat || !stop.lon) return;
           const stopIdentifier = String(stop.mouteStopId || stop.id || stop.code || '');
+          const coordKey = `${stop.lat.toFixed(5)},${stop.lon.toFixed(5)}`;
+
+          // Avoid rendering duplicate marker on top of an identical primary stop
+          if (primaryStopIds.has(stopIdentifier) && primaryCoords.has(coordKey)) {
+            return;
+          }
+
           const isTarget = stopIdentifier === String(targetStopId);
 
           const markerHtml = `
