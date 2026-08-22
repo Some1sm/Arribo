@@ -373,6 +373,10 @@ async function runMainChallengerSuite() {
 
   // Test 2.3: historyDb.checkpointTruncate() method verification
   console.log('\n[Test 2.3] Testing production historyDb.checkpointTruncate() method...');
+  // Lazy-open: ensure the DB is open first (checkpointTruncate is a no-op
+  // returning false when the DB was never opened — by design, so shutdown
+  // cannot lazy-create a fresh database file).
+  historyDb.init();
   const cpOk = historyDb.checkpointTruncate();
   assert.strictEqual(cpOk, true, 'historyDb.checkpointTruncate() must return true');
   console.log('  ✅ historyDb.checkpointTruncate() returned true.');

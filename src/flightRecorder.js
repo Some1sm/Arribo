@@ -15,7 +15,7 @@ class FlightRecorder {
     // When a background worker owns ingestion, the master process receives already-
     // extrapolated fleet states via syncFleetFromWorker and must not extrapolate again
     // (that would double the drift). The web server disables this after starting the bridge.
-    this.autoExtrapolate = true;
+    this.autoExtrapolation = true;
     // Injectable persistence handle (worker-only). Null in the main process,
     // where all SQLite reads/writes are routed through the async gateway.
     this._db = null;
@@ -156,12 +156,6 @@ class FlightRecorder {
     }
   }
 
-  recordArrivalDelay(entry) {
-    if (this._db) {
-      this._db.recordDelayLog(entry);
-    }
-  }
-
   extrapolateStaleVehicles() {
     const now = Date.now();
     const expirationThresholdMs = 5 * 60 * 1000; // 5 mins without GPS = expired
@@ -225,7 +219,9 @@ class FlightRecorder {
       return v.history;
     }
     if (this._gateway) {
-      return this._gateway('getVehicleTrail', { vehicleId, limit: 60 });
+      // minutesBack (not row count): the DB path returns snapshots within this
+      // recency window, capped at 100 rows by the SQL LIMIT.
+      return this._gateway('getVehicleTrail', { vehicleId, minutesBack: 60 });
     }
     return [];
   }

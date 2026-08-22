@@ -736,7 +736,7 @@ class CorridorTracker extends BaseTracker {
       calendarInfo: calendarInfo,
       serviceStatus: {
         isOperating: departuresToUse.some(d => d.isToday && (d.isRealtime || d.minutesAway <= 120)),
-        period: (new Date().getHours() >= 22 || new Date().getHours() < 6) ? 'night' : 'day',
+        period: (() => { const dc = calendarEngine.getDateComponents(new Date(), 'Europe/Madrid'); return (dc.hour >= 22 || dc.hour < 6) ? 'night' : 'day'; })(),
         firstServiceTomorrow: firstTimeTomorrow,
         statusText: departuresToUse.some(d => d.isToday && (d.isRealtime || d.minutesAway <= 120))
           ? `Servei en funcionament • ${calendarInfo.calendarTag}`

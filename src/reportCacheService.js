@@ -174,14 +174,17 @@ class ReportCacheService {
     const canonicalHours = this.normalizeHours(hours);
     const startTime = Date.now();
 
+    // Fail loudly BEFORE the catch-all below: without a DB handle this process
+    // must never fall through to serving an empty skeleton report.
+    if (!this._db) {
+      throw new Error('Report database unavailable in this process');
+    }
+
     try {
       // Resolve catalog if a function was passed
       const catalog = typeof allLinesCatalog === 'function' ? allLinesCatalog() : allLinesCatalog;
 
       console.log(`[ReportCacheService] 📊 Generating fresh ${canonicalHours}h Journalism Report (catalog lines: ${catalog?.length || 0})...`);
-      if (!this._db) {
-        throw new Error('Report database unavailable in this process');
-      }
       const report = this._db.getJournalismReport(canonicalHours, catalog || []);
 
       const now = Date.now();

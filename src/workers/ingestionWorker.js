@@ -49,7 +49,7 @@ function sendToMaster(type, payload = {}) {
 async function executeDbOperation(op, args = {}) {
   switch (op) {
     case 'getVehicleTrail':
-      return historyDb.getVehicleTrail(args.vehicleId, args.limit ?? 60);
+      return historyDb.getVehicleTrail(args.vehicleId, args.minutesBack ?? 60);
 
     case 'getLineDelayStats':
       return historyDb.getLineDelayStats(args.lineCode, args.hours ?? 24, args.lineId);

@@ -585,7 +585,9 @@ class HistoryDatabase {
   }
 
   checkpointTruncate() {
-    if (!this._ensureOpen()) return false;
+    // No-op when never opened: checkpointing an unopened DB would lazy-create
+    // a fresh database file during shutdown (surprising teardown side effect).
+    if (!this.db) return false;
     try {
       this.db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
       console.log('[HistoryDB] WAL checkpoint (TRUNCATE) executed successfully.');
