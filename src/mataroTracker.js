@@ -687,6 +687,7 @@ class MataroTracker {
 
     const routesForStop = this.findRoutesServingStop(sId, lineId);
     let allSynthesizedDepartures = [];
+    const assignedLive = new Set();
 
     routesForStop.forEach(r => {
       const lIdStr = String(r.id_linea || lineId || '1');
@@ -704,7 +705,27 @@ class MataroTracker {
         stopTravelSec = scheduleSynthesizer.getTravelTimeToStop(travelTimes, sId);
       }
 
-      const liveForRoute = filteredDepartures.filter(d => String(d.lineId) === lIdStr);
+      // Assign live departures to their matching route variant without cloning
+      const liveForRoute = filteredDepartures.filter(d => {
+        if (String(d.lineId) !== lIdStr) return false;
+        const destLower = String(d.destination || '').toLowerCase();
+        const rNameLower = String(r.name || '').toLowerCase();
+        const liveKey = d.vehicleId ? `veh_${d.vehicleId}` : `time_${d.departureTime}`;
+        if (assignedLive.has(liveKey)) return false;
+
+        if (routesForStop.length > 1) {
+          const rKeywords = rNameLower.split(/[\s\-–\(\)\/]+/).filter(w => w.length > 3);
+          const dKeywords = destLower.split(/[\s\-–\(\)\/]+/).filter(w => w.length > 3);
+          const matchesAffinity = rKeywords.some(k => destLower.includes(k)) || dKeywords.some(k => rNameLower.includes(k));
+          const hasBetterOther = routesForStop.some(otherR => otherR.id !== r.id && otherR.name.toLowerCase().split(/[\s\-–\(\)\/]+/).some(k => k.length > 3 && destLower.includes(k)));
+          if (!matchesAffinity && hasBetterOther) {
+            return false;
+          }
+        }
+
+        assignedLive.add(liveKey);
+        return true;
+      });
 
       const compiledForRoute = scheduleSynthesizer.compileStopDepartures({
         baseDeparturesToday: dirSchedToday ? dirSchedToday.departures : [],
@@ -739,10 +760,18 @@ class MataroTracker {
       return (a.minutesAway || 0) - (b.minutesAway || 0);
     });
 
+    // Authoritative global deduplication by vehicleId and by (lineId, departureTime, isToday)
     const seenDepKeys = new Set();
+    const seenVehicleIds = new Set();
     const finalDepartures = [];
     for (const dep of allSynthesizedDepartures) {
-      const key = `${dep.lineId}_${dep.directionId || '0'}_${dep.departureTime}_${dep.isToday}`;
+      const vId = dep.vehicleId ? String(dep.vehicleId).trim() : null;
+      if (vId) {
+        if (seenVehicleIds.has(vId)) continue;
+        seenVehicleIds.add(vId);
+      }
+
+      const key = `${dep.lineId}_${dep.departureTime}_${dep.isToday}`;
       if (!seenDepKeys.has(key)) {
         seenDepKeys.add(key);
         finalDepartures.push(dep);
