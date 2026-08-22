@@ -313,6 +313,7 @@ class TransitApp {
   switchLine(lineId, direction = null) {
     this.activeLineId = String(lineId);
     this.selectedVehicleId = null;
+    this.mapController?.clearVehicleTrail();
 
     const lineObj = this.availableLines.find(l => String(l.id) === String(lineId));
     if (direction !== null) {
@@ -360,6 +361,8 @@ class TransitApp {
   switchDirection(dirId) {
     if (!dirId || dirId === this.activeDirection) return;
     this.activeDirection = String(dirId);
+    this.selectedVehicleId = null;
+    this.mapController?.clearVehicleTrail();
 
     // 1. Immediately toggle active and loading classes on all direction buttons & tabs (0ms response)
     const dirButtons = document.querySelectorAll('.btn-direction, .btn-stops-dir-tab');
@@ -2495,7 +2498,6 @@ class TransitApp {
     ` : '';
 
     listEl.innerHTML = modalItemsHtml + modalFooterHint;
-  }
   }
 
   // ==========================================

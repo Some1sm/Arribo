@@ -270,8 +270,9 @@ class C10Map {
     const alreadyRendered = this.lastStopsFingerprint === stopsFingerprint && this.stopMarkers.length > 0;
 
     if (!alreadyRendered) {
-      // Clean up previous bus markers from previous line
+      // Clean up previous bus markers & trail from previous line
       this.clearAllBusMarkers();
+      this.clearVehicleTrail();
 
       // Clean up previous markers & polylines
       this.stopMarkers.forEach(m => this.map.removeLayer(m));
@@ -522,6 +523,7 @@ class C10Map {
   clearAll() {
     if (!this.map) return;
     this.clearAllBusMarkers();
+    this.clearVehicleTrail();
     this.stopMarkers.forEach(m => this.map.removeLayer(m));
     this.stopMarkers = [];
     if (this.secondaryStopMarkers) {
@@ -546,6 +548,7 @@ class C10Map {
 
   clearAllBusMarkers() {
     if (!this.map) return;
+    this.clearVehicleTrail();
     for (const [tId, obj] of this.busMarkersMap.entries()) {
       if (obj.marker) {
         this.map.removeLayer(obj.marker);
