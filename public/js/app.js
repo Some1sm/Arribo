@@ -19,6 +19,7 @@ class TransitApp {
 
     this.landingFilter = 'all';
     this.landingSearch = '';
+    this.LANDING_SEARCH_CAP = 60; // max cards rendered per group during active search
     this.expandedGroups = new Set(); // Group IDs expanded by user on landing page
 
     this.pollInterval = 15;
@@ -570,7 +571,16 @@ class TransitApp {
 
       // Smart DOM Cap: When displaying all categories without active search, limit initial cards to 20 per group to save ~80MB RAM
       const isCapped = !q && activeFilter === 'all' && groupLines.length > 20 && !this.expandedGroups.has(g.id);
-      const linesToRender = isCapped ? groupLines.slice(0, 20) : groupLines;
+      let linesToRender = isCapped ? groupLines.slice(0, 20) : groupLines;
+
+      // Search-result cap: broad queries (e.g. a single digit) can match 900+
+      // lines; rendering them all freezes the tab. Show the first MATCH_CAP
+      // matches plus a refinement hint instead.
+      let hiddenBySearchCap = 0;
+      if (q && groupLines.length > this.LANDING_SEARCH_CAP) {
+        linesToRender = groupLines.slice(0, this.LANDING_SEARCH_CAP);
+        hiddenBySearchCap = groupLines.length - this.LANDING_SEARCH_CAP;
+      }
 
       html += `
         <div class="landing-group-section">
@@ -599,6 +609,11 @@ class TransitApp {
                 </div>
               `;
             }).join('')}
+            ${hiddenBySearchCap > 0 ? `
+              <div style="grid-column: 1 / -1; text-align:center; padding: 0.5rem 0; font-size:0.8rem; color:var(--text-muted);">
+                Mostrant ${this.LANDING_SEARCH_CAP} de ${groupLines.length} coincidències — refina la cerca per veure'n més.
+              </div>
+            ` : ''}
             ${isCapped ? `
               <div style="grid-column: 1 / -1; text-align:center; padding: 0.6rem 0;">
                 <button type="button" class="btn-expand-landing-group" data-group-id="${g.id}" style="background:var(--bg-elevated); border:1px solid var(--border-subtle); color:var(--brand-primary); font-weight:600; font-size:0.8rem; padding:0.45rem 1.1rem; border-radius:8px; cursor:pointer; transition: all 0.2s ease;">
@@ -2626,13 +2641,22 @@ class TransitApp {
 
       totalRendered += groupLines.length;
 
+      // Search-result cap: broad queries (e.g. a single digit) can match 900+
+      // lines; rendering them all freezes the modal. Show the first cap matches.
+      let linesToRender = groupLines;
+      let hiddenBySearchCap = 0;
+      if (q && groupLines.length > this.LANDING_SEARCH_CAP) {
+        linesToRender = groupLines.slice(0, this.LANDING_SEARCH_CAP);
+        hiddenBySearchCap = groupLines.length - this.LANDING_SEARCH_CAP;
+      }
+
       html += `
         <div class="line-category-group">
           <div class="line-category-title">
             <span>${g.name} (${groupLines.length})</span>
           </div>
           <div class="line-grid">
-            ${groupLines.map(l => {
+            ${linesToRender.map(l => {
               const isActive = String(l.id) === String(this.activeLineId);
               const contrast = this.getContrastColor(l.color);
               return `
@@ -2652,6 +2676,11 @@ class TransitApp {
                 </div>
               `;
             }).join('')}
+            ${hiddenBySearchCap > 0 ? `
+              <div style="grid-column: 1 / -1; text-align:center; padding: 0.5rem 0; font-size:0.78rem; color:var(--text-muted);">
+                Mostrant ${this.LANDING_SEARCH_CAP} de ${groupLines.length} — refina la cerca.
+              </div>
+            ` : ''}
           </div>
         </div>
       `;
