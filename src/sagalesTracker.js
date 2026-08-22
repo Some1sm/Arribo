@@ -471,7 +471,8 @@ class SagalesTracker {
       });
       const travelSec = scheduleSynthesizer.getTravelTimeToStop(travelTimes, sIdStr);
 
-      const tomorrow = new Date(Date.now() + 24 * 3600 * 1000);
+      const netNow = timeUtils.getNetworkTime(this.agencyTimezone, new Date(now));
+      const tomorrow = new Date(now + 24 * 3600 * 1000);
       const networkTomorrow = timeUtils.getNetworkTime(this.agencyTimezone, tomorrow);
 
       const baseScheduleMap = {
@@ -503,17 +504,26 @@ class SagalesTracker {
 
       const baseTimes = baseScheduleMap[lineConfig.id]?.[dir] || ['23:45', '00:45', '01:45', '02:45', '03:45', '04:45'];
 
-      baseTimes.forEach((initTimeStr, idx) => {
+      baseTimes.forEach(initTimeStr => {
         const initSec = timeUtils.timeToSec(initTimeStr);
         const passSec = initSec + travelSec;
         const passHour = Math.floor(passSec / 3600) % 24;
         const passMin = Math.floor((passSec % 3600) / 60);
         const passTimeStr = `${String(passHour).padStart(2, '0')}:${String(passMin).padStart(2, '0')}`;
 
-        const depUtc = timeUtils.localTimeToUtcDate(networkTomorrow.year, networkTomorrow.month, networkTomorrow.day, passHour, passMin, 0, this.agencyTimezone);
-        const diffMs = depUtc.getTime() - now;
+        // Check if passing time occurs today or rolls over to tomorrow
+        const depUtcToday = timeUtils.localTimeToUtcDate(netNow.year, netNow.month, netNow.day, passHour, passMin, 0, this.agencyTimezone);
+        let diffMs = depUtcToday.getTime() - now;
+        let isToday = true;
+        let depUtc = depUtcToday;
+
+        if (diffMs < -180000) {
+          depUtc = timeUtils.localTimeToUtcDate(networkTomorrow.year, networkTomorrow.month, networkTomorrow.day, passHour, passMin, 0, this.agencyTimezone);
+          diffMs = depUtc.getTime() - now;
+          isToday = false;
+        }
+
         const diffMin = Math.max(1, Math.round(diffMs / 60000));
-        const isFirst = idx === 0;
 
         departures.push({
           lineId: lineConfig.id,
@@ -525,18 +535,28 @@ class SagalesTracker {
           minutesAway: diffMin,
           isRealTime: false,
           isEstimated: false,
-          isToday: false,
-          isFirstOfDay: isFirst,
-          isNextService: isFirst,
+          isToday: isToday,
+          isFirstOfDay: false,
+          isNextService: false,
           delayStatus: 'scheduled',
-          delayBadgeText: isFirst ? '🌅 1r Servei' : 'Programat',
-          comparisonText: isFirst ? `📅 Pas teòric previst: ${passTimeStr}` : `📅 Horari teòric: ${passTimeStr}`,
+          delayBadgeText: 'Programat',
+          comparisonText: isToday ? `📅 Horari teòric: Avui a les ${passTimeStr}` : `📅 Horari teòric: Demà a les ${passTimeStr}`,
           formattedStatus: passTimeStr
         });
       });
-    }
 
-    departures.sort((a, b) => (a.minutesAway || 0) - (b.minutesAway || 0));
+      // Sort departures strictly by next occurrence (minutesAway)
+      departures.sort((a, b) => (a.minutesAway || 0) - (b.minutesAway || 0));
+
+      if (departures.length > 0) {
+        departures[0].isFirstOfDay = true;
+        departures[0].isNextService = true;
+        departures[0].delayBadgeText = '🌅 1r Servei';
+        departures[0].comparisonText = departures[0].isToday
+          ? `📅 Primer servei d'avui (a les ${departures[0].departureTime})`
+          : `📅 Primer autobús del matí (Demà a les ${departures[0].departureTime})`;
+      }
+    }
 
     const finalDepartures = [];
     const seenTimes = new Set();

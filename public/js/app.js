@@ -1525,13 +1525,23 @@ class TransitApp {
         : (next.departureTime || '--:--');
 
       // A departure is ONLY the first service of tomorrow / morning resumption if explicitly tomorrow & not live/estimated
-      const isTomorrowFirst = (next.isToday === false || next.isFirstOfDay === true) && !next.isRealTime && !next.isEstimated;
-      if (isTomorrowFirst) {
+      const isTomorrow = next.isToday === false && !next.isRealTime && !next.isEstimated;
+      const isFirstMorning = isTomorrow && (next.isFirstOfDay === true || next.isNextService === true);
+      const isFirstToday = next.isToday === true && (next.isFirstOfDay === true || next.isNextService === true) && !next.isRealTime && !next.isEstimated;
+
+      if (isFirstMorning) {
         if (etaBigEl) etaBigEl.textContent = `🌅 ${clockTime}`;
         if (etaClockEl) etaClockEl.textContent = `1r pas previst demà: ${clockTime}`;
         if (etaPillEl && etaStatusText) {
           etaPillEl.className = 'eta-status-pill scheduled';
           etaStatusText.textContent = 'Represa al matí';
+        }
+      } else if (isFirstToday && (next.minutesAway === undefined || next.minutesAway > 180)) {
+        if (etaBigEl) etaBigEl.textContent = `🌅 ${clockTime}`;
+        if (etaClockEl) etaClockEl.textContent = `1r servei d'avui: ${clockTime}`;
+        if (etaPillEl && etaStatusText) {
+          etaPillEl.className = 'eta-status-pill scheduled';
+          etaStatusText.textContent = '1r Servei';
         }
       } else {
         const mins = next.minutesAway;
@@ -1611,7 +1621,8 @@ class TransitApp {
       const schedTime = rawSched ? String(rawSched).replace(/^[A-Za-zÀ-ÿ\.]+\s*(a\s*les\s*)?/i, '').trim() : null;
 
       const isTomorrow = dep.isToday === false && !dep.isRealTime && !dep.isEstimated;
-      const isFirstMorning = (dep.isFirstOfDay === true || (idx === 0 && isTomorrow)) && !dep.isRealTime && !dep.isEstimated;
+      const isFirstMorning = isTomorrow && (dep.isFirstOfDay === true || idx === 0) && !dep.isRealTime && !dep.isEstimated;
+      const isFirstToday = dep.isToday === true && dep.isFirstOfDay === true && !dep.isRealTime && !dep.isEstimated;
       const isDiff = schedTime && schedTime !== clockTime;
       const delayText = dep.delayMins !== undefined && dep.delayMins !== 0
         ? (dep.delayMins > 0 ? `+${dep.delayMins} min retard` : `${dep.delayMins} min avançat`)
@@ -1627,19 +1638,21 @@ class TransitApp {
         ? `🌅 Demà ${clockTime}`
         : (isTomorrow
             ? `Demà ${clockTime}`
-            : ((dep.minutesAway !== undefined && dep.minutesAway >= 0 && dep.minutesAway <= 180)
-                ? (dep.minutesAway <= 0 ? 'Ara' : (dep.minutesAway === 1 ? '1 min' : `${dep.minutesAway} min`))
-                : `${clockTime}`));
+            : (isFirstToday && (dep.minutesAway === undefined || dep.minutesAway > 180)
+                ? `🌅 ${clockTime}`
+                : ((dep.minutesAway !== undefined && dep.minutesAway >= 0 && dep.minutesAway <= 180)
+                    ? (dep.minutesAway <= 0 ? 'Ara' : (dep.minutesAway === 1 ? '1 min' : `${dep.minutesAway} min`))
+                    : `${clockTime}`)));
 
-      const tagLabel = isFirstMorning
+      const tagLabel = (isFirstMorning || isFirstToday)
         ? '🌅 1r Servei'
-        : (isTomorrow ? 'Programat' : (dep.isEstimated ? '⚡ En ruta' : '🟢 Temps Real'));
+        : (isTomorrow ? 'Programat' : (dep.isEstimated ? '⚡ En ruta' : (dep.isRealTime ? '🟢 Temps Real' : 'Programat')));
 
-      const pillLabel = isFirstMorning
+      const pillLabel = (isFirstMorning || isFirstToday)
         ? '1r Servei'
         : (isTomorrow ? 'Programat' : (dep.isEstimated ? '⚡ En ruta' : (dep.delayBadgeText || 'Puntual')));
 
-      const pillClass = isTomorrow ? 'scheduled' : (dep.delayStatus || 'on-time');
+      const pillClass = (isTomorrow || isFirstToday) ? 'scheduled' : (dep.delayStatus || 'on-time');
 
       return `
         <div class="departure-item ${idx === 0 ? 'highlight-next' : ''} ${hasActiveBus ? 'clickable-bus-dep' : ''}"
@@ -1654,7 +1667,7 @@ class TransitApp {
             <div class="dep-time-row">
               <span class="dep-clock">${clockTime}</span>
               ${isDiff ? `<span class="dep-sched-pill" title="Horari oficial teòric">Oficial: ${schedTime}</span>` : ''}
-              <span class="dep-tag-sub ${isFirstMorning ? 'first-service' : ''}">${tagLabel}</span>
+              <span class="dep-tag-sub ${(isFirstMorning || isFirstToday) ? 'first-service' : ''}">${tagLabel}</span>
             </div>
             <div class="dep-dest">
               Cap a <strong>${(dep.destination || 'Destí').replace(/^Cap a\s+/i, '')}</strong>
@@ -1662,15 +1675,17 @@ class TransitApp {
             <div class="dep-time-sub">
               ${isFirstMorning
                 ? `<span>📅 Primer autobús del matí (Demà a les ${clockTime})</span>`
-                : (isTomorrow
-                    ? `<span>📅 Horari teòric: <strong class="sched-strong">Demà a les ${clockTime}</strong></span>`
-                    : (schedTime
-                        ? `<span>📅 Horari oficial: <strong class="sched-strong">${schedTime}</strong> <span class="dep-delay-note ${dep.delayMins > 0 ? 'delay' : (dep.delayMins < 0 ? 'early' : '')}">(${delayText})</span></span>`
-                        : `<span>📅 Horari previst</span>`))}
+                : (isFirstToday
+                    ? `<span>📅 Primer servei d'avui (a les ${clockTime})</span>`
+                    : (isTomorrow
+                        ? `<span>📅 Horari teòric: <strong class="sched-strong">Demà a les ${clockTime}</strong></span>`
+                        : (schedTime
+                            ? `<span>📅 Horari oficial: <strong class="sched-strong">${schedTime}</strong> <span class="dep-delay-note ${dep.delayMins > 0 ? 'delay' : (dep.delayMins < 0 ? 'early' : '')}">(${delayText})</span></span>`
+                            : `<span>📅 Horari previst</span>`)))}
             </div>
           </div>
           <div class="dep-status">
-            <span class="dep-mins" style="${isFirstMorning ? 'color:#fbbf24;' : (isTomorrow ? 'color:#94a3b8;' : '')}">${minsText}</span>
+            <span class="dep-mins" style="${(isFirstMorning || isFirstToday) ? 'color:#fbbf24;' : (isTomorrow ? 'color:#94a3b8;' : '')}">${minsText}</span>
             <span class="dep-delay-pill ${pillClass}">
               ${pillLabel}
             </span>
@@ -2230,7 +2245,8 @@ class TransitApp {
           const schedTime = rawSched ? String(rawSched).replace(/^[A-Za-zÀ-ÿ\.]+\s*(a\s*les\s*)?/i, '').trim() : null;
 
           const isTomorrow = d.isToday === false && !d.isRealTime && !d.isEstimated;
-          const isFirstMorning = (d.isFirstOfDay === true || (idx === 0 && isTomorrow)) && !d.isRealTime && !d.isEstimated;
+          const isFirstMorning = isTomorrow && (d.isFirstOfDay === true || idx === 0) && !d.isRealTime && !d.isEstimated;
+          const isFirstToday = d.isToday === true && d.isFirstOfDay === true && !d.isRealTime && !d.isEstimated;
 
           const isDiff = schedTime && schedTime !== estTime;
           const delayText = d.delayMins !== undefined && d.delayMins !== 0
@@ -2247,19 +2263,21 @@ class TransitApp {
             ? `🌅 Demà ${estTime}`
             : (isTomorrow
                 ? `Demà ${estTime}`
-                : ((d.minutesAway !== undefined && d.minutesAway >= 0 && d.minutesAway <= 180)
-                    ? (d.minutesAway <= 0 ? 'Imminent' : (d.minutesAway === 1 ? '1 min' : `${d.minutesAway} min`))
-                    : `${estTime}`));
+                : (isFirstToday && (d.minutesAway === undefined || d.minutesAway > 180)
+                    ? `🌅 ${estTime}`
+                    : ((d.minutesAway !== undefined && d.minutesAway >= 0 && d.minutesAway <= 180)
+                        ? (d.minutesAway <= 0 ? 'Ara' : (d.minutesAway === 1 ? '1 min' : `${d.minutesAway} min`))
+                        : `${estTime}`)));
 
-          const tagLabel = isFirstMorning
+          const tagLabel = (isFirstMorning || isFirstToday)
             ? '🌅 1r Servei'
-            : (isTomorrow ? 'Programat' : (d.isEstimated ? '⚡ En ruta' : '🟢 Temps Real'));
+            : (isTomorrow ? 'Programat' : (d.isEstimated ? '⚡ En ruta' : (d.isRealTime ? '🟢 Temps Real' : 'Programat')));
 
-          const pillLabel = isFirstMorning
+          const pillLabel = (isFirstMorning || isFirstToday)
             ? '1r Servei'
             : (isTomorrow ? 'Programat' : (d.isEstimated ? '⚡ En ruta' : (d.delayBadgeText || 'Puntual')));
 
-          const pillClass = isTomorrow ? 'scheduled' : (d.delayStatus || 'on-time');
+          const pillClass = (isTomorrow || isFirstToday) ? 'scheduled' : (d.delayStatus || 'on-time');
 
           return `
             <div class="departure-item ${idx === 0 ? 'highlight-next' : ''} ${hasActiveBus ? 'clickable-bus-dep' : ''}"
@@ -2274,7 +2292,7 @@ class TransitApp {
                 <div class="dep-time-row">
                   <span class="dep-clock">${estTime}</span>
                   ${isDiff ? `<span class="dep-sched-pill" title="Horari oficial teòric">Oficial: ${schedTime}</span>` : ''}
-                  <span class="dep-tag-sub ${isFirstMorning ? 'first-service' : ''}">${tagLabel}</span>
+                  <span class="dep-tag-sub ${(isFirstMorning || isFirstToday) ? 'first-service' : ''}">${tagLabel}</span>
                 </div>
                 
                 <div class="dep-dest">
@@ -2285,11 +2303,13 @@ class TransitApp {
                 <div class="dep-time-sub">
                   ${isFirstMorning ? `
                     <span>📅 Primer autobús del matí (Demà a les ${estTime})</span>
+                  ` : (isFirstToday ? `
+                    <span>📅 Primer servei d'avui (a les ${estTime})</span>
                   ` : (isTomorrow ? `
                     <span>📅 Horari teòric: <strong class="sched-strong">Demà a les ${estTime}</strong></span>
                   ` : (schedTime ? `
                     <span>📅 Horari oficial: <strong class="sched-strong">${schedTime}</strong> <span class="dep-delay-note ${d.delayMins > 0 ? 'delay' : (d.delayMins < 0 ? 'early' : '')}">(${delayText})</span></span>
-                  ` : `<span>📅 Horari previst</span>`))}
+                  ` : `<span>📅 Horari previst</span>`)))}
                 </div>
               </div>
 
