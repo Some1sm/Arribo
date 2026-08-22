@@ -1,4 +1,10 @@
 node_modules/
+.agents/
+ORIGINAL_REQUEST.md
+PROJECT.md
+TEST_INFRA.md
+TEST_READY.md
+
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
