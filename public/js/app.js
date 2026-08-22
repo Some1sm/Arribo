@@ -777,8 +777,6 @@ class TransitApp {
   // ==========================================
 
   async refreshAllData(shouldFitBounds = false) {
-    this.setLiveStatus('syncing');
-
     try {
       const reqSeq = ++this.activeRequestSeq;
       const lId = this.activeLineId;
@@ -899,8 +897,6 @@ class TransitApp {
         );
       }
 
-      this.setLiveStatus('online');
-
       // 3. Asynchronously handle Target Stop ETA without delaying map transition
       etaPromise.then(etaRes => {
         if (etaRes.success && etaRes.data && this.activeLineId === lId && this.activeDirection === dir) {
@@ -910,12 +906,10 @@ class TransitApp {
         }
       });
 
-      this.setLiveStatus('online');
       this.secondsRemaining = this.pollInterval;
       this.updateCountdownLabel();
     } catch (err) {
       console.error('Data refresh error:', err);
-      this.setLiveStatus('offline');
     }
   }
 
@@ -3324,27 +3318,6 @@ class TransitApp {
     const label = document.getElementById('countdown-label');
     if (label) {
       label.textContent = `Actualització en ${this.secondsRemaining}s`;
-    }
-  }
-
-  setLiveStatus(status) {
-    const dot = document.querySelector('#live-indicator .live-dot');
-    const text = document.getElementById('live-text');
-    if (!dot || !text) return;
-
-    if (status === 'online') {
-      dot.style.background = '#10b981';
-      dot.style.boxShadow = '0 0 8px rgba(16, 185, 129, 0.6)';
-      text.textContent = 'En directe';
-    } else if (status === 'syncing') {
-      dot.style.background = '#38bdf8';
-      dot.style.boxShadow = '0 0 10px rgba(56, 189, 248, 0.8)';
-      // Keep label stable as 'En directe' so the header container never jumps or resizes
-      text.textContent = 'En directe';
-    } else {
-      dot.style.background = '#ef4444';
-      dot.style.boxShadow = 'none';
-      text.textContent = 'Desconnectat';
     }
   }
 

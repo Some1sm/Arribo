@@ -528,32 +528,6 @@ body {
   box-sizing: border-box;
 }
 
-/* Live Heartbeat Indicator */
-.live-indicator-wrapper {
-  position: relative;
-  flex-shrink: 0;
-}
-
-.live-indicator {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.45rem;
-  background: rgba(16, 185, 129, 0.12);
-  border: 1px solid rgba(16, 185, 129, 0.3);
-  padding: 0.38rem 0.85rem;
-  border-radius: var(--radius-full);
-  font-size: 0.75rem;
-  font-weight: 700;
-  font-family: inherit;
-  color: var(--accent-live);
-  white-space: nowrap;
-  transition: all var(--transition-fast);
-  min-width: 106px;
-  flex-shrink: 0;
-  box-sizing: border-box;
-}
-
 .live-dot {
   width: 8px;
   height: 8px;
@@ -3166,10 +3140,6 @@ body {
     padding: 0.3rem 0.5rem;
     font-size: 0.72rem;
     flex-shrink: 0;
-  }
-
-  .live-indicator-wrapper {
-    display: none !important;
   }
 
   .btn-icon {
