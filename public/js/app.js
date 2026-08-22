@@ -271,33 +271,41 @@ class TransitApp {
       { id: '8', code: 'L8', name: 'Línia 8 - Estació Rodalies - Galícia', color: '#ff1493', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Cap a Galícia' }, { dirId: '1', name: 'Cap a Estació' }] }
     ];
 
+    const cachedLinesStr = localStorage.getItem('arribo_lines_cache');
+    if (cachedLinesStr) {
+      try {
+        const cached = JSON.parse(cachedLinesStr);
+        if (Array.isArray(cached) && cached.length > 0) {
+          this.availableLines = cached;
+        }
+      } catch (_) {}
+    }
+
     if (!this.availableLines || this.availableLines.length === 0) {
       this.availableLines = defaultEmergencyLines;
     }
 
-    const maxRetries = 4;
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 6000);
-        const res = await fetch('/api/lines', { signal: controller.signal });
-        clearTimeout(timeoutId);
+    // Fast non-blocking fetch to update the catalog in background
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const res = await fetch('/api/lines', { signal: controller.signal });
+      clearTimeout(timeoutId);
 
-        if (res.ok) {
-          const json = await res.json();
-          if (json.success && Array.isArray(json.lines) && json.lines.length > 0) {
-            this.availableLines = json.lines;
-            return;
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.lines) && json.lines.length > 0) {
+          this.availableLines = json.lines;
+          try {
+            localStorage.setItem('arribo_lines_cache', JSON.stringify(json.lines));
+          } catch (_) {}
+          if (!this.activeLineId) {
+            this.renderLandingLines();
           }
         }
-      } catch (e) {
-        if (attempt === maxRetries) {
-          console.warn('[TransitApp] Failed to fetch /api/lines after retries, continuing with fallback catalog:', e.message);
-        } else {
-          const delayMs = attempt * 500;
-          await new Promise(r => setTimeout(r, delayMs));
-        }
       }
+    } catch (e) {
+      console.warn('[TransitApp] /api/lines background sync notice:', e.message);
     }
   }
 

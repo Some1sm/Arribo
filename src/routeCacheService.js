@@ -175,10 +175,10 @@ class RouteCacheService {
     this.ensureDirs();
     console.log('[RouteCacheService] 📦 Initializing daily route cache & 3-day snapshots...');
 
-    // 1. Build and persist authoritative Maresme & Exprés.cat cache
+    // 1. Build and persist authoritative Maresme & Exprés.cat cache (only if missing)
     this.buildMaresmeCache();
 
-    // 2. Perform daily snapshot pass
+    // 2. Perform daily snapshot pass (only if missing for today)
     const today = this.getTodayDateStr();
     this.takeDailySnapshot(today);
 
@@ -186,9 +186,20 @@ class RouteCacheService {
     this.pruneOldSnapshots();
   }
 
-  buildMaresmeCache() {
+  buildMaresmeCache(force = false) {
     const maresmeCachePath = path.join(this.cacheDir, 'maresme_cache.json');
     const stopsCachePath = path.join(this.cacheDir, 'stops.json');
+
+    // Skip expensive regeneration if cache already exists and force is false
+    if (!force && fs.existsSync(maresmeCachePath) && fs.existsSync(stopsCachePath)) {
+      try {
+        const stats = fs.statSync(maresmeCachePath);
+        if (stats.size > 1000) {
+          console.log('[RouteCacheService] ⚡ Loaded existing Maresme cache from disk.');
+          return;
+        }
+      } catch (_) {}
+    }
 
     // Build stops map & shapes map
     const allStops = [];
@@ -330,8 +341,19 @@ class RouteCacheService {
     console.log(`[RouteCacheService] ✅ Generated Maresme Cache with ${Object.keys(tripsMap).length} lines, ${Object.keys(shapesMap).length} shapes, ${Object.keys(stopTimesByTrip).length} trips!`);
   }
 
-  takeDailySnapshot(dateStr = this.getTodayDateStr()) {
+  takeDailySnapshot(dateStr = this.getTodayDateStr(), force = false) {
     const snapshotPath = path.join(this.snapshotDir, `routes_${dateStr}.json`);
+
+    // Skip rewriting if snapshot already exists for this date
+    if (!force && fs.existsSync(snapshotPath)) {
+      try {
+        const stats = fs.statSync(snapshotPath);
+        if (stats.size > 1000) {
+          console.log(`[RouteCacheService] ⚡ Reusing existing daily route snapshot for ${dateStr}.`);
+          return;
+        }
+      } catch (_) {}
+    }
 
     try {
       const routesCachePath = path.join(this.cacheDir, 'routes.json');

@@ -37,9 +37,7 @@ app.use(express.static(path.join(__dirname, 'public'), {
   etag: false
 }));
 
-// Pre-initialize async trackers, daily route cache, and launch Autonomous Ingestion Daemon
-routeCacheService.initDailyCache();
-
+// Pre-initialize async trackers and launch Autonomous Ingestion Daemon
 trackerRegistry.initAll().then(() => {
   console.log('[TransitPlatform] All Multi-Provider Trackers Initialized.');
   trackerRegistry.cachedLines = null; // Rebuild catalog with fully initialized providers

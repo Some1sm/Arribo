@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const https = require('https');
 const geoEngine = require('./core/geo/geoEngine');
 const timeEngine = require('./core/time/timeEngine');
@@ -9,6 +11,7 @@ const timeUtils = require('./timeUtils');
 
 const AMB_API_KEY = process.env.AMB_API_KEY || '28EbLJtP0A6CtrWeXp6zE1zy3kp4RzmnaA2sy8JM';
 const AMB_BASE_HOST = 'api.ambmobilitat.cat';
+const AMB_CACHE_FILE = path.join(__dirname, '..', 'data', 'cache', 'amb_catalog_cache.json');
 
 // Agency Mapping Rules
 function categorizeAgency(routeShortName, operatorHint = '') {
@@ -99,106 +102,138 @@ class AmbTracker {
     });
   }
 
-  async init() {
-    if (this.isInitialized) return;
-    try {
-      console.log('[AmbTracker] Initializing AMB routes & stops catalog...');
-      const res = await this.fetchAmbApi('/gtfs/routes-and-stops');
-      if (res.status !== 200 || !res.data || !res.data.busamb) {
-        throw new Error(`Failed to load AMB catalog (HTTP ${res.status})`);
-      }
+  _processBusambData(busamb) {
+    if (!busamb) return;
+    const rawStops = busamb.stops || {};
+    const rawRoutes = busamb.routes || [];
 
-      const busamb = res.data.busamb;
-      const rawStops = busamb.stops || {};
-      const rawRoutes = busamb.routes || [];
+    // 1. Index Stops
+    Object.values(rawStops).forEach(s => {
+      const stopCode = String(s.stop_code || s.stop_id);
+      const stopObj = {
+        id: stopCode,
+        code: stopCode,
+        mouteStopId: stopCode,
+        name: s.stop_name,
+        lat: parseFloat(s.stop_lat),
+        lon: parseFloat(s.stop_lon),
+        routes: s.routes_ids || [],
+        zone: 'Àrea Metropolitana (AMB)'
+      };
+      this.stopsMap.set(stopCode, stopObj);
+      this.stopsMap.set(String(s.stop_id), stopObj);
+    });
 
-      // 1. Index Stops
-      Object.values(rawStops).forEach(s => {
-        const stopCode = String(s.stop_code || s.stop_id);
-        const stopObj = {
-          id: stopCode,
-          code: stopCode,
-          mouteStopId: stopCode,
-          name: s.stop_name,
-          lat: parseFloat(s.stop_lat),
-          lon: parseFloat(s.stop_lon),
-          routes: s.routes_ids || [],
-          zone: 'Àrea Metropolitana (AMB)'
-        };
-        this.stopsMap.set(stopCode, stopObj);
-        this.stopsMap.set(String(s.stop_id), stopObj);
+    // 2. Index Routes
+    this.routes = rawRoutes.map(r => {
+      const routeMeta = r.route || {};
+      const shortName = routeMeta.route_short_name || routeMeta.route_id;
+      const color = routeMeta.route_color ? (routeMeta.route_color.startsWith('#') ? routeMeta.route_color : `#${routeMeta.route_color}`) : '#009485';
+      const agencyInfo = categorizeAgency(shortName);
+
+      const paths = r.tripsPaths || [];
+      const directions = [];
+
+      // Build distinct directions
+      const seenHeads = new Set();
+      paths.forEach((p, pIdx) => {
+        const headsign = p.trip_headsign || (p.direction_id === 0 ? 'Anada' : 'Tornada');
+        if (!seenHeads.has(headsign)) {
+          seenHeads.add(headsign);
+          directions.push({
+            dirId: String(p.direction_id ?? directions.length),
+            name: `Cap a ${headsign}`,
+            shapeId: p.shape_id,
+            stopIds: p.stop_ids || []
+          });
+        }
       });
 
-      // 2. Index Routes
-      this.routes = rawRoutes.map(r => {
-        const routeMeta = r.route || {};
-        const shortName = routeMeta.route_short_name || routeMeta.route_id;
-        const color = routeMeta.route_color ? (routeMeta.route_color.startsWith('#') ? routeMeta.route_color : `#${routeMeta.route_color}`) : '#009485';
-        const agencyInfo = categorizeAgency(shortName);
+      if (directions.length === 0) {
+        directions.push({ dirId: '0', name: 'Cap a Destí', shapeId: null, stopIds: [] });
+      }
 
-        const paths = r.tripsPaths || [];
-        const directions = [];
+      const routeObj = {
+        id: `amb_${shortName.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+        rawId: routeMeta.route_id,
+        code: shortName,
+        name: routeMeta.route_long_name || shortName,
+        color,
+        agency: agencyInfo.agency,
+        group: agencyInfo.group,
+        directions,
+        paths,
+        services: r.services || []
+      };
 
-        // Build distinct directions
-        const seenHeads = new Set();
-        paths.forEach((p, pIdx) => {
-          const headsign = p.trip_headsign || (p.direction_id === 0 ? 'Anada' : 'Tornada');
-          if (!seenHeads.has(headsign)) {
-            seenHeads.add(headsign);
-            directions.push({
-              dirId: String(p.direction_id ?? directions.length),
-              name: `Cap a ${headsign}`,
-              shapeId: p.shape_id,
-              stopIds: p.stop_ids || []
+      this.routesMap.set(routeObj.id, routeObj);
+      this.routesMap.set(shortName.toLowerCase(), routeObj);
+      this.routesMap.set(String(routeMeta.route_id), routeObj);
+
+      return routeObj;
+    });
+
+    // 3. Populate allStopsMap for global search
+    this.routes.forEach(r => {
+      r.directions.forEach(dir => {
+        (dir.stopIds || []).forEach(sId => {
+          const sObj = this.stopsMap.get(String(sId));
+          if (sObj) {
+            this.allStopsMap.set(sObj.id, {
+              ...sObj,
+              lineId: r.id,
+              lineCode: r.code,
+              lineColor: r.color
             });
           }
         });
+      });
+    });
 
-        if (directions.length === 0) {
-          directions.push({ dirId: '0', name: 'Cap a Destí', shapeId: null, stopIds: [] });
+    this.isInitialized = true;
+    console.log(`[AmbTracker] Successfully loaded ${this.routes.length} AMB bus lines & ${this.stopsMap.size} stops!`);
+  }
+
+  async init() {
+    if (this.isInitialized) return;
+
+    // 1. Instant Boot: Try loading from local disk cache first (< 10ms)
+    if (fs.existsSync(AMB_CACHE_FILE)) {
+      try {
+        const cachedContent = fs.readFileSync(AMB_CACHE_FILE, 'utf8');
+        const cachedData = JSON.parse(cachedContent);
+        if (cachedData && cachedData.busamb) {
+          console.log('[AmbTracker] ⚡ Instantly loaded AMB catalog from local cache.');
+          this._processBusambData(cachedData.busamb);
+          // Refresh asynchronously in background after 5s so boot is not delayed
+          setTimeout(() => this._refreshCatalogFromApi().catch(() => {}), 5000);
+          return;
         }
+      } catch (err) {
+        console.warn('[AmbTracker] Cache read warning, falling back to API:', err.message);
+      }
+    }
 
-        const routeObj = {
-          id: `amb_${shortName.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
-          rawId: routeMeta.route_id,
-          code: shortName,
-          name: routeMeta.route_long_name || shortName,
-          color,
-          agency: agencyInfo.agency,
-          group: agencyInfo.group,
-          directions,
-          paths,
-          services: r.services || []
-        };
+    // 2. Fetch from API if no cache exists
+    await this._refreshCatalogFromApi();
+  }
 
-        this.routesMap.set(routeObj.id, routeObj);
-        this.routesMap.set(shortName.toLowerCase(), routeObj);
-        this.routesMap.set(String(routeMeta.route_id), routeObj);
-
-        return routeObj;
-      });
-
-      // 3. Populate allStopsMap for global search
-      this.routes.forEach(r => {
-        r.directions.forEach(dir => {
-          (dir.stopIds || []).forEach(sId => {
-            const sObj = this.stopsMap.get(String(sId));
-            if (sObj) {
-              this.allStopsMap.set(sObj.id, {
-                ...sObj,
-                lineId: r.id,
-                lineCode: r.code,
-                lineColor: r.color
-              });
-            }
-          });
-        });
-      });
-
-      this.isInitialized = true;
-      console.log(`[AmbTracker] Successfully loaded ${this.routes.length} AMB bus lines & ${this.stopsMap.size} stops!`);
-    } catch(err) {
-      console.error('[AmbTracker] Initialization error:', err.message);
+  async _refreshCatalogFromApi() {
+    try {
+      console.log('[AmbTracker] Fetching fresh AMB routes & stops catalog from API...');
+      const res = await this.fetchAmbApi('/gtfs/routes-and-stops');
+      if (res.status === 200 && res.data && res.data.busamb) {
+        this._processBusambData(res.data.busamb);
+        // Persist cache to disk
+        try {
+          const cacheDir = path.dirname(AMB_CACHE_FILE);
+          if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
+          fs.writeFileSync(AMB_CACHE_FILE, JSON.stringify(res.data), 'utf8');
+          console.log('[AmbTracker] 💾 Saved AMB catalog to local cache.');
+        } catch (_) {}
+      }
+    } catch (err) {
+      console.warn('[AmbTracker] Catalog API fetch warning:', err.message);
     }
   }
 

@@ -36,22 +36,21 @@ class IngestionDaemon {
     this.isRunning = true;
     console.log('[IngestionDaemon] 🚀 Starting Autonomous Centralized Ingestion Server...');
 
-    // Apply retention immediately so a restart cannot leave the previous
-    // retention window on disk until the first scheduled maintenance pass.
-    historyDb.pruneOldRecords();
+    // Apply retention in background
+    setTimeout(() => historyDb.pruneOldRecords(), 1000);
 
-    // Initialize daily route cache and snapshots
-    routeCacheService.initDailyCache();
+    // Initialize daily route cache and snapshots asynchronously
+    setTimeout(() => routeCacheService.initDailyCache(), 2000);
 
-    // 1. Initial Ingestion Run
-    this.pollAmbVehicles();
-    this.pollAmbLines();
-    this.pollMataroVehicles();
-    this.pollCorridorDelays();
-    this.pollMaresmeLines();
-    this.pollRodaliesTrains();
-    this.pollSagalesLines();
-    this.pollCataloniaLines();
+    // 1. Initial Ingestion Run (Staggered to prevent startup CPU & I/O spikes)
+    setTimeout(() => this.pollAmbVehicles(), 100);
+    setTimeout(() => this.pollMataroVehicles(), 400);
+    setTimeout(() => this.pollCorridorDelays(), 700);
+    setTimeout(() => this.pollMaresmeLines(), 1000);
+    setTimeout(() => this.pollAmbLines(), 1300);
+    setTimeout(() => this.pollRodaliesTrains(), 1600);
+    setTimeout(() => this.pollSagalesLines(), 2000);
+    setTimeout(() => this.pollCataloniaLines(), 2400);
 
     // 2. Schedule High-Frequency AMB Vehicle Fleet Ingestion (every 12 seconds)
     this.vehiclePollTimer = setInterval(() => this.pollAmbVehicles(), 12000);
