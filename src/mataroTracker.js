@@ -377,8 +377,10 @@ class MataroTracker {
     let minDist = Infinity;
 
     for (let i = 0; i < stops.length; i++) {
-      const d = geoUtils.calculateDistanceMeters(lat, lon, stops[i].lat, stops[i].lon);
-      if (d < minDist) {
+      const sLat = stops[i].latitude !== undefined ? parseFloat(stops[i].latitude) : stops[i].lat;
+      const sLon = stops[i].longitude !== undefined ? parseFloat(stops[i].longitude) : stops[i].lon;
+      const d = geoUtils.calculateDistanceMeters(lat, lon, sLat, sLon);
+      if (!isNaN(d) && d < minDist) {
         minDist = d;
         minIdx = i;
       }
@@ -388,21 +390,25 @@ class MataroTracker {
     const toIdx = Math.min(stops.length - 1, fromIdx + 1);
     const s1 = stops[fromIdx];
     const s2 = stops[toIdx];
+    const s1Lat = s1.latitude !== undefined ? parseFloat(s1.latitude) : s1.lat;
+    const s1Lon = s1.longitude !== undefined ? parseFloat(s1.longitude) : s1.lon;
+    const s2Lat = s2.latitude !== undefined ? parseFloat(s2.latitude) : s2.lat;
+    const s2Lon = s2.longitude !== undefined ? parseFloat(s2.longitude) : s2.lon;
 
-    const distToNext = Math.round(geoUtils.calculateDistanceMeters(lat, lon, s2.lat, s2.lon));
+    const distToNext = Math.round(geoUtils.calculateDistanceMeters(lat, lon, s2Lat, s2Lon));
     const totalProgress = Math.round((toIdx / Math.max(1, stops.length - 1)) * 100);
     const secondsToNext = Math.max(15, Math.round((distToNext / 30) * 3.6));
 
     return {
       fromStop: s1.name,
       toStop: s2.name,
-      fromSeq: s1.seq,
-      toSeq: s2.seq,
+      fromSeq: s1.seq || fromIdx + 1,
+      toSeq: s2.seq || toIdx + 1,
       totalProgress,
       distanceToNextMeters: distToNext,
       secondsToNextStop: secondsToNext,
-      fromCoords: { lat: s1.lat, lon: s1.lon },
-      toCoords: { lat: s2.lat, lon: s2.lon }
+      fromCoords: { lat: s1Lat, lon: s1Lon },
+      toCoords: { lat: s2Lat, lon: s2Lon }
     };
   }
 
@@ -484,10 +490,13 @@ class MataroTracker {
             const vehStopIdx = Math.max(0, (vehNearestStop.fromSeq || 1) - 1);
             isUpstreamDirect = (vehStopIdx <= targetStopIdx);
 
+            const targetLat = targetStopObj.latitude !== undefined ? parseFloat(targetStopObj.latitude) : targetStopObj.lat;
+            const targetLon = targetStopObj.longitude !== undefined ? parseFloat(targetStopObj.longitude) : targetStopObj.lon;
+
             if (vehStopIdx <= targetStopIdx) {
               // Upstream: vehicle is approaching this stop directly on this run
               const remainingStops = targetStopIdx - vehStopIdx;
-              const remainingMeters = this.calculatePolylineDistanceBetween(routePolyCoords, snapped.lat, snapped.lon, targetStopObj.latitude || veh.lat, targetStopObj.longitude || veh.lon);
+              const remainingMeters = this.calculatePolylineDistanceBetween(routePolyCoords, snapped.lat, snapped.lon, targetLat || veh.lat, targetLon || veh.lon);
               const speedMps = Math.max(4.5, (veh.speedKmh || 22) / 3.6);
               let transitTravelSec = Math.round(remainingMeters / speedMps) + (remainingStops * 25);
 
@@ -513,9 +522,16 @@ class MataroTracker {
             } else {
               // Downstream on loop: vehicle passed this stop, will loop through other direction & come back
               const otherRoute = routes[1 - routeIdx] || routes[0];
-              const remainingOnCurrent = this.calculatePolylineDistanceBetween(routePolyCoords, snapped.lat, snapped.lon, routeStops[routeStops.length - 1]?.latitude || veh.lat, routeStops[routeStops.length - 1]?.longitude || veh.lon);
+              const lastStop = routeStops[routeStops.length - 1] || {};
+              const lastLat = lastStop.latitude !== undefined ? parseFloat(lastStop.latitude) : lastStop.lat;
+              const lastLon = lastStop.longitude !== undefined ? parseFloat(lastStop.longitude) : lastStop.lon;
+              const firstStop = routeStops[0] || {};
+              const firstLat = firstStop.latitude !== undefined ? parseFloat(firstStop.latitude) : firstStop.lat;
+              const firstLon = firstStop.longitude !== undefined ? parseFloat(firstStop.longitude) : firstStop.lon;
+
+              const remainingOnCurrent = this.calculatePolylineDistanceBetween(routePolyCoords, snapped.lat, snapped.lon, lastLat || veh.lat, lastLon || veh.lon);
               const otherDist = this.calculateRouteTotalDistance((otherRoute.coords || []).map(c => ({ lat: parseFloat(c.Latitude), lon: parseFloat(c.Longitude) })));
-              const nextRunDist = this.calculatePolylineDistanceBetween(routePolyCoords, routeStops[0]?.latitude || veh.lat, routeStops[0]?.longitude || veh.lon, targetStopObj.latitude || veh.lat, targetStopObj.longitude || veh.lon);
+              const nextRunDist = this.calculatePolylineDistanceBetween(routePolyCoords, firstLat || veh.lat, firstLon || veh.lon, targetLat || veh.lat, targetLon || veh.lon);
 
               const totalMeters = remainingOnCurrent + otherDist + nextRunDist;
               const speedMps = 20 / 3.6;
@@ -527,8 +543,17 @@ class MataroTracker {
             const oppPolyCoords = (oppRoute.coords || []).map(c => ({ lat: parseFloat(c.Latitude), lon: parseFloat(c.Longitude) }));
             const oppStops = oppRoute.stops || [];
             const snapped = this.snapPointToPolyline(veh.lat, veh.lon, oppPolyCoords);
-            const oppRemainingMeters = this.calculatePolylineDistanceBetween(oppPolyCoords, snapped.lat, snapped.lon, oppStops[oppStops.length - 1]?.latitude || veh.lat, oppStops[oppStops.length - 1]?.longitude || veh.lon);
-            const runDist = this.calculatePolylineDistanceBetween(routePolyCoords, routeStops[0]?.latitude || targetStopObj.latitude, routeStops[0]?.longitude || targetStopObj.longitude, targetStopObj.latitude, targetStopObj.longitude);
+            const oppLastStop = oppStops[oppStops.length - 1] || {};
+            const oppLastLat = oppLastStop.latitude !== undefined ? parseFloat(oppLastStop.latitude) : oppLastStop.lat;
+            const oppLastLon = oppLastStop.longitude !== undefined ? parseFloat(oppLastStop.longitude) : oppLastStop.lon;
+            const targetLat = targetStopObj.latitude !== undefined ? parseFloat(targetStopObj.latitude) : targetStopObj.lat;
+            const targetLon = targetStopObj.longitude !== undefined ? parseFloat(targetStopObj.longitude) : targetStopObj.lon;
+            const firstStop = routeStops[0] || {};
+            const firstLat = firstStop.latitude !== undefined ? parseFloat(firstStop.latitude) : firstStop.lat;
+            const firstLon = firstStop.longitude !== undefined ? parseFloat(firstStop.longitude) : firstStop.lon;
+
+            const oppRemainingMeters = this.calculatePolylineDistanceBetween(oppPolyCoords, snapped.lat, snapped.lon, oppLastLat || veh.lat, oppLastLon || veh.lon);
+            const runDist = this.calculatePolylineDistanceBetween(routePolyCoords, firstLat || targetLat, firstLon || targetLon, targetLat, targetLon);
 
             const totalMeters = oppRemainingMeters + runDist;
             const speedMps = 20 / 3.6;
