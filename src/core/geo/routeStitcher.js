@@ -257,6 +257,24 @@ function discoverShapeForStops({ stops, dbPath, thresholdM = 150, minCoverage = 
 }
 
 /**
+ * Detects stop-to-stop chord polylines masquerading as shapes: the coordinate
+ * count tracks the stop count and nearly every stop coincides with a vertex.
+ * Real GTFS road shapes are 10-100x denser and rarely pass exactly through
+ * every stop.
+ */
+function looksLikeChordPolyline(coords, stops, toleranceM = 30) {
+  if (!Array.isArray(coords) || coords.length < 2 || !Array.isArray(stops) || stops.length < 3) return false;
+  if (coords.length > stops.length + 4) return false; // too dense to be chords
+  let onVertex = 0;
+  for (const s of stops) {
+    for (const c of coords) {
+      if (distM([s.lat, s.lon], c) <= toleranceM) { onVertex++; break; }
+    }
+  }
+  return onVertex / stops.length >= 0.8;
+}
+
+/**
  * Unified geometry-resolution chain for a line's polyline.
  *
  * Resolution order (first success wins):
@@ -291,7 +309,11 @@ async function resolveRouteGeometry({
   if (!Array.isArray(stops) || stops.length < 2) return null;
 
   // --- Chain 1: valid provided coords → stitch or compose onto them. ---
-  if (Array.isArray(coords) && coords.length > 1) {
+  // A polyline that is essentially just the stops joined together (what we get
+  // when shapes.db is unavailable) is NOT road geometry — treat it like no
+  // shape at all so discovery/OSRM still get a chance.
+  const chordLike = looksLikeChordPolyline(coords, stops);
+  if (Array.isArray(coords) && coords.length > 1 && !chordLike) {
     const stitched = stitchShapeGaps({ coords, stops, dbPath, primaryShapeId, thresholdM });
     if (stitched && Array.isArray(stitched.coords) && stitched.coords.length > 1) {
       return { ...stitched, method: 'stitched-shape' };
@@ -302,6 +324,7 @@ async function resolveRouteGeometry({
     }
     return { coords, stitched: 0, method: 'shape' };
   }
+  if (chordLike) coords = null; // discard chords — discovery/OSRM below will replace them
 
   // --- Chain 2: no usable coords → discover a covering sibling shape. ---
   const discovered = discoverShapeForStops({ stops, dbPath, thresholdM });

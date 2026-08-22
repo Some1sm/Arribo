@@ -2,6 +2,26 @@ const fs = require('fs');
 const path = require('path');
 const mouteClient = require('./mouteClient');
 const geoEngine = require('./core/geo/geoEngine');
+
+/**
+ * Validates an OSRM-generated polyline actually passes near every stop
+ * (guards against a bad route replacing known-good shapes).
+ */
+function osrmCoversStops(coords, stops, thresholdM = 250) {
+  if (!Array.isArray(coords) || coords.length < 10) return false;
+  let covered = 0;
+  for (const s of stops) {
+    let best = Infinity;
+    for (const c of coords) {
+      const dLat = (s.lat - c[0]) * 111320;
+      const dLon = (s.lon - c[1]) * 111320 * Math.cos(s.lat * Math.PI / 180);
+      const d = Math.sqrt(dLat * dLat + dLon * dLon);
+      if (d < best) best = d;
+    }
+    if (best <= thresholdM) covered++;
+  }
+  return covered / stops.length >= 0.95;
+}
 const timeEngine = require('./core/time/timeEngine');
 const calendarEngine = require('./core/time/calendarEngine');
 const delayEngine = require('./core/schedule/delayEngine');
@@ -159,6 +179,35 @@ class CorridorTracker extends BaseTracker {
 
   async init() {
     this.ensureCalendarLoaded();
+    await this.ensureOsrmPolylines();
+  }
+
+  /**
+   * One-shot (memoised) upgrade of the hardcoded highway shapes to an OSRM
+   * road path through every N-II town stop. Safe to call repeatedly; runs at
+   * most once per process, lazily on first route request.
+   */
+  ensureOsrmPolylines() {
+    if (!this._osrmPolylineUpgrade) {
+      this._osrmPolylineUpgrade = (async () => {
+      try {
+        const { fetchRoadRoute } = require('./core/geo/osrmClient');
+        for (const dir of ['1', '0']) {
+          const attr = dir === '1' ? 'routePolylineDir1' : 'routePolylineDir0';
+          const stopList = dir === '1' ? this.stopsDir1 : this.stopsDir0;
+          if (!Array.isArray(this[attr]) || this[attr].length < 10 || stopList.length < 2) continue;
+          const osrm = await fetchRoadRoute(stopList.map(s => ({ lat: s.lat, lon: s.lon })));
+          if (osrm && osrmCoversStops(osrm, stopList)) {
+            console.log(`[CorridorTracker] dir ${dir}: using OSRM road geometry through all stops (${osrm.length} pts).`);
+            this[attr] = osrm;
+          }
+        }
+      } catch (e) {
+        console.warn('[CorridorTracker] OSRM polyline upgrade skipped:', e.message);
+      }
+      })();
+    }
+    return this._osrmPolylineUpgrade;
   }
 
   loadCalendarSync() {
@@ -1046,6 +1095,8 @@ class CorridorTracker extends BaseTracker {
     });
 
 
+    // Ensure the road-snapped polyline upgrade has run before serving coords.
+    await this.ensureOsrmPolylines();
     const polyline = isDir1 ? this.routePolylineDir1 : this.routePolylineDir0;
 
     const result = {
