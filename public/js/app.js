@@ -2592,12 +2592,12 @@ class TransitApp {
           <div class="search-result-item line-item" data-type="line" data-line-id="${r.lineId}" style="border-left:3px solid ${r.lineColor};">
             <div class="search-result-left">
               <span class="search-result-badge" style="background:${r.lineColor};">${r.lineCode}</span>
-              <div>
-                <div class="search-result-name" style="font-weight:700;">${r.lineName}</div>
+              <div class="search-result-info">
+                <div class="search-result-name">${r.lineName}</div>
                 <div class="search-result-zone">${r.zone || r.agency || 'Línia de transport'}</div>
               </div>
             </div>
-            <span style="font-size:0.75rem; color:var(--c10-primary); font-weight:700;">Canviar ➔</span>
+            <span class="search-result-action">Canviar ➔</span>
           </div>
         `;
       }
@@ -2605,12 +2605,12 @@ class TransitApp {
         <div class="search-result-item stop-item" data-type="stop" data-line-id="${r.lineId}" data-stop-id="${r.stopId}" data-name="${(r.stopName || '').replace(/"/g, '&quot;')}" data-lat="${r.lat || ''}" data-lon="${r.lon || ''}">
           <div class="search-result-left">
             <span class="search-result-badge" style="background:${r.lineColor};">${r.lineCode}</span>
-            <div>
+            <div class="search-result-info">
               <div class="search-result-name">${r.stopName}</div>
               <div class="search-result-zone">${r.zone}${r.code ? ` • Codi: ${r.code}` : ''}</div>
             </div>
           </div>
-          <span style="font-size:0.75rem; color:var(--c10-primary); font-weight:700;">Veure ➔</span>
+          <span class="search-result-action">Veure ➔</span>
         </div>
       `;
     }).join('');

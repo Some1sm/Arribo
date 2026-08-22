@@ -410,7 +410,9 @@ body {
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
-  right: 0;
+  min-width: 100%;
+  width: max(100%, 390px);
+  max-width: min(520px, 92vw);
   background: var(--bg-surface);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
@@ -420,6 +422,7 @@ body {
   z-index: 1100;
   display: none;
   padding: 0.4rem;
+  box-sizing: border-box;
 }
 
 .search-results-dropdown.active {
@@ -441,6 +444,8 @@ body {
   cursor: pointer;
   transition: background var(--transition-fast);
   gap: 0.75rem;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .search-result-item:hover {
@@ -452,6 +457,14 @@ body {
   align-items: center;
   gap: 0.65rem;
   min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.search-result-info {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
 }
 
 .search-result-badge {
@@ -471,11 +484,29 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: block;
 }
 
 .search-result-zone {
   font-size: 0.72rem;
   color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+.search-result-action {
+  font-size: 0.75rem;
+  color: var(--c10-primary);
+  font-weight: 700;
+  white-space: nowrap;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: auto;
+  padding-left: 0.5rem;
 }
 
 /* Active Buses Chip */
