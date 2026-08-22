@@ -6,51 +6,9 @@ const timeEngine = require('./core/time/timeEngine');
 const calendarEngine = require('./core/time/calendarEngine');
 const scheduleSynthesizer = require('./core/schedule/scheduleSynthesizer');
 const delayEngine = require('./core/schedule/delayEngine');
+const mataroSchedules = require('./data/mataroSchedules');
 const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
-
-const MATARO_LINE_SCHEDULES = {
-  '1': {
-    weekday: { inicio: '06:30', fin: '22:15', headwayMins: 15 },
-    saturday: { inicio: '07:15', fin: '22:15', headwayMins: 20 },
-    sunday: { inicio: '08:15', fin: '22:00', headwayMins: 30 }
-  },
-  '2': {
-    weekday: { inicio: '06:30', fin: '22:15', headwayMins: 15 },
-    saturday: { inicio: '07:15', fin: '22:15', headwayMins: 20 },
-    sunday: { inicio: '07:55', fin: '22:00', headwayMins: 30 }
-  },
-  '3': {
-    weekday: { inicio: '06:30', fin: '22:15', headwayMins: 15 },
-    saturday: { inicio: '07:15', fin: '22:15', headwayMins: 20 },
-    sunday: { inicio: '08:00', fin: '22:15', headwayMins: 30 }
-  },
-  '4': {
-    weekday: { inicio: '06:30', fin: '22:00', headwayMins: 18 },
-    saturday: { inicio: '07:15', fin: '22:00', headwayMins: 20 },
-    sunday: { inicio: '08:30', fin: '21:57', headwayMins: 30 }
-  },
-  '5': {
-    weekday: { inicio: '06:40', fin: '21:40', headwayMins: 20 },
-    saturday: { inicio: '07:30', fin: '21:30', headwayMins: 30 },
-    sunday: { inicio: '08:32', fin: '21:22', headwayMins: 30 }
-  },
-  '6': {
-    weekday: { inicio: '06:45', fin: '22:15', headwayMins: 20 },
-    saturday: { inicio: '07:30', fin: '22:15', headwayMins: 30 },
-    sunday: { inicio: '14:00', fin: '22:17', headwayMins: 30, afternoonOnly: true }
-  },
-  '7': {
-    weekday: { inicio: '06:30', fin: '22:00', headwayMins: 20 },
-    saturday: { inicio: '07:30', fin: '22:00', headwayMins: 30 },
-    sunday: { inicio: '08:30', fin: '21:27', headwayMins: 30 }
-  },
-  '8': {
-    weekday: { inicio: '06:45', fin: '21:45', headwayMins: 25 },
-    saturday: { inicio: '14:04', fin: '21:35', headwayMins: 30, afternoonOnly: true },
-    sunday: { inicio: '14:04', fin: '21:35', headwayMins: 30, afternoonOnly: true }
-  }
-};
 
 class MataroTracker {
   constructor() {
@@ -64,40 +22,20 @@ class MataroTracker {
 
   // Get authoritative schedule parameters for a line, route direction and day type
   getScheduleForLine(lIdStr, routeId = null, dayType = 'weekday') {
-    const lId = String(lIdStr || '1');
-    if (lId === '8') {
-      if (dayType === 'saturday' || dayType === 'sunday') {
-        const isRoute11 = String(routeId) === '11';
-        return {
-          inicio: isRoute11 ? '14:45' : '14:04',
-          fin: isRoute11 ? '21:13' : '21:35',
-          headwayMins: 30,
-          afternoonOnly: true
-        };
-      }
-      return { inicio: '06:45', fin: '21:45', headwayMins: 25 };
+    const dirSched = mataroSchedules.getDirectionSchedule(lIdStr, routeId, dayType);
+    if (dirSched) {
+      return {
+        inicio: dirSched.firstTrip || '06:30',
+        fin: dirSched.lastTrip || '22:00',
+        departures: dirSched.departures || [],
+        afternoonOnly: Boolean(dirSched.afternoonOnly)
+      };
     }
-
-    if (lId === '6') {
-      if (dayType === 'sunday') {
-        const isRoute12 = String(routeId) === '12';
-        return {
-          inicio: isRoute12 ? '14:17' : '14:00',
-          fin: isRoute12 ? '22:17' : '22:03',
-          headwayMins: 30,
-          afternoonOnly: true
-        };
-      }
-      if (dayType === 'saturday') {
-        return { inicio: '07:30', fin: '22:15', headwayMins: 30 };
-      }
-      return { inicio: '06:45', fin: '22:15', headwayMins: 20 };
-    }
-
-    return MATARO_LINE_SCHEDULES[lId]?.[dayType] || {
+    return {
       inicio: '06:30',
       fin: '22:00',
-      headwayMins: 20
+      departures: [],
+      afternoonOnly: false
     };
   }
 
@@ -649,7 +587,11 @@ class MataroTracker {
   }
 
   // 3. Get Real-Time & Estimated Departures for a stop (up to 120 mins)
-  async getStopDepartures(stopId, lineId = '') {
+  async getStopDepartures(stopId, lineId = '', direction = '0', options = {}) {
+    if (typeof direction === 'object' && direction !== null) {
+      options = direction;
+      direction = '0';
+    }
     const sId = String(stopId);
     const stopInfo = this.allStopsMap.get(sId) || { id: sId, name: `Parada ${sId}` };
     
@@ -731,127 +673,80 @@ class MataroTracker {
       filteredDepartures.push(dep);
     }
 
-    let finalDepartures = filteredDepartures;
+    // 4. Merge full daily scheduled timetable departures for this stop using scheduleSynthesizer
+    const targetDate = options.dateObj ? new Date(options.dateObj) :
+      (options.targetDate ? new Date(options.targetDate) :
+      (options.referenceDate ? new Date(options.referenceDate) : new Date()));
 
-    finalDepartures.forEach(d => {
-      if (d.isToday === undefined) d.isToday = true;
-      if (d.isFirstOfDay === undefined) d.isFirstOfDay = false;
-      if (d.isNextService === undefined) d.isNextService = false;
-    });
+    const dateCompToday = calendarEngine.getDateComponents(targetDate, this.agencyTimezone);
+    const dayTypeToday = dateCompToday.isSunday ? 'sunday' : (dateCompToday.isSaturday ? 'saturday' : 'weekday');
 
-    // 4. Merge full daily scheduled timetable departures for this stop
-    {
-      const routesForStop = this.findRoutesServingStop(sId, lineId);
-      const now = new Date();
-      const networkNow = timeUtils.getNetworkTime(this.agencyTimezone, now);
-      const nowSec = timeUtils.timeToSec(networkNow.timeStr);
-      const dayTypeToday = (networkNow.dayOfWeek >= 1 && networkNow.dayOfWeek <= 5) ? 'weekday' : (networkNow.dayOfWeek === 6 ? 'saturday' : 'sunday');
-      const seenTimes = new Set(finalDepartures.map(d => d.departureTime));
+    const tomorrow = new Date(targetDate.getTime() + 24 * 3600 * 1000);
+    const dateCompTomorrow = calendarEngine.getDateComponents(tomorrow, this.agencyTimezone);
+    const dayTypeTomorrow = dateCompTomorrow.isSunday ? 'sunday' : (dateCompTomorrow.isSaturday ? 'saturday' : 'weekday');
 
-      const tomorrow = new Date(Date.now() + 24 * 3600 * 1000);
-      const networkTomorrow = timeUtils.getNetworkTime(this.agencyTimezone, tomorrow);
-      const dayTypeTomorrow = (networkTomorrow.dayOfWeek >= 1 && networkTomorrow.dayOfWeek <= 5) ? 'weekday' : (networkTomorrow.dayOfWeek === 6 ? 'saturday' : 'sunday');
+    const routesForStop = this.findRoutesServingStop(sId, lineId);
+    let allSynthesizedDepartures = [];
 
-      routesForStop.forEach(r => {
-        const lIdStr = String(r.id_linea || lineId || '1');
-        const lineSchedToday = this.getScheduleForLine(lIdStr, r.id, dayTypeToday);
+    routesForStop.forEach(r => {
+      const lIdStr = String(r.id_linea || lineId || '1');
+      const dirKey = String(r.id || '0');
+      const dirSchedToday = mataroSchedules.getDirectionSchedule(lIdStr, dirKey, dayTypeToday);
+      const dirSchedTomorrow = mataroSchedules.getDirectionSchedule(lIdStr, dirKey, dayTypeTomorrow);
 
-        const startSecToday = timeUtils.timeToSec(lineSchedToday.inicio);
-        const endSecToday = timeUtils.timeToSec(lineSchedToday.fin);
-        const routeStops = r.stops || [];
-        const travelTimes = scheduleSynthesizer.estimateStopTravelTimes(routeStops, {
+      let stopTravelSec = mataroSchedules.getStopTravelTime(lIdStr, dirKey, sId);
+      if (stopTravelSec === 0 && r.stops && r.stops.length > 0) {
+        const travelTimes = scheduleSynthesizer.estimateStopTravelTimes(r.stops, {
           speedMps: 4.8,
           dwellSecPerStop: 25,
           defaultSegmentMeters: 300
         });
-        const travelSec = scheduleSynthesizer.getTravelTimeToStop(travelTimes, sId);
+        stopTravelSec = scheduleSynthesizer.getTravelTimeToStop(travelTimes, sId);
+      }
 
-        const headwaySec = (lineSchedToday.headwayMins || 20) * 60;
-        const isOperatingToday = nowSec >= startSecToday && nowSec <= endSecToday + travelSec;
+      const liveForRoute = filteredDepartures.filter(d => String(d.lineId) === lIdStr);
 
-        if (isOperatingToday) {
-          // Generate departures for today from now onwards
-          let tripCount = 0;
-          for (let depSec = startSecToday; depSec <= endSecToday; depSec += headwaySec) {
-            const passingSec = depSec + travelSec;
-            if (passingSec < nowSec - 60) continue;
-
-            const passHour = Math.floor(passingSec / 3600) % 24;
-            const passMin = Math.floor((passingSec % 3600) / 60);
-            const passingTimeStr = `${String(passHour).padStart(2, '0')}:${String(passMin).padStart(2, '0')}`;
-
-            if (seenTimes.has(passingTimeStr)) continue;
-            seenTimes.add(passingTimeStr);
-
-            const depUtcDate = timeUtils.localTimeToUtcDate(networkNow.year, networkNow.month, networkNow.day, passHour, passMin, 0, this.agencyTimezone);
-            const diffMs = depUtcDate.getTime() - Date.now();
-            const diffMin = Math.max(1, Math.round(diffMs / 60000));
-
-            finalDepartures.push({
-              lineId: lIdStr,
-              lineName: r.lineName || `Línia ${lIdStr}`,
-              destination: r.name,
-              departureTime: passingTimeStr,
-              departureDate: depUtcDate.toISOString(),
-              expectedIso: depUtcDate.toISOString(),
-              aimedIso: depUtcDate.toISOString(),
-              minutesAway: diffMin,
-              isRealTime: false,
-              isEstimated: false,
-              isToday: true,
-              isFirstOfDay: false,
-              isNextService: tripCount === 0 && finalDepartures.length === 0,
-              delayStatus: 'scheduled',
-              delayBadgeText: 'Horari teòric',
-              comparisonText: `📅 Horari teòric: ${passingTimeStr}`,
-              formattedStatus: `${passingTimeStr}`
-            });
-            tripCount++;
-          }
-        }
-
-        // If few departures remain (e.g. night time after fin or before morning start), generate tomorrow morning departures
-        if (finalDepartures.length < 5) {
-          const lineSchedTomorrow = this.getScheduleForLine(lIdStr, r.id, dayTypeTomorrow);
-          const startSecTomorrow = timeUtils.timeToSec(lineSchedTomorrow.inicio);
-          const endSecTomorrow = timeUtils.timeToSec(lineSchedTomorrow.fin);
-          const headwaySecTomorrow = (lineSchedTomorrow.headwayMins || 20) * 60;
-
-          let tripCount = 0;
-          for (let depSec = startSecTomorrow; depSec <= endSecTomorrow && tripCount < 10; depSec += headwaySecTomorrow) {
-            const passingSec = depSec + travelSec;
-            const passHour = Math.floor(passingSec / 3600) % 24;
-            const passMin = Math.floor((passingSec % 3600) / 60);
-            const passingTimeStr = `${String(passHour).padStart(2, '0')}:${String(passMin).padStart(2, '0')}`;
-
-            const depUtcDate = timeUtils.localTimeToUtcDate(networkTomorrow.year, networkTomorrow.month, networkTomorrow.day, passHour, passMin, 0, this.agencyTimezone);
-            const diffMs = depUtcDate.getTime() - Date.now();
-            const diffMin = Math.max(1, Math.round(diffMs / 60000));
-            const isFirst = tripCount === 0;
-
-            finalDepartures.push({
-              lineId: lIdStr,
-              lineName: r.lineName || `Línia ${lIdStr}`,
-              destination: r.name,
-              departureTime: passingTimeStr,
-              departureDate: depUtcDate.toISOString(),
-              expectedIso: depUtcDate.toISOString(),
-              aimedIso: depUtcDate.toISOString(),
-              minutesAway: diffMin,
-              isRealTime: false,
-              isEstimated: false,
-              isToday: false,
-              isFirstOfDay: isFirst,
-              isNextService: isFirst,
-              delayStatus: 'scheduled',
-              delayBadgeText: isFirst ? '🌅 1r Servei del matí' : 'Programat',
-              comparisonText: isFirst ? `📅 Pas teòric previst demà a les ${passingTimeStr}` : `📅 Horari teòric: ${passingTimeStr}`,
-              formattedStatus: `${passingTimeStr}`
-            });
-            tripCount++;
-          }
-        }
+      const compiledForRoute = scheduleSynthesizer.compileStopDepartures({
+        baseDeparturesToday: dirSchedToday ? dirSchedToday.departures : [],
+        baseDeparturesTomorrow: dirSchedTomorrow ? dirSchedTomorrow.departures : [],
+        stopTravelSec,
+        liveDepartures: liveForRoute,
+        limit: options.limit !== undefined ? Number(options.limit) : 10,
+        minCountBeforeMorning: options.minCountBeforeMorning !== undefined ? Number(options.minCountBeforeMorning) : 5,
+        maxMorningCount: options.maxMorningCount !== undefined ? Number(options.maxMorningCount) : 10,
+        duplicateWindowMinutes: 3,
+        dateObj: targetDate,
+        timezone: this.agencyTimezone,
+        lineId: lIdStr,
+        lineCode: lIdStr,
+        lineName: r.lineName || `Línia ${lIdStr}`,
+        destination: r.name || dirSchedToday?.directionName || `Línia ${lIdStr}`,
+        directionId: dirKey,
+        isTrain: false
       });
+
+      allSynthesizedDepartures.push(...compiledForRoute);
+    });
+
+    if (allSynthesizedDepartures.length === 0 && filteredDepartures.length > 0) {
+      allSynthesizedDepartures = filteredDepartures.map(d => delayEngine.standardizeDeparture(d));
+    }
+
+    allSynthesizedDepartures.sort((a, b) => {
+      if (a.isToday !== b.isToday) {
+        return a.isToday ? -1 : 1;
+      }
+      return (a.minutesAway || 0) - (b.minutesAway || 0);
+    });
+
+    const seenDepKeys = new Set();
+    const finalDepartures = [];
+    for (const dep of allSynthesizedDepartures) {
+      const key = `${dep.lineId}_${dep.directionId || '0'}_${dep.departureTime}_${dep.isToday}`;
+      if (!seenDepKeys.has(key)) {
+        seenDepKeys.add(key);
+        finalDepartures.push(dep);
+      }
     }
 
     return {
@@ -891,15 +786,34 @@ class MataroTracker {
     }
 
     const sId = String(chosenStop.id);
-    const stopDepartures = await this.getStopDepartures(sId, lId);
+    const stopDepartures = await this.getStopDepartures(sId, lId, String(dirIdx));
     const deps = stopDepartures.departures || [];
     const nextBus = deps.length > 0 ? deps[0] : null;
 
-    const tomorrow = new Date(Date.now() + 24 * 3600 * 1000);
-    const netTomorrow = timeUtils.getNetworkTime(this.agencyTimezone, tomorrow);
-    const dayType = (netTomorrow.dayOfWeek >= 1 && netTomorrow.dayOfWeek <= 5) ? 'weekday' : (netTomorrow.dayOfWeek === 6 ? 'saturday' : 'sunday');
-    const lineSched = this.getScheduleForLine(lId, selectedRoute?.id, dayType);
-    const firstTimeTomorrow = nextBus?.departureTime || lineSched.inicio;
+    const now = new Date();
+    const tomorrow = new Date(now.getTime() + 24 * 3600 * 1000);
+    const dateCompTomorrow = calendarEngine.getDateComponents(tomorrow, this.agencyTimezone);
+    const dayTypeTomorrow = dateCompTomorrow.isSunday ? 'sunday' : (dateCompTomorrow.isSaturday ? 'saturday' : 'weekday');
+
+    const dirSchedTomorrow = mataroSchedules.getDirectionSchedule(lId, selectedRoute?.id || String(dirIdx), dayTypeTomorrow);
+    const stopTravelSec = mataroSchedules.getStopTravelTime(lId, selectedRoute?.id || String(dirIdx), sId);
+
+    let firstTimeTomorrow = '06:30';
+    if (dirSchedTomorrow && dirSchedTomorrow.firstTrip) {
+      if (stopTravelSec > 0) {
+        const [hStr, mStr] = dirSchedTomorrow.firstTrip.split(':');
+        const passSec = parseInt(hStr, 10) * 3600 + parseInt(mStr, 10) * 60 + stopTravelSec;
+        const passH = Math.floor(passSec / 3600) % 24;
+        const passM = Math.floor((passSec % 3600) / 60);
+        firstTimeTomorrow = `${String(passH).padStart(2, '0')}:${String(passM).padStart(2, '0')}`;
+      } else {
+        firstTimeTomorrow = dirSchedTomorrow.firstTrip;
+      }
+    }
+
+    const isOperating = deps.some(d => d.isRealTime || d.isEstimated);
+    const dateCompNow = calendarEngine.getDateComponents(now, this.agencyTimezone);
+    const isNight = dateCompNow.hour >= 22 || dateCompNow.hour < 6;
 
     return {
       line: {
@@ -922,10 +836,12 @@ class MataroTracker {
       nextBus,
       upcomingDepartures: deps,
       serviceStatus: {
-        isOperating: deps.some(d => d.isRealTime || d.isEstimated),
-        period: (new Date().getHours() >= 22 || new Date().getHours() < 6) ? 'night' : 'day',
+        isOperating,
+        period: isNight ? 'night' : 'day',
         firstServiceTomorrow: firstTimeTomorrow,
-        statusText: deps.some(d => d.isRealTime || d.isEstimated) ? 'Servei en funcionament' : `Servei fora d'horari • Represa demà a les ${firstTimeTomorrow}`
+        statusText: isOperating 
+          ? 'Servei en funcionament' 
+          : (nextBus ? `Servei programat • Proper servei a les ${nextBus.departureTime}` : `Servei fora d'horari • Represa demà a les ${firstTimeTomorrow}`)
       }
     };
   }

@@ -1,149 +1,56 @@
-# Project: Bus Tracker Deduplication, Standardization & Best Practices
+# Project: Mataró Bus Authoritative Timetable Integration & Universal Schedule Synthesizer
 
 ## Architecture
-The system transitions from siloed, duplicative tracker modules to a layered, modular transit architecture with a shared transit core:
-
-```
-[Upstream Transit APIs & Feeds]
-  │ (AMB REST, Mataró SIRI SOAP, Mou-te REST/GTFS, Moventis SAE, Sagalés JSON, Rodalies GTFS)
-  ▼
-[Upstream Clients: src/clients/]
-  │ (ambClient, mataroSiriClient, mouteClient, moventisClient, sagalesClient)
-  ▼
-[Shared Transit Core: src/core/]
-  ├── geo/geoEngine.js            (snapping, bearing, haversine, polyline distance, polyline decode)
-  ├── time/timeEngine.js          (Europe/Madrid timezone conversion, network time, seconds/ISO utils)
-  ├── time/calendarEngine.js      (day-type detection, GTFS calendar & calendar_dates service validation)
-  ├── schedule/scheduleSynthesizer.js (timetable generation, stop sequence interpolation, travel times)
-  ├── schedule/delayEngine.js     (canonical delay status, badges, formatted comparison strings)
-  ├── BaseTracker.js              (abstract tracker: both-directions merge, checkpoints, deduplication)
-  └── TrackerRegistry.js          (polymorphic line resolution & operator dispatcher)
-  ▼
-[Standardized Trackers: src/]
-  │ (corridorTracker, mataroTracker, maresmeTracker, sagalesTracker, ambTracker, rodaliesTracker, cataloniaTracker)
-  ▼
-[Background Services & Telemetry: src/]
-  │ (ingestionDaemon, flightRecorder, historyDb, reportCacheService, routeCacheService)
-  ▼
-[Unified Server APIs: server.js]
-  │ (/api/lines, /api/line/:lineId, /api/line/:lineId/vehicles, /api/vehicles, /api/line/:lineId/target-eta,
-  │  /api/line/:lineId/stop/:stopId/departures, /api/retards/*, /api/analytics/*)
-  ▼
-[Frontend Web Client: public/]
-  │ (Canvas polyline renderer, inactive tab deep-sleep, vehicle glider with hysteresis, 8-entry LRU cache)
-```
+The transit intelligence engine provides unified multi-operator bus and rail schedules across Catalonia. The architecture consists of:
+1. **Core Schedule Engine (`src/core/schedule/`)**:
+   - `scheduleSynthesizer.js`: Compiles passing timetables from base origin departure matrices, calculates stop travel times, and merges live telemetry with scheduled departures.
+   - `delayEngine.js`: Enforces canonical delay status, midnight rollover, and API contract standardization.
+   - `calendarEngine.js`: Resolves active service profiles across Weekdays, Saturdays, and Sundays/Holidays.
+2. **Operator Trackers (`src/`)**:
+   - `mataroTracker.js`: Urban transit for Mataró Bus lines 1–8 (CTSA/Avanza).
+   - `maresmeTracker.js`, `corridorTracker.js`, `sagalesTracker.js`, `ambTracker.js`, `cataloniaTracker.js`, `rodaliesTracker.js`: Interurban and regional operators.
+3. **Static Datasets (`data/cities/mataro/`, `src/data/`)**:
+   - Authoritative timetable matrices, stop sequences, and route geometries.
 
 ## Feature Inventory
 | # | Feature | Description | Milestone | Source |
 |---|---------|-------------|-----------|--------|
-| 1 | Geometric & Polyline Math Engine | Centralize Haversine, bearing, dot-product point-to-segment projection (`snapPointToPolyline`), cumulative polyline distances, and Google polyline decoding. | M1 | Survey / R1 |
-| 2 | Time & Calendar Engine | Standardize `Europe/Madrid` timezone handling, day-type detection (weekday, saturday, sunday, holiday, august), and GTFS calendar/calendar_dates exception validation. | M1 | Survey / R1 |
-| 3 | Schedule Interpolation & Delay Engine | Unify synthetic departure generation, stop-to-stop cumulative travel-time interpolation with dwell times, and standardized delay badge/status computation. | M1 | Survey / R1 |
-| 4 | BaseTracker Abstract Class | Provide shared implementation for `direction === 'both'` aggregation, bus deduplication, stop checkpoint building, and service status synthesis. | M1 | Survey / R1 |
-| 5 | Tracker Registry | Centralize line routing, provider detection, and uniform line dispatching across all 7 operators. | M1 | Survey / R1 |
-| 6 | Refactor Corridor (C-10) Tracker | Refactor `src/corridorTracker.js` to consume `src/core/` and eliminate duplicate geometric, time, and schedule routines. | M2 | Survey / R1 |
-| 7 | Refactor Mataró Urban Tracker | Refactor `src/mataroTracker.js` to consume `src/core/` and eliminate duplicate snapping, polyline math, and travel time estimation. | M2 | Survey / R1 |
-| 8 | Refactor Moventis Maresme Tracker | Refactor `src/maresmeTracker.js` to consume `src/core/` and eliminate duplicate bus interpolation and departure synthesis. | M2 | Survey / R1 |
-| 9 | Refactor Sagalés Tracker | Refactor `src/sagalesTracker.js` to consume `src/core/` and eliminate embedded polyline decoding and schedule duplication. | M2 | Survey / R1 |
-| 10 | Refactor AMB & Rodalies Trackers | Refactor `src/ambTracker.js` and `src/rodaliesTracker.js` to consume `src/core/` for stop travel time and delay evaluation. | M2 | Survey / R1 |
-| 11 | Refactor Catalonia Tracker | Refactor `src/cataloniaTracker.js` to consume `src/core/` for calendar filtering and date components. | M2 | Survey / R1 |
-| 12 | Standardized Live Vehicles API | Add `/api/line/:lineId/vehicles` and `/api/vehicles` returning unified vehicle schema with dual-cased compatibility fields. | M3 | Survey / R2 |
-| 13 | Standardized Stop Departures API | Ensure `/api/line/:lineId/stop/:stopId/departures` returns uniform schema with `stop` object, `departures` array, and dual-field delays. | M3 | Survey / R2 |
-| 14 | Standardized Target ETA API | Ensure `/api/line/:lineId/target-eta` returns uniform schema with flat + nested coords, `nextBus`, `upcomingDepartures`, `calendarInfo`, `serviceStatus`. | M3 | Survey / R2 |
-| 15 | Standardized Delays & Analytics API | Provide `/api/retards/*` routes mirroring `/api/analytics/*` with uniform journalism report schemas. | M3 | Survey / R2 |
-| 16 | Frontend Performance & Compatibility | Preserve Canvas rendering, Page Visibility deep sleep, LRU cache, audio chimes, and smooth glider with zero breaking changes. | M3 | Survey / R3 |
-| 17 | Comprehensive BEST_PRACTICES.md | Author production-grade developer guide with data models, tracker lifecycle, contribution rules, day-type rules, memory rules, and testing specs. | M4 | Survey / R4 |
-| 18 | Multi-Tier Automated Verification | Expand `test/verification_test.js` to cover all 7 tracker families, all endpoints, 4 testing tiers, and recursive syntax validation across all 28+ JS files. | M5 | Survey / R3 |
+| F1 | Mataró Bus Lines 1–8 Authoritative Departure Matrices | Exact CTSA/Avanza timetable trips per line, direction, and calendar day (Feiners, Dissabtes, Diumenges i Festius). | M1 | ORIGINAL_REQUEST §R2 |
+| F2 | Stop-by-stop Cumulative Run Times | Accurate run times based on route distance and topography for all lines. | M1 | ORIGINAL_REQUEST §R2 |
+| F3 | Line 8 & Line 6 Weekend Constraints | Afternoon-only schedule logic (e.g. Line 8 weekend start at 14:04, Line 6 Sunday start at 14:00). | M1 | ORIGINAL_REQUEST §R2 |
+| F4 | Universal Schedule Synthesizer Enhancement | Native `scheduledDepartures: string[]` input, SIRI/GPS merging, and next-morning resumption. | M2 | ORIGINAL_REQUEST §R3 |
+| F5 | Elimination of 30-Minute/Headway Loops in Mataró Tracker | Remove `depSec += headwaySec` loops and wire exact schedule synthesizer. | M3 | ORIGINAL_REQUEST §R1 |
+| F6 | Interurban & Operator Trackers Audit | Verify non-synthetic departure handling in Maresme, Sagalés, AMB, and Catalonia trackers. | M3 | ORIGINAL_REQUEST §R1 |
+| F7 | Dedicated Timetable Accuracy Test Suite | Assert non-uniform headway sequences, exact first/last trip times, and boundary conditions. | M4 | ORIGINAL_REQUEST §R4 |
+| F8 | Regression Prevention & 100% Test Pass | Full pass across verification_test.js, core_transit_modules_test.js, m3_smoke_test.js, and API endpoints. | M4 | ORIGINAL_REQUEST §R4 |
 
 ## Milestones
 | # | Name | Scope | Dependencies | Status |
 |---|------|-------|-------------|--------|
-| 1 | Shared Transit Core Modules | Implement `src/core/geo/geoEngine.js`, `src/core/time/timeEngine.js`, `src/core/time/calendarEngine.js`, `src/core/schedule/scheduleSynthesizer.js`, `src/core/schedule/delayEngine.js`, `src/core/BaseTracker.js`, `src/core/TrackerRegistry.js`. Maintain backward compatibility in `src/geoUtils.js` and `src/timeUtils.js`. | none | DONE |
-| 2 | Tracker Consolidation & Refactoring | Refactor `src/corridorTracker.js`, `src/mataroTracker.js`, `src/maresmeTracker.js`, `src/sagalesTracker.js`, `src/ambTracker.js`, `src/rodaliesTracker.js`, `src/cataloniaTracker.js` to inherit/use `src/core/`. | M1 | DONE |
-| 3 | API Centralization & Route Harmonization | Update `server.js` with canonical endpoints (`/api/line/:lineId/vehicles`, `/api/vehicles`, `/api/retards/*`), uniform JSON response formatting, and verified frontend compatibility. | M2 | DONE |
-| 4 | Authoritative BEST_PRACTICES.md | Create production-grade `BEST_PRACTICES.md` at repository root with data structures, lifecycle rules, contribution guide, and testing requirements. | M1, M2, M3 | DONE |
-| 5 | Comprehensive Verification & Test Pass | Expand `test/verification_test.js` to assert unified contracts across all 7 tracker families, run recursive syntax checks across all 28+ JS files, and verify 100% test pass. | M1, M2, M3, M4 | DONE |
+| M1 | Authoritative Timetable Ingestion | Ingest `mataro_authoritative_schedules.json` into static data module with run times & direction mapping | none | PLANNED |
+| M2 | Universal Schedule Synthesizer Enhancement | Refactor `src/core/schedule/scheduleSynthesizer.js` to support exact departures & live merging | none | PLANNED |
+| M3 | Mataró Tracker & Operator Integration | Integrate authoritative timetables into `mataroTracker.js`, remove headway loops, audit all trackers | M1, M2 | PLANNED |
+| M4 | E2E Testing Suite & Regression Verification | Implement `test/mataro_timetable_accuracy_test.js`, integrate with `test/verification_test.js`, pass 100% | M3 | PLANNED |
+| M5 | Final Milestone: Challenger & Forensic Audit | Adversarial verification, forensic integrity audit, 100% test coverage validation | M4 | PLANNED |
 
 ## Interface Contracts
+### `src/core/schedule/scheduleSynthesizer.js`
+- `compileStopDepartures(options)`:
+  - Input: `{ baseDeparturesToday: string[], baseDeparturesTomorrow: string[], stopTravelSec: number, liveDepartures: Array, limit: number, serviceStartSec: number, serviceEndSec: number, dateObj: Date }`
+  - Output: `Array<{ time: string, isRealTime: boolean, isToday: boolean, isNextService?: boolean, isFirstOfDay?: boolean, delayMinutes?: number, delayMins?: number, delayStatus?: string, badgeText?: string, ... }>`
+- `synthesizeDeparturesFromBaseTimes(baseDepartureTimes, stopTravelSec, options)`:
+  - Invariant: Exact non-uniform passing times calculated as `originTime + stopTravelSec`.
 
-### `src/core/geo/geoEngine.js`
-- `calculateDistanceMeters(lat1, lon1, lat2, lon2): number`
-- `calculateBearing(lat1, lon1, lat2, lon2): number`
-- `getCompassDirection(bearing): { code: string, label: string }`
-- `snapPointToPolyline(lat, lon, polyCoords): { lat: number, lon: number, index: number, bearing: number, dist: number }`
-- `calculatePolylineDistanceBetween(polyCoords, lat1, lon1, lat2, lon2): number`
-- `calculateRouteTotalDistance(polyCoords): number`
-- `extrapolatePolylinePosition(currentPos, elapsedSec, speedKmh, polyCoords): { lat: number, lon: number, bearing: number, progress: number }`
-- `decodePolyline(encodedString): Array<{ lat: number, lon: number }>`
-
-### `src/core/time/timeEngine.js` & `src/core/time/calendarEngine.js`
-- `getDateComponents(dateObj, timezone?): { dateStr: string, year: number, month: number, day: number, dayOfWeek: number, hour: number, minute: number, second: number, isWeekend: boolean, isSunday: boolean, isSaturday: boolean, isWeekday: boolean, isAugust: boolean }`
-- `formatTimeToTimezone(isoOrDate, timezone?): string` (HH:MM or '--:--')
-- `timeStringToMinutes(timeStr): number`
-- `minutesToTimeString(minutes): string`
-- `isServiceActiveOnDate(calendar, calendarExceptions, dateStr, dayOfWeek): boolean`
-
-### `src/core/schedule/scheduleSynthesizer.js` & `src/core/schedule/delayEngine.js`
-- `estimateStopTravelTimes(stops, polyCoords, avgSpeedKmh, dwellSecPerStop): Array<{ stopId: string, cumulativeMeters: number, travelSec: number }>`
-- `interpolateStopArrivals(baseTripDepartureSec, stopTravelTimes, dateObj): Array<Departure>`
-- `computeDelayStatus(delayMinutes, isRealTime): { delayStatus: 'on_time' | 'delayed' | 'early' | 'scheduled', delayBadgeText: string, comparisonText: string, formattedStatus: string }`
-
-### `src/core/BaseTracker.js`
-- Abstract methods: `fetchLiveVehicles(lineId)`, `fetchStopArrivals(stopId, lineId, direction)`, `getRawLineData(lineId, direction)`
-- Standard methods: `getLineDetails(lineId, direction)`, `handleBothDirections(lineId)`, `deduplicateBuses(buses)`, `buildCheckpoints(stops, activeBuses)`, `buildServiceStatus(calendarInfo, departures)`
+### `src/mataroTracker.js`
+- `getStopDepartures(lineId, stopId, directionId, options)`:
+  - Must return authentic scheduled trips when no live bus is approaching, with non-uniform intervals reflecting official timetable.
+- `getTargetStopETA(lineId, targetStopId, userStopId, directionId)`:
+  - Must use exact official timetable departures for next trip and next morning resumption.
 
 ## Code Layout
-```
-h:/Coding/C10Data/
-├── BEST_PRACTICES.md          # Authoritative developer best practices guide
-├── PROJECT.md                 # Project architecture, inventory, milestones & contracts
-├── TEST_INFRA.md              # Opaque-box E2E test infra & four-tier coverage matrix
-├── package.json               # Scripts & dependencies
-├── server.js                  # Express API server & route handlers
-├── src/
-│   ├── core/
-│   │   ├── BaseTracker.js
-│   │   ├── TrackerRegistry.js
-│   │   ├── geo/
-│   │   │   └── geoEngine.js
-│   │   ├── time/
-│   │   │   ├── timeEngine.js
-│   │   │   └── calendarEngine.js
-│   │   └── schedule/
-│   │       ├── scheduleSynthesizer.js
-│   │       └── delayEngine.js
-│   ├── clients/
-│   │   ├── ambClient.js
-│   │   ├── mataroSiriClient.js
-│   │   ├── mouteClient.js
-│   │   ├── moventisClient.js
-│   │   └── sagalesClient.js
-│   ├── ambTracker.js
-│   ├── cataloniaIndexer.js
-│   ├── cataloniaTracker.js
-│   ├── corridorTracker.js
-│   ├── flightRecorder.js
-│   ├── geoUtils.js            # Backward compatibility re-export
-│   ├── historyDb.js
-│   ├── ingestionDaemon.js
-│   ├── maresmeTracker.js
-│   ├── mataroTracker.js
-│   ├── reportCacheService.js
-│   ├── rodaliesTracker.js
-│   ├── routeCacheService.js
-│   ├── sagalesTracker.js
-│   └── timeUtils.js           # Backward compatibility re-export
-├── public/
-│   ├── index.html
-│   ├── css/
-│   │   └── style.css
-│   └── js/
-│       ├── app.js
-│       └── map.js
-└── test/
-    ├── verification_test.js
-    ├── e2e_multiline_test.js
-    ├── e2e_flight_recorder_test.js
-    ├── api_test.js
-    └── benchmark_lanes.js
-```
+- `src/core/schedule/scheduleSynthesizer.js`: Schedule synthesis engine.
+- `src/core/schedule/delayEngine.js`: Delay and schema standardization.
+- `src/data/mataro_schedules.json`: Official CTSA/Avanza timetable dataset for Mataró Bus lines 1–8.
+- `src/mataroTracker.js`: Mataró Bus tracker implementation.
+- `test/mataro_timetable_accuracy_test.js`: Dedicated timetable accuracy verification suite.
+- `test/verification_test.js`: Master verification test runner.

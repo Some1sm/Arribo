@@ -298,6 +298,97 @@ async function runTests() {
   assert.strictEqual(standardized.isRealtime, true);
   assert.strictEqual(standardized.delayStatus, 'delayed');
 
+  // =========================================================================
+  // compileStopDepartures & Universal Synthesizer Enhancement Tests
+  // =========================================================================
+  console.log('   - Testing compileStopDepartures with exact timetables & live merging...');
+
+  // 1. Exact Timetable Passing Calculation & Options Object Signature
+  const exactDepartures = scheduleSynthesizer.synthesizeDeparturesFromBaseTimes({
+    scheduledDepartures: ['07:05', '07:22', '07:48'],
+    stopTravelSec: 180, // +3 min
+    targetDate: '2026-08-21T07:00:00+02:00',
+    minMinutesAway: -5
+  });
+  assert.strictEqual(exactDepartures.length, 3);
+  assert.strictEqual(exactDepartures[0].departureTime, '07:08');
+  assert.strictEqual(exactDepartures[0].time, '07:08');
+  assert.strictEqual(exactDepartures[1].departureTime, '07:25');
+  assert.strictEqual(exactDepartures[2].departureTime, '07:51');
+
+  // 2. compileStopDepartures: Live SIRI merging with +-3 minute duplicate suppression
+  const compiledWithLive = scheduleSynthesizer.compileStopDepartures({
+    baseDeparturesToday: ['07:05', '07:22', '07:48'], // passing times at stop: 07:08, 07:25, 07:51
+    baseDeparturesTomorrow: ['05:30', '06:00'],
+    stopTravelSec: 180,
+    liveDepartures: [
+      {
+        lineId: 'L1',
+        departureTime: '07:24', // Live bus arriving at 07:24 (matches scheduled 07:25 within +-1 min)
+        minutesAway: 4,
+        isRealTime: true,
+        vehicleId: 'BUS-42'
+      }
+    ],
+    dateObj: '2026-08-21T07:20:00+02:00',
+    minMinutesAway: -5,
+    limit: 10
+  });
+
+  // Scheduled 07:25 must be suppressed because live bus at 07:24 covers it
+  assert(compiledWithLive.length >= 2, `Expected at least 2 departures, got ${compiledWithLive.length}`);
+  const liveDep = compiledWithLive.find(d => d.isRealTime);
+  assert(liveDep, 'Must contain real-time departure');
+  assert.strictEqual(liveDep.departureTime, '07:24');
+  assert.strictEqual(liveDep.vehicleId, 'BUS-42');
+
+  // Check that duplicate 07:25 is NOT present as a separate scheduled departure
+  const duplicateSched = compiledWithLive.find(d => !d.isRealTime && d.departureTime === '07:25');
+  assert.strictEqual(duplicateSched, undefined, 'Duplicate scheduled departure at 07:25 must be suppressed');
+
+  // Non-duplicate scheduled departure at 07:51 must be present
+  const futureSched = compiledWithLive.find(d => !d.isRealTime && d.departureTime === '07:51');
+  assert(futureSched, 'Non-duplicate scheduled trip at 07:51 must be preserved');
+  assert.strictEqual(futureSched.isRealTime, false);
+  assert.strictEqual(futureSched.isToday, true);
+
+  // 3. compileStopDepartures: Overnight Next-Morning First Service Resumption
+  const compiledOvernight = scheduleSynthesizer.compileStopDepartures({
+    baseDeparturesToday: ['06:00', '07:00'], // Already passed at 23:45
+    baseDeparturesTomorrow: ['05:15', '05:45', '06:15'],
+    stopTravelSec: 300, // +5 min -> passing times: 05:20, 05:50, 06:20
+    liveDepartures: [],
+    dateObj: '2026-08-21T23:45:00+02:00',
+    minMinutesAway: 0,
+    limit: 5
+  });
+
+  assert(compiledOvernight.length >= 3, `Expected at least 3 overnight departures, got ${compiledOvernight.length}`);
+  assert.strictEqual(compiledOvernight[0].departureTime, '05:20');
+  assert.strictEqual(compiledOvernight[0].isToday, false);
+  assert.strictEqual(compiledOvernight[0].isFirstOfDay, true);
+  assert.strictEqual(compiledOvernight[0].isNextService, true);
+  assert.strictEqual(compiledOvernight[0].delayBadgeText, '🌅 1r Servei del matí');
+  assert.strictEqual(compiledOvernight[0].badgeText, '🌅 1r Servei del matí');
+
+  assert.strictEqual(compiledOvernight[1].departureTime, '05:50');
+  assert.strictEqual(compiledOvernight[1].isToday, false);
+  assert.strictEqual(compiledOvernight[1].isFirstOfDay, false);
+  assert.strictEqual(compiledOvernight[1].isNextService, false);
+  assert.strictEqual(compiledOvernight[1].delayBadgeText, 'Programat');
+
+  // 4. Rail Overnight Next-Morning Resumption
+  const compiledOvernightRail = scheduleSynthesizer.compileStopDepartures({
+    baseDeparturesToday: [],
+    baseDeparturesTomorrow: ['06:05'],
+    stopTravelSec: 0,
+    liveDepartures: [],
+    isTrain: true,
+    dateObj: '2026-08-21T23:50:00+02:00'
+  });
+  assert.strictEqual(compiledOvernightRail[0].delayBadgeText, '🌅 1r Tren del matí');
+  assert.strictEqual(compiledOvernightRail[0].isTrain, true);
+
   console.log('✅ Schedule Synthesizer & Delay Engine verified.');
 
   // =========================================================================

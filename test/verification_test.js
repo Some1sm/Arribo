@@ -4,6 +4,7 @@ const siriClient = require('../src/mataroSiriClient');
 const historyDb = require('../src/historyDb');
 const flightRecorder = require('../src/flightRecorder');
 const timeUtils = require('../src/timeUtils');
+const { runMataroTimetableAccuracyTests } = require('./mataro_timetable_accuracy_test');
 
 async function verifyAll() {
   console.log('🔍 Running Dedicated Verification Tests...');
@@ -69,6 +70,12 @@ async function verifyAll() {
   console.log(`   - Delayed Lines in Ranking: ${report.rankingMostDelayed.length}`);
   console.log(`   - Worst Stops in Ranking: ${report.rankingWorstStops.length}`);
   console.log(`   - Agencies Reported: ${report.agencyStats.length}`);
+
+  // 6. Mataró Timetable Accuracy & Universal Synthesizer Master Suite
+  console.log('\n6. Testing Mataró Bus Timetable Accuracy & E2E Suite (Tiers 1–4)...');
+  const accuracyResult = await runMataroTimetableAccuracyTests();
+  assert(accuracyResult && accuracyResult.success, 'Timetable accuracy test suite must succeed');
+  console.log(`✅ Mataró Timetable Accuracy & E2E Suite verified (${accuracyResult.totalAssertions} assertions passed).`);
 
   console.log('\n🎉 ALL VERIFICATION CHECKS PASSED PERFECTLY! 🎉\n');
 }

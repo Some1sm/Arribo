@@ -1,40 +1,31 @@
-# E2E Test Infra: Bus Tracker Deduplication & Standardization
+# E2E Test Infra: Mataró Bus Timetable & Synthesizer Verification
 
 ## Test Philosophy
-- Requirement-driven, multi-tier verification covering all 7 transit operators (C-10, Mataró L1-L8, AMB 243 lines, Moventis Maresme 11 lines, Sagalés, Catalonia Mou-te 1,610 routes, Rodalies).
-- Zero breaking changes for frontend consumers (`public/js/app.js`, `public/js/map.js`).
-- Methodology: 4-Tier Verification (Feature Coverage, Boundary/Corner, Cross-Feature Combinations, Real-World Scenarios) + Platform-Independent Recursive Syntax Checks.
+- Opaque-box, requirement-driven testing. Derived directly from `ORIGINAL_REQUEST.md`.
+- Verifies that no synthetic uniform intervals (e.g. constant 30-minute steps) exist.
+- Validates authentic CTSA/Avanza timetable departures for lines 1–8 across Weekdays, Saturdays, and Sundays/Holidays.
 
 ## Feature Inventory
-| # | Feature | Source (requirement) | Tier 1 | Tier 2 | Tier 3 | Tier 4 |
-|---|---------|---------------------|:------:|:------:|:------:|:------:|
-| 1 | Geometric & Polyline Math | ORIGINAL_REQUEST §R1 | 5 | 5 | ✓ | ✓ |
-| 2 | Timezone & Calendar Math | ORIGINAL_REQUEST §R1 | 5 | 5 | ✓ | ✓ |
-| 3 | Schedule Interpolation & Delay Engine | ORIGINAL_REQUEST §R1 | 5 | 5 | ✓ | ✓ |
-| 4 | BaseTracker & Tracker Registry | ORIGINAL_REQUEST §R1 | 5 | 5 | ✓ | ✓ |
-| 5 | Live Vehicles API (`/api/line/:lineId/vehicles`, `/api/vehicles`) | ORIGINAL_REQUEST §R2 | 5 | 5 | ✓ | ✓ |
-| 6 | Stop Departures API (`/api/line/:lineId/stop/:stopId/departures`) | ORIGINAL_REQUEST §R2 | 5 | 5 | ✓ | ✓ |
-| 7 | Target ETA API (`/api/line/:lineId/target-eta`) | ORIGINAL_REQUEST §R2 | 5 | 5 | ✓ | ✓ |
-| 8 | Lines Catalog & Route Details (`/api/lines`, `/api/line/:lineId`) | ORIGINAL_REQUEST §R2 | 5 | 5 | ✓ | ✓ |
-| 9 | Delay Analytics & Journalism (`/api/retards/*`, `/api/analytics/*`) | ORIGINAL_REQUEST §R2 | 5 | 5 | ✓ | ✓ |
-| 10 | Frontend Contracts & Performance Safeguards | ORIGINAL_REQUEST §R3 | 5 | 5 | ✓ | ✓ |
+| # | Feature | Source (requirement) | Tier 1 | Tier 2 | Tier 3 |
+|---|---------|---------------------|:------:|:------:|:------:|
+| 1 | L1–L8 Weekday Departure Accuracy | ORIGINAL_REQUEST §R2 | 5 | 5 | ✓ |
+| 2 | L1–L8 Saturday Departure Accuracy | ORIGINAL_REQUEST §R2 | 5 | 5 | ✓ |
+| 3 | L1–L8 Sunday/Holiday Departure Accuracy | ORIGINAL_REQUEST §R2 | 5 | 5 | ✓ |
+| 4 | Line 8 Afternoon-Only Constraint (14:04+) | ORIGINAL_REQUEST §R2, Acceptance Criteria | 5 | 5 | ✓ |
+| 5 | Line 6 Sunday Afternoon-Only Constraint | ORIGINAL_REQUEST §R2 | 5 | 5 | ✓ |
+| 6 | Stop-by-stop Run Times & Monotonicity | ORIGINAL_REQUEST §R2 | 5 | 5 | ✓ |
+| 7 | Next Morning Resumption First Service | ORIGINAL_REQUEST §R3, Acceptance Criteria | 5 | 5 | ✓ |
+| 8 | Universal Synthesizer Live-to-Scheduled Transition | ORIGINAL_REQUEST §R3 | 5 | 5 | ✓ |
 
 ## Test Architecture
-- **Test Runner**: Node.js native (`node test/verification_test.js`, `npm test`).
-- **Pass/Fail Semantics**: 100% assertions pass with zero errors, process exit code 0.
-- **Syntax Validator**: Recursive `vm.Script` compiler validating all 28+ JS files across backend, frontend, and tests.
+- Test runner: `node test/mataro_timetable_accuracy_test.js` and `node test/verification_test.js`
+- Test case tiers:
+  - Tier 1: Feature Coverage (Exact non-uniform departure arrays for all 8 lines across all 3 day types).
+  - Tier 2: Boundary & Corner Cases (Line 8 morning query returns next service at 14:04, late night midnight transitions, first/last trips).
+  - Tier 3: Cross-Feature (Synthesizer live SIRI merge with schedule array, duplicate arrival suppression).
+  - Tier 4: Real-World Scenarios (Full day simulation for passenger querying stop 100 at 06:00, 14:00, and 23:30).
 
-## Real-World Application Scenarios (Tier 4)
-| # | Scenario | Features Exercised | Complexity |
-|---|----------|--------------------|------------|
-| 1 | Full 24-hour day schedule lifecycle & morning first-service rollover | F2, F3, F6, F7 | High |
-| 2 | Multi-operator rapid switching with 8-entry LRU route cache | F4, F8, F10 | Medium |
-| 3 | Inactive tab deep-sleep pause and rapid wake-up batch refresh | F5, F7, F10 | Medium |
-| 4 | High-density multi-vehicle tracking with HTML5 Canvas renderer & smooth glider | F1, F5, F10 | High |
-| 5 | Journalism report generation across 125,000+ delay logs | F9, F10 | Medium |
-
-## Coverage Thresholds
-- Tier 1: ≥5 test cases per feature (50+ assertions).
-- Tier 2: ≥5 boundary/corner test cases per feature (50+ assertions).
-- Tier 3: Pairwise cross-feature interactions across all 7 operators.
-- Tier 4: ≥5 realistic end-to-end user scenarios.
+## Pass Semantics
+- All tests must exit with code 0.
+- Standard deviation of inter-departure intervals for peak/off-peak schedules must be non-zero (proving non-synthetic schedule).
+- Line 8 Sunday departures must strictly match official array: `['14:04', '15:08', '16:12', '17:16', '18:20', '19:26', '20:32', '21:35']`.

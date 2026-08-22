@@ -8,6 +8,7 @@
 
 const timeEngine = require('../time/timeEngine');
 const geoEngine = require('../geo/geoEngine');
+const delayEngine = require('./delayEngine');
 
 /**
  * Estimates cumulative travel distance and duration along a sequence of stops.
@@ -103,30 +104,50 @@ function getTravelTimeToStop(stopTravelTimes = [], stopIdentifier) {
 
 /**
  * Synthesizes departures at a stop from base route departure times.
+ * Supports exact departure arrays (`scheduledDepartures: string[]` or `baseDepartureTimes: string[]`).
  * 
- * @param {Array<string|object>} baseDepartureTimes - e.g. ['06:00', '06:30']
- * @param {number} [stopTravelSec=0] - Cumulative seconds from route start
+ * @param {Array<string|object>|object} baseDepartureTimes - e.g. ['06:00', '06:30'] or options object
+ * @param {number|object} [stopTravelSec=0] - Cumulative seconds from route start
  * @param {object} [options={}]
  * @returns {Array<object>}
  */
 function synthesizeDeparturesFromBaseTimes(baseDepartureTimes = [], stopTravelSec = 0, options = {}) {
-  const timezone = options.timezone || 'Europe/Madrid';
-  const targetDate = options.targetDate ? new Date(options.targetDate) : new Date();
+  let times = baseDepartureTimes;
+  let travelSec = stopTravelSec;
+  let opts = options;
+
+  if (!Array.isArray(baseDepartureTimes) && typeof baseDepartureTimes === 'object' && baseDepartureTimes !== null) {
+    opts = baseDepartureTimes;
+    times = opts.scheduledDepartures || opts.baseDepartureTimes || opts.baseDepartures || [];
+    travelSec = opts.stopTravelSec || 0;
+  } else if (Array.isArray(baseDepartureTimes) && typeof stopTravelSec === 'object' && stopTravelSec !== null) {
+    opts = stopTravelSec;
+    travelSec = opts.stopTravelSec || 0;
+  } else if (typeof travelSec !== 'number') {
+    travelSec = Number(travelSec) || 0;
+  }
+
+  const timezone = opts.timezone || 'Europe/Madrid';
+  const targetDate = opts.targetDate ? new Date(opts.targetDate) : (opts.dateObj ? new Date(opts.dateObj) : new Date());
   const netNow = timeEngine.getNetworkTime(timezone, targetDate);
   const nowMs = targetDate.getTime();
 
-  const minMinutesAway = options.minMinutesAway !== undefined ? options.minMinutesAway : -5;
-  const maxMinutesAway = options.maxMinutesAway !== undefined ? options.maxMinutesAway : 240;
-  const onlyUpcoming = options.onlyUpcoming !== false;
+  const minMinutesAway = opts.minMinutesAway !== undefined ? opts.minMinutesAway : -5;
+  const maxMinutesAway = opts.maxMinutesAway !== undefined ? opts.maxMinutesAway : 240;
+  const onlyUpcoming = opts.onlyUpcoming !== false;
 
   const departures = [];
 
-  for (const item of baseDepartureTimes) {
-    const timeStr = typeof item === 'string' ? item : (item ? (item.dep || item.arr || item.time || '') : '');
+  if (!Array.isArray(times)) {
+    return departures;
+  }
+
+  for (const item of times) {
+    const timeStr = typeof item === 'string' ? item : (item ? (item.dep || item.arr || item.departureTime || item.time || '') : '');
     if (!timeStr) continue;
 
     const baseSec = timeEngine.timeStringToSeconds(timeStr);
-    const passSec = baseSec + stopTravelSec;
+    const passSec = baseSec + travelSec;
     const passHour = Math.floor(passSec / 3600) % 24;
     const passMin = Math.floor((passSec % 3600) / 60);
     const passingTimeStr = `${String(passHour).padStart(2, '0')}:${String(passMin).padStart(2, '0')}`;
@@ -143,12 +164,13 @@ function synthesizeDeparturesFromBaseTimes(baseDepartureTimes = [], stopTravelSe
     const depIso = depUtcDate.toISOString();
 
     departures.push({
-      lineId: options.lineId || 'line',
-      lineCode: options.lineCode || options.lineId || 'BUS',
-      lineName: options.lineName || options.lineCode || 'Bus',
-      destination: options.destination || 'Destinació',
-      directionId: options.directionId !== undefined ? String(options.directionId) : '0',
+      lineId: opts.lineId || 'line',
+      lineCode: opts.lineCode || opts.lineId || 'BUS',
+      lineName: opts.lineName || opts.lineCode || 'Bus',
+      destination: opts.destination || 'Destinació',
+      directionId: opts.directionId !== undefined ? String(opts.directionId) : '0',
       departureTime: passingTimeStr,
+      time: passingTimeStr,
       departureDate: depIso,
       expectedIso: depIso,
       aimedIso: depIso,
@@ -157,6 +179,7 @@ function synthesizeDeparturesFromBaseTimes(baseDepartureTimes = [], stopTravelSe
       isRealTime: false,
       isRealtime: false,
       isEstimated: false,
+      isTrain: Boolean(opts.isTrain),
       isToday: true,
       isFirstOfDay: false,
       isNextService: false,
@@ -164,6 +187,7 @@ function synthesizeDeparturesFromBaseTimes(baseDepartureTimes = [], stopTravelSe
       delayMins: 0,
       delayStatus: 'scheduled',
       delayBadgeText: 'Horari teòric',
+      badgeText: 'Horari teòric',
       comparisonText: `Horari teòric: ${passingTimeStr}`
     });
   }
@@ -196,37 +220,52 @@ function synthesizeHeadwayDepartures(config = {}) {
 /**
  * Generates next-day first morning departures during overnight off-peak periods.
  * 
- * @param {Array<string|object>} baseDepartureTimes - Tomorrow's initial timetable
- * @param {number} [stopTravelSec=0] - Cumulative travel seconds from route origin
+ * @param {Array<string|object>|object} baseDepartureTimes - Tomorrow's initial timetable or options object
+ * @param {number|object} [stopTravelSec=0] - Cumulative travel seconds from route origin
  * @param {object} [options={}]
  * @returns {Array<object>}
  */
 function generateMorningFirstService(baseDepartureTimes = [], stopTravelSec = 0, options = {}) {
-  if (!Array.isArray(baseDepartureTimes) || baseDepartureTimes.length === 0) {
+  let times = baseDepartureTimes;
+  let travelSec = stopTravelSec;
+  let opts = options;
+
+  if (!Array.isArray(baseDepartureTimes) && typeof baseDepartureTimes === 'object' && baseDepartureTimes !== null) {
+    opts = baseDepartureTimes;
+    times = opts.scheduledDepartures || opts.baseDepartureTimes || opts.baseDeparturesTomorrow || opts.baseDepartures || [];
+    travelSec = opts.stopTravelSec || 0;
+  } else if (Array.isArray(baseDepartureTimes) && typeof stopTravelSec === 'object' && stopTravelSec !== null) {
+    opts = stopTravelSec;
+    travelSec = opts.stopTravelSec || 0;
+  } else if (typeof travelSec !== 'number') {
+    travelSec = Number(travelSec) || 0;
+  }
+
+  if (!Array.isArray(times) || times.length === 0) {
     return [];
   }
 
-  const timezone = options.timezone || 'Europe/Madrid';
-  const now = options.referenceDate ? new Date(options.referenceDate) : new Date();
-  const dayOffset = options.dayOffset !== undefined ? options.dayOffset : 1;
+  const timezone = opts.timezone || 'Europe/Madrid';
+  const now = opts.referenceDate ? new Date(opts.referenceDate) : (opts.dateObj ? new Date(opts.dateObj) : new Date());
+  const dayOffset = opts.dayOffset !== undefined ? opts.dayOffset : 1;
   const targetDate = new Date(now.getTime() + dayOffset * 86400000);
   const netTomorrow = timeEngine.getNetworkTime(timezone, targetDate);
 
-  const isTrain = Boolean(options.isTrain);
-  const badgeFirst = options.badgeTextFirst || (isTrain ? '🌅 1r Tren del matí' : '🌅 1r Servei del matí');
-  const badgeSubsequent = options.badgeTextSubsequent || 'Programat';
-  const maxCount = options.maxCount || 10;
+  const isTrain = Boolean(opts.isTrain);
+  const badgeFirst = opts.badgeTextFirst || (isTrain ? '🌅 1r Tren del matí' : '🌅 1r Servei del matí');
+  const badgeSubsequent = opts.badgeTextSubsequent || 'Programat';
+  const maxCount = opts.maxCount || 10;
 
   const departures = [];
-  const timesToUse = baseDepartureTimes.slice(0, maxCount);
+  const timesToUse = times.slice(0, maxCount);
 
   for (let idx = 0; idx < timesToUse.length; idx++) {
     const item = timesToUse[idx];
-    const timeStr = typeof item === 'string' ? item : (item ? (item.dep || item.arr || item.time || '') : '');
+    const timeStr = typeof item === 'string' ? item : (item ? (item.dep || item.arr || item.departureTime || item.time || '') : '');
     if (!timeStr) continue;
 
     const baseSec = timeEngine.timeStringToSeconds(timeStr);
-    const passSec = baseSec + stopTravelSec;
+    const passSec = baseSec + travelSec;
     const passHour = Math.floor(passSec / 3600) % 24;
     const passMin = Math.floor((passSec % 3600) / 60);
     const passingTimeStr = `${String(passHour).padStart(2, '0')}:${String(passMin).padStart(2, '0')}`;
@@ -236,14 +275,16 @@ function generateMorningFirstService(baseDepartureTimes = [], stopTravelSec = 0,
     const diffMin = Math.max(1, Math.round(diffMs / 60000));
     const isFirst = (idx === 0);
     const depIso = depUtcDate.toISOString();
+    const badge = isFirst ? badgeFirst : badgeSubsequent;
 
     departures.push({
-      lineId: options.lineId || 'line',
-      lineCode: options.lineCode || options.lineId || 'BUS',
-      lineName: options.lineName || options.lineCode || 'Bus',
-      destination: options.destination || 'Destinació',
-      directionId: options.directionId !== undefined ? String(options.directionId) : '0',
+      lineId: opts.lineId || 'line',
+      lineCode: opts.lineCode || opts.lineId || 'BUS',
+      lineName: opts.lineName || opts.lineCode || 'Bus',
+      destination: opts.destination || 'Destinació',
+      directionId: opts.directionId !== undefined ? String(opts.directionId) : '0',
       departureTime: passingTimeStr,
+      time: passingTimeStr,
       departureDate: depIso,
       expectedIso: depIso,
       aimedIso: depIso,
@@ -259,7 +300,8 @@ function generateMorningFirstService(baseDepartureTimes = [], stopTravelSec = 0,
       delayMinutes: 0,
       delayMins: 0,
       delayStatus: 'scheduled',
-      delayBadgeText: isFirst ? badgeFirst : badgeSubsequent,
+      delayBadgeText: badge,
+      badgeText: badge,
       comparisonText: isFirst 
         ? `📅 Pas teòric previst demà a les ${passingTimeStr}` 
         : `📅 Horari teòric: ${passingTimeStr}`
@@ -267,6 +309,206 @@ function generateMorningFirstService(baseDepartureTimes = [], stopTravelSec = 0,
   }
 
   return departures;
+}
+
+/**
+ * Compiles a unified stop departure schedule by merging live telemetry arrivals (SIRI/GPS/GTFS-RT)
+ * with scheduled timetable departures for today, suppressing duplicates within +-3 minutes,
+ * and appending next-morning first service departures when today's service is winding down.
+ * 
+ * @param {object} options
+ * @param {Array<string|object>} [options.baseDeparturesToday] - Origin departures for today
+ * @param {Array<string|object>} [options.baseDeparturesTomorrow] - Origin departures for tomorrow
+ * @param {number} [options.stopTravelSec=0] - Cumulative seconds from route origin to stop
+ * @param {Array<object>} [options.liveDepartures=[]] - Live real-time arrivals
+ * @param {number} [options.limit=10] - Max total departures to return
+ * @param {number} [options.minCountBeforeMorning=5] - Threshold below which tomorrow's morning trips are appended
+ * @param {number} [options.maxMorningCount=10] - Max morning trips to append
+ * @param {number} [options.duplicateWindowMinutes=3] - Window in minutes to suppress scheduled trips covered by live trips
+ * @param {number} [options.serviceStartSec] - Optional start of service day in seconds
+ * @param {number} [options.serviceEndSec] - Optional end of service day in seconds
+ * @param {Date|string|number} [options.dateObj] - Reference date
+ * @param {string} [options.timezone='Europe/Madrid'] - Agency timezone
+ * @param {string} [options.lineId] - Line ID
+ * @param {string} [options.lineCode] - Line Code
+ * @param {string} [options.lineName] - Line Name
+ * @param {string} [options.destination] - Destination name
+ * @param {string|number} [options.directionId] - Direction ID
+ * @param {boolean} [options.isTrain] - Whether mode is rail
+ * @param {number} [options.minMinutesAway=-1] - Min minutes away for scheduled items (default -1)
+ * @param {number} [options.maxMinutesAway=1440] - Max minutes away for scheduled items
+ * @returns {Array<object>} Standardized departure list matching interface contract
+ */
+function compileStopDepartures(options = {}) {
+  const timezone = options.timezone || 'Europe/Madrid';
+  const targetDate = options.dateObj ? new Date(options.dateObj) :
+    (options.targetDate ? new Date(options.targetDate) :
+    (options.referenceDate ? new Date(options.referenceDate) : new Date()));
+  const netNow = timeEngine.getNetworkTime(timezone, targetDate);
+  const nowMs = targetDate.getTime();
+  const nowMinOfDay = netNow.hour * 60 + netNow.minute;
+
+  const stopTravelSec = Number(options.stopTravelSec) || 0;
+  const limit = options.limit !== undefined ? Number(options.limit) : 10;
+  const minCountBeforeMorning = options.minCountBeforeMorning !== undefined ? Number(options.minCountBeforeMorning) : Math.min(limit, 5);
+  const maxMorningCount = options.maxMorningCount !== undefined ? Number(options.maxMorningCount) : 10;
+  const duplicateWindowMinutes = options.duplicateWindowMinutes !== undefined ? Number(options.duplicateWindowMinutes) : 3;
+  const minMinutesAway = options.minMinutesAway !== undefined ? Number(options.minMinutesAway) : -1;
+  const maxMinutesAway = options.maxMinutesAway !== undefined ? Number(options.maxMinutesAway) : 1440;
+
+  const baseToday = options.baseDeparturesToday || options.scheduledDeparturesToday || options.scheduledDepartures || options.baseDepartureTimes || [];
+  const baseTomorrow = options.baseDeparturesTomorrow || options.scheduledDeparturesTomorrow || options.tomorrowDepartures || [];
+  const rawLive = Array.isArray(options.liveDepartures) ? options.liveDepartures : [];
+
+  // 1. Process and standardize live telemetry departures
+  const liveDepartures = [];
+  const liveMinutesOfDay = [];
+
+  for (const raw of rawLive) {
+    if (!raw) continue;
+    const std = delayEngine.standardizeDeparture(raw, options);
+    std.isRealTime = true;
+    std.isRealtime = true;
+    std.isToday = true;
+    std.time = std.departureTime;
+    std.badgeText = std.delayBadgeText;
+
+    let depMin = null;
+    if (std.departureTime && std.departureTime !== '--:--' && std.departureTime.includes(':')) {
+      const [h, m] = std.departureTime.split(':').map(Number);
+      if (!isNaN(h) && !isNaN(m)) {
+        depMin = (h % 24) * 60 + (m % 60);
+      }
+    } else if (std.minutesAway !== undefined && !isNaN(Number(std.minutesAway))) {
+      depMin = (nowMinOfDay + Math.round(Number(std.minutesAway))) % 1440;
+    }
+
+    if (depMin !== null) {
+      liveMinutesOfDay.push(depMin);
+    }
+    liveDepartures.push(std);
+  }
+
+  // Helper to check circular duplicate window against live departures
+  function isDuplicateWithLive(scheduledMinOfDay) {
+    for (const liveMin of liveMinutesOfDay) {
+      let diff = Math.abs(liveMin - scheduledMinOfDay);
+      if (diff > 720) diff = 1440 - diff;
+      if (diff <= duplicateWindowMinutes) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // 2. Process today's scheduled departures
+  const scheduledTodayDepartures = [];
+  const seenTimes = new Set();
+
+  if (Array.isArray(baseToday)) {
+    for (const item of baseToday) {
+      const timeStr = typeof item === 'string' ? item : (item ? (item.dep || item.arr || item.departureTime || item.time || '') : '');
+      if (!timeStr || !timeStr.includes(':')) continue;
+
+      const baseSec = timeEngine.timeStringToSeconds(timeStr);
+
+      if (options.serviceStartSec !== undefined && baseSec < Number(options.serviceStartSec)) continue;
+      if (options.serviceEndSec !== undefined && baseSec > Number(options.serviceEndSec)) continue;
+
+      const passSec = baseSec + stopTravelSec;
+      const passHour = Math.floor(passSec / 3600) % 24;
+      const passMin = Math.floor((passSec % 3600) / 60);
+      const passingTimeStr = `${String(passHour).padStart(2, '0')}:${String(passMin).padStart(2, '0')}`;
+      const passingMinOfDay = passHour * 60 + passMin;
+
+      const depUtcDate = timeEngine.localTimeToUtcDate(netNow.year, netNow.month, netNow.day, passHour, passMin, 0, timezone);
+      const diffMs = depUtcDate.getTime() - nowMs;
+      const diffMin = Math.round(diffMs / 60000);
+
+      if (diffMin < minMinutesAway || diffMin > maxMinutesAway) {
+        continue;
+      }
+
+      if (isDuplicateWithLive(passingMinOfDay)) {
+        continue;
+      }
+
+      if (seenTimes.has(passingTimeStr)) {
+        continue;
+      }
+      seenTimes.add(passingTimeStr);
+
+      const safeDiffMin = Math.max(0, diffMin);
+      const depIso = depUtcDate.toISOString();
+
+      const schedDep = delayEngine.standardizeDeparture({
+        lineId: options.lineId || 'line',
+        lineCode: options.lineCode || options.lineId || 'BUS',
+        lineName: options.lineName || options.lineCode || 'Bus',
+        destination: options.destination || 'Destinació',
+        directionId: options.directionId !== undefined ? String(options.directionId) : '0',
+        departureTime: passingTimeStr,
+        time: passingTimeStr,
+        departureDate: depIso,
+        expectedIso: depIso,
+        aimedIso: depIso,
+        minutesAway: safeDiffMin,
+        formattedStatus: passingTimeStr,
+        isRealTime: false,
+        isRealtime: false,
+        isEstimated: false,
+        isTrain: Boolean(options.isTrain),
+        isToday: true,
+        isFirstOfDay: false,
+        isNextService: false,
+        delayMinutes: 0,
+        delayMins: 0,
+        delayStatus: 'scheduled',
+        delayBadgeText: 'Horari teòric',
+        badgeText: 'Horari teòric',
+        comparisonText: `📅 Horari teòric: ${passingTimeStr}`
+      }, options);
+
+      scheduledTodayDepartures.push(schedDep);
+    }
+  }
+
+  // 3. Merge today's live and scheduled departures
+  const combinedToday = [...liveDepartures, ...scheduledTodayDepartures];
+  combinedToday.sort((a, b) => (Number(a.minutesAway) || 0) - (Number(b.minutesAway) || 0));
+
+  if (combinedToday.length > 0 && liveDepartures.length === 0) {
+    combinedToday[0].isNextService = true;
+  }
+
+  // 4. Append tomorrow morning first service departures if below threshold
+  const finalDepartures = [...combinedToday];
+
+  if (finalDepartures.length < minCountBeforeMorning && Array.isArray(baseTomorrow) && baseTomorrow.length > 0) {
+    const morningCountNeeded = Math.min(maxMorningCount, limit > 0 ? (limit - finalDepartures.length) : maxMorningCount);
+    if (morningCountNeeded > 0) {
+      const morningDepartures = generateMorningFirstService(baseTomorrow, stopTravelSec, {
+        ...options,
+        referenceDate: targetDate,
+        maxCount: morningCountNeeded
+      });
+
+      if (finalDepartures.length === 0 && morningDepartures.length > 0) {
+        morningDepartures[0].isNextService = true;
+      }
+
+      for (const md of morningDepartures) {
+        if (limit > 0 && finalDepartures.length >= limit) break;
+        finalDepartures.push(md);
+      }
+    }
+  }
+
+  if (limit > 0 && finalDepartures.length > limit) {
+    return finalDepartures.slice(0, limit);
+  }
+
+  return finalDepartures;
 }
 
 /**
@@ -304,6 +546,7 @@ function interpolateStopArrivals(baseTripDepartureSec, stopTravelTimes = [], dat
 }
 
 module.exports = {
+  compileStopDepartures,
   estimateStopTravelTimes,
   getTravelTimeToStop,
   synthesizeDeparturesFromBaseTimes,
@@ -311,3 +554,4 @@ module.exports = {
   generateMorningFirstService,
   interpolateStopArrivals
 };
+
