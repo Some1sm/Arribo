@@ -32,6 +32,8 @@ class IngestionDaemon {
     this.startupTimeouts = [];
     this.ipcCallback = null;
     this.lastFleetEmit = 0;
+    this.lastWarnAt = new Map();       // throttleKey -> timestamp (5-min log throttling)
+    this.vehicleDelayLogState = new Map(); // vehicleId -> { mins, ts } (delay-log sampling)
   }
 
   setIpcCallback(callback) {
@@ -64,6 +66,18 @@ class IngestionDaemon {
       timestamp: now,
       vehicles
     });
+  }
+
+  /**
+   * Logs a warning at most once per throttleMs for a given key, so persistent
+   * upstream outages are visible without flooding the console every poll cycle.
+   */
+  warnThrottled(key, message, throttleMs = 5 * 60 * 1000) {
+    const now = Date.now();
+    const last = this.lastWarnAt.get(key) || 0;
+    if ((now - last) < throttleMs) return;
+    this.lastWarnAt.set(key, now);
+    console.warn(`[IngestionDaemon] ⚠️ [${key}] ${message}`);
   }
 
   start() {
@@ -186,23 +200,38 @@ class IngestionDaemon {
             isRealTime: true
           });
 
-          // Log delay record for all active AMB lines in the live vehicle fleet
-          historyDb.recordDelayLog({
-            lineId: route?.id || `amb_${lCode.toLowerCase()}`,
-            lineCode: route?.code || lCode,
-            agency: agency,
-            stopId: v.destination || 'Tram en línia',
-            stopName: v.destination || `${lCode} en circulació`,
-            delayMins: delayMins,
-            scheduledTime: '',
-            actualTime: '',
-            isRealTime: true
-          });
+          // Sampled delay logging: at most one row per vehicle per minute, or sooner
+          // when the reported delay changes by >=1 min. Prevents write amplification
+          // of ~5 rows/min/vehicle flooding the delay_logs table.
+          const dlKey = String(vehicleId);
+          const prevDl = this.vehicleDelayLogState.get(dlKey);
+          const nowMs = Date.now();
+          const shouldLogDelay = !prevDl ||
+            (delayMins !== prevDl.mins && (nowMs - prevDl.ts) >= 10000) ||
+            ((nowMs - prevDl.ts) >= 60000);
+          if (shouldLogDelay) {
+            this.vehicleDelayLogState.set(dlKey, { mins: delayMins, ts: nowMs });
+            if (this.vehicleDelayLogState.size > 5000) {
+              const firstKey = this.vehicleDelayLogState.keys().next().value;
+              if (firstKey !== undefined) this.vehicleDelayLogState.delete(firstKey);
+            }
+            historyDb.recordDelayLog({
+              lineId: route?.id || `amb_${lCode.toLowerCase()}`,
+              lineCode: route?.code || lCode,
+              agency: agency,
+              stopId: v.destination || 'Tram en línia',
+              stopName: v.destination || `${lCode} en circulació`,
+              delayMins: delayMins,
+              scheduledTime: '',
+              actualTime: '',
+              isRealTime: true
+            });
+          }
         });
         this.emitFleetUpdate();
       }
     } catch (e) {
-      // Upstream temporary hiccup
+      this.warnThrottled('pollAmbVehicles', `AMB live-vehicle poll failed: ${e.message}`);
     }
   }
 
@@ -243,7 +272,7 @@ class IngestionDaemon {
         }
       }));
     } catch (e) {
-      // Upstream temporary hiccup
+      this.warnThrottled('pollAmbLines', 'AMB per-line realtime poll failing repeatedly.');
     }
   }
 
@@ -294,7 +323,7 @@ class IngestionDaemon {
       }));
       this.emitFleetUpdate();
     } catch (e) {
-      // Upstream temporary hiccup
+      this.warnThrottled('pollMataroVehicles', `Mataró SIRI poll failed: ${e.message}`);
     }
   }
 
@@ -342,7 +371,7 @@ class IngestionDaemon {
       }
       this.emitFleetUpdate();
     } catch (e) {
-      // Upstream temporary hiccup
+      this.warnThrottled('pollCorridorDelays', `C-10 corridor poll failed: ${e.message}`);
     }
   }
 
@@ -409,7 +438,7 @@ class IngestionDaemon {
       }));
       this.emitFleetUpdate();
     } catch (e) {
-      // Upstream temporary hiccup
+      this.warnThrottled('pollMaresmeLines', `Moventis/Maresme poll failed: ${e.message}`);
     }
   }
 
@@ -444,7 +473,7 @@ class IngestionDaemon {
         }
       }));
     } catch (e) {
-      // Upstream temporary hiccup
+      this.warnThrottled('pollRodaliesTrains', 'Rodalies GTFS-RT poll failing repeatedly.');
     }
   }
 
@@ -491,7 +520,7 @@ class IngestionDaemon {
         }
       }));
     } catch (e) {
-      // Upstream temporary hiccup
+      this.warnThrottled('pollSagalesLines', 'Sagalés realtime poll failing repeatedly.');
     }
   }
 
@@ -534,7 +563,7 @@ class IngestionDaemon {
         }
       }));
     } catch (e) {
-      // Upstream temporary hiccup
+      this.warnThrottled('pollCataloniaLines', 'Catalonia interurban batch poll failing repeatedly.');
     }
   }
 
@@ -548,7 +577,7 @@ class IngestionDaemon {
         });
       }
     } catch (e) {
-      // Upstream temporary hiccup
+      this.warnThrottled('pollDisruptions', `AMB disruptions poll failed: ${e.message}`);
     }
   }
 

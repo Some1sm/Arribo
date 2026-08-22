@@ -20,7 +20,6 @@ class MataroSiriClient {
         port: this.port,
         path: this.path,
         method: 'POST',
-        rejectUnauthorized: false,
         timeout: 5000,
         headers: {
           'Content-Type': 'text/xml; charset=utf-8',

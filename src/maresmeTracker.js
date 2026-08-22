@@ -9,6 +9,7 @@ const scheduleSynthesizer = require('./core/schedule/scheduleSynthesizer');
 const delayEngine = require('./core/schedule/delayEngine');
 const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
+const BaseTracker = require('./core/BaseTracker');
 
 const MARESME_LINES_CONFIG = [
   {
@@ -188,8 +189,9 @@ const MARESME_CANONICAL_SHAPES = {
   'c14_1': 'GEN_22907'
 };
 
-class MaresmeTracker {
+class MaresmeTracker extends BaseTracker {
   constructor() {
+    super();
     this.agencyTimezone = 'Europe/Madrid';
     this.lines = MARESME_LINES_CONFIG;
     this.stopsMap = new Map();

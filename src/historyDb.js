@@ -6,6 +6,9 @@ try {
   DatabaseSync = require('node:sqlite').DatabaseSync;
 } catch (e) {
   DatabaseSync = null;
+  console.error('[HistoryDB] ⚠️ node:sqlite is not available in this Node.js runtime.');
+  console.error('[HistoryDB] ⚠️ node:sqlite requires Node.js >= 22.5. Current version:', process.version);
+  console.error('[HistoryDB] ⚠️ All delay analytics, trails, and journalism reports will return empty data until upgraded.');
 }
 
 class HistoryDatabase {

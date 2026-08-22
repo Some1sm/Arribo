@@ -381,7 +381,15 @@ class BaseTracker {
     const deps = Array.isArray(departures) ? departures : [];
     const buses = Array.isArray(activeBuses) ? activeBuses : [];
     const upcoming = deps.filter(d => d && !d.isPast);
-    const isOperating = (buses.length > 0) || upcoming.length > 0 || (new Date().getHours() >= 6 && new Date().getHours() < 22);
+    // Use agency timezone hour instead of host-local hour so that deployments on
+    // UTC servers (e.g. Vercel) still evaluate the 06:00-22:00 service window correctly.
+    let localHour;
+    try {
+      localHour = calendarEngine.getDateComponents(new Date(), this.agencyTimezone).hour;
+    } catch (_) {
+      localHour = new Date().getHours();
+    }
+    const isOperating = (buses.length > 0) || upcoming.length > 0 || (localHour >= 6 && localHour < 22);
 
     return {
       isOperating: isOperating,

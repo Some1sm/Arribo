@@ -247,9 +247,19 @@ class WorkerBridge extends EventEmitter {
 
   restartWorker(reason = 'Manual restart') {
     if (this.worker) {
+      const targetWorker = this.worker;
+      // Attempt a graceful SHUTDOWN first so the worker can flush its SQLite WAL
+      // checkpoint and close the DB cleanly. Escalate to SIGKILL if it hangs.
       try {
-        this.worker.kill('SIGKILL');
+        this.send('SHUTDOWN');
       } catch (e) {}
+      const killTimer = setTimeout(() => {
+        try {
+          targetWorker.kill('SIGKILL');
+        } catch (e) {}
+      }, 2000);
+      if (killTimer && typeof killTimer.unref === 'function') killTimer.unref();
+      targetWorker.once('exit', () => clearTimeout(killTimer));
     }
     this._isHealthy = false;
     this.worker = null;

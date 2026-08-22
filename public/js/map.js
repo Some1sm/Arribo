@@ -1,6 +1,20 @@
 // Leaflet Map Module for Multi-Line Transit Platform (C-10 + Mataró Bus)
 // Features: Road-Snapping, Polyline Subpath Following, Bearing Rotation, and Glider Animations
 
+/**
+ * HTML-escapes upstream-derived strings (stop names, destinations, IDs) before
+ * they are interpolated into Leaflet tooltips/popup HTML.
+ */
+function escHtml(value) {
+  if (value === null || value === undefined) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 class C10Map {
   constructor(containerId) {
     this.containerId = containerId;
@@ -342,7 +356,7 @@ class C10Map {
         marker.bindTooltip(`
           <div style="display:flex; align-items:center; gap:6px;">
             <span style="background:${lineColor}; color:#fff; font-size:10px; font-weight:800; padding:1px 5px; border-radius:3px;">#${stop.seq || index + 1}</span>
-            <span>${stop.name}</span>
+            <span>${escHtml(stop.name)}</span>
           </div>
         `, {
           direction: 'top',
@@ -405,7 +419,7 @@ class C10Map {
           marker.bindTooltip(`
             <div style="display:flex; align-items:center; gap:6px;">
               <span style="background:${secondaryColor}; color:#fff; font-size:10px; font-weight:800; padding:1px 5px; border-radius:3px;">Sentit 2</span>
-              <span>${stop.name}</span>
+              <span>${escHtml(stop.name)}</span>
             </div>
           `, {
             direction: 'top',
@@ -695,7 +709,7 @@ class C10Map {
           <div class="map-popup-grid">
             <div class="map-popup-item">
               <span class="map-popup-item-label">Vehicle</span>
-              <span class="map-popup-item-val">#${bus.vehicleId || 'Bus'}</span>
+              <span class="map-popup-item-val">#${escHtml(bus.vehicleId || 'Bus')}</span>
             </div>
             <div class="map-popup-item">
               <span class="map-popup-item-label">Estat</span>
@@ -712,7 +726,7 @@ class C10Map {
         <div class="map-popup-card">
           <div class="map-popup-header">
             <div class="map-popup-title">
-              <span>🚌 Bus ${bus.vehicleId ? `#${bus.vehicleId}` : ''}</span>
+              <span>🚌 Bus ${bus.vehicleId ? `#${escHtml(bus.vehicleId)}` : ''}</span>
             </div>
             <span class="map-popup-badge ${isEst ? 'estimated' : 'live'}" style="background:${isSecDir ? 'rgba(56, 189, 248, 0.2)' : ''}; color:${isSecDir ? '#38bdf8' : ''};">
               ${isEst ? '⚡ Estimació' : isSecDir ? '🔄 Sentit 2' : '🟢 GPS Directe'}
@@ -720,9 +734,9 @@ class C10Map {
           </div>
 
           <div class="map-popup-route" style="color:${busColor};">
-            <span>${bus.fromStop}</span>
+            <span>${escHtml(bus.fromStop)}</span>
             <span style="opacity:0.6;">➔</span>
-            <span>${bus.toStop}</span>
+            <span>${escHtml(bus.toStop)}</span>
           </div>
 
           <div class="map-popup-grid">
@@ -740,7 +754,7 @@ class C10Map {
             </div>
             <div class="map-popup-item">
               <span class="map-popup-item-label">🚦 Estat</span>
-              <span class="map-popup-item-val">${bus.delayFormatted || 'Puntual'}</span>
+              <span class="map-popup-item-val">${escHtml(bus.delayFormatted || 'Puntual')}</span>
             </div>
           </div>
 

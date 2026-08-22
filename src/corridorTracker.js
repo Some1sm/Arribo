@@ -7,6 +7,7 @@ const calendarEngine = require('./core/time/calendarEngine');
 const delayEngine = require('./core/schedule/delayEngine');
 const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
+const BaseTracker = require('./core/BaseTracker');
 const {
   C10_STOPS_DIR1,
   C10_STOPS_DIR0,
@@ -32,8 +33,9 @@ function timeToMin(timeStr) {
   return timeEngine.timeToMin(timeStr);
 }
 
-class CorridorTracker {
+class CorridorTracker extends BaseTracker {
   constructor() {
+    super();
     this.agencyTimezone = 'Europe/Madrid';
     this.dataDir = path.join(__dirname, '..', 'data');
     this.stopsDir1 = [...C10_STOPS_DIR1];
@@ -90,12 +92,12 @@ class CorridorTracker {
       { id: '10037202', name: "Mataró - Pl. d'Itàlia", zone: 'Maresme', seq: 3, gtfsStopId: 'GEN_PF08121041' },
       { id: '10026784', name: 'Mataró - Pl. Granollers', zone: 'Maresme', seq: 5, gtfsStopId: 'GEN_PF08121044' },
       { id: '10037205', name: 'Mataró - Porta Laietana', zone: 'Maresme', seq: 8, gtfsStopId: 'GEN_PF08121024' },
-      { id: '10037286', name: 'Vilassar de Mar - Estació', zone: 'Maresme', seq: 21, gtfsStopId: 'GEN_PF08172018' },
-      { id: '10038471', name: 'Premià de Mar - Estació', zone: 'Maresme', seq: 21, gtfsStopId: 'GEN_PF08172018' },
-      { id: '10038038', name: 'El Masnou - Estació', zone: 'Maresme', seq: 26, gtfsStopId: 'GEN_PF08118041' },
-      { id: '10027798', name: 'Montgat - Estació Rodalies', zone: 'AMB (Boundary)', seq: 32, gtfsStopId: 'GEN_PF08126007' },
-      { id: '10025777', name: 'Badalona - Pompeu Fabra', zone: 'AMB', seq: 37, gtfsStopId: 'GEN_PF08015025' },
-      { id: '10008500', name: 'Barcelona - Metro la Pau', zone: 'AMB', seq: 44, gtfsStopId: 'GEN_PF08019096' }
+      { id: '10037286', name: 'Vilassar de Mar - Estació', zone: 'Maresme', seq: 15, gtfsStopId: 'GEN_PF08219037' },
+      { id: '10038471', name: 'Premià de Mar - Estació', zone: 'Maresme', seq: 20, gtfsStopId: 'GEN_PF08172018' },
+      { id: '10038038', name: 'El Masnou - Estació', zone: 'Maresme', seq: 24, gtfsStopId: 'GEN_PF08118041' },
+      { id: '10027798', name: 'Montgat - Estació Rodalies', zone: 'AMB (Boundary)', seq: 29, gtfsStopId: 'GEN_PF08126007' },
+      { id: '10025777', name: 'Badalona - Pompeu Fabra', zone: 'AMB', seq: 34, gtfsStopId: 'GEN_PF08015015' },
+      { id: '10008500', name: 'Barcelona - Metro la Pau', zone: 'AMB', seq: 40, gtfsStopId: 'GEN_PF08019096' }
     ];
 
     this.liveTrackingCache = new Map(); // dir -> { data, timestamp }

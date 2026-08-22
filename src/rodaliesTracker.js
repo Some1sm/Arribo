@@ -6,6 +6,7 @@ const scheduleSynthesizer = require('./core/schedule/scheduleSynthesizer');
 const delayEngine = require('./core/schedule/delayEngine');
 const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
+const BaseTracker = require('./core/BaseTracker');
 
 const AMB_API_KEY = '28EbLJtP0A6CtrWeXp6zE1zy3kp4RzmnaA2sy8JM';
 const AMB_BASE_HOST = 'api.ambmobilitat.cat';
@@ -33,8 +34,9 @@ const RODALIES_LINE_TOKENS = {
   'rt2': { code: 'RT2', color: '#DB87B9', name: "L'Arboç ⇄ Tarragona ⇄ Salou - Port Aventura" }
 };
 
-class RodaliesTracker {
+class RodaliesTracker extends BaseTracker {
   constructor() {
+    super();
     this.agencyTimezone = 'Europe/Madrid';
     this.routes = [];
     this.routesMap = new Map(); // id / code -> routeObj

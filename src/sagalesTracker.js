@@ -6,6 +6,7 @@ const scheduleSynthesizer = require('./core/schedule/scheduleSynthesizer');
 const delayEngine = require('./core/schedule/delayEngine');
 const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
+const BaseTracker = require('./core/BaseTracker');
 
 // Polyline decoder using shared core geoEngine
 function decodePolyline(encoded) {
@@ -95,8 +96,9 @@ const SAGALES_LINES_CONFIG = {
   }
 };
 
-class SagalesTracker {
+class SagalesTracker extends BaseTracker {
   constructor() {
+    super();
     this.agencyTimezone = 'Europe/Madrid';
     this.cache = new Map(); // `${routeId}_${dir}` -> { timestamp, data }
     this.cacheTtlMs = 12000; // 12 seconds TTL

@@ -584,12 +584,12 @@ class TransitApp {
               const contrast = this.getContrastColor(l.color);
               const dirCount = l.directions ? `${l.directions.length} sentits` : 'En servei';
               return `
-                <div class="landing-line-card" data-line-id="${l.id}" title="Fes clic per seguir la línia ${l.code} en directe">
-                  <span class="landing-line-badge" style="background:${l.color}; color:${contrast};">${l.code}</span>
+                <div class="landing-line-card" data-line-id="${this.esc(l.id)}" title="Fes clic per seguir la línia ${this.esc(l.code)} en directe">
+                  <span class="landing-line-badge" style="background:${this.esc(l.color)}; color:${contrast};">${this.esc(l.code)}</span>
                   <div class="landing-line-info">
-                    <div class="landing-line-title">${l.name}</div>
+                    <div class="landing-line-title">${this.esc(l.name)}</div>
                     <div class="landing-line-operator">
-                      <span>${l.agency || g.name}</span>
+                      <span>${this.esc(l.agency || g.name)}</span>
                       <span>•</span>
                       <span>${dirCount}</span>
                     </div>
@@ -617,7 +617,7 @@ class TransitApp {
         <div style="padding: 3rem 1rem; text-align: center; color: var(--text-muted); background:var(--bg-card-gradient); border-radius:var(--radius-lg); border:1px solid var(--border-subtle);">
           <div style="font-size: 2.2rem; margin-bottom: 0.5rem;">🔍</div>
           <div style="font-size:1.1rem; font-weight: 700; color: #fff; margin-bottom: 0.35rem;">Cap línia trobada</div>
-          <div style="font-size: 0.85rem; max-width:450px; margin:0 auto;">No hi ha cap resultat per a "${this.landingSearch}". Prova cercant per codi (ex: B25, C-10, e11.1, L95, 7, M19) o municipi.</div>
+          <div style="font-size: 0.85rem; max-width:450px; margin:0 auto;">No hi ha cap resultat per a "${this.esc(this.landingSearch)}". Prova cercant per codi (ex: B25, C-10, e11.1, L95, 7, M19) o municipi.</div>
         </div>
       `;
       return;
@@ -943,7 +943,7 @@ class TransitApp {
     if (city) {
       const text = calTag ? `${lData.agency || 'Xarxa de Transport'} • 📅 ${calTag}` : (lData.agency || 'Xarxa de Transport');
       if (lData.operatorWebsite) {
-        city.innerHTML = `${text} • <a href="${lData.operatorWebsite}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--brand-primary, #38bdf8); text-decoration:underline; font-weight:600; cursor:pointer;" title="Consultar horaris PDF oficials">📄 Web PDF oficial ↗</a>`;
+        city.innerHTML = `${this.esc(text)} • <a href="${this.safeUrl(lData.operatorWebsite)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" style="color:var(--brand-primary, #38bdf8); text-decoration:underline; font-weight:600; cursor:pointer;" title="Consultar horaris PDF oficials">📄 Web PDF oficial ↗</a>`;
       } else {
         city.textContent = text;
       }
@@ -1016,6 +1016,40 @@ class TransitApp {
     }
   }
 
+  /**
+   * HTML-escapes an upstream/user-derived string so it can never break out of
+   * its element context when interpolated into innerHTML templates.
+   */
+  esc(value) {
+    if (value === null || value === undefined) return '';
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  /**
+   * Sanitizes a URL for safe use inside href/src attributes.
+   * Only absolute http(s) URLs and same-origin relative paths are allowed;
+   * everything else (e.g. javascript:, data:) returns '#'.
+   */
+  safeUrl(value) {
+    const str = String(value || '').trim();
+    if (/^https?:\/\//i.test(str)) return this.esc(str);
+    if (/^\//.test(str) && !str.startsWith('//')) return this.esc(str);
+    return '#';
+  }
+
+  /**
+   * Makes a string safe for interpolation inside a single-quoted JS string
+   * within an inline on* handler attribute (strips quote/backslash/angle chars).
+   */
+  jsSafe(value) {
+    return String(value === null || value === undefined ? '' : value).replace(/['"\\<>`]/g, '');
+  }
+
   decodeHtml(str) {
     if (!str) return '';
     const txt = document.createElement('textarea');
@@ -1077,7 +1111,7 @@ class TransitApp {
         };
       }
     } catch(err) {
-      container.innerHTML = `<div style="text-align:center; padding:2rem; color:var(--text-muted);">Error en carregar incidències: ${err.message}</div>`;
+      container.innerHTML = `<div style="text-align:center; padding:2rem; color:var(--text-muted);">Error en carregar incidències: ${this.esc(err.message)}</div>`;
     }
   }
 
@@ -1102,12 +1136,12 @@ class TransitApp {
     container.innerHTML = filtered.map(d => `
       <div class="disruption-item-card">
         <div class="disruption-header-row">
-          <span class="disruption-title">⚠️ ${this.decodeHtml(d.title)}</span>
-          ${d.affectedCities ? `<span class="disruption-tag">📍 ${this.decodeHtml(d.affectedCities.trim())}</span>` : ''}
+          <span class="disruption-title">⚠️ ${this.esc(this.decodeHtml(d.title))}</span>
+          ${d.affectedCities ? `<span class="disruption-tag">📍 ${this.esc(this.decodeHtml(d.affectedCities.trim()))}</span>` : ''}
         </div>
-        ${d.affectedLines ? `<div class="disruption-lines-badge">🚌 ${this.decodeHtml(d.affectedLines)}</div>` : ''}
-        ${d.affectedStops ? `<div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:0.4rem;">🚏 ${this.decodeHtml(d.affectedStops)}</div>` : ''}
-        <div class="disruption-body-text">${this.decodeHtml(d.description)}</div>
+        ${d.affectedLines ? `<div class="disruption-lines-badge">🚌 ${this.esc(this.decodeHtml(d.affectedLines))}</div>` : ''}
+        ${d.affectedStops ? `<div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:0.4rem;">🚏 ${this.esc(this.decodeHtml(d.affectedStops))}</div>` : ''}
+        <div class="disruption-body-text">${this.esc(this.decodeHtml(d.description))}</div>
       </div>
     `).join('');
   }
@@ -1153,7 +1187,7 @@ class TransitApp {
         container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);">No hi ha prou dades de retards registrades encara. El servidor està capturant la telemetria contínua.</div>';
       }
     } catch(err) {
-      container.innerHTML = `<div style="text-align:center; padding:2rem; color:var(--danger);">Error en carregar informe de periodisme: ${err.message}</div>`;
+      container.innerHTML = `<div style="text-align:center; padding:2rem; color:var(--danger);">Error en carregar informe de periodisme: ${this.esc(err.message)}</div>`;
     }
   }
 
@@ -1306,12 +1340,12 @@ class TransitApp {
               </thead>
               <tbody>
                 ${mostDelayed.map((l, i) => `
-                  <tr onclick="window.transitApp.closeJournalismModal(); window.transitApp.switchLine('${l.lineId || l.lineCode}');" style="border-bottom:1px solid var(--border-subtle); background:${i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'}; cursor:pointer;" title="Clica per veure la línia ${l.lineCode} al mapa">
+                  <tr onclick="window.transitApp.closeJournalismModal(); window.transitApp.switchLine('${this.jsSafe(l.lineId || l.lineCode)}');" style="border-bottom:1px solid var(--border-subtle); background:${i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'}; cursor:pointer;" title="Clica per veure la línia ${this.esc(l.lineCode)} al mapa">
                     <td style="padding:0.6rem 0.8rem; font-weight:700; color:var(--brand-primary);">
-                      <span style="background:${l.color || 'var(--brand-primary)'}; color:#fff; padding:0.15rem 0.45rem; border-radius:6px; margin-right:0.4rem; font-size:0.75rem; display:inline-block;">${l.lineCode}</span>
-                      <span style="font-size:0.78rem; color:var(--text-secondary); font-weight:500;">${l.name && l.name !== l.lineCode ? l.name : ''}</span>
+                      <span style="background:${this.esc(l.color || 'var(--brand-primary)')}; color:#fff; padding:0.15rem 0.45rem; border-radius:6px; margin-right:0.4rem; font-size:0.75rem; display:inline-block;">${this.esc(l.lineCode)}</span>
+                      <span style="font-size:0.78rem; color:var(--text-secondary); font-weight:500;">${l.name && l.name !== l.lineCode ? this.esc(l.name) : ''}</span>
                     </td>
-                    <td style="padding:0.6rem 0.8rem; color:var(--text-muted);">${l.agency}</td>
+                    <td style="padding:0.6rem 0.8rem; color:var(--text-muted);">${this.esc(l.agency)}</td>
                     <td style="padding:0.6rem 0.8rem; font-weight:700; color:#ef4444;">+${l.avgDelay} min</td>
                     <td style="padding:0.6rem 0.8rem; color:var(--text-muted);">+${l.maxDelay} min</td>
                     <td style="padding:0.6rem 0.8rem;">
@@ -1350,11 +1384,11 @@ class TransitApp {
                     <td style="padding:0.6rem 0.8rem; font-weight:600; color:var(--text-primary);">
                       <div style="display:flex; align-items:center; gap:0.4rem;">
                         <span style="color:#f59e0b;">📍</span>
-                        <span>${st.stopName}</span>
+                        <span>${this.esc(st.stopName)}</span>
                       </div>
                     </td>
-                    <td style="padding:0.6rem 0.8rem; font-weight:700; color:var(--brand-primary);">${st.lineCode}</td>
-                    <td style="padding:0.6rem 0.8rem; color:var(--text-muted);">${st.agency}</td>
+                    <td style="padding:0.6rem 0.8rem; font-weight:700; color:var(--brand-primary);">${this.esc(st.lineCode)}</td>
+                    <td style="padding:0.6rem 0.8rem; color:var(--text-muted);">${this.esc(st.agency)}</td>
                     <td style="padding:0.6rem 0.8rem; font-weight:700; color:#ef4444;">+${st.avgDelay} min</td>
                     <td style="padding:0.6rem 0.8rem; color:var(--text-muted);">+${st.maxDelay} min</td>
                     <td style="padding:0.6rem 0.8rem;">
@@ -2456,11 +2490,11 @@ class TransitApp {
 
       return `
         <div class="departure-item ${idx === 0 ? 'highlight-next' : ''} ${hasActiveBus ? 'clickable-bus-dep' : ''}"
-             data-vehicle-id="${resolvedVehicleId}"
-             data-bus-lat="${resolvedLat}"
-             data-bus-lon="${resolvedLon}"
+             data-vehicle-id="${this.esc(resolvedVehicleId)}"
+             data-bus-lat="${this.esc(resolvedLat)}"
+             data-bus-lon="${this.esc(resolvedLon)}"
              data-stop-seq="${stopSeq || ''}"
-             data-stop-id="${stopId || ''}"
+             data-stop-id="${this.esc(stopId || '')}"
              data-dep-index="${idx}"
              title="${hasActiveBus ? 'Fes clic per localitzar aquest autobús en directe al mapa' : ''}">
           <div class="dep-time-group">
@@ -2471,8 +2505,8 @@ class TransitApp {
             </div>
             
             <div class="dep-dest">
-              ${d.lineId ? `<span class="line-badge-sm" style="font-size:0.68rem; padding:1px 5px; margin-right:4px; background:var(--c10-primary);">${d.lineId}</span>` : ''}
-              Cap a <strong>${(d.destination || 'Destí').replace(/^Cap a\s+/i, '')}</strong>
+              ${d.lineId ? `<span class="line-badge-sm" style="font-size:0.68rem; padding:1px 5px; margin-right:4px; background:var(--c10-primary);">${this.esc(d.lineId)}</span>` : ''}
+              Cap a <strong>${this.esc((d.destination || 'Destí').replace(/^Cap a\s+/i, ''))}</strong>
             </div>
 
             <div class="dep-time-sub">
@@ -2490,7 +2524,7 @@ class TransitApp {
 
           <div class="dep-status">
             <span class="dep-mins" style="${isFirstMorning ? 'color:#fbbf24;' : (isTomorrow ? 'color:#94a3b8;' : '')}">${minsText}</span>
-            <span class="dep-delay-pill ${pillClass}" title="${d.delayBadgeText || pillLabel}">${pillLabel}</span>
+            <span class="dep-delay-pill ${pillClass}" title="${this.esc(d.delayBadgeText || pillLabel)}">${this.esc(pillLabel)}</span>
             ${hasActiveBus ? `
               <span class="dep-map-cta">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polygon points="12 8 8 12 12 16 12 8"/></svg>
@@ -2759,12 +2793,12 @@ class TransitApp {
     dropdown.innerHTML = itemsToRender.map(r => {
       if (r.isLine) {
         return `
-          <div class="search-result-item line-item" data-type="line" data-line-id="${r.lineId}" style="border-left:3px solid ${r.lineColor};">
+          <div class="search-result-item line-item" data-type="line" data-line-id="${this.esc(r.lineId)}" style="border-left:3px solid ${this.esc(r.lineColor)};">
             <div class="search-result-left">
-              <span class="search-result-badge" style="background:${r.lineColor};">${r.lineCode}</span>
+              <span class="search-result-badge" style="background:${this.esc(r.lineColor)};">${this.esc(r.lineCode)}</span>
               <div class="search-result-info">
-                <div class="search-result-name">${r.lineName}</div>
-                <div class="search-result-zone">${r.zone || r.agency || 'Línia de transport'}</div>
+                <div class="search-result-name">${this.esc(r.lineName)}</div>
+                <div class="search-result-zone">${this.esc(r.zone || r.agency || 'Línia de transport')}</div>
               </div>
             </div>
             <span class="search-result-action">Canviar ➔</span>
@@ -2772,12 +2806,12 @@ class TransitApp {
         `;
       }
       return `
-        <div class="search-result-item stop-item" data-type="stop" data-line-id="${r.lineId}" data-stop-id="${r.stopId}" data-name="${(r.stopName || '').replace(/"/g, '&quot;')}" data-lat="${r.lat || ''}" data-lon="${r.lon || ''}">
+        <div class="search-result-item stop-item" data-type="stop" data-line-id="${this.esc(r.lineId)}" data-stop-id="${this.esc(r.stopId)}" data-name="${this.esc(r.stopName || '')}" data-lat="${this.esc(r.lat || '')}" data-lon="${this.esc(r.lon || '')}">
           <div class="search-result-left">
-            <span class="search-result-badge" style="background:${r.lineColor};">${r.lineCode}</span>
+            <span class="search-result-badge" style="background:${this.esc(r.lineColor)};">${this.esc(r.lineCode)}</span>
             <div class="search-result-info">
-              <div class="search-result-name">${r.stopName}</div>
-              <div class="search-result-zone">${r.zone}${r.code ? ` • Codi: ${r.code}` : ''}</div>
+              <div class="search-result-name">${this.esc(r.stopName)}</div>
+              <div class="search-result-zone">${this.esc(r.zone)}${r.code ? ` • Codi: ${this.esc(r.code)}` : ''}</div>
             </div>
           </div>
           <span class="search-result-action">Veure ➔</span>
@@ -3259,7 +3293,7 @@ class TransitApp {
           dotEl.className = data.status === 'slow' ? 'live-dot warning' : 'live-dot';
         }
         if (diagBox) diagBox.className = 'conn-diagnostic-box success';
-        if (diagText) diagText.innerHTML = `✅ <strong>Connexió satisfactòria</strong>: ${data.message}`;
+        if (diagText) diagText.innerHTML = `✅ <strong>Connexió satisfactòria</strong>: ${this.esc(data.message)}`;
       } else {
         if (badgeEl) {
           badgeEl.className = 'conn-badge offline';
@@ -3269,7 +3303,7 @@ class TransitApp {
           dotEl.className = 'live-dot offline';
         }
         if (diagBox) diagBox.className = 'conn-diagnostic-box error';
-        if (diagText) diagText.innerHTML = `⚠️ <strong>Error d'accés a l'API</strong>: ${data.message || data.error}`;
+        if (diagText) diagText.innerHTML = `⚠️ <strong>Error d'accés a l'API</strong>: ${this.esc(data.message || data.error)}`;
       }
     } catch (err) {
       if (latencyEl) latencyEl.textContent = 'Temps esgotat';
@@ -3279,7 +3313,7 @@ class TransitApp {
         badgeEl.textContent = 'Error';
       }
       if (diagBox) diagBox.className = 'conn-diagnostic-box error';
-      if (diagText) diagText.innerHTML = `❌ <strong>No s'ha pogut contactar amb el servidor</strong>: ${err.message}`;
+      if (diagText) diagText.innerHTML = `❌ <strong>No s'ha pogut contactar amb el servidor</strong>: ${this.esc(err.message)}`;
     } finally {
       if (testBtn) testBtn.disabled = false;
       if (spinIcon) spinIcon.classList.remove('spinning');

@@ -10,9 +10,11 @@ const delayEngine = require('./core/schedule/delayEngine');
 const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
 const indexer = require('./cataloniaIndexer');
+const BaseTracker = require('./core/BaseTracker');
 
-class CataloniaTracker {
+class CataloniaTracker extends BaseTracker {
   constructor() {
+    super();
     this.cacheDir = path.join(__dirname, '..', 'data', 'cache');
     this.shapesDbPath = path.join(__dirname, '..', 'data', 'shapes.db');
     this.shapesDb = null;

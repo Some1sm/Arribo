@@ -10,12 +10,36 @@ class FlightRecorder {
       ? snapshotIntervalMs
       : 60000;
     this.deadReckonInterval = null;
+    // Per-line delay stats cache so per-request reads never hit SQLite synchronously
+    // more than once every STATS_CACHE_TTL_MS per line.
+    this.statsCache = new Map(); // key -> { data, timestamp }
+    this.statsCacheTtlMs = 30000;
+    // When a background worker owns ingestion, the master process receives already-
+    // extrapolated fleet states via syncFleetFromWorker and must not extrapolate again
+    // (that would double the drift). The web server disables this after starting the bridge.
+    this.autoExtrapolate = true;
+    // Maximum cumulative dead-reckoning window per vehicle. Matches the documented
+    // "90-second client-side retention" behaviour and bounds positional drift.
+    this.maxExtrapolationMs = 90000;
     this.init();
+  }
+
+  /**
+   * Enable/disable the automatic 5s dead-reckoning timer. Manual calls to
+   * extrapolateStaleVehicles() remain available for tests and workers.
+   * @param {boolean} enabled
+   */
+  setAutoExtrapolation(enabled) {
+    this.autoExtrapolation = enabled !== false;
+    if (!this.autoExtrapolation && this.deadReckonInterval) {
+      clearInterval(this.deadReckonInterval);
+      this.deadReckonInterval = null;
+    }
   }
 
   init() {
     // Start periodic dead-reckoning extrapolator every 5 seconds
-    if (!this.deadReckonInterval) {
+    if (!this.deadReckonInterval && this.autoExtrapolation !== false) {
       this.deadReckonInterval = setInterval(() => this.extrapolateStaleVehicles(), 5000);
       if (this.deadReckonInterval && typeof this.deadReckonInterval.unref === 'function') {
         this.deadReckonInterval.unref();
@@ -126,8 +150,15 @@ class FlightRecorder {
       }
 
       if (elapsed > extrapolateThresholdMs && v.speedKmh > 5 && v.bearing !== undefined) {
+        // Bound total dead-reckoning to maxExtrapolationMs so vehicles never drift
+        // arbitrarily far from their last real GPS fix during long cellular shadows.
+        const projectedMs = (v.extrapolatedMs || 0);
+        if (projectedMs >= this.maxExtrapolationMs) {
+          continue;
+        }
         // Project vehicle forward along bearing vector
         v.status = 'extrapolated';
+        v.extrapolatedMs = Math.min(this.maxExtrapolationMs, projectedMs + 5000);
         const speedMps = (v.speedKmh * 1000) / 3600;
         const distMeters = speedMps * 5; // 5-second interval distance
         const rad = (v.bearing * Math.PI) / 180;
@@ -167,7 +198,22 @@ class FlightRecorder {
   }
 
   getLineStats(lineCode, lineId = null) {
-    return historyDb.getLineDelayStats(lineCode, 24, lineId);
+    // Cached for statsCacheTtlMs so frequent per-line HTTP requests never issue
+    // synchronous SQLite scans on the web-server event loop.
+    const key = `${String(lineCode || '').toUpperCase()}|${lineId || ''}`;
+    const now = Date.now();
+    const cached = this.statsCache.get(key);
+    if (cached && (now - cached.timestamp) < this.statsCacheTtlMs) {
+      return cached.data;
+    }
+    const data = historyDb.getLineDelayStats(lineCode, 24, lineId);
+    this.statsCache.set(key, { data, timestamp: now });
+    // Bound cache size defensively
+    if (this.statsCache.size > 500) {
+      const oldestKey = this.statsCache.keys().next().value;
+      if (oldestKey !== undefined) this.statsCache.delete(oldestKey);
+    }
+    return data;
   }
 
   getJournalismReport(hours = 24, allLinesCatalog = []) {
@@ -207,6 +253,7 @@ class FlightRecorder {
         status: v.status || 'active',
         lastSeen: v.lastSeen || now,
         lastPersistedAt: v.lastPersistedAt || 0,
+        extrapolatedMs: v.extrapolatedMs || (existing ? existing.extrapolatedMs : 0),
         history: history
       };
 

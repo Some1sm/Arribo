@@ -9,9 +9,11 @@ const delayEngine = require('./core/schedule/delayEngine');
 const mataroSchedules = require('./data/mataroSchedules');
 const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
+const BaseTracker = require('./core/BaseTracker');
 
-class MataroTracker {
+class MataroTracker extends BaseTracker {
   constructor() {
+    super();
     this.agencyTimezone = 'Europe/Madrid';
     this.linesData = [];
     this.routesData = {};

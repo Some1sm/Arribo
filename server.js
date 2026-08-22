@@ -22,7 +22,8 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(compression());
-app.use(express.json());
+// Note: no express.json() — this service is strictly read-only GET/HEAD (enforced below),
+// so request-body parsing is intentionally omitted to shrink the attack surface.
 
 // Strict Read-Only Security Guard: Reject any write requests from clients
 app.use((req, res, next) => {
@@ -32,13 +33,23 @@ app.use((req, res, next) => {
   next();
 });
 
+// Static assets: enable etag + browser caching for immutable-ish assets while keeping
+// HTML always revalidated so deploys propagate immediately.
 app.use(express.static(path.join(__dirname, 'public'), {
-  maxAge: 0,
-  etag: false
+  etag: true,
+  maxAge: '5m',
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  }
 }));
 
 // Launch Background Ingestion & Analytics Worker asynchronously via WorkerBridge supervisor
 workerBridge.start();
+// Fleet positions are authoritative from the worker (already extrapolated there).
+// Disable the master-process auto extrapolator to avoid double-applying drift.
+flightRecorder.setAutoExtrapolation(false);
 
 // Request logger middleware
 app.use('/api', (req, res, next) => {
@@ -229,205 +240,66 @@ app.get('/api/lines', (req, res) => {
   });
 });
 
-// Universal Stop & Line Searcher (Across all bus and train lines & stops in Catalonia)
+// Universal Stop & Line Searcher — delegates to TrackerRegistry.searchStopsAndLines(),
+// the single shared search implementation across all registered providers.
+// The dedicated C-10 corridor stops are supplemented here because corridorTracker
+// keeps its own per-direction stop maps rather than a registry-searchable stopsMap.
+const SEARCH_RESULT_LIMIT = 35;
 app.get('/api/search/stops', (req, res) => {
-  const q = (req.query.q || '').trim().toLowerCase();
-  if (!q || q.length < 1) {
-    return res.json({ success: true, results: [] });
+  const q = String(req.query.q || '').trim();
+  if (!q) {
+    return res.json({ success: true, query: '', results: [] });
   }
 
-  const normQ = q.replace(/[-_\s\.]/g, '');
-  const results = [];
+  const results = trackerRegistry.searchStopsAndLines(q, SEARCH_RESULT_LIMIT);
 
-  // 1. Search Lines First (high priority matches)
-  const allLines = getAllTransitLines();
-  const matchingLines = allLines.filter(l => {
-    const code = String(l.code || '').toLowerCase();
-    const name = String(l.name || '').toLowerCase();
-    const id = String(l.id || '').toLowerCase();
-    const agency = String(l.agency || '').toLowerCase();
-    const normCode = code.replace(/[-_\s\.]/g, '');
-    const normId = id.replace(/[-_\s\.]/g, '');
-    if (q.length === 1) {
-      return code === q || normCode === normQ || code.startsWith(q) || normCode.startsWith(normQ);
-    }
-    return code.includes(q) || normCode.includes(normQ) || id.includes(q) || normId.includes(normQ) || name.includes(q) || agency.includes(q);
-  });
-
-  // Sort exact code matches to the top
-  matchingLines.sort((a, b) => {
-    const aCode = String(a.code || '').toLowerCase();
-    const bCode = String(b.code || '').toLowerCase();
-    const aExact = aCode === q || aCode.replace(/[-_\s\.]/g, '') === normQ;
-    const bExact = bCode === q || bCode.replace(/[-_\s\.]/g, '') === normQ;
-    if (aExact && !bExact) return -1;
-    if (!aExact && bExact) return 1;
-    const aStarts = aCode.startsWith(q) || aCode.replace(/[-_\s\.]/g, '').startsWith(normQ);
-    const bStarts = bCode.startsWith(q) || bCode.replace(/[-_\s\.]/g, '').startsWith(normQ);
-    if (aStarts && !bStarts) return -1;
-    if (!aStarts && bStarts) return 1;
-    return 0;
-  });
-
-  matchingLines.slice(0, 6).forEach(l => {
-    results.push({
-      type: 'line',
-      isLine: true,
-      lineId: l.id,
-      lineCode: l.code,
-      lineName: l.name,
-      lineColor: l.color || '#009485',
-      agency: l.agency || 'Xarxa de Transport',
-      zone: `🚌 Línia • ${l.agency || 'Transport'}`,
-      isTrain: l.group === 'rodalies' || l.group === 'renfe'
-    });
-  });
-
-  // 2. Search Rodalies train stations
-  rodaliesTracker.allStopsMap.forEach(s => {
-    if (s.name.toLowerCase().includes(q) || (s.cleanName && s.cleanName.toLowerCase().includes(q)) || s.id.includes(q)) {
-      results.push({
-        type: 'stop',
-        lineId: s.lineId || 'rodalies_r1',
-        lineCode: s.lineCode || 'R1',
-        lineName: s.name,
-        lineColor: s.lineColor || '#7DBCEC',
-        stopId: s.id,
-        stopName: s.name,
-        code: s.code,
-        zone: '🚆 Rodalies de Catalunya',
-        isTrain: true,
-        lat: s.lat,
-        lon: s.lon
-      });
-    }
-  });
-
-  // 3. Search Maresme Moventis / Casas stops (N80, N81, e11.1, e11.2, C-20, C-30, etc.)
-  maresmeTracker.allStopsMap.forEach(s => {
-    if (results.length < 35 && s && ((s.name && s.name.toLowerCase().includes(q)) || (s.code && String(s.code).includes(q)))) {
-      results.push({
-        type: 'stop',
-        lineId: s.lineId,
-        lineCode: s.lineCode,
-        lineName: s.name,
-        lineColor: s.lineColor || '#009485',
-        stopId: s.id,
-        stopName: s.name,
-        code: s.code,
-        zone: '🌊 Moventis Maresme',
-        lat: s.lat,
-        lon: s.lon
-      });
-    }
-  });
-
-  // 4. Search C-10 stops
-  const c10Stops = corridorTracker.getStops('1');
-  c10Stops.forEach(s => {
-    if (results.length < 35 && s && ((s.name && s.name.toLowerCase().includes(q)) || (s.code && String(s.code).includes(q)))) {
-      results.push({
-        type: 'stop',
-        lineId: 'c10',
-        lineCode: 'C-10',
-        lineName: 'Barcelona ⇄ Mataró',
-        lineColor: '#009485',
-        stopId: s.mouteStopId,
-        stopName: s.name,
-        code: s.code,
-        zone: s.lon >= 2.289 ? '🌊 Zona Maresme' : '🏙️ Zona AMB',
-        lat: s.lat,
-        lon: s.lon
-      });
-    }
-  });
-
-  // 5. Search Sagalés stops
-  sagalesTracker.allStopsMap.forEach(s => {
-    if (results.length < 35 && s && ((s.name && s.name.toLowerCase().includes(q)) || (s.code && String(s.code).includes(q)))) {
-      results.push({
-        type: 'stop',
-        lineId: s.lineId || 'n82',
-        lineCode: s.lineCode || 'N82',
-        lineName: s.name,
-        lineColor: s.lineColor || '#457336',
-        stopId: s.id,
-        stopName: s.name,
-        code: s.code,
-        zone: `🦉 Sagalés (${s.city || 'Costa'})`,
-        lat: s.lat,
-        lon: s.lon
-      });
-    }
-  });
-
-  // 6. Search AMB Bus stops (TUSGSAL, Avanza, Monbus, Soler i Sauret, Baixbus, Moventis)
-  ambTracker.allStopsMap.forEach(s => {
-    if (results.length < 35 && s && ((s.name && s.name.toLowerCase().includes(q)) || (s.code && String(s.code).includes(q)))) {
-      results.push({
-        type: 'stop',
-        lineId: s.lineId,
-        lineCode: s.lineCode,
-        lineName: s.name,
-        lineColor: s.lineColor || '#009485',
-        stopId: s.id,
-        stopName: s.name,
-        code: s.code,
-        zone: '🏙️ Àrea Metropolitana (AMB)',
-        lat: s.lat,
-        lon: s.lon
-      });
-    }
-  });
-
-  // 7. Search Mataró Bus stops
-  mataroTracker.allStopsMap.forEach(s => {
-    if (s.name.toLowerCase().includes(q) || s.id.includes(q)) {
-      const lineCodes = s.lineas.map(l => `Línia ${l.id}`).join(', ') || 'Mataró Urbà';
-      const firstLine = s.lineas[0] || { id: '1', color: '#ff00ff' };
-      results.push({
-        type: 'stop',
-        lineId: firstLine.id,
-        lineCode: lineCodes,
-        lineName: s.name,
-        lineColor: firstLine.color || '#00ea00',
-        stopId: s.id,
-        stopName: s.name,
-        code: s.id,
-        zone: '📍 Mataró Urbà',
-        lat: s.lat,
-        lon: s.lon
-      });
-    }
-  });
-
-  // 8. Search All Catalonia Interurban Bus stops (Sagalés, Plana, Hife, Teisa, etc.)
-  if (results.length < 35) {
-    cataloniaTracker.allStopsMap.forEach(s => {
-      if (results.length < 40 && (s.name.toLowerCase().includes(q) || (s.code && s.code.includes(q)))) {
+  // Supplement: dedicated C-10 corridor stops
+  if (results.length < SEARCH_RESULT_LIMIT) {
+    const qLower = q.toLowerCase();
+    const normQ = qLower.replace(/[-_\s.]/g, '');
+    const seenStopIds = new Set(
+      results.filter(r => r && r.type === 'stop').map(r => String(r.stopId))
+    );
+    outer: for (const dir of ['1', '0']) {
+      const c10Stops = corridorTracker.getStops(dir) || [];
+      for (const s of c10Stops) {
+        if (results.length >= SEARCH_RESULT_LIMIT) break outer;
+        if (!s) continue;
+        const sName = String(s.name || '').toLowerCase();
+        const sCode = String(s.code || '').toLowerCase();
+        const stopKey = String(s.mouteStopId || s.gtfsStopId || s.id || '');
+        const matches = sName.includes(qLower) ||
+          sCode.includes(qLower) ||
+          (stopKey && stopKey.toLowerCase().includes(normQ));
+        if (!matches || seenStopIds.has(stopKey)) continue;
+        seenStopIds.add(stopKey);
         results.push({
           type: 'stop',
-          lineId: s.lineId,
-          lineCode: s.lineCode,
-          lineName: s.name,
-          lineColor: s.lineColor || '#009485',
-          stopId: s.id,
+          lineId: 'c10',
+          lineCode: 'C-10',
+          lineName: 'Barcelona ⇄ Mataró',
+          lineColor: '#009485',
+          stopId: stopKey,
           stopName: s.name,
           code: s.code,
-          zone: `🚌 ${s.agency || 'Interurbà Catalunya'}`,
+          zone: s.lon >= 2.289 ? '🌊 Zona Maresme' : '🏙️ Zona AMB',
           lat: s.lat,
           lon: s.lon
         });
       }
-    });
+    }
   }
 
   res.json({
     success: true,
     query: q,
-    results: results.slice(0, 35)
+    results
   });
 });
+
+// ==========================================
+// 2. UNIVERSAL DYNAMIC LINE ENDPOINTS
+// ==========================================
 
 // ==========================================
 // 2. UNIVERSAL DYNAMIC LINE ENDPOINTS
@@ -996,14 +868,24 @@ app.get('/api/routes/diff', (req, res) => {
 });
 
 app.get('/api/health', (req, res) => {
+  let appVersion = '2.0.0';
+  try {
+    appVersion = require('./package.json').version;
+  } catch (_) {}
   res.json({
     status: 'ok',
     app: 'Arribo!',
-    version: '3.0.0',
+    version: appVersion,
     description: 'Universal Realtime Bus Telemetry & Schedule Platform for Catalonia',
     timestamp: new Date().toISOString(),
     worker: workerBridge.getStatus()
   });
+});
+
+// Unknown /api/* paths must return a proper JSON 404 (never the SPA HTML),
+// so API consumers and the frontend can distinguish "no such endpoint" reliably.
+app.use('/api', (req, res) => {
+  res.status(404).json({ success: false, error: `Not found: ${req.method} ${req.originalUrl}` });
 });
 
 app.get('*', (req, res) => {
