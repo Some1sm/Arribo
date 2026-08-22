@@ -11,6 +11,7 @@ class TransitApp {
     
     this.targetStopsByLine = JSON.parse(localStorage.getItem('bad_amb_target_stops') || '{}');
     this.lineCache = new Map(); // LRU bounded to max 8 active routes
+    this.stopDeparturesCache = new Map(); // Client-side SWR stop departures cache
     this.allStops = [];
     this.activeBuses = [];
     this.selectedVehicleId = null;
@@ -2258,8 +2259,18 @@ class TransitApp {
 
     if (titleEl) titleEl.textContent = displayName;
     if (subEl) subEl.textContent = `Codi identificador: ${displayCode}`;
-    if (countBadge) countBadge.innerHTML = '<span class="loading-spinner-inline" style="width:10px;height:10px;border-width:1.5px;"></span>';
-    if (listEl) listEl.innerHTML = '<div class="departures-loading-placeholder"><span class="loading-spinner-inline"></span> Sincronitzant properes sortides i horaris oficials...</div>';
+
+    // SWR Cache Lookup for Instant 0ms Rendering
+    const stopCacheKey = `${this.activeLineId}_${this.activeDirection}_${stopId}`;
+    const cachedEntry = this.stopDeparturesCache.get(stopCacheKey);
+
+    if (cachedEntry && cachedEntry.data) {
+      // 0ms Instant Optimistic Render from memory cache
+      this.renderModalDepartures(cachedEntry.data, stopId, currIndex, stopsList);
+    } else {
+      if (countBadge) countBadge.innerHTML = '<span class="loading-spinner-inline" style="width:10px;height:10px;border-width:1.5px;"></span>';
+      if (listEl) listEl.innerHTML = '<div class="departures-loading-placeholder"><span class="loading-spinner-inline"></span> Sincronitzant properes sortides i horaris oficials...</div>';
+    }
 
     if (seqBadge) {
       seqBadge.textContent = currIndex >= 0 ? `Parada #${currIndex + 1} / ${totalStops}` : 'Parada';
@@ -2337,135 +2348,154 @@ class TransitApp {
       };
     }
 
+    // Silent background fetch / SWR revalidation
     try {
       const endpoint = `/api/line/${this.activeLineId}/stop/${stopId}/departures?direction=${this.activeDirection}`;
       const res = await fetch(endpoint).then(r => r.json());
 
       if (res.success && res.data) {
-        const deps = res.data.departures || [];
-        const stopObj = res.data.stop || {};
+        // Save to cache for subsequent 0ms opens
+        this.stopDeparturesCache.set(stopCacheKey, { ts: Date.now(), data: res.data });
 
-        if (countBadge) countBadge.textContent = `${deps.length} sortides`;
-
-        if (mapsLink && stopObj.lat && stopObj.lon) {
-          mapsLink.href = `https://www.google.com/maps/search/?api=1&query=${stopObj.lat},${stopObj.lon}`;
+        // If modal is still open and displaying this stop, update seamlessly
+        if (modal.classList.contains('active') && subEl && subEl.textContent.includes(String(displayCode))) {
+          this.renderModalDepartures(res.data, stopId, currIndex, stopsList);
         }
-
-        if (deps.length === 0) {
-          listEl.innerHTML = '<div style="color:var(--text-muted); font-size:0.85rem; padding:0.5rem;">Sense arribades previstes en els propers 120 min.</div>';
-          return;
-        }
-
-        const currStop = (currIndex >= 0 && stopsList) ? stopsList[currIndex] : null;
-        const stopSeq = currStop?.seq || (currIndex >= 0 ? currIndex + 1 : null);
-
-        const modalItemsHtml = deps.map((d, idx) => {
-          const rawTime = (d.expectedIso && !d.expectedIso.startsWith('0001-') && !d.expectedIso.startsWith('1970-'))
-            ? new Date(d.expectedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
-            : (d.departureTime || '--:--');
-          const estTime = String(rawTime).replace(/^[A-Za-zÀ-ÿ\.]+\s*(a\s*les\s*)?/i, '').trim();
-
-          const rawSched = (d.aimedIso && !d.aimedIso.startsWith('0001-') && !d.aimedIso.startsWith('1970-'))
-            ? new Date(d.aimedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
-            : (d.isEstimated ? estTime : null);
-          const schedTime = rawSched ? String(rawSched).replace(/^[A-Za-zÀ-ÿ\.]+\s*(a\s*les\s*)?/i, '').trim() : null;
-
-          const isTomorrow = d.isToday === false && !d.isRealTime && !d.isEstimated;
-          const isFirstMorning = isTomorrow && (d.isFirstOfDay === true || idx === 0) && !d.isRealTime && !d.isEstimated;
-          const isFirstToday = d.isToday === true && d.isFirstOfDay === true && !d.isRealTime && !d.isEstimated;
-
-          const isDiff = schedTime && schedTime !== estTime;
-          const rawDelayMins = d.delayMins !== undefined && d.delayMins !== null ? Number(d.delayMins) : 0;
-          const delayText = rawDelayMins >= 2
-            ? `+${rawDelayMins} min retard`
-            : (rawDelayMins <= -2 ? `${Math.abs(rawDelayMins)} min avançat` : 'Puntual');
-
-          const matchedBus = this.resolveBusForDeparture(d, stopSeq, stopId, idx);
-          const resolvedVehicleId = matchedBus?.vehicleId || matchedBus?.tripId || d.vehicleId || '';
-          const resolvedLat = matchedBus?.lat || d.busCoords?.lat || '';
-          const resolvedLon = matchedBus?.lon || d.busCoords?.lon || '';
-          const hasActiveBus = Boolean(resolvedVehicleId || (resolvedLat && resolvedLon) || d.tripId || d.isRealTime || d.isEstimated || (this.activeLineData?.activeBuses?.length > 0 && d.minutesAway <= 60));
-
-          const minsText = isFirstMorning
-            ? `🌅 Demà ${estTime}`
-            : (isTomorrow
-                ? `Demà ${estTime}`
-                : (isFirstToday && (d.minutesAway === undefined || d.minutesAway > 180)
-                    ? `🌅 ${estTime}`
-                    : ((d.minutesAway !== undefined && d.minutesAway >= 0 && d.minutesAway <= 180)
-                        ? (d.minutesAway <= 0 ? 'Ara' : (d.minutesAway === 1 ? '1 min' : `${d.minutesAway} min`))
-                        : `${estTime}`)));
-
-          const tagLabel = (isFirstMorning || isFirstToday)
-            ? '🌅 1r Servei'
-            : (isTomorrow ? 'Programat' : (d.isEstimated ? '⚡ En ruta' : (d.isRealTime ? '🟢 Temps Real' : 'Programat')));
-
-          const pillLabel = (isFirstMorning || isFirstToday)
-            ? '1r Servei'
-            : (isTomorrow ? 'Programat' : (d.isEstimated ? '⚡ En ruta' : (d.delayBadgeText || 'Puntual')));
-
-          const pillClass = (isTomorrow || isFirstToday) ? 'scheduled' : (rawDelayMins >= 2 ? 'delayed' : (rawDelayMins <= -2 ? 'early' : (d.delayStatus || 'on-time')));
-
-          return `
-            <div class="departure-item ${idx === 0 ? 'highlight-next' : ''} ${hasActiveBus ? 'clickable-bus-dep' : ''}"
-                 data-vehicle-id="${resolvedVehicleId}"
-                 data-bus-lat="${resolvedLat}"
-                 data-bus-lon="${resolvedLon}"
-                 data-stop-seq="${stopSeq || ''}"
-                 data-stop-id="${stopId || ''}"
-                 data-dep-index="${idx}"
-                 title="${hasActiveBus ? 'Fes clic per localitzar aquest autobús en directe al mapa' : ''}">
-              <div class="dep-time-group">
-                <div class="dep-time-row">
-                  <span class="dep-clock">${estTime}</span>
-                  ${isDiff ? `<span class="dep-sched-pill" title="Horari oficial teòric">Oficial: ${schedTime}</span>` : ''}
-                  <span class="dep-tag-sub ${(isFirstMorning || isFirstToday) ? 'first-service' : ''}">${tagLabel}</span>
-                </div>
-                
-                <div class="dep-dest">
-                  ${d.lineId ? `<span class="line-badge-sm" style="font-size:0.68rem; padding:1px 5px; margin-right:4px; background:var(--c10-primary);">${d.lineId}</span>` : ''}
-                  Cap a <strong>${(d.destination || 'Destí').replace(/^Cap a\s+/i, '')}</strong>
-                </div>
-
-                <div class="dep-time-sub">
-                  ${isFirstMorning ? `
-                    <span>📅 Primer autobús del matí (Demà a les ${estTime})</span>
-                  ` : (isFirstToday ? `
-                    <span>📅 Primer servei d'avui (a les ${estTime})</span>
-                  ` : (isTomorrow ? `
-                    <span>📅 Horari teòric: <strong class="sched-strong">Demà a les ${estTime}</strong></span>
-                  ` : (schedTime ? `
-                    <span>📅 Horari oficial: <strong class="sched-strong">${schedTime}</strong> <span class="dep-delay-note ${rawDelayMins >= 2 ? 'delay' : (rawDelayMins <= -2 ? 'early' : 'on-time')}">(${delayText})</span></span>
-                  ` : `<span>📅 Horari previst</span>`)))}
-                </div>
-              </div>
-
-              <div class="dep-status">
-                <span class="dep-mins" style="${isFirstMorning ? 'color:#fbbf24;' : (isTomorrow ? 'color:#94a3b8;' : '')}">${minsText}</span>
-                <span class="dep-delay-pill ${pillClass}" title="${d.delayBadgeText || pillLabel}">${pillLabel}</span>
-                ${hasActiveBus ? `
-                  <span class="dep-map-cta">
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polygon points="12 8 8 12 12 16 12 8"/></svg>
-                    Veure al mapa
-                  </span>
-                ` : ''}
-              </div>
-            </div>
-          `;
-        }).join('');
-
-        const modalFooterHint = deps.length > 5 ? `
-          <div class="dep-scroll-footer" style="text-align: center; padding: 0.6rem 0.5rem; font-size: 0.72rem; color: var(--text-muted); border-top: 1px dashed var(--border-subtle); margin-top: 0.25rem;">
-            📜 Mostrant tot l'horari teòric oficial del dia • Desplaça per consultar totes les sortides
-          </div>
-        ` : '';
-
-        listEl.innerHTML = modalItemsHtml + modalFooterHint;
       }
     } catch (e) {
       console.error('Stop departures fetch error:', e);
-      if (listEl) listEl.innerHTML = '<div style="color:var(--danger); font-size:0.85rem;">Error en carregar les sortides.</div>';
+      if (!cachedEntry && listEl) {
+        listEl.innerHTML = '<div style="color:var(--danger); font-size:0.85rem;">Error en carregar les sortides.</div>';
+      }
     }
+  }
+
+  renderModalDepartures(data, stopId, currIndex, stopsList) {
+    const listEl = document.getElementById('modal-departures-list');
+    const countBadge = document.getElementById('modal-departures-count-badge');
+    const mapsLink = document.getElementById('modal-maps-link');
+    if (!listEl) return;
+
+    const deps = data?.departures || [];
+    const stopObj = data?.stop || {};
+
+    if (countBadge) countBadge.textContent = `${deps.length} sortides`;
+
+    if (mapsLink && stopObj.lat && stopObj.lon) {
+      mapsLink.href = `https://www.google.com/maps/search/?api=1&query=${stopObj.lat},${stopObj.lon}`;
+    }
+
+    if (deps.length === 0) {
+      listEl.innerHTML = '<div style="color:var(--text-muted); font-size:0.85rem; padding:0.5rem;">Sense arribades previstes en els propers 120 min.</div>';
+      return;
+    }
+
+    const currStop = (currIndex >= 0 && stopsList) ? stopsList[currIndex] : null;
+    const stopSeq = currStop?.seq || (currIndex >= 0 ? currIndex + 1 : null);
+
+    const modalItemsHtml = deps.map((d, idx) => {
+      const rawTime = (d.expectedIso && !d.expectedIso.startsWith('0001-') && !d.expectedIso.startsWith('1970-'))
+        ? new Date(d.expectedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+        : (d.departureTime || '--:--');
+      const estTime = String(rawTime).replace(/^[A-Za-zÀ-ÿ\.]+\s*(a\s*les\s*)?/i, '').trim();
+
+      const rawSched = (d.aimedIso && !d.aimedIso.startsWith('0001-') && !d.aimedIso.startsWith('1970-'))
+        ? new Date(d.aimedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+        : (d.isEstimated ? estTime : null);
+      const schedTime = rawSched ? String(rawSched).replace(/^[A-Za-zÀ-ÿ\.]+\s*(a\s*les\s*)?/i, '').trim() : null;
+
+      const isTomorrow = d.isToday === false && !d.isRealTime && !d.isEstimated;
+      const isFirstMorning = isTomorrow && (d.isFirstOfDay === true || idx === 0) && !d.isRealTime && !d.isEstimated;
+      const isFirstToday = d.isToday === true && d.isFirstOfDay === true && !d.isRealTime && !d.isEstimated;
+
+      const isDiff = schedTime && schedTime !== estTime;
+      const rawDelayMins = d.delayMins !== undefined && d.delayMins !== null ? Number(d.delayMins) : 0;
+      const delayText = rawDelayMins >= 2
+        ? `+${rawDelayMins} min retard`
+        : (rawDelayMins <= -2 ? `${Math.abs(rawDelayMins)} min avançat` : 'Puntual');
+
+      const matchedBus = this.resolveBusForDeparture(d, stopSeq, stopId, idx);
+      const resolvedVehicleId = matchedBus?.vehicleId || matchedBus?.tripId || d.vehicleId || '';
+      const resolvedLat = matchedBus?.lat || d.busCoords?.lat || '';
+      const resolvedLon = matchedBus?.lon || d.busCoords?.lon || '';
+      const hasActiveBus = Boolean(resolvedVehicleId || (resolvedLat && resolvedLon) || d.tripId || d.isRealTime || d.isEstimated || (this.activeLineData?.activeBuses?.length > 0 && d.minutesAway <= 60));
+
+      const minsText = isFirstMorning
+        ? `🌅 Demà ${estTime}`
+        : (isTomorrow
+            ? `Demà ${estTime}`
+            : (isFirstToday && (d.minutesAway === undefined || d.minutesAway > 180)
+                ? `🌅 ${estTime}`
+                : ((d.minutesAway !== undefined && d.minutesAway >= 0 && d.minutesAway <= 180)
+                    ? (d.minutesAway <= 0 ? 'Ara' : (d.minutesAway === 1 ? '1 min' : `${d.minutesAway} min`))
+                    : `${estTime}`)));
+
+      const tagLabel = (isFirstMorning || isFirstToday)
+        ? '🌅 1r Servei'
+        : (isTomorrow ? 'Programat' : (d.isEstimated ? '⚡ En ruta' : (d.isRealTime ? '🟢 Temps Real' : 'Programat')));
+
+      const pillLabel = (isFirstMorning || isFirstToday)
+        ? '1r Servei'
+        : (isTomorrow ? 'Programat' : (d.isEstimated ? '⚡ En ruta' : (d.delayBadgeText || 'Puntual')));
+
+      const pillClass = (isTomorrow || isFirstToday) ? 'scheduled' : (rawDelayMins >= 2 ? 'delayed' : (rawDelayMins <= -2 ? 'early' : (d.delayStatus || 'on-time')));
+
+      return `
+        <div class="departure-item ${idx === 0 ? 'highlight-next' : ''} ${hasActiveBus ? 'clickable-bus-dep' : ''}"
+             data-vehicle-id="${resolvedVehicleId}"
+             data-bus-lat="${resolvedLat}"
+             data-bus-lon="${resolvedLon}"
+             data-stop-seq="${stopSeq || ''}"
+             data-stop-id="${stopId || ''}"
+             data-dep-index="${idx}"
+             title="${hasActiveBus ? 'Fes clic per localitzar aquest autobús en directe al mapa' : ''}">
+          <div class="dep-time-group">
+            <div class="dep-time-row">
+              <span class="dep-clock">${estTime}</span>
+              ${isDiff ? `<span class="dep-sched-pill" title="Horari oficial teòric">Oficial: ${schedTime}</span>` : ''}
+              <span class="dep-tag-sub ${(isFirstMorning || isFirstToday) ? 'first-service' : ''}">${tagLabel}</span>
+            </div>
+            
+            <div class="dep-dest">
+              ${d.lineId ? `<span class="line-badge-sm" style="font-size:0.68rem; padding:1px 5px; margin-right:4px; background:var(--c10-primary);">${d.lineId}</span>` : ''}
+              Cap a <strong>${(d.destination || 'Destí').replace(/^Cap a\s+/i, '')}</strong>
+            </div>
+
+            <div class="dep-time-sub">
+              ${isFirstMorning ? `
+                <span>📅 Primer autobús del matí (Demà a les ${estTime})</span>
+              ` : (isFirstToday ? `
+                <span>📅 Primer servei d'avui (a les ${estTime})</span>
+              ` : (isTomorrow ? `
+                <span>📅 Horari teòric: <strong class="sched-strong">Demà a les ${estTime}</strong></span>
+              ` : (schedTime ? `
+                <span>📅 Horari oficial: <strong class="sched-strong">${schedTime}</strong> <span class="dep-delay-note ${rawDelayMins >= 2 ? 'delay' : (rawDelayMins <= -2 ? 'early' : 'on-time')}">(${delayText})</span></span>
+              ` : `<span>📅 Horari previst</span>`)))}
+            </div>
+          </div>
+
+          <div class="dep-status">
+            <span class="dep-mins" style="${isFirstMorning ? 'color:#fbbf24;' : (isTomorrow ? 'color:#94a3b8;' : '')}">${minsText}</span>
+            <span class="dep-delay-pill ${pillClass}" title="${d.delayBadgeText || pillLabel}">${pillLabel}</span>
+            ${hasActiveBus ? `
+              <span class="dep-map-cta">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polygon points="12 8 8 12 12 16 12 8"/></svg>
+                Veure al mapa
+              </span>
+            ` : ''}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    const modalFooterHint = deps.length > 5 ? `
+      <div class="dep-scroll-footer" style="text-align: center; padding: 0.6rem 0.5rem; font-size: 0.72rem; color: var(--text-muted); border-top: 1px dashed var(--border-subtle); margin-top: 0.25rem;">
+        📜 Mostrant tot l'horari teòric oficial del dia • Desplaça per consultar totes les sortides
+      </div>
+    ` : '';
+
+    listEl.innerHTML = modalItemsHtml + modalFooterHint;
+  }
   }
 
   // ==========================================

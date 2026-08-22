@@ -17,6 +17,8 @@ class MataroTracker {
     this.routesData = {};
     this.allStopsMap = new Map();
     this.vehicleHistory = new Map(); // Vehicle tracking history for dead-zone estimation
+    this.stopDeparturesMemoryCache = new Map(); // In-memory pre-computed stop departures cache
+    this.stopCacheTtlMs = 35000; // 35-second TTL (sub-millisecond instant serving)
     this.loadDatasets();
   }
 
@@ -638,6 +640,20 @@ class MataroTracker {
       direction = '0';
     }
     const sId = String(stopId);
+    const dirKey = String(direction || '0');
+    const lIdKey = String(lineId || '');
+    const limitKey = String(options.limit || 10);
+    const dateKey = options.targetDate || options.dateObj ? String(options.targetDate || options.dateObj) : '';
+    const cacheKey = `${sId}_${lIdKey}_${dirKey}_${limitKey}_${dateKey}`;
+
+    // Fast-path: Instant 0ms memory cache return if fresh
+    if (!options.skipCache && this.stopDeparturesMemoryCache.has(cacheKey)) {
+      const cached = this.stopDeparturesMemoryCache.get(cacheKey);
+      if (Date.now() - cached.timestamp < this.stopCacheTtlMs) {
+        return cached.data;
+      }
+    }
+
     const stopInfo = this.allStopsMap.get(sId) || { id: sId, name: `Parada ${sId}` };
     
     // 1. Query Official Real-Time SIRI Departures
@@ -823,7 +839,7 @@ class MataroTracker {
       }
     }
 
-    return {
+    const result = {
       stop: {
         id: sId,
         name: stopInfo.name,
@@ -834,6 +850,45 @@ class MataroTracker {
       departures: finalDepartures,
       totalDepartures: finalDepartures.length
     };
+
+    // Store in memory cache for sub-millisecond retrieval
+    this.stopDeparturesMemoryCache.set(cacheKey, {
+      timestamp: Date.now(),
+      data: result
+    });
+
+    // Bounded garbage collection for memory cache
+    if (this.stopDeparturesMemoryCache.size > 800) {
+      const now = Date.now();
+      for (const [k, v] of this.stopDeparturesMemoryCache.entries()) {
+        if (now - v.timestamp > 120000) {
+          this.stopDeparturesMemoryCache.delete(k);
+        }
+      }
+    }
+
+    return result;
+  }
+
+  // 3b. Warm all stops cache for a line in a fast background pass
+  async warmLineStopsCache(lineId) {
+    try {
+      const lId = String(lineId);
+      const routes = this.routesData[lId] || [];
+      const stopIds = new Set();
+      routes.forEach(r => {
+        (r.stops || []).forEach(s => {
+          if (s.id) stopIds.add(String(s.id));
+        });
+      });
+
+      const promises = Array.from(stopIds).map(sId => 
+        this.getStopDepartures(sId, lId, '0', { skipCache: true }).catch(() => null)
+      );
+      await Promise.allSettled(promises);
+    } catch (e) {
+      // Non-blocking warming
+    }
   }
 
   // 4. Get Target Stop ETA
