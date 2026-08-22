@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const geoEngine = require('./core/geo/geoEngine');
+const { stitchShapeGaps } = require('./core/geo/routeStitcher');
 const timeEngine = require('./core/time/timeEngine');
 const calendarEngine = require('./core/time/calendarEngine');
 const scheduleSynthesizer = require('./core/schedule/scheduleSynthesizer');
@@ -453,18 +454,43 @@ class AmbTracker extends BaseTracker {
       };
     });
 
-    // Fetch geometry shape
+    // Fetch geometry shape; fall back to local shapes.db (AMB_* ids) before chords
     let polylineCoords = [];
     if (dirObj.shapeId) {
       polylineCoords = await this.getShapeCoords(dirObj.shapeId);
+      if (!polylineCoords || polylineCoords.length === 0) {
+        try {
+          const dbPath = path.join(__dirname, '..', 'data', 'shapes.db');
+          if (fs.existsSync(dbPath)) {
+            const { DatabaseSync } = require('node:sqlite');
+            const db = new DatabaseSync(dbPath);
+            const row = db.prepare('SELECT coords FROM shapes WHERE shape_id = ?').get(dirObj.shapeId);
+            db.close();
+            if (row) {
+              polylineCoords = JSON.parse(row.coords);
+              console.log(`[AmbTracker] shape ${dirObj.shapeId} recovered from shapes.db (${polylineCoords.length} pts)`);
+            }
+          }
+        } catch (_) { /* shapes.db fallback is best-effort */ }
+      }
     }
 
     if (polylineCoords.length === 0 && stops.length > 0) {
       polylineCoords = stops.map(s => [s.lat, s.lon]);
     }
     if (polylineCoords.length > 1 && stops.length > 0) {
-      const composed = geoEngine.composeRouteWithStops(polylineCoords, stops);
-      if (composed.stitched > 0) polylineCoords = composed.coords;
+      const stitched = stitchShapeGaps({
+        coords: polylineCoords,
+        stops,
+        dbPath: path.join(__dirname, '..', 'data', 'shapes.db'),
+        primaryShapeId: dirObj.shapeId || '',
+      });
+      if (stitched) {
+        polylineCoords = stitched.coords;
+      } else {
+        const composed = geoEngine.composeRouteWithStops(polylineCoords, stops);
+        if (composed.stitched > 0) polylineCoords = composed.coords;
+      }
     }
 
     // 1. Discover real-time vehicles for this route directly from live AMB vehicle fleet

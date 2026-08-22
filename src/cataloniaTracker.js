@@ -3,6 +3,7 @@ const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 const mouteClient = require('./mouteClient');
 const geoEngine = require('./core/geo/geoEngine');
+const { stitchShapeGaps, discoverShapeForStops } = require('./core/geo/routeStitcher');
 const timeEngine = require('./core/time/timeEngine');
 const calendarEngine = require('./core/time/calendarEngine');
 const scheduleSynthesizer = require('./core/schedule/scheduleSynthesizer');
@@ -211,12 +212,14 @@ class CataloniaTracker extends BaseTracker {
       let coords0 = this.getShapeCoords(shape0) || details0.stops.map(s => [s.lat, s.lon]);
       let coords1 = this.getShapeCoords(shape1) || details1.stops.map(s => [s.lat, s.lon]);
       if (coords0.length > 1 && details0.stops.length > 0) {
-        const composed0 = geoEngine.composeRouteWithStops(coords0, details0.stops);
-        if (composed0.stitched > 0) coords0 = composed0.coords;
+        const stitched0 = stitchShapeGaps({ coords: coords0, stops: details0.stops, dbPath: this.shapesDbPath, primaryShapeId: shape0 || '' })
+          || geoEngine.composeRouteWithStops(coords0, details0.stops);
+        if (stitched0.stitched > 0) coords0 = stitched0.coords;
       }
       if (coords1.length > 1 && details1.stops.length > 0) {
-        const composed1 = geoEngine.composeRouteWithStops(coords1, details1.stops);
-        if (composed1.stitched > 0) coords1 = composed1.coords;
+        const stitched1 = stitchShapeGaps({ coords: coords1, stops: details1.stops, dbPath: this.shapesDbPath, primaryShapeId: shape1 || '' })
+          || geoEngine.composeRouteWithStops(coords1, details1.stops);
+        if (stitched1.stitched > 0) coords1 = stitched1.coords;
       }
       return {
         ...details0,
@@ -247,10 +250,16 @@ class CataloniaTracker extends BaseTracker {
       ];
     }
     const dirMeta = route.directions.find(d => String(d.dirId) === dirIdx) || route.directions[0] || { name: 'Cap a Destí' };
-    let polylineCoords = this.getShapeCoords(dirMeta.shapeId) || stops.map(s => [s.lat, s.lon]);
+    let polylineCoords = this.getShapeCoords(dirMeta.shapeId);
+    if (!polylineCoords || polylineCoords.length < 2) {
+      // No indexed shape: try discovering one that follows the stops along real roads.
+      const discovered = discoverShapeForStops({ stops, dbPath: this.shapesDbPath });
+      polylineCoords = (discovered && discovered.coords) || stops.map(s => [s.lat, s.lon]);
+    }
     if (polylineCoords.length > 1 && stops.length > 0) {
-      const composed = geoEngine.composeRouteWithStops(polylineCoords, stops);
-      if (composed.stitched > 0) polylineCoords = composed.coords;
+      const result = stitchShapeGaps({ coords: polylineCoords, stops, dbPath: this.shapesDbPath, primaryShapeId: dirMeta.shapeId || '' })
+        || geoEngine.composeRouteWithStops(polylineCoords, stops);
+      if (result.stitched > 0) polylineCoords = result.coords;
     }
 
     // Check scheduled service for today
