@@ -198,7 +198,6 @@ class TransitApp {
     const badge = document.getElementById('header-line-badge');
     const modeBadge = document.getElementById('header-mode-badge');
     const subtitle = document.getElementById('header-subtitle');
-    const connLineName = document.getElementById('conn-line-name');
 
     if (badge) {
       badge.textContent = '🚌';
@@ -212,9 +211,6 @@ class TransitApp {
     }
     if (subtitle) {
       subtitle.textContent = 'Telemetria de busos en directe a Catalunya';
-    }
-    if (connLineName) {
-      connLineName.textContent = 'Totes les línies';
     }
 
     document.title = "Arribo! | Telemetria i Seguiment d'Autobusos en Temps Real";
@@ -3068,7 +3064,7 @@ class TransitApp {
 
     this.setupGlobalSearch();
     this.setupLinePicker();
-    this.setupConnectionMenu();
+    this.setupMapResizeControls();
     this.setupDisruptionsModal();
     this.setupJournalismModal();
   }
@@ -3161,166 +3157,8 @@ class TransitApp {
   }
 
   // ==========================================
-  // CONNECTION MENU & DIAGNOSTICS
+  // MAP RESIZE CONTROLS
   // ==========================================
-
-  setupConnectionMenu() {
-    const liveBtn = document.getElementById('live-indicator');
-    const wrapper = document.getElementById('live-indicator-wrapper');
-    const dropdown = document.getElementById('connection-menu-dropdown');
-    const backdrop = document.getElementById('connection-modal-backdrop');
-    const closeBtn = document.getElementById('conn-menu-close-btn');
-    const testBtn = document.getElementById('btn-test-connection');
-
-    if (!liveBtn || !dropdown) return;
-
-    const openMenu = () => {
-      dropdown.classList.add('active');
-      backdrop?.classList.add('active');
-      wrapper?.classList.add('active');
-      liveBtn.setAttribute('aria-expanded', 'true');
-      this.updateConnectionMenuDetails();
-    };
-
-    const closeMenu = () => {
-      dropdown.classList.remove('active');
-      backdrop?.classList.remove('active');
-      wrapper?.classList.remove('active');
-      liveBtn.setAttribute('aria-expanded', 'false');
-    };
-
-    liveBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (dropdown.classList.contains('active')) {
-        closeMenu();
-      } else {
-        openMenu();
-      }
-    });
-
-    closeBtn?.addEventListener('click', (e) => {
-      e.preventDefault();
-      closeMenu();
-    });
-
-    backdrop?.addEventListener('click', () => {
-      closeMenu();
-    });
-
-    testBtn?.addEventListener('click', (e) => {
-      e.preventDefault();
-      this.testApiConnection();
-    });
-
-    // Close on Escape
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && dropdown.classList.contains('active')) {
-        closeMenu();
-      }
-    });
-  }
-
-  updateConnectionMenuDetails() {
-    const lineEl = document.getElementById('conn-line-name');
-    const provEl = document.getElementById('conn-provider-name');
-    const hostEl = document.getElementById('conn-api-host');
-
-    const lCode = this.activeLineData?.code || this.activeLineId.toUpperCase();
-    const provName = this.getProviderNameForLine(this.activeLineId);
-    const hostName = this.getProviderHostForLine(this.activeLineId);
-
-    if (lineEl) lineEl.textContent = lCode;
-    if (provEl) provEl.textContent = provName;
-    if (hostEl) hostEl.textContent = hostName;
-  }
-
-  getProviderNameForLine(lineId) {
-    const clean = String(lineId).toLowerCase();
-    if (clean === 'c10' || clean === 'c-10') return 'Generalitat Mou-te & ATM';
-    if (['1','2','3','4','5','6','7','8'].includes(clean)) return 'Mataró Bus Urbà (Avanza)';
-    if (['c11','c12','c14','c20','c30','e11.1','e11.2','e13','n80','c10'].includes(clean)) return 'Moventis / Casas (Interurbà)';
-    if (clean.startsWith('n8') || clean === '551' || clean === '553' || clean === '554') return 'Sagalés Real-Time Feeds';
-    if (clean.startsWith('r') || clean.startsWith('rg') || clean.startsWith('rt')) return 'Rodalies de Catalunya';
-    return 'Àrea Metropolitana (AMB Mobilitat)';
-  }
-
-  getProviderHostForLine(lineId) {
-    const clean = String(lineId).toLowerCase();
-    if (clean === 'c10' || clean === 'c-10' || ['c11','c12','c14','c20','c30','e11.1','e11.2','e13','n80'].includes(clean)) {
-      return 'moute.gencat.cat';
-    }
-    if (['1','2','3','4','5','6','7','8'].includes(clean)) {
-      return 'sirimataro.avanzagrupo.com';
-    }
-    if (clean.startsWith('n8') || clean === '551' || clean === '553' || clean === '554') {
-      return 'www.sagales.com';
-    }
-    return 'api.ambmobilitat.cat';
-  }
-
-  async testApiConnection() {
-    const testBtn = document.getElementById('btn-test-connection');
-    const spinIcon = document.getElementById('test-icon-spin');
-    const btnText = document.getElementById('btn-test-conn-text');
-    const latencyEl = document.getElementById('conn-latency-val');
-    const testedEl = document.getElementById('conn-last-tested');
-    const badgeEl = document.getElementById('conn-menu-badge');
-    const dotEl = document.getElementById('conn-menu-dot');
-    const diagBox = document.getElementById('conn-diagnostic-box');
-    const diagText = document.getElementById('conn-diagnostic-text');
-
-    if (testBtn) testBtn.disabled = true;
-    if (spinIcon) spinIcon.classList.add('spinning');
-    if (btnText) btnText.textContent = 'Provant connexió...';
-    if (diagBox) {
-      diagBox.className = 'conn-diagnostic-box';
-      if (diagText) diagText.textContent = 'Realitzant petició de diagnòstic amb la passarel·la en temps real...';
-    }
-
-    try {
-      const resp = await fetch(`/api/diagnostics/test?lineId=${encodeURIComponent(this.activeLineId)}`);
-      const data = await resp.json();
-
-      if (testedEl) testedEl.textContent = data.testedAt || new Date().toLocaleTimeString();
-      if (latencyEl) latencyEl.textContent = `${data.latencyMs || 0} ms`;
-
-      if (data.success) {
-        if (badgeEl) {
-          badgeEl.className = data.status === 'slow' ? 'conn-badge slow' : 'conn-badge';
-          badgeEl.textContent = data.status === 'slow' ? 'Lenta' : 'En directe';
-        }
-        if (dotEl) {
-          dotEl.className = data.status === 'slow' ? 'live-dot warning' : 'live-dot';
-        }
-        if (diagBox) diagBox.className = 'conn-diagnostic-box success';
-        if (diagText) diagText.innerHTML = `✅ <strong>Connexió satisfactòria</strong>: ${this.esc(data.message)}`;
-      } else {
-        if (badgeEl) {
-          badgeEl.className = 'conn-badge offline';
-          badgeEl.textContent = 'Sense connexió';
-        }
-        if (dotEl) {
-          dotEl.className = 'live-dot offline';
-        }
-        if (diagBox) diagBox.className = 'conn-diagnostic-box error';
-        if (diagText) diagText.innerHTML = `⚠️ <strong>Error d'accés a l'API</strong>: ${this.esc(data.message || data.error)}`;
-      }
-    } catch (err) {
-      if (latencyEl) latencyEl.textContent = 'Temps esgotat';
-      if (testedEl) testedEl.textContent = new Date().toLocaleTimeString();
-      if (badgeEl) {
-        badgeEl.className = 'conn-badge offline';
-        badgeEl.textContent = 'Error';
-      }
-      if (diagBox) diagBox.className = 'conn-diagnostic-box error';
-      if (diagText) diagText.innerHTML = `❌ <strong>No s'ha pogut contactar amb el servidor</strong>: ${this.esc(err.message)}`;
-    } finally {
-      if (testBtn) testBtn.disabled = false;
-      if (spinIcon) spinIcon.classList.remove('spinning');
-      if (btnText) btnText.textContent = 'Tornar a provar connexió';
-    }
-  }
 
   setupMapResizeControls() {
     const expandHeightBtn = document.getElementById('btn-map-expand-height');
