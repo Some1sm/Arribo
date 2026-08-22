@@ -21,8 +21,8 @@ const MARESME_LINES_CONFIG = [
     agency: 'Moventis / Casas (NitBus Maresme)',
     group: 'moventis',
     directions: [
-      { dirId: '0', name: 'Cap a Mataró (Hospital / Parc) i Barcelona' },
-      { dirId: '1', name: 'Cap a Mataró (Hospital / Parc) i Barcelona' }
+      { dirId: '0', name: 'Cap a Barcelona (Pg. de Gràcia)' },
+      { dirId: '1', name: 'Cap a Mataró (Renfe)' }
     ]
   },
   {
@@ -35,8 +35,8 @@ const MARESME_LINES_CONFIG = [
     agency: 'Moventis / Casas (NitBus)',
     group: 'moventis',
     directions: [
-      { dirId: '0', name: 'Cap a Vilassar de Dalt i Barcelona' },
-      { dirId: '1', name: 'Cap a Vilassar de Dalt i Barcelona' }
+      { dirId: '0', name: 'Cap a Barcelona (Pg. de Gràcia)' },
+      { dirId: '1', name: 'Cap a Vilassar de Dalt' }
     ]
   },
   {
@@ -896,6 +896,45 @@ class MaresmeTracker {
     return bestMatch;
   }
 
+  matchesDirection(destName, dir, lineConfig) {
+    if (dir === 'both' || !lineConfig || !lineConfig.directions) return true;
+    const currentDirObj = lineConfig.directions.find(d => String(d.dirId) === String(dir));
+    const otherDirObj = lineConfig.directions.find(d => String(d.dirId) !== String(dir));
+    if (!currentDirObj) return true;
+
+    const cleanPlaceName = (str) => {
+      return String(str || '')
+        .toLowerCase()
+        .replace(/\bbcn\b/g, 'barcelona')
+        .replace(/\([^)]*\)/g, '')
+        .replace(/^cap a\s+/i, '')
+        .trim();
+    };
+
+    const rawClean = cleanPlaceName(destName);
+    const parts = rawClean.split(/\s*[-–➔⇄]\s*/).map(p => p.trim()).filter(Boolean);
+    const terminus = parts.length > 1 ? parts[parts.length - 1] : (parts[0] || rawClean);
+
+    const currTarget = cleanPlaceName(currentDirObj.name);
+    const otherTarget = otherDirObj ? cleanPlaceName(otherDirObj.name) : '';
+
+    const getKeywords = (str) => {
+      return str
+        .split(/[\s,\/]+/)
+        .filter(w => w.length > 2 && !['cap', 'les', 'dels', 'dalt', 'mar', 'renfe', 'estacio', 'estació', 'centre', 'nord', 'parc'].includes(w));
+    };
+
+    const currKeywords = getKeywords(currTarget);
+    const otherKeywords = getKeywords(otherTarget);
+
+    const matchesCurr = currKeywords.some(k => terminus.includes(k) || (parts.length === 1 && rawClean.includes(k)));
+    const matchesOther = otherKeywords.some(k => terminus.includes(k) || (parts.length === 1 && rawClean.includes(k)));
+
+    if (matchesCurr && !matchesOther) return true;
+    if (matchesOther && !matchesCurr) return false;
+    return true;
+  }
+
   async getStopDepartures(stopId, lineId = null, direction = '0', lineDetails = null) {
     const lineConfig = lineId ? this.resolveLine(lineId) : null;
     const dir = String(direction || '0');
@@ -924,6 +963,11 @@ class MaresmeTracker {
           matchingItems.forEach(lineItem => {
             const trs = lineItem.trayectos || {};
             for (const [destName, depList] of Object.entries(trs)) {
+              // Strictly filter trayectos by the requested route direction
+              if (!this.matchesDirection(destName, dir, lineConfig)) {
+                continue;
+              }
+
               const list = Array.isArray(depList) ? depList : (typeof depList === 'object' ? Object.values(depList) : []);
               list.forEach(dep => {
                 const isRT = dep.real === 'S';
@@ -955,7 +999,7 @@ class MaresmeTracker {
 
                 if (safeMins !== null && safeMins >= 0 && safeMins <= 1440) {
                   const depUtc = new Date(Date.now() + safeMins * 60 * 1000);
-                  const cleanDest = destName.includes('(') ? destName : (destName || defaultDest);
+                  const cleanDest = defaultDest;
                   rawDeps.push({
                     lineId: displayLineId,
                     lineName: lineConfig.code,

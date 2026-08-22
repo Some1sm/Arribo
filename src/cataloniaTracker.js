@@ -310,6 +310,45 @@ class CataloniaTracker {
     };
   }
 
+  matchesDirection(destName, dir, route) {
+    if (dir === 'both' || !route || !route.directions || route.directions.length <= 1) return true;
+    const currentDirObj = route.directions.find(d => String(d.dirId) === String(dir));
+    const otherDirObj = route.directions.find(d => String(d.dirId) !== String(dir));
+    if (!currentDirObj) return true;
+
+    const cleanPlaceName = (str) => {
+      return String(str || '')
+        .toLowerCase()
+        .replace(/\bbcn\b/g, 'barcelona')
+        .replace(/\([^)]*\)/g, '')
+        .replace(/^cap a\s+/i, '')
+        .trim();
+    };
+
+    const rawClean = cleanPlaceName(destName);
+    const parts = rawClean.split(/\s*[-–➔⇄]\s*/).map(p => p.trim()).filter(Boolean);
+    const terminus = parts.length > 1 ? parts[parts.length - 1] : (parts[0] || rawClean);
+
+    const currTarget = cleanPlaceName(currentDirObj.name);
+    const otherTarget = otherDirObj ? cleanPlaceName(otherDirObj.name) : '';
+
+    const getKeywords = (str) => {
+      return str
+        .split(/[\s,\/]+/)
+        .filter(w => w.length > 2 && !['cap', 'les', 'dels', 'dalt', 'mar', 'renfe', 'estacio', 'estació', 'centre', 'nord', 'parc'].includes(w));
+    };
+
+    const currKeywords = getKeywords(currTarget);
+    const otherKeywords = getKeywords(otherTarget);
+
+    const matchesCurr = currKeywords.some(k => terminus.includes(k) || (parts.length === 1 && rawClean.includes(k)));
+    const matchesOther = otherKeywords.some(k => terminus.includes(k) || (parts.length === 1 && rawClean.includes(k)));
+
+    if (matchesCurr && !matchesOther) return true;
+    if (matchesOther && !matchesCurr) return false;
+    return true;
+  }
+
   async getStopDepartures(stopId, lineId, direction = '0') {
     await this.init();
     const route = this.resolveLine(lineId);
@@ -339,13 +378,16 @@ class CataloniaTracker {
       rawList.forEach(item => {
         const itemLine = String(item.linia || item.nomLinia || '').toUpperCase();
         if (itemLine.includes(routeCodeUpper) || routeCodeUpper.includes(itemLine)) {
+          if (item.destinacio && !this.matchesDirection(item.destinacio, dirIdx, route)) {
+            return;
+          }
           const arrMins = parseInt(item.tempsMinuts || item.minuts || '0', 10);
           const timeStr = item.horaReal || item.horaTeorica || '--:--';
           departures.push({
             lineId: route.id,
             lineCode: route.code,
             lineName: route.code,
-            destination: item.destinacio || dirMeta.name,
+            destination: dirMeta.name,
             departureTime: timeStr,
             minutesAway: arrMins,
             etaFormatted: arrMins <= 1 ? 'Imminent' : `${arrMins} min`,
