@@ -1126,6 +1126,24 @@ body {
   box-shadow: 0 4px 12px var(--c10-primary-glow);
 }
 
+.btn-direction.loading {
+  position: relative;
+  pointer-events: none;
+  opacity: 0.85;
+}
+
+.btn-direction.loading::after {
+  content: '';
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: spinner-rotate 0.6s linear infinite;
+  margin-left: 4px;
+}
+
 .btn-direction:hover:not(.active) {
   color: var(--text-primary);
   background: rgba(125, 125, 125, 0.1);

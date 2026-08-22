@@ -356,6 +356,87 @@ class TransitApp {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
+  switchDirection(dirId) {
+    if (!dirId || dirId === this.activeDirection) return;
+    this.activeDirection = String(dirId);
+
+    // 1. Immediately toggle active and loading classes on all direction buttons & tabs (0ms response)
+    const dirButtons = document.querySelectorAll('.btn-direction, .btn-stops-dir-tab');
+    dirButtons.forEach(btn => {
+      const bDir = btn.getAttribute('data-dir-id') || btn.getAttribute('data-direction');
+      const isMatch = String(bDir) === String(dirId);
+      btn.classList.toggle('active', isMatch);
+      if (isMatch) {
+        btn.classList.add('loading');
+      } else {
+        btn.classList.remove('loading');
+      }
+    });
+
+    // 2. Instant Optimistic Render from cached route data if available
+    const lId = this.activeLineId;
+    const routeKey = `${lId}_${this.activeDirection}`;
+    const cached = this.lineCache.get(routeKey);
+    if (cached) {
+      this.activeLineData = cached;
+      const isBoth = this.activeDirection === 'both' || cached.direction === 'both';
+      if (isBoth && cached.allDirections && cached.allDirections.length > 1) {
+        const merged = [];
+        for (const dir of cached.allDirections) {
+          for (const s of (dir.stops || [])) {
+            const last = merged[merged.length - 1];
+            if (!last || String(last.id || last.mouteStopId || last.code) !== String(s.id || s.mouteStopId || s.code)) {
+              merged.push(s);
+            }
+          }
+        }
+        this.allStops = merged.map((s, idx) => ({ ...s, seq: idx + 1 }));
+      } else {
+        this.allStops = cached.stops || [];
+      }
+
+      const savedStopId = this.targetStopsByLine[routeKey] || null;
+      const isSavedValid = savedStopId && this.allStops.some(s => String(s.id || s.mouteStopId || s.code) === String(savedStopId));
+      const activeTargetId = isSavedValid ? savedStopId : (this.allStops[0]?.id || this.allStops[0]?.mouteStopId || this.allStops[0]?.code || null);
+
+      this.updateHeaderBrand(cached);
+      this.renderLineBanner(cached);
+      this.populateSelect('target-stop-select', cached, activeTargetId);
+      this.renderRouteTimeline(cached, activeTargetId);
+      this.renderStopsBrowser(cached, lId);
+
+      const lineColor = cached.color || '#009485';
+      const coords = cached.coords || cached.polyline || cached.allDirections?.[0]?.coords || cached.allDirections?.[0]?.polyline || [];
+      const secondaryCoords = isBoth ? (cached.secondaryCoords || cached.allDirections?.[1]?.coords || cached.allDirections?.[1]?.polyline || null) : null;
+      const secondaryStops = isBoth ? (cached.secondaryStops || cached.allDirections?.[1]?.stops || null) : null;
+      const secondaryColor = isBoth ? (cached.secondaryColor || '#38bdf8') : '#38bdf8';
+
+      this.mapController.renderStops(
+        cached.stops || [],
+        activeTargetId,
+        (s) => this.inspectStop(s.id || s.mouteStopId, s.name),
+        true,
+        lineColor,
+        coords,
+        secondaryCoords,
+        secondaryStops,
+        secondaryColor,
+        lId,
+        this.activeDirection
+      );
+    } else if (this.activeLineData) {
+      const etaMins = document.getElementById('target-countdown');
+      if (etaMins) {
+        etaMins.innerHTML = '<span class="loading-spinner-inline" style="width:22px; height:22px; border-width:3px; margin-right:6px;"></span>';
+      }
+    }
+
+    // 3. Fetch fresh data
+    this.refreshAllData(true).finally(() => {
+      document.querySelectorAll('.btn-direction.loading, .btn-stops-dir-tab.loading').forEach(b => b.classList.remove('loading'));
+    });
+  }
+
   getContrastColor(hex) {
     if (!hex) return '#ffffff';
     let c = hex.replace('#', '');
@@ -2709,8 +2790,7 @@ class TransitApp {
         e.preventDefault();
         const dirId = btn.getAttribute('data-dir-id') || btn.getAttribute('data-direction');
         if (dirId && dirId !== this.activeDirection) {
-          this.activeDirection = dirId;
-          this.refreshAllData(true);
+          this.switchDirection(dirId);
         }
       });
     }
@@ -2734,8 +2814,7 @@ class TransitApp {
         e.preventDefault();
         const dirId = btn.getAttribute('data-dir-id');
         if (dirId && dirId !== this.activeDirection) {
-          this.activeDirection = dirId;
-          this.refreshAllData(true);
+          this.switchDirection(dirId);
         }
       }
     });
