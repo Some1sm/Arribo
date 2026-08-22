@@ -45,6 +45,7 @@ class CorridorTracker {
     this.stopsDir1.forEach(s => this.stopsMapDir1.set(s.gtfsStopId, s));
     this.stopsDir0.forEach(s => this.stopsMapDir0.set(s.gtfsStopId, s));
     this.fullSchedule = { dir1: [...C10_TRIPS_DIR1], dir0: [...C10_TRIPS_DIR0] };
+    this.calendarLoaded = false;
     this.calendarExceptions = new Map();
     this.calendarWeekly = [];
     this.loadData();
@@ -142,11 +143,20 @@ class CorridorTracker {
       this.stopsMapDir0 = new Map();
       this.stopsDir0.forEach(s => this.stopsMapDir0.set(s.gtfsStopId, s));
 
-      this.loadCalendarSync();
       console.log(`[CorridorTracker] Authoritatively loaded C-10 (${this.stopsDir1.length} stops dir 1, ${this.stopsDir0.length} stops dir 0, ${this.fullSchedule.dir1.length + this.fullSchedule.dir0.length} trips)!`);
     } catch (e) {
       console.error('[CorridorTracker] Error loading static C-10 datasets:', e.message);
     }
+  }
+
+  ensureCalendarLoaded() {
+    if (this.calendarLoaded) return;
+    this.calendarLoaded = true;
+    this.loadCalendarSync();
+  }
+
+  async init() {
+    this.ensureCalendarLoaded();
   }
 
   loadCalendarSync() {
@@ -258,6 +268,7 @@ class CorridorTracker {
   }
 
   isServiceActiveOnDate(serviceId, dateObj = new Date()) {
+    this.ensureCalendarLoaded();
     return calendarEngine.isServiceActiveOnDate(serviceId, this.calendarWeekly, this.calendarExceptions, dateObj, this.agencyTimezone);
   }
 

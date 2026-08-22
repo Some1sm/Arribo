@@ -37,6 +37,7 @@ class HistoryDatabase {
         this.db = new DatabaseSync(this.dbPath);
         this.db.exec(`
           PRAGMA journal_mode = WAL;
+          PRAGMA busy_timeout = 5000;
           PRAGMA synchronous = NORMAL;
           PRAGMA cache_size = -2048;
           PRAGMA wal_autocheckpoint = 200;
@@ -61,6 +62,7 @@ class HistoryDatabase {
 
           CREATE INDEX IF NOT EXISTS idx_veh_time ON vehicle_snapshots(vehicle_id, timestamp);
           CREATE INDEX IF NOT EXISTS idx_line_time ON vehicle_snapshots(line_code, timestamp);
+          CREATE INDEX IF NOT EXISTS idx_veh_timestamp ON vehicle_snapshots(timestamp);
 
           CREATE TABLE IF NOT EXISTS delay_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -79,6 +81,10 @@ class HistoryDatabase {
 
           CREATE INDEX IF NOT EXISTS idx_delay_line ON delay_logs(line_code, timestamp);
           CREATE INDEX IF NOT EXISTS idx_delay_stop ON delay_logs(stop_id, timestamp);
+          CREATE INDEX IF NOT EXISTS idx_delay_timestamp ON delay_logs(timestamp);
+          CREATE INDEX IF NOT EXISTS idx_delay_time_line ON delay_logs(timestamp, line_code);
+          CREATE INDEX IF NOT EXISTS idx_delay_line_timestamp ON delay_logs(line_code, timestamp);
+          CREATE INDEX IF NOT EXISTS idx_delay_stop_timestamp ON delay_logs(stop_id, timestamp);
 
           -- Option B: Hourly Aggregated Rollup Table (Kept indefinitely with <1 MB/day footprint)
           CREATE TABLE IF NOT EXISTS hourly_line_stats (
@@ -544,6 +550,31 @@ class HistoryDatabase {
       console.log(`[HistoryDB] Pruned old records (snapshots: ${this.snapshotRetentionHours}h, delays: ${daysRetention}d, deleted: ${snapshotChanges + delayChanges}, hourly stats preserved).`);
     } catch (e) {
       console.error('[HistoryDB] pruneOldRecords error:', e.message);
+    }
+  }
+
+  checkpointTruncate() {
+    if (!this.db) return false;
+    try {
+      this.db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+      console.log('[HistoryDB] WAL checkpoint (TRUNCATE) executed successfully.');
+      return true;
+    } catch (e) {
+      console.error('[HistoryDB] checkpointTruncate error:', e.message);
+      return false;
+    }
+  }
+
+  close() {
+    if (this.db) {
+      try {
+        this.checkpointTruncate();
+        this.db.close();
+      } catch (e) {
+        console.error('[HistoryDB] close error:', e.message);
+      } finally {
+        this.db = null;
+      }
     }
   }
 }

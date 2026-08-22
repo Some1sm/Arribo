@@ -201,11 +201,17 @@ class MaresmeTracker {
     this.getShapeStmt = null;
     this.isLoaded = false;
     this.baseLineDetailsCache = new Map();
+  }
+
+  async init() {
     this.loadData();
   }
 
   getShapeCoords(shapeId) {
     if (!shapeId) return null;
+    if (!this.isLoaded) {
+      this.loadData();
+    }
     if (this.shapesMap.has(shapeId)) {
       const pts = this.shapesMap.get(shapeId);
       if (pts && pts.length > 0) {
@@ -936,6 +942,9 @@ class MaresmeTracker {
   }
 
   async getStopDepartures(stopId, lineId = null, direction = '0', lineDetails = null) {
+    if (!this.isLoaded) {
+      this.loadData();
+    }
     const lineConfig = lineId ? this.resolveLine(lineId) : null;
     const dir = String(direction || '0');
     const sIdStr = String(stopId);

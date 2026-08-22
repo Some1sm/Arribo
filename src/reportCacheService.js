@@ -9,7 +9,36 @@ class ReportCacheService {
     this.supportedHours = [24, 48, 168];
     this.cachedReports = new Map();
     this.isGenerating = false;
+    this.ipcCallback = null;
     this.init();
+  }
+
+  setIpcCallback(callback) {
+    this.ipcCallback = typeof callback === 'function' ? callback : null;
+  }
+
+  emitIpc(type, payload) {
+    try {
+      if (typeof process.send === 'function') {
+        process.send({ type, payload });
+      }
+    } catch (e) {
+      // IPC channel disconnected
+    }
+    if (this.ipcCallback) {
+      try {
+        this.ipcCallback(type, payload);
+      } catch (e) {
+        // Callback error
+      }
+    }
+  }
+
+  updateMemoryCache(timeframeHours, report) {
+    if (!report) return;
+    const canonicalHours = this.normalizeHours(timeframeHours);
+    this.cachedReports.set(String(canonicalHours), report);
+    console.log(`[ReportCacheService] ⚡ Memory cache updated via IPC for ${canonicalHours}h report`);
   }
 
   init() {
@@ -170,6 +199,13 @@ class ReportCacheService {
 
       // Update in-memory cache
       this.cachedReports.set(String(canonicalHours), fullReport);
+
+      // Notify master/bridge via IPC
+      this.emitIpc('REPORT_CACHE_UPDATE', {
+        timeframeHours: canonicalHours,
+        report: fullReport,
+        generatedAt: now
+      });
 
       // Keep max 2 reports per timeframe on storage
       this.pruneOldReports();

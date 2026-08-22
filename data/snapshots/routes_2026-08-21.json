@@ -1,10 +1,10 @@
 {
   "date": "2026-08-21",
-  "timestamp": 1787321670593,
-  "isoDate": "2026-08-21T14:14:30.593Z",
+  "timestamp": 1787356583486,
+  "isoDate": "2026-08-21T23:56:23.486Z",
   "totalRoutes": 1610,
   "totalStops": 23309,
-  "totalShapes": 24,
+  "totalShapes": 6688,
   "totalTrips": 11,
   "routes": [
     {

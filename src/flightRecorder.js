@@ -174,9 +174,62 @@ class FlightRecorder {
     return historyDb.getJournalismReport(hours, allLinesCatalog);
   }
 
+  syncFleetFromWorker(vehicles) {
+    if (!Array.isArray(vehicles)) return;
+    const newMap = new Map();
+    const newLineIndex = new Map();
+    const now = Date.now();
+
+    for (let i = 0; i < vehicles.length; i++) {
+      const v = vehicles[i];
+      if (!v || !v.vehicleId) continue;
+      const vId = String(v.vehicleId);
+      const lineCode = String(v.lineCode || '').toUpperCase();
+
+      const existing = this.vehicles.get(vId);
+      const history = (v.history && Array.isArray(v.history) && v.history.length > 0)
+        ? v.history
+        : (existing ? existing.history : []);
+
+      const state = {
+        vehicleId: vId,
+        lineId: v.lineId || '',
+        lineCode: lineCode,
+        agency: v.agency || 'Transit',
+        plateNumber: v.plateNumber || '',
+        lat: Number(v.lat),
+        lon: Number(v.lon),
+        speedKmh: Number(v.speedKmh || 0),
+        bearing: Number(v.bearing || 0),
+        delayMins: Number(v.delayMins || 0),
+        destination: v.destination || '',
+        isRealTime: v.isRealTime !== false,
+        status: v.status || 'active',
+        lastSeen: v.lastSeen || now,
+        lastPersistedAt: v.lastPersistedAt || 0,
+        history: history
+      };
+
+      newMap.set(vId, state);
+
+      if (lineCode) {
+        let set = newLineIndex.get(lineCode);
+        if (!set) {
+          set = new Set();
+          newLineIndex.set(lineCode, set);
+        }
+        set.add(vId);
+      }
+    }
+
+    this.vehicles = newMap;
+    this.lineIndex = newLineIndex;
+  }
+
   exportCsv(hours = 48) {
     return historyDb.exportDelayLogsCsv(hours);
   }
 }
 
 module.exports = new FlightRecorder();
+

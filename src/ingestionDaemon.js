@@ -29,6 +29,41 @@ class IngestionDaemon {
     this.ambBatchOffset = 0;
     this.sagalesBatchOffset = 0;
     this.maresmeBatchOffset = 0;
+    this.startupTimeouts = [];
+    this.ipcCallback = null;
+    this.lastFleetEmit = 0;
+  }
+
+  setIpcCallback(callback) {
+    this.ipcCallback = typeof callback === 'function' ? callback : null;
+  }
+
+  emitIpc(type, payload) {
+    try {
+      if (typeof process.send === 'function') {
+        process.send({ type, payload });
+      }
+    } catch (e) {
+      // IPC channel disconnected
+    }
+    if (this.ipcCallback) {
+      try {
+        this.ipcCallback(type, payload);
+      } catch (e) {
+        // Callback error
+      }
+    }
+  }
+
+  emitFleetUpdate() {
+    const now = Date.now();
+    if (this.lastFleetEmit && (now - this.lastFleetEmit < 500)) return;
+    this.lastFleetEmit = now;
+    const vehicles = flightRecorder.getAllVehicles();
+    this.emitIpc('FLEET_UPDATE', {
+      timestamp: now,
+      vehicles
+    });
   }
 
   start() {
@@ -36,21 +71,25 @@ class IngestionDaemon {
     this.isRunning = true;
     console.log('[IngestionDaemon] 🚀 Starting Autonomous Centralized Ingestion Server...');
 
+    // Clear any existing startup timeouts
+    this.startupTimeouts.forEach(t => clearTimeout(t));
+    this.startupTimeouts = [];
+
     // Apply retention in background
-    setTimeout(() => historyDb.pruneOldRecords(), 1000);
+    this.startupTimeouts.push(setTimeout(() => historyDb.pruneOldRecords(), 1000));
 
     // Initialize daily route cache and snapshots asynchronously
-    setTimeout(() => routeCacheService.initDailyCache(), 2000);
+    this.startupTimeouts.push(setTimeout(() => routeCacheService.initDailyCache(), 2000));
 
     // 1. Initial Ingestion Run (Staggered to prevent startup CPU & I/O spikes)
-    setTimeout(() => this.pollAmbVehicles(), 100);
-    setTimeout(() => this.pollMataroVehicles(), 400);
-    setTimeout(() => this.pollCorridorDelays(), 700);
-    setTimeout(() => this.pollMaresmeLines(), 1000);
-    setTimeout(() => this.pollAmbLines(), 1300);
-    setTimeout(() => this.pollRodaliesTrains(), 1600);
-    setTimeout(() => this.pollSagalesLines(), 2000);
-    setTimeout(() => this.pollCataloniaLines(), 2400);
+    this.startupTimeouts.push(setTimeout(() => this.pollAmbVehicles(), 100));
+    this.startupTimeouts.push(setTimeout(() => this.pollMataroVehicles(), 400));
+    this.startupTimeouts.push(setTimeout(() => this.pollCorridorDelays(), 700));
+    this.startupTimeouts.push(setTimeout(() => this.pollMaresmeLines(), 1000));
+    this.startupTimeouts.push(setTimeout(() => this.pollAmbLines(), 1300));
+    this.startupTimeouts.push(setTimeout(() => this.pollRodaliesTrains(), 1600));
+    this.startupTimeouts.push(setTimeout(() => this.pollSagalesLines(), 2000));
+    this.startupTimeouts.push(setTimeout(() => this.pollCataloniaLines(), 2400));
 
     // 2. Schedule High-Frequency AMB Vehicle Fleet Ingestion (every 12 seconds)
     this.vehiclePollTimer = setInterval(() => this.pollAmbVehicles(), 12000);
@@ -91,12 +130,16 @@ class IngestionDaemon {
     }, 24 * 3600 * 1000);
 
     // 12. Schedule Periodic Journalism Report Generation (every 30 minutes, keeping max 2 reports on storage)
-    setTimeout(() => this.generateJournalismReport(), 3000);
+    this.startupTimeouts.push(setTimeout(() => this.generateJournalismReport(), 3000));
     this.journalismReportTimer = setInterval(() => this.generateJournalismReport(), 30 * 60 * 1000);
   }
 
   stop() {
     this.isRunning = false;
+    if (this.startupTimeouts && this.startupTimeouts.length > 0) {
+      this.startupTimeouts.forEach(t => clearTimeout(t));
+      this.startupTimeouts = [];
+    }
     if (this.vehiclePollTimer) clearInterval(this.vehiclePollTimer);
     if (this.ambLinesPollTimer) clearInterval(this.ambLinesPollTimer);
     if (this.mataroPollTimer) clearInterval(this.mataroPollTimer);
@@ -156,6 +199,7 @@ class IngestionDaemon {
             isRealTime: true
           });
         });
+        this.emitFleetUpdate();
       }
     } catch (e) {
       // Upstream temporary hiccup
@@ -248,6 +292,7 @@ class IngestionDaemon {
           // Skip individual line
         }
       }));
+      this.emitFleetUpdate();
     } catch (e) {
       // Upstream temporary hiccup
     }
@@ -295,6 +340,7 @@ class IngestionDaemon {
           });
         }
       }
+      this.emitFleetUpdate();
     } catch (e) {
       // Upstream temporary hiccup
     }
@@ -361,6 +407,7 @@ class IngestionDaemon {
           // Skip individual line
         }
       }));
+      this.emitFleetUpdate();
     } catch (e) {
       // Upstream temporary hiccup
     }
@@ -493,7 +540,13 @@ class IngestionDaemon {
 
   async pollDisruptions() {
     try {
-      await ambTracker.getDisruptions();
+      const disruptions = await ambTracker.getDisruptions();
+      if (Array.isArray(disruptions)) {
+        this.emitIpc('DISRUPTIONS_UPDATE', {
+          timestamp: Date.now(),
+          disruptions
+        });
+      }
     } catch (e) {
       // Upstream temporary hiccup
     }

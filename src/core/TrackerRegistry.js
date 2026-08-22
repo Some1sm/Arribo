@@ -1,10 +1,5 @@
-/**
- * src/core/TrackerRegistry.js
- * 
- * Centralized Tracker Registry & Multi-Provider Dispatcher.
- * Handles polymorphic line resolution, 4-tier line deduplication,
- * multi-agency asynchronous initialization, and universal stop search.
- */
+const fs = require('fs');
+const path = require('path');
 
 class TrackerRegistry {
   constructor() {
@@ -13,6 +8,43 @@ class TrackerRegistry {
     this.lastCacheTime = 0;
     this.cacheTtlMs = 60000;       // 1 minute line catalog cache
     this.isInitialized = false;
+  }
+
+  loadWarmSnapshotCatalog() {
+    // 1. Try cache/routes.json (full warm catalog)
+    try {
+      const cachePath = path.join(__dirname, '..', '..', 'data', 'cache', 'routes.json');
+      if (fs.existsSync(cachePath)) {
+        const raw = fs.readFileSync(cachePath, 'utf8');
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (e) {}
+
+    // 2. Try local snapshot directory (data/snapshots/routes_*.json)
+    try {
+      const snapshotsDir = path.join(__dirname, '..', '..', 'data', 'snapshots');
+      if (fs.existsSync(snapshotsDir)) {
+        const files = fs.readdirSync(snapshotsDir)
+          .filter(f => f.startsWith('routes_') && f.endsWith('.json'))
+          .sort()
+          .reverse();
+        if (files.length > 0) {
+          const snapshotFile = path.join(snapshotsDir, files[0]);
+          const raw = fs.readFileSync(snapshotFile, 'utf8');
+          const parsed = JSON.parse(raw);
+          if (parsed && Array.isArray(parsed.routes) && parsed.routes.length > 0) {
+            return parsed.routes;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[TrackerRegistry] Could not read daily routes snapshot:', e.message);
+    }
+
+    return [];
   }
 
   /**
@@ -341,11 +373,14 @@ class TrackerRegistry {
       }
     }
 
-    // 2. Generic Catalonia Fallback Catalog
+    // 2. Generic Catalonia Fallback Catalog / Warm Snapshot
     const catEntry = this.providers.get('catalonia');
-    if (catEntry && typeof catEntry.tracker.getLines === 'function') {
-      const catLines = catEntry.tracker.getLines();
-      if (Array.isArray(catLines)) catLines.forEach(addLine);
+    let catLines = (catEntry && typeof catEntry.tracker.getLines === 'function') ? catEntry.tracker.getLines() : [];
+    if (!Array.isArray(catLines) || catLines.length === 0) {
+      catLines = this.loadWarmSnapshotCatalog();
+    }
+    if (Array.isArray(catLines)) {
+      catLines.forEach(addLine);
     }
 
     this.cachedLines = allCombined;

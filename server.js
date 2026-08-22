@@ -12,8 +12,8 @@ const cataloniaTracker = require('./src/cataloniaTracker');
 const routeCacheService = require('./src/routeCacheService');
 const reportCacheService = require('./src/reportCacheService');
 const flightRecorder = require('./src/flightRecorder');
-const ingestionDaemon = require('./src/ingestionDaemon');
 const trackerRegistry = require('./src/core/TrackerRegistry');
+const workerBridge = require('./src/core/WorkerBridge');
 const calendarEngine = require('./src/core/time/calendarEngine');
 const delayEngine = require('./src/core/schedule/delayEngine');
 
@@ -37,12 +37,8 @@ app.use(express.static(path.join(__dirname, 'public'), {
   etag: false
 }));
 
-// Pre-initialize async trackers and launch Autonomous Ingestion Daemon
-trackerRegistry.initAll().then(() => {
-  console.log('[TransitPlatform] All Multi-Provider Trackers Initialized.');
-  trackerRegistry.cachedLines = null; // Rebuild catalog with fully initialized providers
-  ingestionDaemon.start();
-});
+// Launch Background Ingestion & Analytics Worker asynchronously via WorkerBridge supervisor
+workerBridge.start();
 
 // Request logger middleware
 app.use('/api', (req, res, next) => {
@@ -223,8 +219,7 @@ function getAllTransitLines() {
 }
 
 // List all available transit lines across all providers
-app.get('/api/lines', async (req, res) => {
-  await trackerRegistry.initAll();
+app.get('/api/lines', (req, res) => {
   const combinedLines = getAllTransitLines();
 
   res.json({
@@ -235,8 +230,7 @@ app.get('/api/lines', async (req, res) => {
 });
 
 // Universal Stop & Line Searcher (Across all bus and train lines & stops in Catalonia)
-app.get('/api/search/stops', async (req, res) => {
-  await trackerRegistry.initAll();
+app.get('/api/search/stops', (req, res) => {
   const q = (req.query.q || '').trim().toLowerCase();
   if (!q || q.length < 1) {
     return res.json({ success: true, results: [] });
@@ -559,21 +553,28 @@ app.get('/api/line/:lineId/vehicles', async (req, res) => {
   const { lineId } = req.params;
   const direction = req.query.direction || '0';
   try {
-    const { type, tracker } = getTrackerForLine(lineId);
-    let details;
-    if (type === 'c10') {
-      const dir = direction === '0' ? '0' : '1';
-      details = await corridorTracker.getCorridorLiveTracking(dir);
+    const { type, tracker, cleanCode, agency } = getTrackerForLine(lineId);
+    let vehicles = flightRecorder.getLineVehicles(cleanCode || lineId);
+    let details = null;
+
+    if (!vehicles || vehicles.length === 0) {
+      if (type === 'c10') {
+        const dir = direction === '0' ? '0' : '1';
+        details = await corridorTracker.getCorridorLiveTracking(dir);
+      } else {
+        details = await tracker.getLineDetails(lineId, direction);
+      }
+      vehicles = (details?.activeBuses || []).map(standardizeVehicle);
     } else {
-      details = await tracker.getLineDetails(lineId, direction);
+      vehicles = vehicles.map(standardizeVehicle);
     }
-    const vehicles = (details?.activeBuses || []).map(standardizeVehicle);
+
     res.json({
       success: true,
       lineId,
-      code: details?.code || String(lineId),
+      code: details?.code || cleanCode || String(lineId),
       name: details?.name || null,
-      agency: details?.agency || null,
+      agency: details?.agency || agency || null,
       direction: String(direction),
       totalVehicles: vehicles.length,
       vehicles,
@@ -1000,7 +1001,8 @@ app.get('/api/health', (req, res) => {
     app: 'Arribo!',
     version: '3.0.0',
     description: 'Universal Realtime Bus Telemetry & Schedule Platform for Catalonia',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    worker: workerBridge.getStatus()
   });
 });
 
@@ -1017,9 +1019,17 @@ if (require.main === module) {
     console.log(`====================================================`);
   });
 
-  const gracefulShutdown = (signal) => {
+  const gracefulShutdown = async (signal) => {
     console.log(`[Server] Received ${signal}. Shutting down gracefully...`);
-    ingestionDaemon.stop();
+    try {
+      if (typeof workerBridge.stop === 'function') {
+        await workerBridge.stop();
+      } else if (typeof workerBridge.shutdown === 'function') {
+        await workerBridge.shutdown();
+      }
+    } catch (e) {
+      console.error('[Server] WorkerBridge shutdown error:', e.message);
+    }
     runningServer.close(() => {
       console.log('[Server] HTTP server closed.');
       process.exit(0);
