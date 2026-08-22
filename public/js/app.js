@@ -12,6 +12,7 @@ class TransitApp {
     this.targetStopsByLine = JSON.parse(localStorage.getItem('bad_amb_target_stops') || '{}');
     this.lineCache = new Map(); // LRU bounded to max 8 active routes
     this.stopDeparturesCache = new Map(); // Client-side SWR stop departures cache
+    this.activeRequestSeq = 0; // Monotonic request sequence ID to prevent race conditions
     this.allStops = [];
     this.activeBuses = [];
     this.selectedVehicleId = null;
@@ -775,8 +776,11 @@ class TransitApp {
     this.setLiveStatus('syncing');
 
     try {
+      const reqSeq = ++this.activeRequestSeq;
       const lId = this.activeLineId;
       const dir = this.activeDirection;
+      if (!lId) return;
+
       const routeKey = `${lId}_${dir}`;
       const savedStopId = this.targetStopsByLine[routeKey] || null;
 
@@ -796,6 +800,11 @@ class TransitApp {
 
       // 2. Process Line details immediately (<5ms)
       const lineRes = await linePromise;
+
+      // Guard: Discard stale network responses from previous lines or directions
+      if (this.activeRequestSeq !== reqSeq || this.activeLineId !== lId || this.activeDirection !== dir) {
+        return;
+      }
 
       let activeTargetId = null;
       if (lineRes.success && lineRes.data) {
@@ -890,7 +899,7 @@ class TransitApp {
 
       // 3. Asynchronously handle Target Stop ETA without delaying map transition
       etaPromise.then(etaRes => {
-        if (etaRes.success && etaRes.data && this.activeLineId === lId && this.activeDirection === dir) {
+        if (etaRes.success && etaRes.data && this.activeRequestSeq === reqSeq && this.activeLineId === lId && this.activeDirection === dir) {
           this.renderTargetCard(etaRes.data, this.activeLineData);
           this.renderTelemetryCockpit(this.activeLineData, etaRes.data);
           this.checkArrivalAlerts(this.activeLineData, activeTargetId);
@@ -2812,6 +2821,17 @@ class TransitApp {
 
   setupEventListeners() {
     this.setupPageVisibility();
+
+    // Synchronize route view on browser back / forward navigation
+    window.addEventListener('popstate', () => {
+      const prevLineId = this.activeLineId;
+      this.parseUrlHash();
+      if (this.activeLineId && this.activeLineId !== prevLineId) {
+        this.switchLine(this.activeLineId);
+      } else if (!this.activeLineId) {
+        this.navigateToLanding();
+      }
+    });
 
     // Dynamic Direction buttons delegation
     const dirGroup = document.getElementById('direction-toggle-group');
