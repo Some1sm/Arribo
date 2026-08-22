@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const historyDb = require('./historyDb');
 
 class ReportCacheService {
   constructor() {
@@ -10,7 +9,14 @@ class ReportCacheService {
     this.cachedReports = new Map();
     this.isGenerating = false;
     this.ipcCallback = null;
+    // Injectable database handle (set via setDatabase). The main process never
+    // sets this, so it never touches SQLite.
+    this._db = null;
     this.init();
+  }
+
+  setDatabase(db) {
+    this._db = db || null;
   }
 
   setIpcCallback(callback) {
@@ -173,7 +179,10 @@ class ReportCacheService {
       const catalog = typeof allLinesCatalog === 'function' ? allLinesCatalog() : allLinesCatalog;
 
       console.log(`[ReportCacheService] 📊 Generating fresh ${canonicalHours}h Journalism Report (catalog lines: ${catalog?.length || 0})...`);
-      const report = historyDb.getJournalismReport(canonicalHours, catalog || []);
+      if (!this._db) {
+        throw new Error('Report database unavailable in this process');
+      }
+      const report = this._db.getJournalismReport(canonicalHours, catalog || []);
 
       const now = Date.now();
       const meta = {
@@ -233,7 +242,7 @@ class ReportCacheService {
     }
   }
 
-  async getLatestReport(hours = 24, allLinesCatalogSupplier = null) {
+  async getLatestReport(hours = 24, allLinesCatalogSupplier = null, options = {}) {
     const canonicalHours = this.normalizeHours(hours);
     const cached = this.cachedReports.get(String(canonicalHours));
 
@@ -242,7 +251,14 @@ class ReportCacheService {
       return cached;
     }
 
-    // Only generate if cold boot before the background daemon creates the first report
+    // Default: do NOT generate on a miss. This keeps the main process away from
+    // SQLite entirely; callers treat null as "ask the worker via RPC". Only an
+    // explicit { allowGenerate: true } triggers generation (throws if no db).
+    if (options.allowGenerate !== true) {
+      return null;
+    }
+
+    // Cold boot fallback before the background daemon creates the first report
     const catalog = typeof allLinesCatalogSupplier === 'function' ? allLinesCatalogSupplier() : allLinesCatalogSupplier;
     return await this.generateAndSaveReport(canonicalHours, catalog);
   }

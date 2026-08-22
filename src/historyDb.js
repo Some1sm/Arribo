@@ -29,10 +29,18 @@ class HistoryDatabase {
     // Cached prepared statements for the high-frequency write paths
     this._snapshotStmt = null;
     this._delayStmt = null;
-    this.init();
   }
 
+  // Public init() kept for backwards compatibility; delegates to lazy open.
   init() {
+    return this._ensureOpen();
+  }
+
+  // Lazy open: idempotent. The SQLite handle, schema DDL and DROP INDEX
+  // migrations only run on first use, so merely requiring this module in ANY
+  // process has no filesystem side effects.
+  _ensureOpen() {
+    if (this.db) return true;
     const dir = path.dirname(this.dbPath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
@@ -123,10 +131,12 @@ class HistoryDatabase {
         this.db = null;
       }
     }
+    return this.db != null;
   }
 
   recordVehicleSnapshot(snap) {
-    if (!this.db || !snap || !snap.vehicleId) return;
+    if (!snap || !snap.vehicleId) return;
+    if (!this._ensureOpen()) return;
     try {
       if (!this._snapshotStmt) {
         this._snapshotStmt = this.db.prepare(`
@@ -156,7 +166,8 @@ class HistoryDatabase {
   }
 
   recordDelayLog(entry) {
-    if (!this.db || !entry || !entry.lineCode) return;
+    if (!entry || !entry.lineCode) return;
+    if (!this._ensureOpen()) return;
     try {
       if (!this._delayStmt) {
         this._delayStmt = this.db.prepare(`
@@ -186,7 +197,7 @@ class HistoryDatabase {
   }
 
   getVehicleTrail(vehicleId, minutesBack = 45) {
-    if (!this.db) return [];
+    if (!this._ensureOpen()) return [];
     try {
       const cutoff = Date.now() - minutesBack * 60 * 1000;
       const stmt = this.db.prepare(`
@@ -204,7 +215,7 @@ class HistoryDatabase {
   }
 
   getLineDelayStats(lineCode, hoursBack = 24, lineId = null) {
-    if (!this.db) return { totalSamples: 0, avgDelayMins: 0, maxDelayMins: 0, onTimePct: 100, latePct: 0, moderateLatePct: 0, severeLatePct: 0, isBaseline: true };
+    if (!this._ensureOpen()) return { totalSamples: 0, avgDelayMins: 0, maxDelayMins: 0, onTimePct: 100, latePct: 0, moderateLatePct: 0, severeLatePct: 0, isBaseline: true };
     try {
       const cutoff = Date.now() - hoursBack * 3600 * 1000;
       const raw = String(lineCode || '').trim();
@@ -293,7 +304,7 @@ class HistoryDatabase {
   }
 
   getJournalismReport(hoursBack = 24, allLinesCatalog = []) {
-    if (!this.db) return { summary: {}, rankingMostDelayed: [], rankingBestPunctuality: [], rankingWorstStops: [], agencyStats: [] };
+    if (!this._ensureOpen()) return { summary: {}, rankingMostDelayed: [], rankingBestPunctuality: [], rankingWorstStops: [], agencyStats: [] };
     try {
       const cutoff = Date.now() - hoursBack * 3600 * 1000;
 
@@ -477,7 +488,7 @@ class HistoryDatabase {
   }
 
   exportDelayLogsCsv(hoursBack = 48) {
-    if (!this.db) return 'timestamp,line_code,agency,stop_name,delay_mins,scheduled_time,actual_time\n';
+    if (!this._ensureOpen()) return 'timestamp,line_code,agency,stop_name,delay_mins,scheduled_time,actual_time\n';
     try {
       const cutoff = Date.now() - hoursBack * 3600 * 1000;
       const stmt = this.db.prepare(`
@@ -511,7 +522,7 @@ class HistoryDatabase {
 
   // Option B: Aggregate raw delay logs into persistent hourly rollups
   aggregateHourlyStats(hoursBack = 48) {
-    if (!this.db) return;
+    if (!this._ensureOpen()) return;
     try {
       const cutoff = Date.now() - hoursBack * 3600 * 1000;
       const stmt = this.db.prepare(`
@@ -545,7 +556,7 @@ class HistoryDatabase {
 
   // Retention cleanup: roll up stats first, then prune raw logs and snapshots.
   pruneOldRecords(daysRetention = this.delayRetentionDays) {
-    if (!this.db) return;
+    if (!this._ensureOpen()) return;
     try {
       // 1. Ensure all historical data is aggregated into hourly rollups first
       this.aggregateHourlyStats(daysRetention * 24);
@@ -574,7 +585,7 @@ class HistoryDatabase {
   }
 
   checkpointTruncate() {
-    if (!this.db) return false;
+    if (!this._ensureOpen()) return false;
     try {
       this.db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
       console.log('[HistoryDB] WAL checkpoint (TRUNCATE) executed successfully.');

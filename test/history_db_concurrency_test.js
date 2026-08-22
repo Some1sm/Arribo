@@ -5,6 +5,9 @@ const historyDb = require('../src/historyDb');
 function runHistoryDbTests() {
   console.log('Testing HistoryDb SQLite Concurrency, PRAGMAs & Indexes...');
 
+  // Lazy-open: explicitly open the database before poking internals.
+  historyDb.init();
+
   // 1. Verify PRAGMAs
   console.log('\n1. Verifying PRAGMA configuration...');
   const busyTimeout = historyDb.db.prepare('PRAGMA busy_timeout;').get();

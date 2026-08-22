@@ -1,5 +1,3 @@
-const historyDb = require('./historyDb');
-
 class FlightRecorder {
   constructor() {
     this.vehicles = new Map(); // vehicleId -> VehicleState
@@ -18,6 +16,12 @@ class FlightRecorder {
     // extrapolated fleet states via syncFleetFromWorker and must not extrapolate again
     // (that would double the drift). The web server disables this after starting the bridge.
     this.autoExtrapolate = true;
+    // Injectable persistence handle (worker-only). Null in the main process,
+    // where all SQLite reads/writes are routed through the async gateway.
+    this._db = null;
+    // Async persistence gateway: async (op, args) => result. Backed by RPC in
+    // the main process and by direct dispatch in the worker.
+    this._gateway = null;
     // Maximum cumulative dead-reckoning window per vehicle. Matches the documented
     // "90-second client-side retention" behaviour and bounds positional drift.
     this.maxExtrapolationMs = 90000;
@@ -35,6 +39,27 @@ class FlightRecorder {
       clearInterval(this.deadReckonInterval);
       this.deadReckonInterval = null;
     }
+  }
+
+  /**
+   * Attach a persistence backend. Called ONLY in the worker process by
+   * ingestionWorker. When absent (main process), write paths are skipped
+   * silently and reads fall through to the gateway.
+   * @param {object} db - lazy-opened persistence handle exposing
+   *   recordVehicleSnapshot() and recordDelayLog()
+   */
+  enablePersistence(db) {
+    this._db = db || null;
+  }
+
+  /**
+   * Install the async history gateway: async (op, args) => result. Called in
+   * BOTH processes (server.js via WorkerBridge.historyQuery in main; direct
+   * dispatch in worker) so read paths behave identically everywhere.
+   * @param {Function} fn
+   */
+  setHistoryGateway(fn) {
+    this._gateway = typeof fn === 'function' ? fn : null;
   }
 
   init() {
@@ -112,8 +137,8 @@ class FlightRecorder {
     // Persist live state independently of the polling frequency. The frontend
     // still receives every poll in memory, but one-minute sampling is enough
     // for the historical trail and prevents raw GPS rows dominating the DB.
-    if (!v.lastPersistedAt || now - v.lastPersistedAt >= this.snapshotIntervalMs) {
-      historyDb.recordVehicleSnapshot({
+    if (this._db && (!v.lastPersistedAt || now - v.lastPersistedAt >= this.snapshotIntervalMs)) {
+      this._db.recordVehicleSnapshot({
         vehicleId: v.vehicleId,
         lineId: v.lineId,
         lineCode: v.lineCode,
@@ -132,7 +157,9 @@ class FlightRecorder {
   }
 
   recordArrivalDelay(entry) {
-    historyDb.recordDelayLog(entry);
+    if (this._db) {
+      this._db.recordDelayLog(entry);
+    }
   }
 
   extrapolateStaleVehicles() {
@@ -192,15 +219,18 @@ class FlightRecorder {
     return Array.from(this.vehicles.values());
   }
 
-  getVehicleTrail(vehicleId) {
+  async getVehicleTrail(vehicleId) {
     const v = this.vehicles.get(String(vehicleId));
     if (v && v.history && v.history.length > 0) {
       return v.history;
     }
-    return historyDb.getVehicleTrail(vehicleId, 60);
+    if (this._gateway) {
+      return this._gateway('getVehicleTrail', { vehicleId, limit: 60 });
+    }
+    return [];
   }
 
-  getLineStats(lineCode, lineId = null) {
+  async getLineStats(lineCode, lineId = null) {
     // Cached for statsCacheTtlMs so frequent per-line HTTP requests never issue
     // synchronous SQLite scans on the web-server event loop.
     const key = `${String(lineCode || '').toUpperCase()}|${lineId || ''}`;
@@ -209,7 +239,14 @@ class FlightRecorder {
     if (cached && (now - cached.timestamp) < this.statsCacheTtlMs) {
       return cached.data;
     }
-    const data = historyDb.getLineDelayStats(lineCode, 24, lineId);
+    let data;
+    if (this._gateway) {
+      data = await this._gateway('getLineDelayStats', { lineCode, hours: 24, lineId });
+    } else {
+      // Mirror the persistence layer's empty-stats shape so callers see an
+      // identical baseline whether or not a gateway is installed.
+      data = { totalSamples: 0, avgDelayMins: 0, maxDelayMins: 0, onTimePct: 100, latePct: 0, moderateLatePct: 0, severeLatePct: 0, isBaseline: true };
+    }
     this.statsCache.set(key, { data, timestamp: now });
     // Bound cache size defensively
     if (this.statsCache.size > 500) {
@@ -219,8 +256,11 @@ class FlightRecorder {
     return data;
   }
 
-  getJournalismReport(hours = 24, allLinesCatalog = []) {
-    return historyDb.getJournalismReport(hours, allLinesCatalog);
+  async getJournalismReport(hours = 24, allLinesCatalog = []) {
+    if (!this._gateway) {
+      throw new Error('No history gateway configured');
+    }
+    return this._gateway('getJournalismReport', { hours, allLinesCatalog });
   }
 
   syncFleetFromWorker(vehicles) {
@@ -276,8 +316,11 @@ class FlightRecorder {
     this.lineIndex = newLineIndex;
   }
 
-  exportCsv(hours = 48) {
-    return historyDb.exportDelayLogsCsv(hours);
+  async exportCsv(hours = 48) {
+    if (!this._gateway) {
+      throw new Error('No history gateway configured');
+    }
+    return this._gateway('exportDelayLogsCsv', { hours });
   }
 }
 

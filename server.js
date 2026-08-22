@@ -63,6 +63,10 @@ workerBridge.start();
 // Fleet positions are authoritative from the worker (already extrapolated there).
 // Disable the master-process auto extrapolator to avoid double-applying drift.
 flightRecorder.setAutoExtrapolation(false);
+// History gateway: all SQLite reads in the main process are proxied to the
+// ingestion worker via WorkerBridge.historyQuery() RPC (DB_REQUEST/DB_RESPONSE).
+// The main process never opens the database itself.
+flightRecorder.setHistoryGateway((op, args) => workerBridge.historyQuery(op, args));
 
 // Request logger middleware
 app.use('/api', (req, res, next) => {
@@ -371,7 +375,7 @@ app.get('/api/line/:lineId', async (req, res) => {
               firstServiceTomorrow: '06:45',
               calendarTag: calInfo.calendarTag
             },
-            delayStats: flightRecorder.getLineStats('C-10', 'c10')
+            delayStats: await flightRecorder.getLineStats('C-10', 'c10')
           }
         });
       } else {
@@ -403,14 +407,14 @@ app.get('/api/line/:lineId', async (req, res) => {
               firstServiceTomorrow: dir === '1' ? '08:15' : '06:45',
               calendarTag: calInfo.calendarTag
             },
-            delayStats: flightRecorder.getLineStats('C-10', 'c10')
+            delayStats: await flightRecorder.getLineStats('C-10', 'c10')
           }
         });
       }
     } else {
       const data = await tracker.getLineDetails(lineId, direction);
       if (data) {
-        data.delayStats = flightRecorder.getLineStats(data.code || lineId, lineId);
+        data.delayStats = await flightRecorder.getLineStats(data.code || lineId, lineId);
       }
       res.json({ success: true, data });
     }
@@ -775,63 +779,129 @@ app.get('/api/vehicles', (req, res) => {
   });
 });
 
-// GPS breadcrumb trail history for a specific vehicle
-app.get('/api/vehicle/:vehicleId/trail', (req, res) => {
+// GPS breadcrumb trail history for a specific vehicle.
+// Trail reads are proxied to the worker's SQLite history via the history gateway.
+app.get('/api/vehicle/:vehicleId/trail', async (req, res) => {
   const { vehicleId } = req.params;
-  const trail = flightRecorder.getVehicleTrail(vehicleId);
-  res.json({
-    success: true,
-    vehicleId,
-    pointsCount: trail.length,
-    trail
-  });
+  try {
+    const trail = await flightRecorder.getVehicleTrail(vehicleId);
+    res.json({
+      success: true,
+      vehicleId,
+      pointsCount: trail.length,
+      trail
+    });
+  } catch (err) {
+    sendInternalError(req, res, err);
+  }
 });
 
-// Real-time & 24h delay statistics and punctuality score for a line
-app.get('/api/line/:lineId/stats', (req, res) => {
+// Real-time & 24h delay statistics and punctuality score for a line.
+// Stats reads are proxied to the worker's SQLite history via the history gateway.
+app.get('/api/line/:lineId/stats', async (req, res) => {
   const { lineId } = req.params;
   const cleanCode = lineId.replace('cat_gen_', '').replace(/.*_/, '').toUpperCase();
-  const stats = flightRecorder.getLineStats(cleanCode, lineId);
-  res.json({
-    success: true,
-    lineId,
-    lineCode: cleanCode,
-    stats
-  });
+  try {
+    const stats = await flightRecorder.getLineStats(cleanCode, lineId);
+    res.json({
+      success: true,
+      lineId,
+      lineCode: cleanCode,
+      stats
+    });
+  } catch (err) {
+    sendInternalError(req, res, err);
+  }
 });
 
 // Shared Journalism Report handler (Instant Cache & 30-min background generation)
+
+// Coalesces concurrent cold-miss generations per timeframe so a request burst
+// triggers ONE worker RPC instead of N, and warms the memory cache with the result.
+const inFlightReportGeneration = new Map(); // canonicalHours -> Promise<report|null>
+
+// Memoized serialization: identical report object => identical JSON body.
+// Avoids re-stringifying a ~750KB report on every request during bursts
+// (event-loop head-of-line blocking for all other endpoints).
+const serializedReportBodies = new WeakMap();
+function sendReportResponse(res, report) {
+  let body = serializedReportBodies.get(report);
+  if (body === undefined) {
+    body = JSON.stringify({ success: true, report });
+    serializedReportBodies.set(report, body);
+  }
+  res.set('Content-Type', 'application/json').send(body);
+}
+function generateReportViaWorker(canonicalHours) {
+  if (inFlightReportGeneration.has(canonicalHours)) {
+    return inFlightReportGeneration.get(canonicalHours);
+  }
+  const promise = workerBridge.historyQuery(
+    'generateReport',
+    { hours: canonicalHours },
+    { timeoutMs: 30000 }
+  )
+    .then((report) => {
+      if (report && report.summary) {
+        reportCacheService.updateMemoryCache(canonicalHours, report);
+      }
+      return report;
+    })
+    .catch(() => null)
+    .finally(() => inFlightReportGeneration.delete(canonicalHours));
+  inFlightReportGeneration.set(canonicalHours, promise);
+  return promise;
+}
+
 async function handleJournalismReport(req, res) {
   try {
-    const hours = parseInt(req.query.hours || '24', 10);
-    const report = await reportCacheService.getLatestReport(hours, () => getAllTransitLines());
-    res.json({
-      success: true,
-      report
-    });
+    const canonicalHours = reportCacheService.normalizeHours(parseInt(req.query.hours || '24', 10));
+    // Memory-cache hit first (never generates in main); null on miss.
+    let report = await reportCacheService.getLatestReport(canonicalHours, () => getAllTransitLines());
+    if (!report) {
+      // Cache miss: coalesced RPC (one generation per timeframe under bursts).
+      report = await generateReportViaWorker(canonicalHours);
+    }
+    if (!report) {
+      return res.status(503).json({ success: false, error: 'Report warming up — try again shortly' });
+    }
+    sendReportResponse(res, report);
   } catch (err) {
     sendInternalError(req, res, err);
   }
 }
 
 // Shared CSV Export handler for spreadsheet / investigative journalism analysis
-function handleAnalyticsCsv(req, res) {
+async function handleAnalyticsCsv(req, res) {
   const hours = parseInt(req.query.hours || '48', 10);
-  const csvData = flightRecorder.exportCsv(hours);
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="arribo_transit_delays_${Date.now()}.csv"`);
-  res.send(csvData);
+  try {
+    // CSV export reads the worker's SQLite delay logs through the history gateway.
+    const csvData = await flightRecorder.exportCsv(hours);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="arribo_transit_delays_${Date.now()}.csv"`);
+    res.send(csvData);
+  } catch (err) {
+    sendInternalError(req, res, err);
+  }
 }
 
 // Shared Delay Ranking handler (canonical delay rankings across lines & stops)
 async function handleRankingReport(req, res) {
   try {
-    const hours = parseInt(req.query.hours || '24', 10);
+    const canonicalHours = reportCacheService.normalizeHours(parseInt(req.query.hours || '24', 10));
     const limit = Math.min(500, Math.max(1, parseInt(req.query.limit || '25', 10)));
-    const report = await reportCacheService.getLatestReport(hours, () => getAllTransitLines());
+    // Memory-cache hit first (never generates in main); null on miss.
+    let report = await reportCacheService.getLatestReport(canonicalHours, () => getAllTransitLines());
+    if (!report) {
+      // Cache miss: coalesced RPC (one generation per timeframe under bursts).
+      report = await generateReportViaWorker(canonicalHours);
+    }
+    if (!report) {
+      return res.status(503).json({ success: false, error: 'Report warming up — try again shortly' });
+    }
     res.json({
       success: true,
-      timeframeHours: report?.meta?.timeframeHours || reportCacheService.normalizeHours(hours),
+      timeframeHours: report?.meta?.timeframeHours || canonicalHours,
       generatedAt: report?.meta?.generatedAt || null,
       summary: report?.summary || {},
       rankingMostDelayed: (report?.rankingMostDelayed || []).slice(0, limit),

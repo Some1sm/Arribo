@@ -29,6 +29,10 @@ class WorkerBridge extends EventEmitter {
     this._pendingReplacement = false;
     this._forceSpawnFallback = null;
 
+    // DB request/response RPC plumbing over IPC
+    this._dbRequestId = 0;
+    this._pendingDbRequests = new Map(); // requestId -> { resolve, reject, timer }
+
     this.pingTimer = null;
     this.watchdogTimer = null;
     this.restartTimer = null;
@@ -153,6 +157,26 @@ class WorkerBridge extends EventEmitter {
         this.emit('status', payload);
         break;
 
+      case 'DB_RESPONSE': {
+        // The worker answers flat ({ type, requestId, ok, result|error });
+        // tolerate a { payload } envelope for robustness.
+        const env = payload && typeof payload === 'object' ? payload : {};
+        const dbRequestId = message.requestId ?? env.requestId;
+        const pending = dbRequestId != null ? this._pendingDbRequests.get(dbRequestId) : undefined;
+        if (!pending) break; // stale/unknown requestId - ignore silently
+
+        if (pending.timer) clearTimeout(pending.timer);
+        this._pendingDbRequests.delete(dbRequestId);
+
+        const ok = message.ok ?? env.ok;
+        if (ok) {
+          pending.resolve(message.result !== undefined ? message.result : env.result);
+        } else {
+          pending.reject(new Error((message.error ?? env.error) || 'DB request failed'));
+        }
+        break;
+      }
+
       default:
         this.emit('message', message);
         break;
@@ -164,6 +188,11 @@ class WorkerBridge extends EventEmitter {
     this._isHealthy = false;
     this.worker = null;
     this.workerPid = null;
+
+    // The child died - no DB_RESPONSE can ever arrive anymore. Fail every
+    // outstanding DB RPC immediately (covers crash exits, watchdog restarts
+    // via restartWorker's exit listener, and graceful shutdown alike).
+    this._failAllPendingDbRequests('Worker exited before DB response');
 
     if (this.stabilityTimer) {
       clearTimeout(this.stabilityTimer);
@@ -328,6 +357,58 @@ class WorkerBridge extends EventEmitter {
       console.error('[WorkerBridge] Error sending IPC message to worker:', err.message);
     }
     return false;
+  }
+
+  /**
+   * Issue an asynchronous DB RPC against the background worker.
+   * Resolves with the worker's `result`; rejects on timeout, transport failure,
+   * worker-reported errors, or worker death.
+   */
+  historyQuery(op, args = {}, { timeoutMs = 10000 } = {}) {
+    return new Promise((resolve, reject) => {
+      if (!this.worker || typeof this.worker.send !== 'function') {
+        reject(new Error('Worker not running'));
+        return;
+      }
+
+      const requestId = ++this._dbRequestId;
+      const pending = { resolve, reject, timer: null };
+
+      pending.timer = setTimeout(() => {
+        if (this._pendingDbRequests.get(requestId) === pending) {
+          this._pendingDbRequests.delete(requestId);
+          reject(new Error(`DB request ${op} timed out after ${timeoutMs}ms`));
+        }
+      }, timeoutMs);
+      if (pending.timer && typeof pending.timer.unref === 'function') {
+        pending.timer.unref();
+      }
+
+      this._pendingDbRequests.set(requestId, pending);
+
+      try {
+        this.worker.send({ type: 'DB_REQUEST', requestId, op, args });
+      } catch (err) {
+        if (pending.timer) clearTimeout(pending.timer);
+        this._pendingDbRequests.delete(requestId);
+        reject(err);
+      }
+    });
+  }
+
+  /** Fail and flush every in-flight DB RPC (called when the worker dies). */
+  _failAllPendingDbRequests(reason) {
+    if (!this._pendingDbRequests || this._pendingDbRequests.size === 0) return;
+    const entries = Array.from(this._pendingDbRequests.values());
+    this._pendingDbRequests.clear();
+    for (const pending of entries) {
+      if (pending.timer) clearTimeout(pending.timer);
+      try {
+        pending.reject(new Error(reason));
+      } catch (e) {
+        // A misbehaving rejection handler must never break exit processing.
+      }
+    }
   }
 
   triggerReport(hours = 24) {

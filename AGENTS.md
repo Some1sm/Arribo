@@ -37,6 +37,12 @@ transit operators** into a single polymorphic REST API and SPA frontend.
 │  ├── FlightRecorder (in-memory vehicle state, read-only)         │
 │  └── ReportCacheService (in-memory report cache, read-only)      │
 │                                                                  │
+│  NOTE: no SQLite connection exists in this process. Historical    │
+│  reads (trails, delay stats, CSV, reports on cache miss) are      │
+│  proxied to the worker via DB_REQUEST/DB_RESPONSE through         │
+│  WorkerBridge.historyQuery(); flightRecorder persistence is       │
+│  enabled only in the worker via enablePersistence().              │
+│                                                                  │
 │  WorkerBridge (src/core/WorkerBridge.js)                         │
 │  ├── Heartbeat ping/pong every 15s                               │
 │  ├── Auto-restart with exponential backoff (1s → 15s)            │
@@ -68,12 +74,17 @@ transit operators** into a single polymorphic REST API and SPA frontend.
 | Worker → Main | `FLEET_UPDATE` | `{vehicles: [...]}` | Sync live vehicle positions |
 | Worker → Main | `REPORT_CACHE_UPDATE` | `{timeframeHours, report}` | Push fresh report |
 | Worker → Main | `DISRUPTIONS_UPDATE` | `{disruptions: [...]}` | Push AMB service alerts |
+| Main → Worker | `DB_REQUEST` | `{requestId, op, args}` | Proxy SQLite reads/writes to worker |
+| Worker → Main | `DB_RESPONSE` | `{requestId, ok, result\|error}` | RPC reply for `DB_REQUEST` |
 | Main → Worker | `PING` | — | Liveness check |
 | Worker → Main | `PONG` | `{memory, uptime, activeVehicles}` | Health response |
 | Main → Worker | `SHUTDOWN` | — | Graceful termination |
 
-> **Critical rule**: The main process never writes to SQLite or polls upstream APIs.
-> All heavy I/O happens in the worker. The main process only reads from in-memory caches
+> **Critical rule**: The main process never opens SQLite at all (lazy-open + no direct
+> require of `historyDb`) and never polls upstream APIs. All heavy I/O happens in the
+> worker. History reads/writes from API routes are proxied to the worker via the
+> `DB_REQUEST`/`DB_RESPONSE` RPC pair through `WorkerBridge.historyQuery(op, args)`.
+> Everything else is served from in-memory caches (`flightRecorder`, `reportCacheService`)
 > synced via IPC.
 
 ---
@@ -492,11 +503,20 @@ After modifying `public/js/app.js` or `public/js/map.js`, **always bump** the `?
 query parameter in `public/index.html` or browsers will serve stale cached scripts.
 
 ### SQLite in Main Process
-The main HTTP server process does **not** open or write to SQLite. All database I/O
-happens in the background worker. The main process reads from in-memory caches
-(`flightRecorder`, `reportCacheService`) that are synced via IPC. If you need
-historical data in an API route, use the existing `flightRecorder.getDelayStats()`
-or `reportCacheService.getReport()` methods.
+The main HTTP server process does **not open SQLite AT ALL** — there is no direct
+require of `historyDb`, and the database file is lazily opened only inside the
+background worker. All history reads and writes are proxied to the worker over IPC
+as `DB_REQUEST`/`DB_RESPONSE` RPC pairs via `WorkerBridge.historyQuery(op, args)`.
+FlightRecorder persistence is enabled exclusively in the worker via
+`enablePersistence()`; in the main process it acts as a pure in-memory cache whose
+historical read methods (`getVehicleTrail`, `getLineStats`, `getJournalismReport`,
+`exportCsv`) forward through the gateway installed with
+`flightRecorder.setHistoryGateway(...)`. If you need historical data in an API route,
+await these flightRecorder methods or call `workerBridge.historyQuery()` directly —
+never import `historyDb` in server-side request paths. Report serving uses
+`reportCacheService.getLatestReport(hours, catalog)` (memory hit or null; never
+generates in main) with a fallback `historyQuery('generateReport', ..., { timeoutMs: 30000 })`
+on miss, responding 503 'Report warming up' if both fail.
 
 ### Dual Coordinate Fields
 Vehicle objects must have **both** `lat`/`lon` AND `latitude`/`longitude` fields.
@@ -555,7 +575,7 @@ the timeout/retry logic.
 | `WorkerBridge.js:96` | `handleWorkerMessage()` | IPC dispatch switch |
 | `ingestionDaemon.js:13` | `constructor()` | All polling timer handles |
 | `historyDb.js:41` | `init()` | SQLite schema + PRAGMA setup |
-| `flightRecorder.js:50` | `ingestVehicle()` | Vehicle state ingestion |
+| `flightRecorder.js:50` | `ingestVehicle()` | Vehicle state ingestion (no direct DB access in main; history reads proxied via history gateway) |
 
 ---
 

@@ -42,6 +42,53 @@ function sendToMaster(type, payload = {}) {
 }
 
 /**
+ * Single dispatch table for DB RPC operations.
+ * Used by BOTH the DB_REQUEST IPC handler and the flightRecorder history
+ * gateway so the two paths can never drift apart.
+ */
+async function executeDbOperation(op, args = {}) {
+  switch (op) {
+    case 'getVehicleTrail':
+      return historyDb.getVehicleTrail(args.vehicleId, args.limit ?? 60);
+
+    case 'getLineDelayStats':
+      return historyDb.getLineDelayStats(args.lineCode, args.hours ?? 24, args.lineId);
+
+    case 'getJournalismReport':
+      return historyDb.getJournalismReport(args.hours, args.allLinesCatalog);
+
+    case 'exportDelayLogsCsv':
+      return historyDb.exportDelayLogsCsv(args.hours);
+
+    case 'generateReport': {
+      // Long-running: callers should pass timeoutMs >= 30000.
+      // Catalog resolves worker-side when the caller cannot serialize one over IPC
+      // (functions/undefined do not survive structured clone).
+      const catalog = Array.isArray(args.allLinesCatalog)
+        ? args.allLinesCatalog
+        : trackerRegistry.getAllLines();
+      return reportCacheService.generateAndSaveReport(args.hours, catalog);
+    }
+
+    default:
+      throw new Error(`Unknown DB operation: ${String(op)}`);
+  }
+}
+
+/**
+ * Send a flat (unwrapped) DB_RESPONSE frame back to the master process.
+ */
+function sendDbResponse(response) {
+  if (typeof process.send === 'function') {
+    try {
+      process.send(response);
+    } catch (err) {
+      // Parent channel closed or disconnected - nothing to do.
+    }
+  }
+}
+
+/**
  * Handle incoming command from supervisor / master
  */
 function handleMasterMessage(message) {
@@ -72,6 +119,30 @@ function handleMasterMessage(message) {
         })
         .catch(err => {
           console.error('[IngestionWorker] Error generating triggered report:', err.message);
+        });
+      break;
+    }
+
+    case 'DB_REQUEST': {
+      // Accept both flat frames ({ type, requestId, op, args }) and enveloped
+      // ones ({ payload: { requestId, op, args } }) for robustness.
+      const env = payload && typeof payload === 'object' ? payload : {};
+      const requestId = message.requestId ?? env.requestId;
+      const op = message.op ?? env.op;
+      const args = message.args ?? env.args ?? {};
+
+      Promise.resolve()
+        .then(() => executeDbOperation(op, args))
+        .then(result => {
+          sendDbResponse({ type: 'DB_RESPONSE', requestId, ok: true, result });
+        })
+        .catch(err => {
+          sendDbResponse({
+            type: 'DB_RESPONSE',
+            requestId,
+            ok: false,
+            error: String((err && err.message) || err)
+          });
         });
       break;
     }
@@ -146,6 +217,19 @@ process.on('unhandledRejection', (reason) => {
 // Initialize Trackers, start autonomous ingestion daemon, and announce readiness
 async function initWorker() {
   console.log('[IngestionWorker] 🚀 Booting background ingestion & analytics worker (PID:', process.pid, ')...');
+
+  // Wire the singletons together before anything starts polling:
+  // - flightRecorder persists snapshots through the worker-owned SQLite handle
+  // - flightRecorder falls back to DB RPC dispatch when asked for history ops
+  // - reportCacheService reads through the same SQLite handle
+  try {
+    flightRecorder.enablePersistence(historyDb);
+    flightRecorder.setHistoryGateway(async (op, args) => executeDbOperation(op, args || {}));
+    reportCacheService.setDatabase(historyDb);
+  } catch (err) {
+    console.warn('[IngestionWorker] Non-fatal singleton wiring warning:', err.message);
+  }
+
   try {
     await trackerRegistry.initAll();
     console.log('[IngestionWorker] All multi-provider trackers initialized.');
