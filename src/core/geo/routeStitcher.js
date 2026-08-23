@@ -66,7 +66,7 @@ function nearestVertex(p, coords) {
  * @returns {{coords:Array<[number,number]>, stitched:number, source:string}|null}
  *          null when nothing needed stitching or no candidate was found.
  */
-function stitchShapeGaps({ coords, stops, dbPath, primaryShapeId = '', thresholdM = 150 }) {
+function stitchShapeGaps({ coords, stops, dbPath, primaryShapeId = '', thresholdM = 200 }) {
   if (!Array.isArray(coords) || coords.length < 2 || !Array.isArray(stops) || stops.length === 0) return null;
 
   const sig = stops.map(s => `${s.id || `${s.lat.toFixed(5)},${s.lon.toFixed(5)}`}`).join(';');
@@ -84,34 +84,38 @@ function stitchShapeGaps({ coords, stops, dbPath, primaryShapeId = '', threshold
 function computeStitch(coords, stops, dbPath, primaryShapeId, thresholdM, cacheKey) {
   // 1. Project stops onto the primary shape.
   const proj = stops.map(s => nearestVertex([s.lat, s.lon], coords));
-  const uncovered = [];
+  const uncoveredIdx = [];
   for (let i = 0; i < stops.length; i++) {
-    if (proj[i].dist > thresholdM) uncovered.push({ seq: i, stop: stops[i] });
+    if (proj[i].dist > thresholdM) uncoveredIdx.push(i);
   }
-  if (uncovered.length === 0) return null;
+  if (uncoveredIdx.length === 0) return null;
 
-  // Only head/tail runs are supported; isolated mid-route gaps fall back to
-  // the caller's simpler strategies.
-  let leadEnd = 0;
-  while (leadEnd < uncovered.length && uncovered[leadEnd].seq === leadEnd) leadEnd++;
-  let trailCount = 0;
-  for (let i = stops.length - 1; i >= 0 && proj[i].dist > thresholdM; i--) trailCount++;
-  const hasTrailing = trailCount > 0;
-  const hasLeading = leadEnd > 0;
-  if (!hasTrailing && !hasLeading) return null;
+  // 2. Group uncovered stops into contiguous runs (by stop sequence).
+  const runs = [];
+  let runStart = null, runPrev = -1;
+  for (let k = 0; k < uncoveredIdx.length; k++) {
+    const seq = uncoveredIdx[k];
+    if (runStart === null) {
+      runStart = seq;
+      runPrev = seq === 0 ? -1 : proj[seq - 1].idx; // vertex anchor BEFORE the run
+    } else if (seq !== uncoveredIdx[k - 1] + 1) {
+      runs.push({ start: runStart, end: uncoveredIdx[k - 1], prevV: runPrev, nextV: proj[seq] ? proj[seq].idx : -1 });
+      runStart = seq;
+      runPrev = seq === 0 ? -1 : proj[seq - 1].idx;
+    }
+    if (k === uncoveredIdx.length - 1 || seq + 1 !== (uncoveredIdx[k + 1] ?? seq)) {
+      // handled on next iteration mismatch or at end below
+    }
+    if (k === uncoveredIdx.length - 1) {
+      runs.push({ start: runStart, end: seq, prevV: runPrev, nextV: seq === stops.length - 1 ? -1 : proj[seq + 1].idx });
+    }
+  }
 
-  // 2. Scan shapes.db for a sibling covering the uncovered stops.
+  const gapStops = runs.flatMap(r => stops.slice(r.start, r.end + 1));
+
+  // 3. Scan shapes.db for candidates covering every gap stop.
   const db = getDb(dbPath);
   if (!db) return null;
-
-  const gapStops = hasTrailing
-    ? stops.slice(stops.length - trailCount)
-    : stops.slice(0, leadEnd);
-  const refPoint = hasTrailing
-    ? coords[proj[Math.max(0, stops.length - trailCount - 1)]?.idx ?? coords.length - 1] || coords[coords.length - 1]
-    : coords[proj[leadEnd]?.idx ?? 0];
-
-  let best = null; // {id, orientedTail, score}
   let rows;
   try {
     rows = db.prepare('SELECT shape_id, coords FROM shapes').all();
@@ -120,79 +124,96 @@ function computeStitch(coords, stops, dbPath, primaryShapeId, thresholdM, cacheK
     return null;
   }
 
+  const candidates = []; // {id, oriented, score}
   for (const row of rows) {
     if (row.shape_id === primaryShapeId) continue;
     let c;
     try { c = JSON.parse(row.coords); } catch (_) { continue; }
     if (!Array.isArray(c) || c.length < 5) continue;
 
-    // Cheap bbox prefilter: candidate must reach every gap stop.
-    let ok = true;
-    for (const s of gapStops) {
-      let inReach = false;
-      for (const v of c) {
-        if (Math.abs(v[0] - s.lat) * 111320 < thresholdM &&
-            Math.abs(v[1] - s.lon) * 111320 * Math.cos(s.lat * Math.PI / 180) < thresholdM) { inReach = true; break; }
+    for (const oriented of [c, [...c].reverse()]) {
+      // For each run, find the portion of the candidate between its two
+      // anchors. All runs must be ordered consistently within one orientation.
+      let score = 0, feasible = true;
+      const portions = [];
+      let cursor = 0;
+      for (const r of runs) {
+        const pA = nearestVertex([coords[Math.max(0, r.prevV)]?.[0] ?? oriented[cursor][0], coords[Math.max(0, r.prevV)]?.[1] ?? oriented[cursor][1]], oriented.slice(cursor));
+        const startJ = cursor + pA.idx;
+        const anchorB = r.nextV >= 0 ? coords[r.nextV] : [oriented[oriented.length - 1][0], oriented[oriented.length - 1][1]];
+        const pB = nearestVertex(anchorB, oriented.slice(startJ));
+        const endJ = startJ + pB.idx;
+        if (endJ <= startJ) { feasible = false; break; }
+        const portion = oriented.slice(startJ, endJ + 1);
+        if (portion.length < 2) { feasible = false; break; }
+        for (let s = r.start; s <= r.end; s++) {
+          const d = covDist(portion, stops[s]);
+          if (d > thresholdM) { feasible = false; break; }
+          score += d;
+        }
+        if (!feasible) break;
+        portions.push({ startJ, endJ, portion });
+        cursor = endJ;
       }
-      if (!inReach) { ok = false; break; }
+      if (!feasible) continue;
+      candidates.push({ id: row.shape_id, oriented, score, portions });
+    }
+  }
+
+  if (candidates.length === 0) {
+    return null;
+  }
+  candidates.sort((a, b) => a.score - b.score);
+
+  // 4. Build merged polyline per candidate (runs processed in order), then
+  // validate that EVERY stop lands within thresholdM of the result.
+  for (const cand of candidates) {
+    // Re-derive portions against this candidate's orientation.
+    const segments = [];
+    let cursor = 0;
+    let ok = true;
+    for (const r of runs) {
+      const refPrev = r.prevV >= 0 ? coords[r.prevV] : cand.oriented[0];
+      const pA = nearestVertex(refPrev, cand.oriented.slice(cursor));
+      const startJ = cursor + pA.idx;
+      const refNext = r.nextV >= 0 ? coords[r.nextV] : cand.oriented[cand.oriented.length - 1];
+      const rest = cand.oriented.slice(startJ);
+      const pB = nearestVertex(refNext, rest);
+      const endJ = startJ + pB.idx;
+      if (endJ <= startJ) { ok = false; break; }
+      segments.push({ startJ, endJ });
+      cursor = endJ;
     }
     if (!ok) continue;
 
-    // Try both orientations; require full coverage of gap stops and pick the
-    // best (lowest total gap-stop distance).
-    for (const oriented of [c, [...c].reverse()]) {
-      // Trim from the vertex nearest the divergence reference point.
-      const j = nearestVertex(refPoint, oriented).idx;
-      const tail = oriented.slice(j);
-      if (tail.length < 3) continue;
-      let score = 0, coversAll = true;
-      for (const s of gapStops) {
-        const d = covDist(tail, s);
-        if (d > thresholdM) { coversAll = false; break; }
-        score += d;
-      }
-      if (!coversAll) continue;
-      if (!best || score < best.score) best = { id: row.shape_id, oriented, score };
+    // Assemble: primary head + portion(run0) + primary middle + portion(run1)+...
+    let merged = [];
+    let prevCut = -1;
+    for (let ri = 0; ri < runs.length; ri++) {
+      const r = runs[ri];
+      const seg = cand.segments ? null : null;
+      const { startJ, endJ } = segments[ri];
+      const portion = cand.oriented.slice(startJ, endJ + 1);
+      const fromV = r.prevV >= 0 ? r.prevV : 0;           // inclusive primary start
+      const toV = r.nextV >= 0 ? r.nextV : coords.length - 1; // exclusive primary end
+      merged = merged.concat(coords.slice(prevCut + 1, fromV + 1), portion);
+      prevCut = toV;
+      if (r.nextV < 0) prevCut = coords.length - 1;
+    }
+    merged = merged.concat(coords.slice(prevCut + 1));
+
+    let valid = true;
+    for (let i = 0; i < stops.length; i++) {
+      if (nearestVertex([stops[i].lat, stops[i].lon], merged).dist > thresholdM) { valid = false; break; }
+    }
+    if (valid) {
+      const stitchedCount = runs.reduce((n, r) => n + (r.end - r.start + 1), 0);
+      console.log(`[RouteStitcher] stitched ${stitchedCount} stop(s) into ${cacheKey} using sibling shape ${cand.id}`);
+      return { coords: merged, stitched: stitchedCount, source: cand.id };
     }
   }
 
-  if (!best) return null;
-
-  // 3. Merge.
-  let merged;
-  let stitchedCount;
-  if (hasTrailing) {
-    const lastCoveredIdx = stops.length - trailCount - 1;
-    const headCut = lastCoveredIdx >= 0 ? proj[lastCoveredIdx].idx : coords.length - 1;
-    const head = coords.slice(0, Math.min(headCut + 1, coords.length));
-    // Tail: orient candidate so it starts near the head's cut point.
-    let tail = best.oriented;
-    const jj = nearestVertex(head[head.length - 1] || coords[coords.length - 1], tail).idx;
-    tail = tail.slice(jj);
-    merged = head.concat(tail);
-    stitchedCount = trailCount;
-  } else {
-    // Leading run: prepend candidate legs before the primary start.
-    const cutIdx = proj[leadEnd].idx;
-    const headPrimary = coords.slice(0, cutIdx + 1);
-    let pre = best.oriented;
-    // Orientation that ENDS nearest the primary's first covered stop.
-    const jj = nearestVertex(headPrimary[headPrimary.length - 1], pre).idx;
-    pre = pre.slice(0, jj + 1);
-    merged = pre.concat(headPrimary);
-    stitchedCount = leadEnd;
-  }
-
-  // 4. Final validation: every stop must now be within threshold of merged.
-  for (let i = 0; i < stops.length; i++) {
-    if (nearestVertex([stops[i].lat, stops[i].lon], merged).dist > thresholdM) {
-      console.warn(`[RouteStitcher] candidate rejected for ${cacheKey}: stop ${i} still uncovered`);
-      return null;
-    }
-  }
-
-  console.log(`[RouteStitcher] stitched ${stitchedCount} stop(s) into ${cacheKey} using sibling shape ${best.id}`);
-  return { coords: merged, stitched: stitchedCount, source: best.id };
+  return null;
 }
 
 function covDist(seg, s) {
@@ -213,7 +234,7 @@ function covDist(seg, s) {
  * @param {number}   [params.minCoverage=0.9] fraction of stops that must be covered
  * @returns {{coords:Array<[number,number]>, source:string}|null}
  */
-function discoverShapeForStops({ stops, dbPath, thresholdM = 150, minCoverage = 0.9 }) {
+function discoverShapeForStops({ stops, dbPath, thresholdM = 200, minCoverage = 0.9 }) {
   if (!Array.isArray(stops) || stops.length < 2) return null;
   const db = getDb(dbPath);
   if (!db) return null;
@@ -303,7 +324,7 @@ async function resolveRouteGeometry({
   stops = [],
   dbPath = '',
   primaryShapeId = '',
-  thresholdM = 150,
+  thresholdM = 200,
   useOsrm = true
 } = {}) {
   if (!Array.isArray(stops) || stops.length < 2) return null;
