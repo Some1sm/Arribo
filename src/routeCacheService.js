@@ -105,6 +105,78 @@ function generateExpressPolyline(stops, isDir1 = false) {
 }
 
 // Generate full timetable stop times across the service day (06:00 to 22:30 or overnight 23:00 to 05:00)
+/**
+ * Memory-safe line iterator for large GTFS files (stop_times.txt is ~220MB).
+ */
+function forEachLineSync(filePath, cb) {
+  if (!fs.existsSync(filePath)) return;
+  const fd = fs.openSync(filePath, 'r');
+  const buf = Buffer.alloc(1 << 20);
+  let leftover = '';
+  let bytesRead;
+  try {
+    while ((bytesRead = fs.readSync(fd, buf, 0, buf.length, null)) > 0) {
+      const chunk = leftover + buf.toString('utf8', 0, bytesRead);
+      const lines = chunk.split('\n');
+      leftover = lines.pop();
+      for (const l of lines) cb(l.replace(/\r$/, ''));
+    }
+    if (leftover) cb(leftover.replace(/\r$/, ''));
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/**
+ * Extracts the REAL GTFS schedule for a route from data/atm_gtfs (trips +
+ * stop_times), replacing synthetic fixed-headway generators. Includes each
+ * trip's service_id so consumers can filter by operating day.
+ *
+ * @returns {{trips:Array, stopTimesMap:Object, serviceIds:Set}|null} null when the route is absent from the feed.
+ */
+function extractRealGtfsSchedule(routeId, atmDir) {
+  const tripsPath = path.join(atmDir, 'trips.txt');
+  const stopTimesPath = path.join(atmDir, 'stop_times.txt');
+  if (!fs.existsSync(tripsPath) || !fs.existsSync(stopTimesPath)) return null;
+
+  // Pass 1: trips.txt — collect this route's trips (small file).
+  const wanted = new Map(); // tripId -> {tripId, routeId, dirId, serviceId}
+  forEachLineSync(tripsPath, (line) => {
+    if (!line || line.startsWith('route_id')) return;
+    const p = line.split(',');
+    if (p[0] !== routeId) return;
+    const tripId = p[1];
+    if (!tripId) return;
+    wanted.set(tripId, { tripId, routeId, dirId: String(p[4] || '0'), serviceId: p[p.length - 1] || '' });
+  });
+  if (wanted.size === 0) return null;
+
+  // Pass 2: stop_times.txt — streamed, keep only this route's trips.
+  const byTrip = new Map(); // tripId -> [{stopId, arr, dep, seq}]
+  forEachLineSync(stopTimesPath, (line) => {
+    if (!line || line.startsWith('trip_id')) return;
+    const p = line.split(',');
+    if (!wanted.has(p[0])) return;
+    if (!byTrip.has(p[0])) byTrip.set(p[0], []);
+    byTrip.get(p[0]).push({ stopId: p[3], arr: p[1], dep: p[2], seq: parseInt(p[4], 10) || 0 });
+  });
+
+  const trips = [];
+  const stopTimesMap = {};
+  const serviceIds = new Set();
+  for (const t of wanted.values()) {
+    const st = byTrip.get(t.tripId);
+    if (!st || st.length < 2) continue; // skip trips without timetable rows
+    st.sort((a, b) => a.seq - b.seq);
+    trips.push(t);
+    stopTimesMap[t.tripId] = st.map(x => ({ stopId: x.stopId, arr: x.arr, dep: x.dep }));
+    if (t.serviceId) serviceIds.add(t.serviceId);
+  }
+  if (trips.length === 0) return null;
+  console.log(`[RouteCacheService] 📖 Real GTFS schedule for ${routeId}: ${trips.length} trips, ${serviceIds.size} service ids.`);
+  return { trips, stopTimesMap, serviceIds };
+}
+
 function generateServiceTimetable(routeId, dirId, stops, headways = 15, startHour = 6, endHour = 23) {
   const trips = [];
   const stopTimesMap = {};
@@ -239,10 +311,21 @@ class RouteCacheService {
     shapesMap['GEN_24318'] = poly111_0;
     shapesMap['GEN_23685'] = poly111_1;
 
-    const sched111_0 = generateServiceTimetable('GEN_0496', '0', E11_1_STOPS_DIR0, 12, 6, 23);
-    const sched111_1 = generateServiceTimetable('GEN_0496', '1', E11_1_STOPS_DIR1, 12, 6, 23);
-    tripsMap['GEN_0496'] = [...sched111_0.trips, ...sched111_1.trips];
-    Object.assign(stopTimesByTrip, sched111_0.stopTimesMap, sched111_1.stopTimesMap);
+    // E11.1 — REAL GTFS schedule when available (falls back to synthetic).
+    // The old fixed-12-min generator ignored service days entirely, showing
+    // weekday headways on Sundays.
+    const atmGtfsDir = path.join(__dirname, '..', 'data', 'atm_gtfs');
+    const real111 = extractRealGtfsSchedule('GEN_0496', atmGtfsDir);
+    let sched111_0, sched111_1;
+    if (real111) {
+      tripsMap['GEN_0496'] = real111.trips;
+      Object.assign(stopTimesByTrip, real111.stopTimesMap);
+    } else {
+      sched111_0 = generateServiceTimetable('GEN_0496', '0', E11_1_STOPS_DIR0, 12, 6, 23);
+      sched111_1 = generateServiceTimetable('GEN_0496', '1', E11_1_STOPS_DIR1, 12, 6, 23);
+      tripsMap['GEN_0496'] = [...sched111_0.trips, ...sched111_1.trips];
+      Object.assign(stopTimesByTrip, sched111_0.stopTimesMap, sched111_1.stopTimesMap);
+    }
 
     // E11.2 (GTFS Shape IDs: GEN_18664 + Mataró Urban Ring & GEN_18716)
     const e112_dir1_shape = shapesMap['GEN_18716'] || generateExpressPolyline(E11_2_STOPS_DIR1, true);
@@ -256,10 +339,17 @@ class RouteCacheService {
     shapesMap['GEN_18664'] = poly112_0;
     shapesMap['GEN_18716'] = poly112_1;
 
-    const sched112_0 = generateServiceTimetable('GEN_0497', '0', E11_2_STOPS_DIR0, 15, 6, 22);
-    const sched112_1 = generateServiceTimetable('GEN_0497', '1', E11_2_STOPS_DIR1, 15, 6, 22);
-    tripsMap['GEN_0497'] = [...sched112_0.trips, ...sched112_1.trips];
-    Object.assign(stopTimesByTrip, sched112_0.stopTimesMap, sched112_1.stopTimesMap);
+    const real112 = extractRealGtfsSchedule('GEN_0497', atmGtfsDir);
+    let sched112_0, sched112_1;
+    if (real112) {
+      tripsMap['GEN_0497'] = real112.trips;
+      Object.assign(stopTimesByTrip, real112.stopTimesMap);
+    } else {
+      sched112_0 = generateServiceTimetable('GEN_0497', '0', E11_2_STOPS_DIR0, 15, 6, 22);
+      sched112_1 = generateServiceTimetable('GEN_0497', '1', E11_2_STOPS_DIR1, 15, 6, 22);
+      tripsMap['GEN_0497'] = [...sched112_0.trips, ...sched112_1.trips];
+      Object.assign(stopTimesByTrip, sched112_0.stopTimesMap, sched112_1.stopTimesMap);
+    }
 
     // Other Maresme Lines (N80, N81, C20, C30, C3, C12, C14, C15)
     const otherMaresmeLines = [
@@ -278,10 +368,16 @@ class RouteCacheService {
       const p1 = shapesMap[`SHAPE_${l.id}_D1`] || generateExpressPolyline(l.stops1, true);
       shapesMap[`SHAPE_${l.id}_D0`] = p0;
       shapesMap[`SHAPE_${l.id}_D1`] = p1;
-      const s0 = generateServiceTimetable(l.id, '0', l.stops0, l.freq, l.sH, l.eH);
-      const s1 = generateServiceTimetable(l.id, '1', l.stops1, l.freq, l.sH, l.eH);
-      tripsMap[l.id] = [...s0.trips, ...s1.trips];
-      Object.assign(stopTimesByTrip, s0.stopTimesMap, s1.stopTimesMap);
+      const realSched = extractRealGtfsSchedule(l.id, atmGtfsDir);
+      if (realSched) {
+        tripsMap[l.id] = realSched.trips;
+        Object.assign(stopTimesByTrip, realSched.stopTimesMap);
+      } else {
+        const s0 = generateServiceTimetable(l.id, '0', l.stops0, l.freq, l.sH, l.eH);
+        const s1 = generateServiceTimetable(l.id, '1', l.stops1, l.freq, l.sH, l.eH);
+        tripsMap[l.id] = [...s0.trips, ...s1.trips];
+        Object.assign(stopTimesByTrip, s0.stopTimesMap, s1.stopTimesMap);
+      }
     });
 
     // C-10 Coastal Corridor (Barcelona ⇄ Mataró per N-II)

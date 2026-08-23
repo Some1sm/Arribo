@@ -203,6 +203,11 @@ class MaresmeTracker extends BaseTracker {
     this.shapesDb = null;
     this.getShapeStmt = null;
     this.isLoaded = false;
+    // GTFS service calendar (atm_gtfs) — memoised lazy load. Used to filter
+    // trips by operating day so weekday timetables never leak into Sundays.
+    this._gtfsCalendarLoaded = false;
+    this._gtfsCalendarWeekly = [];
+    this._gtfsCalendarExceptions = new Map();
     this.baseLineDetailsCache = new Map();
     this._shapeDbWarned = false;
   }
@@ -253,6 +258,67 @@ class MaresmeTracker extends BaseTracker {
     return null;
   }
 
+  /**
+   * One-shot load of the full ATM GTFS service calendar (calendar.txt weekly
+   * rules + calendar_dates.txt exceptions). Files are small; sync read is fine.
+   */
+  ensureGtfsCalendar() {
+    if (this._gtfsCalendarLoaded) return;
+    this._gtfsCalendarLoaded = true;
+    const atmDir = path.join(__dirname, '..', 'data', 'atm_gtfs');
+
+    const datesFile = path.join(atmDir, 'calendar_dates.txt');
+    if (fs.existsSync(datesFile)) {
+      const lines = fs.readFileSync(datesFile, 'utf8').split('\n');
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        const [sId, dateStr, excType] = line.split(',');
+        if (!sId || !dateStr) continue;
+        if (!this._gtfsCalendarExceptions.has(dateStr)) {
+          this._gtfsCalendarExceptions.set(dateStr, { active: new Set(), inactive: new Set() });
+        }
+        const entry = this._gtfsCalendarExceptions.get(dateStr);
+        if (excType === '1') entry.active.add(sId);
+        if (excType === '2') entry.inactive.add(sId);
+      }
+    }
+
+    const calFile = path.join(atmDir, 'calendar.txt');
+    if (fs.existsSync(calFile)) {
+      const lines = fs.readFileSync(calFile, 'utf8').split('\n');
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        const p = line.split(',');
+        if (!p[0]) continue;
+        this._gtfsCalendarWeekly.push({
+          serviceId: p[0],
+          monday: p[1] === '1', tuesday: p[2] === '1', wednesday: p[3] === '1',
+          thursday: p[4] === '1', friday: p[5] === '1', saturday: p[6] === '1', sunday: p[7] === '1',
+          startDate: p[8], endDate: p[9]
+        });
+      }
+    }
+  }
+
+  /**
+   * True when the trip's GTFS service operates today (Europe/Madrid).
+   * Trips without a serviceId (synthetic fallback timetable) are always
+   * considered active to preserve legacy behaviour.
+   */
+  isServiceActiveToday(serviceId) {
+    if (!serviceId) return true;
+    this.ensureGtfsCalendar();
+    return calendarEngine.isServiceActiveOnDate(
+      serviceId,
+      this._gtfsCalendarWeekly,
+      this._gtfsCalendarExceptions,
+      new Date(),
+      this.agencyTimezone
+    );
+  }
+
   loadData() {
     if (this.isLoaded) return;
     try {
@@ -294,14 +360,17 @@ class MaresmeTracker extends BaseTracker {
         const tripsPath = path.join(atmDir, 'trips.txt');
         if (fs.existsSync(tripsPath)) {
           fs.readFileSync(tripsPath, 'utf8').split('\n').slice(1).filter(Boolean).forEach(l => {
-            const p = l.split(',');
+            const p = l.trim().split(',');
             const routeId = p[0];
             if (targetRouteIds.has(routeId)) {
               const tripId = p[1];
               const dirId = p[4] || '0';
               const shapeId = p[6] || '';
+              // service_id is the last column in this feed layout; needed for
+              // service-day filtering so weekday trips never run on Sundays.
+              const serviceId = p[p.length - 1] || '';
               if (!this.tripsMap.has(routeId)) this.tripsMap.set(routeId, []);
-              this.tripsMap.get(routeId).push({ tripId, routeId, dirId, shapeId });
+              this.tripsMap.get(routeId).push({ tripId, routeId, dirId, shapeId, serviceId });
               targetTripIds.add(tripId);
               if (shapeId) targetShapeIds.add(shapeId);
             }
@@ -742,7 +811,11 @@ class MaresmeTracker extends BaseTracker {
 
     const lineTrips = this.tripsMap.get(lineConfig.routeId) || [];
     const dirTrips = lineTrips.filter(t => t.dirId === dir);
-    const chosenTrip = dirTrips[0] || lineTrips[0];
+    // Prefer a trip whose service operates today so the displayed stop list
+    // matches the running timetable; fall back to any trip of the direction.
+    const chosenTrip = dirTrips.find(t => this.isServiceActiveToday(t.serviceId))
+      || dirTrips[0]
+      || lineTrips[0];
 
     const rawStopTimes = chosenTrip ? (this.stopTimesByTrip.get(chosenTrip.tripId) || []) : [];
     const stops = rawStopTimes.map((st, idx) => {
@@ -847,7 +920,9 @@ class MaresmeTracker extends BaseTracker {
       }
     }
 
-    const trips = (this.tripsMap.get(lineConfig.routeId) || []).filter(t => String(t.dirId) === String(dir));
+    const trips = (this.tripsMap.get(lineConfig.routeId) || [])
+      .filter(t => String(t.dirId) === String(dir))
+      .filter(t => this.isServiceActiveToday(t.serviceId));
     const netNow = timeUtils.getNetworkTime(this.agencyTimezone);
     const currentSec = netNow.hour * 3600 + netNow.minute * 60 + netNow.second;
     const activeBuses = [];
@@ -984,7 +1059,9 @@ class MaresmeTracker extends BaseTracker {
 
   findClosestScheduledTime(clockStr, stopId, routeId, dirId) {
     if (!clockStr || !routeId) return null;
-    const trips = (this.tripsMap.get(routeId) || []).filter(t => String(t.dirId) === String(dirId));
+    const trips = (this.tripsMap.get(routeId) || [])
+      .filter(t => String(t.dirId) === String(dirId))
+      .filter(t => this.isServiceActiveToday(t.serviceId));
     const targetSec = timeUtils.timeToSec(clockStr);
     let bestMatch = null;
     let minDiffSec = Infinity;
@@ -1313,7 +1390,9 @@ class MaresmeTracker extends BaseTracker {
 
     // If no live departures, calculate stop-specific passing times from real GTFS timetable
     if (departures.length === 0 && lineConfig) {
-      const trips = (this.tripsMap.get(lineConfig.routeId) || []).filter(t => String(t.dirId) === dir);
+      const trips = (this.tripsMap.get(lineConfig.routeId) || [])
+        .filter(t => String(t.dirId) === dir)
+        .filter(t => this.isServiceActiveToday(t.serviceId));
       const netNow = timeUtils.getNetworkTime(this.agencyTimezone);
       const currentSec = netNow.hour * 3600 + netNow.minute * 60;
 
