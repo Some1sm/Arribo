@@ -9,6 +9,9 @@ class ReportCacheService {
     this.cachedReports = new Map();
     this.isGenerating = false;
     this.ipcCallback = null;
+    // Consecutive generation failures per timeframe — surfaced in logs so a
+    // broken production pipeline is diagnosable from docker logs alone.
+    this.consecutiveFailures = new Map();
     // Injectable database handle (set via setDatabase). The main process never
     // sets this, so it never touches SQLite.
     this._db = null;
@@ -188,6 +191,10 @@ class ReportCacheService {
       const report = this._db.getJournalismReport(canonicalHours, catalog || []);
 
       const now = Date.now();
+      if (this.consecutiveFailures.get(String(canonicalHours))) {
+        console.log(`[ReportCacheService] ✅ ${canonicalHours}h report generation recovered after ${this.consecutiveFailures.get(String(canonicalHours))} consecutive failure(s).`);
+        this.consecutiveFailures.delete(String(canonicalHours));
+      }
       const meta = {
         generatedAt: new Date(now).toISOString(),
         generatedTimestamp: now,
@@ -224,8 +231,16 @@ class ReportCacheService {
 
       return fullReport;
     } catch (e) {
-      console.error(`[ReportCacheService] Error generating ${canonicalHours}h report:`, e.message);
-      return this.cachedReports.get(String(canonicalHours)) || { summary: {}, rankingMostDelayed: [], rankingBestPunctuality: [], rankingWorstStops: [], agencyStats: [] };
+      const failKey = String(canonicalHours);
+      const fails = (this.consecutiveFailures.get(failKey) || 0) + 1;
+      this.consecutiveFailures.set(failKey, fails);
+      // Log full stack on the first two failures and every 10th after that,
+      // so recurring production failures are visible in docker logs without
+      // flooding every 30-min cycle.
+      if (fails <= 2 || fails % 10 === 0) {
+        console.error(`[ReportCacheService] ❌ ${canonicalHours}h report generation FAILED (${fails} consecutive):`, e.stack || e.message);
+      }
+      return this.cachedReports.get(failKey) || { summary: {}, rankingMostDelayed: [], rankingBestPunctuality: [], rankingWorstStops: [], agencyStats: [] };
     }
   }
 
@@ -249,9 +264,20 @@ class ReportCacheService {
     const canonicalHours = this.normalizeHours(hours);
     const cached = this.cachedReports.get(String(canonicalHours));
 
-    // Strictly serve the pre-generated report from memory cache (instant < 1ms)
-    if (cached) {
+    // Serve the pre-generated report from memory cache (instant < 1ms) — but
+    // ONLY while it is fresh. A cached report older than maxAgeMs means the
+    // worker's periodic generation has stalled (crash loop, DB failure, IPC
+    // loss); serving it forever would freeze the Observatori at a fossil
+    // timestamp. Stale entries are treated as a miss so callers fall back to
+    // the on-demand worker RPC, which regenerates and re-primes the cache.
+    if (cached && !this.isReportStale(cached, options)) {
       return cached;
+    }
+    if (cached) {
+      const ageMin = cached.meta?.generatedTimestamp
+        ? Math.round((Date.now() - cached.meta.generatedTimestamp) / 60000)
+        : '?';
+      console.warn(`[ReportCacheService] ⚠️ Cached ${canonicalHours}h report is stale (${ageMin} min old) — treating as miss so the worker regenerates it.`);
     }
 
     // Default: do NOT generate on a miss. This keeps the main process away from
@@ -264,6 +290,21 @@ class ReportCacheService {
     // Cold boot fallback before the background daemon creates the first report
     const catalog = typeof allLinesCatalogSupplier === 'function' ? allLinesCatalogSupplier() : allLinesCatalogSupplier;
     return await this.generateAndSaveReport(canonicalHours, catalog);
+  }
+
+  /**
+   * A report is stale when it lacks generation metadata (skeleton/empty
+   * object) or was generated longer than maxAgeMs ago. Default budget is
+   * 65 min: two generation intervals (2×30 min) plus margin, so a single
+   * missed cycle never triggers regeneration churn.
+   */
+  isReportStale(report, options = {}) {
+    const maxAgeMs = options.maxAgeMs || 65 * 60 * 1000;
+    const ts = report?.meta?.generatedTimestamp;
+    if (!Number.isFinite(ts)) return true; // skeleton without meta = stale
+    // >= (not >): immune to coarse clock granularity where elapsed can
+    // equal maxAgeMs exactly on Windows timers.
+    return (Date.now() - ts) >= maxAgeMs;
   }
 }
 
