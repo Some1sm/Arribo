@@ -428,6 +428,43 @@ function composeRouteWithStops(coords, stops, opts = {}) {
   return { coords: out, stitched };
 }
 
+/**
+ * Builds a cumulative-distance table (metres) along a polyline.
+ * @returns {{cum:number[], total:number}} cum[i] = distance from coords[0] to coords[i]
+ */
+function buildPolylineDistanceTable(coords) {
+  const list = (Array.isArray(coords) ? coords : []).map(normalizeCoord);
+  const cum = [0];
+  for (let i = 1; i < list.length; i++) {
+    cum.push(cum[i - 1] + calculateDistanceMeters(list[i - 1].lat, list[i - 1].lon, list[i].lat, list[i].lon));
+  }
+  return { cum, total: cum[cum.length - 1] || 0 };
+}
+
+/**
+ * Returns the coordinate at a given distance along the polyline (metres),
+ * plus the bearing toward the next vertex. Clamps to the route ends.
+ */
+function pointAtDistance(coords, table, distM) {
+  const list = (Array.isArray(coords) ? coords : []).map(normalizeCoord);
+  if (list.length < 2 || !table || !Array.isArray(table.cum) || table.cum.length !== list.length) {
+    return list[0] ? { lat: list[0].lat, lon: list[0].lon, bearing: 0 } : null;
+  }
+  const d = Math.min(Math.max(0, distM), table.total);
+  // Binary search for the segment containing d.
+  let lo = 0, hi = table.cum.length - 1;
+  while (lo < hi - 1) {
+    const mid = (lo + hi) >> 1;
+    if (table.cum[mid] <= d) lo = mid; else hi = mid;
+  }
+  const segLen = table.cum[hi] - table.cum[lo];
+  const frac = segLen > 0 ? (d - table.cum[lo]) / segLen : 0;
+  const lat = list[lo].lat + (list[hi].lat - list[lo].lat) * frac;
+  const lon = list[lo].lon + (list[hi].lon - list[lo].lon) * frac;
+  const bearing = Math.round(calculateBearing(list[lo].lat, list[lo].lon, list[hi].lat, list[hi].lon) || 0);
+  return { lat, lon, bearing };
+}
+
 module.exports = {
   normalizeCoord,
   calculateDistanceMeters,
@@ -440,5 +477,7 @@ module.exports = {
   calculateRouteTotalDistance,
   extrapolatePolylinePosition,
   composeRouteWithStops,
+  buildPolylineDistanceTable,
+  pointAtDistance,
   decodePolyline
 };

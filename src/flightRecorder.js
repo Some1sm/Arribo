@@ -94,6 +94,10 @@ class FlightRecorder {
         delayMins: Number(snap.delayMins || 0),
         destination: snap.destination || '',
         isRealTime: snap.isRealTime !== false,
+        // Schedule-estimated buses (no real GPS) must not be dead-reckoned:
+        // their position is already recomputed from the timetable every poll,
+        // and extrapolation would drag them off the drawn route.
+        isEstimated: Boolean(snap.isEstimated || snap.isDeadReckoned),
         status: 'active',
         lastSeen: now,
         lastPersistedAt: 0,
@@ -108,6 +112,7 @@ class FlightRecorder {
       v.delayMins = Number(snap.delayMins || 0);
       if (snap.destination) v.destination = snap.destination;
       v.isRealTime = snap.isRealTime !== false;
+      v.isEstimated = Boolean(snap.isEstimated || snap.isDeadReckoned);
       v.status = 'active';
       // Fresh real GPS fix resets the dead-reckoning budget so vehicles that
       // regain telemetry can extrapolate again during the next cellular shadow.
@@ -173,7 +178,7 @@ class FlightRecorder {
         continue;
       }
 
-      if (elapsed > extrapolateThresholdMs && v.speedKmh > 5 && v.bearing !== undefined) {
+      if (elapsed > extrapolateThresholdMs && v.speedKmh > 5 && v.bearing !== undefined && !v.isEstimated) {
         // Bound total dead-reckoning to maxExtrapolationMs so vehicles never drift
         // arbitrarily far from their last real GPS fix during long cellular shadows.
         const projectedMs = (v.extrapolatedMs || 0);

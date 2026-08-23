@@ -567,13 +567,30 @@ class MaresmeTracker extends BaseTracker {
                 polylineCoords,
                 scheduledRuns
               };
+              // Distance table + per-stop route distances: lets bus positions be
+              // interpolated by METRES ALONG THE ROUTE between stops instead of
+              // vertex-index ratio (which diverges after shape stitching changes
+              // vertex density).
+              baseData.distTable = geoEngine.buildPolylineDistanceTable(polylineCoords);
+              baseData.stopRouteDist = stops.map(s => {
+                const snap = geoEngine.snapPointToPolyline(s.lat, s.lon, polylineCoords);
+                const d = snap && typeof snap.index === 'number' && baseData.distTable.cum[snap.index] !== undefined
+                  ? baseData.distTable.cum[snap.index] : 0;
+                return d;
+              });
+              // Enforce monotonic non-decreasing stop distances along the route.
+              for (let i = 1; i < baseData.stopRouteDist.length; i++) {
+                if (baseData.stopRouteDist[i] < baseData.stopRouteDist[i - 1]) {
+                  baseData.stopRouteDist[i] = baseData.stopRouteDist[i - 1];
+                }
+              }
               this.baseLineDetailsCache.set(cacheKey, baseData);
             }
           }
         }
 
         if (baseData) {
-          const { stops, polylineCoords, scheduledRuns } = baseData;
+          const { stops, polylineCoords, scheduledRuns, distTable, stopRouteDist } = baseData;
           const netNow = timeUtils.getNetworkTime(this.agencyTimezone);
           const currentSec = netNow.hour * 3600 + netNow.minute * 60 + netNow.second;
           const activeBuses = [];
@@ -586,14 +603,21 @@ class MaresmeTracker extends BaseTracker {
 
             if (elapsedSec >= 0 && elapsedSec <= run.durSec) {
               const progress = Math.min(0.99, Math.max(0.01, elapsedSec / run.durSec));
-              const polyIdx = Math.min(polylineCoords.length - 1, Math.floor(progress * (polylineCoords.length - 1)));
-              const pos = polylineCoords[polyIdx];
-              const nextPos = polylineCoords[Math.min(polylineCoords.length - 1, polyIdx + 1)] || pos;
-
-              const bearing = Math.round(geoEngine.calculateBearing(pos[0], pos[1], nextPos[0], nextPos[1]) || 0);
+              // Position by METRES ALONG THE ROUTE: interpolate the travelled
+              // distance between the projected stop distances, then convert
+              // back to a coordinate. Keeps the marker consistent with the
+              // labeled segment regardless of vertex density.
+              const seqPos = progress * (stops.length - 1);
+              const stopIndex = Math.min(stops.length - 2, Math.floor(seqPos));
+              const segFrac = seqPos - stopIndex;
+              const fromDist = stopRouteDist ? (stopRouteDist[stopIndex] || 0) : 0;
+              const toDist = stopRouteDist ? (stopRouteDist[Math.min(stopIndex + 1, stops.length - 1)] ?? distTable.total) : distTable.total * ((stopIndex + 1) / (stops.length - 1));
+              const targetDist = fromDist + segFrac * (toDist - fromDist);
+              const at = geoEngine.pointAtDistance(polylineCoords, distTable, targetDist) || {};
+              const pos = [at.lat || stops[stopIndex].lat, at.lon || stops[stopIndex].lon];
+              const bearing = at.bearing || 0;
               const compass = geoEngine.bearingToCompassName(bearing);
 
-              const stopIndex = Math.min(stops.length - 2, Math.floor(progress * (stops.length - 1)));
               const fromStop = stops[stopIndex];
               const toStop = stops[stopIndex + 1];
 
@@ -612,7 +636,7 @@ class MaresmeTracker extends BaseTracker {
                 bearing,
                 compass,
                 speedKmh,
-                progressInSegment: (progress * (stops.length - 1)) % 1,
+                progressInSegment: segFrac,
                 totalProgress: Math.round(progress * 100),
                 fromStop: fromStop?.name || 'Origen',
                 toStop: toStop?.name || 'Destí',
@@ -810,8 +834,18 @@ class MaresmeTracker extends BaseTracker {
     };
   }
 
-  calculateActiveBuses(lineConfig, dir, stops, polylineCoords) {
+  calculateActiveBuses(lineConfig, dir, stops, polylineCoords, distTable = null, stopRouteDist = null) {
     if (!polylineCoords || polylineCoords.length < 2 || !stops || stops.length < 2) return [];
+    if (!distTable) distTable = geoEngine.buildPolylineDistanceTable(polylineCoords);
+    if (!stopRouteDist) {
+      stopRouteDist = stops.map(s => {
+        const snap = geoEngine.snapPointToPolyline(s.lat, s.lon, polylineCoords);
+        return snap && typeof snap.index === 'number' && distTable.cum[snap.index] !== undefined ? distTable.cum[snap.index] : 0;
+      });
+      for (let i = 1; i < stopRouteDist.length; i++) {
+        if (stopRouteDist[i] < stopRouteDist[i - 1]) stopRouteDist[i] = stopRouteDist[i - 1];
+      }
+    }
 
     const trips = (this.tripsMap.get(lineConfig.routeId) || []).filter(t => String(t.dirId) === String(dir));
     const netNow = timeUtils.getNetworkTime(this.agencyTimezone);
@@ -855,14 +889,19 @@ class MaresmeTracker extends BaseTracker {
 
       if (elapsedSec >= 0 && elapsedSec <= run.durSec) {
         const progress = Math.min(0.99, Math.max(0.01, elapsedSec / run.durSec));
-        const polyIdx = Math.min(polylineCoords.length - 1, Math.floor(progress * (polylineCoords.length - 1)));
-        const pos = polylineCoords[polyIdx];
-        const nextPos = polylineCoords[Math.min(polylineCoords.length - 1, polyIdx + 1)] || pos;
-
-        const bearing = Math.round(geoEngine.calculateBearing(pos[0], pos[1], nextPos[0], nextPos[1]) || 0);
+        // Position by metres along the route between projected stop distances
+        // (see resolveRouteGeometry note — vertex-ratio breaks after stitching).
+        const seqPos = progress * (stops.length - 1);
+        const stopIndex = Math.min(stops.length - 2, Math.floor(seqPos));
+        const segFrac = seqPos - stopIndex;
+        const fromDist = stopRouteDist[stopIndex] || 0;
+        const toDist = stopRouteDist[Math.min(stopIndex + 1, stops.length - 1)] ?? distTable.total;
+        const targetDist = fromDist + segFrac * (toDist - fromDist);
+        const at = geoEngine.pointAtDistance(polylineCoords, distTable, targetDist) || {};
+        const pos = [at.lat || stops[stopIndex].lat, at.lon || stops[stopIndex].lon];
+        const bearing = at.bearing || 0;
         const compass = geoEngine.bearingToCompassName(bearing);
 
-        const stopIndex = Math.min(stops.length - 2, Math.floor(progress * (stops.length - 1)));
         const fromStop = stops[stopIndex];
         const toStop = stops[stopIndex + 1];
 
@@ -881,7 +920,7 @@ class MaresmeTracker extends BaseTracker {
           bearing,
           compass,
           speedKmh,
-          progressInSegment: (progress * (stops.length - 1)) % 1,
+          progressInSegment: segFrac,
           totalProgress: Math.round(progress * 100),
           fromStop: fromStop?.name || 'Origen',
           toStop: toStop?.name || 'Destí',
