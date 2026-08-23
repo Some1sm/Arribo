@@ -1925,6 +1925,7 @@ class TransitApp {
     const speedEl = document.getElementById('telemetry-speed');
     const segmentEl = document.getElementById('telemetry-segment');
     const etaNextEl = document.getElementById('telemetry-eta-next');
+    const tripStartEl = document.getElementById('telemetry-trip-start');
     const progressFill = document.getElementById('telemetry-progress-bar');
     const progressText = document.getElementById('telemetry-progress-text');
     const statusBadge = document.getElementById('telemetry-status-badge');
@@ -1938,6 +1939,7 @@ class TransitApp {
       if (speedEl) speedEl.textContent = '0 km/h (Parat)';
       if (segmentEl) segmentEl.textContent = 'Circuit fora d\'horari';
       if (etaNextEl) etaNextEl.textContent = `Pas per ${targetName}: ${nextTime}`;
+      if (tripStartEl) tripStartEl.textContent = '--';
       if (progressFill) progressFill.style.width = '0%';
       if (progressText) progressText.textContent = '0%';
       if (statusBadge) { 
@@ -1955,6 +1957,7 @@ class TransitApp {
     if (speedEl) speedEl.textContent = `${b.speedKmh || 32} km/h`;
     if (segmentEl) segmentEl.textContent = `${b.fromStop || 'Origen'} ➔ ${b.toStop || 'Destí'}`;
     if (etaNextEl) etaNextEl.textContent = b.secondsToNextStop ? `~${Math.round(b.secondsToNextStop / 60)} min (${b.toStop})` : `${b.toStop || 'En trajecte'}`;
+    if (tripStartEl) tripStartEl.textContent = b.tripStartTime || '--';
     
     const prog = Math.min(100, Math.max(0, b.totalProgress || 0));
     if (progressFill) progressFill.style.width = `${prog}%`;

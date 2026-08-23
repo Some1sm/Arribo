@@ -919,6 +919,7 @@ class CorridorTracker extends BaseTracker {
         const depTimeStr = secToTime(turnaroundDepartureSec).substring(0, 5);
         return {
           tripId: trip.tripId,
+          tripStartTime: (trip.stops[0]?.dep || trip.stops[0]?.arr || '').substring(0, 5),
           isTerminalLayover: true,
           headsign: trip.headsign,
           fromStop: termStopData.name || 'Terminal de línia',
@@ -986,6 +987,7 @@ class CorridorTracker extends BaseTracker {
 
         return {
           tripId: trip.tripId,
+          tripStartTime: (trip.stops[0]?.dep || trip.stops[0]?.arr || '').substring(0, 5),
           vehicleId: `c10_${trip.tripId}`,
           headsign: trip.headsign,
           fromStop: stop1Data.name || 'Parada anterior',
@@ -1008,6 +1010,9 @@ class CorridorTracker extends BaseTracker {
           segEndSec: t2,
           secondsToNextStop: Math.max(0, t2 - currentSec),
           currentSegmentTime: `${secToTime(t1).substring(0, 5)} ➔ ${secToTime(t2).substring(0, 5)}`,
+          // Official scheduled departure from the trip's first stop — the hour
+          // this bus started its current direction.
+          tripStartTime: (trip.stops[0].dep || trip.stops[0].arr || '').substring(0, 5),
           allStops: allStopsFormatted,
           isDeadReckoned: true,
           isEstimated: true,

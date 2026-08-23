@@ -853,6 +853,11 @@ class C10Map {
               <span class="map-popup-item-label">🚦 Estat</span>
               <span class="map-popup-item-val">${escHtml(bus.delayFormatted || 'Puntual')}</span>
             </div>
+            ${bus.tripStartTime ? `
+            <div class="map-popup-item">
+              <span class="map-popup-item-label">🕐 Inici trajecte</span>
+              <span class="map-popup-item-val">${escHtml(bus.tripStartTime)}</span>
+            </div>` : ''}
           </div>
 
           <div class="map-popup-coords-footer">
