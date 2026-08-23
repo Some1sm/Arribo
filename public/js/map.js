@@ -78,6 +78,89 @@ class C10Map {
 
     this.updateTileLayer();
     this.setupResizeObserver();
+    this.requestUserLocation();
+  }
+
+  /**
+   * Requests the browser's geolocation and shows the user's position on the
+   * map as a pulsing blue dot. If permission is denied or geolocation is
+   * unavailable, shows a small dismissible hint badge in the map corner.
+   */
+  requestUserLocation() {
+    if (!this.map || !navigator.geolocation) {
+      this.showLocationPermissionHint(navigator.geolocation ? 'pending' : 'unsupported');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        this.hideLocationPermissionHint();
+        this.renderUserLocationMarker(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+      },
+      (err) => {
+        // PERMISSION_DENIED = 1, POSITION_UNAVAILABLE = 2, TIMEOUT = 3
+        this.showLocationPermissionHint(err && err.code === 1 ? 'denied' : 'error');
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
+  }
+
+  renderUserLocationMarker(lat, lon, accuracyMeters = 0) {
+    if (!this.map) return;
+    if (this.userLocationMarker) {
+      this.userLocationMarker.setLatLng([lat, lon]);
+      if (this.userLocationAccuracyCircle) this.userLocationAccuracyCircle.setLatLng([lat, lon]);
+      return;
+    }
+    const icon = L.divIcon({
+      html: '<div class="user-location-dot"><div class="user-location-pulse"></div></div>',
+      className: 'user-location-marker',
+      iconSize: [22, 22],
+      iconAnchor: [11, 11]
+    });
+    this.userLocationMarker = L.marker([lat, lon], {
+      icon,
+      zIndexOffset: 6000,
+      interactive: false,
+      keyboard: false
+    }).addTo(this.map);
+    if (Number.isFinite(accuracyMeters) && accuracyMeters > 0) {
+      this.userLocationAccuracyCircle = L.circle([lat, lon], {
+        radius: Math.min(accuracyMeters, 500),
+        color: '#3b82f6',
+        weight: 1,
+        opacity: 0.35,
+        fillColor: '#3b82f6',
+        fillOpacity: 0.08,
+        interactive: false
+      }).addTo(this.map);
+    }
+  }
+
+  showLocationPermissionHint(state = 'denied') {
+    if (!this.map || !this.map.getContainer()) return;
+    let badge = document.getElementById('user-location-badge');
+    if (!badge) {
+      badge = document.createElement('div');
+      badge.id = 'user-location-badge';
+      badge.className = 'user-location-badge';
+      badge.setAttribute('role', 'button');
+      badge.setAttribute('tabindex', '0');
+      badge.title = 'Clica per tornar-ho a provar';
+      const container = this.map.getContainer();
+      container.appendChild(badge);
+      const retry = () => { badge.style.display = 'none'; this.requestUserLocation(); };
+      badge.addEventListener('click', retry);
+      badge.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') retry(); });
+    }
+    badge.textContent = state === 'unsupported'
+      ? '📍 El teu navegador no permet geolocalització'
+      : '📍 Dona permís d\'ubicació al navegador per veure la teva posició al mapa — clica aquí per reintentar';
+    badge.style.display = 'block';
+  }
+
+  hideLocationPermissionHint() {
+    const badge = document.getElementById('user-location-badge');
+    if (badge) badge.style.display = 'none';
   }
 
   setupResizeObserver() {
