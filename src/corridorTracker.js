@@ -200,6 +200,8 @@ class CorridorTracker extends BaseTracker {
           if (osrm && osrmCoversStops(osrm, stopList)) {
             console.log(`[CorridorTracker] dir ${dir}: using OSRM road geometry through all stops (${osrm.length} pts).`);
             this[attr] = osrm;
+            this._polylineUpgraded = this._polylineUpgraded || {};
+            this._polylineUpgraded[dir] = true;
           }
         }
       } catch (e) {
@@ -1098,6 +1100,8 @@ class CorridorTracker extends BaseTracker {
     // Ensure the road-snapped polyline upgrade has run before serving coords.
     await this.ensureOsrmPolylines();
     const polyline = isDir1 ? this.routePolylineDir1 : this.routePolylineDir0;
+    const geometrySource = this._polylineUpgraded?.[isDir1 ? '1' : '0'] ? 'osrm' : 'gtfs';
+    const geometryEstimated = Boolean(this._polylineUpgraded?.[isDir1 ? '1' : '0']);
 
     const result = {
       direction: direction,
@@ -1108,6 +1112,8 @@ class CorridorTracker extends BaseTracker {
       stops: stopsList,
       routePolyline: polyline,
       coords: polyline,
+      geometrySource,
+      geometryEstimated,
       trackedTripId: targetTripToTrack?.tripId || null,
       calendarInfo: this.getServiceCalendarInfo(now),
       targetStop: this.targetStop,

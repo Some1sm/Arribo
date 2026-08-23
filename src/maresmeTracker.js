@@ -509,6 +509,8 @@ class MaresmeTracker extends BaseTracker {
               if (polylineCoords.length === 0 && stops.length > 0) {
                 polylineCoords = stops.map(s => [s.lat, s.lon]);
               }
+              let geometrySource = (polylineCoords.length > 1 && stops.length > 0) ? 'stops-chords' : null;
+              let geometryEstimated = true;
               if (polylineCoords.length > 1 && stops.length > 0) {
                 // Prefer stitching a sibling road shape from shapes.db (keeps
                 // real streets); fall back to chord composition when no
@@ -521,6 +523,15 @@ class MaresmeTracker extends BaseTracker {
                 });
                 if (geom) {
                   polylineCoords = geom.coords;
+                  const map = {
+                    'stitched-shape': ['stitched-gtfs', false],
+                    'shape': ['gtfs', false],
+                    'composed': ['composed', true],
+                    'discovered': ['discovered-gtfs', true],
+                    'osrm': ['osrm', true]
+                  };
+                  const m = map[geom.method];
+                  if (m) { geometrySource = m[0]; geometryEstimated = m[1]; }
                 }
               }
 
@@ -640,6 +651,8 @@ class MaresmeTracker extends BaseTracker {
             stops,
             coords: polylineCoords,
             polyline: polylineCoords,
+            geometrySource,
+            geometryEstimated,
             activeBuses,
             checkpoints,
             totalActiveBuses: activeBuses.length,
@@ -736,6 +749,8 @@ class MaresmeTracker extends BaseTracker {
     if (polylineCoords.length === 0 && stops.length > 0) {
       polylineCoords = stops.map(s => [s.lat, s.lon]);
     }
+    let geometrySource = (polylineCoords.length > 1 && stops.length > 0) ? 'stops-chords' : null;
+    let geometryEstimated = true;
     if (polylineCoords.length > 1 && stops.length > 0) {
       const geom = await resolveRouteGeometry({
         coords: polylineCoords,
@@ -745,6 +760,15 @@ class MaresmeTracker extends BaseTracker {
       });
       if (geom) {
         polylineCoords = geom.coords;
+        const map = {
+          'stitched-shape': ['stitched-gtfs', false],
+          'shape': ['gtfs', false],
+          'composed': ['composed', true],
+          'discovered': ['discovered-gtfs', true],
+          'osrm': ['osrm', true]
+        };
+        const m = map[geom.method];
+        if (m) { geometrySource = m[0]; geometryEstimated = m[1]; }
       }
     }
 
@@ -771,6 +795,8 @@ class MaresmeTracker extends BaseTracker {
       stops,
       coords: polylineCoords,
       polyline: polylineCoords,
+      geometrySource,
+      geometryEstimated,
       activeBuses,
       checkpoints,
       totalActiveBuses: activeBuses.length,

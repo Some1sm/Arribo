@@ -244,6 +244,8 @@ class MataroTracker extends BaseTracker {
       stops,
       coords: polyline,
       polyline,
+      geometrySource: 'gtfs',
+      geometryEstimated: false,
       secondaryCoords: (isBoth && allDirections.length > 1) ? allDirections[1].polyline : null,
       secondaryStops: (isBoth && allDirections.length > 1) ? allDirections[1].stops : null,
       secondaryColor: '#38bdf8',

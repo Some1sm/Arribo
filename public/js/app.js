@@ -429,7 +429,8 @@ class TransitApp {
         secondaryStops,
         secondaryColor,
         lId,
-        this.activeDirection
+        this.activeDirection,
+        cached.geometryEstimated === undefined ? null : { estimated: Boolean(cached.geometryEstimated), source: String(cached.geometrySource || '') }
       );
     } else if (this.activeLineData) {
       const etaMins = document.getElementById('target-countdown');
@@ -896,7 +897,8 @@ class TransitApp {
           secondaryStops,
           secondaryColor,
           lId,
-          dir
+          dir,
+          lData.geometryEstimated === undefined ? null : { estimated: Boolean(lData.geometryEstimated), source: String(lData.geometrySource || '') }
         );
         this.mapController.updateBusMarkers(
           this.activeBuses, 

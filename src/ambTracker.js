@@ -475,13 +475,28 @@ class AmbTracker extends BaseTracker {
       }
     }
 
+    let geometrySource = 'stops-chords', geometryEstimated = true;
     const geom = await resolveRouteGeometry({
       coords: (polylineCoords && polylineCoords.length > 1) ? polylineCoords : null,
       stops,
       dbPath: path.join(__dirname, '..', 'data', 'shapes.db'),
       primaryShapeId: dirObj.shapeId || '',
     });
-    polylineCoords = (geom && geom.coords) || polylineCoords || stops.map(s => [s.lat, s.lon]);
+    if (geom) {
+      polylineCoords = geom.coords;
+      const METHOD_MAP = {
+        'stitched-shape': ['stitched-gtfs', false],
+        'shape': ['gtfs', false],
+        'composed': ['composed', true],
+        'discovered': ['discovered-gtfs', true],
+        'osrm': ['osrm', true]
+      };
+      const m = METHOD_MAP[geom.method];
+      if (m) { geometrySource = m[0]; geometryEstimated = m[1]; }
+    } else if (polylineCoords && polylineCoords.length > 1) {
+      geometrySource = 'gtfs'; geometryEstimated = false;
+    }
+    polylineCoords = polylineCoords || stops.map(s => [s.lat, s.lon]);
 
     // 1. Discover real-time vehicles for this route directly from live AMB vehicle fleet
     const liveFleet = await this.getLiveVehicles();
@@ -672,6 +687,8 @@ class AmbTracker extends BaseTracker {
       stops,
       coords: polylineCoords,
       polyline: polylineCoords,
+      geometrySource,
+      geometryEstimated,
       activeBuses,
       checkpoints,
       disruptions,

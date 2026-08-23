@@ -306,8 +306,9 @@ class C10Map {
   }
 
   // Render stops and road polyline on map (with support for both directions simultaneously)
-  renderStops(stops, targetStopId = '', onStopClick = null, shouldFitBounds = false, lineColor = '#009485', customPolyline = null, secondaryPolyline = null, secondaryStops = null, secondaryColor = '#38bdf8', lineId = '', direction = '') {
+  renderStops(stops, targetStopId = '', onStopClick = null, shouldFitBounds = false, lineColor = '#009485', customPolyline = null, secondaryPolyline = null, secondaryStops = null, secondaryColor = '#38bdf8', lineId = '', direction = '', geometryInfo = null) {
     if (!this.map) return;
+    this.updateRouteSourceBadge(geometryInfo);
 
     // NOTE: targetStopId intentionally excluded from fingerprint so clicking a new
     // target stop toggles styling on cached markers instead of rebuilding them all.
@@ -626,6 +627,30 @@ class C10Map {
     }
     this.lastStopsFingerprint = null;
     this._hasFittedInitialBounds = false;
+    this.updateRouteSourceBadge(null);
+  }
+
+  /**
+   * Shows/hides the 'estimated route' badge inside the map container.
+   * geometryInfo: { estimated: bool, source: string } | null
+   */
+  updateRouteSourceBadge(geometryInfo) {
+    if (!this.map) return;
+    let badge = document.getElementById('route-source-badge');
+    if (!badge && this.map.getContainer()) {
+      badge = document.createElement('div');
+      badge.id = 'route-source-badge';
+      badge.className = 'route-source-badge';
+      this.map.getContainer().appendChild(badge);
+    }
+    if (!badge) return;
+    if (geometryInfo && geometryInfo.estimated) {
+      badge.textContent = '⚠️ Traçat estimat';
+      badge.title = "Aquest traçat està calculat (OSRM o interpolació entre parades) i pot no coincidir exactament amb la ruta real de l'operador.";
+      badge.style.display = 'block';
+    } else {
+      badge.style.display = 'none';
+    }
   }
 
   clearAllBusMarkers() {

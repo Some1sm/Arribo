@@ -360,6 +360,8 @@ app.get('/api/line/:lineId', async (req, res) => {
             ],
             stops: stops1,
             coords: tracking1.routePolyline || [],
+            geometrySource: tracking1.geometrySource || 'gtfs',
+            geometryEstimated: Boolean(tracking1.geometryEstimated || tracking0.geometryEstimated),
             secondaryStops: stops0,
             secondaryCoords: tracking0.routePolyline || [],
             allDirections: [
@@ -398,6 +400,8 @@ app.get('/api/line/:lineId', async (req, res) => {
             ],
             stops: stops,
             coords: tracking.routePolyline || [],
+            geometrySource: tracking.geometrySource || 'gtfs',
+            geometryEstimated: Boolean(tracking.geometryEstimated),
             activeBuses: tracking.activeBuses || [],
             checkpoints: tracking.checkpoints || [],
             totalVehiclesInCircuit: tracking.activeBuses?.length || 0,

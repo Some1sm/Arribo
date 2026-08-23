@@ -209,15 +209,26 @@ class CataloniaTracker extends BaseTracker {
       const details1 = await this.getLineDetails(lineId, '1');
       const shape0 = route.directions[0]?.shapeId;
       const shape1 = route.directions[1]?.shapeId;
+      const METHOD_MAP = {
+        'stitched-shape': ['stitched-gtfs', false],
+        'shape': ['gtfs', false],
+        'composed': ['composed', true],
+        'discovered': ['discovered-gtfs', true],
+        'osrm': ['osrm', true]
+      };
       let coords0 = this.getShapeCoords(shape0) || details0.stops.map(s => [s.lat, s.lon]);
       let coords1 = this.getShapeCoords(shape1) || details1.stops.map(s => [s.lat, s.lon]);
       const geom0 = await resolveRouteGeometry({ coords: coords0, stops: details0.stops, dbPath: this.shapesDbPath, primaryShapeId: shape0 || '' });
       if (geom0) coords0 = geom0.coords;
       const geom1 = await resolveRouteGeometry({ coords: coords1, stops: details1.stops, dbPath: this.shapesDbPath, primaryShapeId: shape1 || '' });
       if (geom1) coords1 = geom1.coords;
+      const m0 = geom0 ? (METHOD_MAP[geom0.method] || ['gtfs', false]) : ['stops-chords', true];
+      const m1 = geom1 ? (METHOD_MAP[geom1.method] || ['stops-chords', true]) : ['stops-chords', true];
       return {
         ...details0,
         direction: 'both',
+        geometrySource: m0[0],
+        geometryEstimated: m0[1] || m1[1],
         coords: coords0,
         polyline: coords0,
         secondaryStops: details1.stops,
@@ -251,7 +262,22 @@ class CataloniaTracker extends BaseTracker {
       dbPath: this.shapesDbPath,
       primaryShapeId: dirMeta.shapeId || '',
     });
-    polylineCoords = (geom && geom.coords) || polylineCoords || stops.map(s => [s.lat, s.lon]);
+    const METHOD_MAP = {
+      'stitched-shape': ['stitched-gtfs', false],
+      'shape': ['gtfs', false],
+      'composed': ['composed', true],
+      'discovered': ['discovered-gtfs', true],
+      'osrm': ['osrm', true]
+    };
+    let geometrySource = 'stops-chords', geometryEstimated = true;
+    if (geom) {
+      polylineCoords = geom.coords;
+      const m = METHOD_MAP[geom.method];
+      if (m) { geometrySource = m[0]; geometryEstimated = m[1]; }
+    } else if (polylineCoords && polylineCoords.length > 1) {
+      geometrySource = 'gtfs'; geometryEstimated = false;
+    }
+    polylineCoords = polylineCoords || stops.map(s => [s.lat, s.lon]);
 
     // Check scheduled service for today
     const now = new Date();
@@ -313,6 +339,8 @@ class CataloniaTracker extends BaseTracker {
       stops,
       coords: polylineCoords,
       polyline: polylineCoords,
+      geometrySource,
+      geometryEstimated,
       activeBuses: [], // No fake synthetic ghost buses!
       checkpoints,
       totalActiveBuses: 0,
