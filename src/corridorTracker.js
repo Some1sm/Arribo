@@ -138,7 +138,14 @@ class CorridorTracker extends BaseTracker {
       }));
       this.routePolylineDir1 = [...c10Static.C10_POLYLINE_DIR1];
       this.routePolylineDir0 = [...c10Static.C10_POLYLINE_DIR0];
-      this.fullSchedule = { dir1: [...c10Static.C10_TRIPS_DIR1], dir0: [...c10Static.C10_TRIPS_DIR0] };
+      // Prefer the REAL GTFS schedule (GEN_0498) over the fabricated
+      // fixed-start-minute timetables — service-day filtering depends on the
+      // feed's service_ids, and Sunday/holiday times must match the operator.
+      const gtfsTrips = c10Static.C10_GTFS_TRIPS;
+      this.fullSchedule = {
+        dir1: (gtfsTrips && gtfsTrips.dir1.length > 0) ? gtfsTrips.dir1 : [...c10Static.C10_TRIPS_DIR1],
+        dir0: (gtfsTrips && gtfsTrips.dir0.length > 0) ? gtfsTrips.dir0 : [...c10Static.C10_TRIPS_DIR0]
+      };
 
       // Load authoritative high-resolution road shapes from SQLite shapes database
       const shapesDbPath = path.join(this.dataDir, 'shapes.db');

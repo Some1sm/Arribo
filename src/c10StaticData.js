@@ -1,6 +1,146 @@
 // Authoritative Static Dataset for C-10 Coastal Corridor (Barcelona ⇄ Mataró per N-II)
 // Moventis / Casas (Interurbà Maresme)
 
+const fs = require('fs');
+const path = require('path');
+
+/**
+ * Extracts the REAL GEN_0498 (C-10) trip schedule from data/atm_gtfs, replacing
+ * the old fabricated fixed-start-minute timetables. Cached to
+ * data/cache/c10_gtfs_schedule.json so the 220MB stop_times scan runs once.
+ * Returns { dir0: [...], dir1: [...] } or null when the feed is unavailable.
+ */
+function extractGtfsTrips() {
+  const CACHE_VERSION = 3;
+  const cachePath = path.join(__dirname, '..', 'data', 'cache', 'c10_gtfs_schedule.json');
+  try {
+    if (fs.existsSync(cachePath)) {
+      const cached = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+      if (cached.version === CACHE_VERSION && Array.isArray(cached.dir0) && Array.isArray(cached.dir1) && cached.dir0.length > 0) {
+        return cached;
+      }
+    }
+  } catch (_) {}
+
+  const atmDir = path.join(__dirname, '..', 'data', 'atm_gtfs');
+  const tripsPath = path.join(atmDir, 'trips.txt');
+  const stopTimesPath = path.join(atmDir, 'stop_times.txt');
+  if (!fs.existsSync(tripsPath) || !fs.existsSync(stopTimesPath)) return null;
+
+  const parseCsvLine = (line) => {
+    const out = []; let cur = '', q = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (q) { if (ch === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += ch; }
+      else if (ch === '"') q = true;
+      else if (ch === ',') { out.push(cur); cur = ''; }
+      else cur += ch;
+    }
+    out.push(cur.trim());
+    return out;
+  };
+
+  // Pass 1: trips.txt — collect GEN_0498 trips (small file).
+  const wanted = new Map(); // tripId -> { serviceId, dirId }
+  const tLines = fs.readFileSync(tripsPath, 'utf8').split('\n').filter(l => l.trim());
+  const tH = {};
+  parseCsvLine(tLines[0]).forEach((nm, i) => { tH[nm.trim()] = i; });
+  for (let i = 1; i < tLines.length; i++) {
+    const p = parseCsvLine(tLines[i]);
+    if (p[tH.route_id] !== 'GEN_0498' || !p[tH.trip_id]) continue;
+    wanted.set(p[tH.trip_id], {
+      serviceId: p[tH.service_id] || '',
+      dirId: String(p[tH.direction_id] || '0')
+    });
+  }
+  if (wanted.size === 0) return null;
+
+  // Pass 2: stop_times.txt — chunked sync read (memory-safe).
+  const stHeader = parseCsvLine(fs.readFileSync(stopTimesPath, 'utf8').split('\n')[0]);
+  const stI = {};
+  stHeader.forEach((nm, i) => { stI[nm.trim()] = i; });
+  const byTrip = new Map();
+  const fd = fs.openSync(stopTimesPath, 'r');
+  const buf = Buffer.alloc(1 << 22);
+  let leftover = '', bytesRead;
+  try {
+    while ((bytesRead = fs.readSync(fd, buf, 0, buf.length, null)) > 0) {
+      const lines = (leftover + buf.toString('utf8', 0, bytesRead)).split('\n');
+      leftover = lines.pop();
+      for (const l of lines) {
+        const p = l.split(',');
+        if (!wanted.has(p[stI.trip_id])) continue;
+        if (!byTrip.has(p[stI.trip_id])) byTrip.set(p[stI.trip_id], []);
+        byTrip.get(p[stI.trip_id]).push({
+          stopId: p[stI.stop_id],
+          seq: parseInt(p[stI.stop_sequence], 10) || 0,
+          arr: p[stI.arrival_time] || '',
+          dep: p[stI.departure_time] || ''
+        });
+      }
+    }
+    if (leftover.trim()) {
+      const p = leftover.split(',');
+      if (wanted.has(p[stI.trip_id])) {
+        if (!byTrip.has(p[stI.trip_id])) byTrip.set(p[stI.trip_id], []);
+        byTrip.get(p[stI.trip_id]).push({ stopId: p[stI.stop_id], seq: parseInt(p[stI.stop_sequence], 10) || 0, arr: p[stI.arrival_time] || '', dep: p[stI.departure_time] || '' });
+      }
+    }
+  } finally {
+    fs.closeSync(fd);
+  }
+
+  const buildDir = (dirId, headsign) => {
+    const trips = [];
+    for (const [tripId, meta] of wanted.entries()) {
+      if (meta.dirId !== dirId) continue;
+      const rows = (byTrip.get(tripId) || []).sort((a, b) => a.seq - b.seq);
+      if (rows.length < 2) continue;
+      trips.push({
+        tripId,
+        serviceId: meta.serviceId,
+        dirId,
+        headsign,
+        stops: rows.map(r => {
+          const arr = (r.arr || r.dep || '').trim();
+          const dep = (r.dep || r.arr || '').trim();
+          return {
+            stopId: r.stopId,
+            gtfsStopId: r.stopId,
+            seq: r.seq,
+            arr, dep,
+            arrivalTime: arr.substring(0, 5),
+            departureTime: dep.substring(0, 5)
+          };
+        })
+      });
+    }
+    trips.sort((a, b) => (a.stops[0].dep || '').localeCompare(b.stops[0].dep || ''));
+    return trips;
+  };
+
+  const result = {
+    version: CACHE_VERSION,
+    generatedAt: new Date().toISOString(),
+    dir0: buildDir('0', 'Barcelona (Metro la Pau)'),
+    dir1: buildDir('1', 'Hospital de Mataró')
+  };
+  if (result.dir0.length === 0 && result.dir1.length === 0) return null;
+
+  try {
+    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+    const tmpPath = cachePath + '.tmp';
+    fs.writeFileSync(tmpPath, JSON.stringify(result), 'utf8');
+    fs.renameSync(tmpPath, cachePath);
+  } catch (_) {}
+  return result;
+}
+
+const C10_GTFS_TRIPS = extractGtfsTrips();
+if (C10_GTFS_TRIPS) {
+  console.log(`[C10StaticData] 📖 Real GTFS C-10 schedule loaded: ${C10_GTFS_TRIPS.dir0.length} dir0 + ${C10_GTFS_TRIPS.dir1.length} dir1 trips.`);
+}
+
 const C10_STOPS_DIR1 = [
   { seq: 0, mouteStopId: 'PF08019096', gtfsStopId: 'GEN_PF08019096', code: 'PF08019096', name: 'Barcelona - rbla. Guipúscoa (Metro la Pau)', lat: 41.4233475, lon: 2.2061915, zone: 'Maresme', city: 'Barcelona' },
   { seq: 1, mouteStopId: 'PF08019095', gtfsStopId: 'GEN_PF08019095', code: 'PF08019095', name: 'Sant Adrià de Besòs - rbla. Guipúscoa - c. Extremadura', lat: 41.4248161, lon: 2.2085872, zone: 'Maresme', city: 'Sant Adrià de Besòs' },
@@ -190,6 +330,7 @@ const C10_TRIPS_DIR0 = [
 ];
 
 module.exports = {
+  C10_GTFS_TRIPS,
   C10_STOPS_DIR1,
   C10_STOPS_DIR0,
   C10_POLYLINE_DIR1,
