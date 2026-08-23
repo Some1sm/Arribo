@@ -84,11 +84,17 @@ class C10Map {
   /**
    * Requests the browser's geolocation and shows the user's position on the
    * map as a pulsing blue dot. If permission is denied or geolocation is
-   * unavailable, shows a small dismissible hint badge in the map corner.
+   * unavailable, shows a small hint badge in the map corner (dismissible).
    */
   requestUserLocation() {
-    if (!this.map || !navigator.geolocation) {
-      this.showLocationPermissionHint(navigator.geolocation ? 'pending' : 'unsupported');
+    if (!this.map) return;
+    // Respect a previous manual dismissal of the hint bubble.
+    try {
+      if (sessionStorage.getItem('arribo_loc_hint_dismissed') === '1') return;
+    } catch (_) {}
+    if (!navigator.geolocation || !window.isSecureContext) {
+      // Geolocation only works in secure contexts (HTTPS or localhost).
+      this.showLocationPermissionHint(!window.isSecureContext ? 'insecure' : 'unsupported');
       return;
     }
     navigator.geolocation.getCurrentPosition(
@@ -97,7 +103,9 @@ class C10Map {
         this.renderUserLocationMarker(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
       },
       (err) => {
-        // PERMISSION_DENIED = 1, POSITION_UNAVAILABLE = 2, TIMEOUT = 3
+        // PERMISSION_DENIED = 1, POSITION_UNAVAILABLE = 2, TIMEOUT = 3.
+        // Note: after an explicit denial browsers NEVER re-prompt from JS;
+        // the user must unblock the site via the padlock in the address bar.
         this.showLocationPermissionHint(err && err.code === 1 ? 'denied' : 'error');
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
@@ -143,19 +151,30 @@ class C10Map {
       badge = document.createElement('div');
       badge.id = 'user-location-badge';
       badge.className = 'user-location-badge';
-      badge.setAttribute('role', 'button');
-      badge.setAttribute('tabindex', '0');
-      badge.title = 'Clica per tornar-ho a provar';
+      badge.setAttribute('role', 'status');
       const container = this.map.getContainer();
       container.appendChild(badge);
-      const retry = () => { badge.style.display = 'none'; this.requestUserLocation(); };
-      badge.addEventListener('click', retry);
-      badge.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') retry(); });
+      // Delegated clicks: message area = retry, ✕ button = dismiss for this session.
+      badge.addEventListener('click', (e) => {
+        if (e.target && e.target.closest('.user-location-badge-close')) {
+          try { sessionStorage.setItem('arribo_loc_hint_dismissed', '1'); } catch (_) {}
+          badge.style.display = 'none';
+          return;
+        }
+        badge.style.display = 'none';
+        this.requestUserLocation();
+      });
     }
-    badge.textContent = state === 'unsupported'
-      ? '📍 El teu navegador no permet geolocalització'
-      : '📍 Dona permís d\'ubicació al navegador per veure la teva posició al mapa — clica aquí per reintentar';
-    badge.style.display = 'block';
+    const messages = {
+      denied: '📍 Ubicació blocada: permet-la des del candau 🔒 de la barra d\'adreces del navegador',
+      insecure: '📍 La geolocalització només funciona per HTTPS o localhost',
+      unsupported: '📍 El teu navegador no suporta geolocalització',
+      error: '📍 Clica aquí per activar la teva ubicació al mapa'
+    };
+    const msg = messages[state] || messages.error;
+    badge.innerHTML = `<span class="user-location-badge-msg">${msg}</span>` +
+      `<button type="button" class="user-location-badge-close" aria-label="Tanca l'avís">✕</button>`;
+    badge.style.display = 'flex';
   }
 
   hideLocationPermissionHint() {

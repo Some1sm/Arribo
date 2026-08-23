@@ -3831,20 +3831,41 @@ body {
   bottom: 12px;
   left: 12px;
   z-index: 500;
-  max-width: 70%;
+  max-width: 75%;
   background: rgba(15, 23, 42, 0.88);
   color: #e2e8f0;
   font-size: 0.72rem;
   font-weight: 600;
-  padding: 0.4rem 0.75rem;
+  padding: 0.4rem 0.5rem 0.4rem 0.75rem;
   border-radius: 999px;
   border: 1px solid rgba(59, 130, 246, 0.45);
   cursor: pointer;
   display: none;
+  align-items: center;
+  gap: 0.55rem;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
 }
 .user-location-badge:hover {
   border-color: rgba(59, 130, 246, 0.8);
+}
+.user-location-badge-close {
+  background: rgba(148, 163, 184, 0.18);
+  color: #cbd5e1;
+  border: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 0.7rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.user-location-badge-close:hover {
+  background: rgba(239, 68, 68, 0.35);
+  color: #fff;
 }
 .user-location-marker {
   background: transparent;
