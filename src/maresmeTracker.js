@@ -12,6 +12,15 @@ const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
 const BaseTracker = require('./core/BaseTracker');
 
+// GTFS times may exceed 24h (e.g. '24:48:00' = 00:48 next clock day).
+function normalizeGtfsTime(t) {
+  const str = String(t || '');
+  const m = str.match(/^(\d+):(\d{2})/);
+  if (!m) return str.substring(0, 5);
+  const h = parseInt(m[1], 10) % 24;
+  return String(h).padStart(2, '0') + ':' + m[2];
+}
+
 const MARESME_LINES_CONFIG = [
   {
     id: 'n80',
@@ -699,7 +708,7 @@ class MaresmeTracker extends BaseTracker {
                 lineId: lineConfig.id,
                 lineCode: lineConfig.code,
                 lineColor: lineConfig.color,
-                direction: String(dir),                tripStartTime: (run.startStr || '').substring(0, 5),
+                direction: String(dir),                tripStartTime: normalizeGtfsTime(run.startStr),
                 lat: pos[0],
                 lon: pos[1],
                 bearing,
@@ -943,7 +952,7 @@ class MaresmeTracker extends BaseTracker {
           const durSec = Math.max(900, (endSec >= startSec ? endSec - startSec : (86400 - startSec + endSec)));
           scheduledRuns.push({
             tripId: trip.tripId,
-            startStr: startStr.substring(0, 5),
+            startStr: normalizeGtfsTime(startStr),
             startSec,
             endSec,
             durSec,
@@ -989,7 +998,7 @@ class MaresmeTracker extends BaseTracker {
           lineId: lineConfig.id,
           lineCode: lineConfig.code,
           lineColor: lineConfig.color,
-          direction: String(dir),          tripStartTime: (run.startStr || '').substring(0, 5),
+          direction: String(dir),          tripStartTime: normalizeGtfsTime(run.startStr),
           lat: pos[0],
           lon: pos[1],
           bearing,
@@ -1076,7 +1085,7 @@ class MaresmeTracker extends BaseTracker {
           minDiffSec = diffSec;
           const delayMins = Math.round((targetSec - schedSec) / 60);
           bestMatch = {
-            scheduledTime: st.dep.substring(0, 5),
+            scheduledTime: normalizeGtfsTime(st.dep),
             schedSec,
             delayMins
           };
@@ -1338,8 +1347,11 @@ class MaresmeTracker extends BaseTracker {
 
               const netDate = timeUtils.getNetworkTime(this.agencyTimezone);
               let depUtc = timeUtils.localTimeToUtcDate(netDate.year, netDate.month, netDate.day, arrHour, arrMin, 0, this.agencyTimezone);
-              // Handle midnight rollover (e.g. at 22:00, 00:30 is tomorrow)
-              if (netDate.hour >= 18 && arrHour < 6) {
+              // Handle midnight rollover: an early-morning time that is
+              // already in the past belongs to TONIGHT (next occurrence).
+              // e.g. queried at 17:50, tonight's 00:05 is 6h away — the old
+              // hour>=18 gate dropped it entirely.
+              if (arrHour < 12 && depUtc.getTime() < now - 5 * 60 * 1000) {
                 depUtc = new Date(depUtc.getTime() + 24 * 3600 * 1000);
               }
               const diffMs = depUtc.getTime() - now;
@@ -1403,11 +1415,11 @@ class MaresmeTracker extends BaseTracker {
         const stList = this.stopTimesByTrip.get(trip.tripId) || [];
         const st = stList.find(s => String(s.stopId) === sIdStr || String(s.stopId) === stopObj.id || String(s.stopId) === stopObj.mouteStopId);
         if (st && st.dep) {
-          const timeStr = st.dep.substring(0, 5);
+          const timeStr = normalizeGtfsTime(st.dep);
           if (!seenTimes.has(timeStr)) {
             seenTimes.add(timeStr);
             const depSec = timeUtils.timeToSec(st.dep);
-            const originDepStr = (stList[0]?.dep || st.dep).substring(0, 5);
+            const originDepStr = normalizeGtfsTime((stList[0]?.dep || st.dep));
             const tripKey = `${lineConfig.code}_${originDepStr.replace(':', '')}`;
             stopSchedTimes.push({ timeStr, depSec, tripKey });
           }

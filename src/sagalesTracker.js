@@ -626,19 +626,27 @@ class SagalesTracker extends BaseTracker {
         const nowSec = netNow.hour * 3600 + netNow.minute * 60 + netNow.second;
         const secToTimeStr = (sec) => `${String(Math.floor(sec / 3600) % 24).padStart(2, '0')}:${String(Math.floor(sec / 60) % 60).padStart(2, '0')}`;
         for (const t of gtfsTrips) {
-          const diffMin = Math.round((t.passSec - nowSec) / 60);
+          // Night-rollover: an early-morning pass time already in the past
+          // belongs to TONIGHT's upcoming service (next occurrence ~24h later).
+          let passSec = t.passSec;
+          let isTodayDep = true;
+          if (passSec < nowSec - 300 && passSec < 12 * 3600) {
+            passSec += 86400;
+            isTodayDep = false;
+          }
+          const diffMin = Math.round((passSec - nowSec) / 60);
           if (diffMin < -1 || diffMin > 360) continue; // night lines: allow long waits
-          const passTimeStr = secToTimeStr(t.passSec);
+          const passTimeStr = secToTimeStr(passSec);
           departures.push({
             lineId: lineConfig.id,
             lineName: lineConfig.code,
             destination: dir === '0' ? lineConfig.directions[0].name : lineConfig.directions[1].name,
             departureTime: passTimeStr,
-            expectedIso: timeUtils.localTimeToUtcDate(netNow.year, netNow.month, netNow.day, Math.floor(t.passSec / 3600) % 24, Math.floor(t.passSec / 60) % 60, 0, this.agencyTimezone).toISOString(),
+            expectedIso: timeUtils.localTimeToUtcDate(netNow.year, netNow.month, netNow.day + (isTodayDep ? 0 : 1), Math.floor(passSec / 3600) % 24, Math.floor(passSec / 60) % 60, 0, this.agencyTimezone).toISOString(),
             minutesAway: Math.max(1, diffMin),
             isRealTime: false,
             isEstimated: false,
-            isToday: true,
+            isToday: isTodayDep,
             isFirstOfDay: false,
             delayStatus: 'scheduled',
             delayBadgeText: 'Programat',
