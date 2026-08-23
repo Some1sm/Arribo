@@ -439,9 +439,11 @@ class SagalesTracker extends BaseTracker {
    * Maps tracker stop codes to GTFS stop ids for a route schedule via
    * geographic proximity (<200m). Memoised per route.
    */
-  gtfsStopMapping(lineConfigId, gtfsSched, stops) {
+  gtfsStopMapping(lineConfigId, gtfsSched, stops, dir = '0') {
     if (!this._gtfsStopMaps) this._gtfsStopMaps = new Map();
-    if (this._gtfsStopMaps.has(lineConfigId)) return this._gtfsStopMaps.get(lineConfigId);
+    // Per-line AND per-direction: dir0/dir1 stop lists differ.
+    const mapKey = lineConfigId + '_' + dir;
+    if (this._gtfsStopMaps.has(mapKey)) return this._gtfsStopMaps.get(mapKey);
     const mapping = new Map(); // trackerStopCode -> gtfsStopId
     try {
       const coords = this.gtfsStopCoords();
@@ -458,7 +460,7 @@ class SagalesTracker extends BaseTracker {
         if (best) mapping.set(String(s.id || s.code), best.gid);
       }
     } catch (_) {}
-    this._gtfsStopMaps.set(lineConfigId, mapping);
+    this._gtfsStopMaps.set(mapKey, mapping);
     return mapping;
   }
 
@@ -468,7 +470,7 @@ class SagalesTracker extends BaseTracker {
    */
   gtfsTripsForStop(lineConfigId, gtfsSched, dir, trackerStopId, dateObj = new Date(), stops = null) {
     if (!gtfsSched) return [];
-    const mapping = this.gtfsStopMapping(lineConfigId, gtfsSched, stops);
+    const mapping = this.gtfsStopMapping(lineConfigId, gtfsSched, stops, dir);
     const gtfsStopId = mapping.get(String(trackerStopId));
     if (!gtfsStopId) return [];
     const trips = String(dir) === '1' ? gtfsSched.dir1 : gtfsSched.dir0;
@@ -599,7 +601,27 @@ class SagalesTracker extends BaseTracker {
       const gtfsSched = gtfsRouteId ? gtfsScheduleStore.getRouteSchedule(gtfsRouteId) : null;
       const gtfsTrips = gtfsSched ? this.gtfsTripsForStop(lineConfig.id, gtfsSched, dir, stopObj.id || sIdStr, new Date(), stops) : [];
 
-      if (gtfsTrips.length > 0) {
+      // Route known in the feed but this stop is not served by the current
+      // (service-day-filtered) pattern — e.g. night express skipping urban
+      // stops. Show an honest "no service" entry instead of fabricated times.
+      if (gtfsSched && gtfsTrips.length === 0) {
+        departures.push({
+          lineId: lineConfig.id,
+          lineName: lineConfig.code,
+          destination: dir === '0' ? lineConfig.directions[0].name : lineConfig.directions[1].name,
+          departureTime: '--:--',
+          minutesAway: null,
+          isRealTime: false,
+          isEstimated: false,
+          isToday: true,
+          isFirstOfDay: false,
+          isNextService: false,
+          delayStatus: 'scheduled',
+          delayBadgeText: 'Sense servei',
+          comparisonText: '🚫 Aquesta parada no és servida pel patró actual de la línia (horari oficial GTFS)',
+          formattedStatus: 'Sense servei'
+        });
+      } else if (gtfsTrips.length > 0) {
         const netNow = timeUtils.getNetworkTime(this.agencyTimezone, new Date(now));
         const nowSec = netNow.hour * 3600 + netNow.minute * 60 + netNow.second;
         const secToTimeStr = (sec) => `${String(Math.floor(sec / 3600) % 24).padStart(2, '0')}:${String(Math.floor(sec / 60) % 60).padStart(2, '0')}`;
@@ -710,7 +732,7 @@ class SagalesTracker extends BaseTracker {
       // Sort departures strictly by next occurrence (minutesAway)
       departures.sort((a, b) => (a.minutesAway || 0) - (b.minutesAway || 0));
 
-      if (departures.length > 0) {
+      if (departures.length > 0 && departures[0].departureTime !== '--:--') {
         departures[0].isFirstOfDay = true;
         departures[0].isNextService = true;
         departures[0].delayBadgeText = '🌅 1r Servei';
