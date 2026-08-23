@@ -802,11 +802,24 @@ class CorridorTracker extends BaseTracker {
   }
 
   async getStopDepartures(stopId, direction = '1', targetDate = null) {
-    const isDir1 = direction === '1';
-    const stopsList = direction === '0' ? this.stopsDir0 : this.stopsDir1;
-    const stopObj = stopsList.find(s => s.mouteStopId === stopId) || {};
-    const gtfsStopId = stopObj.gtfsStopId || null;
-    const seq = stopObj.seq !== undefined ? stopObj.seq : null;
+    let isDir1 = direction === '1';
+    let stopsList = isDir1 ? this.stopsDir1 : this.stopsDir0;
+    let stopObj = stopsList.find(s => s.mouteStopId === stopId || s.gtfsStopId === stopId || s.id === stopId) || null;
+    if (!stopObj) {
+      // Auto-resolve: the client may pass direction='both' (ambdós sentits) or
+      // a stale direction hint. Find which direction actually owns this stop —
+      // otherwise reverse-direction stops resolve to nothing and fall through
+      // to the "next service tomorrow" block.
+      const otherList = isDir1 ? this.stopsDir0 : this.stopsDir1;
+      const alt = otherList.find(s => s.mouteStopId === stopId || s.gtfsStopId === stopId || s.id === stopId);
+      if (alt) {
+        isDir1 = !isDir1;
+        stopsList = otherList;
+        stopObj = alt;
+      }
+    }
+    const gtfsStopId = stopObj ? stopObj.gtfsStopId : null;
+    const seq = stopObj && stopObj.seq !== undefined ? stopObj.seq : null;
     const now = (targetDate && !isNaN(new Date(targetDate).getTime())) ? new Date(targetDate) : new Date();
     const calendarInfo = this.getServiceCalendarInfo(now);
 

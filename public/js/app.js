@@ -2308,6 +2308,9 @@ class TransitApp {
           if (idx !== -1) {
             stopsList = dir.stops;
             currIndex = idx;
+            // Remember which direction owns this stop so that in 'ambdós'
+            // mode the departures fetch targets the correct direction.
+            this._resolvedStopDirection = String(dir.dirId || dir.id || '');
             break;
           }
         }
@@ -2414,7 +2417,11 @@ class TransitApp {
 
     // Silent background fetch / SWR revalidation
     try {
-      const endpoint = `/api/line/${this.activeLineId}/stop/${stopId}/departures?direction=${this.activeDirection}`;
+      let fetchDirection = this.activeDirection;
+      if (String(fetchDirection) === 'both' && this._resolvedStopDirection) {
+        fetchDirection = this._resolvedStopDirection;
+      }
+      const endpoint = `/api/line/${this.activeLineId}/stop/${stopId}/departures?direction=${fetchDirection}`;
       const res = await fetch(endpoint).then(r => r.json());
 
       if (res.success && res.data) {
