@@ -369,7 +369,11 @@ class CorridorTracker extends BaseTracker {
         if (schedStr) {
           const schedMin = timeToMin(schedStr);
           const diff = Math.abs(liveMin - schedMin);
-          if (diff < minDiff && diff <= 55) {
+          // Tight window: with 45-120 min headways a loose window (the old 55 min)
+          // made a live departure steal the identity of a DIFFERENT trip (e.g. a
+          // 17:00 live time matching the 16:07 trip), which then suppressed that
+          // trip from the departures board entirely.
+          if (diff < minDiff && diff <= 25) {
             minDiff = diff;
             bestTrip = trip;
             scheduledTime = schedStr;

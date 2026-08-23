@@ -426,8 +426,12 @@ class C10Map {
           const stopIdentifier = String(stop.mouteStopId || stop.id || stop.code || '');
           const coordKey = `${stop.lat.toFixed(5)},${stop.lon.toFixed(5)}`;
 
-          // Snap secondary-direction markers onto the road polyline too
-          const secSnapped = snapStopToPolyline(stop.lat, stop.lon, customPolyline, 120);
+          // Snap secondary-direction markers onto THEIR OWN direction polyline
+          // (never the primary one — that dragged opposite-direction stops
+          // across the road when 'Ambdós sentits' was selected).
+          const secSnapped = secondaryPolyline
+            ? snapStopToPolyline(stop.lat, stop.lon, secondaryPolyline, 120)
+            : null;
 
           // Avoid rendering duplicate marker on top of an identical primary stop
           if (primaryStopIds.has(stopIdentifier) && primaryCoords.has(coordKey)) {
