@@ -6,6 +6,7 @@ const scheduleSynthesizer = require('./core/schedule/scheduleSynthesizer');
 const delayEngine = require('./core/schedule/delayEngine');
 const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
+const gtfsScheduleStore = require('./core/schedule/gtfsScheduleStore');
 const BaseTracker = require('./core/BaseTracker');
 
 // Polyline decoder using shared core geoEngine
@@ -409,6 +410,127 @@ class SagalesTracker extends BaseTracker {
   }
 
   // 3. Get Stop Departures for any Stop
+  /**
+   * Memoised GTFS stop coordinates (stopId -> {lat, lon}) for proximity
+   * mapping between tracker stop codes and GTFS stops.
+   */
+  gtfsStopCoords() {
+    if (this._gtfsStopCoords) return this._gtfsStopCoords;
+    this._gtfsStopCoords = new Map();
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const stopsPath = path.join(__dirname, '..', 'data', 'atm_gtfs', 'stops.txt');
+      const lines = fs.readFileSync(stopsPath, 'utf8').split('\n');
+      const h = {};
+      (lines[0] || '').split(',').forEach((nm, i) => { h[nm.trim()] = i; });
+      lines.slice(1).forEach(l => {
+        if (!l.trim()) return;
+        const p = l.split(',');
+        const id = p[h.stop_id];
+        const lat = parseFloat(p[h.stop_lat]), lon = parseFloat(p[h.stop_lon]);
+        if (id && Number.isFinite(lat)) this._gtfsStopCoords.set(id, { lat, lon });
+      });
+    } catch (e) { /* keep empty */ }
+    return this._gtfsStopCoords;
+  }
+
+  /**
+   * Maps tracker stop codes to GTFS stop ids for a route schedule via
+   * geographic proximity (<200m). Memoised per route.
+   */
+  gtfsStopMapping(lineConfigId, gtfsSched, stops) {
+    if (!this._gtfsStopMaps) this._gtfsStopMaps = new Map();
+    if (this._gtfsStopMaps.has(lineConfigId)) return this._gtfsStopMaps.get(lineConfigId);
+    const mapping = new Map(); // trackerStopCode -> gtfsStopId
+    try {
+      const coords = this.gtfsStopCoords();
+      const gtfsStops = new Map(); // gtfsStopId -> {lat, lon}
+      [...gtfsSched.dir0, ...gtfsSched.dir1].forEach(t => t.stops.forEach(s => {
+        if (!gtfsStops.has(s.stopId) && coords.has(s.stopId)) gtfsStops.set(s.stopId, coords.get(s.stopId));
+      }));
+      for (const s of (stops || [])) {
+        let best = null;
+        for (const [gid, g] of gtfsStops) {
+          const d = Math.hypot((g.lat - s.lat) * 111320, (g.lon - s.lon) * 111320 * Math.cos(g.lat * Math.PI / 180));
+          if (d < 200 && (!best || d < best.d)) best = { gid, d };
+        }
+        if (best) mapping.set(String(s.id || s.code), best.gid);
+      }
+    } catch (_) {}
+    this._gtfsStopMaps.set(lineConfigId, mapping);
+    return mapping;
+  }
+
+  /**
+   * Today's active GTFS trips passing through a tracker stop (via the
+   * proximity mapping). Returns [{tripId, serviceId, passSec}] sorted.
+   */
+  gtfsTripsForStop(lineConfigId, gtfsSched, dir, trackerStopId, dateObj = new Date(), stops = null) {
+    if (!gtfsSched) return [];
+    const mapping = this.gtfsStopMapping(lineConfigId, gtfsSched, stops);
+    const gtfsStopId = mapping.get(String(trackerStopId));
+    if (!gtfsStopId) return [];
+    const trips = String(dir) === '1' ? gtfsSched.dir1 : gtfsSched.dir0;
+    const out = [];
+    for (const trip of trips) {
+      if (!this.gtfsIsServiceActive(trip.serviceId, dateObj)) continue;
+      const st = trip.stops.find(x => x.stopId === gtfsStopId);
+      if (!st) continue;
+      const sec = timeUtils.timeToSec(st.dep || st.arr);
+      if (!Number.isFinite(sec)) continue;
+      out.push({ tripId: trip.tripId, serviceId: trip.serviceId, passSec: sec });
+    }
+    out.sort((a, b) => a.passSec - b.passSec);
+    return out;
+  }
+
+  ensureGtfsCalendar() {
+    if (this._gtfsCalLoaded) return;
+    this._gtfsCalLoaded = true;
+    this._gtfsCalWeekly = [];
+    this._gtfsCalExceptions = new Map();
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const atmDir = path.join(__dirname, '..', 'data', 'atm_gtfs');
+      const datesFile = path.join(atmDir, 'calendar_dates.txt');
+      if (fs.existsSync(datesFile)) {
+        fs.readFileSync(datesFile, 'utf8').split('\n').slice(1).forEach(raw => {
+          const line = raw.trim();
+          if (!line) return;
+          const [sId, dateStr, excType] = line.split(',');
+          if (!sId || !dateStr) return;
+          if (!this._gtfsCalExceptions.has(dateStr)) this._gtfsCalExceptions.set(dateStr, { active: new Set(), inactive: new Set() });
+          const entry = this._gtfsCalExceptions.get(dateStr);
+          if (excType === '1') entry.active.add(sId);
+          if (excType === '2') entry.inactive.add(sId);
+        });
+      }
+      const calFile = path.join(atmDir, 'calendar.txt');
+      if (fs.existsSync(calFile)) {
+        fs.readFileSync(calFile, 'utf8').split('\n').slice(1).forEach(raw => {
+          const line = raw.trim();
+          if (!line) return;
+          const p = line.split(',');
+          if (!p[0]) return;
+          this._gtfsCalWeekly.push({
+            serviceId: p[0],
+            monday: p[1] === '1', tuesday: p[2] === '1', wednesday: p[3] === '1',
+            thursday: p[4] === '1', friday: p[5] === '1', saturday: p[6] === '1', sunday: p[7] === '1',
+            startDate: p[8], endDate: p[9]
+          });
+        });
+      }
+    } catch (e) { /* keep empty */ }
+  }
+
+  gtfsIsServiceActive(serviceId, dateObj = new Date()) {
+    if (!serviceId) return true;
+    this.ensureGtfsCalendar();
+    return calendarEngine.isServiceActiveOnDate(serviceId, this._gtfsCalWeekly, this._gtfsCalExceptions, dateObj, this.agencyTimezone);
+  }
+
   async getStopDepartures(stopId, lineId = null, direction = '0', feed = null, lineDetails = null) {
     const lineConfig = this.resolveLineConfig(lineId || 'n82');
     const dir = direction === '1' ? '1' : '0';
@@ -468,9 +590,41 @@ class SagalesTracker extends BaseTracker {
       });
     }
 
-    // If no real-time trips found (or off-peak), generate scheduled departures with exact calculated passing time for this stop
+    // If no real-time trips found (or off-peak), use the REAL GTFS timetable
+    // (service-day filtered) with the legacy hourly fallback only for routes
+    // missing from the feed (e.g. 603).
     if (departures.length === 0) {
       const stops = lDetails.stops || [];
+      const gtfsRouteId = gtfsScheduleStore.SAGALES_ROUTE_IDS[String(lineConfig.id).toLowerCase()];
+      const gtfsSched = gtfsRouteId ? gtfsScheduleStore.getRouteSchedule(gtfsRouteId) : null;
+      const gtfsTrips = gtfsSched ? this.gtfsTripsForStop(lineConfig.id, gtfsSched, dir, stopObj.id || sIdStr, new Date(), stops) : [];
+
+      if (gtfsTrips.length > 0) {
+        const netNow = timeUtils.getNetworkTime(this.agencyTimezone, new Date(now));
+        const nowSec = netNow.hour * 3600 + netNow.minute * 60 + netNow.second;
+        const secToTimeStr = (sec) => `${String(Math.floor(sec / 3600) % 24).padStart(2, '0')}:${String(Math.floor(sec / 60) % 60).padStart(2, '0')}`;
+        for (const t of gtfsTrips) {
+          const diffMin = Math.round((t.passSec - nowSec) / 60);
+          if (diffMin < -1 || diffMin > 360) continue; // night lines: allow long waits
+          const passTimeStr = secToTimeStr(t.passSec);
+          departures.push({
+            lineId: lineConfig.id,
+            lineName: lineConfig.code,
+            destination: dir === '0' ? lineConfig.directions[0].name : lineConfig.directions[1].name,
+            departureTime: passTimeStr,
+            expectedIso: timeUtils.localTimeToUtcDate(netNow.year, netNow.month, netNow.day, Math.floor(t.passSec / 3600) % 24, Math.floor(t.passSec / 60) % 60, 0, this.agencyTimezone).toISOString(),
+            minutesAway: Math.max(1, diffMin),
+            isRealTime: false,
+            isEstimated: false,
+            isToday: true,
+            isFirstOfDay: false,
+            delayStatus: 'scheduled',
+            delayBadgeText: 'Programat',
+            comparisonText: `📅 Horari teòric (GTFS): ${passTimeStr}`,
+            formattedStatus: passTimeStr
+          });
+        }
+      } else {
       const travelTimes = scheduleSynthesizer.estimateStopTravelTimes(stops, {
         speedMps: 10.0,
         dwellSecPerStop: 30,
@@ -551,6 +705,7 @@ class SagalesTracker extends BaseTracker {
           formattedStatus: passTimeStr
         });
       });
+      } // end legacy hourly fallback
 
       // Sort departures strictly by next occurrence (minutesAway)
       departures.sort((a, b) => (a.minutesAway || 0) - (b.minutesAway || 0));

@@ -6,6 +6,7 @@ const scheduleSynthesizer = require('./core/schedule/scheduleSynthesizer');
 const delayEngine = require('./core/schedule/delayEngine');
 const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
+const gtfsScheduleStore = require('./core/schedule/gtfsScheduleStore');
 const BaseTracker = require('./core/BaseTracker');
 
 const AMB_API_KEY = '28EbLJtP0A6CtrWeXp6zE1zy3kp4RzmnaA2sy8JM';
@@ -429,6 +430,80 @@ const RODALIES_FALLBACK_STOPS = {
   }
 
   // 3. Station Departures
+  ensureGtfsCalendar() {
+    if (this._gtfsCalLoaded) return;
+    this._gtfsCalLoaded = true;
+    this._gtfsCalWeekly = [];
+    this._gtfsCalExceptions = new Map();
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const atmDir = path.join(__dirname, '..', 'data', 'atm_gtfs');
+      const datesFile = path.join(atmDir, 'calendar_dates.txt');
+      if (fs.existsSync(datesFile)) {
+        fs.readFileSync(datesFile, 'utf8').split('\n').slice(1).forEach(raw => {
+          const line = raw.trim();
+          if (!line) return;
+          const [sId, dateStr, excType] = line.split(',');
+          if (!sId || !dateStr) return;
+          if (!this._gtfsCalExceptions.has(dateStr)) this._gtfsCalExceptions.set(dateStr, { active: new Set(), inactive: new Set() });
+          const entry = this._gtfsCalExceptions.get(dateStr);
+          if (excType === '1') entry.active.add(sId);
+          if (excType === '2') entry.inactive.add(sId);
+        });
+      }
+      const calFile = path.join(atmDir, 'calendar.txt');
+      if (fs.existsSync(calFile)) {
+        fs.readFileSync(calFile, 'utf8').split('\n').slice(1).forEach(raw => {
+          const line = raw.trim();
+          if (!line) return;
+          const p = line.split(',');
+          if (!p[0]) return;
+          this._gtfsCalWeekly.push({
+            serviceId: p[0],
+            monday: p[1] === '1', tuesday: p[2] === '1', wednesday: p[3] === '1',
+            thursday: p[4] === '1', friday: p[5] === '1', saturday: p[6] === '1', sunday: p[7] === '1',
+            startDate: p[8], endDate: p[9]
+          });
+        });
+      }
+    } catch (e) { /* keep empty */ }
+  }
+
+  gtfsIsServiceActive(serviceId, dateObj = new Date()) {
+    if (!serviceId) return true;
+    this.ensureGtfsCalendar();
+    return calendarEngine.isServiceActiveOnDate(serviceId, this._gtfsCalWeekly, this._gtfsCalExceptions, dateObj, this.agencyTimezone);
+  }
+
+  /**
+   * Today's active trains through a GTFS station stop (both directions —
+   * the ROD feed does not populate direction_id). Sorted chronologically.
+   */
+  gtfsTripsForStation(gtfsSched, gtfsStopId, dateObj = new Date()) {
+    if (!gtfsSched || !gtfsStopId) return [];
+    const out = [];
+    for (const trip of [...gtfsSched.dir0, ...gtfsSched.dir1]) {
+      if (!this.gtfsIsServiceActive(trip.serviceId, dateObj)) continue;
+      const st = trip.stops.find(x => x.stopId === gtfsStopId);
+      if (!st) continue;
+      const sec = timeUtils.timeToSec(st.dep || st.arr);
+      if (!Number.isFinite(sec)) continue;
+      out.push({ tripId: trip.tripId, serviceId: trip.serviceId, passSec: sec });
+    }
+    out.sort((a, b) => a.passSec - b.passSec);
+    return out;
+  }
+
+  gtfsMatchLiveTrain(gtfsSched, gtfsStopId, liveTotalMin, dateObj = new Date()) {
+    const trips = this.gtfsTripsForStation(gtfsSched, gtfsStopId, dateObj);
+    let best = null;
+    for (const t of trips) {
+      const diff = Math.abs(t.passSec / 60 - liveTotalMin);
+      if (diff <= 30 && (!best || diff < best.diff)) best = { ...t, diff };
+    }
+    return best;
+  }
   async getStopDepartures(stopId, lineId = null, direction = '0', lineDetails = null) {
     await this.init();
     const sIdStr = String(stopId);
@@ -437,6 +512,17 @@ const RODALIES_FALLBACK_STOPS = {
     const route = lineId ? this.resolveLine(lineId) : null;
     const dir = String(direction || '0');
     const lDetails = lineDetails || (route ? await this.getLineDetails(route.id, dir) : null);
+
+    // Real GTFS timetable for this Rodalies route
+    const gtfsRouteId = route ? gtfsScheduleStore.resolveRouteId(route.code, 'ROD_') : null;
+    const gtfsSched = gtfsRouteId ? gtfsScheduleStore.getRouteSchedule(gtfsRouteId) : null;
+    // Station code '79603' → GTFS stop 'ROD_79603' (verified against route stops)
+    const stationGtfsStopId = (() => {
+      if (!gtfsSched) return null;
+      const cand = 'ROD_' + String(stationObj.code || sIdStr).replace(/^ROD_/, '');
+      const all = [...gtfsSched.dir0, ...gtfsSched.dir1];
+      return all.some(t => t.stops.some(s => s.stopId === cand)) ? cand : null;
+    })();
 
     const departures = [];
     const now = Date.now();
@@ -454,13 +540,27 @@ const RODALIES_FALLBACK_STOPS = {
         const clockStr = timeUtils.formatTimeToTimezone(new Date(arrMs), this.agencyTimezone);
         if (clockStr === '--:--') return;
 
-        // Calculate schedule comparison for trains
+        // Schedule comparison against the REAL GTFS timetable when available
+        // (station code '79603' → GTFS stop 'ROD_79603'); headway heuristic as
+        // last-resort fallback only.
         const netTime = timeUtils.getNetworkTime(this.agencyTimezone, new Date(arrMs));
         const totalMinutes = netTime.hour * 60 + netTime.minute;
-        const headway = 15; // Typical Rodalies frequency
-        const closestSlotMin = Math.round(totalMinutes / headway) * headway;
-        const delayMin = Math.max(-3, Math.min(30, totalMinutes - closestSlotMin));
-        const aimedMs = arrMs - (delayMin * 60000);
+        let delayMin = null;
+        let aimedMs = arrMs;
+        const stationGtfsStopId = stationObj && /^ROD_/.test(String(stationObj.gtfsStopId || '')) ? stationObj.gtfsStopId : (gtfsSched && gtfsSched.dir0.concat(gtfsSched.dir1).some(t => t.stops.some(s => s.stopId === 'ROD_' + sIdStr.replace(/^ROD_/, ''))) ? 'ROD_' + sIdStr.replace(/^ROD_/, '') : null);
+        if (gtfsSched && stationGtfsStopIdLive) {
+          const match = this.gtfsMatchLiveTrain(gtfsSched, stationGtfsStopIdLive, totalMinutes, new Date(arrMs));
+          if (match) {
+            delayMin = Math.max(-3, Math.min(30, Math.round(totalMinutes - match.passSec / 60)));
+            aimedMs = arrMs - (delayMin * 60000);
+          }
+        }
+        if (delayMin === null) {
+          const headway = 15; // Typical Rodalies frequency
+          const closestSlotMin = Math.round(totalMinutes / headway) * headway;
+          delayMin = Math.max(-3, Math.min(30, totalMinutes - closestSlotMin));
+          aimedMs = arrMs - (delayMin * 60000);
+        }
         const aimedClockStr = timeUtils.formatTimeToTimezone(new Date(aimedMs), this.agencyTimezone);
 
         const delayInfo = delayEngine.computeDelayStatus(delayMin, false);
@@ -488,7 +588,39 @@ const RODALIES_FALLBACK_STOPS = {
       }
     });
 
-    // If night / off-peak, calculate scheduled train departure times
+    // If night / off-peak, use the REAL GTFS timetable (service-day filtered);
+    // legacy synthetic morning list only when the route is missing from the feed.
+    if (departures.length === 0 && lDetails && gtfsSched && stationGtfsStopId) {
+      const nowDate = new Date();
+      const netNow = timeUtils.getNetworkTime(this.agencyTimezone, nowDate);
+      const nowSec = netNow.hour * 3600 + netNow.minute * 60 + netNow.second;
+      const tripsToday = this.gtfsTripsForStation(gtfsSched, stationGtfsStopId, nowDate);
+      const secToTimeStr = (sec) => `${String(Math.floor(sec / 3600) % 24).padStart(2, '0')}:${String(Math.floor(sec / 60) % 60).padStart(2, '0')}`;
+      for (const t of tripsToday) {
+        const diffMin = Math.round((t.passSec - nowSec) / 60);
+        if (diffMin < -1 || diffMin > 360) continue;
+        const passTimeStr = secToTimeStr(t.passSec);
+        departures.push({
+          lineId: route ? route.id : 'rodalies',
+          lineName: route ? route.code : 'Rodalies',
+          destination: route ? route.directions[dir]?.name : 'Destí',
+          departureTime: passTimeStr,
+          expectedIso: timeUtils.localTimeToUtcDate(netNow.year, netNow.month, netNow.day, Math.floor(t.passSec / 3600) % 24, Math.floor(t.passSec / 60) % 60, 0, this.agencyTimezone).toISOString(),
+          aimedIso: timeUtils.localTimeToUtcDate(netNow.year, netNow.month, netNow.day, Math.floor(t.passSec / 3600) % 24, Math.floor(t.passSec / 60) % 60, 0, this.agencyTimezone).toISOString(),
+          minutesAway: Math.max(1, diffMin),
+          isRealTime: false,
+          isEstimated: false,
+          isTrain: true,
+          isToday: true,
+          isFirstOfDay: false,
+          delayStatus: 'scheduled',
+          delayBadgeText: 'Programat',
+          comparisonText: `📅 Horari teòric (GTFS): ${passTimeStr}`,
+          formattedStatus: passTimeStr
+        });
+      }
+    }
+
     if (departures.length === 0 && lDetails) {
       const stations = lDetails.stops || [];
       const travelTimes = scheduleSynthesizer.estimateStopTravelTimes(stations, {

@@ -9,6 +9,7 @@ const scheduleSynthesizer = require('./core/schedule/scheduleSynthesizer');
 const delayEngine = require('./core/schedule/delayEngine');
 const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
+const gtfsScheduleStore = require('./core/schedule/gtfsScheduleStore');
 const BaseTracker = require('./core/BaseTracker');
 
 const AMB_API_KEY = process.env.AMB_API_KEY || '28EbLJtP0A6CtrWeXp6zE1zy3kp4RzmnaA2sy8JM';
@@ -248,6 +249,93 @@ class AmbTracker extends BaseTracker {
       group: r.group,
       directions: r.directions
     }));
+  }
+
+  /**
+   * Memoised load of the full GTFS service calendar (calendar.txt weekly rules
+   * + calendar_dates.txt exceptions) for service-day filtering of AMB trips.
+   */
+  ensureGtfsCalendar() {
+    if (this._gtfsCalLoaded) return;
+    this._gtfsCalLoaded = true;
+    this._gtfsCalWeekly = [];
+    this._gtfsCalExceptions = new Map();
+    const atmDir = path.join(__dirname, '..', 'data', 'atm_gtfs');
+    try {
+      const datesFile = path.join(atmDir, 'calendar_dates.txt');
+      if (fs.existsSync(datesFile)) {
+        fs.readFileSync(datesFile, 'utf8').split('\n').slice(1).forEach(raw => {
+          const line = raw.trim();
+          if (!line) return;
+          const [sId, dateStr, excType] = line.split(',');
+          if (!sId || !dateStr) return;
+          if (!this._gtfsCalExceptions.has(dateStr)) {
+            this._gtfsCalExceptions.set(dateStr, { active: new Set(), inactive: new Set() });
+          }
+          const entry = this._gtfsCalExceptions.get(dateStr);
+          if (excType === '1') entry.active.add(sId);
+          if (excType === '2') entry.inactive.add(sId);
+        });
+      }
+      const calFile = path.join(atmDir, 'calendar.txt');
+      if (fs.existsSync(calFile)) {
+        fs.readFileSync(calFile, 'utf8').split('\n').slice(1).forEach(raw => {
+          const line = raw.trim();
+          if (!line) return;
+          const p = line.split(',');
+          if (!p[0]) return;
+          this._gtfsCalWeekly.push({
+            serviceId: p[0],
+            monday: p[1] === '1', tuesday: p[2] === '1', wednesday: p[3] === '1',
+            thursday: p[4] === '1', friday: p[5] === '1', saturday: p[6] === '1', sunday: p[7] === '1',
+            startDate: p[8], endDate: p[9]
+          });
+        });
+      }
+    } catch (e) {
+      console.warn('[AmbTracker] GTFS calendar load failed:', e.message);
+    }
+  }
+
+  gtfsIsServiceActive(serviceId, dateObj = new Date()) {
+    if (!serviceId) return true;
+    this.ensureGtfsCalendar();
+    return calendarEngine.isServiceActiveOnDate(serviceId, this._gtfsCalWeekly, this._gtfsCalExceptions, dateObj, this.agencyTimezone);
+  }
+
+  /**
+   * Today's active trips of a GTFS route schedule passing through a stop.
+   * Returns [{tripId, serviceId, passSec}] sorted chronologically.
+   */
+  gtfsTripsForStop(gtfsSched, dir, stopId, dateObj = new Date()) {
+    if (!gtfsSched) return [];
+    const trips = String(dir) === '1' ? gtfsSched.dir1 : gtfsSched.dir0;
+    const out = [];
+    for (const trip of trips) {
+      if (!this.gtfsIsServiceActive(trip.serviceId, dateObj)) continue;
+      const st = trip.stops.find(x => x.stopId === String(stopId));
+      if (!st) continue;
+      const sec = timeUtils.timeToSec(st.dep || st.arr);
+      if (!Number.isFinite(sec)) continue;
+      out.push({ tripId: trip.tripId, serviceId: trip.serviceId, passSec: sec });
+    }
+    out.sort((a, b) => a.passSec - b.passSec);
+    return out;
+  }
+
+  /**
+   * Matches a live arrival time to the nearest scheduled trip at a stop
+   * within a 25-minute window (tighter windows avoid cross-trip theft on
+   * high-frequency lines; AMB headways are 8-15 min so 25 is generous).
+   */
+  gtfsMatchLive(gtfsSched, dir, stopId, liveTotalMin, dateObj = new Date()) {
+    const trips = this.gtfsTripsForStop(gtfsSched, dir, stopId, dateObj);
+    let best = null;
+    for (const t of trips) {
+      const diff = Math.abs(t.passSec / 60 - liveTotalMin);
+      if (diff <= 25 && (!best || diff < best.diff)) best = { ...t, diff };
+    }
+    return best;
   }
 
   resolveLine(lineId) {
@@ -757,6 +845,10 @@ class AmbTracker extends BaseTracker {
     const dir = String(direction || '0');
     const lDetails = lineDetails || (route ? await this.getLineDetails(route.id, dir) : null);
 
+    // Real GTFS timetable for this route (official stop times + service days)
+    const gtfsRouteId = route ? gtfsScheduleStore.resolveRouteId(route.code, 'AMB_') : null;
+    const gtfsSched = gtfsRouteId ? gtfsScheduleStore.getRouteSchedule(gtfsRouteId) : null;
+
     const departures = [];
     const now = Date.now();
 
@@ -775,13 +867,25 @@ class AmbTracker extends BaseTracker {
         const clockStr = timeUtils.formatTimeToTimezone(new Date(arrTime), this.agencyTimezone);
         if (clockStr === '--:--') return;
 
-        // Calculate schedule comparison
+        // Schedule comparison against the REAL GTFS timetable when available;
+        // the legacy headway-grid heuristic is a last-resort fallback only.
         const netTime = timeUtils.getNetworkTime(this.agencyTimezone, new Date(arrTime));
         const totalMinutes = netTime.hour * 60 + netTime.minute;
-        const headway = (route && route.code.startsWith('M')) ? 8 : ((route && route.code.startsWith('B')) ? 12 : 15);
-        const closestSlotMin = Math.round(totalMinutes / headway) * headway;
-        const delayMin = Math.max(-4, Math.min(25, totalMinutes - closestSlotMin));
-        const aimedMs = arrTime - (delayMin * 60000);
+        let delayMin = null;
+        let aimedMs = arrTime;
+        if (gtfsSched) {
+          const match = this.gtfsMatchLive(gtfsSched, dir, sIdStr, totalMinutes, new Date(arrTime));
+          if (match) {
+            delayMin = Math.max(-4, Math.min(25, Math.round(totalMinutes - match.passSec / 60)));
+            aimedMs = arrTime - (delayMin * 60000);
+          }
+        }
+        if (delayMin === null) {
+          const headway = (route && route.code.startsWith('M')) ? 8 : ((route && route.code.startsWith('B')) ? 12 : 15);
+          const closestSlotMin = Math.round(totalMinutes / headway) * headway;
+          delayMin = Math.max(-4, Math.min(25, totalMinutes - closestSlotMin));
+          aimedMs = arrTime - (delayMin * 60000);
+        }
         const aimedClockStr = timeUtils.formatTimeToTimezone(new Date(aimedMs), this.agencyTimezone);
 
           const delayInfo = delayEngine.computeDelayStatus(delayMin, false);
@@ -808,8 +912,71 @@ class AmbTracker extends BaseTracker {
         }
       });
 
-      // 2. Generate calculated scheduled passing times for full daily timetable
-      if (lDetails) {
+      // 2. Scheduled passing times — REAL GTFS timetable (service-day filtered)
+      if (lDetails && gtfsSched) {
+        const nowDate = new Date();
+        const netNow = timeUtils.getNetworkTime(this.agencyTimezone, nowDate);
+        const nowSec = netNow.hour * 3600 + netNow.minute * 60 + netNow.second;
+        const secToTimeStr = (sec) => `${String(Math.floor(sec / 3600) % 24).padStart(2, '0')}:${String(Math.floor(sec / 60) % 60).padStart(2, '0')}`;
+        const liveCovered = new Set(departures.filter(d => d.isToday).map(d => d.departureTime));
+
+        const tripsToday = this.gtfsTripsForStop(gtfsSched, dir, sIdStr, nowDate);
+        for (const t of tripsToday) {
+          const diffMin = Math.round((t.passSec - nowSec) / 60);
+          if (diffMin < -1 || diffMin > 240) continue;
+          const passTimeStr = secToTimeStr(t.passSec);
+          if (liveCovered.has(passTimeStr)) continue; // live entry already covers this trip
+          departures.push({
+            lineId: route ? route.id : 'amb_bus',
+            lineName: route ? route.code : 'AMB',
+            destination: route ? route.directions[dir]?.name : 'Destí',
+            departureTime: passTimeStr,
+            expectedIso: timeUtils.localTimeToUtcDate(netNow.year, netNow.month, netNow.day, Math.floor(t.passSec / 3600) % 24, Math.floor(t.passSec / 60) % 60, 0, this.agencyTimezone).toISOString(),
+            aimedIso: timeUtils.localTimeToUtcDate(netNow.year, netNow.month, netNow.day, Math.floor(t.passSec / 3600) % 24, Math.floor(t.passSec / 60) % 60, 0, this.agencyTimezone).toISOString(),
+            minutesAway: Math.max(0, diffMin),
+            isRealTime: false,
+            isEstimated: false,
+            isToday: true,
+            isFirstOfDay: false,
+            delayStatus: 'scheduled',
+            delayBadgeText: 'Horari teòric',
+            comparisonText: `📅 Horari teòric: ${passTimeStr}`,
+            formattedStatus: passTimeStr
+          });
+        }
+
+        if (departures.length < 5) {
+          const tomorrow = new Date(nowDate.getTime() + 24 * 3600 * 1000);
+          const netTomorrow = timeUtils.getNetworkTime(this.agencyTimezone, tomorrow);
+          const tripsTomorrow = this.gtfsTripsForStop(gtfsSched, dir, sIdStr, tomorrow).slice(0, 6);
+          tripsTomorrow.forEach((t, idx) => {
+            const passHour = Math.floor(t.passSec / 3600) % 24;
+            const passMin = Math.floor(t.passSec / 60) % 60;
+            const passTimeStr = `${String(passHour).padStart(2, '0')}:${String(passMin).padStart(2, '0')}`;
+            const depUtc = timeUtils.localTimeToUtcDate(netTomorrow.year, netTomorrow.month, netTomorrow.day, passHour, passMin, 0, this.agencyTimezone);
+            const diffMin = Math.max(1, Math.round((depUtc.getTime() - nowDate.getTime()) / 60000));
+            const isFirst = idx === 0 && departures.length === 0;
+            departures.push({
+              lineId: route ? route.id : 'amb_bus',
+              lineName: route ? route.code : 'AMB',
+              destination: route ? route.directions[dir]?.name : 'Destí',
+              departureTime: passTimeStr,
+              expectedIso: depUtc.toISOString(),
+              aimedIso: depUtc.toISOString(),
+              minutesAway: diffMin,
+              isRealTime: false,
+              isEstimated: false,
+              isToday: false,
+              isFirstOfDay: isFirst,
+              isNextService: isFirst,
+              delayStatus: 'scheduled',
+              delayBadgeText: isFirst ? '🌅 1r Servei' : 'Programat demà',
+              comparisonText: isFirst ? `📅 Pas teòric previst: ${passTimeStr}` : `📅 Horari teòric: ${passTimeStr}`,
+              formattedStatus: passTimeStr
+            });
+          });
+        }
+      } else if (lDetails) {
         const stops = lDetails.stops || [];
         const travelTimes = scheduleSynthesizer.estimateStopTravelTimes(stops, {
           speedMps: 8.0,
