@@ -78,7 +78,7 @@ class CorridorTracker extends BaseTracker {
       googleMapsUrl: "https://maps.app.goo.gl/ScnubXtht3oSKDCk6",
       coords: { lat: 41.5468674, lon: 2.4321194 },
       dir1: {
-        mouteStopId: '10037202',
+        mouteStopId: 'PF08121075',
         gtfsStopId: 'GEN_PF08121075',
         code: '121',
         name: "pl. Itàlia (A)",
@@ -86,7 +86,7 @@ class CorridorTracker extends BaseTracker {
         directionName: "Cap a Mataró (Hospital de Mataró)"
       },
       dir0: {
-        mouteStopId: '10037202',
+        mouteStopId: 'PF08121041',
         gtfsStopId: 'GEN_PF08121041',
         code: '8371',
         name: "pl. Itàlia (D)",
@@ -97,27 +97,27 @@ class CorridorTracker extends BaseTracker {
 
     // Checkpoint stops along the corridor with accurate GTFS stop IDs
     this.checkpointsDir1 = [
-      { id: '10008500', name: 'Barcelona - Metro la Pau', zone: 'AMB', seq: 0, gtfsStopId: 'GEN_PF08019096' },
-      { id: '10025777', name: 'Badalona - Pompeu Fabra', zone: 'AMB', seq: 7, gtfsStopId: 'GEN_PF08015014' },
-      { id: '10027798', name: 'Montgat - Estació Rodalies', zone: 'AMB (Boundary)', seq: 12, gtfsStopId: 'GEN_PF08126015' },
-      { id: '10038038', name: 'El Masnou - Estació', zone: 'Maresme', seq: 17, gtfsStopId: 'GEN_PF08118027' },
-      { id: '10038471', name: 'Premià de Mar - Estació', zone: 'Maresme', seq: 21, gtfsStopId: 'GEN_PF08172022' },
-      { id: '10037286', name: 'Vilassar de Mar - Estació', zone: 'Maresme', seq: 26, gtfsStopId: 'GEN_PF08219011' },
-      { id: '10037205', name: 'Mataró - Porta Laietana', zone: 'Maresme', seq: 34, gtfsStopId: 'GEN_PF08121080' },
-      { id: '10026784', name: 'Mataró - Pl. Granollers', zone: 'Maresme', seq: 37, gtfsStopId: 'GEN_PF08121077' },
-      { id: '10037202', name: "Mataró - Pl. d'Itàlia", zone: 'Maresme', seq: 39, gtfsStopId: 'GEN_PF08121075' }
+      { id: 'PF08019096', name: 'Barcelona - Metro la Pau', zone: 'AMB', seq: 0, gtfsStopId: 'GEN_PF08019096' },
+      { id: 'PF08015014', name: 'Badalona - Pompeu Fabra', zone: 'AMB', seq: 7, gtfsStopId: 'GEN_PF08015014' },
+      { id: 'PF08126015', name: 'Montgat - Estació Rodalies', zone: 'AMB (Boundary)', seq: 12, gtfsStopId: 'GEN_PF08126015' },
+      { id: 'PF08118027', name: 'El Masnou - Estació', zone: 'Maresme', seq: 17, gtfsStopId: 'GEN_PF08118027' },
+      { id: 'PF08172022', name: 'Premià de Mar - Estació', zone: 'Maresme', seq: 21, gtfsStopId: 'GEN_PF08172022' },
+      { id: 'PF08219011', name: 'Vilassar de Mar - Estació', zone: 'Maresme', seq: 26, gtfsStopId: 'GEN_PF08219011' },
+      { id: 'PF08121080', name: 'Mataró - Porta Laietana', zone: 'Maresme', seq: 34, gtfsStopId: 'GEN_PF08121080' },
+      { id: 'PF08121077', name: 'Mataró - Pl. Granollers', zone: 'Maresme', seq: 37, gtfsStopId: 'GEN_PF08121077' },
+      { id: 'PF08121075', name: "Mataró - Pl. d'Itàlia", zone: 'Maresme', seq: 39, gtfsStopId: 'GEN_PF08121075' }
     ];
 
     this.checkpointsDir0 = [
-      { id: '10037202', name: "Mataró - Pl. d'Itàlia", zone: 'Maresme', seq: 3, gtfsStopId: 'GEN_PF08121041' },
-      { id: '10026784', name: 'Mataró - Pl. Granollers', zone: 'Maresme', seq: 5, gtfsStopId: 'GEN_PF08121044' },
-      { id: '10037205', name: 'Mataró - Porta Laietana', zone: 'Maresme', seq: 8, gtfsStopId: 'GEN_PF08121024' },
-      { id: '10037286', name: 'Vilassar de Mar - Estació', zone: 'Maresme', seq: 15, gtfsStopId: 'GEN_PF08219037' },
-      { id: '10038471', name: 'Premià de Mar - Estació', zone: 'Maresme', seq: 20, gtfsStopId: 'GEN_PF08172018' },
-      { id: '10038038', name: 'El Masnou - Estació', zone: 'Maresme', seq: 24, gtfsStopId: 'GEN_PF08118041' },
-      { id: '10027798', name: 'Montgat - Estació Rodalies', zone: 'AMB (Boundary)', seq: 29, gtfsStopId: 'GEN_PF08126007' },
-      { id: '10025777', name: 'Badalona - Pompeu Fabra', zone: 'AMB', seq: 34, gtfsStopId: 'GEN_PF08015015' },
-      { id: '10008500', name: 'Barcelona - Metro la Pau', zone: 'AMB', seq: 40, gtfsStopId: 'GEN_PF08019096' }
+      { id: 'PF08121041', name: "Mataró - Pl. d'Itàlia", zone: 'Maresme', seq: 3, gtfsStopId: 'GEN_PF08121041' },
+      { id: 'PF08121044', name: 'Mataró - Pl. Granollers', zone: 'Maresme', seq: 5, gtfsStopId: 'GEN_PF08121044' },
+      { id: 'PF08121024', name: 'Mataró - Porta Laietana', zone: 'Maresme', seq: 8, gtfsStopId: 'GEN_PF08121024' },
+      { id: 'PF08219036', name: 'Vilassar de Mar - Estació', zone: 'Maresme', seq: 16, gtfsStopId: 'GEN_PF08219036' },
+      { id: 'PF08172018', name: 'Premià de Mar - Estació', zone: 'Maresme', seq: 21, gtfsStopId: 'GEN_PF08172018' },
+      { id: 'PF08118041', name: 'El Masnou - Estació', zone: 'Maresme', seq: 26, gtfsStopId: 'GEN_PF08118041' },
+      { id: 'PF08126007', name: 'Montgat - Estació Rodalies', zone: 'AMB (Boundary)', seq: 32, gtfsStopId: 'GEN_PF08126007' },
+      { id: 'PF08015025', name: 'Badalona - Pompeu Fabra', zone: 'AMB', seq: 37, gtfsStopId: 'GEN_PF08015025' },
+      { id: 'PF08019096', name: 'Barcelona - Metro la Pau', zone: 'AMB', seq: 44, gtfsStopId: 'GEN_PF08019096' }
     ];
 
     this.liveTrackingCache = new Map(); // dir -> { data, timestamp }

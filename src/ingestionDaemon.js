@@ -360,7 +360,7 @@ class IngestionDaemon {
             lineId: 'c10',
             lineCode: 'C-10',
             agency: 'Moventis / Casas (Interurbà Maresme)',
-            stopId: c10Eta.targetStop?.mouteStopId || c10Eta.targetStop?.id || '10037202',
+            stopId: c10Eta.targetStop?.mouteStopId || c10Eta.targetStop?.id || 'PF08121041',
             stopName: c10Eta.targetStop?.name || "pl. Itàlia (A)",
             delayMins: delay,
             scheduledTime: nb.scheduledTime || nb.departureTime || '',
