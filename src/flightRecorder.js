@@ -242,7 +242,14 @@ class FlightRecorder {
     }
     let data;
     if (this._gateway) {
-      data = await this._gateway('getLineDelayStats', { lineCode, hours: 24, lineId });
+      try {
+        data = await this._gateway('getLineDelayStats', { lineCode, hours: 24, lineId });
+      } catch (err) {
+        // Delay stats are auxiliary: a DB RPC timeout (e.g. worker busy with
+        // startup report scans) must never 500 the line-details route.
+        console.warn(`[FlightRecorder] getLineDelayStats unavailable (${err.message}) — serving baseline stats.`);
+        data = { totalSamples: 0, avgDelayMins: 0, maxDelayMins: 0, onTimePct: 100, latePct: 0, moderateLatePct: 0, severeLatePct: 0, isBaseline: true };
+      }
     } else {
       // Mirror the persistence layer's empty-stats shape so callers see an
       // identical baseline whether or not a gateway is installed.

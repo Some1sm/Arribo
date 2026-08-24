@@ -66,7 +66,7 @@ flightRecorder.setAutoExtrapolation(false);
 // History gateway: all SQLite reads in the main process are proxied to the
 // ingestion worker via WorkerBridge.historyQuery() RPC (DB_REQUEST/DB_RESPONSE).
 // The main process never opens the database itself.
-flightRecorder.setHistoryGateway((op, args) => workerBridge.historyQuery(op, args));
+flightRecorder.setHistoryGateway((op, args) => workerBridge.historyQuery(op, args, { timeoutMs: op === 'getLineDelayStats' ? 25000 : 10000 }));
 
 // Request logger middleware
 app.use('/api', (req, res, next) => {

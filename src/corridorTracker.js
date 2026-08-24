@@ -27,6 +27,7 @@ const calendarEngine = require('./core/time/calendarEngine');
 const delayEngine = require('./core/schedule/delayEngine');
 const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
+const https = require('https');
 const BaseTracker = require('./core/BaseTracker');
 const {
   C10_STOPS_DIR1,
@@ -58,6 +59,11 @@ class CorridorTracker extends BaseTracker {
     super();
     this.agencyTimezone = 'Europe/Madrid';
     this.dataDir = path.join(__dirname, '..', 'data');
+    // AMB v2 realtime supplementary source for C-10 stops (the operator's own
+    // app tracks C-10 buses there; Mou-te often lacks realtime for them).
+    this._ambApiKey = process.env.AMB_API_KEY || '28EbLJtP0A6CtrWeXp6zE1zy3kp4RzmnaA2sy8JM';
+    this._ambRealtimeCache = new Map(); // ambStopCode -> { timestamp, times }
+    this._ambCodeByStop = new Map();    // c10 stopId -> AMB stop code
     this.stopsDir1 = [...C10_STOPS_DIR1];
     this.stopsDir0 = [...C10_STOPS_DIR0];
     this.routePolylineDir1 = [...C10_POLYLINE_DIR1];
@@ -808,6 +814,139 @@ class CorridorTracker extends BaseTracker {
     };
   }
 
+  /**
+   * Maps a C-10 stop to its AMB stop code via geographic proximity against
+   * data/cache/stops.json (AMB_* stops carry the AMB API's codes). Memoised.
+   */
+  ambCodeForStop(stopObj) {
+    const key = String(stopObj.id || stopObj.mouteStopId || stopObj.gtfsStopId);
+    if (this._ambCodeByStop.has(key)) return this._ambCodeByStop.get(key);
+    let code = null;
+    try {
+      if (Number.isFinite(stopObj.lat) && Number.isFinite(stopObj.lon)) {
+        const stopsPath = path.join(this.dataDir, 'cache', 'stops.json');
+        if (!this._ambCatalogStops) {
+          this._ambCatalogStops = [];
+          if (fs.existsSync(stopsPath)) {
+            JSON.parse(fs.readFileSync(stopsPath, 'utf8')).forEach(s => {
+              if (String(s.id || '').startsWith('AMB_') && Number.isFinite(s.lat)) {
+                this._ambCatalogStops.push({ code: String(s.code || s.id.replace('AMB_', '')), lat: s.lat, lon: s.lon });
+              }
+            });
+          }
+        }
+        let best = null;
+        for (const s of this._ambCatalogStops) {
+          const d = Math.hypot((s.lat - stopObj.lat) * 111320, (s.lon - stopObj.lon) * 111320 * Math.cos(stopObj.lat * Math.PI / 180));
+          if (d < 60 && (!best || d < best.d)) best = { code: s.code, d };
+        }
+        if (best) code = best.code;
+      }
+    } catch (_) {}
+    this._ambCodeByStop.set(key, code);
+    return code;
+  }
+
+  /**
+   * Fetches AMB v2 realtime arrivals for an AMB stop code (30s cache).
+   * Returns the raw times array or [].
+   */
+  fetchAmbRealtime(ambStopCode) {
+    const now = Date.now();
+    const cached = this._ambRealtimeCache.get(ambStopCode);
+    if (cached && (now - cached.timestamp < 30000)) return Promise.resolve(cached.times);
+    return new Promise((resolve) => {
+      const req = https.request({
+        hostname: 'api.ambmobilitat.cat',
+        path: `/v2/bus/stops/${encodeURIComponent(ambStopCode)}/realtimes`,
+        method: 'GET',
+        headers: {
+          'x-api-key': this._ambApiKey,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+          'Accept': 'application/json'
+        },
+        timeout: 5000
+      }, (res) => {
+        let data = '';
+        res.on('data', c => data += c);
+        res.on('end', () => {
+          let times = [];
+          try {
+            const j = JSON.parse(data);
+            times = (res.statusCode === 200 && Array.isArray(j?.times)) ? j.times : [];
+          } catch (_) {}
+          this._ambRealtimeCache.set(ambStopCode, { timestamp: now, times });
+          resolve(times);
+        });
+      });
+      req.on('timeout', () => { req.destroy(); resolve([]); });
+      req.on('error', () => resolve([]));
+      req.end();
+    });
+  }
+
+  /**
+   * Merges AMB v2 realtime C-10 arrivals into a departures board. Realtime
+   * entries replace scheduled ones within ±4 minutes; otherwise they are
+   * appended (the operator app can track buses the GTFS timetable omits).
+   */
+  async mergeAmbRealtimeDepartures(departures, stopObj, isDir1) {
+    try {
+      const ambCode = this.ambCodeForStop(stopObj);
+      if (!ambCode) return departures;
+      const times = await this.fetchAmbRealtime(ambCode);
+      const c10Times = times.filter(t => /^c\s*-?\s*10$/i.test(String(t.lineCode || '')));
+      if (c10Times.length === 0) return departures;
+
+      const now = Date.now();
+      for (const t of c10Times) {
+        const arrMs = Number(t.time) > 1e11 ? Number(t.time) : now + Number(t.arrivalTime || 0) * 1000;
+        if (!Number.isFinite(arrMs) || arrMs < now - 5 * 60000) continue;
+        const diffMin = Math.max(0, Math.round((arrMs - now) / 60000));
+        const clockStr = timeUtils.formatTimeToTimezone(new Date(arrMs), this.agencyTimezone);
+        if (clockStr === '--:--') continue;
+
+        // Destination sanity: dir1 heads to Mataró, dir0 to Barcelona
+        const dest = String(t.destination || '');
+        const destIsMataro = /matar/i.test(dest);
+        if (isDir1 !== destIsMataro) continue;
+
+        // Replace a scheduled entry within ±4 min; else append
+        const existing = departures.find(d => d.isToday !== false && Number.isFinite(d.minutesAway) && Math.abs(d.minutesAway - diffMin) <= 4);
+        if (existing) {
+          existing.expectedIso = new Date(arrMs).toISOString();
+          existing.departureTime = clockStr;
+          existing.minutesAway = diffMin;
+          existing.isRealTime = true;
+          existing.delayBadgeText = '🔴 Temps real (AMB)';
+          existing.comparisonText = `🔴 Temps real AMB (programat: ${existing.departureTime === clockStr ? existing.scheduledTime || existing.departureTime : existing.departureTime})`;
+          existing.formattedStatus = diffMin === 0 ? 'Imminent' : `${diffMin} min`;
+        } else {
+          departures.push({
+            lineId: '02498',
+            lineName: 'C-10',
+            tripId: t.tripId || null,
+            destination: isDir1 ? 'Hospital de Mataró' : 'Barcelona (Metro la Pau)',
+            directionId: isDir1 ? 'R' : 'A',
+            departureTime: clockStr,
+            expectedIso: new Date(arrMs).toISOString(),
+            aimedIso: new Date(arrMs).toISOString(),
+            minutesAway: diffMin,
+            isRealTime: true,
+            isToday: true,
+            delayMinutes: 0,
+            delayStatus: 'on_time',
+            delayBadgeText: '🔴 Temps real (AMB)',
+            comparisonText: `🔴 Temps real AMB (${clockStr})`,
+            formattedStatus: diffMin === 0 ? 'Imminent' : `${diffMin} min`
+          });
+        }
+      }
+      departures.sort((a, b) => (a.minutesAway || 0) - (b.minutesAway || 0));
+    } catch (_) { /* realtime is best-effort */ }
+    return departures;
+  }
+
   async getStopDepartures(stopId, direction = '1', targetDate = null) {
     let isDir1 = direction === '1';
     let stopsList = isDir1 ? this.stopsDir1 : this.stopsDir0;
@@ -883,6 +1022,10 @@ class CorridorTracker extends BaseTracker {
         });
       }
     }
+
+    // Supplementary AMB v2 realtime: the operator app tracks C-10 buses there
+    // even when Mou-te has no realtime for the stop.
+    departures = await this.mergeAmbRealtimeDepartures(departures, stopObj || {}, isDir1);
 
     return {
       stopId: stopId,
