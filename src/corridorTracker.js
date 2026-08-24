@@ -25,6 +25,7 @@ function osrmCoversStops(coords, stops, thresholdM = 250) {
 const timeEngine = require('./core/time/timeEngine');
 const calendarEngine = require('./core/time/calendarEngine');
 const delayEngine = require('./core/schedule/delayEngine');
+const delayMemory = require('./core/realtime/delayMemory');
 const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
 const https = require('https');
@@ -890,6 +891,21 @@ class CorridorTracker extends BaseTracker {
    * entries replace scheduled ones within ±4 minutes; otherwise they are
    * appended (the operator app can track buses the GTFS timetable omits).
    */
+  /** Scheduled origin→terminus duration for a C-10 trip (purge policy input). */
+  runDurationForTrip(tripId, isDir1) {
+    try {
+      const trips = isDir1 ? (this.fullSchedule?.dir1 || []) : (this.fullSchedule?.dir0 || []);
+      const t = trips.find(x => x.trip && String(x.trip.tripId) === String(tripId))
+        || trips.find(x => String(x.tripId || '') === String(tripId));
+      const stops = t?.trip?.stops || t?.stops;
+      if (!Array.isArray(stops) || stops.length < 2) return null;
+      const first = stops[0], last = stops[stops.length - 1];
+      const s0 = timeToSec(first.dep || first.arr), s1 = timeToSec(last.dep || last.arr);
+      if (!Number.isFinite(s0) || !Number.isFinite(s1)) return null;
+      return Math.max(0, s1 - s0);
+    } catch (_) { return null; }
+  }
+
   async mergeAmbRealtimeDepartures(departures, stopObj, isDir1) {
     try {
       const ambCode = this.ambCodeForStop(stopObj);
@@ -960,6 +976,23 @@ class CorridorTracker extends BaseTracker {
             : '🔴 Temps real (AMB) · A l\'hora';
           existing.comparisonText = `🔴 Temps real AMB (horari teòric: ${schedRef}${delayMin > 0 ? `, +${delayMin} min de retard` : ''})`;
           existing.formattedStatus = diffMin === 0 ? 'Imminent' : `${diffMin} min`;
+          // Persist the observation (delay memory): downstream stops without
+          // realtime coverage will propagate this known delay via tripId.
+          if (existing.tripId) {
+            delayMemory.record([{
+              agency: 'amb',
+              lineCode: 'C-10',
+              lineId: 'c10',
+              direction: isDir1 ? '1' : '0',
+              tripId: existing.tripId,
+              stopId: String(stopObj.gtfsStopId || stopObj.mouteStopId || stopObj.id || ''),
+              stopName: stopObj.name || null,
+              scheduledMs: schedMs,
+              actualMs: arrMs,
+              delayMins: delayMin,
+              runDurationSecs: this.runDurationForTrip(existing.tripId, isDir1)
+            }]);
+          }
         } else {
           departures.push({
             lineId: '02498',
@@ -1191,6 +1224,15 @@ class CorridorTracker extends BaseTracker {
     // Propagate those realtime arrivals to downstream stops without their own
     // realtime, using the official schedule's stop-to-stop deltas.
     departures = await this.propagateUpstreamAmbRealtime(departures, stopObj || {}, isDir1);
+    // Delay memory: buses observed (and persisted) upstream keep showing
+    // their known delay at stops beyond the realtime-covered stretch.
+    departures = await delayMemory.applyKnownDelays(departures, {
+      lineId: 'c10',
+      direction: isDir1 ? '1' : '0'
+    }, {
+      badgeKnown: '⏱ Retard conegut',
+      formatClock: (ms) => timeUtils.formatTimeToTimezone(new Date(ms), this.agencyTimezone)
+    });
 
     return {
       stopId: stopId,

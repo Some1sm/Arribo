@@ -67,6 +67,10 @@ flightRecorder.setAutoExtrapolation(false);
 // ingestion worker via WorkerBridge.historyQuery() RPC (DB_REQUEST/DB_RESPONSE).
 // The main process never opens the database itself.
 flightRecorder.setHistoryGateway((op, args) => workerBridge.historyQuery(op, args, { timeoutMs: op === 'getLineDelayStats' ? 25000 : 10000 }));
+// Delay-memory gateway: persisted realtime bus observations (same worker-owned
+// SQLite; see src/core/realtime/delayMemory.js). Fire-and-forget writes.
+const delayMemory = require('./src/core/realtime/delayMemory');
+delayMemory.setGateway((op, args) => workerBridge.historyQuery(op, args, { timeoutMs: op === 'saveAmbObservations' ? 5000 : 8000 }));
 
 // Request logger middleware
 app.use('/api', (req, res, next) => {

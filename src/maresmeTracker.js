@@ -11,6 +11,8 @@ const delayEngine = require('./core/schedule/delayEngine');
 const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
 const BaseTracker = require('./core/BaseTracker');
+const ambStopRealtime = require('./core/realtime/ambStopRealtime');
+const delayMemory = require('./core/realtime/delayMemory');
 
 // GTFS times may exceed 24h (e.g. '24:48:00' = 00:48 next clock day).
 function normalizeGtfsTime(t) {
@@ -662,12 +664,19 @@ class MaresmeTracker extends BaseTracker {
                   baseData.stopRouteDist[i] = baseData.stopRouteDist[i - 1];
                 }
               }
+              baseData.geometrySource = geometrySource;
+              baseData.geometryEstimated = geometryEstimated;
               this.baseLineDetailsCache.set(cacheKey, baseData);
             }
           }
         }
 
-        if (baseData) {
+        // Only serve the Moventis-API board when it carries REAL road geometry
+        // (shapes.db / OSRM). A trayecto is a single canonical pattern — for some
+        // lines (N80) it under-represents the corridor and yields chord-composed
+        // geometry, so we fall through to the full GTFS corridor resolution.
+        const moventisGeomReal = ['stitched-gtfs', 'gtfs', 'shape', 'osrm'].includes(String(baseData?.geometrySource || ''));
+        if (baseData && (moventisGeomReal || baseData.stops.length >= 25)) {
           const { stops, polylineCoords, scheduledRuns, distTable, stopRouteDist } = baseData;
           const netNow = timeUtils.getNetworkTime(this.agencyTimezone);
           const currentSec = netNow.hour * 3600 + netNow.minute * 60 + netNow.second;
@@ -753,8 +762,8 @@ class MaresmeTracker extends BaseTracker {
             stops,
             coords: polylineCoords,
             polyline: polylineCoords,
-            geometrySource,
-            geometryEstimated,
+            geometrySource: baseData.geometrySource || 'stops-chords',
+            geometryEstimated: baseData.geometryEstimated !== undefined ? baseData.geometryEstimated : true,
             activeBuses,
             checkpoints,
             totalActiveBuses: activeBuses.length,
@@ -1087,7 +1096,8 @@ class MaresmeTracker extends BaseTracker {
           bestMatch = {
             scheduledTime: normalizeGtfsTime(st.dep),
             schedSec,
-            delayMins
+            delayMins,
+            tripId: trip.tripId
           };
         }
       }
@@ -1135,6 +1145,101 @@ class MaresmeTracker extends BaseTracker {
   }
 
   async getStopDepartures(stopId, lineId = null, direction = '0', lineDetails = null) {
+    const board = await this.getStopDeparturesBase(stopId, lineId, direction, lineDetails);
+    return this.mergeAmbRealtimeIntoBoard(board, lineId, direction, stopId);
+  }
+
+  /**
+   * Merges AMB v2 realtime arrivals into a Maresme departures board.
+   * The AMB app tracks Moventis buses inside the 36 metropolitan
+   * municipalities, so Barcelona/Montgat/Badalona-side stops get real
+   * operator realtime even when Mou-te has none for the stop. Delayed
+   * realtime entries REPLACE their nearest scheduled entry (≤40 min)
+   * instead of duplicating it; on-time ones update in place.
+   */
+  /** Scheduled origin→terminus duration for a route's trip (purge policy input). */
+  runDurationForTrip(routeId, tripId) {
+    try {
+      const trip = (this.tripsMap.get(routeId) || []).find(t => String(t.tripId) === String(tripId));
+      if (!trip) return null;
+      const stList = this.stopTimesByTrip.get(trip.tripId) || [];
+      if (stList.length < 2) return null;
+      const s0 = timeUtils.timeToSec(stList[0].dep || stList[0].arr);
+      const s1 = timeUtils.timeToSec(stList[stList.length - 1].dep || stList[stList.length - 1].arr);
+      if (!Number.isFinite(s0) || !Number.isFinite(s1)) return null;
+      return Math.max(0, s1 >= s0 ? s1 - s0 : (86400 - s0) + s1);
+    } catch (_) { return null; }
+  }
+
+  async mergeAmbRealtimeIntoBoard(board, lineId, direction, stopId) {
+    try {
+      if (!board || !Array.isArray(board.departures)) return board;
+      const dir = String(direction || '0');
+      const lineConfig = this.resolveLine(lineId || board.lineCode);
+      const wantedCodes = [];
+      if (lineConfig?.code) wantedCodes.push(lineConfig.code);
+      if (lineConfig?.id && lineConfig.id !== lineConfig.code) wantedCodes.push(lineConfig.id);
+      if (wantedCodes.length === 0) return board;
+
+      const stopObj = this.stopsMap.get(String(stopId)) || {};
+      if (!Number.isFinite(stopObj.lat)) return board;
+      const dirObj = lineConfig.directions?.find(d => String(d.dirId) === dir);
+      if (!dirObj) return board;
+
+      await ambStopRealtime.mergeLineRealtime(board.departures, {
+        stopLat: stopObj.lat,
+        stopLon: stopObj.lon ?? stopObj.lng,
+        wantedLineCodes: wantedCodes,
+        directionMatches: (dest) => this.matchesDirection(dest, dir, lineConfig),
+        badgePrefix: '🔴 Temps real (AMB)',
+        computeDelay: (entry, arrMs) => {
+          const schedIso = entry.aimedIso || entry.expectedIso;
+          const schedMs = Date.parse(schedIso || '');
+          const delayMin = Number.isFinite(schedMs) ? Math.round((arrMs - schedMs) / 60000) : 0;
+          const schedRef = entry.scheduledTime || entry.departureTime;
+          const info = delayEngine.computeDelayStatus(delayMin, true, { scheduledTime: schedRef });
+          entry.delayMinutes = delayMin;
+          entry.delayMins = delayMin;
+          entry.scheduledTime = schedRef;
+          entry.delayStatus = info.delayStatus;
+          entry.delayFormatted = info.delayFormatted;
+          entry.delayBadgeText = delayMin >= 2
+            ? '🔴 Temps real (AMB) · +' + delayMin + ' min retard'
+            : '🔴 Temps real (AMB) · A l\'hora';
+          entry.comparisonText = '🔴 Temps real AMB (horari teòric: ' + schedRef + (delayMin > 0 ? ', +' + delayMin + ' min de retard' : '') + ')';
+          // Persist observation (delay memory) for stops beyond realtime coverage
+          if (entry.tripId) {
+            delayMemory.record([{
+              agency: 'moventis',
+              lineCode: lineConfig.code,
+              lineId: lineConfig.id,
+              direction: dir,
+              tripId: String(entry.tripId),
+              stopId: String(stopObj.id || stopId),
+              stopName: stopObj.name || null,
+              scheduledMs: schedMs,
+              actualMs: arrMs,
+              delayMins: delayMin,
+              runDurationSecs: this.runDurationForTrip(lineConfig.routeId, entry.tripId)
+            }]);
+          }
+        }
+      });
+      // Delay memory: propagate known delays from persisted upstream observations
+      await delayMemory.applyKnownDelays(board.departures, {
+        lineId: lineConfig.id,
+        direction: dir
+      }, {
+        badgeKnown: '⏱ Retard conegut',
+        formatClock: (ms) => timeEngine.formatTimeToTimezone(new Date(ms))
+      });
+      board.departures = board.departures.slice(0, 10);
+      board.totalDepartures = board.departures.length;
+    } catch (_) { /* AMB realtime is best-effort */ }
+    return board;
+  }
+
+  async getStopDeparturesBase(stopId, lineId = null, direction = '0', lineDetails = null) {
     if (!this.isLoaded) {
       this.loadData();
     }
@@ -1381,6 +1486,7 @@ class MaresmeTracker extends BaseTracker {
                 expectedIso: depUtc.toISOString(),
                 aimedIso: aimedUtc.toISOString(),
                 minutesAway: safeDiffMin,
+                tripId: schedMatch?.tripId || undefined,
                 isRealTime: Boolean(s.realtime),
                 isEstimated: !s.realtime,
                 isToday: true,

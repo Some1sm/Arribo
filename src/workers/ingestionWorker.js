@@ -55,6 +55,12 @@ async function executeDbOperation(op, args = {}) {
     case 'getLineDelayStats':
       return historyDb.getLineDelayStats(args.lineCode, args.hours ?? 24, args.lineId);
 
+    case 'saveAmbObservations':
+      return historyDb.saveAmbObservations(args.rows || []);
+
+    case 'getRecentAmbObservations':
+      return historyDb.getRecentAmbObservations(args);
+
     case 'getJournalismReport':
       return historyDb.getJournalismReport(args.hours, args.allLinesCatalog);
 

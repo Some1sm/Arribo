@@ -116,6 +116,26 @@ class HistoryDatabase {
           );
 
           CREATE INDEX IF NOT EXISTS idx_hourly_stats ON hourly_line_stats(line_code, date_hour);
+
+          -- Realtime bus observations (delay memory): AMB-tracked arrivals
+          -- persisted so downstream stops without realtime coverage can still
+          -- show the known delay. Purged after 2 route completions.
+          CREATE TABLE IF NOT EXISTS amb_bus_observations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            agency TEXT NOT NULL,
+            line_code TEXT NOT NULL,
+            line_id TEXT NOT NULL,
+            direction TEXT NOT NULL,
+            trip_id TEXT,
+            stop_id TEXT NOT NULL,
+            stop_name TEXT,
+            scheduled_ms INTEGER NOT NULL,
+            actual_ms INTEGER NOT NULL,
+            delay_mins INTEGER NOT NULL,
+            run_duration_secs INTEGER,
+            created_ms INTEGER NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS idx_ambobs_line ON amb_bus_observations(line_id, direction, scheduled_ms);
         `);
         // Idempotent migration: drop legacy duplicate indexes present in
         // pre-existing database files (superseded by idx_delay_time_line /
@@ -612,6 +632,93 @@ class HistoryDatabase {
       }
     }
   }
+  /**
+   * Persists realtime bus observations (delay memory) and purges stale ones.
+   * Purge rule = "after 2 route completions": each row lives 2× its trip's
+   * scheduled run duration (clamped 2h–6h, default run 60min).
+   * @returns {{inserted: number, purged: number}}
+   */
+  saveAmbObservations(rows = []) {
+    if (!this._ensureOpen()) return { inserted: 0, purged: 0 };
+    try {
+      const now = Date.now();
+      const insert = this.db.prepare(`
+        INSERT INTO amb_bus_observations
+          (agency, line_code, line_id, direction, trip_id, stop_id, stop_name,
+           scheduled_ms, actual_ms, delay_mins, run_duration_secs, created_ms)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      let inserted = 0;
+      this.db.exec('BEGIN');
+      try {
+        for (const r of rows) {
+          const lineId = String(r.lineId || '').trim();
+          const stopId = String(r.stopId || '').trim();
+          const scheduledMs = Number(r.scheduledMs);
+          const actualMs = Number(r.actualMs);
+          const delayMins = Number(r.delayMins);
+          if (!lineId || !stopId || !Number.isFinite(scheduledMs) || !Number.isFinite(actualMs) || !Number.isFinite(delayMins)) continue;
+          const runSecs = Number.isFinite(Number(r.runDurationSecs)) ? Math.max(0, Math.round(Number(r.runDurationSecs))) : null;
+          insert.run(
+            String(r.agency || '').trim() || 'unknown',
+            String(r.lineCode || '').trim(),
+            lineId,
+            String(r.direction ?? '').trim() || '0',
+            r.tripId ? String(r.tripId).trim() : null,
+            stopId,
+            r.stopName ? String(r.stopName).trim() : null,
+            Math.round(scheduledMs),
+            Math.round(actualMs),
+            Math.round(delayMins),
+            runSecs,
+            now
+          );
+          inserted++;
+        }
+        this.db.exec('COMMIT');
+      } catch (e) {
+        try { this.db.exec('ROLLBACK'); } catch (_) {}
+        throw e;
+      }
+
+      // Purge: "2 route completions" worth of retention per row.
+      // MAX/MIN here are SQLite scalar functions (variadic), not aggregates.
+      const purge = this.db.prepare(`
+        DELETE FROM amb_bus_observations
+        WHERE created_ms < ? - MAX(7200000, MIN(21600000, 2 * COALESCE(run_duration_secs, 3600) * 1000))
+      `);
+      let purged = 0;
+      try { purged = purge.run(now).changes; } catch (_) {}
+      return { inserted, purged };
+    } catch (e) {
+      console.error('[HistoryDB] saveAmbObservations error:', e.message);
+      return { inserted: 0, purged: 0 };
+    }
+  }
+
+  /** Recent observations for a line+direction, newest scheduled first. */
+  getRecentAmbObservations({ lineId, direction = '0', windowMins = 120, limit = 50 } = {}) {
+    if (!this._ensureOpen()) return [];
+    try {
+      const cutoff = Date.now() - Number(windowMins || 120) * 60000;
+      const rows = this.db.prepare(`
+        SELECT id, agency, line_code AS lineCode, line_id AS lineId, direction,
+               trip_id AS tripId, stop_id AS stopId, stop_name AS stopName,
+               scheduled_ms AS scheduledMs, actual_ms AS actualMs,
+               delay_mins AS delayMins, run_duration_secs AS runDurationSecs,
+               created_ms AS createdMs
+        FROM amb_bus_observations
+        WHERE line_id = ? AND direction = ? AND scheduled_ms >= ?
+        ORDER BY scheduled_ms DESC
+        LIMIT ?
+      `).all(String(lineId || ''), String(direction || '0'), cutoff, Math.min(200, Number(limit) || 50));
+      return rows;
+    } catch (e) {
+      console.error('[HistoryDB] getRecentAmbObservations error:', e.message);
+      return [];
+    }
+  }
+
 }
 
 module.exports = new HistoryDatabase();
