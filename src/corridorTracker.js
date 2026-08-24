@@ -28,6 +28,8 @@ const delayEngine = require('./core/schedule/delayEngine');
 const delayMemory = require('./core/realtime/delayMemory');
 const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
+const flightRecorder = require('./flightRecorder');
+const c10TelemetryExtractor = require('./c10TelemetryExtractor');
 const https = require('https');
 const BaseTracker = require('./core/BaseTracker');
 const {
@@ -1292,7 +1294,7 @@ class CorridorTracker extends BaseTracker {
 
     return {
       stopId: stopId,
-      stopName: stopObj.name || '',
+      stopName: stopObj ? (stopObj.name || '') : String(stopId),
       departures: departures,
       calendarInfo: calendarInfo,
       lastUpdated: new Date().toISOString()
@@ -1438,6 +1440,36 @@ class CorridorTracker extends BaseTracker {
     return null;
   }
 
+  /**
+   * Fetch live vehicles for C-10 corridor directly or from flightRecorder.
+   * @param {string|number} [lineId='c10']
+   * @returns {Promise<Array<object>>}
+   */
+  async fetchLiveVehicles(lineId = 'c10') {
+    try {
+      const live = await c10TelemetryExtractor.getLiveVehicles();
+      if (Array.isArray(live) && live.length > 0) {
+        return live;
+      }
+      const recorded = flightRecorder.getLineVehicles('C-10');
+      if (Array.isArray(recorded) && recorded.length > 0) {
+        return recorded.map(v => ({
+          ...v,
+          lat: Number(v.lat),
+          lon: Number(v.lon),
+          latitude: Number(v.lat),
+          longitude: Number(v.lon),
+          isRealTime: true,
+          isRealtime: true,
+          isEstimated: false,
+          isDeadReckoned: false,
+          statusText: '🟢 Senyal GPS Actiu'
+        }));
+      }
+    } catch (_) {}
+    return [];
+  }
+
   async getCorridorLiveTracking(direction = '1') {
     const cached = this.liveTrackingCache.get(direction);
     const nowMs = Date.now();
@@ -1462,16 +1494,44 @@ class CorridorTracker extends BaseTracker {
     const oppositeTrips = oppositeScheduleTrips.filter(trip => this.isServiceActiveOnDate(trip.serviceId, now));
     oppositeTrips.sort((a, b) => timeToSec(a.stops[0].dep) - timeToSec(b.stops[0].dep));
 
-    const activeBuses = [];
-    for (const trip of todaysTrips) {
-      const busPos = this.interpolateBusPosition(trip, currentSec, stopsMap, stopsList, oppositeTrips);
-      if (busPos) {
-        activeBuses.push(busPos);
+    // Check for real GPS live telemetry vehicles first
+    let liveVehicles = [];
+    try {
+      liveVehicles = await this.fetchLiveVehicles('c10');
+    } catch (_) {}
+
+    // Filter genuine live GPS fixes (isRealTime: true, !isEstimated, !isDeadReckoned) for requested direction
+    const genuineGpsVehicles = (Array.isArray(liveVehicles) ? liveVehicles : [])
+      .filter(v => (v.isRealTime || v.isRealtime) && !v.isEstimated && !v.isDeadReckoned)
+      .filter(v => direction === 'both' || v.direction === undefined || String(v.direction) === String(direction))
+      .map(v => ({
+        ...v,
+        lat: Number(v.lat),
+        lon: Number(v.lon),
+        latitude: Number(v.lat),
+        longitude: Number(v.lon),
+        isRealTime: true,
+        isRealtime: true,
+        isEstimated: false,
+        isDeadReckoned: false,
+        statusText: '🟢 Senyal GPS Actiu'
+      }));
+
+    let activeBuses = [];
+    if (genuineGpsVehicles.length > 0) {
+      activeBuses = genuineGpsVehicles;
+    } else {
+      // Fall back to GTFS schedule interpolation
+      for (const trip of todaysTrips) {
+        const busPos = this.interpolateBusPosition(trip, currentSec, stopsMap, stopsList, oppositeTrips);
+        if (busPos) {
+          activeBuses.push(busPos);
+        }
       }
     }
 
     const primaryBus = activeBuses[0] || null;
-    const primaryActiveTrip = primaryBus ? todaysTrips.find(t => t.tripId === primaryBus.tripId) : null;
+    const primaryActiveTrip = (primaryBus && !primaryBus.isRealTime) ? todaysTrips.find(t => t.tripId === primaryBus.tripId) : null;
     const nextUpcomingTrip = todaysTrips.find(t => timeToSec(t.stops[t.stops.length - 1].arr) >= currentSec) || todaysTrips[0] || null;
     const targetTripToTrack = primaryActiveTrip || nextUpcomingTrip;
 
@@ -1530,7 +1590,6 @@ class CorridorTracker extends BaseTracker {
         nextBus: next
       };
     });
-
 
     // Ensure the road-snapped polyline upgrade has run before serving coords.
     await this.ensureOsrmPolylines();

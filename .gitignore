@@ -1,4 +1,7 @@
 node_modules/
+PROGRESS.md
+.pi/
+
 .agents/
 ORIGINAL_REQUEST.md
 PROJECT.md

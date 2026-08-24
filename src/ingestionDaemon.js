@@ -9,6 +9,7 @@ const cataloniaTracker = require('./cataloniaTracker');
 const routeCacheService = require('./routeCacheService');
 const reportCacheService = require('./reportCacheService');
 const historyDb = require('./historyDb');
+const c10TelemetryExtractor = require('./c10TelemetryExtractor');
 
 class IngestionDaemon {
   constructor() {
@@ -340,27 +341,73 @@ class IngestionDaemon {
 
   async pollCorridorDelays() {
     try {
-      for (const dir of ['1', '0']) {
-        const c10Eta = await corridorTracker.getTargetStopETA(dir);
-        const liveCorridor = await corridorTracker.getCorridorLiveTracking(dir);
+      // 1. Ingest direct real-time GPS telemetry from Moventis SAE via c10TelemetryExtractor
+      let liveVehicles = [];
+      try {
+        liveVehicles = await c10TelemetryExtractor.getLiveVehicles();
+      } catch (err) {
+        // Fallback handled below
+      }
 
-        // Ingest active vehicles along the corridor
-        if (liveCorridor && Array.isArray(liveCorridor.activeBuses)) {
-          liveCorridor.activeBuses.forEach((b, idx) => {
-            flightRecorder.ingestVehicle({
-              vehicleId: b.vehicleId || `c10_dir${dir}_${idx}`,
+      if (Array.isArray(liveVehicles) && liveVehicles.length > 0) {
+        liveVehicles.forEach(v => {
+          flightRecorder.ingestVehicle({
+            vehicleId: v.vehicleId,
+            lineId: 'c10',
+            lineCode: 'C-10',
+            agency: v.agency || 'Moventis / Casas (Interurbà Maresme)',
+            plateNumber: v.plateNumber || '',
+            lat: v.lat,
+            lon: v.lon,
+            speedKmh: v.speedKmh || 0,
+            bearing: v.bearing || 0,
+            delayMins: v.delayMins || 0,
+            destination: v.destination || '',
+            isRealTime: true,
+            isEstimated: false
+          });
+
+          if (v.delayMins !== undefined && v.delayMins !== null) {
+            historyDb.recordDelayLog({
               lineId: 'c10',
               lineCode: 'C-10',
-              agency: 'Moventis / Casas (Interurbà Maresme)',
-              lat: b.lat,
-              lon: b.lon,
-              speedKmh: b.speedKmh || 38,
-              bearing: b.bearing || 45,
-              delayMins: 0,
-              destination: dir === '1' ? 'Mataró (Hospital)' : 'Barcelona (Metro la Pau)',
+              agency: v.agency || 'Moventis / Casas (Interurbà Maresme)',
+              stopId: v.toStop || 'c10_corridor',
+              stopName: v.toStop || 'Corredor C-10',
+              delayMins: v.delayMins,
+              scheduledTime: '',
+              actualTime: v.recordedAt || '',
               isRealTime: true
             });
-          });
+          }
+        });
+      }
+
+      // 2. Query target stop ETAs for departure logs and schedule fallbacks
+      for (const dir of ['1', '0']) {
+        const c10Eta = await corridorTracker.getTargetStopETA(dir);
+
+        // If no direct live vehicles were found, fall back to corridorTracker active buses
+        if (!liveVehicles || liveVehicles.length === 0) {
+          const liveCorridor = await corridorTracker.getCorridorLiveTracking(dir);
+          if (liveCorridor && Array.isArray(liveCorridor.activeBuses)) {
+            liveCorridor.activeBuses.forEach((b, idx) => {
+              flightRecorder.ingestVehicle({
+                vehicleId: b.vehicleId || `c10_dir${dir}_${idx}`,
+                lineId: 'c10',
+                lineCode: 'C-10',
+                agency: 'Moventis / Casas (Interurbà Maresme)',
+                lat: b.lat,
+                lon: b.lon,
+                speedKmh: b.speedKmh || 38,
+                bearing: b.bearing || 45,
+                delayMins: b.delayMins || 0,
+                destination: dir === '1' ? 'Mataró (Hospital)' : 'Barcelona (Metro la Pau)',
+                isRealTime: Boolean(b.isRealTime && !b.isEstimated),
+                isEstimated: Boolean(b.isEstimated)
+              });
+            });
+          }
         }
 
         // Record real-time departure delay when available

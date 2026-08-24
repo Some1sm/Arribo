@@ -43,7 +43,7 @@ class MoventisClient {
     return `${y}${m}${d}`;
   }
 
-  async fetchWithTimeout(url, timeoutMs = 8000) {
+  async fetchWithTimeout(url, timeoutMs = 8000, customHeaders = {}) {
     // Pluggable transport: server.js proxies via WorkerBridge in main process.
     if (typeof this._httpBackend === 'function') {
       // UA + Accept headers MUST be forwarded (worker has no client state).
@@ -54,7 +54,8 @@ class MoventisClient {
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
             'Accept': 'application/json, text/javascript, */*; q=0.01',
-            'X-Requested-With': 'XMLHttpRequest'
+            'X-Requested-With': 'XMLHttpRequest',
+            ...customHeaders
           }
         },
         timeoutMs
@@ -73,7 +74,8 @@ class MoventisClient {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
           'Accept': 'application/json, text/javascript, */*; q=0.01',
-          'X-Requested-With': 'XMLHttpRequest'
+          'X-Requested-With': 'XMLHttpRequest',
+          ...customHeaders
         }
       });
       clearTimeout(timer);
@@ -267,6 +269,61 @@ class MoventisClient {
     const num = parseFloat(minutosStr);
     return isNaN(num) ? null : num;
   }
+
+  /**
+   * Get real-time GPS vehicle positions for a Moventis SAE line.
+   * Line 502 corresponds to Empresa Casas C-10 (Barcelona ⇄ Mataró per N-II).
+   * @param {string|number} [lineId=502]
+   * @returns {Promise<Array<object>>}
+   */
+  async getLinePositions(lineId = 502) {
+    let cleanId = String(lineId || 502).toLowerCase().trim();
+    if (cleanId === 'c10' || cleanId === 'c-10' || cleanId === 'gen_0498' || cleanId === '02498') {
+      cleanId = '502';
+    }
+    const numericId = cleanId.replace(/\D/g, '') || '502';
+    const cacheKey = `sae_pos_${numericId}`;
+    this._posCache = this._posCache || new Map();
+    const cached = this._posCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < 5000) {
+      return cached.data;
+    }
+
+    this._posInflight = this._posInflight || new Map();
+    const inflight = this._posInflight.get(cacheKey);
+    if (inflight) return inflight;
+
+    const job = (async () => {
+      try {
+        const saeUrl = `https://app.moventis.es/sae/api/posicion/linea/${numericId}`;
+        const authHeader = process.env.MOVENTIS_SAE_AUTH || process.env.MOVENTIS_AUTH || 'Basic YXBwbW92ZW50aXM6YXBwbW92ZW50aXM=';
+        const headers = {
+          'Authorization': authHeader.startsWith('Basic ') ? authHeader : `Basic ${authHeader}`
+        };
+        const data = await this.fetchWithTimeout(saeUrl, 6000, headers);
+        let list = [];
+        if (Array.isArray(data)) {
+          list = data;
+        } else if (data && typeof data === 'object') {
+          list = data.posiciones || data.data || data.vehicles || data.autobuses || data.bus || [];
+        }
+        if (Array.isArray(list)) {
+          this._posCache.set(cacheKey, { ts: Date.now(), data: list });
+          return list;
+        }
+      } catch (e) {
+        const stale = this._posCache.get(cacheKey);
+        if (stale && Date.now() - stale.ts < 60000) return stale.data;
+      } finally {
+        this._posInflight.delete(cacheKey);
+      }
+      return [];
+    })();
+
+    this._posInflight.set(cacheKey, job);
+    return job;
+  }
 }
 
 module.exports = new MoventisClient();
+
