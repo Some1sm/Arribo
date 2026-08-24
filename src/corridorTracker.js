@@ -986,6 +986,129 @@ class CorridorTracker extends BaseTracker {
     return departures;
   }
 
+  /**
+   * Today's active GTFS trips serving BOTH stops of a direction, as
+   * [{trip, secAtUp, secAtDown}] sorted by secAtUp. Used for realtime
+   * propagation: the schedule delta between the two stops.
+   */
+  gtfsTripsServingBoth(dir, upGtfsId, downGtfsId, dateObj = new Date()) {
+    const isDir1 = String(dir) === '1';
+    const trips = isDir1 ? (this.fullSchedule?.dir1 || []) : (this.fullSchedule?.dir0 || []);
+    const out = [];
+    for (const trip of trips) {
+      if (!this.isServiceActiveOnDate(trip.serviceId, dateObj)) continue;
+      const up = trip.stops.find(s => s.stopId === upGtfsId);
+      if (!up) continue;
+      const down = trip.stops.find(s => s.stopId === downGtfsId);
+      if (!down) continue;
+      const secAtUp = timeToSec(up.dep || up.arr);
+      const secAtDown = timeToSec(down.dep || down.arr);
+      if (!Number.isFinite(secAtUp) || !Number.isFinite(secAtDown)) continue;
+      out.push({ trip, secAtUp, secAtDown });
+    }
+    out.sort((a, b) => a.secAtUp - b.secAtUp);
+    return out;
+  }
+
+  /**
+   * Propagates AMB v2 realtime arrivals from upstream stops to this stop.
+   * A bus tracked in realtime at an upstream stop U will reach this stop S
+   * after U; the estimated arrival = realtimeAtU + (schedAtS - schedAtU)
+   * using the matched official trip's own stop-to-stop deltas.
+   *
+   * Checks the 6 nearest upstream stops (C-10 travel time ~2-3 min/stop, so
+   * this covers buses arriving within ~20 min of S). Estimates never
+   * duplicate an existing board entry within ±3 min.
+   */
+  async propagateUpstreamAmbRealtime(departures, stopObj, isDir1) {
+    try {
+      const stopsList = isDir1 ? this.stopsDir1 : this.stopsDir0;
+      const seq = Number(stopObj.seq);
+      if (!Number.isFinite(seq) || seq === 0) return departures;
+      const downGtfsId = stopObj.gtfsStopId || stopObj.mouteStopId;
+
+      const now = Date.now();
+      const netNow = timeUtils.getNetworkTime(this.agencyTimezone, new Date(now));
+      const nowSec = netNow.hour * 3600 + netNow.minute * 60 + netNow.second;
+      const secToTimeStr = (sec) => `${String(Math.floor(sec / 3600) % 24).padStart(2, '0')}:${String(Math.floor(sec / 60) % 60).padStart(2, '0')}`;
+
+      let added = 0;
+      for (let k = 1; k <= 6 && added < 3; k++) {
+        const up = stopsList[seq - k];
+        if (!up) break;
+        const upGtfsId = up.gtfsStopId || up.mouteStopId;
+        const ambCode = this.ambCodeForStop(up);
+        if (!ambCode) continue;
+
+        const times = await this.fetchAmbRealtime(ambCode);
+        const c10Times = times.filter(t => /^c\s*-?\s*10$/i.test(String(t.lineCode || '')));
+        if (c10Times.length === 0) continue;
+
+        for (const t of c10Times) {
+          if (added >= 3) break;
+          const arrMs = Number(t.time) > 1e11 ? Number(t.time) : now + Number(t.arrivalTime || 0) * 1000;
+          if (!Number.isFinite(arrMs) || arrMs < now - 5 * 60000) continue;
+
+          // Destination sanity
+          const destIsMataro = /matar/i.test(String(t.destination || ''));
+          if (isDir1 !== destIsMataro) continue;
+
+          // Match the bus to an official trip serving both U and S
+          const rtSecAtUp = Math.round((arrMs - (now - nowSec * 1000)) / 1000) % 86400;
+          const pairs = this.gtfsTripsServingBoth(isDir1 ? '1' : '0', upGtfsId, downGtfsId, new Date(now));
+          let bestTrip = null, bestDiff = Infinity;
+          for (const p of pairs) {
+            let d = Math.abs(p.secAtUp - rtSecAtUp);
+            if (d > 43200) d = 86400 - d; // midnight wrap
+            if (d < bestDiff) { bestDiff = d; bestTrip = p; }
+          }
+          if (!bestTrip || bestDiff > 40 * 60) continue; // no plausible official trip
+
+          // Schedule delta from the matched trip → estimated arrival at S
+          let estSec = rtSecAtUp + (bestTrip.secAtDown - bestTrip.secAtUp);
+          let estIsToday = true;
+          if (estSec < nowSec - 300 && estSec < 12 * 3600) { estSec += 86400; estIsToday = false; }
+          const diffMin = Math.round((estSec - nowSec) / 60);
+          if (diffMin < -1 || diffMin > 360) continue;
+          const passTimeStr = secToTimeStr(estSec);
+
+          // Never duplicate: skip if the board already has this time covered
+          const covered = departures.some(d =>
+            d.isToday !== false &&
+            Number.isFinite(d.minutesAway) &&
+            Math.abs((d.minutesAway || 0) - diffMin) <= 3
+          );
+          if (covered) continue;
+
+          const depIso = timeUtils.localTimeToUtcDate(netNow.year, netNow.month, netNow.day + (estIsToday ? 0 : 1), Math.floor(estSec / 3600) % 24, Math.floor(estSec / 60) % 60, 0, this.agencyTimezone).toISOString();
+          departures.push({
+            lineId: '02498',
+            lineName: 'C-10',
+            tripId: bestTrip.trip.tripId,
+            destination: isDir1 ? 'Hospital de Mataró' : 'Barcelona (Metro la Pau)',
+            directionId: isDir1 ? 'R' : 'A',
+            departureTime: passTimeStr,
+            expectedIso: depIso,
+            aimedIso: depIso,
+            minutesAway: Math.max(1, diffMin),
+            isRealTime: false,
+            isEstimated: true,
+            isToday: estIsToday,
+            isFirstOfDay: false,
+            delayStatus: bestDiff > 5 * 60 ? 'delayed' : 'on_time',
+            delayMinutes: Math.max(0, Math.round((rtSecAtUp - bestTrip.secAtUp) / 60)),
+            delayBadgeText: `📍 Estimat (temps real AMB)`,
+            comparisonText: `📍 Estimat: temps real a ${up.name} + horari oficial fins a aquesta parada`,
+            formattedStatus: diffMin === 0 ? 'Imminent' : `${diffMin} min`
+          });
+          added++;
+        }
+      }
+      if (added > 0) departures.sort((a, b) => (a.minutesAway || 0) - (b.minutesAway || 0));
+    } catch (_) { /* propagation is best-effort */ }
+    return departures;
+  }
+
   async getStopDepartures(stopId, direction = '1', targetDate = null) {
     let isDir1 = direction === '1';
     let stopsList = isDir1 ? this.stopsDir1 : this.stopsDir0;
@@ -1065,6 +1188,9 @@ class CorridorTracker extends BaseTracker {
     // Supplementary AMB v2 realtime: the operator app tracks C-10 buses there
     // even when Mou-te has no realtime for the stop.
     departures = await this.mergeAmbRealtimeDepartures(departures, stopObj || {}, isDir1);
+    // Propagate those realtime arrivals to downstream stops without their own
+    // realtime, using the official schedule's stop-to-stop deltas.
+    departures = await this.propagateUpstreamAmbRealtime(departures, stopObj || {}, isDir1);
 
     return {
       stopId: stopId,
