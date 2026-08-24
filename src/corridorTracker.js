@@ -938,12 +938,27 @@ class CorridorTracker extends BaseTracker {
           matched.add(best.cand);
           const existing = best.cand;
           const schedRef = existing.scheduledTime || existing.departureTime;
+          // Real delay vs the replaced entry's OFFICIAL scheduled time
+          // (aimedIso = GTFS schedule; expectedIso may already be realtime)
+          const schedIso = existing.aimedIso || existing.expectedIso;
+          const schedMs = Date.parse(schedIso);
+          const delayMin = Number.isFinite(schedMs) ? Math.round((arrMs - schedMs) / 60000) : 0;
+          const delayInfo = delayEngine.computeDelayStatus(delayMin, true, {
+            scheduledTime: schedRef
+          });
           existing.expectedIso = new Date(arrMs).toISOString();
           existing.departureTime = clockStr;
           existing.minutesAway = diffMin;
           existing.isRealTime = true;
-          existing.delayBadgeText = '🔴 Temps real (AMB)';
-          existing.comparisonText = `🔴 Temps real AMB (horari teòric: ${schedRef})`;
+          existing.delayMinutes = delayMin;
+          existing.delayMins = delayMin;
+          existing.scheduledTime = schedRef;
+          existing.delayStatus = delayInfo.delayStatus;
+          existing.delayFormatted = delayInfo.delayFormatted;
+          existing.delayBadgeText = delayMin >= 2
+            ? `🔴 Temps real (AMB) · +${delayMin} min retard`
+            : '🔴 Temps real (AMB) · A l\'hora';
+          existing.comparisonText = `🔴 Temps real AMB (horari teòric: ${schedRef}${delayMin > 0 ? `, +${delayMin} min de retard` : ''})`;
           existing.formattedStatus = diffMin === 0 ? 'Imminent' : `${diffMin} min`;
         } else {
           departures.push({
