@@ -37,6 +37,7 @@ class C10TelemetryExtractor {
     this._inflight = new Map();
     this._mockSource = null;
     this._fetchBackend = null;
+    this._lastWarn = {};
     this._circuitBreaker = {
       failures: 0,
       lastFailure: 0,
@@ -77,6 +78,18 @@ class C10TelemetryExtractor {
    */
   setFetchBackend(fn) {
     this._fetchBackend = typeof fn === 'function' ? fn : null;
+  }
+
+  /**
+   * Throttled warning (max once per key per minute) — upstream outages fire
+   * many calls/sec; unthrottled logs would flood production output.
+   */
+  _warnThrottled(key, message, throttleMs = 60000) {
+    const now = Date.now();
+    if (!this._lastWarn[key] || now - this._lastWarn[key] > throttleMs) {
+      this._lastWarn[key] = now;
+      console.warn(`[C10Extractor] ${message}`);
+    }
   }
 
   /**
@@ -190,6 +203,7 @@ class C10TelemetryExtractor {
       } catch (err) {
         this._circuitBreaker.failures++;
         this._circuitBreaker.lastFailure = now;
+        this._warnThrottled('amb', `AMB feed failed (${err.message}); falling back to Moventis SAE`);
       }
     }
 
@@ -221,13 +235,17 @@ class C10TelemetryExtractor {
       return null;
     }
 
-    // 2. Parse vehicle identity / fleet number
-    const rawId = raw.idVehiculo ?? raw.calca ?? raw.id ?? raw.vehicleId ?? raw.code ?? raw.numero ?? raw.matricula ?? '342';
-    const cleanCalca = String(rawId).replace(/C-?10/gi, '').replace(/[^a-zA-Z0-9_-]/g, '') || String(rawId);
+    // 2. Parse vehicle identity / fleet number. Vehicles without a usable
+    // identity are SKIPPED (never collapsed into a shared magic ID): a shared
+    // ID makes buses overwrite each other in FlightRecorder → teleporting map.
+    const rawId = raw.idVehiculo ?? raw.calca ?? raw.id ?? raw.vehicleId ?? raw.code ?? raw.numero ?? raw.matricula;
+    const cleanCalca = String(rawId ?? '').replace(/C-?10/gi, '').replace(/[^a-zA-Z0-9_-]/g, '');
+    if (!cleanCalca) {
+      this._warnThrottled('no-id', `Skipping vehicle without usable identity (lat=${raw.lat ?? raw.latitud}, lon=${raw.lon ?? raw.longitud})`);
+      return null;
+    }
     let vehicleId;
-    if (String(rawId).startsWith('c10_502_')) {
-      vehicleId = String(rawId);
-    } else if (String(rawId).startsWith('c10_')) {
+    if (String(rawId).startsWith('c10_502_') || String(rawId).startsWith('c10_')) {
       vehicleId = String(rawId);
     } else {
       vehicleId = `c10_502_${cleanCalca}`;
@@ -511,6 +529,7 @@ class C10TelemetryExtractor {
         this.lastFetchTime = Date.now();
         return validVehicles;
       } catch (err) {
+        this._warnThrottled('getlive', `getLiveVehicles fetch failed: ${err.message} — serving stale cache`);
         return this.cachedVehicles || [];
       } finally {
         this._inflight.delete('getLiveVehicles');

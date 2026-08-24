@@ -8,6 +8,7 @@ const sagalesTracker = require('./src/sagalesTracker');
 const ambTracker = require('./src/ambTracker');
 const rodaliesTracker = require('./src/rodaliesTracker');
 const maresmeTracker = require('./src/maresmeTracker');
+const c10TelemetryExtractor = require('./src/c10TelemetryExtractor');
 const cataloniaTracker = require('./src/cataloniaTracker');
 const routeCacheService = require('./src/routeCacheService');
 const reportCacheService = require('./src/reportCacheService');
@@ -110,6 +111,15 @@ corridorTracker.setFetchBackend(async ({ ambCode }) => {
     const times = await workerBridge.historyQuery('getCorridorAmbRealtime', { ambCode }, { timeoutMs: 8000 });
     return Array.isArray(times) ? times : [];
   } catch (_) { return []; }
+});
+
+// Centralize C-10 extractor AMB traffic in the worker as well: the extractor's
+// /bus/vehicles fetch is proxied over IPC so the main process never opens a
+// socket to api.ambmobilitat.cat. Rejections propagate so the extractor's
+// circuit breaker counts upstream failures.
+c10TelemetryExtractor.setFetchBackend(async () => {
+  const list = await workerBridge.historyQuery('getC10AmbVehicles', {}, { timeoutMs: 9000 });
+  return { status: Array.isArray(list) ? 200 : 502, data: Array.isArray(list) ? list : [] };
 });
 
 // Generic upstream-HTTP proxy for client modules (SIRI SOAP, Moventis SAE,

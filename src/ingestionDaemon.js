@@ -18,6 +18,8 @@ class IngestionDaemon {
     this.ambLinesPollTimer = null;
     this.mataroPollTimer = null;
     this.corridorPollTimer = null;
+    this._corridorPollRunning = false;
+    this._lastDelayLogByVehicle = new Map(); // vehicleId -> last persisted delayMins
     this.maresmePollTimer = null;
     this.rodaliesPollTimer = null;
     this.sagalesPollTimer = null;
@@ -340,6 +342,10 @@ class IngestionDaemon {
   }
 
   async pollCorridorDelays() {
+    // Overlap guard: the body chains multiple multi-second upstream awaits;
+    // if a tick exceeds the 20s interval, skip rather than stacking polls.
+    if (this._corridorPollRunning) return;
+    this._corridorPollRunning = true;
     try {
       // 1. Ingest direct real-time GPS telemetry from Moventis SAE via c10TelemetryExtractor
       let liveVehicles = [];
@@ -368,7 +374,12 @@ class IngestionDaemon {
           });
 
           if (v.delayMins !== undefined && v.delayMins !== null) {
-            historyDb.recordDelayLog({
+            // Change-gated: only persist when this vehicle's delay actually
+            // moved (prevents ~43k placeholder rows/day at 20s poll cadence).
+            const lastDelay = this._lastDelayLogByVehicle?.get(v.vehicleId);
+            if (lastDelay === undefined || lastDelay !== v.delayMins) {
+              (this._lastDelayLogByVehicle ||= new Map()).set(v.vehicleId, v.delayMins);
+              historyDb.recordDelayLog({
               lineId: 'c10',
               lineCode: 'C-10',
               agency: v.agency || 'Moventis / Casas (Interurbà Maresme)',
@@ -378,7 +389,8 @@ class IngestionDaemon {
               scheduledTime: '',
               actualTime: v.recordedAt || '',
               isRealTime: true
-            });
+              });
+            }
           }
         });
       }
@@ -430,6 +442,8 @@ class IngestionDaemon {
       this.emitFleetUpdate();
     } catch (e) {
       this.warnThrottled('pollCorridorDelays', `C-10 corridor poll failed: ${e.message}`);
+    } finally {
+      this._corridorPollRunning = false;
     }
   }
 

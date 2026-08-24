@@ -1453,17 +1453,14 @@ class CorridorTracker extends BaseTracker {
       }
       const recorded = flightRecorder.getLineVehicles('C-10');
       if (Array.isArray(recorded) && recorded.length > 0) {
+        // Preserve each entry's REAL provenance flags (dead-reckoned entries
+        // must stay labelled as such downstream — §7.6 honesty).
         return recorded.map(v => ({
           ...v,
           lat: Number(v.lat),
           lon: Number(v.lon),
           latitude: Number(v.lat),
-          longitude: Number(v.lon),
-          isRealTime: true,
-          isRealtime: true,
-          isEstimated: false,
-          isDeadReckoned: false,
-          statusText: '🟢 Senyal GPS Actiu'
+          longitude: Number(v.lon)
         }));
       }
     } catch (_) {}
@@ -1500,7 +1497,7 @@ class CorridorTracker extends BaseTracker {
       liveVehicles = await this.fetchLiveVehicles('c10');
     } catch (_) {}
 
-    // Filter genuine live GPS fixes (isRealTime: true, !isEstimated, !isDeadReckoned) for requested direction
+    // Filter genuine live GPS fixes for the requested direction
     const genuineGpsVehicles = (Array.isArray(liveVehicles) ? liveVehicles : [])
       .filter(v => (v.isRealTime || v.isRealtime) && !v.isEstimated && !v.isDeadReckoned)
       .filter(v => direction === 'both' || v.direction === undefined || String(v.direction) === String(direction))
@@ -1509,24 +1506,23 @@ class CorridorTracker extends BaseTracker {
         lat: Number(v.lat),
         lon: Number(v.lon),
         latitude: Number(v.lat),
-        longitude: Number(v.lon),
-        isRealTime: true,
-        isRealtime: true,
-        isEstimated: false,
-        isDeadReckoned: false,
-        statusText: '🟢 Senyal GPS Actiu'
+        longitude: Number(v.lon)
       }));
 
-    let activeBuses = [];
-    if (genuineGpsVehicles.length > 0) {
-      activeBuses = genuineGpsVehicles;
-    } else {
-      // Fall back to GTFS schedule interpolation
-      for (const trip of todaysTrips) {
-        const busPos = this.interpolateBusPosition(trip, currentSec, stopsMap, stopsList, oppositeTrips);
-        if (busPos) {
-          activeBuses.push(busPos);
-        }
+    // Per-trip merge: keep every genuine GPS fix, then add GTFS-interpolated
+    // positions ONLY for trips NOT already covered by a nearby live vehicle.
+    // This preserves full fleet visibility under partial GPS coverage
+    // (previously: ANY GPS presence hid ALL scheduled-interpolation buses).
+    let activeBuses = [...genuineGpsVehicles];
+    for (const trip of todaysTrips) {
+      const busPos = this.interpolateBusPosition(trip, currentSec, stopsMap, stopsList, oppositeTrips);
+      if (!busPos) continue;
+      // Coverage heuristic: an interpolation within ~450m of a live GPS fix is
+      // considered the same physical bus (N-II directions are further apart).
+      const coveredByGps = genuineGpsVehicles.some(g =>
+        geoEngine.calculateDistanceMeters(g.lat, g.lon, busPos.lat, busPos.lon) < 450);
+      if (!coveredByGps) {
+        activeBuses.push(busPos);
       }
     }
 

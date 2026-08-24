@@ -11,6 +11,7 @@ const historyDb = require('../historyDb');
 const reportCacheService = require('../reportCacheService');
 const flightRecorder = require('../flightRecorder');
 const sagalesTracker = require('../sagalesTracker');
+const c10TelemetryExtractor = require('../c10TelemetryExtractor');
 const ambTracker = require('../ambTracker');
 const rodaliesTracker = require('../rodaliesTracker');
 const corridorTracker = require('../corridorTracker');
@@ -115,6 +116,11 @@ async function executeDbOperation(op, args = {}) {
     case 'proxyUpstreamHttp':
       // Generic worker-owned upstream HTTP for main-process client backends.
       return proxyUpstreamFetch(args);
+
+    case 'getC10AmbVehicles':
+      // Worker-owned AMB /bus/vehicles fetch for the C-10 GPS extractor
+      // (worker instance has no backend installed → direct HTTPS here).
+      return c10TelemetryExtractor.fetchAmbVehicles();
 
     case 'getJournalismReport':
       return historyDb.getJournalismReport(args.hours, args.allLinesCatalog);
