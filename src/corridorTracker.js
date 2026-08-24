@@ -65,6 +65,9 @@ class CorridorTracker extends BaseTracker {
     this._ambApiKey = process.env.AMB_API_KEY || '28EbLJtP0A6CtrWeXp6zE1zy3kp4RzmnaA2sy8JM';
     this._ambRealtimeCache = new Map(); // ambStopCode -> { timestamp, times }
     this._ambCodeByStop = new Map();    // c10 stopId -> AMB stop code
+    // Pluggable upstream transport (installed by server.js in the main
+    // process to proxy AMB realtime over WorkerBridge IPC).
+    this._fetchBackend = null;
     this.stopsDir1 = [...C10_STOPS_DIR1];
     this.stopsDir0 = [...C10_STOPS_DIR0];
     this.routePolylineDir1 = [...C10_POLYLINE_DIR1];
@@ -129,6 +132,14 @@ class CorridorTracker extends BaseTracker {
 
     this.liveTrackingCache = new Map(); // dir -> { data, timestamp }
   }
+  /**
+   * Install an alternative transport. fn({ ambCode }) must resolve to an
+   * array of realtime arrival times (or null/[] on failure).
+   */
+  setFetchBackend(fn) {
+    this._fetchBackend = typeof fn === 'function' ? fn : null;
+  }
+
 
   loadData() {
     try {
@@ -856,6 +867,18 @@ class CorridorTracker extends BaseTracker {
     const now = Date.now();
     const cached = this._ambRealtimeCache.get(ambStopCode);
     if (cached && (now - cached.timestamp < 30000)) return Promise.resolve(cached.times);
+    // Pluggable transport: main process proxies via setFetchBackend() so the
+    // web process never opens sockets to api.ambmobilitat.cat.
+    if (typeof this._fetchBackend === 'function') {
+      return Promise.resolve()
+        .then(() => this._fetchBackend({ ambCode: ambStopCode }))
+        .then((times) => {
+          const arr = Array.isArray(times) ? times : [];
+          this._ambRealtimeCache.set(ambStopCode, { timestamp: now, times: arr });
+          return arr;
+        })
+        .catch(() => []);
+    }
     return new Promise((resolve) => {
       const req = https.request({
         hostname: 'api.ambmobilitat.cat',

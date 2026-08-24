@@ -140,6 +140,15 @@ class CataloniaTracker extends BaseTracker {
     return calendarEngine.getDateComponents(dateObj, 'Europe/Madrid');
   }
 
+  /**
+   * Weekday index (0=Sunday) computed in Europe/Madrid — never machine-local.
+   */
+  getWeekdayIndexMadrid(dateObj) {
+    const wd = new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Madrid', weekday: 'short' }).format(dateObj);
+    return { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }[wd];
+
+  }
+
   isServiceActiveOnDate(serviceId, dateObj = new Date()) {
     return calendarEngine.isServiceActiveOnDate(serviceId, this.calendar, this.calendarExceptions, dateObj, 'Europe/Madrid');
   }
@@ -305,7 +314,7 @@ class CataloniaTracker extends BaseTracker {
         const nextTrips = this.getScheduledDeparturesForDate(route, dirIdx, nextDate);
         if (nextTrips.length > 0) {
           const daysOfWeek = ['Diumenge', 'Dilluns', 'Dimarts', 'Dimecres', 'Dijous', 'Divendres', 'Dissabte'];
-          const dowName = daysOfWeek[nextDate.getDay()];
+          const dowName = daysOfWeek[(this.getWeekdayIndexMadrid(nextDate))];
           nextOperatingDayText = `${dowName} a les ${nextTrips[0].departureTime}`;
           break;
         }
@@ -487,7 +496,7 @@ class CataloniaTracker extends BaseTracker {
         if (nextTrips.length > 0) {
           const isTomorrow = dayOffset === 1;
           const daysOfWeek = ['Dg.', 'Dl.', 'Dt.', 'Dc.', 'Dj.', 'Dv.', 'Ds.'];
-          const dowName = daysOfWeek[nextDate.getDay()];
+          const dowName = daysOfWeek[(this.getWeekdayIndexMadrid(nextDate))];
           const prefix = isTomorrow ? 'Demà' : dowName;
 
           nextTrips.slice(0, 20).forEach((t, idx) => {
@@ -639,7 +648,7 @@ class CataloniaTracker extends BaseTracker {
         if (nextTrips.length > 0) {
           const isTomorrow = dayOffset === 1;
           const daysOfWeek = ['Dg.', 'Dl.', 'Dt.', 'Dc.', 'Dj.', 'Dv.', 'Ds.'];
-          const dowName = daysOfWeek[nextDate.getDay()];
+          const dowName = daysOfWeek[(this.getWeekdayIndexMadrid(nextDate))];
           const prefix = isTomorrow ? 'Demà' : dowName;
 
           nextTrips.slice(0, 20).forEach((t, idx) => {

@@ -104,6 +104,19 @@ class SagalesTracker extends BaseTracker {
     this.cache = new Map(); // `${routeId}_${dir}` -> { timestamp, data }
     this.cacheTtlMs = 12000; // 12 seconds TTL
     this.allStopsMap = new Map(); // stopCode -> stop object
+    // Pluggable transport: in the main HTTP process this is installed by
+    // server.js to proxy upstream fetches through WorkerBridge IPC, so the
+    // web process NEVER calls the Sagalés API directly. Defaults to direct
+    // HTTPS (used inside the ingestion worker / local tooling).
+    this._fetchBackend = null;
+  }
+
+  /**
+   * Install an alternative upstream transport. fn({ routeId, dir }) must
+   * resolve to the raw feed JSON (or null on failure).
+   */
+  setFetchBackend(fn) {
+    this._fetchBackend = typeof fn === 'function' ? fn : null;
   }
 
   // HTTP GET helper with timeout
@@ -147,8 +160,13 @@ class SagalesTracker extends BaseTracker {
     }
 
     try {
-      const url = `https://www.sagales.com/real-time-bus/${sagalesRouteId}/${dir}`;
-      const json = await this.fetchJson(url);
+      let json;
+      if (this._fetchBackend) {
+        json = await this._fetchBackend({ routeId: sagalesRouteId, dir });
+      } else {
+        const url = `https://www.sagales.com/real-time-bus/${sagalesRouteId}/${dir}`;
+        json = await this.fetchJson(url);
+      }
       if (json) {
         this.cache.set(cacheKey, { timestamp: now, data: json });
       }

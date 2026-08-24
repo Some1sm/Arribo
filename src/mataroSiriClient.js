@@ -11,9 +11,39 @@ class MataroSiriClient {
     this.cache = new Map();
     this.cacheTtlMs = 12000; // 12-second live cache
     this.lastWarnTime = 0;
+    // Pluggable transport: server.js installs an WorkerBridge-backed backend
+    // in the main process so SIRI SOAP traffic stays worker-owned.
+    this._httpBackend = null;
+  }
+
+  /**
+   * Install alternative transport. fn(req) must resolve to { status, bodyText }.
+   */
+  setHttpBackend(fn) {
+    this._httpBackend = typeof fn === 'function' ? fn : null;
   }
 
   callSoap(action, soapXml) {
+    if (typeof this._httpBackend === 'function') {
+      return Promise.resolve()
+        .then(() => this._httpBackend({
+          kind: 'siri',
+          url: `https://${this.hostname}${this.path}`,
+          options: {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'text/xml; charset=utf-8',
+              'SOAPAction': `http://tempuri.org/${action}`,
+              'User-Agent': 'MataroBus/2.4.0 (Android; com.geoactio.matarobus)'
+            }
+          },
+          body: soapXml
+        }))
+        .then((r) => {
+          if (!r || typeof r.bodyText !== 'string') throw new Error('SIRI proxy malformed response');
+          return r.bodyText;
+        });
+    }
     return new Promise((resolve, reject) => {
       const options = {
         hostname: this.hostname,

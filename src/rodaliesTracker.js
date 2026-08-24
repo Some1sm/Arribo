@@ -47,9 +47,22 @@ class RodaliesTracker extends BaseTracker {
     this.realtimeCache = new Map(); // stationId -> { timestamp, data }
     this.cacheTtlMs = 15000; // 15s TTL
     this.isInitialized = false;
+    this._fetchBackend = null;
+  }
+
+  /**
+   * Install an alternative upstream transport. fn(path) must resolve to
+   * { status, data } exactly like the default direct-HTTPS transport.
+   */
+  setFetchBackend(fn) {
+    this._fetchBackend = typeof fn === 'function' ? fn : null;
   }
 
   async fetchAmbApi(path) {
+    // Pluggable transport: main process proxies via setFetchBackend() (IPC).
+    if (typeof this._fetchBackend === 'function') {
+      return this._fetchBackend(path);
+    }
     return new Promise((resolve, reject) => {
       const options = {
         hostname: AMB_BASE_HOST,

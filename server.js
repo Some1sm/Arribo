@@ -81,6 +81,53 @@ ambStopRealtime.setFetchBackend(async (ambCode) => {
   } catch (_) { return []; }
 });
 
+// Centralize Sagalés upstream traffic in the worker as well: the tracker's
+// live feed transport is proxied over IPC (worker owns all provider calls).
+sagalesTracker.setFetchBackend(async ({ routeId, dir }) => {
+  try {
+    return await workerBridge.historyQuery('getSagalesFeed', { routeId, dir }, { timeoutMs: 8000 });
+  } catch (_) { return null; }
+});
+
+// Centralize AMB v2 traffic for ambTracker + rodaliesTracker: both share the
+// same upstream host, so a single RPC op fans out by client kind. The main
+// process never opens an HTTPS socket to api.ambmobilitat.cat.
+function installAmbApiProxy(tracker, client) {
+  tracker.setFetchBackend(async (path) => {
+    const res = await workerBridge.historyQuery('getAmbApi', { client, path }, { timeoutMs: 8000 });
+    if (!res || typeof res !== 'object' || !('status' in res)) {
+      throw new Error(`AMB API proxy returned malformed response for ${path}`);
+    }
+    return res;
+  });
+}
+installAmbApiProxy(ambTracker, 'amb');
+installAmbApiProxy(rodaliesTracker, 'rodalies');
+
+// Centralize corridorTracker (C-10) AMB realtime traffic in the worker too.
+corridorTracker.setFetchBackend(async ({ ambCode }) => {
+  try {
+    const times = await workerBridge.historyQuery('getCorridorAmbRealtime', { ambCode }, { timeoutMs: 8000 });
+    return Array.isArray(times) ? times : [];
+  } catch (_) { return []; }
+});
+
+// Generic upstream-HTTP proxy for client modules (SIRI SOAP, Moventis SAE,
+// Mou-te REST): raw fetches execute in the worker; the main process only ever
+// sees { status, bodyText } over IPC.
+const mataroSiriClient = require('./src/mataroSiriClient');
+const moventisClient = require('./src/moventisClient');
+const mouteClient = require('./src/mouteClient');
+[mataroSiriClient, moventisClient, mouteClient].forEach((client) => {
+  client.setHttpBackend(async (req) => {
+    const res = await workerBridge.historyQuery('proxyUpstreamHttp', req, { timeoutMs: 9000 });
+    if (!res || typeof res.status !== 'number' || typeof res.bodyText !== 'string') {
+      throw new Error(`Upstream proxy malformed response (${req && req.kind})`);
+    }
+    return res;
+  });
+});
+
 // Request logger middleware
 app.use('/api', (req, res, next) => {
   const time = new Date().toLocaleTimeString();
@@ -148,6 +195,13 @@ function standardizeVehicle(raw = {}) {
   const speed = Number.isFinite(Number(rawSpeed)) ? Number(rawSpeed) : 0;
   v.speedKmh = speed;
   v.speed = speed;
+
+  // Dual coordinate schema (AGENTS.md §7.5): vehicles must carry BOTH
+  // lat/lon AND latitude/longitude so every consumer convention works.
+  if (v.lat === undefined && Number.isFinite(Number(v.latitude))) v.lat = Number(v.latitude);
+  if (v.lon === undefined && Number.isFinite(Number(v.longitude))) v.lon = Number(v.longitude);
+  if (Number.isFinite(Number(v.lat))) v.latitude = Number(v.lat);
+  if (Number.isFinite(Number(v.lon))) v.longitude = Number(v.lon);
 
   if (!v.lastUpdate) {
     v.lastUpdate = v.recordedAt || new Date().toISOString();

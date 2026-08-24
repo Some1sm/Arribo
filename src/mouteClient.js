@@ -8,6 +8,15 @@ class MouTeClient {
     this._releaseMap = new Map(); // cacheKey -> release fn
     this.cacheTTL = 30 * 1000; // 30 seconds fresh cache
     this.staleTTL = 120 * 1000; // 2 minutes stale fallback
+    // Pluggable transport: server.js proxies via WorkerBridge in main process.
+    this._httpBackend = null;
+  }
+
+  /**
+   * Install alternative transport. fn(req) must resolve to { status, bodyText }.
+   */
+  setHttpBackend(fn) {
+    this._httpBackend = typeof fn === 'function' ? fn : null;
   }
 
   getAuthHeader() {
@@ -78,22 +87,37 @@ class MouTeClient {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
 
-    const res = await fetch(url, {
-      headers: {
-        'AT': at,
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/plain, */*'
-      },
-      signal: controller.signal
-    });
+    let text;
+    let statusText = 'OK';
+    if (typeof this._httpBackend === 'function') {
+      // Pluggable transport: server.js proxies upstream via WorkerBridge IPC.
+      const r = await this._httpBackend({ kind: 'moute', url, options: {}, timeoutMs: 5000 });
+      clearTimeout(timeoutId);
+      if (!r || typeof r.status !== 'number' || typeof r.bodyText !== 'string') {
+        throw new Error(`Mou-te proxy malformed response for ${endpoint}`);
+      }
+      if (r.status < 200 || r.status >= 300) {
+        throw new Error(`Mou-te API HTTP ${r.status}: ${r.statusText || statusText}`);
+      }
+      text = r.bodyText;
+    } else {
+      const res = await fetch(url, {
+        headers: {
+          'AT': at,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'application/json, text/plain, */*'
+        },
+        signal: controller.signal
+      });
 
-    clearTimeout(timeoutId);
+      clearTimeout(timeoutId);
 
-    if (!res.ok) {
-      throw new Error(`Mou-te API HTTP ${res.status}: ${res.statusText}`);
+      if (!res.ok) {
+        throw new Error(`Mou-te API HTTP ${res.status}: ${res.statusText}`);
+      }
+      text = await res.text();
     }
 
-    const text = await res.text();
     if (!text || text.trim().length === 0) {
       return null;
     }

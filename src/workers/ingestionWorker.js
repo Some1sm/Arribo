@@ -10,6 +10,10 @@ const ingestionDaemon = require('../ingestionDaemon');
 const historyDb = require('../historyDb');
 const reportCacheService = require('../reportCacheService');
 const flightRecorder = require('../flightRecorder');
+const sagalesTracker = require('../sagalesTracker');
+const ambTracker = require('../ambTracker');
+const rodaliesTracker = require('../rodaliesTracker');
+const corridorTracker = require('../corridorTracker');
 const trackerRegistry = require('../core/TrackerRegistry');
 // Worker-side delay-memory gateway: sweeps run HERE, so observations must
 // persist directly (main process uses the workerBridge RPC gateway instead).
@@ -49,6 +53,29 @@ function sendToMaster(type, payload = {}) {
 }
 
 /**
+ * Worker-owned upstream HTTP fetch used by the proxyUpstreamHttp RPC op.
+ * Returns { status, bodyText } so the main process never opens sockets to
+ * upstream providers itself.
+ */
+async function proxyUpstreamFetch(args = {}) {
+  const url = String(args.url || '');
+  if (!/^https?:\/\//.test(url)) {
+    throw new Error('proxyUpstreamHttp: invalid url');
+  }
+  const options = (args.options && typeof args.options === 'object') ? { ...args.options } : {};
+  if (typeof args.body === 'string' && !options.body) options.body = args.body;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), Number(args.timeoutMs) || 6000);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    const bodyText = await res.text();
+    return { status: res.status, bodyText };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * Single dispatch table for DB RPC operations.
  * Used by BOTH the DB_REQUEST IPC handler and the flightRecorder history
  * gateway so the two paths can never drift apart.
@@ -70,6 +97,24 @@ async function executeDbOperation(op, args = {}) {
     case 'getAmbStopRealtimes':
       // Central AMB v2 access point: the worker owns all upstream calls.
       return ambStopRealtime.fetchRealtime(String(args.ambCode || ''));
+
+    case 'getSagalesFeed':
+      // Central Sagalés access point: the worker owns all upstream calls.
+      return sagalesTracker.getSagalesFeed(String(args.routeId || ''), args.dir === '1' ? '1' : '0');
+
+    case 'getAmbApi': {
+      // Central AMB v2 access point for amb + rodalies trackers.
+      const t = String(args.client) === 'rodalies' ? rodaliesTracker : ambTracker;
+      return t.fetchAmbApi(String(args.path || '/'));
+    }
+
+    case 'getCorridorAmbRealtime':
+      // Central C-10/AMB realtime access point: worker owns upstream calls.
+      return corridorTracker.fetchAmbRealtime(String(args.ambCode || ''));
+
+    case 'proxyUpstreamHttp':
+      // Generic worker-owned upstream HTTP for main-process client backends.
+      return proxyUpstreamFetch(args);
 
     case 'getJournalismReport':
       return historyDb.getJournalismReport(args.hours, args.allLinesCatalog);

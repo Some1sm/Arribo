@@ -69,9 +69,24 @@ class AmbTracker extends BaseTracker {
     this.lineDocumentsMap = new Map();
     this.disruptionsCache = { timestamp: 0, data: [] };
     this.vehiclesCache = { timestamp: 0, data: [] };
+    this._fetchBackend = null;
+  }
+
+  /**
+   * Install an alternative upstream transport. fn(path) must resolve to
+   * { status, data } exactly like the default direct-HTTPS transport.
+   */
+  setFetchBackend(fn) {
+    this._fetchBackend = typeof fn === 'function' ? fn : null;
   }
 
   async fetchAmbApi(path) {
+    // Pluggable transport: main process installs a WorkerBridge-backed
+    // backend via setFetchBackend() so the web process never calls the AMB
+    // API directly. Default (worker / local tooling) is direct HTTPS.
+    if (typeof this._fetchBackend === 'function') {
+      return this._fetchBackend(path);
+    }
     return new Promise((resolve, reject) => {
       const options = {
         hostname: AMB_BASE_HOST,

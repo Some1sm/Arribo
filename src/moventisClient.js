@@ -20,10 +20,19 @@ class MoventisClient {
     this.trayectosCache = new Map();
     this.paradasCache = new Map();
     this.rtCache = new Map();
+    // Pluggable transport: server.js proxies via WorkerBridge in main process.
+    this._httpBackend = null;
 
     if (!fs.existsSync(this.cacheDir)) {
       fs.mkdirSync(this.cacheDir, { recursive: true });
     }
+  }
+
+  /**
+   * Install alternative transport. fn(req) must resolve to { status, bodyText }.
+   */
+  setHttpBackend(fn) {
+    this._httpBackend = typeof fn === 'function' ? fn : null;
   }
 
   getTodayDateStr() {
@@ -35,6 +44,15 @@ class MoventisClient {
   }
 
   async fetchWithTimeout(url, timeoutMs = 8000) {
+    // Pluggable transport: server.js proxies via WorkerBridge in main process.
+    if (typeof this._httpBackend === 'function') {
+      const r = await this._httpBackend({ kind: 'moventis', url, options: {}, timeoutMs });
+      if (!r || typeof r.status !== 'number' || typeof r.bodyText !== 'string') {
+        throw new Error(`Moventis proxy malformed response for ${url}`);
+      }
+      if (r.status < 200 || r.status >= 300) throw new Error(`HTTP ${r.status} for ${url}`);
+      return JSON.parse(r.bodyText);
+    }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
