@@ -114,10 +114,13 @@ class DelayMemory {
         const schedObsMs = Number(o.scheduledMs);
         const actualObsMs = Number(o.actualMs);
         if (!Number.isFinite(schedHereMs) || !Number.isFinite(schedObsMs) || !Number.isFinite(actualObsMs)) continue;
-        // The bus must not have passed THIS stop yet per schedule
-        if (schedHereMs < schedObsMs) continue;
+        // Works in BOTH directions: observation may come from a downstream
+        // stop (adjust earlier stops on the same trip) or upstream (propagate
+        // forward). Only requirement: this stop's adjusted arrival must still
+        // be in the future — otherwise the bus already passed and the stale
+        // scheduled entry ages out through normal past-time filtering.
         const estArrivalMs = actualObsMs + (schedHereMs - schedObsMs);
-        if (estArrivalMs < now - 5 * 60000 || estArrivalMs > now + 6 * 3600000) continue;
+        if (estArrivalMs < now - 90 * 1000 || estArrivalMs > now + 6 * 3600000) continue;
         const delayMin = Math.round((estArrivalMs - schedHereMs) / 60000);
         if (Math.abs(delayMin) > 180) continue;
 
@@ -132,11 +135,13 @@ class DelayMemory {
         entry.delayMinutes = delayMin;
         entry.delayMins = delayMin;
         entry.scheduledTime = entry.scheduledTime || clock || entry.departureTime;
-        entry.delayStatus = delayMin >= 2 ? 'delayed' : 'on_time';
+        entry.delayStatus = Math.abs(delayMin) >= 2 ? 'delayed' : 'on_time';
         entry.delayBadgeText = delayMin >= 2
           ? `${opts.badgeKnown || '⏱ Retard conegut'} · +${delayMin} min`
-          : `${opts.badgeKnown || '⏱ Retard conegut'} · A l'hora`;
-        entry.comparisonText = `${opts.badgeKnown || '⏱ Retard conegut'} observat a ${o.stopName || o.stopId}${delayMin >= 2 ? ` (+${delayMin} min)` : ''}, propagat amb l'horari oficial`;
+          : delayMin <= -2
+            ? `${opts.badgeKnown || '⏱ Retard conegut'} · ${delayMin} min (avança)`
+            : `${opts.badgeKnown || '⏱ Retard conegut'} · A l'hora`;
+        entry.comparisonText = `⏱ Desviament observat en temps real a ${o.stopName || o.stopId} (${delayMin >= 0 ? '+' : ''}${delayMin} min), aplicat amb l'horari oficial`;
         entry.formattedStatus = diffMin <= 0 ? 'Imminent' : `${diffMin} min`;
       }
       departures.sort((a, b) => (a.minutesAway ?? Infinity) - (b.minutesAway ?? Infinity));
