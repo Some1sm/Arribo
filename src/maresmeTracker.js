@@ -1144,6 +1144,36 @@ class MaresmeTracker extends BaseTracker {
     return true;
   }
 
+  /**
+   * Background sweep: for every Maresme stop whose coordinates resolve to an
+   * AMB catalog code (memoised), request its board so AMB-tracked arrivals
+   * get RECORDED into delay memory even with zero user traffic.
+   * @returns {number} stops swept
+   */
+  async sweepAmbObservations() {
+    try {
+      if (!this.isLoaded) this.loadData();
+      let n = 0;
+      for (const lineConfig of (this.lines || [])) {
+        if (!lineConfig?.directions) continue;
+        for (const dirObj of lineConfig.directions) {
+          const dir = String(dirObj.dirId || '0');
+          let details;
+          try { details = await this.getLineDetails(lineConfig.id, dir); } catch (_) { continue; }
+          const stops = details?.stops || [];
+          for (const s of stops) {
+            if (!Number.isFinite(s.lat)) continue;
+            // resolveAmbCode is memoised per coordinate — cheap after first pass
+            const amb = await ambStopRealtime.resolveAmbCode(s.lat, s.lon ?? s.lng);
+            if (!amb) continue;
+            try { await this.getStopDepartures(String(s.id), lineConfig.id, dir); n++; } catch (_) {}
+          }
+        }
+      }
+      return n;
+    } catch (_) { return 0; }
+  }
+
   async getStopDepartures(stopId, lineId = null, direction = '0', lineDetails = null) {
     const board = await this.getStopDeparturesBase(stopId, lineId, direction, lineDetails);
     return this.mergeAmbRealtimeIntoBoard(board, lineId, direction, stopId);

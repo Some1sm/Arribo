@@ -146,6 +146,16 @@ class IngestionDaemon {
     // 12. Schedule Periodic Journalism Report Generation (every 30 minutes, keeping max 2 reports on storage)
     this.startupTimeouts.push(setTimeout(() => this.generateJournalismReport(), 3000));
     this.journalismReportTimer = setInterval(() => this.generateJournalismReport(), 30 * 60 * 1000);
+
+    // Delay-memory sweep: actively record realtime bus observations at
+    // AMB-covered stops so boards beyond the realtime stretch still show
+    // known delays — independent of user traffic.
+    this.ambObservationSweepTimer = setInterval(async () => {
+      try {
+        await corridorTracker.sweepAmbObservations();
+        await maresmeTracker.sweepAmbObservations();
+      } catch (_) { /* best-effort */ }
+    }, 2 * 60 * 1000);
   }
 
   stop() {
@@ -166,6 +176,7 @@ class IngestionDaemon {
     if (this.pruneTimer) clearInterval(this.pruneTimer);
     if (this.dailySnapshotTimer) clearInterval(this.dailySnapshotTimer);
     if (this.journalismReportTimer) clearInterval(this.journalismReportTimer);
+    if (this.ambObservationSweepTimer) clearInterval(this.ambObservationSweepTimer);
     console.log('[IngestionDaemon] Stopped ingestion daemon.');
   }
 

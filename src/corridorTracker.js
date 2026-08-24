@@ -1142,6 +1142,27 @@ class CorridorTracker extends BaseTracker {
     return departures;
   }
 
+  /**
+   * Background sweep: requests boards for every AMB-realtime-covered stop so
+   * bus observations get RECORDED even when no user is viewing the line.
+   * Without this, delay memory only fills up when someone happens to open a
+   * covered stop's board while a bus approaches. @returns {number} stops swept
+   */
+  async sweepAmbObservations() {
+    try {
+      let n = 0;
+      for (const [idx, list] of [this.stopsDir0, this.stopsDir1].entries()) {
+        const dir = idx === 1 ? '1' : '0';
+        for (const stop of list) {
+          if (!this.ambCodeForStop(stop)) continue;
+          await this.getStopDepartures(stop.mouteStopId, dir);
+          n++;
+        }
+      }
+      return n;
+    } catch (_) { return 0; }
+  }
+
   async getStopDepartures(stopId, direction = '1', targetDate = null) {
     let isDir1 = direction === '1';
     let stopsList = isDir1 ? this.stopsDir1 : this.stopsDir0;

@@ -11,6 +11,10 @@ const historyDb = require('../historyDb');
 const reportCacheService = require('../reportCacheService');
 const flightRecorder = require('../flightRecorder');
 const trackerRegistry = require('../core/TrackerRegistry');
+// Worker-side delay-memory gateway: sweeps run HERE, so observations must
+// persist directly (main process uses the workerBridge RPC gateway instead).
+const delayMemory = require('../core/realtime/delayMemory');
+delayMemory.setGateway((op, args) => Promise.resolve(executeDbOperation(op, args)));
 
 let parentPort = null;
 try {
