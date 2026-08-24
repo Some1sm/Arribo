@@ -899,6 +899,21 @@ class CorridorTracker extends BaseTracker {
       if (c10Times.length === 0) return departures;
 
       const now = Date.now();
+      // Candidate pool: existing board entries the realtime buses may correspond
+      // to. A realtime-tracked bus IS one of the scheduled trips (possibly
+      // delayed), so each AMB entry REPLACES its nearest scheduled entry —
+      // never appends a duplicate next to it. C-10 headways are 45-90 min,
+      // so nearest-match within 40 min is unambiguous; beyond that, append.
+      const pool = departures.filter(d =>
+        d.isToday !== false &&
+        Number.isFinite(d.minutesAway) &&
+        !/AMB/.test(d.delayBadgeText || '') &&
+        d.departureTime !== '--:--'
+      );
+      const matched = new Set();
+
+      // Process realtime entries in chronological order for stable matching
+      c10Times.sort((a, b) => Number(a.time) - Number(b.time));
       for (const t of c10Times) {
         const arrMs = Number(t.time) > 1e11 ? Number(t.time) : now + Number(t.arrivalTime || 0) * 1000;
         if (!Number.isFinite(arrMs) || arrMs < now - 5 * 60000) continue;
@@ -911,15 +926,24 @@ class CorridorTracker extends BaseTracker {
         const destIsMataro = /matar/i.test(dest);
         if (isDir1 !== destIsMataro) continue;
 
-        // Replace a scheduled entry within ±4 min; else append
-        const existing = departures.find(d => d.isToday !== false && Number.isFinite(d.minutesAway) && Math.abs(d.minutesAway - diffMin) <= 4);
-        if (existing) {
+        // Nearest unmatched candidate (any distance up to 40 min)
+        let best = null;
+        for (const cand of pool) {
+          if (matched.has(cand)) continue;
+          const d = Math.abs((cand.minutesAway || 0) - diffMin);
+          if (d <= 40 && (!best || d < best.d)) best = { cand, d };
+        }
+
+        if (best) {
+          matched.add(best.cand);
+          const existing = best.cand;
+          const schedRef = existing.scheduledTime || existing.departureTime;
           existing.expectedIso = new Date(arrMs).toISOString();
           existing.departureTime = clockStr;
           existing.minutesAway = diffMin;
           existing.isRealTime = true;
           existing.delayBadgeText = '🔴 Temps real (AMB)';
-          existing.comparisonText = `🔴 Temps real AMB (programat: ${existing.departureTime === clockStr ? existing.scheduledTime || existing.departureTime : existing.departureTime})`;
+          existing.comparisonText = `🔴 Temps real AMB (horari teòric: ${schedRef})`;
           existing.formattedStatus = diffMin === 0 ? 'Imminent' : `${diffMin} min`;
         } else {
           departures.push({
