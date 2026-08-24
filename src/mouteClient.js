@@ -13,6 +13,7 @@ class MouTeClient {
     // Circuit breaker state (protects upstream from retry storms)
     this._failStreak = 0;
     this._circuitOpenUntil = 0;
+    this._halfOpen = false;
     this._breakerThreshold = 3;      // consecutive failures before opening
     this._breakerCooldownMs = 120000; // 2 min full backoff, then half-open
   }
@@ -84,9 +85,15 @@ class MouTeClient {
         return entry.data;
       }
       // Trip the breaker after consecutive failures to stop retry storms.
+      // In-flight stragglers that passed the pre-check before the circuit
+      // opened must NOT re-increment the streak or re-log (they'd spam).
+      if (Date.now() < this._circuitOpenUntil) {
+        throw err;
+      }
       this._failStreak = (this._failStreak || 0) + 1;
       if (this._failStreak >= this._breakerThreshold) {
         this._circuitOpenUntil = Date.now() + this._breakerCooldownMs;
+        this._halfOpen = false;
         console.warn(`[MouTeClient] ⚠️ ${this._failStreak}x consecutive failures — circuit OPEN for ${this._breakerCooldownMs / 1000}s`);
       }
       throw err;
