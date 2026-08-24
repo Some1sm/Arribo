@@ -4,6 +4,8 @@ class MouTeClient {
   constructor() {
     this.baseUrl = 'https://mou-te.gencat.cat/MouteAPI/rest/';
     this.cache = new Map(); // key -> { data, timestamp }
+    this._inflight = new Map();  // cacheKey -> gate Promise (single-flight)
+    this._releaseMap = new Map(); // cacheKey -> release fn
     this.cacheTTL = 30 * 1000; // 30 seconds fresh cache
     this.staleTTL = 120 * 1000; // 2 minutes stale fallback
   }
@@ -25,45 +27,33 @@ class MouTeClient {
       }
     }
 
-    const at = this.getAuthHeader();
-    const url = `${this.baseUrl}${endpoint}`;
+    // Single-flight: N concurrent callers of the same endpoint share ONE
+    // upstream request. The LEADER performs the fetch; FOLLOWERS wait for
+    // the leader to settle, then serve the freshly-cached result.
+    let leaderGate = null;
+    let isLeader = false;
+    if (useCache) {
+      leaderGate = this._inflight.get(cacheKey);
+      if (!leaderGate) {
+        isLeader = true;
+        let releaseFn;
+        leaderGate = new Promise((res) => { releaseFn = res; });
+        this._inflight.set(cacheKey, leaderGate);
+        this._releaseMap.set(cacheKey, releaseFn);
+      }
+    }
+
+    if (!isLeader && useCache && leaderGate) {
+      await leaderGate.catch(() => {});
+      const entry = this.cache.get(cacheKey);
+      if (entry && Date.now() - entry.timestamp < this.staleTTL) {
+        return entry.data;
+      }
+      throw new Error(`Mou-te request failed (single-flight follower): ${endpoint}`);
+    }
 
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
-
-      const res = await fetch(url, {
-        headers: {
-          'AT': at,
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'application/json, text/plain, */*'
-        },
-        signal: controller.signal
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!res.ok) {
-        throw new Error(`Mou-te API HTTP ${res.status}: ${res.statusText}`);
-      }
-
-      const text = await res.text();
-      if (!text || text.trim().length === 0) {
-        return null;
-      }
-
-      const data = JSON.parse(text);
-      if (useCache) {
-        this.cache.set(cacheKey, { data, timestamp: now });
-        // Opportunistic sweep: evict entries past staleTTL once the map grows large
-        if (this.cache.size > 2000) {
-          const cutoff = Date.now() - this.staleTTL;
-          for (const [key, e] of this.cache) {
-            if (e.timestamp < cutoff) this.cache.delete(key);
-          }
-        }
-      }
-      return data;
+      return await this._fetchAndCache(endpoint, cacheKey, now);
     } catch (err) {
       // Serve cached entry only while it is within the stale window (staleTTL)
       const entry = this.cache.get(cacheKey);
@@ -71,7 +61,53 @@ class MouTeClient {
         return entry.data;
       }
       throw err;
+    } finally {
+      if (useCache && isLeader) {
+        const releaseFn = this._releaseMap?.get(cacheKey);
+        this._inflight.delete(cacheKey);
+        this._releaseMap?.delete(cacheKey);
+        releaseFn?.();
+      }
     }
+  }
+
+  async _fetchAndCache(endpoint, cacheKey, startedAt) {
+    const at = this.getAuthHeader();
+    const url = `${this.baseUrl}${endpoint}`;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+
+    const res = await fetch(url, {
+      headers: {
+        'AT': at,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*'
+      },
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      throw new Error(`Mou-te API HTTP ${res.status}: ${res.statusText}`);
+    }
+
+    const text = await res.text();
+    if (!text || text.trim().length === 0) {
+      return null;
+    }
+
+    const data = JSON.parse(text);
+    this.cache.set(cacheKey, { data, timestamp: startedAt });
+    // Opportunistic sweep: evict entries past staleTTL once the map grows large
+    if (this.cache.size > 2000) {
+      const cutoff = Date.now() - this.staleTTL;
+      for (const [key, e] of this.cache) {
+        if (e.timestamp < cutoff) this.cache.delete(key);
+      }
+    }
+    return data;
   }
 
   async getNextDepartures(stopId, useRealTime = true, language = 'ca_ES') {

@@ -189,18 +189,30 @@ class MoventisClient {
       return cached.data;
     }
 
-    try {
-      const url = `${this.baseUrl}/api/json/GetTiemposParada/ca/${stopId}/${moventisLineId}/0`;
-      const data = await this.fetchWithTimeout(url, 5000);
-      if (Array.isArray(data)) {
-        this.rtCache.set(cacheKey, { ts: Date.now(), data });
-        return data;
-      }
-    } catch (e) {
-      // Fallback
-    }
+    // Single-flight: concurrent callers share ONE upstream request
+    this._rtInflight = this._rtInflight || new Map();
+    const inflight = this._rtInflight.get(cacheKey);
+    if (inflight) return inflight;
 
-    return [];
+    const job = (async () => {
+      try {
+        const url = `${this.baseUrl}/api/json/GetTiemposParada/ca/${stopId}/${moventisLineId}/0`;
+        const data = await this.fetchWithTimeout(url, 5000);
+        if (Array.isArray(data)) {
+          this.rtCache.set(cacheKey, { ts: Date.now(), data });
+          return data;
+        }
+      } catch (e) {
+        // Fallback: serve last known data if fresh enough
+        const stale = this.rtCache.get(cacheKey);
+        if (stale && Date.now() - stale.ts < 60000) return stale.data;
+      } finally {
+        this._rtInflight.delete(cacheKey);
+      }
+      return [];
+    })();
+    this._rtInflight.set(cacheKey, job);
+    return job;
   }
 
   parseRealtimeMinutes(minutosStr) {

@@ -71,6 +71,15 @@ flightRecorder.setHistoryGateway((op, args) => workerBridge.historyQuery(op, arg
 // SQLite; see src/core/realtime/delayMemory.js). Fire-and-forget writes.
 const delayMemory = require('./src/core/realtime/delayMemory');
 delayMemory.setGateway((op, args) => workerBridge.historyQuery(op, args, { timeoutMs: op === 'saveAmbObservations' ? 5000 : 8000 }));
+// Centralize AMB v2 traffic in the worker: the web process NEVER calls the
+// AMB API directly — it asks the worker (whose sweeps keep results warm).
+const ambStopRealtime = require('./src/core/realtime/ambStopRealtime');
+ambStopRealtime.setFetchBackend(async (ambCode) => {
+  try {
+    const res = await workerBridge.historyQuery('getAmbStopRealtimes', { ambCode }, { timeoutMs: 8000 });
+    return Array.isArray(res) ? res : [];
+  } catch (_) { return []; }
+});
 
 // Request logger middleware
 app.use('/api', (req, res, next) => {

@@ -15,6 +15,8 @@ const trackerRegistry = require('../core/TrackerRegistry');
 // persist directly (main process uses the workerBridge RPC gateway instead).
 const delayMemory = require('../core/realtime/delayMemory');
 delayMemory.setGateway((op, args) => Promise.resolve(executeDbOperation(op, args)));
+// Worker fetches AMB upstream directly (default). Main process routes here via IPC.
+delayMemory.setGateway((op, args) => Promise.resolve(executeDbOperation(op, args)));
 
 let parentPort = null;
 try {
@@ -64,6 +66,10 @@ async function executeDbOperation(op, args = {}) {
 
     case 'getRecentAmbObservations':
       return historyDb.getRecentAmbObservations(args);
+
+    case 'getAmbStopRealtimes':
+      // Central AMB v2 access point: the worker owns all upstream calls.
+      return ambStopRealtime.fetchRealtime(String(args.ambCode || ''));
 
     case 'getJournalismReport':
       return historyDb.getJournalismReport(args.hours, args.allLinesCatalog);

@@ -38,6 +38,19 @@ class AmbStopRealtimeService {
     this._catalogPromise = null;
     this._codeCache = new Map();   // "lat,lon" -> { codAMB, dist } | null
     this._rtCache = new Map();     // codAMB -> { timestamp, times }
+    this._fetchBackend = null;     // (ambCode) => Promise<times>; routes upstream calls to the worker
+    this._inflight = new Map();    // ambCode -> Promise<times> (single-flight dedupe)
+  }
+
+  /**
+   * Route ALL upstream realtime fetches through the given executor.
+   * The main process installs one that asks the worker over IPC — so the
+   * worker is the ONLY caller of the AMB API, and its continuous sweep
+   * keeps results warm. Leave unset (worker process / tests) for direct
+   * upstream access.
+   */
+  setFetchBackend(fn) {
+    this._fetchBackend = typeof fn === 'function' ? fn : null;
   }
 
   _catalogPath() {
@@ -150,12 +163,33 @@ class AmbStopRealtimeService {
     return result;
   }
 
-  /** Realtime arrivals for an AMB stop code (30 s cache, fails soft → []). */
+  /**
+   * Realtime arrivals for an AMB stop code.
+   * - 30 s memory cache per code
+   * - single-flight: concurrent callers share one in-flight request
+   * - with a backend installed (main process), upstream is only ever hit by
+   *   the worker — which also sweeps these codes every 2 min, keeping them warm
+   */
   fetchRealtime(ambStopCode) {
     const now = Date.now();
     const cached = this._rtCache.get(ambStopCode);
     if (cached && now - cached.timestamp < REALTIME_TTL_MS) return Promise.resolve(cached.times);
-    return new Promise((resolve) => {
+
+    // Single-flight: join an already-running request for this code
+    const existing = this._inflight.get(ambStopCode);
+    if (existing) return existing;
+
+    const job = new Promise((resolve) => {
+      const finish = (times) => {
+        this._rtCache.set(ambStopCode, { timestamp: now, times });
+        resolve(times);
+      };
+      if (this._fetchBackend) {
+        Promise.resolve(this._fetchBackend(ambStopCode))
+          .then((times) => finish(Array.isArray(times) ? times : []))
+          .catch(() => finish([]));
+        return;
+      }
       const req = https.request({
         hostname: 'api.ambmobilitat.cat',
         path: `/v2/bus/stops/${encodeURIComponent(ambStopCode)}/realtimes`,
@@ -175,14 +209,15 @@ class AmbStopRealtimeService {
             const j = JSON.parse(data);
             times = (res.statusCode === 200 && Array.isArray(j?.times)) ? j.times : [];
           } catch (_) {}
-          this._rtCache.set(ambStopCode, { timestamp: now, times });
-          resolve(times);
+          finish(times);
         });
       });
-      req.on('timeout', () => { req.destroy(); resolve([]); });
-      req.on('error', () => resolve([]));
+      req.on('timeout', () => { req.destroy(); finish([]); });
+      req.on('error', () => finish([]));
       req.end();
-    });
+    }).finally(() => { this._inflight.delete(ambStopCode); });
+    this._inflight.set(ambStopCode, job);
+    return job;
   }
 
   /**
