@@ -140,6 +140,18 @@ class CorridorTracker extends BaseTracker {
     this._fetchBackend = typeof fn === 'function' ? fn : null;
   }
 
+  /**
+   * Throttled warning: at most once per 60s regardless of how many stops
+   * hit a failed upstream (prevents log floods during outages).
+   */
+  _warnMouteThrottled(detail) {
+    const nowMs = Date.now();
+    if (!this._lastMouteWarn || nowMs - this._lastMouteWarn > 60000) {
+      this._lastMouteWarn = nowMs;
+      console.warn(`[CorridorTracker] Mou-te API transient issue (${detail}). Using GTFS schedule fallback. [throttled 60s]`);
+    }
+  }
+
 
   loadData() {
     try {
@@ -686,7 +698,7 @@ class CorridorTracker extends BaseTracker {
       const data = await mouteClient.getNextDepartures(stopId, true, 'ca_ES');
       allDepartures = this.parseDepartures(data, gtfsStopId, direction, stopId, stopSeq);
     } catch (err) {
-      console.warn(`[CorridorTracker] Mou-te API transient issue (${err.message}). Using GTFS schedule fallback.`);
+      this._warnMouteThrottled(err.message);
       allDepartures = this.parseDepartures(null, gtfsStopId, direction, stopId, stopSeq);
     }
 
@@ -1213,7 +1225,7 @@ class CorridorTracker extends BaseTracker {
       const data = await mouteClient.getNextDepartures(stopId, true, 'ca_ES');
       departures = this.parseDepartures(data, gtfsStopId, direction, stopId, seq);
     } catch (err) {
-      console.warn(`[CorridorTracker] Mou-te API transient issue for stop ${stopId} (${err.message}). Using GTFS schedule fallback.`);
+      this._warnMouteThrottled(`${stopId}: ${err.message}`);
       departures = this.parseDepartures(null, gtfsStopId, direction, stopId, seq);
     }
 
