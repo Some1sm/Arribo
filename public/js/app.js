@@ -124,8 +124,18 @@ class TransitApp {
 
       // 4. Initial Route or Landing View Routing
       if (this.activeLineId) {
-        this.showActiveLineView();
-        await this.refreshAllData(true);
+        // Validate the hash-resolved line actually exists — otherwise show a
+        // friendly 'not found' popup instead of an eternal loading screen.
+        const lineObj = this.availableLines.find(l => String(l.id) === String(this.activeLineId));
+        if (!lineObj) {
+          this.showLineNotFoundModal(this.activeLineId);
+          this.activeLineId = null;
+          this.showLandingView();
+          this.renderLandingLines();
+        } else {
+          this.showActiveLineView();
+          await this.refreshAllData(true);
+        }
       } else {
         this.showLandingView();
         this.renderLandingLines();
@@ -181,6 +191,36 @@ class TransitApp {
   // ==========================================
   // VIEW SWITCHING (LANDING HUB VS ACTIVE LINE)
   // ==========================================
+
+  /**
+   * Popup for a line ID that doesn't exist (bad URL hash). Offers a button
+   * back to the full line catalog.
+   */
+  showLineNotFoundModal(lineId) {
+    if (document.getElementById('line-not-found-overlay')) return;
+    const overlay = document.createElement('div');
+    overlay.id = 'line-not-found-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);';
+    const lang = (navigator.language || 'ca').startsWith('es') ? 'es' : 'ca';
+    const texts = lang === 'es'
+      ? { title: 'Línea no encontrada', body: `La línea «${lineId}» no existe o ya no está disponible.`, btn: 'Ver todas las líneas' }
+      : { title: 'Línia no trobada', body: `La línia «${lineId}» no existeix o ja no està disponible.`, btn: 'Veure totes les línies' };
+    overlay.innerHTML = `
+      <div role="dialog" aria-modal="true" style="max-width:420px;width:calc(100% - 40px);padding:28px;border-radius:16px;text-align:center;background:var(--bg-card, #1a1d24);border:1px solid var(--border-subtle, rgba(255,255,255,0.1));box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+        <div style="font-size:40px;margin-bottom:12px;">🚏</div>
+        <h2 style="margin:0 0 8px;font-size:20px;color:var(--text-primary, #fff);">${this.esc(texts.title)}</h2>
+        <p style="margin:0 0 20px;color:var(--text-secondary, #9aa0aa);font-size:14px;line-height:1.5;">${this.esc(texts.body)}</p>
+        <button id="line-not-found-back" style="padding:10px 22px;border:none;border-radius:10px;cursor:pointer;font-weight:600;font-size:14px;background:var(--accent, #3b82f6);color:#fff;">${texts.btn}</button>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#line-not-found-back').addEventListener('click', () => {
+      overlay.remove();
+      window.location.hash = '';
+      history.replaceState(null, '', window.location.pathname);
+      this.showLandingView();
+      this.renderLandingLines();
+    });
+  }
 
   showLandingView() {
     const landingView = document.getElementById('view-landing');

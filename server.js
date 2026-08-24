@@ -142,9 +142,39 @@ function sendInternalError(req, res, err, extra = {}) {
   res.status(500).json({ success: false, error: 'Internal server error', ...extra });
 }
 
+/**
+ * Route error handler: unknown-line/stop lookups surface as thrown "not
+ * found" errors from trackers (e.g. the catalonia fallback accepts any ID
+ * at resolution time). Answer 404 instead of leaking a 500.
+ */
+function handleRouteError(req, res, err) {
+  if (err && /not found/i.test(String(err.message))) {
+    return res.status(404).json({ success: false, error: 'Unknown line or stop' });
+  }
+  sendInternalError(req, res, err);
+}
+
 // Centralized polymorphic line resolution via TrackerRegistry (src/core/TrackerRegistry.js)
 function getTrackerForLine(lineId) {
   return trackerRegistry.getTrackerForLine(lineId);
+}
+
+/**
+ * Resolve a line to its tracker, answering 404 (not 500) for unknown IDs.
+ * Returns the resolution object or null when the response was already sent.
+ */
+function resolveTrackerOr404(res, lineId) {
+  try {
+    const resolution = getTrackerForLine(lineId);
+    if (!resolution || !resolution.tracker) {
+      res.status(404).json({ success: false, error: 'Unknown line' });
+      return null;
+    }
+    return resolution;
+  } catch (_) {
+    res.status(404).json({ success: false, error: 'Unknown line' });
+    return null;
+  }
 }
 
 function buildDefaultCalendarInfo(date = new Date()) {
@@ -402,7 +432,9 @@ app.get('/api/line/:lineId', async (req, res) => {
   const direction = req.query.direction || '0';
   const targetDate = req.query.date || null;
   try {
-    const { type, tracker } = getTrackerForLine(lineId);
+    const resolution = resolveTrackerOr404(res, lineId);
+    if (!resolution) return;
+    const { type, tracker } = resolution;
     if (type === 'c10') {
       const calInfo = corridorTracker.getServiceCalendarInfo(targetDate ? new Date(targetDate) : new Date());
       if (direction === 'both') {
@@ -490,7 +522,7 @@ app.get('/api/line/:lineId', async (req, res) => {
       res.json({ success: true, data });
     }
   } catch (err) {
-    sendInternalError(req, res, err);
+    handleRouteError(req, res, err);
   }
 });
 
@@ -501,7 +533,9 @@ app.get('/api/line/:lineId/target-eta', async (req, res) => {
   const stopId = req.query.stopId || null;
   const targetDate = req.query.date || null;
   try {
-    const { type, tracker } = getTrackerForLine(lineId);
+    const resolution = resolveTrackerOr404(res, lineId);
+    if (!resolution) return;
+    const { type, tracker } = resolution;
     if (type === 'c10') {
       const dir = direction === '0' ? '0' : '1';
       const data = await corridorTracker.getTargetStopETA(dir, stopId, targetDate);
@@ -511,7 +545,7 @@ app.get('/api/line/:lineId/target-eta', async (req, res) => {
       res.json({ success: true, data: harmonizeTargetEta(data, tracker, lineId, direction) });
     }
   } catch (err) {
-    sendInternalError(req, res, err);
+    handleRouteError(req, res, err);
   }
 });
 
@@ -520,7 +554,9 @@ app.get('/api/line/:lineId/vehicles', async (req, res) => {
   const { lineId } = req.params;
   const direction = req.query.direction || '0';
   try {
-    const { type, tracker, cleanCode, agency } = getTrackerForLine(lineId);
+    const resolution = resolveTrackerOr404(res, lineId);
+    if (!resolution) return;
+    const { type, tracker, cleanCode, agency } = resolution;
     let vehicles = flightRecorder.getLineVehicles(cleanCode || lineId);
     let details = null;
 
@@ -557,7 +593,9 @@ app.get('/api/line/:lineId/live', async (req, res) => {
   const { lineId } = req.params;
   const direction = req.query.direction || '0';
   try {
-    const { type, tracker } = getTrackerForLine(lineId);
+    const resolution = resolveTrackerOr404(res, lineId);
+    if (!resolution) return;
+    const { type, tracker } = resolution;
     if (type === 'c10') {
       const dir = direction === '0' ? '0' : '1';
       const data = await corridorTracker.getCorridorLiveTracking(dir);
@@ -567,7 +605,7 @@ app.get('/api/line/:lineId/live', async (req, res) => {
       res.json({ success: true, data });
     }
   } catch (err) {
-    sendInternalError(req, res, err);
+    handleRouteError(req, res, err);
   }
 });
 
@@ -577,7 +615,9 @@ app.get('/api/line/:lineId/stop/:stopId/departures', async (req, res) => {
   const direction = req.query.direction || '0';
   const targetDate = req.query.date || null;
   try {
-    const { type, tracker } = getTrackerForLine(lineId);
+    const resolution = resolveTrackerOr404(res, lineId);
+    if (!resolution) return;
+    const { type, tracker } = resolution;
     if (type === 'c10') {
       const dir = direction === '0' ? '0' : '1';
       const data = await corridorTracker.getStopDepartures(stopId, dir, targetDate);
@@ -587,7 +627,7 @@ app.get('/api/line/:lineId/stop/:stopId/departures', async (req, res) => {
       res.json({ success: true, data: harmonizeDeparturesEnvelope(data, tracker, lineId) });
     }
   } catch (err) {
-    sendInternalError(req, res, err);
+    handleRouteError(req, res, err);
   }
 });
 
@@ -604,7 +644,7 @@ app.get('/api/c10/target-eta', async (req, res) => {
     const data = await corridorTracker.getTargetStopETA(direction, stopId, targetDate);
     res.json({ success: true, data });
   } catch (err) {
-    sendInternalError(req, res, err);
+    handleRouteError(req, res, err);
   }
 });
 
@@ -620,7 +660,7 @@ app.get('/api/c10/stops', (req, res) => {
       stops
     });
   } catch (err) {
-    sendInternalError(req, res, err);
+    handleRouteError(req, res, err);
   }
 });
 
@@ -633,7 +673,7 @@ app.get('/api/c10/stop/:stopId/departures', async (req, res) => {
     const data = await corridorTracker.getStopDepartures(stopId, direction, targetDate);
     res.json({ success: true, data });
   } catch (err) {
-    sendInternalError(req, res, err);
+    handleRouteError(req, res, err);
   }
 });
 
@@ -644,7 +684,7 @@ app.get('/api/c10/live-corridor', async (req, res) => {
     const data = await corridorTracker.getCorridorLiveTracking(direction);
     res.json({ success: true, data });
   } catch (err) {
-    sendInternalError(req, res, err);
+    handleRouteError(req, res, err);
   }
 });
 
@@ -662,7 +702,7 @@ app.get('/api/mataro/line/:lineId', async (req, res) => {
     const data = await mataroTracker.getLineDetails(lineId, direction);
     res.json({ success: true, data });
   } catch (err) {
-    sendInternalError(req, res, err);
+    handleRouteError(req, res, err);
   }
 });
 
@@ -675,7 +715,7 @@ app.get('/api/mataro/target-eta', async (req, res) => {
     const data = await mataroTracker.getTargetStopETA(lineId, stopId, direction);
     res.json({ success: true, data });
   } catch (err) {
-    sendInternalError(req, res, err);
+    handleRouteError(req, res, err);
   }
 });
 
@@ -687,7 +727,7 @@ app.get('/api/mataro/stop/:stopId/departures', async (req, res) => {
     const data = await mataroTracker.getStopDepartures(stopId, lineId);
     res.json({ success: true, data });
   } catch (err) {
-    sendInternalError(req, res, err);
+    handleRouteError(req, res, err);
   }
 });
 
@@ -863,7 +903,7 @@ app.get('/api/vehicle/:vehicleId/trail', async (req, res) => {
       trail
     });
   } catch (err) {
-    sendInternalError(req, res, err);
+    handleRouteError(req, res, err);
   }
 });
 
@@ -881,7 +921,7 @@ app.get('/api/line/:lineId/stats', async (req, res) => {
       stats
     });
   } catch (err) {
-    sendInternalError(req, res, err);
+    handleRouteError(req, res, err);
   }
 });
 
@@ -938,7 +978,7 @@ async function handleJournalismReport(req, res) {
     }
     sendReportResponse(res, report);
   } catch (err) {
-    sendInternalError(req, res, err);
+    handleRouteError(req, res, err);
   }
 }
 
@@ -952,7 +992,7 @@ async function handleAnalyticsCsv(req, res) {
     res.setHeader('Content-Disposition', `attachment; filename="arribo_transit_delays_${Date.now()}.csv"`);
     res.send(csvData);
   } catch (err) {
-    sendInternalError(req, res, err);
+    handleRouteError(req, res, err);
   }
 }
 
@@ -981,7 +1021,7 @@ async function handleRankingReport(req, res) {
       agencyStats: report?.agencyStats || []
     });
   } catch (err) {
-    sendInternalError(req, res, err);
+    handleRouteError(req, res, err);
   }
 }
 
@@ -1016,7 +1056,7 @@ app.get('/api/routes/snapshots', (req, res) => {
       diff
     });
   } catch (err) {
-    sendInternalError(req, res, err);
+    handleRouteError(req, res, err);
   }
 });
 
@@ -1030,7 +1070,7 @@ app.get('/api/routes/snapshots/:date', (req, res) => {
     }
     res.json({ success: true, snapshot });
   } catch (err) {
-    sendInternalError(req, res, err);
+    handleRouteError(req, res, err);
   }
 });
 
@@ -1040,7 +1080,7 @@ app.get('/api/routes/diff', (req, res) => {
     const diff = routeCacheService.get3DayDiff();
     res.json({ success: true, diff });
   } catch (err) {
-    sendInternalError(req, res, err);
+    handleRouteError(req, res, err);
   }
 });
 
