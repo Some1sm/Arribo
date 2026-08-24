@@ -10,6 +10,11 @@ class MouTeClient {
     this.staleTTL = 120 * 1000; // 2 minutes stale fallback
     // Pluggable transport: server.js proxies via WorkerBridge in main process.
     this._httpBackend = null;
+    // Circuit breaker state (protects upstream from retry storms)
+    this._failStreak = 0;
+    this._circuitOpenUntil = 0;
+    this._breakerThreshold = 3;      // consecutive failures before opening
+    this._breakerCooldownMs = 120000; // 2 min full backoff, then half-open
   }
 
   /**
@@ -28,6 +33,13 @@ class MouTeClient {
   async fetchWithAuth(endpoint, useCache = true) {
     const cacheKey = endpoint;
     const now = Date.now();
+
+    // Circuit breaker: after repeated upstream failures, fail fast WITHOUT
+    // touching the network for BREAKER_COOLDOWN_MS so we never flood the
+    // provider while it is unhealthy (e.g. 502 storms).
+    if (now < this._circuitOpenUntil) {
+      throw new Error(`Mou-te circuit open (cooldown until ${new Date(this._circuitOpenUntil).toISOString()})`);
+    }
 
     if (useCache && this.cache.has(cacheKey)) {
       const entry = this.cache.get(cacheKey);
@@ -62,12 +74,20 @@ class MouTeClient {
     }
 
     try {
-      return await this._fetchAndCache(endpoint, cacheKey, now);
+      const result = await this._fetchAndCache(endpoint, cacheKey, now);
+      this._failStreak = 0; // upstream healthy again
+      return result;
     } catch (err) {
       // Serve cached entry only while it is within the stale window (staleTTL)
       const entry = this.cache.get(cacheKey);
       if (entry && Date.now() - entry.timestamp < this.staleTTL) {
         return entry.data;
+      }
+      // Trip the breaker after consecutive failures to stop retry storms.
+      this._failStreak = (this._failStreak || 0) + 1;
+      if (this._failStreak >= this._breakerThreshold) {
+        this._circuitOpenUntil = Date.now() + this._breakerCooldownMs;
+        console.warn(`[MouTeClient] ⚠️ ${this._failStreak}x consecutive failures — circuit OPEN for ${this._breakerCooldownMs / 1000}s`);
       }
       throw err;
     } finally {
