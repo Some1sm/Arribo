@@ -46,7 +46,19 @@ class MoventisClient {
   async fetchWithTimeout(url, timeoutMs = 8000) {
     // Pluggable transport: server.js proxies via WorkerBridge in main process.
     if (typeof this._httpBackend === 'function') {
-      const r = await this._httpBackend({ kind: 'moventis', url, options: {}, timeoutMs });
+      // UA + Accept headers MUST be forwarded (worker has no client state).
+      const r = await this._httpBackend({
+        kind: 'moventis',
+        url,
+        options: {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept': 'application/json, text/javascript, */*; q=0.01',
+            'X-Requested-With': 'XMLHttpRequest'
+          }
+        },
+        timeoutMs
+      });
       if (!r || typeof r.status !== 'number' || typeof r.bodyText !== 'string') {
         throw new Error(`Moventis proxy malformed response for ${url}`);
       }

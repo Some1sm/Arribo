@@ -91,7 +91,19 @@ class MouTeClient {
     let statusText = 'OK';
     if (typeof this._httpBackend === 'function') {
       // Pluggable transport: server.js proxies upstream via WorkerBridge IPC.
-      const r = await this._httpBackend({ kind: 'moute', url, options: {}, timeoutMs: 5000 });
+      // Auth + UA headers MUST be forwarded (worker has no client state).
+      const r = await this._httpBackend({
+        kind: 'moute',
+        url,
+        options: {
+          headers: {
+            'AT': at,
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*'
+          }
+        },
+        timeoutMs: 5000
+      });
       clearTimeout(timeoutId);
       if (!r || typeof r.status !== 'number' || typeof r.bodyText !== 'string') {
         throw new Error(`Mou-te proxy malformed response for ${endpoint}`);
