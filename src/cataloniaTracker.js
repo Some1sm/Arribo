@@ -456,7 +456,13 @@ class CataloniaTracker extends BaseTracker {
         }
       });
     } catch(e) {
-      console.warn(`[CataloniaTracker] getStopDepartures Mou-te fetch failed:`, e.message);
+      // Rate-limit this log: upstream outages fire many calls/sec and would
+      // flood logs. Re-warn at most once per 60s.
+      const nowMs = Date.now();
+      if (!this._lastMouteWarn || nowMs - this._lastMouteWarn > 60000) {
+        this._lastMouteWarn = nowMs;
+        console.warn(`[CataloniaTracker] getStopDepartures Mou-te fetch failed (throttled log):`, e.message);
+      }
     }
 
     // 2. Load authoritative GTFS timetable to provide full daily schedule for the stop
@@ -612,7 +618,11 @@ class CataloniaTracker extends BaseTracker {
       });
       liveArrivals = dedupedArrivals;
     } catch(e) {
-      console.warn(`[CataloniaTracker] Mou-te live departure fetch for stop ${targetStopId} failed:`, e.message);
+      const nowMs = Date.now();
+      if (!this._lastMouteWarn || nowMs - this._lastMouteWarn > 60000) {
+        this._lastMouteWarn = nowMs;
+        console.warn(`[CataloniaTracker] Mou-te live departure fetch failed (throttled log):`, e.message);
+      }
     }
 
     // 2. Load authoritative GTFS timetable departures for the full daily schedule
