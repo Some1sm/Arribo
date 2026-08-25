@@ -25,6 +25,11 @@ class FlightRecorder {
     // Maximum cumulative dead-reckoning window per vehicle. Matches the documented
     // "90-second client-side retention" behaviour and bounds positional drift.
     this.maxExtrapolationMs = 90000;
+    // Hard ceiling on API-serving staleness, aligned with the worker's own
+    // extrapolateStaleVehicles() 5-minute expiry. Guarantees that even with a
+    // generous per-operator serviceableMs, a dead entry can never linger past
+    // this window in the main process.
+    this.staleEvictionCeilingMs = 5 * 60 * 1000;
     this.init();
   }
 
@@ -98,6 +103,14 @@ class FlightRecorder {
         // their position is already recomputed from the timetable every poll,
         // and extrapolation would drag them off the drawn route.
         isEstimated: Boolean(snap.isEstimated || snap.isDeadReckoned),
+        // Per-operator re-ingestion budget (ms). Operators whose full fleet
+        // sweep takes longer than maxExtrapolationMs (e.g. AMB: 7 ticks × 12s
+        // = ~84s) declare a larger serviceability window so one flaky upstream
+        // tick cannot flicker healthy buses off public APIs. Always capped by
+        // staleEvictionCeilingMs in _isServiceable().
+        serviceableMs: Number.isFinite(Number(snap.serviceableMs)) && Number(snap.serviceableMs) > 0
+          ? Number(snap.serviceableMs)
+          : undefined,
         status: 'active',
         lastSeen: now,
         lastPersistedAt: 0,
@@ -113,6 +126,10 @@ class FlightRecorder {
       if (snap.destination) v.destination = snap.destination;
       v.isRealTime = snap.isRealTime !== false;
       v.isEstimated = Boolean(snap.isEstimated || snap.isDeadReckoned);
+      if (snap.serviceableMs !== undefined) {
+        v.serviceableMs = Number.isFinite(Number(snap.serviceableMs)) && Number(snap.serviceableMs) > 0
+          ? Number(snap.serviceableMs) : undefined;
+      }
       v.status = 'active';
       // Fresh real GPS fix resets the dead-reckoning budget so vehicles that
       // regain telemetry can extrapolate again during the next cellular shadow.
@@ -200,6 +217,29 @@ class FlightRecorder {
     }
   }
 
+  /**
+   * Serviceability gate: a vehicle whose last GPS/schedule fix is older than
+   * maxExtrapolationMs (§7.6, 90s) must never reach API consumers. This guards
+   * the MAIN process, where auto-extrapolation is disabled (server.js) and a
+   * worker stall/restart gap could otherwise freeze night-service ghosts
+   * (e.g. an N80 bus from 05:00 still served at 15:50). Healthy vehicles are
+   * re-ingested every ~25s batch cycle, so they always stay well inside the
+   * window; only genuinely dead entries fall out.
+   */
+  _isServiceable(v) {
+    if (!v) return false;
+    const lastSeen = Number(v.lastSeen);
+    if (!Number.isFinite(lastSeen)) return false;
+    // Cadence-aware threshold: default to the §7.6 90s window, but honour a
+    // declared per-vehicle serviceableMs for slow-sweep operators. Never exceed
+    // the hard eviction ceiling so stale ghosts always die within 5 minutes.
+    const threshold = Math.min(
+      Math.max(this.maxExtrapolationMs, Number(v.serviceableMs) || 0),
+      this.staleEvictionCeilingMs
+    );
+    return (Date.now() - lastSeen) <= threshold;
+  }
+
   getLineVehicles(lineCode) {
     if (!lineCode) return [];
     const codeUpper = String(lineCode).toUpperCase().trim();
@@ -209,13 +249,13 @@ class FlightRecorder {
     const result = [];
     for (const vId of set) {
       const v = this.vehicles.get(vId);
-      if (v) result.push(v);
+      if (v && this._isServiceable(v)) result.push(v);
     }
     return result;
   }
 
   getAllVehicles() {
-    return Array.from(this.vehicles.values());
+    return Array.from(this.vehicles.values()).filter(v => this._isServiceable(v));
   }
 
   async getVehicleTrail(vehicleId) {
@@ -301,6 +341,11 @@ class FlightRecorder {
         delayMins: Number(v.delayMins || 0),
         destination: v.destination || '',
         isRealTime: v.isRealTime !== false,
+        // Preserve the honest "estimated" label across IPC: schedule-synthesized
+        // or dead-reckoned buses must keep their amber badge in the main process
+        // instead of silently masquerading as real-time telemetry.
+        isEstimated: Boolean(v.isEstimated || v.isDeadReckoned),
+        serviceableMs: Number(v.serviceableMs) > 0 ? Number(v.serviceableMs) : undefined,
         status: v.status || 'active',
         lastSeen: v.lastSeen || now,
         lastPersistedAt: v.lastPersistedAt || 0,

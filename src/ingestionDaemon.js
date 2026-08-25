@@ -211,7 +211,12 @@ class IngestionDaemon {
             bearing: v.bearing || 0,
             delayMins,
             destination: v.destination || route?.name || '',
-            isRealTime: true
+            isRealTime: true,
+            // AMB sweeps 243 lines in batches of 35 every 12s (~84s full cycle).
+            // Declare a cadence-aware serviceability window so one failed batch
+            // tick doesn't flicker healthy buses off the API (hard-capped at
+            // staleEvictionCeilingMs by FlightRecorder).
+            serviceableMs: 180000
           });
 
           // Sampled delay logging: at most one row per vehicle per minute, or sooner
@@ -467,6 +472,7 @@ class IngestionDaemon {
               // Ingest live telemetry for active buses on highway / urban corridor
               if (Array.isArray(lineDetails.activeBuses)) {
                 lineDetails.activeBuses.forEach(b => {
+                  const isSynthetic = Boolean(b.isEstimated || b.isDeadReckoned);
                   flightRecorder.ingestVehicle({
                     vehicleId: b.vehicleId || `mov_${lId}_${b.tripId}`,
                     lineId: lId,
@@ -478,7 +484,14 @@ class IngestionDaemon {
                     bearing: b.bearing || 0,
                     delayMins: 0,
                     destination: b.toStop || '',
-                    isRealTime: true
+                    // Honest labeling (§7.5): timetable-synthesized positions are
+                    // NOT real-time telemetry. Forward the flags instead of
+                    // hardcoding isRealTime:true, so downstream consumers can
+                    // distinguish estimated buses from GPS-backed ones.
+                    isRealTime: b.isRealTime !== undefined ? Boolean(b.isRealTime) : !isSynthetic,
+                    isEstimated: isSynthetic,
+                    // Maresme sweeps 11 lines in batches of 4 every 25s (~75s cycle).
+                    serviceableMs: 175000
                   });
                 });
               }
