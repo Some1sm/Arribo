@@ -16,13 +16,12 @@ const E11_1_STOPS_DIR0 = [
 const E11_1_STOPS_DIR1 = [
   { seq: 1, id: 'GEN_PF08121020', code: 'GEN_PF08121020', mouteStopId: 'GEN_PF08121020', name: 'Mataró - plaça de les Tereses PNL', lat: 41.538784, lon: 2.4423418, zone: 'Maresme', city: 'Mataró' },
   { seq: 2, id: 'GEN_PF08121083', code: 'GEN_PF08121083', mouteStopId: 'GEN_PF08121083', name: 'Mataró - c. Sant Isidor - c. Jaume Isern', lat: 41.5407867, lon: 2.4401164, zone: 'Maresme', city: 'Mataró' },
-  { seq: 3, id: 'GEN_PF08121028', code: 'GEN_PF08121028', mouteStopId: 'GEN_PF08121028', name: 'Mataró - pl. Espanya (Parc Central)', lat: 41.5445938, lon: 2.441669, zone: 'Maresme', city: 'Mataró' },
-  { seq: 4, id: 'GEN_PF08121099', code: 'GEN_PF08121099', mouteStopId: 'GEN_PF08121099', name: 'Mataró - Camí de la Geganta (pl. Granollers)', lat: 41.5411987, lon: 2.43645, zone: 'Maresme', city: 'Mataró' },
-  { seq: 5, id: 'GEN_PF08121051', code: 'GEN_PF08121051', mouteStopId: 'GEN_PF08121051', name: 'Mataró - rda. República - c. Miquel Biada (D)', lat: 41.5370598, lon: 2.4367707, zone: 'Maresme', city: 'Mataró' },
-  { seq: 6, id: 'GEN_PF08121022', code: 'GEN_PF08121022', mouteStopId: 'GEN_PF08121022', name: 'Mataró - Camí Ral (Jutjats)', lat: 41.5336571, lon: 2.439702, zone: 'Maresme', city: 'Mataró' },
-  { seq: 7, id: 'GEN_PF08121024', code: 'GEN_PF08121024', mouteStopId: 'GEN_PF08121024', name: 'Mataró - Camí Ral (Porta Laietana) (D)', lat: 41.5304337, lon: 2.4358335, zone: 'Maresme', city: 'Mataró' },
-  { seq: 8, id: 'GEN_PF08019097', code: 'GEN_PF08019097', mouteStopId: 'GEN_PF08019097', name: 'Barcelona - Gran Via - c.Roger de Flor (pl. Tetuan) PD', lat: 41.3962402, lon: 2.1769471, zone: 'AMB', city: 'Barcelona' },
-  { seq: 9, id: 'GEN_PF08019226', code: 'GEN_PF08019226', mouteStopId: 'GEN_PF08019226', name: 'Barcelona - rda. Universitat - c. Balmes', lat: 41.3869095, lon: 2.1668999, zone: 'AMB', city: 'Barcelona' },
+  { seq: 3, id: 'GEN_PF08121099', code: 'GEN_PF08121099', mouteStopId: 'GEN_PF08121099', name: 'Mataró - Camí de la Geganta (pl. Granollers)', lat: 41.5411987, lon: 2.43645, zone: 'Maresme', city: 'Mataró' },
+  { seq: 4, id: 'GEN_PF08121051', code: 'GEN_PF08121051', mouteStopId: 'GEN_PF08121051', name: 'Mataró - rda. República - c. Miquel Biada (D)', lat: 41.5370598, lon: 2.4367707, zone: 'Maresme', city: 'Mataró' },
+  { seq: 5, id: 'GEN_PF08121022', code: 'GEN_PF08121022', mouteStopId: 'GEN_PF08121022', name: 'Mataró - Camí Ral (Jutjats)', lat: 41.5336571, lon: 2.439702, zone: 'Maresme', city: 'Mataró' },
+  { seq: 6, id: 'GEN_PF08121024', code: 'GEN_PF08121024', mouteStopId: 'GEN_PF08121024', name: 'Mataró - Camí Ral (Porta Laietana) (D)', lat: 41.5304337, lon: 2.4358335, zone: 'Maresme', city: 'Mataró' },
+  { seq: 7, id: 'GEN_PF08019097', code: 'GEN_PF08019097', mouteStopId: 'GEN_PF08019097', name: 'Barcelona - Gran Via - c.Roger de Flor (pl. Tetuan) PD', lat: 41.3962402, lon: 2.1769471, zone: 'AMB', city: 'Barcelona' },
+  { seq: 8, id: 'GEN_PF08019226', code: 'GEN_PF08019226', mouteStopId: 'GEN_PF08019226', name: 'Barcelona - rda. Universitat - c. Balmes', lat: 41.3869095, lon: 2.1668999, zone: 'AMB', city: 'Barcelona' },
 ];
 
 const E11_2_STOPS_DIR0 = [
