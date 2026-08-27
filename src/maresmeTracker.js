@@ -594,7 +594,7 @@ class MaresmeTracker extends BaseTracker {
         if (!baseData) {
           const trayectos = await moventisClient.getLineTrayectos(lineConfig.moventisLineId);
           if (trayectos && trayectos.length > 0) {
-            const targetSentido = (dir === '0') ? 'V' : 'I';
+            const targetSentido = (dir === '0') ? 'I' : 'V';
             let matchingTrays = trayectos.filter(t => t.SENTIDO === targetSentido);
             if (matchingTrays.length === 0) matchingTrays = trayectos;
             matchingTrays.sort((a, b) => (b.TrayectosDet?.length || 0) - (a.TrayectosDet?.length || 0));
