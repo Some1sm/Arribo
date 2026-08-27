@@ -117,11 +117,46 @@ class SagalesTracker extends BaseTracker {
     this.cache = new Map(); // `${routeId}_${dir}` -> { timestamp, data }
     this.cacheTtlMs = 12000; // 12 seconds TTL
     this.allStopsMap = new Map(); // stopCode -> stop object
+    this._cachedRutaMap = new Map(); // `${routeId}_${dir}` -> ruta object (permanent route topography cache)
     // Pluggable transport: in the main HTTP process this is installed by
     // server.js to proxy upstream fetches through WorkerBridge IPC, so the
     // web process NEVER calls the Sagalés API directly. Defaults to direct
     // HTTPS (used inside the ingestion worker / local tooling).
     this._fetchBackend = null;
+    this._loadRutaDiskCache();
+  }
+
+  _loadRutaDiskCache() {
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const cachePath = path.join(__dirname, '..', 'data', 'cache', 'sagales_rutas.json');
+      if (fs.existsSync(cachePath)) {
+        const raw = fs.readFileSync(cachePath, 'utf8');
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          for (const [k, v] of Object.entries(parsed)) {
+            if (v && typeof v === 'object') {
+              this._cachedRutaMap.set(k, v);
+            }
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  _saveRutaDiskCache() {
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const cacheDir = path.join(__dirname, '..', 'data', 'cache');
+      if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
+      const obj = {};
+      for (const [k, v] of this._cachedRutaMap.entries()) {
+        obj[k] = v;
+      }
+      fs.writeFileSync(path.join(cacheDir, 'sagales_rutas.json'), JSON.stringify(obj), 'utf8');
+    } catch (_) {}
   }
 
   /**
@@ -181,12 +216,22 @@ class SagalesTracker extends BaseTracker {
         json = await this.fetchJson(url);
       }
       if (json) {
+        if (json.ruta && Array.isArray(json.ruta.stops) && json.ruta.stops.length > 0) {
+          this._cachedRutaMap.set(cacheKey, json.ruta);
+        } else if (!json.ruta && this._cachedRutaMap.has(cacheKey)) {
+          json.ruta = this._cachedRutaMap.get(cacheKey);
+        }
         this.cache.set(cacheKey, { timestamp: now, data: json });
+      } else if (this._cachedRutaMap.has(cacheKey)) {
+        json = { ruta: this._cachedRutaMap.get(cacheKey), bus: { entities: [] } };
       }
       return json;
     } catch (err) {
       console.warn(`[SagalesTracker] Notice: Upstream feed unavailable for ${sagalesRouteId}/${dir} (${err.message})`);
       if (cached) return cached.data; // Fallback to stale cache
+      if (this._cachedRutaMap.has(cacheKey)) {
+        return { ruta: this._cachedRutaMap.get(cacheKey), bus: { entities: [] } };
+      }
       return null;
     }
   }
@@ -250,14 +295,16 @@ class SagalesTracker extends BaseTracker {
     }
 
     const dir = direction === '1' ? '1' : '0';
-    const feed = await this.getSagalesFeed(lineConfig.sagalesRouteId, dir);
+    let feed = await this.getSagalesFeed(lineConfig.sagalesRouteId, dir);
 
     let stops = [];
     let polylineCoords = [];
     let activeBuses = [];
 
-    if (feed && feed.ruta) {
-      const rawStops = feed.ruta.stops || [];
+    const ruta = feed?.ruta || this._cachedRutaMap.get(`${lineConfig.sagalesRouteId}_${dir}`);
+
+    if (ruta) {
+      const rawStops = ruta.stops || [];
       stops = rawStops.map((s, idx) => {
         const stopObj = {
           id: String(s.stopCode || s.id),
@@ -282,8 +329,8 @@ class SagalesTracker extends BaseTracker {
         return stopObj;
       });
 
-      if (feed.ruta.shapes) {
-        polylineCoords = decodePolyline(feed.ruta.shapes);
+      if (ruta.shapes) {
+        polylineCoords = decodePolyline(ruta.shapes);
       }
     }
 
