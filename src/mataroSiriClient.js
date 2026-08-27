@@ -9,11 +9,12 @@ class MataroSiriClient {
     this.accountId = 'Mataro';
     this.accountKey = 'Mataro*WS';
     this.cache = new Map();
-    this.cacheTtlMs = 12000; // 12-second live cache
+    this.cacheTtlMs = 25000; // 25-second live cache with 90s stale fallback
     this.lastWarnTime = 0;
     // Pluggable transport: server.js installs an WorkerBridge-backed backend
     // in the main process so SIRI SOAP traffic stays worker-owned.
     this._httpBackend = null;
+    this._rpcBackend = null;
   }
 
   /**
@@ -21,6 +22,13 @@ class MataroSiriClient {
    */
   setHttpBackend(fn) {
     this._httpBackend = typeof fn === 'function' ? fn : null;
+  }
+
+  /**
+   * Install direct RPC backend for worker communication.
+   */
+  setRpcBackend(fn) {
+    this._rpcBackend = typeof fn === 'function' ? fn : null;
   }
 
   callSoap(action, soapXml) {
@@ -50,7 +58,7 @@ class MataroSiriClient {
         port: this.port,
         path: this.path,
         method: 'POST',
-        timeout: 5000,
+        timeout: 10000,
         headers: {
           'Content-Type': 'text/xml; charset=utf-8',
           'SOAPAction': `http://tempuri.org/${action}`,
@@ -132,6 +140,15 @@ class MataroSiriClient {
   // 1. Get Live GPS Telemetry for All Buses on a Line (or all lines)
   async getLiveVehicles(lineRef = '') {
     this.assertSafeRef(lineRef, 'lineRef');
+
+    if (typeof this._rpcBackend === 'function') {
+      try {
+        const res = await this._rpcBackend('getMataroLiveVehicles', { lineRef });
+        return Array.isArray(res) ? res : [];
+      } catch (err) {
+        return [];
+      }
+    }
 
     const cacheKey = `veh_${lineRef}`;
     const cached = this.cache.get(cacheKey);
@@ -217,7 +234,7 @@ class MataroSiriClient {
       } else {
         console.error(`[SIRI Error] GetVehicleMonitoring(${lineRef}):`, err.message);
       }
-      return cached ? cached.data : [];
+      return (cached && (Date.now() - cached.ts < 90000)) ? cached.data : [];
     }
   }
 
@@ -225,6 +242,15 @@ class MataroSiriClient {
   async getStopArrivals(stopId, lineRef = '') {
     this.assertSafeRef(stopId, 'stopId');
     this.assertSafeRef(lineRef, 'lineRef');
+
+    if (typeof this._rpcBackend === 'function') {
+      try {
+        const res = await this._rpcBackend('getMataroStopArrivals', { stopId, lineRef });
+        return Array.isArray(res) ? res : [];
+      } catch (err) {
+        return [];
+      }
+    }
 
     const cacheKey = `stop_${stopId}_${lineRef}`;
     const cached = this.cache.get(cacheKey);
@@ -341,7 +367,7 @@ class MataroSiriClient {
       } else {
         console.error(`[SIRI Error] GetStopMonitoring(${stopId}):`, err.message);
       }
-      return cached ? cached.data : [];
+      return (cached && (Date.now() - cached.ts < 90000)) ? cached.data : [];
     }
   }
 }

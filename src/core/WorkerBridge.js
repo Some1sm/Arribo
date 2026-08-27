@@ -10,7 +10,7 @@ class WorkerBridge extends EventEmitter {
     super();
     this.workerPath = options.workerPath || path.join(__dirname, '..', 'workers', 'ingestionWorker.js');
     this.pingIntervalMs = options.pingIntervalMs || 15000;  // 15s ping
-    this.pingTimeoutMs = options.pingTimeoutMs || 30000;    // 30s timeout
+    this.pingTimeoutMs = options.pingTimeoutMs || 60000;    // 60s timeout for heavy startup operations
     this.baseBackoffMs = options.baseBackoffMs || 1000;     // 1s base
     this.maxBackoffMs = options.maxBackoffMs || 15000;       // 15s max backoff
     this.mode = options.mode || 'fork';

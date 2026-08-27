@@ -9,6 +9,7 @@ const delayEngine = require('./core/schedule/delayEngine');
 const mataroSchedules = require('./data/mataroSchedules');
 const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
+const flightRecorder = require('./flightRecorder');
 const BaseTracker = require('./core/BaseTracker');
 
 class MataroTracker extends BaseTracker {
@@ -210,7 +211,14 @@ class MataroTracker extends BaseTracker {
     }));
 
     // Fetch Live Buses via SIRI
-    const liveVehicles = await siriClient.getLiveVehicles(lId);
+    let liveVehicles = await siriClient.getLiveVehicles(lId);
+    if (!liveVehicles || liveVehicles.length === 0) {
+      const frVehs = flightRecorder.getLineVehicles(`L${lId}`);
+      const mataroVehs = (frVehs || []).filter(v => (v.agency || '').includes('Mataró') || String(v.lineId) === lId);
+      if (mataroVehs.length > 0) {
+        liveVehicles = mataroVehs;
+      }
+    }
 
     // Apply Deterministic Direction Matching & Road-Snapping
     let processedBuses = [];

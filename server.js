@@ -122,15 +122,24 @@ c10TelemetryExtractor.setFetchBackend(async () => {
   return { status: Array.isArray(list) ? 200 : 502, data: Array.isArray(list) ? list : [] };
 });
 
-// Generic upstream-HTTP proxy for client modules (SIRI SOAP, Moventis SAE,
+// Centralize Mataró SIRI traffic in the worker: the main process delegates
+// directly to the worker's cached/live SIRI client over IPC.
+const mataroSiriClient = require('./src/mataroSiriClient');
+mataroSiriClient.setRpcBackend(async (op, args) => {
+  try {
+    const res = await workerBridge.historyQuery(op, args, { timeoutMs: 8000 });
+    return Array.isArray(res) ? res : [];
+  } catch (_) { return []; }
+});
+
+// Generic upstream-HTTP proxy for client modules (Moventis SAE,
 // Mou-te REST): raw fetches execute in the worker; the main process only ever
 // sees { status, bodyText } over IPC.
-const mataroSiriClient = require('./src/mataroSiriClient');
 const moventisClient = require('./src/moventisClient');
 const mouteClient = require('./src/mouteClient');
-[mataroSiriClient, moventisClient, mouteClient].forEach((client) => {
+[moventisClient, mouteClient].forEach((client) => {
   client.setHttpBackend(async (req) => {
-    const res = await workerBridge.historyQuery('proxyUpstreamHttp', req, { timeoutMs: 9000 });
+    const res = await workerBridge.historyQuery('proxyUpstreamHttp', req, { timeoutMs: 12000 });
     if (!res || typeof res.status !== 'number' || typeof res.bodyText !== 'string') {
       throw new Error(`Upstream proxy malformed response (${req && req.kind})`);
     }

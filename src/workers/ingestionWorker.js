@@ -15,6 +15,7 @@ const c10TelemetryExtractor = require('../c10TelemetryExtractor');
 const ambTracker = require('../ambTracker');
 const rodaliesTracker = require('../rodaliesTracker');
 const corridorTracker = require('../corridorTracker');
+const mataroSiriClient = require('../mataroSiriClient');
 const trackerRegistry = require('../core/TrackerRegistry');
 // Worker-side delay-memory gateway: sweeps run HERE, so observations must
 // persist directly (main process uses the workerBridge RPC gateway instead).
@@ -112,6 +113,14 @@ async function executeDbOperation(op, args = {}) {
     case 'getCorridorAmbRealtime':
       // Central C-10/AMB realtime access point: worker owns upstream calls.
       return corridorTracker.fetchAmbRealtime(String(args.ambCode || ''));
+
+    case 'getMataroLiveVehicles':
+      // Central Mataró SIRI live vehicles access point: worker owns upstream calls.
+      return mataroSiriClient.getLiveVehicles(String(args.lineRef || ''));
+
+    case 'getMataroStopArrivals':
+      // Central Mataró SIRI stop arrivals access point: worker owns upstream calls.
+      return mataroSiriClient.getStopArrivals(String(args.stopId || ''), String(args.lineRef || ''));
 
     case 'proxyUpstreamHttp':
       // Generic worker-owned upstream HTTP for main-process client backends.
