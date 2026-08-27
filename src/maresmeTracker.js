@@ -201,6 +201,47 @@ const MARESME_CANONICAL_SHAPES = {
   'c14_1': 'GEN_22907'
 };
 
+const AUTHORITATIVE_MARESME_STOPS = {
+  'e111_0': [
+    { seq: 1, id: 'GEN_PF08019226', code: '4647', mouteStopId: 'GEN_PF08019226', name: 'Barcelona - rda. Universitat - c. Balmes', lat: 41.3869095, lon: 2.1668999, zone: 'AMB', city: 'Barcelona' },
+    { seq: 2, id: 'GEN_PF08019064', code: '3220', mouteStopId: 'GEN_PF08019064', name: 'Barcelona - pl. Tetuan (c. Roger de Flor) PD', lat: 41.3952179, lon: 2.1763365, zone: 'AMB', city: 'Barcelona' },
+    { seq: 3, id: 'GEN_PF08121009', code: '5982', mouteStopId: 'GEN_PF08121009', name: 'Mataró - pol. ind. les Hortes (el Rengle)', lat: 41.5291023, lon: 2.4293151, zone: 'Maresme', city: 'Mataró' },
+    { seq: 4, id: 'GEN_PF08121080', code: '3630', mouteStopId: 'GEN_PF08121080', name: 'Mataró - Camí Ral (Porta Laietana) (A)', lat: 41.5305748, lon: 2.4362342, zone: 'Maresme', city: 'Mataró' },
+    { seq: 5, id: 'GEN_PF08121062', code: '3620', mouteStopId: 'GEN_PF08121062', name: 'Mataró - rda. República - Camí Ral', lat: 41.5344810, lon: 2.4401255, zone: 'Maresme', city: 'Mataró' },
+    { seq: 6, id: 'GEN_PF08121017', code: '4825', mouteStopId: 'GEN_PF08121017', name: 'Mataró - rda. República - c. Miquel Biada (A)', lat: 41.5370255, lon: 2.4369676, zone: 'Maresme', city: 'Mataró' },
+    { seq: 7, id: 'GEN_PF08121020', code: '20', mouteStopId: 'GEN_PF08121020', name: 'Mataró - plaça de les Tereses PNL', lat: 41.5387840, lon: 2.4423418, zone: 'Maresme', city: 'Mataró' }
+  ],
+  'e111_1': [
+    { seq: 1, id: 'GEN_PF08121020', code: '20', mouteStopId: 'GEN_PF08121020', name: 'Mataró - plaça de les Tereses PNL', lat: 41.5387840, lon: 2.4423418, zone: 'Maresme', city: 'Mataró' },
+    { seq: 2, id: 'GEN_PF08121083', code: '291', mouteStopId: 'GEN_PF08121083', name: 'Mataró - c. Sant Isidor - c. Jaume Isern', lat: 41.5407867, lon: 2.4401164, zone: 'Maresme', city: 'Mataró' },
+    { seq: 3, id: 'GEN_PF08121028', code: '3990', mouteStopId: 'GEN_PF08121028', name: 'Mataró - pl. Espanya (Parc Central)', lat: 41.5445938, lon: 2.4416690, zone: 'Maresme', city: 'Mataró' },
+    { seq: 4, id: 'GEN_PF08121099', code: '7475', mouteStopId: 'GEN_PF08121099', name: 'Mataró - Camí de la Geganta (pl. Granollers)', lat: 41.5411987, lon: 2.4364500, zone: 'Maresme', city: 'Mataró' },
+    { seq: 5, id: 'GEN_PF08121051', code: '30', mouteStopId: 'GEN_PF08121051', name: 'Mataró - rda. República - c. Miquel Biada (D)', lat: 41.5370598, lon: 2.4367707, zone: 'Maresme', city: 'Mataró' },
+    { seq: 6, id: 'GEN_PF08121022', code: '11', mouteStopId: 'GEN_PF08121022', name: 'Mataró - Camí Ral (Jutjats)', lat: 41.5336571, lon: 2.4397020, zone: 'Maresme', city: 'Mataró' },
+    { seq: 7, id: 'GEN_PF08121024', code: '12', mouteStopId: 'GEN_PF08121024', name: 'Mataró - Camí Ral (Porta Laietana) (D)', lat: 41.5304337, lon: 2.4358335, zone: 'Maresme', city: 'Mataró' },
+    { seq: 8, id: 'GEN_PF08019097', code: '13', mouteStopId: 'GEN_PF08019097', name: 'Barcelona - Gran Via - c.Roger de Flor (pl. Tetuan) PD', lat: 41.3962402, lon: 2.1769471, zone: 'AMB', city: 'Barcelona' },
+    { seq: 9, id: 'GEN_PF08019226', code: '4647', mouteStopId: 'GEN_PF08019226', name: 'Barcelona - rda. Universitat - c. Balmes', lat: 41.3869095, lon: 2.1668999, zone: 'AMB', city: 'Barcelona' }
+  ],
+  'e112_0': [
+    { seq: 1, id: '10008001', code: '10008001', mouteStopId: '10008001', name: 'Barcelona - Rda. Universitat / Balmes', lat: 41.3872, lon: 2.1678, zone: 'AMB', city: 'Barcelona' },
+    { seq: 2, id: '10008002', code: '10008002', mouteStopId: '10008002', name: 'Barcelona - Gran Via / Pl. Tetuan', lat: 41.3951, lon: 2.1764, zone: 'AMB', city: 'Barcelona' },
+    { seq: 3, id: '10008003', code: '10008003', mouteStopId: '10008003', name: 'Barcelona - Gran Via / Marina', lat: 41.3998, lon: 2.1832, zone: 'AMB', city: 'Barcelona' },
+    { seq: 4, id: 'MAT_ITALIA_A', code: 'MAT_ITALIA_A', name: "Mataró - Plaça d'Itàlia (A)", lat: 41.5468, lon: 2.4321, zone: 'Maresme', city: 'Mataró' },
+    { seq: 5, id: 'MAT_VIA_EUROPA', code: 'MAT_VIA_EUROPA', name: 'Mataró - Via Europa / Itàlia', lat: 41.5485, lon: 2.4323, zone: 'Maresme', city: 'Mataró' },
+    { seq: 6, id: 'MAT_SERRA', code: 'MAT_SERRA', name: 'Mataró - Camí de la Serra / Cirera', lat: 41.5510, lon: 2.4328, zone: 'Maresme', city: 'Mataró' },
+    { seq: 7, id: 'MAT_HOSP_NORD', code: 'MAT_HOSP_NORD', name: 'Mataró - Hospital de Mataró (Nord)', lat: 41.5543, lon: 2.4332, zone: 'Maresme', city: 'Mataró' }
+  ],
+  'e112_1': [
+    { seq: 1, id: 'MAT_HOSP_NORD', code: 'MAT_HOSP_NORD', name: 'Mataró - Hospital de Mataró (Nord)', lat: 41.5543, lon: 2.4332, zone: 'Maresme', city: 'Mataró' },
+    { seq: 2, id: 'MAT_SERRA', code: 'MAT_SERRA', name: 'Mataró - Camí de la Serra / Cirera', lat: 41.5510, lon: 2.4328, zone: 'Maresme', city: 'Mataró' },
+    { seq: 3, id: 'MAT_VIA_EUROPA', code: 'MAT_VIA_EUROPA', name: 'Mataró - Via Europa / Itàlia', lat: 41.5485, lon: 2.4323, zone: 'Maresme', city: 'Mataró' },
+    { seq: 4, id: 'MAT_ITALIA_D', code: 'MAT_ITALIA_D', name: "Mataró - Plaça d'Itàlia (D)", lat: 41.5468, lon: 2.4321, zone: 'Maresme', city: 'Mataró' },
+    { seq: 5, id: '10008004', code: '10008004', mouteStopId: '10008004', name: 'Barcelona - Gran Via / Padilla', lat: 41.4012, lon: 2.1848, zone: 'AMB', city: 'Barcelona' },
+    { seq: 6, id: '10008005', code: '10008005', mouteStopId: '10008005', name: 'Barcelona - Gran Via / Pau Claris', lat: 41.3918, lon: 2.1695, zone: 'AMB', city: 'Barcelona' },
+    { seq: 7, id: '10008001', code: '10008001', mouteStopId: '10008001', name: 'Barcelona - Rda. Universitat / Balmes', lat: 41.3872, lon: 2.1678, zone: 'AMB', city: 'Barcelona' }
+  ]
+};
+
 class MaresmeTracker extends BaseTracker {
   constructor() {
     super();
@@ -560,7 +601,8 @@ class MaresmeTracker extends BaseTracker {
             const chosenTray = matchingTrays[0] || trayectos[0];
 
             if (chosenTray && chosenTray.TrayectosDet && chosenTray.TrayectosDet.length > 0) {
-              const stops = chosenTray.TrayectosDet.map((st, idx) => {
+              const authStops = AUTHORITATIVE_MARESME_STOPS[`${lineConfig.id}_${dir}`];
+              const stops = authStops || chosenTray.TrayectosDet.map((st, idx) => {
                 const p = st.Parada || {};
                 const idStr = String(p.ID_PARADA || p.COD_PARADA);
                 return {
@@ -835,8 +877,9 @@ class MaresmeTracker extends BaseTracker {
       || dirTrips[0]
       || lineTrips[0];
 
+    const authStops = AUTHORITATIVE_MARESME_STOPS[`${lineConfig.id}_${dir}`];
     const rawStopTimes = chosenTrip ? (this.stopTimesByTrip.get(chosenTrip.tripId) || []) : [];
-    const stops = rawStopTimes.map((st, idx) => {
+    const stops = authStops || rawStopTimes.map((st, idx) => {
       const sObj = this.stopsMap.get(st.stopId) || { id: st.stopId, name: `Parada ${st.stopId}`, lat: 41.5365, lon: 2.43047 };
       return {
         id: sObj.id,
