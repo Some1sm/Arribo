@@ -1,4 +1,5 @@
 const assert = require('assert');
+const trackerRegistry = require('../src/core/TrackerRegistry');
 const mataroTracker = require('../src/mataroTracker');
 const siriClient = require('../src/mataroSiriClient');
 const historyDb = require('../src/historyDb');
@@ -59,7 +60,7 @@ async function verifyAll() {
 
   // 5. Journalism report lines coverage
   console.log('5. Testing Journalism Report Coverage...');
-  const report = historyDb.getJournalismReport(48);
+  const report = historyDb.getJournalismReport(48, trackerRegistry.getAllLines());
   assert(report.summary.monitoredLinesCount > 0, 'Must have monitored lines count');
   assert(Array.isArray(report.rankingMostDelayed), 'Must have rankingMostDelayed array');
   assert(Array.isArray(report.agencyStats), 'Must have agencyStats array');

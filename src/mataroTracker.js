@@ -86,13 +86,25 @@ class MataroTracker extends BaseTracker {
     }
   }
 
+  // Normalize line identifier (e.g. '1', 1, 'mataro_1', 'L1', 'Line 1') -> '1'..'8'
+  normalizeLineId(lineId) {
+    if (lineId === null || lineId === undefined) return '';
+    return String(lineId)
+      .trim()
+      .toLowerCase()
+      .replace(/^mataro_?/, '')
+      .replace(/^line-?/, '')
+      .replace(/^linia-?/, '')
+      .replace(/^l(?=[1-8]$)/, '');
+  }
+
   // 1. Get all Mataro urban lines (L1..L8)
   getLines() {
     return this.linesData.map(l => {
       const routes = this.routesData[l.id] || [];
       return {
-        id: l.id,
-        code: String(l.id),
+        id: String(l.id),
+        code: `L${l.id}`,
         name: l.name.trim(),
         color: l.color || '#009485',
         agency: 'Mataró Bus',
@@ -109,7 +121,7 @@ class MataroTracker extends BaseTracker {
   }
 
   resolveLineConfig(lineId) {
-    const cleanId = String(lineId).toLowerCase().replace(/^mataro_?/, '').replace(/^line-?/, '').replace(/^linia-?/, '').replace(/^l(?=[1-8]$)/, '').trim();
+    const cleanId = this.normalizeLineId(lineId);
     return this.linesData.find(l => String(l.id).toLowerCase() === cleanId) || null;
   }
 
@@ -146,7 +158,7 @@ class MataroTracker extends BaseTracker {
 
   // 2. Get full details for a line & direction (stops, route polyline, and live/estimated buses)
   async getLineDetails(lineId, direction = '0') {
-    const lId = String(lineId);
+    const lId = this.normalizeLineId(lineId) || '1';
     const lineInfo = this.linesData.find(l => String(l.id) === lId) || { id: lId, name: `Línia ${lId}`, color: '#009485' };
     const routes = this.routesData[lId] || [];
     const isBoth = direction === 'both';
@@ -235,11 +247,19 @@ class MataroTracker extends BaseTracker {
 
     return {
       lineId: lId,
-      code: String(lId),
+      code: `L${lId}`,
       name: lineInfo.name.trim(),
       color: lineInfo.color,
+      agency: 'Mataró Bus (Avanza)',
+      group: 'mataro',
       direction: isBoth ? 'both' : String(dirIdx),
       directionName: isBoth ? 'Ambdós sentits' : (selectedRoute.name || `${lineInfo.name}`),
+      directions: routes.map((r, idx) => ({
+        dirId: String(idx),
+        routeId: r.id,
+        name: r.name,
+        stopsCount: r.stops ? r.stops.length : 0
+      })),
       totalStops: stops.length,
       stops,
       coords: polyline,
@@ -298,16 +318,24 @@ class MataroTracker extends BaseTracker {
         tripId: `mataro_${b.vehicleId}`,
         vehicleId: b.vehicleId,
         lineId: b.lineId,
+        lineName: b.lineName || (route && route.name) || `Línia ${b.lineId}`,
         direction: dirId,
         _snapDist: snapped.dist,
         lat: roadLat,
         lon: roadLon,
+        latitude: roadLat,
+        longitude: roadLon,
         bearing: roadBearing,
         compass: geoUtils.bearingToCompassName(roadBearing),
         speedKmh: b.speedKmh,
         delayMins: b.delayMins,
         delayFormatted: b.delayFormatted,
         isEstimated: false,
+        isRealTime: true,
+        recordedAt: b.recordedAt || new Date().toISOString(),
+        timestamp: b.timestamp || now,
+        origin: b.origin || '',
+        destination: b.destination || '',
         statusText: '🟢 Senyal GPS Actiu',
         fromStop: segInfo.fromStop,
         toStop: segInfo.toStop,
@@ -342,15 +370,23 @@ class MataroTracker extends BaseTracker {
             tripId: `mataro_${vId}`,
             vehicleId: vId,
             lineId: hist.lineId,
+            lineName: (route && route.name) || `Línia ${hist.lineId}`,
             direction: dirId,
             lat: estPos.lat,
             lon: estPos.lon,
+            latitude: estPos.lat,
+            longitude: estPos.lon,
             bearing: estPos.bearing,
             compass: geoUtils.bearingToCompassName(estPos.bearing),
             speedKmh: Math.max(15, Math.min(45, hist.speedKmh || 30)),
             delayMins: hist.delayMins,
             delayFormatted: hist.delayMins > 0 ? `+${hist.delayMins} min retard` : 'Puntual',
             isEstimated: true,
+            isRealTime: false,
+            recordedAt: new Date(hist.lastSeen).toISOString(),
+            timestamp: hist.lastSeen,
+            origin: hist.origin || '',
+            destination: hist.destination || '',
             statusText: `⚡ Estimació Zona Cobertura (${Math.round(elapsedSec)}s sense GPS)`,
             fromStop: segInfo.fromStop,
             toStop: segInfo.toStop,
@@ -433,16 +469,24 @@ class MataroTracker extends BaseTracker {
     return geoEngine.calculateRouteTotalDistance(polyCoords);
   }
 
+  // BaseTracker interface implementation
+  async fetchLiveVehicles(lineId = '') {
+    const lId = this.normalizeLineId(lineId);
+    const details = await this.getLineDetails(lId || '1', 'both');
+    return details && Array.isArray(details.activeBuses) ? details.activeBuses : [];
+  }
+
   // Estimate arrival ETA to stopId from active live vehicles along the route circuit
   async estimateArrivalsForStop(stopId, lineId = '', existingArrivals = []) {
     const sId = String(stopId);
+    const cleanLineId = lineId ? this.normalizeLineId(lineId) : '';
     const existingVehicleIds = new Set(existingArrivals.map(a => a.vehicleId).filter(Boolean));
     const estimatedArrivals = [];
 
     // Determine relevant lines serving this stop
     let targetLineIds = [];
-    if (lineId) {
-      targetLineIds = [String(lineId)];
+    if (cleanLineId) {
+      targetLineIds = [cleanLineId];
     } else {
       const stopInfo = this.allStopsMap.get(sId);
       if (stopInfo && stopInfo.lineas && stopInfo.lineas.length > 0) {
@@ -605,9 +649,10 @@ class MataroTracker extends BaseTracker {
 
   findRoutesServingStop(stopId, lineId = '') {
     const sId = String(stopId);
+    const cleanLineId = lineId ? this.normalizeLineId(lineId) : '';
     const results = [];
 
-    const linesToCheck = lineId ? [String(lineId)] : Object.keys(this.routesData);
+    const linesToCheck = cleanLineId ? [cleanLineId] : Object.keys(this.routesData);
     for (const lId of linesToCheck) {
       const routes = this.routesData[lId] || [];
       const lineInfo = this.linesData.find(l => String(l.id) === lId) || { id: lId, name: `Línia ${lId}` };
@@ -622,13 +667,13 @@ class MataroTracker extends BaseTracker {
       }
     }
 
-    if (results.length === 0 && lineId && this.routesData[lineId]) {
-      const lineInfo = this.linesData.find(l => String(l.id) === String(lineId)) || { id: lineId, name: `Línia ${lineId}` };
-      const defaultRoute = this.routesData[lineId][0];
+    if (results.length === 0 && cleanLineId && this.routesData[cleanLineId]) {
+      const lineInfo = this.linesData.find(l => String(l.id) === String(cleanLineId)) || { id: cleanLineId, name: `Línia ${cleanLineId}` };
+      const defaultRoute = this.routesData[cleanLineId][0];
       if (defaultRoute) {
         results.push({
           ...defaultRoute,
-          id_linea: String(lineId),
+          id_linea: String(cleanLineId),
           lineName: lineInfo.name.trim()
         });
       }
@@ -644,8 +689,9 @@ class MataroTracker extends BaseTracker {
       direction = '0';
     }
     const sId = String(stopId);
+    const cleanLineId = lineId ? this.normalizeLineId(lineId) : '';
     const dirKey = String(direction || '0');
-    const lIdKey = String(lineId || '');
+    const lIdKey = cleanLineId || '';
     const limitKey = String(options.limit || 10);
     const dateKey = options.targetDate || options.dateObj ? String(options.targetDate || options.dateObj) : '';
     const cacheKey = `${sId}_${lIdKey}_${dirKey}_${limitKey}_${dateKey}`;
@@ -663,7 +709,7 @@ class MataroTracker extends BaseTracker {
     // 1. Query Official Real-Time SIRI Departures
     let liveArrivals = [];
     try {
-      liveArrivals = await siriClient.getStopArrivals(sId, lineId);
+      liveArrivals = await siriClient.getStopArrivals(sId, cleanLineId);
     } catch (e) {
       console.warn(`[getStopDepartures] SIRI query error for stop ${sId}:`, e.message);
     }
@@ -671,7 +717,7 @@ class MataroTracker extends BaseTracker {
     // 2. Query Circuit Position Estimations for Active Vehicles
     let estimatedArrivals = [];
     try {
-      estimatedArrivals = await this.estimateArrivalsForStop(sId, lineId, liveArrivals);
+      estimatedArrivals = await this.estimateArrivalsForStop(sId, cleanLineId, liveArrivals);
     } catch (e) {
       console.warn(`[getStopDepartures] Circuit estimation error for stop ${sId}:`, e.message);
     }
@@ -877,7 +923,7 @@ class MataroTracker extends BaseTracker {
   // 3b. Warm all stops cache for a line in a fast background pass
   async warmLineStopsCache(lineId) {
     try {
-      const lId = String(lineId);
+      const lId = this.normalizeLineId(lineId) || '1';
       const routes = this.routesData[lId] || [];
       const stopIds = new Set();
       routes.forEach(r => {
@@ -897,7 +943,7 @@ class MataroTracker extends BaseTracker {
 
   // 4. Get Target Stop ETA
   async getTargetStopETA(lineId, stopId = null, direction = '0') {
-    const lId = String(lineId);
+    const lId = this.normalizeLineId(lineId) || '1';
     const lineInfo = this.linesData.find(l => String(l.id) === lId) || { id: lId, name: `Línia ${lId}`, color: '#009485' };
     const routes = this.routesData[lId] || [];
     const dirIdx = parseInt(direction, 10) || 0;

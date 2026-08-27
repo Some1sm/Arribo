@@ -525,9 +525,13 @@ app.get('/api/line/:lineId', async (req, res) => {
         });
       }
     } else {
-      const data = await tracker.getLineDetails(lineId, direction);
+      const targetLine = resolution.lineId || lineId;
+      const data = await tracker.getLineDetails(targetLine, direction);
       if (data) {
-        data.delayStats = await flightRecorder.getLineStats(data.code || lineId, lineId);
+        if (Array.isArray(data.activeBuses)) {
+          data.activeBuses = data.activeBuses.map(standardizeVehicle);
+        }
+        data.delayStats = await flightRecorder.getLineStats(data.code || targetLine, targetLine);
       }
       res.json({ success: true, data });
     }
@@ -551,8 +555,9 @@ app.get('/api/line/:lineId/target-eta', async (req, res) => {
       const data = await corridorTracker.getTargetStopETA(dir, stopId, targetDate);
       res.json({ success: true, data: harmonizeTargetEta(data, corridorTracker, lineId, dir) });
     } else {
-      const data = await tracker.getTargetStopETA(lineId, stopId, direction);
-      res.json({ success: true, data: harmonizeTargetEta(data, tracker, lineId, direction) });
+      const targetLine = resolution.lineId || lineId;
+      const data = await tracker.getTargetStopETA(targetLine, stopId, direction);
+      res.json({ success: true, data: harmonizeTargetEta(data, tracker, targetLine, direction) });
     }
   } catch (err) {
     handleRouteError(req, res, err);
@@ -567,7 +572,8 @@ app.get('/api/line/:lineId/vehicles', async (req, res) => {
     const resolution = resolveTrackerOr404(res, lineId);
     if (!resolution) return;
     const { type, tracker, cleanCode, agency } = resolution;
-    let vehicles = flightRecorder.getLineVehicles(cleanCode || lineId);
+    const targetLine = resolution.lineId || lineId;
+    let vehicles = flightRecorder.getLineVehicles(cleanCode || targetLine);
     let details = null;
 
     if (!vehicles || vehicles.length === 0) {
@@ -575,7 +581,7 @@ app.get('/api/line/:lineId/vehicles', async (req, res) => {
         const dir = direction === '0' ? '0' : '1';
         details = await corridorTracker.getCorridorLiveTracking(dir);
       } else {
-        details = await tracker.getLineDetails(lineId, direction);
+        details = await tracker.getLineDetails(targetLine, direction);
       }
       vehicles = (details?.activeBuses || []).map(standardizeVehicle);
     } else {
@@ -611,7 +617,8 @@ app.get('/api/line/:lineId/live', async (req, res) => {
       const data = await corridorTracker.getCorridorLiveTracking(dir);
       res.json({ success: true, data });
     } else {
-      const data = await tracker.getLineDetails(lineId, direction);
+      const targetLine = resolution.lineId || lineId;
+      const data = await tracker.getLineDetails(targetLine, direction);
       res.json({ success: true, data });
     }
   } catch (err) {
@@ -633,8 +640,9 @@ app.get('/api/line/:lineId/stop/:stopId/departures', async (req, res) => {
       const data = await corridorTracker.getStopDepartures(stopId, dir, targetDate);
       res.json({ success: true, data: harmonizeDeparturesEnvelope(data, corridorTracker, lineId) });
     } else {
-      const data = await tracker.getStopDepartures(stopId, lineId, direction);
-      res.json({ success: true, data: harmonizeDeparturesEnvelope(data, tracker, lineId) });
+      const targetLine = resolution.lineId || lineId;
+      const data = await tracker.getStopDepartures(stopId, targetLine, direction);
+      res.json({ success: true, data: harmonizeDeparturesEnvelope(data, tracker, targetLine) });
     }
   } catch (err) {
     handleRouteError(req, res, err);

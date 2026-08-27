@@ -126,7 +126,10 @@ class TransitApp {
       if (this.activeLineId) {
         // Validate the hash-resolved line actually exists — otherwise show a
         // friendly 'not found' popup instead of an eternal loading screen.
-        const lineObj = this.availableLines.find(l => String(l.id) === String(this.activeLineId));
+        const lineObj = this.availableLines.find(l => 
+          String(l.id).toLowerCase() === String(this.activeLineId).toLowerCase() || 
+          String(l.code).toLowerCase() === String(this.activeLineId).toLowerCase()
+        );
         if (!lineObj) {
           this.showLineNotFoundModal(this.activeLineId);
           this.activeLineId = null;
@@ -353,7 +356,10 @@ class TransitApp {
     this.selectedVehicleId = null;
     this.mapController?.clearVehicleTrail();
 
-    const lineObj = this.availableLines.find(l => String(l.id) === String(lineId));
+    const lineObj = this.availableLines.find(l => 
+      String(l.id).toLowerCase() === String(lineId).toLowerCase() || 
+      String(l.code).toLowerCase() === String(lineId).toLowerCase()
+    );
     if (direction !== null) {
       this.activeDirection = String(direction);
     } else if (lineObj?.directions?.length > 0) {

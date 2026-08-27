@@ -854,8 +854,12 @@ class C10Map {
 
     const secondaryCoords = (this.secondaryRoutePolyline) ? this.secondaryRoutePolyline.getLatLngs().map(p => [p.lat, p.lng]) : null;
 
-    activeBuses.forEach(bus => {
-      if (!bus.lat || !bus.lon) return;
+    (activeBuses || []).forEach(bus => {
+      const bLat = bus.lat !== undefined ? bus.lat : bus.latitude;
+      const bLon = bus.lon !== undefined ? bus.lon : bus.longitude;
+      if (bLat === undefined || bLon === undefined || bLat === null || bLon === null) return;
+      bus.lat = Number(bLat);
+      bus.lon = Number(bLon);
 
       const isSelected = this.isBusSelected(bus, this.selectedVehicleId);
       let isSecDir = (String(bus.direction) === '1' || bus.direction === 1) && secondaryCoords && secondaryCoords.length > 1;

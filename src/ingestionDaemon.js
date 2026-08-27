@@ -300,7 +300,7 @@ class IngestionDaemon {
       const activeLines = ['1', '2', '3', '4', '5', '6', '7', '8'];
       await Promise.allSettled(activeLines.map(async (lId) => {
         try {
-          const details = await mataroTracker.getLineDetails(lId);
+          const details = await mataroTracker.getLineDetails(lId, 'both');
           if (details && Array.isArray(details.activeBuses)) {
             details.activeBuses.forEach(b => {
               flightRecorder.ingestVehicle({
@@ -311,6 +311,8 @@ class IngestionDaemon {
                 plateNumber: b.plateNumber || '',
                 lat: b.lat,
                 lon: b.lon,
+                latitude: b.lat,
+                longitude: b.lon,
                 speedKmh: b.speedKmh || 25,
                 bearing: b.bearing || 0,
                 delayMins: b.delayMins || 0,
