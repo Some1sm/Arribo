@@ -15,6 +15,19 @@ function decodePolyline(encoded) {
   return geoEngine.decodePolyline(encoded).map(p => [p.lat, p.lon]);
 }
 
+function parseCsvLine(line) {
+  const out = []; let cur = '', q = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (q) { if (ch === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === ',') { out.push(cur.trim()); cur = ''; }
+    else cur += ch;
+  }
+  out.push(cur.trim());
+  return out;
+}
+
 // Sagalés Lines Catalog
 const SAGALES_LINES_CONFIG = {
   'n82': {
@@ -444,10 +457,10 @@ class SagalesTracker extends BaseTracker {
       (lines[0] || '').split(',').forEach((nm, i) => { h[nm.trim()] = i; });
       lines.slice(1).forEach(l => {
         if (!l.trim()) return;
-        const p = l.split(',');
+        const p = parseCsvLine(l);
         const id = p[h.stop_id];
         const lat = parseFloat(p[h.stop_lat]), lon = parseFloat(p[h.stop_lon]);
-        if (id && Number.isFinite(lat)) this._gtfsStopCoords.set(id, { lat, lon });
+        if (id && Number.isFinite(lat) && Number.isFinite(lon)) this._gtfsStopCoords.set(id, { lat, lon });
       });
     } catch (e) { /* keep empty */ }
     return this._gtfsStopCoords;
@@ -491,7 +504,20 @@ class SagalesTracker extends BaseTracker {
     const mapping = this.gtfsStopMapping(lineConfigId, gtfsSched, stops, dir);
     const gtfsStopId = mapping.get(String(trackerStopId));
     if (!gtfsStopId) return [];
-    const trips = String(dir) === '1' ? gtfsSched.dir1 : gtfsSched.dir0;
+
+    // Select the GTFS direction that best aligns with the tracker direction
+    let score0 = 0;
+    let score1 = 0;
+    for (const s of (stops || [])) {
+      const gid = mapping.get(String(s.id || s.code));
+      if (!gid) continue;
+      if (gtfsSched.dir0.some(t => t.stops.some(x => x.stopId === gid))) score0++;
+      if (gtfsSched.dir1.some(t => t.stops.some(x => x.stopId === gid))) score1++;
+    }
+    const trips = (score1 > score0 && gtfsSched.dir1.length > 0) ? gtfsSched.dir1
+      : ((score0 > score1 && gtfsSched.dir0.length > 0) ? gtfsSched.dir0
+      : (String(dir) === '1' ? (gtfsSched.dir1.length ? gtfsSched.dir1 : gtfsSched.dir0) : (gtfsSched.dir0.length ? gtfsSched.dir0 : gtfsSched.dir1)));
+
     const out = [];
     for (const trip of trips) {
       if (!this.gtfsIsServiceActive(trip.serviceId, dateObj)) continue;
@@ -651,9 +677,12 @@ class SagalesTracker extends BaseTracker {
           if (passSec < nowSec - 300 && passSec < 12 * 3600) {
             passSec += 86400;
             isTodayDep = false;
+          } else if (passSec < nowSec - 300) {
+            // Already departed earlier in the day; cycle forward to tomorrow's schedule
+            passSec += 86400;
+            isTodayDep = false;
           }
           const diffMin = Math.round((passSec - nowSec) / 60);
-          if (diffMin < -1 || diffMin > 360) continue; // night lines: allow long waits
           const passTimeStr = secToTimeStr(passSec);
           departures.push({
             lineId: lineConfig.id,
@@ -672,6 +701,7 @@ class SagalesTracker extends BaseTracker {
             formattedStatus: passTimeStr
           });
         }
+        departures.sort((a, b) => a.minutesAway - b.minutesAway);
       } else {
       const travelTimes = scheduleSynthesizer.estimateStopTravelTimes(stops, {
         speedMps: 10.0,
