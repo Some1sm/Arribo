@@ -104,6 +104,23 @@ function generateExpressPolyline(stops, isDir1 = false) {
   return interpolated;
 }
 
+function getShapeFromDb(shapeId) {
+  if (!shapeId) return null;
+  try {
+    const { DatabaseSync } = require('node:sqlite');
+    const dbPath = path.join(__dirname, '..', 'data', 'shapes.db');
+    if (fs.existsSync(dbPath)) {
+      const db = new DatabaseSync(dbPath, { readOnly: true });
+      const row = db.prepare('SELECT coords FROM shapes WHERE shape_id = ?').get(shapeId);
+      if (row && row.coords) {
+        const parsed = JSON.parse(row.coords);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    }
+  } catch (_) {}
+  return null;
+}
+
 // Generate full timetable stop times across the service day (06:00 to 22:30 or overnight 23:00 to 05:00)
 /**
  * Memory-safe line iterator for large GTFS files (stop_times.txt is ~220MB).
@@ -304,8 +321,8 @@ class RouteCacheService {
     }
 
     // E11.1 (GTFS Shape IDs: GEN_24318 & GEN_23685)
-    const poly111_0 = shapesMap['GEN_24318'] || generateExpressPolyline(E11_1_STOPS_DIR0, false);
-    const poly111_1 = shapesMap['GEN_23685'] || generateExpressPolyline(E11_1_STOPS_DIR1, true);
+    const poly111_0 = shapesMap['GEN_24318'] || getShapeFromDb('GEN_24318') || generateExpressPolyline(E11_1_STOPS_DIR0, false);
+    const poly111_1 = shapesMap['GEN_23685'] || getShapeFromDb('GEN_23685') || generateExpressPolyline(E11_1_STOPS_DIR1, true);
     shapesMap['SHAPE_GEN_0496_D0'] = poly111_0;
     shapesMap['SHAPE_GEN_0496_D1'] = poly111_1;
     shapesMap['GEN_24318'] = poly111_0;
@@ -328,9 +345,9 @@ class RouteCacheService {
     }
 
     // E11.2 (GTFS Shape IDs: GEN_18664 + Mataró Urban Ring & GEN_18716)
-    const e112_dir1_shape = shapesMap['GEN_18716'] || generateExpressPolyline(E11_2_STOPS_DIR1, true);
+    const e112_dir1_shape = shapesMap['GEN_18716'] || getShapeFromDb('GEN_18716') || generateExpressPolyline(E11_2_STOPS_DIR1, true);
     const e112_mataro_ring = e112_dir1_shape.slice(0, 165);
-    const e112_dir0_highway = shapesMap['GEN_18664'] || generateExpressPolyline(E11_2_STOPS_DIR0, false);
+    const e112_dir0_highway = shapesMap['GEN_18664'] || getShapeFromDb('GEN_18664') || generateExpressPolyline(E11_2_STOPS_DIR0, false);
     const poly112_0 = [...e112_dir0_highway, ...e112_mataro_ring];
     const poly112_1 = e112_dir1_shape;
 
