@@ -74,8 +74,8 @@ class IngestionDaemon {
     this.startupTimeouts.push(setTimeout(() => this.pollMataroVehicles(), 200));
     this.startupTimeouts.push(setTimeout(() => this.pollDisruptions(), 800));
 
-    // 2. Schedule Mataró Bus SIRI Ingestion (every 12 seconds)
-    this.mataroPollTimer = setInterval(() => this.pollMataroVehicles(), 12000);
+    // 2. Schedule Mataró Bus SIRI Ingestion (every 20 seconds to prevent rate limits)
+    this.mataroPollTimer = setInterval(() => this.pollMataroVehicles(), 20000);
 
     // 3. Schedule Disruptions Ingestion (every 5 minutes)
     this.disruptionsTimer = setInterval(() => this.pollDisruptions(), 300000);

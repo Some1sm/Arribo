@@ -94,14 +94,18 @@ class MataroTracker extends BaseTracker {
               }
             }
 
+            const isWarning = /tall|corte|anul|desvi|obres|obras|afectaci/i.test(title + ' ' + plainText);
+            const hasExplicitLines = linesAffected.size > 0;
+
             avisos.push({
               id: 'aviso_' + (idx + 1),
               title,
               description: plainText || title,
-              linesAffected: linesAffected.size > 0 ? Array.from(linesAffected) : ['1', '2', '3', '4', '5', '6', '7', '8'],
-              affectedLines: linesAffected.size > 0 ? Array.from(linesAffected).map(l => 'L' + l).join(', ') : 'Totes les línies',
+              linesAffected: Array.from(linesAffected),
+              affectedLines: hasExplicitLines ? Array.from(linesAffected).map(l => 'L' + l).join(', ') : 'Informació General',
               agency: 'Mataró Bus (Avanza)',
-              severity: /tall|corte|anul|desvi/i.test(title) ? 'warning' : 'info',
+              severity: isWarning ? 'warning' : 'info',
+              isSpecific: hasExplicitLines,
               url: 'https://mataro.avanzagrupo.com/ca/avisos',
               active: true
             });
@@ -154,7 +158,8 @@ class MataroTracker extends BaseTracker {
     const all = await this.fetchAvisos();
     if (!lineId) return all;
     const cleanId = this.normalizeLineId(lineId);
-    return all.filter(a => (a.linesAffected || []).includes(cleanId) || (a.linesAffected || []).length === 8);
+    // For a specific line, ONLY return active warnings/disruptions that explicitly affect this line!
+    return all.filter(a => a.severity === 'warning' && Array.isArray(a.linesAffected) && a.linesAffected.includes(cleanId));
   }
 
   precompileStaticRoutes() {

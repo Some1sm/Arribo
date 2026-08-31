@@ -9,7 +9,7 @@ class MataroSiriClient {
     this.accountId = 'Mataro';
     this.accountKey = 'Mataro*WS';
     this.cache = new Map();
-    this.cacheTtlMs = 15000; // 15-second live cache with 10-minute (600s) stale fallback buffer
+    this.cacheTtlMs = 20000; // 20-second live cache with 10-minute (600s) stale fallback buffer
     this.staleFallbackTtlMs = 10 * 60 * 1000; // 10-minute fallback buffer for dead reckoning
     this.lastWarnTime = 0;
     // Pluggable transport: server.js installs an WorkerBridge-backed backend

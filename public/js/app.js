@@ -22,7 +22,7 @@ class TransitApp {
     this.LANDING_SEARCH_CAP = 60; // max cards rendered per group during active search
     this.expandedGroups = new Set(); // Group IDs expanded by user on landing page
 
-    this.pollInterval = 15;
+    this.pollInterval = 20;
     this.secondsRemaining = this.pollInterval;
     this.pollTimer = null;
     this.searchDebounceTimer = null;
@@ -1085,7 +1085,13 @@ class TransitApp {
     const descEl = document.getElementById('disruption-banner-desc');
     const chipCount = document.getElementById('incidents-count-text');
 
-    const disruptions = lData.disruptions || [];
+    const lId = String(lData.lineId || lData.id || this.activeLineId || '');
+    const disruptions = (lData.disruptions || []).filter(d => 
+      d.severity === 'warning' && (
+        (Array.isArray(d.linesAffected) && d.linesAffected.includes(lId)) ||
+        (!d.linesAffected || d.linesAffected.length === 0)
+      )
+    );
 
     if (chipCount) {
       chipCount.textContent = disruptions.length > 0 ? `${disruptions.length} Avisos` : 'Avisos';
