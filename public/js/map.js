@@ -831,11 +831,11 @@ class C10Map {
     const now = Date.now();
     const currentTripIds = new Set(activeBuses.map(b => String(b.tripId || b.vehicleId || `${b.lat}_${b.lon}`)));
 
-    // Handle missing buses with 90-second client-side dead-reckoning hold buffer
+    // Handle missing buses with 10-minute (600s) client-side dead-reckoning hold buffer
     for (const [tId, obj] of this.busMarkersMap.entries()) {
       if (!currentTripIds.has(tId)) {
         const elapsedSec = (now - (obj.lastUpdated || now)) / 1000;
-        if (elapsedSec > 90) {
+        if (elapsedSec > 600) {
           this.map.removeLayer(obj.marker);
           this.busMarkersMap.delete(tId);
         } else {

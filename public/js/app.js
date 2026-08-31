@@ -878,7 +878,7 @@ class TransitApp {
         this.renderStopsBrowser(lData, lId);
 
         // 2. Render Map Route & Bus Markers immediately
-        this.updateActiveBusesCount(this.activeBuses.length);
+        this.updateActiveBusesCount(this.activeBuses.length, lData);
         const lineColor = lData.color || '#009485';
         const coords = lData.coords || lData.polyline || lData.allDirections?.[0]?.coords || lData.allDirections?.[0]?.polyline || [];
         const secondaryCoords = isBoth ? (lData.secondaryCoords || lData.allDirections?.[1]?.coords || lData.allDirections?.[1]?.polyline || null) : null;
@@ -3311,11 +3311,29 @@ class TransitApp {
     }
   }
 
-  updateActiveBusesCount(count) {
+  updateActiveBusesCount(count, lData = null) {
     const headerEl = document.getElementById('header-active-buses-text');
     const mapEl = document.getElementById('map-bus-counter-tag');
-    if (headerEl) headerEl.innerHTML = `<strong>${count}</strong> bus${count === 1 ? '' : 'os'}`;
-    if (mapEl) mapEl.textContent = `🚌 ${count} actiu${count === 1 ? '' : 's'}`;
+    if (headerEl) {
+      if (count > 0) {
+        const isEst = lData?.isEstimated || (this.activeBuses.length > 0 && this.activeBuses.every(b => b.isEstimated));
+        headerEl.innerHTML = isEst 
+          ? `⚡ <strong>${count}</strong> estimat${count === 1 ? '' : 's'}` 
+          : `🟢 <strong>${count}</strong> en directe`;
+      } else {
+        headerEl.innerHTML = `🕒 <strong>0</strong> busos (horari teòric)`;
+      }
+    }
+    if (mapEl) {
+      if (count > 0) {
+        const isEst = lData?.isEstimated || (this.activeBuses.length > 0 && this.activeBuses.every(b => b.isEstimated));
+        mapEl.innerHTML = isEst
+          ? `⚡ ${count} bus${count === 1 ? '' : 'os'} (estimat)`
+          : `🟢 ${count} bus${count === 1 ? '' : 'os'} en directe`;
+      } else {
+        mapEl.innerHTML = `🕒 Horari programat (sense GPS)`;
+      }
+    }
   }
 
   setupAudio() {

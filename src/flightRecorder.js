@@ -22,14 +22,10 @@ class FlightRecorder {
     // Async persistence gateway: async (op, args) => result. Backed by RPC in
     // the main process and by direct dispatch in the worker.
     this._gateway = null;
-    // Maximum cumulative dead-reckoning window per vehicle. Matches the documented
-    // "90-second client-side retention" behaviour and bounds positional drift.
-    this.maxExtrapolationMs = 90000;
-    // Hard ceiling on API-serving staleness, aligned with the worker's own
-    // extrapolateStaleVehicles() 5-minute expiry. Guarantees that even with a
-    // generous per-operator serviceableMs, a dead entry can never linger past
-    // this window in the main process.
-    this.staleEvictionCeilingMs = 5 * 60 * 1000;
+    // Maximum cumulative dead-reckoning window per vehicle (10 minutes retention).
+    this.maxExtrapolationMs = 10 * 60 * 1000;
+    // Hard ceiling on API-serving staleness (10 minutes).
+    this.staleEvictionCeilingMs = 10 * 60 * 1000;
     this.init();
   }
 
@@ -180,8 +176,8 @@ class FlightRecorder {
 
   extrapolateStaleVehicles() {
     const now = Date.now();
-    const expirationThresholdMs = 5 * 60 * 1000; // 5 mins without GPS = expired
-    const extrapolateThresholdMs = 18 * 1000;     // >18s without GPS = dead reckon
+    const expirationThresholdMs = 10 * 60 * 1000; // 10 mins without GPS = expired
+    const extrapolateThresholdMs = 15 * 1000;     // >15s without GPS = dead reckon
 
     for (const [vId, v] of this.vehicles.entries()) {
       const elapsed = now - v.lastSeen;

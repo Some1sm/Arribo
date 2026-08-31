@@ -19,10 +19,96 @@ class MataroTracker extends BaseTracker {
     this.linesData = [];
     this.routesData = {};
     this.allStopsMap = new Map();
-    this.vehicleHistory = new Map(); // Vehicle tracking history for dead-zone estimation
+    this.staticLineCache = new Map(); // Pre-compiled static line routes, polylines & stops
+    this.vehicleHistory = new Map(); // Vehicle tracking history with 10-minute retention
     this.stopDeparturesMemoryCache = new Map(); // In-memory pre-computed stop departures cache
     this.stopCacheTtlMs = 35000; // 35-second TTL (sub-millisecond instant serving)
     this.loadDatasets();
+    this.precompileStaticRoutes();
+  }
+
+  precompileStaticRoutes() {
+    try {
+      for (const line of this.linesData) {
+        const lId = String(line.id);
+        const routes = this.routesData[lId] || [];
+        for (const dir of ['0', '1', 'both']) {
+          const isBoth = dir === 'both';
+          const dirIdx = isBoth ? 0 : (parseInt(dir, 10) || 0);
+          const selectedRoute = routes[dirIdx] || routes[0] || { coords: [], stops: [] };
+
+          const polyline = (selectedRoute.coords || []).map(c => [
+            parseFloat(c.Latitude),
+            parseFloat(c.Longitude)
+          ]);
+
+          const stops = (selectedRoute.stops || []).map((s, idx) => {
+            const globalStop = this.allStopsMap.get(String(s.id)) || {};
+            const cleanName = s.name.replace(/ - \d+$/, '');
+            return {
+              id: String(s.id),
+              seq: idx + 1,
+              name: cleanName,
+              lat: s.latitude || globalStop.lat,
+              lon: s.longitude || globalStop.lon,
+              code: String(s.id),
+              zone: 'Mataró Urbà',
+              color: line.color
+            };
+          });
+
+          const allDirections = routes.map((r, idx) => ({
+            dirId: String(idx),
+            name: r.name,
+            polyline: (r.coords || []).map(c => [parseFloat(c.Latitude), parseFloat(c.Longitude)]),
+            stops: (r.stops || []).map((s, sIdx) => {
+              const globalStop = this.allStopsMap.get(String(s.id)) || {};
+              return {
+                id: String(s.id),
+                seq: sIdx + 1,
+                name: s.name.replace(/ - \d+$/, ''),
+                lat: s.latitude || globalStop.lat,
+                lon: s.longitude || globalStop.lon,
+                code: String(s.id),
+                zone: 'Mataró Urbà',
+                color: line.color
+              };
+            })
+          }));
+
+          const cacheKey = `${lId}_${dir}`;
+          this.staticLineCache.set(cacheKey, {
+            lineId: lId,
+            code: `L${lId}`,
+            name: line.name.trim(),
+            color: line.color || '#009485',
+            agency: 'Mataró Bus (Avanza)',
+            group: 'mataro',
+            direction: isBoth ? 'both' : String(dirIdx),
+            directionName: isBoth ? 'Ambdós sentits' : (selectedRoute.name || `${line.name}`),
+            directions: routes.map((r, idx) => ({
+              dirId: String(idx),
+              routeId: r.id,
+              name: r.name,
+              stopsCount: r.stops ? r.stops.length : 0
+            })),
+            totalStops: stops.length,
+            stops,
+            coords: polyline,
+            polyline,
+            geometrySource: 'gtfs',
+            geometryEstimated: false,
+            secondaryCoords: (isBoth && allDirections.length > 1) ? allDirections[1].polyline : null,
+            secondaryStops: (isBoth && allDirections.length > 1) ? allDirections[1].stops : null,
+            secondaryColor: '#38bdf8',
+            allDirections
+          });
+        }
+      }
+      console.log(`[MataroTracker] ⚡ Pre-compiled ${this.staticLineCache.size} static line route variants in memory.`);
+    } catch (e) {
+      console.warn('[MataroTracker] Static routes precompilation warning:', e.message);
+    }
   }
 
   // Get authoritative schedule parameters for a line, route direction and day type
@@ -160,58 +246,24 @@ class MataroTracker extends BaseTracker {
   // 2. Get full details for a line & direction (stops, route polyline, and live/estimated buses)
   async getLineDetails(lineId, direction = '0') {
     const lId = this.normalizeLineId(lineId) || '1';
+    const isBoth = direction === 'both';
+    const dirIdx = isBoth ? 0 : (parseInt(direction, 10) || 0);
+    const cacheKey = `${lId}_${direction}`;
+    const staticTemplate = this.staticLineCache.get(cacheKey) || this.staticLineCache.get(`${lId}_0`);
+
     const lineInfo = this.linesData.find(l => String(l.id) === lId) || { id: lId, name: `Línia ${lId}`, color: '#009485' };
     const routes = this.routesData[lId] || [];
-    const isBoth = direction === 'both';
-    
-    // Choose route by index or ID
-    const dirIdx = isBoth ? 0 : (parseInt(direction, 10) || 0);
     const selectedRoute = routes[dirIdx] || routes[0] || { coords: [], stops: [] };
-
-    // Format polyline
-    const polyline = (selectedRoute.coords || []).map(c => [
-      parseFloat(c.Latitude),
-      parseFloat(c.Longitude)
-    ]);
-
-    // Format stops
-    const stops = (selectedRoute.stops || []).map((s, idx) => {
-      const globalStop = this.allStopsMap.get(String(s.id)) || {};
-      const cleanName = s.name.replace(/ - \d+$/, '');
-      return {
-        id: String(s.id),
-        seq: idx + 1,
-        name: cleanName,
-        lat: s.latitude || globalStop.lat,
-        lon: s.longitude || globalStop.lon,
-        code: String(s.id),
-        zone: 'Mataró Urbà',
-        color: lineInfo.color
-      };
-    });
-
-    // All Directions data for showing both directions on map
-    const allDirections = routes.map((r, idx) => ({
-      dirId: String(idx),
-      name: r.name,
-      polyline: (r.coords || []).map(c => [parseFloat(c.Latitude), parseFloat(c.Longitude)]),
-      stops: (r.stops || []).map((s, sIdx) => {
-        const globalStop = this.allStopsMap.get(String(s.id)) || {};
-        return {
-          id: String(s.id),
-          seq: sIdx + 1,
-          name: s.name.replace(/ - \d+$/, ''),
-          lat: s.latitude || globalStop.lat,
-          lon: s.longitude || globalStop.lon,
-          code: String(s.id),
-          zone: 'Mataró Urbà',
-          color: lineInfo.color
-        };
-      })
-    }));
+    const polyline = staticTemplate ? staticTemplate.polyline : (selectedRoute.coords || []).map(c => [parseFloat(c.Latitude), parseFloat(c.Longitude)]);
+    const stops = staticTemplate ? staticTemplate.stops : [];
+    const allDirections = staticTemplate ? staticTemplate.allDirections : [];
 
     // Fetch Live Buses via SIRI
-    let liveVehicles = await siriClient.getLiveVehicles(lId);
+    let liveVehicles = [];
+    try {
+      liveVehicles = await siriClient.getLiveVehicles(lId);
+    } catch (_) {}
+
     if (!liveVehicles || liveVehicles.length === 0) {
       const frVehs = flightRecorder.getLineVehicles(`L${lId}`);
       const mataroVehs = (frVehs || []).filter(v => (v.agency || '').includes('Mataró') || String(v.lineId) === lId);
@@ -220,14 +272,14 @@ class MataroTracker extends BaseTracker {
       }
     }
 
-    // Apply Deterministic Direction Matching & Road-Snapping
+    // Apply Deterministic Direction Matching & Road-Snapping with 10-minute dead reckoning
     let processedBuses = [];
     if (isBoth && routes.length > 1) {
       const vehs0 = liveVehicles.filter(v => this.matchVehicleToRouteIndex(v, routes) === 0);
       const vehs1 = liveVehicles.filter(v => this.matchVehicleToRouteIndex(v, routes) === 1);
 
-      const buses0 = this.processBusesWithDeadReckoning(vehs0, routes[0], allDirections[0].stops, '0', liveVehicles);
-      const buses1 = this.processBusesWithDeadReckoning(vehs1, routes[1], allDirections[1].stops, '1', liveVehicles);
+      const buses0 = this.processBusesWithDeadReckoning(vehs0, routes[0], allDirections[0]?.stops || stops, '0', liveVehicles);
+      const buses1 = this.processBusesWithDeadReckoning(vehs1, routes[1], allDirections[1]?.stops || stops, '1', liveVehicles);
 
       processedBuses = [...buses0, ...buses1];
     } else {
@@ -253,7 +305,11 @@ class MataroTracker extends BaseTracker {
     });
     processedBuses = Array.from(uniqueBusesMap.values());
 
+    const hasLiveGps = processedBuses.some(b => !b.isEstimated);
+    const isOnlyEstimated = processedBuses.length > 0 && processedBuses.every(b => b.isEstimated);
+
     return {
+      ...(staticTemplate || {}),
       lineId: lId,
       code: `L${lId}`,
       name: lineInfo.name.trim(),
@@ -280,7 +336,11 @@ class MataroTracker extends BaseTracker {
       allDirections,
       activeBuses: processedBuses,
       totalActiveBuses: processedBuses.length,
-      totalVehiclesInCircuit: processedBuses.length
+      totalVehiclesInCircuit: processedBuses.length,
+      isRealTime: hasLiveGps,
+      isEstimated: isOnlyEstimated,
+      isScheduleBaseline: processedBuses.length === 0,
+      lastSyncTimestamp: Date.now()
     };
   }
 
@@ -361,7 +421,7 @@ class MataroTracker extends BaseTracker {
       });
     });
 
-    // 2. Dead-Reckoning: Check if any recently tracked vehicles lost signal in dead zones
+    // 2. Dead-Reckoning: Check if any recently tracked vehicles lost signal in dead zones (10-minute / 600s window)
     for (const [vId, hist] of this.vehicleHistory.entries()) {
       if (String(hist.lineId) !== String(route.id_linea)) continue;
       if (String(hist.direction) !== String(dirId)) continue; // Only dead-reckon on the matching direction
@@ -369,10 +429,12 @@ class MataroTracker extends BaseTracker {
 
       // If vehicle is live on ANY direction of this line, do not dead-reckon it
       const isCurrentlyActive = (allLineLiveVehicles || liveBuses).some(b => String(b.vehicleId) === String(vId));
-      if (!isCurrentlyActive && elapsedSec >= 15 && elapsedSec <= 120) {
+      if (!isCurrentlyActive && elapsedSec >= 15 && elapsedSec <= 600) {
         const estPos = this.extrapolatePolylinePosition(hist, elapsedSec, polyCoords);
         if (estPos) {
           const segInfo = this.findNearestSegment(estPos.lat, estPos.lon, stops, polyCoords);
+          const elapsedMin = Math.floor(elapsedSec / 60);
+          const elapsedText = elapsedMin > 0 ? `${elapsedMin} min` : `${Math.round(elapsedSec)}s`;
 
           result.push({
             tripId: `mataro_${vId}`,
@@ -387,7 +449,7 @@ class MataroTracker extends BaseTracker {
             bearing: estPos.bearing,
             compass: geoUtils.bearingToCompassName(estPos.bearing),
             speedKmh: Math.max(15, Math.min(45, hist.speedKmh || 30)),
-            delayMins: hist.delayMins,
+            delayMins: hist.delayMins || 0,
             delayFormatted: hist.delayMins > 0 ? `+${hist.delayMins} min retard` : 'Puntual',
             isEstimated: true,
             isRealTime: false,
@@ -395,7 +457,7 @@ class MataroTracker extends BaseTracker {
             timestamp: hist.lastSeen,
             origin: hist.origin || '',
             destination: hist.destination || '',
-            statusText: `⚡ Estimació Zona Cobertura (${Math.round(elapsedSec)}s sense GPS)`,
+            statusText: `⚡ Estimació de posició (${elapsedText} sense GPS)`,
             fromStop: segInfo.fromStop,
             toStop: segInfo.toStop,
             fromSeq: segInfo.fromSeq,
