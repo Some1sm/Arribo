@@ -52,6 +52,8 @@ class C10Map {
     this.busMarkersMap = new Map(); // tripId -> { marker, busData, subpath, currentBearing }
     this.routePolyline = null;
     this.secondaryRoutePolyline = null;
+    this.detourPolylineLayer = null;
+    this.provisionalStopMarkers = [];
     this.vehicleTrailPolyline = null;
     this.activePolylineCoords = []; // Array of [lat, lon]
     this.tileLayer = null;
@@ -408,14 +410,13 @@ class C10Map {
     return arrows;
   }
 
-  // Render stops and road polyline on map (with support for both directions simultaneously)
-  renderStops(stops, targetStopId = '', onStopClick = null, shouldFitBounds = false, lineColor = '#009485', customPolyline = null, secondaryPolyline = null, secondaryStops = null, secondaryColor = '#38bdf8', lineId = '', direction = '', geometryInfo = null) {
+  // Render stops and road polyline on map (with support for both directions and detours)
+  renderStops(stops, targetStopId = '', onStopClick = null, shouldFitBounds = false, lineColor = '#009485', customPolyline = null, secondaryPolyline = null, secondaryStops = null, secondaryColor = '#38bdf8', lineId = '', direction = '', geometryInfo = null, detourInfo = null) {
     if (!this.map) return;
     this.updateRouteSourceBadge(geometryInfo);
 
-    // NOTE: targetStopId intentionally excluded from fingerprint so clicking a new
-    // target stop toggles styling on cached markers instead of rebuilding them all.
-    const stopsFingerprint = `${lineId}_${direction}_${stops.length}_${lineColor}_${customPolyline ? customPolyline.length : 0}_${secondaryPolyline ? secondaryPolyline.length : 0}`;
+    const detourSig = detourInfo?.hasDetour ? `${detourInfo.title}_${detourInfo.detourPolyline?.length || 0}` : 'no-detour';
+    const stopsFingerprint = `${lineId}_${direction}_${stops.length}_${lineColor}_${customPolyline ? customPolyline.length : 0}_${secondaryPolyline ? secondaryPolyline.length : 0}_${detourSig}`;
     const alreadyRendered = this.lastStopsFingerprint === stopsFingerprint && this.stopMarkers.length > 0;
 
     if (!alreadyRendered) {
@@ -432,6 +433,13 @@ class C10Map {
         this.secondaryStopMarkers = [];
       } else {
         this.secondaryStopMarkers = [];
+      }
+
+      if (this.provisionalStopMarkers) {
+        this.provisionalStopMarkers.forEach(m => this.map.removeLayer(m));
+        this.provisionalStopMarkers = [];
+      } else {
+        this.provisionalStopMarkers = [];
       }
 
       if (this.directionalArrowMarkers) {
@@ -451,6 +459,11 @@ class C10Map {
         this.secondaryRoutePolyline = null;
       }
 
+      if (this.detourPolylineLayer) {
+        this.map.removeLayer(this.detourPolylineLayer);
+        this.detourPolylineLayer = null;
+      }
+
       const latLngs = [];
 
       // 1. Render Primary Direction Stops
@@ -458,7 +471,6 @@ class C10Map {
         if (!stop.lat || !stop.lon) return;
 
         // Display coords: snap marker onto road polyline when close enough.
-        // latLngs keeps true coords so bounds/polyline fallback stay faithful.
         const snapped = snapStopToPolyline(stop.lat, stop.lon, customPolyline, 120);
         const markerLatLng = snapped || [stop.lat, stop.lon];
         const latLng = [stop.lat, stop.lon];
@@ -467,8 +479,25 @@ class C10Map {
         const stopIdentifier = String(stop.mouteStopId || stop.id || stop.code || '');
         const isTarget = stopIdentifier === String(targetStopId);
         const isMaresme = stop.zone === 'Zona Maresme' || (stop.lon && stop.lon >= 2.289);
+        const isCancelled = Boolean(stop.isCancelled);
 
-        const markerHtml = `
+        const markerHtml = isCancelled ? `
+          <div class="stop-marker-dot cancelled" style="
+            width: 16px;
+            height: 16px;
+            background-color: #ef4444;
+            border: 2px solid #ffffff;
+            border-radius: 50%;
+            box-shadow: 0 0 10px rgba(239, 68, 68, 0.8);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
+            color: #ffffff;
+            font-weight: 900;
+          ">✕</div>
+        ` : `
           <div class="stop-marker-dot" style="
             width: ${isTarget ? '22px' : '14px'};
             height: ${isTarget ? '22px' : '14px'};
@@ -484,20 +513,30 @@ class C10Map {
 
         const customIcon = L.divIcon({
           html: markerHtml,
-          className: 'c10-stop-marker',
-          iconSize: [isTarget ? 22 : 14, isTarget ? 22 : 14],
-          iconAnchor: [isTarget ? 11 : 7, isTarget ? 11 : 7]
+          className: `c10-stop-marker ${isCancelled ? 'cancelled' : ''}`,
+          iconSize: [isTarget ? 22 : 16, isTarget ? 22 : 16],
+          iconAnchor: [isTarget ? 11 : 8, isTarget ? 11 : 8]
         });
 
         const marker = L.marker(markerLatLng, { icon: customIcon }).addTo(this.map);
 
         // Hover tooltip
-        marker.bindTooltip(`
+        const tooltipHtml = isCancelled ? `
+          <div style="display:flex; flex-direction:column; gap:2px;">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="background:#ef4444; color:#fff; font-size:10px; font-weight:800; padding:1px 5px; border-radius:3px;">❌ ANUL·LADA</span>
+              <span style="text-decoration:line-through; color:#f87171;">${escHtml(stop.name)}</span>
+            </div>
+            <div style="font-size:10px; color:#cbd5e1;">Afectada per desviament d'obres</div>
+          </div>
+        ` : `
           <div style="display:flex; align-items:center; gap:6px;">
             <span style="background:${lineColor}; color:#fff; font-size:10px; font-weight:800; padding:1px 5px; border-radius:3px;">#${stop.seq || index + 1}</span>
             <span>${escHtml(stop.name)}</span>
           </div>
-        `, {
+        `;
+
+        marker.bindTooltip(tooltipHtml, {
           direction: 'top',
           offset: [0, -8],
           className: 'stop-hover-tooltip',
@@ -513,11 +552,60 @@ class C10Map {
           }
         });
 
-        marker._stopMeta = { id: stopIdentifier, lineColor, maresme: isMaresme };
+        marker._stopMeta = { id: stopIdentifier, lineColor, maresme: isMaresme, isCancelled };
         const dotRoot = marker.getElement();
         marker._dotEl = dotRoot ? dotRoot.querySelector('.stop-marker-dot') : null;
         this.stopMarkers.push(marker);
       });
+
+      // 1b. Render Provisional Detour Stops (if active detour exists)
+      if (detourInfo && Array.isArray(detourInfo.provisionalStops)) {
+        detourInfo.provisionalStops.forEach(p => {
+          if (!p.lat || !p.lon) return;
+          const pMarkerHtml = `
+            <div class="stop-marker-dot provisional" style="
+              width: 18px;
+              height: 18px;
+              background-color: #f59e0b;
+              border: 2px solid #ffffff;
+              border-radius: 50%;
+              box-shadow: 0 0 10px #f59e0b;
+              cursor: pointer;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-size: 10px;
+              color: #000;
+              font-weight: 900;
+            ">🔄</div>
+          `;
+
+          const pIcon = L.divIcon({
+            html: pMarkerHtml,
+            className: 'c10-stop-marker provisional',
+            iconSize: [18, 18],
+            iconAnchor: [9, 9]
+          });
+
+          const pMarker = L.marker([p.lat, p.lon], { icon: pIcon }).addTo(this.map);
+          pMarker.bindTooltip(`
+            <div style="display:flex; flex-direction:column; gap:2px;">
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span style="background:#f59e0b; color:#000; font-size:10px; font-weight:800; padding:1px 5px; border-radius:3px;">PROVISIONAL</span>
+                <span style="color:#fbbf24; font-weight:700;">${escHtml(p.name)}</span>
+              </div>
+              <div style="font-size:10px; color:#cbd5e1;">Parada provisional habilitada per tall</div>
+            </div>
+          `, {
+            direction: 'top',
+            offset: [0, -8],
+            className: 'stop-hover-tooltip',
+            opacity: 0.95
+          });
+
+          this.provisionalStopMarkers.push(pMarker);
+        });
+      }
 
       // 2. Render Secondary Direction Stops (if showing both directions)
       if (secondaryStops && secondaryStops.length > 0) {
@@ -605,6 +693,18 @@ class C10Map {
         // Add Directional Arrow Chevrons
         const primaryArrows = this.createDirectionalArrows(this.activePolylineCoords, lineColor || '#009485');
         this.directionalArrowMarkers.push(...primaryArrows);
+      }
+
+      // 4b. Draw Detour Trajectory Polyline (if active detour on this line)
+      if (detourInfo && Array.isArray(detourInfo.detourPolyline) && detourInfo.detourPolyline.length > 1) {
+        this.detourPolylineLayer = L.polyline(detourInfo.detourPolyline, {
+          color: '#f59e0b',
+          weight: 5,
+          opacity: 0.95,
+          dashArray: '6, 8',
+          lineCap: 'round',
+          lineJoin: 'round'
+        }).addTo(this.map);
       }
 
       // 5. Draw Secondary Route Polyline (if both directions active)
@@ -1207,6 +1307,15 @@ class C10Map {
   focusTargetStop(lat, lon) {
     if (!this.map || !lat || !lon) return;
     this.map.flyTo([lat, lon], 15, { duration: 1.2 });
+  }
+
+  focusDetour(detour) {
+    if (!this.map || !detour) return;
+    const pts = detour.detourPolyline || [];
+    if (pts.length > 0) {
+      const bounds = L.latLngBounds(pts);
+      this.map.fitBounds(bounds, { padding: [50, 50], maxZoom: 16, animate: true });
+    }
   }
 
   invalidateSize(options = { pan: false, debounceMoveend: true }) {

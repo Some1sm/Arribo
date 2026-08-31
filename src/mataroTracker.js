@@ -10,6 +10,7 @@ const mataroSchedules = require('./data/mataroSchedules');
 const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
 const flightRecorder = require('./flightRecorder');
+const detourEngine = require('./core/detours/detourEngine');
 const BaseTracker = require('./core/BaseTracker');
 
 class MataroTracker extends BaseTracker {
@@ -443,6 +444,20 @@ class MataroTracker extends BaseTracker {
     const hasLiveGps = processedBuses.some(b => !b.isEstimated);
     const isOnlyEstimated = processedBuses.length > 0 && processedBuses.every(b => b.isEstimated);
     const disruptions = await this.getDisruptions(lId);
+    let detour = null;
+    try {
+      detour = await detourEngine.getLineDetour(lId, String(dirIdx), stops, disruptions);
+    } catch (_) {}
+
+    if (detour && detour.hasDetour) {
+      const cancelledSet = new Set(detour.cancelledStopIds || []);
+      stops.forEach(s => {
+        if (cancelledSet.has(String(s.id))) {
+          s.isCancelled = true;
+          s.cancelReason = detour.title;
+        }
+      });
+    }
 
     return {
       ...(staticTemplate || {}),
@@ -477,7 +492,9 @@ class MataroTracker extends BaseTracker {
       isEstimated: isOnlyEstimated,
       isScheduleBaseline: processedBuses.length === 0,
       lastSyncTimestamp: Date.now(),
-      disruptions
+      disruptions,
+      detour,
+      detourCoords: detour ? detour.detourPolyline : null
     };
   }
 
