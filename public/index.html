@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Arribo! | Telemetria i Seguiment d'Autobusos en Temps Real</title>
-  <meta name="description" content="Arribo! Plataforma de telemetria GPS i seguiment d'arribades d'autobusos en temps real per a totes les línies d'autobús urbà i interurbà de Catalunya.">
+  <title>Arribo! Mataró | Telemetria i Seguiment d'Autobusos Urbans en Temps Real</title>
+  <meta name="description" content="Arribo! Mataró — Plataforma de telemetria GPS i seguiment d'arribades d'autobusos urbans en temps real per a les línies L1 a L8 de Mataró Bus.">
   
   <!-- Favicon -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚌</text></svg>">
@@ -13,7 +13,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
   
   <!-- App Styles -->
-  <link rel="stylesheet" href="/css/style.css?v=3.2.55">
+  <link rel="stylesheet" href="/css/style.css?v=4.0.0">
 </head>
 <body>
 
@@ -23,15 +23,15 @@
       <div class="logo-group" id="header-logo-group" title="Arribo! - Tornar a l'inici" role="button" tabindex="0">
         <div class="logo-brand-badge" id="header-line-badge">🚌</div>
         <div class="app-title-group">
-          <h1>Arribo! <span class="app-version-pill">v3.0</span></h1>
-          <p class="app-subtitle" id="header-subtitle">Telemetria de busos en directe</p>
+          <h1>Arribo! <span class="app-version-pill">Mataró</span></h1>
+          <p class="app-subtitle" id="header-subtitle">Mataró Bus Urbà en directe</p>
         </div>
       </div>
 
       <!-- Universal Stop & Line Search Input -->
       <div class="global-search-container">
         <svg class="search-icon-svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="text" id="global-search-input" class="global-search-input" placeholder="Cercar línia o parada (ex: B25, Tetuan, C-10, L1)..." autocomplete="off">
+        <input type="text" id="global-search-input" class="global-search-input" placeholder="Cercar línia o parada (ex: L1, Hospital, Rodalies, 7, Tereses)..." autocomplete="off">
         <span class="search-shortcut-hint"><kbd>⌘</kbd><kbd>K</kbd></span>
         <div class="search-results-dropdown" id="search-results-dropdown"></div>
       </div>
@@ -105,35 +105,30 @@
       
       <!-- Landing Hero Card -->
       <section class="landing-hero-card" aria-label="Benvinguda a Arribo!">
-        <div class="landing-hero-badge">✨ Tota la Xarxa de Catalunya en Directe</div>
-        <h2 class="landing-hero-title">Quin autobús vols seguir?</h2>
+        <div class="landing-hero-badge">✨ Mataró Bus Urbà en Directe (L1–L8)</div>
+        <h2 class="landing-hero-title">Quin autobús de Mataró vols seguir?</h2>
         <p class="landing-hero-subtitle">
-          Cerca entre centenars de línies d'autobús urbà i interurbà amb telemetria GPS en directe, horaris reals i estimació de retards.
+          Cerca entre les 8 línies de Mataró Bus Urbà amb telemetria GPS en directe, horaris reals i temps d'espera exactes.
         </p>
 
         <!-- Big Hero Search Input -->
         <div class="landing-hero-search-wrapper">
           <svg class="landing-search-icon-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input type="text" id="landing-hero-search-input" class="landing-hero-search-input" placeholder="🔍 Cerca per línia (ex: B25, C-10, L95, e11.1, 7, M19, 603, A1), municipi o operador..." autocomplete="off">
+          <input type="text" id="landing-hero-search-input" class="landing-hero-search-input" placeholder="🔍 Cerca per línia (ex: L1, L2, L3, 5, 8) o parada (ex: Hospital, Rodalies, Tereses)..." autocomplete="off">
           <button type="button" class="landing-search-clear-btn" id="btn-landing-search-clear" aria-label="Netejar cerca" style="display:none;">&times;</button>
         </div>
 
         <!-- Network & Operator Filter Tabs -->
         <div class="landing-filter-tabs" id="landing-filter-tabs">
           <button type="button" class="landing-filter-tab active" data-filter="all">🌐 Totes les línies</button>
-          <button type="button" class="landing-filter-tab" data-filter="metrobus">🚇 Metrobús AMB</button>
-          <button type="button" class="landing-filter-tab" data-filter="expres">⚡ Exprés.cat</button>
-          <button type="button" class="landing-filter-tab" data-filter="sagales">🦉 Sagalés</button>
-          <button type="button" class="landing-filter-tab" data-filter="moventis">🌊 Moventis / Casas</button>
-          <button type="button" class="landing-filter-tab" data-filter="mataro">📍 Mataró Bus Urbà</button>
-          <button type="button" class="landing-filter-tab" data-filter="tusgsal">🟡 TUSGSAL (Barcelonès Nord)</button>
-          <button type="button" class="landing-filter-tab" data-filter="avanza">🔵 Avanza Baix & Garraf</button>
-          <button type="button" class="landing-filter-tab" data-filter="monbus">🟠 Monbus & Aerobús</button>
-          <button type="button" class="landing-filter-tab" data-filter="plana">🏖️ Empresa Plana</button>
-          <button type="button" class="landing-filter-tab" data-filter="teisa">🌲 TEISA</button>
-          <button type="button" class="landing-filter-tab" data-filter="hife">⚓ HIFE</button>
-          <button type="button" class="landing-filter-tab" data-filter="soler">🟢 Soler i Sauret</button>
-          <button type="button" class="landing-filter-tab" data-filter="interurba">🚌 Altres Interurbans</button>
+          <button type="button" class="landing-filter-tab" data-filter="1">L1</button>
+          <button type="button" class="landing-filter-tab" data-filter="2">L2</button>
+          <button type="button" class="landing-filter-tab" data-filter="3">L3</button>
+          <button type="button" class="landing-filter-tab" data-filter="4">L4</button>
+          <button type="button" class="landing-filter-tab" data-filter="5">L5</button>
+          <button type="button" class="landing-filter-tab" data-filter="6">L6</button>
+          <button type="button" class="landing-filter-tab" data-filter="7">L7</button>
+          <button type="button" class="landing-filter-tab" data-filter="8">L8</button>
         </div>
       </section>
 
@@ -142,7 +137,7 @@
         <div id="landing-lines-container" class="landing-lines-container">
           <div style="padding:2.5rem 1rem; text-align:center; color:var(--text-muted);">
             <div style="font-size:1.8rem; margin-bottom:0.5rem;">🚌</div>
-            <div>Carregant catàleg de línies de transport...</div>
+            <div>Carregant línies de Mataró Bus...</div>
           </div>
         </div>
       </section>
@@ -152,8 +147,8 @@
         <div class="landing-stat-card">
           <div class="stat-icon-badge">🚌</div>
           <div class="stat-card-text">
-            <strong>Centenars de Línies</strong>
-            <span>Tota la xarxa urbana i interurbana de Catalunya en una sola app</span>
+            <strong>8 Línies Urbanes</strong>
+            <span>Cobertura completa de tota la xarxa urbana de Mataró Bus (L1 a L8)</span>
           </div>
         </div>
 
@@ -161,15 +156,15 @@
           <div class="stat-icon-badge">🛰️</div>
           <div class="stat-card-text">
             <strong>Telemetria GPS en Directe</strong>
-            <span>Posició exacta dels autobusos i velocitat en temps real</span>
+            <span>Posició exacta dels autobusos i velocitat en temps real via SIRI</span>
           </div>
         </div>
 
         <div class="landing-stat-card">
           <div class="stat-icon-badge">⏱️</div>
           <div class="stat-card-text">
-            <strong>Temps d'Arribada Reals</strong>
-            <span>Minuts d'espera exactes calculats amb dades oficials de les operadores</span>
+            <strong>1.678 Horaris Oficials</strong>
+            <span>Minuts d'espera calculats amb dades oficials feiners, dissabtes i diumenges</span>
           </div>
         </div>
 
@@ -177,7 +172,7 @@
           <div class="stat-icon-badge">⚠️</div>
           <div class="stat-card-text">
             <strong>Avisos i Desviaments</strong>
-            <span>Incidències oficials i talls de trànsit al moment</span>
+            <span>Incidències oficials i avisos de Mataró Bus al moment</span>
           </div>
         </div>
       </section>
@@ -443,33 +438,28 @@
       <button type="button" class="modal-close-btn" id="line-picker-close-btn" aria-label="Tancar finestra">&times;</button>
       
       <div class="line-picker-header">
-        <div class="target-badge">Arribo! Xarxa de Transport</div>
-        <h3 class="line-picker-title">Explorador de Línies de Catalunya</h3>
-        <p class="line-picker-subtitle">Accés instantani a centenars de línies d'autobús urbà i interurbà</p>
+        <div class="target-badge">Mataró Bus Urbà</div>
+        <h3 class="line-picker-title">Explorador de Línies de Mataró</h3>
+        <p class="line-picker-subtitle">Accés instantani a les 8 línies de la xarxa urbana (L1 a L8)</p>
       </div>
 
       <!-- Quick Search Filter in Modal -->
       <div class="line-picker-search-bar">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="text" id="line-picker-search-input" class="line-picker-search-input" placeholder="🔍 Cerca per codi, municipi o destí (ex: B25, C-10, L95, e11.1, 7, M19)..." autocomplete="off">
+        <input type="text" id="line-picker-search-input" class="line-picker-search-input" placeholder="🔍 Cerca per línia (ex: L1, L2, L3, 5, 8)..." autocomplete="off">
       </div>
 
       <!-- City & Network Filter Pills -->
       <div class="line-picker-filter-tabs" id="line-picker-filter-tabs">
         <button type="button" class="line-filter-tab active" data-city="all">🌐 Totes les línies</button>
-        <button type="button" class="line-filter-tab" data-city="metrobus">🚇 Metrobús AMB</button>
-        <button type="button" class="line-filter-tab" data-city="expres">⚡ Exprés.cat</button>
-        <button type="button" class="line-filter-tab" data-city="sagales">🦉 Sagalés</button>
-        <button type="button" class="line-filter-tab" data-city="moventis">🌊 Moventis / Casas</button>
-        <button type="button" class="line-filter-tab" data-city="mataro">📍 Mataró Bus Urbà</button>
-        <button type="button" class="line-filter-tab" data-city="tusgsal">🟡 TUSGSAL (Barcelonès Nord)</button>
-        <button type="button" class="line-filter-tab" data-city="avanza">🔵 Avanza Baix & Garraf</button>
-        <button type="button" class="line-filter-tab" data-city="monbus">🟠 Monbus & Aerobús</button>
-        <button type="button" class="line-filter-tab" data-city="plana">🏖️ Empresa Plana</button>
-        <button type="button" class="line-filter-tab" data-city="teisa">🌲 TEISA</button>
-        <button type="button" class="line-filter-tab" data-city="hife">⚓ HIFE</button>
-        <button type="button" class="line-filter-tab" data-city="soler">🟢 Soler i Sauret</button>
-        <button type="button" class="line-filter-tab" data-city="interurba">🚌 Altres Interurbans</button>
+        <button type="button" class="line-filter-tab" data-city="1">L1</button>
+        <button type="button" class="line-filter-tab" data-city="2">L2</button>
+        <button type="button" class="line-filter-tab" data-city="3">L3</button>
+        <button type="button" class="line-filter-tab" data-city="4">L4</button>
+        <button type="button" class="line-filter-tab" data-city="5">L5</button>
+        <button type="button" class="line-filter-tab" data-city="6">L6</button>
+        <button type="button" class="line-filter-tab" data-city="7">L7</button>
+        <button type="button" class="line-filter-tab" data-city="8">L8</button>
       </div>
 
       <!-- Scrollable Lines Grid & Categories -->
@@ -591,7 +581,7 @@
   <footer class="app-footer">
     <div class="footer-content">
       <div>
-        <span>🚌 <strong>Arribo!</strong> • Dades oficials en temps real: Generalitat de Catalunya (Mou-te / ATM), AMB Mobilitat, TUSGSAL, Moventis, Sagalés, Avanza, Monbus, TEISA, Plana i operadores de transport</span>
+        <span>🚌 <strong>Arribo! Mataró</strong> • Dades oficials en temps real: Mataró Bus Urbà (Avanza / Ajuntament de Mataró)</span>
       </div>
       <div class="footer-links">
         <a href="#" id="footer-link-home">Totes les línies</a>
@@ -605,7 +595,7 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   
   <!-- App Scripts -->
-  <script src="/js/map.js?v=3.2.63"></script>
-  <script src="/js/app.js?v=3.2.63"></script>
+  <script src="/js/map.js?v=4.0.0"></script>
+  <script src="/js/app.js?v=4.0.0"></script>
 </body>
 </html>

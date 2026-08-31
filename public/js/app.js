@@ -302,15 +302,14 @@ class TransitApp {
 
   async fetchLines() {
     const defaultEmergencyLines = [
-      { id: 'c10', code: 'C-10', name: 'Barcelona ⇄ Mataró (per N-II)', color: '#009485', agency: 'Moventis / Casas (Interurbà Maresme)', group: 'moventis', directions: [{ dirId: '1', name: "Cap a Mataró (Hospital / Pl. d'Itàlia)" }, { dirId: '0', name: 'Cap a Barcelona (Metro la Pau)' }] },
-      { id: '1', code: 'L1', name: 'Línia 1 - Circular Mataró', color: '#00ea00', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Circular' }] },
-      { id: '2', code: 'L2', name: 'Línia 2 - Circular Mataró', color: '#ff00ff', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Circular' }] },
-      { id: '3', code: 'L3', name: 'Línia 3 - Camí de la Serra - Rocafonda', color: '#00bfff', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Sentit Anada' }, { dirId: '1', name: 'Sentit Tornada' }] },
-      { id: '4', code: 'L4', name: 'Línia 4 - Cirera - Molins', color: '#ffa500', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Sentit Anada' }, { dirId: '1', name: 'Sentit Tornada' }] },
-      { id: '5', code: 'L5', name: 'Línia 5 - Estació Rodalies - Hospital de Mataró', color: '#800080', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Cap a Hospital' }, { dirId: '1', name: 'Cap a Estació' }] },
-      { id: '6', code: 'L6', name: 'Línia 6 - Ctra. de Cirera - Institut Català Salut', color: '#ffff00', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Sentit Anada' }, { dirId: '1', name: 'Sentit Tornada' }] },
-      { id: '7', code: 'L7', name: 'Línia 7 - Pl. de les Tereses - Cerdanyola', color: '#a52a2a', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Sentit Anada' }, { dirId: '1', name: 'Sentit Tornada' }] },
-      { id: '8', code: 'L8', name: 'Línia 8 - Estació Rodalies - Galícia', color: '#ff1493', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Cap a Galícia' }, { dirId: '1', name: 'Cap a Estació' }] }
+      { id: '1', code: 'L1', name: 'Línia 1 - Circular Mataró', color: '#ff00ff', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Circular' }] },
+      { id: '2', code: 'L2', name: 'Línia 2 - Circular Mataró', color: '#804000', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Circular' }] },
+      { id: '3', code: 'L3', name: 'Línia 3 - Camí de la Serra - Rocafonda', color: '#808080', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Sentit Anada' }, { dirId: '1', name: 'Sentit Tornada' }] },
+      { id: '4', code: 'L4', name: 'Línia 4 - Cirera - Molins', color: '#ff0000', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Sentit Anada' }, { dirId: '1', name: 'Sentit Tornada' }] },
+      { id: '5', code: 'L5', name: 'Línia 5 - Estació Rodalies - Hospital de Mataró', color: '#00ea00', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Cap a Hospital' }, { dirId: '1', name: 'Cap a Estació' }] },
+      { id: '6', code: 'L6', name: 'Línia 6 - Ctra. de Cirera - Institut Català Salut', color: '#febf01', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Sentit Anada' }, { dirId: '1', name: 'Sentit Tornada' }] },
+      { id: '7', code: 'L7', name: 'Línia 7 - Pl. de les Tereses - Cerdanyola', color: '#80ffff', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Sentit Anada' }, { dirId: '1', name: 'Sentit Tornada' }] },
+      { id: '8', code: 'L8', name: 'Línia 8 - Estació Rodalies - Galícia', color: '#008040', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Cap a Galícia' }, { dirId: '1', name: 'Cap a Estació' }] }
     ];
 
     const cachedLinesStr = localStorage.getItem('arribo_lines_cache');
@@ -582,23 +581,12 @@ class TransitApp {
     const q = (this.landingSearch || '').trim().toLowerCase();
     const activeFilter = this.landingFilter || 'all';
 
-    const groups = [
-      { id: 'metrobus', name: 'Metrobús (Xarxa d\'Alta Freqüència AMB)', icon: '🚇', filter: l => (l.group === 'metrobus' || (l.agency && l.agency.includes('MetroBus')) || String(l.code).toUpperCase().startsWith('M') || ['m1','m5','m6','m12','m14','m15','m19','m26','m27','m28','m30','m75'].includes(String(l.code).toLowerCase())) && (!l.isTrain && l.group !== 'rodalies') },
-      { id: 'expres', name: 'Exprés.cat (Xarxa d\'Altes Prestacions)', icon: '⚡', filter: l => (l.group === 'expres' || String(l.code).toLowerCase().startsWith('e') || (l.mode && l.mode.includes('Exprés'))) && (!l.isTrain && l.group !== 'rodalies') },
-      { id: 'sagales', name: 'Sagalés (Vallès, Maresme, Costa & Osona)', icon: '🦉', filter: l => (l.group === 'sagales' || (l.agency && l.agency.toLowerCase().includes('sagal')) || ['n82', 'n83', '603', 'n70', 'n71', 'n73', '201', '230', 'e13', '320', '330', '400', '500'].includes(String(l.code).toLowerCase())) && (!l.isTrain && l.group !== 'rodalies') },
-      { id: 'moventis', name: 'Moventis / Casas (Maresme & Vallès)', icon: '🌊', filter: l => (l.group === 'moventis' || String(l.id) === 'c10' || (l.agency && (l.agency.includes('Moventis') || l.agency.includes('Casas')))) && (!l.isTrain && l.group !== 'rodalies') },
-      { id: 'mataro', name: 'Mataró Bus Urbà (Xarxa Local L1..L8)', icon: '📍', filter: l => (l.group === 'mataro' || ['1','2','3','4','5','6','7','8','l1','l2','l3','l4','l5','l6','l7','l8'].includes(String(l.id).toLowerCase())) && (!l.isTrain && l.group !== 'rodalies' && l.group !== 'moventis' && String(l.id) !== 'c10') },
-      { id: 'tusgsal', name: 'DIREXIS TUSGSAL (Barcelonès Nord & NitBus)', icon: '🟡', filter: l => (l.group === 'tusgsal' || (l.agency && l.agency.includes('TUSGSAL')) || String(l.code).toLowerCase().startsWith('b')) && (!l.isTrain && l.group !== 'rodalies') },
-      { id: 'avanza', name: 'Avanza (Baix Llobregat & Garraf)', icon: '🔵', filter: l => (l.group === 'avanza' || (l.agency && l.agency.includes('Avanza')) || String(l.code).toLowerCase().startsWith('l')) && (!l.isTrain && l.group !== 'rodalies') },
-      { id: 'monbus', name: 'Monbus, Hispano Igualadina & Aerobús', icon: '🟠', filter: l => (l.group === 'monbus' || (l.agency && (l.agency.includes('Monbus') || l.agency.includes('Igualadina') || l.agency.includes('Aerobús')))) && (!l.isTrain && l.group !== 'rodalies') },
-      { id: 'plana', name: 'Empresa Plana (Tarragona & Costa Daurada)', icon: '🏖️', filter: l => (l.group === 'plana' || (l.agency && l.agency.toLowerCase().includes('plana'))) && (!l.isTrain && l.group !== 'rodalies') },
-      { id: 'teisa', name: 'TEISA (Girona, Garrotxa & Ripollès)', icon: '🌲', filter: l => (l.group === 'teisa' || (l.agency && l.agency.toLowerCase().includes('teisa'))) && (!l.isTrain && l.group !== 'rodalies') },
-      { id: 'hife', name: 'HIFE (Terres de l\'Ebre & Delta)', icon: '⚓', filter: l => (l.group === 'hife' || (l.agency && l.agency.toLowerCase().includes('hife'))) && (!l.isTrain && l.group !== 'rodalies') },
-      { id: 'soler', name: 'Soler i Sauret (Baix Llobregat & Anoia)', icon: '🟢', filter: l => (l.group === 'soler' || (l.agency && l.agency.toLowerCase().includes('soler'))) && (!l.isTrain && l.group !== 'rodalies') },
-      { id: 'interurba', name: 'Altres Línies Interurbanes de Catalunya', icon: '🚌', filter: l => (l.group === 'interurba' || !l.group) && (!l.isTrain && l.group !== 'rodalies') }
-    ];
-
     const filterFn = (l) => {
+      if (activeFilter !== 'all') {
+        const matchId = String(l.id).toLowerCase() === activeFilter.toLowerCase() ||
+                        String(l.code).toLowerCase() === `l${activeFilter}`.toLowerCase();
+        if (!matchId) return false;
+      }
       if (!q) return true;
       const code = (l.code || String(l.id)).toLowerCase();
       const name = (l.name || '').toLowerCase();
@@ -606,83 +594,49 @@ class TransitApp {
       return code.includes(q) || name.includes(q) || agency.includes(q) || ('línia ' + code).includes(q) || ('linia ' + code).includes(q);
     };
 
-    let totalRendered = 0;
-    let html = '';
+    const linesToRender = this.availableLines.filter(filterFn);
 
-    groups.forEach(g => {
-      if (activeFilter !== 'all' && activeFilter !== g.id) return;
-      const groupLines = this.availableLines.filter(g.filter).filter(filterFn);
-      if (groupLines.length === 0) return;
-
-      totalRendered += groupLines.length;
-
-      // Smart DOM Cap: When displaying all categories without active search, limit initial cards to 20 per group to save ~80MB RAM
-      const isCapped = !q && activeFilter === 'all' && groupLines.length > 20 && !this.expandedGroups.has(g.id);
-      let linesToRender = isCapped ? groupLines.slice(0, 20) : groupLines;
-
-      // Search-result cap: broad queries (e.g. a single digit) can match 900+
-      // lines; rendering them all freezes the tab. Show the first MATCH_CAP
-      // matches plus a refinement hint instead.
-      let hiddenBySearchCap = 0;
-      if (q && groupLines.length > this.LANDING_SEARCH_CAP) {
-        linesToRender = groupLines.slice(0, this.LANDING_SEARCH_CAP);
-        hiddenBySearchCap = groupLines.length - this.LANDING_SEARCH_CAP;
-      }
-
-      html += `
-        <div class="landing-group-section">
-          <div class="landing-group-header">
-            <h3><span>${g.icon}</span> ${g.name}</h3>
-            <span class="landing-group-badge">${groupLines.length} línia${groupLines.length === 1 ? '' : 'es'}</span>
-          </div>
-          <div class="landing-lines-grid">
-            ${linesToRender.map(l => {
-              const contrast = this.getContrastColor(l.color);
-              const dirCount = l.directions ? `${l.directions.length} sentits` : 'En servei';
-              return `
-                <div class="landing-line-card" data-line-id="${this.esc(l.id)}" title="Fes clic per seguir la línia ${this.esc(l.code)} en directe">
-                  <span class="landing-line-badge" style="background:${this.esc(l.color)}; color:${contrast};">${this.esc(l.code)}</span>
-                  <div class="landing-line-info">
-                    <div class="landing-line-title">${this.esc(l.name)}</div>
-                    <div class="landing-line-operator">
-                      <span>${this.esc(l.agency || g.name)}</span>
-                      <span>•</span>
-                      <span>${dirCount}</span>
-                    </div>
-                  </div>
-                  <span class="landing-line-arrow">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-                  </span>
-                </div>
-              `;
-            }).join('')}
-            ${hiddenBySearchCap > 0 ? `
-              <div style="grid-column: 1 / -1; text-align:center; padding: 0.5rem 0; font-size:0.8rem; color:var(--text-muted);">
-                Mostrant ${this.LANDING_SEARCH_CAP} de ${groupLines.length} coincidències — refina la cerca per veure'n més.
-              </div>
-            ` : ''}
-            ${isCapped ? `
-              <div style="grid-column: 1 / -1; text-align:center; padding: 0.6rem 0;">
-                <button type="button" class="btn-expand-landing-group" data-group-id="${g.id}" style="background:var(--bg-elevated); border:1px solid var(--border-subtle); color:var(--brand-primary); font-weight:600; font-size:0.8rem; padding:0.45rem 1.1rem; border-radius:8px; cursor:pointer; transition: all 0.2s ease;">
-                  ⬇️ Mostra totes les ${groupLines.length} línies de ${g.name.split('(')[0].trim()} (+${groupLines.length - 20})
-                </button>
-              </div>
-            ` : ''}
-          </div>
-        </div>
-      `;
-    });
-
-    if (totalRendered === 0) {
+    if (linesToRender.length === 0) {
       container.innerHTML = `
         <div style="padding: 3rem 1rem; text-align: center; color: var(--text-muted); background:var(--bg-card-gradient); border-radius:var(--radius-lg); border:1px solid var(--border-subtle);">
           <div style="font-size: 2.2rem; margin-bottom: 0.5rem;">🔍</div>
           <div style="font-size:1.1rem; font-weight: 700; color: #fff; margin-bottom: 0.35rem;">Cap línia trobada</div>
-          <div style="font-size: 0.85rem; max-width:450px; margin:0 auto;">No hi ha cap resultat per a "${this.esc(this.landingSearch)}". Prova cercant per codi (ex: B25, C-10, e11.1, L95, 7, M19) o municipi.</div>
+          <div style="font-size: 0.85rem; max-width:450px; margin:0 auto;">No hi ha cap resultat per a "${this.esc(this.landingSearch)}". Prova cercant per línia (ex: L1, L2, L3, 5, 8) o parada.</div>
         </div>
       `;
       return;
     }
+
+    let html = `
+      <div class="landing-group-section">
+        <div class="landing-group-header">
+          <h3><span>📍</span> Mataró Bus Urbà</h3>
+          <span class="landing-group-badge">${linesToRender.length} línia${linesToRender.length === 1 ? '' : 'es'}</span>
+        </div>
+        <div class="landing-lines-grid">
+          ${linesToRender.map(l => {
+            const contrast = this.getContrastColor(l.color);
+            const dirCount = l.directions ? `${l.directions.length} sentits` : 'En servei';
+            return `
+              <div class="landing-line-card" data-line-id="${this.esc(l.id)}" title="Fes clic per seguir la línia ${this.esc(l.code)} en directe">
+                <span class="landing-line-badge" style="background:${this.esc(l.color)}; color:${contrast};">${this.esc(l.code)}</span>
+                <div class="landing-line-info">
+                  <div class="landing-line-title">${this.esc(l.name)}</div>
+                  <div class="landing-line-operator">
+                    <span>${this.esc(l.agency || 'Mataró Bus')}</span>
+                    <span>•</span>
+                    <span>${dirCount}</span>
+                  </div>
+                </div>
+                <span class="landing-line-arrow">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                </span>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
 
     container.innerHTML = html;
   }
@@ -2648,28 +2602,12 @@ class TransitApp {
     const q = (this.linePickerSearch || '').trim().toLowerCase();
     const cityFilter = this.linePickerFilter || 'all';
 
-    // Group definitions (Organized by Transit Networks)
-    const groups = [
-      { id: 'metrobus', name: '🚇 Metrobús (Xarxa d\'Alta Freqüència AMB)', icon: '🚇', filter: l => (l.group === 'metrobus' || (l.agency && l.agency.includes('MetroBus')) || String(l.code).toUpperCase().startsWith('M') || ['m1','m5','m6','m12','m14','m15','m19','m26','m27','m28','m30','m75'].includes(String(l.code).toLowerCase())) && (!l.isTrain && l.group !== 'rodalies') },
-      { id: 'expres', name: '⚡ Exprés.cat (Xarxa d\'Altes Prestacions)', icon: '⚡', filter: l => (l.group === 'expres' || String(l.code).toLowerCase().startsWith('e') || (l.mode && l.mode.includes('Exprés'))) && (!l.isTrain && l.group !== 'rodalies') },
-      { id: 'sagales', name: '🦉 Sagalés (Vallès, Maresme, Costa & Osona)', icon: '🦉', filter: l => (l.group === 'sagales' || (l.agency && l.agency.toLowerCase().includes('sagal')) || ['n82', 'n83', '603', 'n70', 'n71', 'n73', '201', '230', 'e13', '320', '330', '400', '500'].includes(String(l.code).toLowerCase())) && (!l.isTrain && l.group !== 'rodalies') },
-      { id: 'moventis', name: '🌊 Moventis / Casas (Maresme & Vallès)', icon: '🌊', filter: l => (l.group === 'moventis' || String(l.id) === 'c10' || (l.agency && (l.agency.includes('Moventis') || l.agency.includes('Casas')))) && (!l.isTrain && l.group !== 'rodalies') },
-      { id: 'mataro', name: '📍 Mataró Bus Urbà (L1..L8)', icon: '📍', filter: l => (l.group === 'mataro' || ['1','2','3','4','5','6','7','8','l1','l2','l3','l4','l5','l6','l7','l8'].includes(String(l.id).toLowerCase())) && (!l.isTrain && l.group !== 'rodalies' && l.group !== 'moventis' && String(l.id) !== 'c10') },
-      { id: 'tusgsal', name: '🟡 DIREXIS TUSGSAL (Barcelonès Nord & NitBus)', icon: '🟡', filter: l => (l.group === 'tusgsal' || (l.agency && l.agency.includes('TUSGSAL')) || String(l.code).toLowerCase().startsWith('b')) && (!l.isTrain && l.group !== 'rodalies') },
-      { id: 'avanza', name: '🔵 Avanza (Baix Llobregat & Garraf)', icon: '🔵', filter: l => (l.group === 'avanza' || (l.agency && l.agency.includes('Avanza')) || String(l.code).toLowerCase().startsWith('l')) && (!l.isTrain && l.group !== 'rodalies') },
-      { id: 'monbus', name: '🟠 Monbus, Hispano Igualadina & Aerobús', icon: '🟠', filter: l => (l.group === 'monbus' || (l.agency && (l.agency.includes('Monbus') || l.agency.includes('Igualadina') || l.agency.includes('Aerobús')))) && (!l.isTrain && l.group !== 'rodalies') },
-      { id: 'plana', name: '🏖️ Empresa Plana (Tarragona & Costa Daurada)', icon: '🏖️', filter: l => (l.group === 'plana' || (l.agency && l.agency.toLowerCase().includes('plana'))) && (!l.isTrain && l.group !== 'rodalies') },
-      { id: 'teisa', name: '🌲 TEISA (Girona, Garrotxa & Ripollès)', icon: '🌲', filter: l => (l.group === 'teisa' || (l.agency && l.agency.toLowerCase().includes('teisa'))) && (!l.isTrain && l.group !== 'rodalies') },
-      { id: 'hife', name: '⚓ HIFE (Terres de l\'Ebre & Delta)', icon: '⚓', filter: l => (l.group === 'hife' || (l.agency && l.agency.toLowerCase().includes('hife'))) && (!l.isTrain && l.group !== 'rodalies') },
-      { id: 'soler', name: '🟢 Soler i Sauret (Baix Llobregat & Anoia)', icon: '🟢', filter: l => (l.group === 'soler' || (l.agency && l.agency.toLowerCase().includes('soler'))) && (!l.isTrain && l.group !== 'rodalies') },
-      { id: 'interurba', name: '🚌 Altres Línies Interurbanes de Catalunya', icon: '🚌', filter: l => (l.group === 'interurba' || !l.group) && (!l.isTrain && l.group !== 'rodalies') }
-    ];
-
-    if (this.showTrainsInUI) {
-      groups.unshift({ id: 'rodalies', name: '🚆 Rodalies de Catalunya (Trens)', icon: '🚆', filter: l => l.group === 'rodalies' || l.isTrain || String(l.id).startsWith('rodalies_') });
-    }
-
     const filterFn = (l) => {
+      if (cityFilter !== 'all') {
+        const matchId = String(l.id).toLowerCase() === cityFilter.toLowerCase() ||
+                        String(l.code).toLowerCase() === `l${cityFilter}`.toLowerCase();
+        if (!matchId) return false;
+      }
       if (!q) return true;
       const code = (l.code || String(l.id)).toLowerCase();
       const name = (l.name || '').toLowerCase();
@@ -2677,83 +2615,48 @@ class TransitApp {
       return code.includes(q) || name.includes(q) || agency.includes(q) || ('línia ' + code).includes(q) || ('linia ' + code).includes(q);
     };
 
-    let totalRendered = 0;
-    let html = '';
-    const isNight = new Date().getHours() >= 22 || new Date().getHours() < 6;
-    const renderedLineIds = new Set();
+    const linesToRender = this.availableLines.filter(filterFn);
 
-    groups.forEach(g => {
-      if (cityFilter !== 'all' && cityFilter !== g.id) return;
-      const groupLines = this.availableLines
-        .filter(g.filter)
-        .filter(filterFn)
-        .filter(l => {
-          if (cityFilter === 'all') {
-            if (renderedLineIds.has(String(l.id).toLowerCase())) return false;
-            renderedLineIds.add(String(l.id).toLowerCase());
-          }
-          return true;
-        });
-
-      if (groupLines.length === 0) return;
-
-      totalRendered += groupLines.length;
-
-      // Search-result cap: broad queries (e.g. a single digit) can match 900+
-      // lines; rendering them all freezes the modal. Show the first cap matches.
-      let linesToRender = groupLines;
-      let hiddenBySearchCap = 0;
-      if (q && groupLines.length > this.LANDING_SEARCH_CAP) {
-        linesToRender = groupLines.slice(0, this.LANDING_SEARCH_CAP);
-        hiddenBySearchCap = groupLines.length - this.LANDING_SEARCH_CAP;
-      }
-
-      html += `
-        <div class="line-category-group">
-          <div class="line-category-title">
-            <span>${g.name} (${groupLines.length})</span>
-          </div>
-          <div class="line-grid">
-            ${linesToRender.map(l => {
-              const isActive = String(l.id) === String(this.activeLineId);
-              const contrast = this.getContrastColor(l.color);
-              return `
-                <div class="line-grid-card ${isActive ? 'active' : ''}" data-line-id="${this.esc(l.id)}">
-                  <div class="line-card-left">
-                    <span class="line-card-badge" style="background:${l.color}; color:${contrast};">${l.code}</span>
-                    <div class="line-card-details">
-                      <div class="line-card-name">${this.esc(l.isTrain ? `Tren ${l.code}` : l.code)}: ${this.esc(l.name)}</div>
-                      <div class="line-card-sub">
-                        <span>${l.agency || g.name}</span>
-                        <span>•</span>
-                        <span>${l.directions ? `${l.directions.length} sentits` : 'En servei'}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <span class="line-card-arrow">➔</span>
-                </div>
-              `;
-            }).join('')}
-            ${hiddenBySearchCap > 0 ? `
-              <div style="grid-column: 1 / -1; text-align:center; padding: 0.5rem 0; font-size:0.78rem; color:var(--text-muted);">
-                Mostrant ${this.LANDING_SEARCH_CAP} de ${groupLines.length} — refina la cerca.
-              </div>
-            ` : ''}
-          </div>
-        </div>
-      `;
-    });
-
-    if (totalRendered === 0) {
+    if (linesToRender.length === 0) {
       container.innerHTML = `
         <div style="padding: 2.5rem 1rem; text-align: center; color: var(--text-muted);">
           <div style="font-size: 2rem; margin-bottom: 0.5rem;">🔍</div>
           <div style="font-weight: 700; color: #fff; margin-bottom: 0.25rem;">Cap línia trobada</div>
-          <div style="font-size: 0.8rem;">No hi ha cap resultat per "${this.linePickerSearch}". Prova cercant per codi (ex: R1, B25, L80, N82, A1, C10, 1).</div>
+          <div style="font-size: 0.85rem;">Prova amb una altra cerca (ex: L1, L2, L3, 5, 8)...</div>
         </div>
       `;
       return;
     }
+
+    let html = `
+      <div class="line-category-group">
+        <div class="line-category-title">
+          <span>📍 Mataró Bus Urbà (${linesToRender.length})</span>
+        </div>
+        <div class="line-grid">
+          ${linesToRender.map(l => {
+            const isActive = String(l.id) === String(this.activeLineId);
+            const contrast = this.getContrastColor(l.color);
+            return `
+              <div class="line-grid-card ${isActive ? 'active' : ''}" data-line-id="${this.esc(l.id)}">
+                <div class="line-card-left">
+                  <span class="line-card-badge" style="background:${l.color}; color:${contrast};">${l.code}</span>
+                  <div class="line-card-details">
+                    <div class="line-card-name">${this.esc(l.code)}: ${this.esc(l.name)}</div>
+                    <div class="line-card-sub">
+                      <span>${l.agency || 'Mataró Bus'}</span>
+                      <span>•</span>
+                      <span>${l.directions ? `${l.directions.length} sentits` : 'En servei'}</span>
+                    </div>
+                  </div>
+                </div>
+                <span class="line-card-arrow">➔</span>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
 
     container.innerHTML = html;
   }

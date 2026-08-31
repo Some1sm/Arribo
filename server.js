@@ -2,15 +2,9 @@ const express = require('express');
 const cors = require('cors');
 const compression = require('compression');
 const path = require('path');
-const corridorTracker = require('./src/corridorTracker');
+const fs = require('fs');
 const mataroTracker = require('./src/mataroTracker');
-const sagalesTracker = require('./src/sagalesTracker');
-const ambTracker = require('./src/ambTracker');
-const rodaliesTracker = require('./src/rodaliesTracker');
-const maresmeTracker = require('./src/maresmeTracker');
-const c10TelemetryExtractor = require('./src/c10TelemetryExtractor');
-const cataloniaTracker = require('./src/cataloniaTracker');
-const routeCacheService = require('./src/routeCacheService');
+const mataroSiriClient = require('./src/mataroSiriClient');
 const reportCacheService = require('./src/reportCacheService');
 const flightRecorder = require('./src/flightRecorder');
 const trackerRegistry = require('./src/core/TrackerRegistry');
@@ -20,8 +14,6 @@ const delayEngine = require('./src/core/schedule/delayEngine');
 
 // ==========================================
 // 0. PROCESS-LEVEL RESILIENCE TRAPS
-// Resilience-first transit tracker: log unexpected async/sync failures but
-// NEVER crash the HTTP process — keep serving cached data to riders.
 // ==========================================
 process.on('unhandledRejection', (reason) => {
   console.error('[Process] Unhandled promise rejection:', reason);
@@ -36,8 +28,6 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(compression());
-// Note: no express.json() — this service is strictly read-only GET/HEAD (enforced below),
-// so request-body parsing is intentionally omitted to shrink the attack surface.
 
 // Strict Read-Only Security Guard: Reject any write requests from clients
 app.use((req, res, next) => {
@@ -47,8 +37,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Static assets: enable etag + browser caching for immutable-ish assets while keeping
-// HTML always revalidated so deploys propagate immediately.
+// Static assets: enable etag + browser caching
 app.use(express.static(path.join(__dirname, 'public'), {
   etag: true,
   maxAge: '5m',
@@ -59,92 +48,17 @@ app.use(express.static(path.join(__dirname, 'public'), {
   }
 }));
 
-// Launch Background Ingestion & Analytics Worker asynchronously via WorkerBridge supervisor
+// Launch Background Ingestion Worker asynchronously via WorkerBridge supervisor
 workerBridge.start();
-// Fleet positions are authoritative from the worker (already extrapolated there).
-// Disable the master-process auto extrapolator to avoid double-applying drift.
 flightRecorder.setAutoExtrapolation(false);
-// History gateway: all SQLite reads in the main process are proxied to the
-// ingestion worker via WorkerBridge.historyQuery() RPC (DB_REQUEST/DB_RESPONSE).
-// The main process never opens the database itself.
 flightRecorder.setHistoryGateway((op, args) => workerBridge.historyQuery(op, args, { timeoutMs: op === 'getLineDelayStats' ? 25000 : 10000 }));
-// Delay-memory gateway: persisted realtime bus observations (same worker-owned
-// SQLite; see src/core/realtime/delayMemory.js). Fire-and-forget writes.
-const delayMemory = require('./src/core/realtime/delayMemory');
-delayMemory.setGateway((op, args) => workerBridge.historyQuery(op, args, { timeoutMs: op === 'saveAmbObservations' ? 5000 : 8000 }));
-// Centralize AMB v2 traffic in the worker: the web process NEVER calls the
-// AMB API directly — it asks the worker (whose sweeps keep results warm).
-const ambStopRealtime = require('./src/core/realtime/ambStopRealtime');
-ambStopRealtime.setFetchBackend(async (ambCode) => {
-  try {
-    const res = await workerBridge.historyQuery('getAmbStopRealtimes', { ambCode }, { timeoutMs: 8000 });
-    return Array.isArray(res) ? res : [];
-  } catch (_) { return []; }
-});
 
-// Centralize Sagalés upstream traffic in the worker as well: the tracker's
-// live feed transport is proxied over IPC (worker owns all provider calls).
-sagalesTracker.setFetchBackend(async ({ routeId, dir }) => {
-  try {
-    return await workerBridge.historyQuery('getSagalesFeed', { routeId, dir }, { timeoutMs: 8000 });
-  } catch (_) { return null; }
-});
-
-// Centralize AMB v2 traffic for ambTracker + rodaliesTracker: both share the
-// same upstream host, so a single RPC op fans out by client kind. The main
-// process never opens an HTTPS socket to api.ambmobilitat.cat.
-function installAmbApiProxy(tracker, client) {
-  tracker.setFetchBackend(async (path) => {
-    const res = await workerBridge.historyQuery('getAmbApi', { client, path }, { timeoutMs: 8000 });
-    if (!res || typeof res !== 'object' || !('status' in res)) {
-      throw new Error(`AMB API proxy returned malformed response for ${path}`);
-    }
-    return res;
-  });
-}
-installAmbApiProxy(ambTracker, 'amb');
-installAmbApiProxy(rodaliesTracker, 'rodalies');
-
-// Centralize corridorTracker (C-10) AMB realtime traffic in the worker too.
-corridorTracker.setFetchBackend(async ({ ambCode }) => {
-  try {
-    const times = await workerBridge.historyQuery('getCorridorAmbRealtime', { ambCode }, { timeoutMs: 8000 });
-    return Array.isArray(times) ? times : [];
-  } catch (_) { return []; }
-});
-
-// Centralize C-10 extractor AMB traffic in the worker as well: the extractor's
-// /bus/vehicles fetch is proxied over IPC so the main process never opens a
-// socket to api.ambmobilitat.cat. Rejections propagate so the extractor's
-// circuit breaker counts upstream failures.
-c10TelemetryExtractor.setFetchBackend(async () => {
-  const list = await workerBridge.historyQuery('getC10AmbVehicles', {}, { timeoutMs: 9000 });
-  return { status: Array.isArray(list) ? 200 : 502, data: Array.isArray(list) ? list : [] };
-});
-
-// Centralize Mataró SIRI traffic in the worker: the main process delegates
-// directly to the worker's cached/live SIRI client over IPC.
-const mataroSiriClient = require('./src/mataroSiriClient');
+// Centralize Mataró SIRI traffic in the worker over IPC
 mataroSiriClient.setRpcBackend(async (op, args) => {
   try {
     const res = await workerBridge.historyQuery(op, args, { timeoutMs: 8000 });
     return Array.isArray(res) ? res : [];
   } catch (_) { return []; }
-});
-
-// Generic upstream-HTTP proxy for client modules (Moventis SAE,
-// Mou-te REST): raw fetches execute in the worker; the main process only ever
-// sees { status, bodyText } over IPC.
-const moventisClient = require('./src/moventisClient');
-const mouteClient = require('./src/mouteClient');
-[moventisClient, mouteClient].forEach((client) => {
-  client.setHttpBackend(async (req) => {
-    const res = await workerBridge.historyQuery('proxyUpstreamHttp', req, { timeoutMs: 12000 });
-    if (!res || typeof res.status !== 'number' || typeof res.bodyText !== 'string') {
-      throw new Error(`Upstream proxy malformed response (${req && req.kind})`);
-    }
-    return res;
-  });
 });
 
 // Request logger middleware
@@ -154,18 +68,11 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-// Uniform internal-error responder: full error is logged server-side with the
-// route path; clients only ever receive a generic message (no stack/SQL/key leaks).
 function sendInternalError(req, res, err, extra = {}) {
   console.error(`[API] 500 on ${req.method} ${req.originalUrl}:`, err);
   res.status(500).json({ success: false, error: 'Internal server error', ...extra });
 }
 
-/**
- * Route error handler: unknown-line/stop lookups surface as thrown "not
- * found" errors from trackers (e.g. the catalonia fallback accepts any ID
- * at resolution time). Answer 404 instead of leaking a 500.
- */
 function handleRouteError(req, res, err) {
   if (err && /not found/i.test(String(err.message))) {
     return res.status(404).json({ success: false, error: 'Unknown line or stop' });
@@ -173,15 +80,10 @@ function handleRouteError(req, res, err) {
   sendInternalError(req, res, err);
 }
 
-// Centralized polymorphic line resolution via TrackerRegistry (src/core/TrackerRegistry.js)
 function getTrackerForLine(lineId) {
   return trackerRegistry.getTrackerForLine(lineId);
 }
 
-/**
- * Resolve a line to its tracker, answering 404 (not 500) for unknown IDs.
- * Returns the resolution object or null when the response was already sent.
- */
 function resolveTrackerOr404(res, lineId) {
   try {
     const resolution = getTrackerForLine(lineId);
@@ -220,13 +122,9 @@ function getCalendarInfoFor(tracker, date = new Date()) {
 }
 
 // ==========================================
-// CANONICAL SCHEMA HARMONIZATION (M3)
-// Guarantees uniform JSON contracts across all 7 operator trackers
-// while preserving dual-cased compatibility fields.
+// CANONICAL SCHEMA HARMONIZATION
 // ==========================================
 
-// Canonical Vehicle payload with dual-cased compatibility fields
-// (delayMinutes + delayMins, isRealTime + isRealtime, speedKmh + speed)
 function standardizeVehicle(raw = {}) {
   const v = { ...(raw || {}) };
 
@@ -245,8 +143,6 @@ function standardizeVehicle(raw = {}) {
   v.speedKmh = speed;
   v.speed = speed;
 
-  // Dual coordinate schema (AGENTS.md §7.5): vehicles must carry BOTH
-  // lat/lon AND latitude/longitude so every consumer convention works.
   if (v.lat === undefined && Number.isFinite(Number(v.latitude))) v.lat = Number(v.latitude);
   if (v.lon === undefined && Number.isFinite(Number(v.longitude))) v.lon = Number(v.longitude);
   if (Number.isFinite(Number(v.lat))) v.latitude = Number(v.lat);
@@ -258,7 +154,6 @@ function standardizeVehicle(raw = {}) {
   return v;
 }
 
-// Canonical Departure payload with dual-cased delay fields
 function harmonizeDeparture(dep = {}) {
   const d = { ...(dep || {}) };
 
@@ -271,7 +166,6 @@ function harmonizeDeparture(dep = {}) {
   d.isRealTime = isRealTime;
   d.isRealtime = isRealTime;
 
-  // Fill canonical status fields only when the tracker omitted them
   if (!d.delayStatus) {
     const evalStatus = delayEngine.computeDelayStatus(delay, isRealTime, {
       scheduledTime: d.scheduledTime || d.departureTime,
@@ -290,21 +184,19 @@ function harmonizeDeparture(dep = {}) {
   return d;
 }
 
-// Canonical Stop Departures envelope:
-// { stopId, stopName, stop: { id, code, name, lat, lon, zone }, departures, totalDepartures, calendarInfo, lastUpdated }
 function harmonizeDeparturesEnvelope(data, tracker, lineId) {
   if (!data || typeof data !== 'object') return data;
 
   const stopRaw = data.stop || {};
-  const stopId = data.stopId || stopRaw.id || stopRaw.mouteStopId || stopRaw.gtfsStopId || null;
+  const stopId = data.stopId || stopRaw.id || null;
   const stopName = data.stopName || stopRaw.name || '';
   const departures = Array.isArray(data.departures) ? data.departures.map(harmonizeDeparture) : [];
 
   const stop = {
     id: stopRaw.id || stopId,
-    code: stopRaw.code || stopRaw.gtfsStopId || stopId,
+    code: stopRaw.code || stopId,
     name: stopName,
-    zone: stopRaw.zone || 'Zona Transit'
+    zone: stopRaw.zone || 'Mataró Urbà'
   };
   if (stopRaw.lat !== undefined) stop.lat = stopRaw.lat;
   else if (typeof stopRaw.latitude === 'number') stop.lat = stopRaw.latitude;
@@ -324,8 +216,6 @@ function harmonizeDeparturesEnvelope(data, tracker, lineId) {
   };
 }
 
-// Canonical Target ETA envelope:
-// { targetStop (flat coords + coords{lat,lon}), direction, directionName, nextBus, upcomingDepartures, allDepartures, calendarInfo, serviceStatus, lastUpdated }
 function harmonizeTargetEta(data, tracker, lineId, direction) {
   if (!data || typeof data !== 'object') return data;
 
@@ -361,75 +251,41 @@ function harmonizeTargetEta(data, tracker, lineId, direction) {
 }
 
 // ==========================================
-// 1. UNIVERSAL TRANSIT LINES & SEARCH
+// 1. PUBLIC REST API ENDPOINTS
 // ==========================================
 
-// Canonical multi-provider line catalog via TrackerRegistry (4-tier deduplication + 60s TTL cache)
-function getAllTransitLines() {
-  return trackerRegistry.getAllLines();
-}
-
-// List all available transit lines across all providers
-app.get('/api/lines', (req, res) => {
-  const combinedLines = getAllTransitLines();
-
+// Health Check
+app.get('/api/health', (req, res) => {
   res.json({
-    success: true,
-    totalLines: combinedLines.length,
-    lines: combinedLines
+    status: 'ok',
+    uptime: process.uptime(),
+    timestamp: Date.now(),
+    agency: 'Mataró Bus Urbà'
   });
 });
 
-// Universal Stop & Line Searcher — delegates to TrackerRegistry.searchStopsAndLines(),
-// the single shared search implementation across all registered providers.
-// The dedicated C-10 corridor stops are supplemented here because corridorTracker
-// keeps its own per-direction stop maps rather than a registry-searchable stopsMap.
-const SEARCH_RESULT_LIMIT = 35;
+// All Available Lines (Lines 1 to 8)
+app.get('/api/lines', (req, res) => {
+  try {
+    const lines = trackerRegistry.getAllLines();
+    res.json({
+      success: true,
+      count: lines.length,
+      lines
+    });
+  } catch (err) {
+    sendInternalError(req, res, err, { count: 0, lines: [] });
+  }
+});
+
+// Universal Search across Mataró stops and lines
 app.get('/api/search/stops', (req, res) => {
-  const q = String(req.query.q || '').trim();
-  if (!q) {
+  const q = req.query.q || '';
+  if (!q.trim()) {
     return res.json({ success: true, query: '', results: [] });
   }
 
-  const results = trackerRegistry.searchStopsAndLines(q, SEARCH_RESULT_LIMIT);
-
-  // Supplement: dedicated C-10 corridor stops
-  if (results.length < SEARCH_RESULT_LIMIT) {
-    const qLower = q.toLowerCase();
-    const normQ = qLower.replace(/[-_\s.]/g, '');
-    const seenStopIds = new Set(
-      results.filter(r => r && r.type === 'stop').map(r => String(r.stopId))
-    );
-    outer: for (const dir of ['1', '0']) {
-      const c10Stops = corridorTracker.getStops(dir) || [];
-      for (const s of c10Stops) {
-        if (results.length >= SEARCH_RESULT_LIMIT) break outer;
-        if (!s) continue;
-        const sName = String(s.name || '').toLowerCase();
-        const sCode = String(s.code || '').toLowerCase();
-        const stopKey = String(s.mouteStopId || s.gtfsStopId || s.id || '');
-        const matches = sName.includes(qLower) ||
-          sCode.includes(qLower) ||
-          (stopKey && stopKey.toLowerCase().includes(normQ));
-        if (!matches || seenStopIds.has(stopKey)) continue;
-        seenStopIds.add(stopKey);
-        results.push({
-          type: 'stop',
-          lineId: 'c10',
-          lineCode: 'C-10',
-          lineName: 'Barcelona ⇄ Mataró',
-          lineColor: '#009485',
-          stopId: stopKey,
-          stopName: s.name,
-          code: s.code,
-          zone: s.lon >= 2.289 ? '🌊 Zona Maresme' : '🏙️ Zona AMB',
-          lat: s.lat,
-          lon: s.lon
-        });
-      }
-    }
-  }
-
+  const results = trackerRegistry.searchStopsAndLines(q, 35);
   res.json({
     success: true,
     query: q,
@@ -437,161 +293,59 @@ app.get('/api/search/stops', (req, res) => {
   });
 });
 
-// ==========================================
-// 2. UNIVERSAL DYNAMIC LINE ENDPOINTS
-// ==========================================
-
-// ==========================================
-// 2. UNIVERSAL DYNAMIC LINE ENDPOINTS
-// ==========================================
-
-// Get unified line details (stops, geometry, active vehicles) for any line
+// Get unified line details (stops, geometry, active vehicles)
 app.get('/api/line/:lineId', async (req, res) => {
   const { lineId } = req.params;
   const direction = req.query.direction || '0';
-  const targetDate = req.query.date || null;
   try {
     const resolution = resolveTrackerOr404(res, lineId);
     if (!resolution) return;
-    const { type, tracker } = resolution;
-    if (type === 'c10') {
-      const calInfo = corridorTracker.getServiceCalendarInfo(targetDate ? new Date(targetDate) : new Date());
-      if (direction === 'both') {
-        const tracking1 = await corridorTracker.getCorridorLiveTracking('1');
-        const tracking0 = await corridorTracker.getCorridorLiveTracking('0');
-        const stops1 = corridorTracker.getStops('1');
-        const stops0 = corridorTracker.getStops('0');
-        res.json({
-          success: true,
-          data: {
-            id: 'c10',
-            code: 'C-10',
-            name: 'Barcelona ⇄ Mataró (per N-II)',
-            color: '#009485',
-            secondaryColor: '#38bdf8',
-            agency: 'Moventis / Casas (Interurbà Maresme)',
-            direction: 'both',
-            directionName: 'Ambdós sentits (Barcelona ⇄ Mataró)',
-            directions: [
-              { dirId: '1', name: "Cap a Mataró (Hospital / Pl. d'Itàlia)" },
-              { dirId: '0', name: "Cap a Barcelona (Metro la Pau)" }
-            ],
-            stops: stops1,
-            coords: tracking1.routePolyline || [],
-            geometrySource: tracking1.geometrySource || 'gtfs',
-            geometryEstimated: Boolean(tracking1.geometryEstimated || tracking0.geometryEstimated),
-            secondaryStops: stops0,
-            secondaryCoords: tracking0.routePolyline || [],
-            allDirections: [
-              { dirId: '1', name: "Cap a Mataró (Hospital / Pl. d'Itàlia)", stops: stops1, coords: tracking1.routePolyline || [] },
-              { dirId: '0', name: "Cap a Barcelona (Metro la Pau)", stops: stops0, coords: tracking0.routePolyline || [] }
-            ],
-            activeBuses: [ ...(tracking1.activeBuses || []), ...(tracking0.activeBuses || []) ],
-            checkpoints: tracking1.checkpoints || [],
-            totalVehiclesInCircuit: (tracking1.activeBuses?.length || 0) + (tracking0.activeBuses?.length || 0),
-            calendarInfo: calInfo,
-            serviceStatus: {
-              isOperating: ((tracking1.activeBuses?.length || 0) + (tracking0.activeBuses?.length || 0)) > 0,
-              firstServiceTomorrow: '06:45',
-              calendarTag: calInfo.calendarTag
-            },
-            delayStats: await flightRecorder.getLineStats('C-10', 'c10')
-          }
-        });
-      } else {
-        const dir = direction === '0' ? '0' : '1';
-        const tracking = await corridorTracker.getCorridorLiveTracking(dir);
-        const stops = corridorTracker.getStops(dir);
-        res.json({
-          success: true,
-          data: {
-            id: 'c10',
-            code: 'C-10',
-            name: 'Barcelona ⇄ Mataró (per N-II)',
-            color: '#009485',
-            agency: 'Moventis / Casas (Interurbà Maresme)',
-            direction: String(dir),
-            directionName: dir === '1' ? "Cap a Mataró (Hospital / Pl. d'Itàlia)" : "Cap a Barcelona (Metro la Pau)",
-            directions: [
-              { dirId: '1', name: "Cap a Mataró (Hospital / Pl. d'Itàlia)" },
-              { dirId: '0', name: "Cap a Barcelona (Metro la Pau)" }
-            ],
-            stops: stops,
-            coords: tracking.routePolyline || [],
-            geometrySource: tracking.geometrySource || 'gtfs',
-            geometryEstimated: Boolean(tracking.geometryEstimated),
-            activeBuses: tracking.activeBuses || [],
-            checkpoints: tracking.checkpoints || [],
-            totalVehiclesInCircuit: tracking.activeBuses?.length || 0,
-            calendarInfo: calInfo,
-            serviceStatus: {
-              isOperating: (tracking.activeBuses?.length || 0) > 0,
-              firstServiceTomorrow: dir === '1' ? '08:15' : '06:45',
-              calendarTag: calInfo.calendarTag
-            },
-            delayStats: await flightRecorder.getLineStats('C-10', 'c10')
-          }
-        });
+    const { tracker } = resolution;
+    const targetLine = resolution.lineId || lineId;
+    const data = await tracker.getLineDetails(targetLine, direction);
+    if (data) {
+      if (Array.isArray(data.activeBuses)) {
+        data.activeBuses = data.activeBuses.map(standardizeVehicle);
       }
-    } else {
-      const targetLine = resolution.lineId || lineId;
-      const data = await tracker.getLineDetails(targetLine, direction);
-      if (data) {
-        if (Array.isArray(data.activeBuses)) {
-          data.activeBuses = data.activeBuses.map(standardizeVehicle);
-        }
-        data.delayStats = await flightRecorder.getLineStats(data.code || targetLine, targetLine);
-      }
-      res.json({ success: true, data });
+      data.delayStats = await flightRecorder.getLineStats(data.code || targetLine, targetLine);
     }
+    res.json({ success: true, data });
   } catch (err) {
     handleRouteError(req, res, err);
   }
 });
 
-// Get unified Target Stop ETA for any line
+// Get unified Target Stop ETA
 app.get('/api/line/:lineId/target-eta', async (req, res) => {
   const { lineId } = req.params;
   const direction = req.query.direction || '0';
   const stopId = req.query.stopId || null;
-  const targetDate = req.query.date || null;
   try {
     const resolution = resolveTrackerOr404(res, lineId);
     if (!resolution) return;
-    const { type, tracker } = resolution;
-    if (type === 'c10') {
-      const dir = direction === '0' ? '0' : '1';
-      const data = await corridorTracker.getTargetStopETA(dir, stopId, targetDate);
-      res.json({ success: true, data: harmonizeTargetEta(data, corridorTracker, lineId, dir) });
-    } else {
-      const targetLine = resolution.lineId || lineId;
-      const data = await tracker.getTargetStopETA(targetLine, stopId, direction);
-      res.json({ success: true, data: harmonizeTargetEta(data, tracker, targetLine, direction) });
-    }
+    const { tracker } = resolution;
+    const targetLine = resolution.lineId || lineId;
+    const data = await tracker.getTargetStopETA(targetLine, stopId, direction);
+    res.json({ success: true, data: harmonizeTargetEta(data, tracker, targetLine, direction) });
   } catch (err) {
     handleRouteError(req, res, err);
   }
 });
 
-// Get canonical Live Vehicles for any line (uniform vehicle schema)
+// Get Live Vehicles for a line
 app.get('/api/line/:lineId/vehicles', async (req, res) => {
   const { lineId } = req.params;
   const direction = req.query.direction || '0';
   try {
     const resolution = resolveTrackerOr404(res, lineId);
     if (!resolution) return;
-    const { type, tracker, cleanCode, agency } = resolution;
+    const { tracker, cleanCode, agency } = resolution;
     const targetLine = resolution.lineId || lineId;
     let vehicles = flightRecorder.getLineVehicles(cleanCode || targetLine);
     let details = null;
 
     if (!vehicles || vehicles.length === 0) {
-      if (type === 'c10') {
-        const dir = direction === '0' ? '0' : '1';
-        details = await corridorTracker.getCorridorLiveTracking(dir);
-      } else {
-        details = await tracker.getLineDetails(targetLine, direction);
-      }
+      details = await tracker.getLineDetails(targetLine, direction);
       vehicles = (details?.activeBuses || []).map(standardizeVehicle);
     } else {
       vehicles = vehicles.map(standardizeVehicle);
@@ -602,7 +356,7 @@ app.get('/api/line/:lineId/vehicles', async (req, res) => {
       lineId,
       code: details?.code || cleanCode || String(lineId),
       name: details?.name || null,
-      agency: details?.agency || agency || null,
+      agency: details?.agency || agency || 'Mataró Bus',
       direction: String(direction),
       totalVehicles: vehicles.length,
       vehicles,
@@ -613,115 +367,28 @@ app.get('/api/line/:lineId/vehicles', async (req, res) => {
   }
 });
 
-// Get unified Live Telemetry & Vehicles for any line
-app.get('/api/line/:lineId/live', async (req, res) => {
-  const { lineId } = req.params;
-  const direction = req.query.direction || '0';
-  try {
-    const resolution = resolveTrackerOr404(res, lineId);
-    if (!resolution) return;
-    const { type, tracker } = resolution;
-    if (type === 'c10') {
-      const dir = direction === '0' ? '0' : '1';
-      const data = await corridorTracker.getCorridorLiveTracking(dir);
-      res.json({ success: true, data });
-    } else {
-      const targetLine = resolution.lineId || lineId;
-      const data = await tracker.getLineDetails(targetLine, direction);
-      res.json({ success: true, data });
-    }
-  } catch (err) {
-    handleRouteError(req, res, err);
-  }
-});
-
-// Get unified Stop Departures for any line & stop
+// Get Stop Departures
 app.get('/api/line/:lineId/stop/:stopId/departures', async (req, res) => {
   const { lineId, stopId } = req.params;
   const direction = req.query.direction || '0';
-  const targetDate = req.query.date || null;
   try {
     const resolution = resolveTrackerOr404(res, lineId);
     if (!resolution) return;
-    const { type, tracker } = resolution;
-    if (type === 'c10') {
-      const dir = direction === '0' ? '0' : '1';
-      const data = await corridorTracker.getStopDepartures(stopId, dir, targetDate);
-      res.json({ success: true, data: harmonizeDeparturesEnvelope(data, corridorTracker, lineId) });
-    } else {
-      const targetLine = resolution.lineId || lineId;
-      const data = await tracker.getStopDepartures(stopId, targetLine, direction);
-      res.json({ success: true, data: harmonizeDeparturesEnvelope(data, tracker, targetLine) });
-    }
+    const { tracker } = resolution;
+    const targetLine = resolution.lineId || lineId;
+    const data = await tracker.getStopDepartures(stopId, targetLine, direction);
+    res.json({ success: true, data: harmonizeDeparturesEnvelope(data, tracker, targetLine) });
   } catch (err) {
     handleRouteError(req, res, err);
   }
 });
 
-// ==========================================
-// 3. LEGACY ENDPOINTS (BACKWARDS COMPATIBILITY)
-// ==========================================
-
-// Target stop real-time ETA endpoint for C-10
-app.get('/api/c10/target-eta', async (req, res) => {
-  const direction = req.query.direction === '0' ? '0' : '1';
-  const stopId = req.query.stopId || null;
-  const targetDate = req.query.date || null;
-  try {
-    const data = await corridorTracker.getTargetStopETA(direction, stopId, targetDate);
-    res.json({ success: true, data });
-  } catch (err) {
-    handleRouteError(req, res, err);
-  }
-});
-
-// All stops on C-10
-app.get('/api/c10/stops', (req, res) => {
-  const direction = req.query.direction === '0' ? '0' : '1';
-  try {
-    const stops = corridorTracker.getStops(direction);
-    res.json({
-      success: true,
-      direction,
-      totalStops: stops.length,
-      stops
-    });
-  } catch (err) {
-    handleRouteError(req, res, err);
-  }
-});
-
-// Real-time departures for any C-10 stop
-app.get('/api/c10/stop/:stopId/departures', async (req, res) => {
-  const { stopId } = req.params;
-  const direction = req.query.direction === '0' ? '0' : '1';
-  const targetDate = req.query.date || null;
-  try {
-    const data = await corridorTracker.getStopDepartures(stopId, direction, targetDate);
-    res.json({ success: true, data });
-  } catch (err) {
-    handleRouteError(req, res, err);
-  }
-});
-
-// Live Corridor Tracking & Active Buses across checkpoints for C-10
-app.get('/api/c10/live-corridor', async (req, res) => {
-  const direction = req.query.direction === '0' ? '0' : '1';
-  try {
-    const data = await corridorTracker.getCorridorLiveTracking(direction);
-    res.json({ success: true, data });
-  } catch (err) {
-    handleRouteError(req, res, err);
-  }
-});
-
-// List of all Mataró urban lines
+// Mataró specific alias endpoints
 app.get('/api/mataro/lines', (req, res) => {
   const lines = mataroTracker.getLines();
   res.json({ success: true, lines });
 });
 
-// Get Line details (stops, polyline geometry, and active buses with dead-zone estimation)
 app.get('/api/mataro/line/:lineId', async (req, res) => {
   const { lineId } = req.params;
   const direction = req.query.direction === 'both' ? 'both' : (req.query.direction === '1' ? '1' : '0');
@@ -733,7 +400,6 @@ app.get('/api/mataro/line/:lineId', async (req, res) => {
   }
 });
 
-// Target stop real-time countdown & departures for Mataró Bus line
 app.get('/api/mataro/target-eta', async (req, res) => {
   const lineId = req.query.lineId || '1';
   const stopId = req.query.stopId || null;
@@ -746,7 +412,6 @@ app.get('/api/mataro/target-eta', async (req, res) => {
   }
 });
 
-// Real-time departures for any Mataró Bus stop
 app.get('/api/mataro/stop/:stopId/departures', async (req, res) => {
   const { stopId } = req.params;
   const lineId = req.query.lineId || '';
@@ -758,124 +423,25 @@ app.get('/api/mataro/stop/:stopId/departures', async (req, res) => {
   }
 });
 
-// ==========================================
-// 4. API CONNECTION DIAGNOSTICS & HEALTH
-// ==========================================
-
-// Diagnostic test for current line's upstream API
-app.get('/api/diagnostics/test', async (req, res) => {
-  const lineId = req.query.lineId || 'c10';
-  const start = Date.now();
-
-  // Tracker resolution happens INSIDE structured handling: an unknown line
-  // (the registry throws for unresolved IDs) must become a JSON 404 instead
-  // of escaping this handler as an unhandled rejection.
-  let type;
-  let tracker;
+// Disruptions / Notices for Mataró Bus
+app.get('/api/disruptions', (req, res) => {
   try {
-    const resolution = getTrackerForLine(lineId);
-    if (!resolution || !resolution.tracker) {
-      return res.status(404).json({ success: false, error: 'Unknown line' });
+    const p = path.join(__dirname, 'data', 'cities', 'mataro', 'mataro_avisos.json');
+    let disruptions = [];
+    if (fs.existsSync(p)) {
+      const raw = JSON.parse(fs.readFileSync(p, 'utf8'));
+      if (Array.isArray(raw.message)) {
+        disruptions = raw.message.map(a => ({
+          id: String(a.id),
+          title: a.title_ca || a.title_es || 'Avís de servei',
+          description: a.text_ca || a.text_es || '',
+          agency: 'Mataró Bus',
+          severity: 'info',
+          linesAffected: ['1', '2', '3', '4', '5', '6', '7', '8'],
+          active: a.estado === 1
+        }));
+      }
     }
-    type = resolution.type;
-    tracker = resolution.tracker;
-  } catch (err) {
-    console.error(`[API] 404 on GET ${req.originalUrl} (lineId=${lineId}):`, err.message);
-    return res.status(404).json({ success: false, error: 'Unknown line' });
-  }
-  const providerMeta = {
-    c10: {
-      provider: 'Generalitat de Catalunya (Mou-te / ATM)',
-      host: 'moute.gencat.cat',
-      auth: 'HMAC-MD5 Token Authentication',
-      type: 'REST JSON / Nexus NextDepartures'
-    },
-    maresme: {
-      provider: 'Moventis / Casas (Generalitat Mou-te & ATM)',
-      host: 'moute.gencat.cat',
-      auth: 'HMAC-MD5 Token Authentication',
-      type: 'REST JSON / Nexus NextDepartures'
-    },
-    mataro: {
-      provider: 'Mataró Bus Urbà (Avanza SIRI Gateway)',
-      host: 'sirimataro.avanzagrupo.com',
-      auth: 'SIRI-Lite Protocol',
-      type: 'SOAP / XML VehicleMonitoring'
-    },
-    sagales: {
-      provider: 'Sagalés Real-Time Web Service',
-      host: 'www.sagales.com',
-      auth: 'Direct JSON Telemetry',
-      type: 'REST JSON Vehicle Entities'
-    },
-    amb: {
-      provider: 'Àrea Metropolitana de Barcelona (AMB Mobilitat)',
-      host: 'api.ambmobilitat.cat',
-      auth: 'API Key Header (x-api-key)',
-      type: 'REST JSON v2 GTFS & Realtime'
-    },
-    rodalies: {
-      provider: 'Renfe Rodalies de Catalunya (AMB Mobilitat)',
-      host: 'api.ambmobilitat.cat',
-      auth: 'API Key Header (x-api-key)',
-      type: 'REST JSON v2 GTFS-RT'
-    }
-  }[type] || {
-    provider: 'AMB Mobilitat',
-    host: 'api.ambmobilitat.cat',
-    auth: 'API Key Header',
-    type: 'REST API'
-  };
-
-  try {
-    let result = null;
-    if (type === 'c10') {
-      result = await corridorTracker.getCorridorLiveTracking('1');
-    } else {
-      result = await tracker.getLineDetails(lineId, '0');
-    }
-    const latencyMs = Date.now() - start;
-    const activeVehicles = result?.activeBuses?.length || result?.totalActiveBuses || 0;
-
-    res.json({
-      success: true,
-      lineId,
-      provider: providerMeta.provider,
-      host: providerMeta.host,
-      auth: providerMeta.auth,
-      type: providerMeta.type,
-      latencyMs,
-      status: latencyMs > 3000 ? 'slow' : 'online',
-      statusCode: 200,
-      activeVehicles,
-      message: `Connexió correcta amb ${providerMeta.host} (${latencyMs}ms). ${activeVehicles} vehicle${activeVehicles === 1 ? '' : 's'} actiu${activeVehicles === 1 ? '' : 's'}.`,
-      testedAt: new Date().toLocaleTimeString('ca-ES', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit', second: '2-digit' })
-    });
-  } catch (err) {
-    console.error(`[API] Diagnostics upstream failure on ${req.originalUrl} (lineId=${lineId}):`, err);
-    const latencyMs = Date.now() - start;
-    res.json({
-      success: false,
-      lineId,
-      provider: providerMeta.provider,
-      host: providerMeta.host,
-      auth: providerMeta.auth,
-      type: providerMeta.type,
-      latencyMs,
-      status: 'offline',
-      statusCode: 502,
-      error: err.message,
-      message: `Error en connectar amb ${providerMeta.host}: ${err.message}`,
-      testedAt: new Date().toLocaleTimeString('ca-ES', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit', second: '2-digit' })
-    });
-  }
-});
-
-// Live Transit Disruptions & Service Alerts API
-app.get('/api/disruptions', async (req, res) => {
-  try {
-    const lineCode = req.query.line || null;
-    const disruptions = await ambTracker.getDisruptions(lineCode);
     res.json({
       success: true,
       count: disruptions.length,
@@ -886,22 +452,7 @@ app.get('/api/disruptions', async (req, res) => {
   }
 });
 
-// ==========================================
-// 4. CENTRALIZED FLIGHT RECORDER & JOURNALISM ANALYTICS
-// ==========================================
-
-// Global fleet snapshot across all monitored lines in Catalonia
-app.get('/api/fleet/live', (req, res) => {
-  const vehicles = flightRecorder.getAllVehicles();
-  res.json({
-    success: true,
-    count: vehicles.length,
-    timestamp: Date.now(),
-    vehicles
-  });
-});
-
-// Canonical Global Live Vehicles API (uniform vehicle schema with dual-cased compatibility fields)
+// All Active Vehicles across Mataró Bus
 app.get('/api/vehicles', (req, res) => {
   const lineFilter = req.query.line ? String(req.query.line).toUpperCase() : null;
   let vehicles = flightRecorder.getAllVehicles();
@@ -917,8 +468,17 @@ app.get('/api/vehicles', (req, res) => {
   });
 });
 
-// GPS breadcrumb trail history for a specific vehicle.
-// Trail reads are proxied to the worker's SQLite history via the history gateway.
+app.get('/api/fleet/live', (req, res) => {
+  const vehicles = flightRecorder.getAllVehicles();
+  res.json({
+    success: true,
+    count: vehicles.length,
+    timestamp: Date.now(),
+    vehicles
+  });
+});
+
+// Vehicle Trail
 app.get('/api/vehicle/:vehicleId/trail', async (req, res) => {
   const { vehicleId } = req.params;
   try {
@@ -934,17 +494,17 @@ app.get('/api/vehicle/:vehicleId/trail', async (req, res) => {
   }
 });
 
-// Real-time & 24h delay statistics and punctuality score for a line.
-// Stats reads are proxied to the worker's SQLite history via the history gateway.
+// Line Delay Stats
 app.get('/api/line/:lineId/stats', async (req, res) => {
   const { lineId } = req.params;
-  const cleanCode = lineId.replace('cat_gen_', '').replace(/.*_/, '').toUpperCase();
+  const cleanCode = `L${lineId.replace(/^l/i, '')}`;
   try {
     const stats = await flightRecorder.getLineStats(cleanCode, lineId);
     res.json({
       success: true,
       lineId,
-      lineCode: cleanCode,
+      code: cleanCode,
+      hoursMonitored: 24,
       stats
     });
   } catch (err) {
@@ -952,218 +512,100 @@ app.get('/api/line/:lineId/stats', async (req, res) => {
   }
 });
 
-// Shared Journalism Report handler (Instant Cache & 30-min background generation)
-
-// Coalesces concurrent cold-miss generations per timeframe so a request burst
-// triggers ONE worker RPC instead of N, and warms the memory cache with the result.
-const inFlightReportGeneration = new Map(); // canonicalHours -> Promise<report|null>
-
-// Memoized serialization: identical report object => identical JSON body.
-// Avoids re-stringifying a ~750KB report on every request during bursts
-// (event-loop head-of-line blocking for all other endpoints).
-const serializedReportBodies = new WeakMap();
-function sendReportResponse(res, report) {
-  let body = serializedReportBodies.get(report);
-  if (body === undefined) {
-    body = JSON.stringify({ success: true, report });
-    serializedReportBodies.set(report, body);
-  }
-  res.set('Content-Type', 'application/json').send(body);
-}
-function generateReportViaWorker(canonicalHours) {
-  if (inFlightReportGeneration.has(canonicalHours)) {
-    return inFlightReportGeneration.get(canonicalHours);
-  }
-  const promise = workerBridge.historyQuery(
-    'generateReport',
-    { hours: canonicalHours },
-    { timeoutMs: 30000 }
-  )
-    .then((report) => {
-      if (report && report.summary) {
-        reportCacheService.updateMemoryCache(canonicalHours, report);
-      }
-      return report;
-    })
-    .catch(() => null)
-    .finally(() => inFlightReportGeneration.delete(canonicalHours));
-  inFlightReportGeneration.set(canonicalHours, promise);
-  return promise;
-}
-
-async function handleJournalismReport(req, res) {
+// Observatori & Analytics Reports
+app.get('/api/analytics/journalism', async (req, res) => {
+  const hours = Math.max(1, Math.min(168, parseInt(req.query.hours, 10) || 24));
+  const allLines = trackerRegistry.getAllLines();
   try {
-    const canonicalHours = reportCacheService.normalizeHours(parseInt(req.query.hours || '24', 10));
-    // Memory-cache hit first (never generates in main); null on miss.
-    let report = await reportCacheService.getLatestReport(canonicalHours, () => getAllTransitLines());
+    let report = reportCacheService.getLatestReport(hours, allLines);
     if (!report) {
-      // Cache miss: coalesced RPC (one generation per timeframe under bursts).
-      report = await generateReportViaWorker(canonicalHours);
+      try {
+        report = await workerBridge.historyQuery('generateReport', { hours, allLinesCatalog: allLines }, { timeoutMs: 30000 });
+      } catch (_) {}
     }
     if (!report) {
-      return res.status(503).json({ success: false, error: 'Report warming up — try again shortly' });
+      return res.status(503).json({ success: false, error: 'Report is warming up, retry shortly.' });
     }
-    sendReportResponse(res, report);
+    res.json({ success: true, ...report });
   } catch (err) {
-    handleRouteError(req, res, err);
+    sendInternalError(req, res, err);
   }
-}
+});
 
-// Shared CSV Export handler for spreadsheet / investigative journalism analysis
-async function handleAnalyticsCsv(req, res) {
-  const hours = parseInt(req.query.hours || '48', 10);
+app.get('/api/retards/ranking', async (req, res) => {
+  const allLines = trackerRegistry.getAllLines();
   try {
-    // CSV export reads the worker's SQLite delay logs through the history gateway.
-    const csvData = await flightRecorder.exportCsv(hours);
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="arribo_transit_delays_${Date.now()}.csv"`);
-    res.send(csvData);
-  } catch (err) {
-    handleRouteError(req, res, err);
-  }
-}
-
-// Shared Delay Ranking handler (canonical delay rankings across lines & stops)
-async function handleRankingReport(req, res) {
-  try {
-    const canonicalHours = reportCacheService.normalizeHours(parseInt(req.query.hours || '24', 10));
-    const limit = Math.min(500, Math.max(1, parseInt(req.query.limit || '25', 10)));
-    // Memory-cache hit first (never generates in main); null on miss.
-    let report = await reportCacheService.getLatestReport(canonicalHours, () => getAllTransitLines());
+    let report = reportCacheService.getLatestReport(24, allLines);
     if (!report) {
-      // Cache miss: coalesced RPC (one generation per timeframe under bursts).
-      report = await generateReportViaWorker(canonicalHours);
-    }
-    if (!report) {
-      return res.status(503).json({ success: false, error: 'Report warming up — try again shortly' });
+      try {
+        report = await workerBridge.historyQuery('generateReport', { hours: 24, allLinesCatalog: allLines }, { timeoutMs: 30000 });
+      } catch (_) {}
     }
     res.json({
       success: true,
-      timeframeHours: report?.meta?.timeframeHours || canonicalHours,
-      generatedAt: report?.meta?.generatedAt || null,
-      summary: report?.summary || {},
-      rankingMostDelayed: (report?.rankingMostDelayed || []).slice(0, limit),
-      rankingBestPunctuality: (report?.rankingBestPunctuality || []).slice(0, limit),
-      rankingWorstStops: (report?.rankingWorstStops || []).slice(0, limit),
-      agencyStats: report?.agencyStats || []
+      timeframe: '24h',
+      ranking: report ? report.rankingMostDelayed : []
     });
   } catch (err) {
-    handleRouteError(req, res, err);
+    sendInternalError(req, res, err, { ranking: [] });
   }
-}
+});
 
-// Journalism Investigation Report across all lines & operators
-app.get('/api/analytics/journalism', handleJournalismReport);
-
-// Canonical Catalan alias namespace (/api/retards/*) mirroring /api/analytics/*
-app.get('/api/retards/journalism', handleJournalismReport);
-app.get('/api/retards/export/csv', handleAnalyticsCsv);
-app.get('/api/retards/ranking', handleRankingReport);
-
-// CSV Export for spreadsheet / investigative journalism analysis
-app.get('/api/analytics/export/csv', handleAnalyticsCsv);
-
-// Delay Ranking endpoint (mirrored at /api/retards/ranking)
-app.get('/api/analytics/ranking', handleRankingReport);
-
-// ==========================================
-// 5. DAILY ROUTE SNAPSHOTS & 3-DAY RETENTION
-// ==========================================
-
-// Get list of daily route snapshots and change metadata (maintained for the last 3 days)
-app.get('/api/routes/snapshots', (req, res) => {
+// Diagnostic upstream test
+app.get('/api/diagnostics/test', async (req, res) => {
+  const lineId = req.query.lineId || '1';
+  const start = Date.now();
   try {
-    const snapshots = routeCacheService.getSnapshotsList();
-    const diff = routeCacheService.get3DayDiff();
+    const result = await mataroTracker.getLineDetails(lineId, '0');
+    const latencyMs = Date.now() - start;
+    const activeVehicles = result?.activeBuses?.length || 0;
     res.json({
       success: true,
-      retentionDays: 3,
-      totalSnapshots: snapshots.length,
-      snapshots,
-      diff
+      lineId,
+      provider: 'Mataró Bus Urbà (Avanza SIRI Gateway)',
+      host: 'sirimataro.avanzagrupo.com',
+      auth: 'SIRI-Lite Protocol',
+      type: 'SOAP / XML VehicleMonitoring',
+      latencyMs,
+      status: latencyMs > 3000 ? 'slow' : 'online',
+      statusCode: 200,
+      activeVehicles,
+      message: `Connexió correcta amb sirimataro.avanzagrupo.com (${latencyMs}ms). ${activeVehicles} vehicles actius.`,
+      testedAt: new Date().toLocaleTimeString('ca-ES', { timeZone: 'Europe/Madrid' })
     });
   } catch (err) {
-    handleRouteError(req, res, err);
+    res.json({
+      success: false,
+      lineId,
+      provider: 'Mataró Bus Urbà',
+      host: 'sirimataro.avanzagrupo.com',
+      status: 'offline',
+      statusCode: 502,
+      error: err.message
+    });
   }
 });
 
-// Get full route snapshot for a specific date
-app.get('/api/routes/snapshots/:date', (req, res) => {
-  try {
-    const { date } = req.params;
-    const snapshot = routeCacheService.getSnapshotByDate(date);
-    if (!snapshot) {
-      return res.status(404).json({ success: false, error: `Snapshot for date ${date} not found or pruned (retained for 3 days).` });
-    }
-    res.json({ success: true, snapshot });
-  } catch (err) {
-    handleRouteError(req, res, err);
-  }
+// 404 handler for unmatched API routes
+app.all('/api/*', (req, res) => {
+  res.status(404).json({ success: false, error: `API endpoint '${req.path}' not found.` });
 });
 
-// Get 3-day changes and route topology diffs
-app.get('/api/routes/diff', (req, res) => {
-  try {
-    const diff = routeCacheService.get3DayDiff();
-    res.json({ success: true, diff });
-  } catch (err) {
-    handleRouteError(req, res, err);
-  }
-});
-
-app.get('/api/health', (req, res) => {
-  let appVersion = '2.0.0';
-  try {
-    appVersion = require('./package.json').version;
-  } catch (_) {}
-  res.json({
-    status: 'ok',
-    app: 'Arribo!',
-    version: appVersion,
-    description: 'Universal Realtime Bus Telemetry & Schedule Platform for Catalonia',
-    timestamp: new Date().toISOString(),
-    worker: workerBridge.getStatus()
-  });
-});
-
-// Unknown /api/* paths must return a proper JSON 404 (never the SPA HTML),
-// so API consumers and the frontend can distinguish "no such endpoint" reliably.
-app.use('/api', (req, res) => {
-  res.status(404).json({ success: false, error: `Not found: ${req.method} ${req.originalUrl}` });
-});
-
+// SPA fallback for HTML5 routing
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// Start Server
 if (require.main === module) {
-  const runningServer = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`====================================================`);
-    console.log(`🚌 Arribo! Transit Telemetry Platform Running!`);
-    console.log(`🌐 Full Catalonia Multi-Provider Realtime Bus Network`);
-    console.log(`📍 Local URL: http://localhost:${PORT}`);
-    console.log(`====================================================`);
+  app.listen(PORT, () => {
+    console.log(`\n======================================================`);
+    console.log(`🚌 Arribo! Mataró Bus Tracker HTTP Server`);
+    console.log(`📡 URL: http://localhost:${PORT}`);
+    console.log(`📊 Lines: Mataró Bus Urbà (L1 - L8)`);
+    console.log(`🛰️ SIRI: sirimataro.avanzagrupo.com`);
+    console.log(`======================================================\n`);
   });
-
-  const gracefulShutdown = async (signal) => {
-    console.log(`[Server] Received ${signal}. Shutting down gracefully...`);
-    try {
-      if (typeof workerBridge.stop === 'function') {
-        await workerBridge.stop();
-      } else if (typeof workerBridge.shutdown === 'function') {
-        await workerBridge.shutdown();
-      }
-    } catch (e) {
-      console.error('[Server] WorkerBridge shutdown error:', e.message);
-    }
-    runningServer.close(() => {
-      console.log('[Server] HTTP server closed.');
-      process.exit(0);
-    });
-  };
-
-  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 }
 
 module.exports = app;

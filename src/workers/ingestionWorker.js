@@ -1,6 +1,6 @@
 /**
  * Ingestion & Analytics Background Worker
- * Runs autonomous API polling, GTFS ingestion, and heavy SQLite analytics
+ * Runs autonomous Mataró Bus API polling and SQLite analytics
  * in an isolated Node.js process / thread.
  */
 
@@ -10,19 +10,9 @@ const ingestionDaemon = require('../ingestionDaemon');
 const historyDb = require('../historyDb');
 const reportCacheService = require('../reportCacheService');
 const flightRecorder = require('../flightRecorder');
-const sagalesTracker = require('../sagalesTracker');
-const c10TelemetryExtractor = require('../c10TelemetryExtractor');
-const ambTracker = require('../ambTracker');
-const rodaliesTracker = require('../rodaliesTracker');
-const corridorTracker = require('../corridorTracker');
 const mataroSiriClient = require('../mataroSiriClient');
+const mataroTracker = require('../mataroTracker');
 const trackerRegistry = require('../core/TrackerRegistry');
-// Worker-side delay-memory gateway: sweeps run HERE, so observations must
-// persist directly (main process uses the workerBridge RPC gateway instead).
-const delayMemory = require('../core/realtime/delayMemory');
-delayMemory.setGateway((op, args) => Promise.resolve(executeDbOperation(op, args)));
-// Worker fetches AMB upstream directly (default). Main process routes here via IPC.
-delayMemory.setGateway((op, args) => Promise.resolve(executeDbOperation(op, args)));
 
 let parentPort = null;
 try {
@@ -55,9 +45,7 @@ function sendToMaster(type, payload = {}) {
 }
 
 /**
- * Worker-owned upstream HTTP fetch used by the proxyUpstreamHttp RPC op.
- * Returns { status, bodyText } so the main process never opens sockets to
- * upstream providers itself.
+ * Worker-owned upstream HTTP fetch used by proxyUpstreamHttp
  */
 async function proxyUpstreamFetch(args = {}) {
   const url = String(args.url || '');
@@ -79,8 +67,6 @@ async function proxyUpstreamFetch(args = {}) {
 
 /**
  * Single dispatch table for DB RPC operations.
- * Used by BOTH the DB_REQUEST IPC handler and the flightRecorder history
- * gateway so the two paths can never drift apart.
  */
 async function executeDbOperation(op, args = {}) {
   switch (op) {
@@ -90,57 +76,22 @@ async function executeDbOperation(op, args = {}) {
     case 'getLineDelayStats':
       return historyDb.getLineDelayStats(args.lineCode, args.hours ?? 24, args.lineId);
 
-    case 'saveAmbObservations':
-      return historyDb.saveAmbObservations(args.rows || []);
-
-    case 'getRecentAmbObservations':
-      return historyDb.getRecentAmbObservations(args);
-
-    case 'getAmbStopRealtimes':
-      // Central AMB v2 access point: the worker owns all upstream calls.
-      return ambStopRealtime.fetchRealtime(String(args.ambCode || ''));
-
-    case 'getSagalesFeed':
-      // Central Sagalés access point: the worker owns all upstream calls.
-      return sagalesTracker.getSagalesFeed(String(args.routeId || ''), args.dir === '1' ? '1' : '0');
-
-    case 'getAmbApi': {
-      // Central AMB v2 access point for amb + rodalies trackers.
-      const t = String(args.client) === 'rodalies' ? rodaliesTracker : ambTracker;
-      return t.fetchAmbApi(String(args.path || '/'));
-    }
-
-    case 'getCorridorAmbRealtime':
-      // Central C-10/AMB realtime access point: worker owns upstream calls.
-      return corridorTracker.fetchAmbRealtime(String(args.ambCode || ''));
-
     case 'getMataroLiveVehicles':
-      // Central Mataró SIRI live vehicles access point: worker owns upstream calls.
       return mataroSiriClient.getLiveVehicles(String(args.lineRef || ''));
 
     case 'getMataroStopArrivals':
-      // Central Mataró SIRI stop arrivals access point: worker owns upstream calls.
       return mataroSiriClient.getStopArrivals(String(args.stopId || ''), String(args.lineRef || ''));
 
     case 'proxyUpstreamHttp':
-      // Generic worker-owned upstream HTTP for main-process client backends.
       return proxyUpstreamFetch(args);
 
-    case 'getC10AmbVehicles':
-      // Worker-owned AMB /bus/vehicles fetch for the C-10 GPS extractor
-      // (worker instance has no backend installed → direct HTTPS here).
-      return c10TelemetryExtractor.fetchAmbVehicles();
-
     case 'getJournalismReport':
-      return historyDb.getJournalismReport(args.hours, args.allLinesCatalog);
+      return historyDb.getJournalismReport(args.hours, args.allLinesCatalog || trackerRegistry.getAllLines());
 
     case 'exportDelayLogsCsv':
       return historyDb.exportDelayLogsCsv(args.hours);
 
     case 'generateReport': {
-      // Long-running: callers should pass timeoutMs >= 30000.
-      // Catalog resolves worker-side when the caller cannot serialize one over IPC
-      // (functions/undefined do not survive structured clone).
       const catalog = Array.isArray(args.allLinesCatalog)
         ? args.allLinesCatalog
         : trackerRegistry.getAllLines();
@@ -160,7 +111,7 @@ function sendDbResponse(response) {
     try {
       process.send(response);
     } catch (err) {
-      // Parent channel closed or disconnected - nothing to do.
+      // Parent channel closed or disconnected
     }
   }
 }
@@ -179,162 +130,116 @@ function handleMasterMessage(message) {
         pid: process.pid,
         memory: process.memoryUsage(),
         uptime: process.uptime(),
-        activeVehicles: flightRecorder.getAllVehicles().length,
-        isRunning: ingestionDaemon.isRunning
+        activeVehicles: flightRecorder.getAllVehicles().length
       });
       break;
 
-    case 'TRIGGER_REPORT': {
-      const hours = payload.hours || 24;
-      reportCacheService.generateAndSaveReport(hours, () => trackerRegistry.getAllLines())
-        .then(rep => {
-          sendToMaster('REPORT_CACHE_UPDATE', {
-            timeframeHours: reportCacheService.normalizeHours(hours),
-            report: rep,
-            generatedAt: Date.now()
-          });
-        })
-        .catch(err => {
-          console.error('[IngestionWorker] Error generating triggered report:', err.message);
-        });
+    case 'TRIGGER_POLL':
+      ingestionDaemon.pollMataroVehicles().catch(err => {
+        console.error('[Worker] Manual poll error:', err.message);
+      });
       break;
-    }
+
+    case 'GENERATE_REPORT':
+      reportCacheService.generateAllReports(trackerRegistry.getAllLines()).then(() => {
+        sendToMaster('REPORT_GENERATED', { timestamp: Date.now() });
+      }).catch(err => {
+        console.error('[Worker] Manual report generation error:', err.message);
+      });
+      break;
 
     case 'DB_REQUEST': {
-      // Accept both flat frames ({ type, requestId, op, args }) and enveloped
-      // ones ({ payload: { requestId, op, args } }) for robustness.
-      const env = payload && typeof payload === 'object' ? payload : {};
-      const requestId = message.requestId ?? env.requestId;
-      const op = message.op ?? env.op;
-      const args = message.args ?? env.args ?? {};
-
+      const { requestId, op, args } = message;
+      if (!requestId || !op) {
+        return;
+      }
       Promise.resolve()
         .then(() => executeDbOperation(op, args))
-        .then(result => {
-          sendDbResponse({ type: 'DB_RESPONSE', requestId, ok: true, result });
+        .then((result) => {
+          sendDbResponse({
+            type: 'DB_RESPONSE',
+            requestId,
+            ok: true,
+            result
+          });
         })
-        .catch(err => {
+        .catch((err) => {
           sendDbResponse({
             type: 'DB_RESPONSE',
             requestId,
             ok: false,
-            error: String((err && err.message) || err)
+            error: err && err.message ? err.message : String(err)
           });
         });
       break;
     }
 
-    case 'GET_STATUS':
-      sendToMaster('STATUS', {
-        pid: process.pid,
-        uptime: process.uptime(),
-        memory: process.memoryUsage(),
-        activeVehicles: flightRecorder.getAllVehicles().length,
-        isRunning: ingestionDaemon.isRunning
-      });
-      break;
-
     case 'SHUTDOWN':
-      console.log('[IngestionWorker] Received SHUTDOWN command. Initiating graceful shutdown...');
+      console.log('[Worker] Graceful shutdown requested by master...');
       try {
         ingestionDaemon.stop();
-      } catch (err) {
-        console.error('[IngestionWorker] Error stopping ingestion daemon:', err.message);
-      }
-      try {
-        historyDb.checkpointTruncate();
         historyDb.close();
-      } catch (err) {
-        console.error('[IngestionWorker] Error closing SQLite database handle:', err.message);
-      }
-      setTimeout(() => {
-        process.exit(0);
-      }, 50);
+      } catch (e) {}
+      process.exit(0);
       break;
 
     default:
-      // Unknown message type
-      break;
+      console.warn(`[Worker] Unhandled master message type: ${type}`);
   }
 }
 
-// Bind incoming message listeners
-if (process.on) {
+// Attach listener to IPC channel
+if (typeof process.on === 'function') {
   process.on('message', handleMasterMessage);
 }
-if (parentPort) {
+if (parentPort && typeof parentPort.on === 'function') {
   parentPort.on('message', handleMasterMessage);
 }
 
-// Graceful signal handlers
-const handleTermination = (sig) => {
-  console.log(`[IngestionWorker] Received ${sig}. Closing database and exiting...`);
-  try {
-    ingestionDaemon.stop();
-    historyDb.checkpointTruncate();
-    historyDb.close();
-  } catch (err) {
-    // Ignore cleanup error on exit
-  }
-  process.exit(0);
-};
-
-process.on('SIGTERM', () => handleTermination('SIGTERM'));
-process.on('SIGINT', () => handleTermination('SIGINT'));
-
-process.on('uncaughtException', (err) => {
-  console.error('[IngestionWorker] FATAL uncaughtException:', err);
-  process.exit(1);
+// Forward daemon events to master process over IPC
+ingestionDaemon.setIpcCallback((type, payload) => {
+  sendToMaster(type, payload);
 });
 
-process.on('unhandledRejection', (reason) => {
-  console.error('[IngestionWorker] unhandledRejection:', reason);
-});
-
-// Initialize Trackers, start autonomous ingestion daemon, and announce readiness
-async function initWorker() {
-  console.log('[IngestionWorker] 🚀 Booting background ingestion & analytics worker (PID:', process.pid, ')...');
-
-  // Wire the singletons together before anything starts polling:
-  // - flightRecorder persists snapshots through the worker-owned SQLite handle
-  // - flightRecorder falls back to DB RPC dispatch when asked for history ops
-  // - reportCacheService reads through the same SQLite handle
+// Boot the background worker
+async function bootWorker() {
+  console.log(`[Worker] ⚡ Ingestion Worker Process initializing (PID: ${process.pid})...`);
+  
+  // 1. Initialize SQLite Database exclusively in worker
   try {
-    flightRecorder.enablePersistence(historyDb);
-    flightRecorder.setHistoryGateway(async (op, args) => executeDbOperation(op, args || {}));
-    reportCacheService.setDatabase(historyDb);
+    historyDb.init();
   } catch (err) {
-    console.warn('[IngestionWorker] Non-fatal singleton wiring warning:', err.message);
+    console.error('[Worker] Fatal: SQLite initialization failed:', err.message);
   }
 
-  try {
-    await trackerRegistry.initAll();
-    console.log('[IngestionWorker] All multi-provider trackers initialized.');
-  } catch (err) {
-    console.warn('[IngestionWorker] Non-fatal tracker initialization warning:', err.message);
-  }
-
-  // One-time geometry presence check: loud degradation notice for road-shape data
-  const shapesDbPath = path.join(__dirname, '..', '..', 'data', 'shapes.db');
-  if (!fs.existsSync(shapesDbPath)) {
-    console.warn('[IngestionWorker] ⚠️ data/shapes.db NOT FOUND — Maresme/Catalonia/AMB road geometry will degrade to straight stop-to-stop segments.');
-  }
-
-  // Start background pollers and timers
-  ingestionDaemon.start();
-
-  // Announce worker is ready to master supervisor
-  sendToMaster('WORKER_READY', {
-    timestamp: Date.now(),
-    pid: process.pid,
-    version: '1.0.0',
-    nodeVersion: process.version
+  // 2. Enable persistence on FlightRecorder
+  flightRecorder.enablePersistence((snapshot) => {
+    historyDb.recordVehicleSnapshot(snapshot);
   });
 
-  console.log('[IngestionWorker] ✅ Worker ready and operational.');
+  // Wire flightRecorder historical queries directly through the worker's DB execution
+  flightRecorder.setHistoryGateway((op, args) => Promise.resolve(executeDbOperation(op, args)));
+
+  // 3. Initialize Tracker Registry
+  try {
+    await trackerRegistry.initAll();
+  } catch (err) {
+    console.warn('[Worker] Tracker Registry init warning:', err.message);
+  }
+
+  // 4. Launch ingestion daemon
+  ingestionDaemon.start();
+
+  // 5. Notify master that worker is ready
+  sendToMaster('WORKER_READY', {
+    pid: process.pid,
+    version: '3.0.0-mataro'
+  });
+
+  console.log('[Worker] ✅ Ingestion Worker Ready and Listening.');
 }
 
-initWorker().catch(err => {
-  console.error('[IngestionWorker] Fatal error during worker startup:', err);
+bootWorker().catch(err => {
+  console.error('[Worker] Fatal bootstrap error:', err);
   process.exit(1);
 });

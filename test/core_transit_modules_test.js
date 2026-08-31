@@ -450,34 +450,26 @@ async function runTests() {
   assert.strictEqual(detailsBoth.allDirections.length, 2);
 
   // Test Tracker Registry
-  const resC10 = trackerRegistry.getTrackerForLine('c10');
-  assert.strictEqual(resC10.type, 'c10');
-  assert.strictEqual(resC10.cleanCode, 'C-10');
+  const resMataro1 = trackerRegistry.getTrackerForLine('1');
+  assert.strictEqual(resMataro1.type, 'mataro');
+  assert.strictEqual(resMataro1.cleanCode, 'L1');
 
-  const resMataro = trackerRegistry.getTrackerForLine('1');
-  assert.strictEqual(resMataro.type, 'mataro');
-  assert.strictEqual(resMataro.cleanCode, 'L1');
+  const resMataro8 = trackerRegistry.getTrackerForLine('L8');
+  assert.strictEqual(resMataro8.type, 'mataro');
+  assert.strictEqual(resMataro8.cleanCode, 'L8');
 
-  const resMaresme = trackerRegistry.getTrackerForLine('e11.1');
-  assert.strictEqual(resMaresme.type, 'maresme');
-
-  const resRodalies = trackerRegistry.getTrackerForLine('r1');
-  assert.strictEqual(resRodalies.type, 'rodalies');
-  assert.strictEqual(resRodalies.isTrain, true);
-
-  const resAmb = trackerRegistry.getTrackerForLine('b25');
-  assert.strictEqual(resAmb.type, 'amb');
-
-  const resSagales = trackerRegistry.getTrackerForLine('n82');
-  assert.strictEqual(resSagales.type, 'sagales');
-
-  const resCat = trackerRegistry.getTrackerForLine('cat_gen_0496');
-  assert.strictEqual(resCat.type, 'catalonia');
+  const resMataroAlias = trackerRegistry.getTrackerForLine('mataro_5');
+  assert.strictEqual(resMataroAlias.type, 'mataro');
+  assert.strictEqual(resMataroAlias.cleanCode, 'L5');
 
   // Universal Stop & Line Search
-  const searchLines = trackerRegistry.searchStopsAndLines('C-10');
+  const searchLines = trackerRegistry.searchStopsAndLines('L1');
   assert(searchLines.length > 0);
   assert(searchLines.some(r => r.type === 'line'));
+
+  const searchStops = trackerRegistry.searchStopsAndLines('Hospital');
+  assert(searchStops.length > 0);
+  assert(searchStops.some(r => r.type === 'stop'));
 
   console.log('✅ BaseTracker & TrackerRegistry verified.');
 

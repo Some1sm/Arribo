@@ -160,10 +160,10 @@ async function runChallengerTestSuite() {
   // 2.2 Unresolvable Line Handling
   assert.doesNotThrow(() => {
     const fallbackRes = trackerRegistry.getTrackerForLine('unknown_line_xyz_123');
-    assert.strictEqual(fallbackRes.type, 'catalonia');
+    assert.strictEqual(fallbackRes.type, 'mataro');
   });
   totalTestsRun++;
-  console.log('  ✓ 2.2 Unrecognized lines cleanly route to Catalonia Mou-te fallback');
+  console.log('  ✓ 2.2 Unrecognized lines cleanly route to Mataró Bus fallback');
 
   // 2.3 4-Tier Deduplication across 1,200+ Lines in Custom Registry Instance
   const CustomTrackerRegistryClass = trackerRegistry.TrackerRegistry;
