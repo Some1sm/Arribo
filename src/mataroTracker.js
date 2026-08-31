@@ -546,7 +546,7 @@ class MataroTracker extends BaseTracker {
     return details && Array.isArray(details.activeBuses) ? details.activeBuses : [];
   }
 
-  // Estimate arrival ETA to stopId from active live vehicles along the route circuit
+  // Estimate arrival ETA to stopId from active live vehicles along the route
   async estimateArrivalsForStop(stopId, lineId = '', existingArrivals = []) {
     const sId = String(stopId);
     const cleanLineId = lineId ? this.normalizeLineId(lineId) : '';
@@ -569,6 +569,10 @@ class MataroTracker extends BaseTracker {
     }
 
     const now = Date.now();
+    const netNow = timeEngine.getNetworkTime(this.agencyTimezone, new Date(now));
+    const currentSec = netNow.hour * 3600 + netNow.minute * 60 + netNow.second;
+    const dateComp = calendarEngine.getDateComponents(new Date(now), this.agencyTimezone);
+    const dayType = dateComp.isSunday ? 'sunday' : (dateComp.isSaturday ? 'saturday' : 'weekday');
 
     for (const lId of targetLineIds) {
       const routes = this.routesData[lId] || [];
@@ -590,6 +594,14 @@ class MataroTracker extends BaseTracker {
         const targetStopIdx = routeStops.findIndex(s => String(s.id) === sId);
         if (targetStopIdx === -1) return; // This route direction does not visit this stop
 
+        const dirSched = mataroSchedules.getDirectionSchedule(lId, String(route.id || routeIdx), dayType);
+        const lastTripSec = dirSched && dirSched.lastTrip ? timeEngine.timeStringToSeconds(dirSched.lastTrip) : 22 * 3600 + 35 * 60;
+
+        // If service for today has ended (past last trip + 20m grace period), do not synthesize arrivals
+        if (currentSec > lastTripSec + 1200) {
+          return;
+        }
+
         const targetStopObj = routeStops[targetStopIdx];
         const routePolyCoords = (route.coords || []).map(c => ({ lat: parseFloat(c.Latitude), lon: parseFloat(c.Longitude) }));
 
@@ -600,90 +612,40 @@ class MataroTracker extends BaseTracker {
           const vehRouteIdx = this.matchVehicleToRouteIndex(veh, routes);
           const isSameDirection = (vehRouteIdx === routeIdx);
 
-          let totalTravelSec = 0;
-          let isUpstreamDirect = false;
+          // ONLY estimate ETA for physically approaching upstream vehicles on the same route direction
+          if (!isSameDirection) return;
 
-          if (isSameDirection) {
-            // Vehicle is on the same route direction
-            const snapped = this.snapPointToPolyline(veh.lat, veh.lon, routePolyCoords);
-            const vehNearestStop = this.findNearestSegment(snapped.lat, snapped.lon, routeStops, routePolyCoords);
-            const vehStopIdx = Math.max(0, (vehNearestStop.fromSeq || 1) - 1);
-            isUpstreamDirect = (vehStopIdx <= targetStopIdx);
+          const snapped = this.snapPointToPolyline(veh.lat, veh.lon, routePolyCoords);
+          const vehNearestStop = this.findNearestSegment(snapped.lat, snapped.lon, routeStops, routePolyCoords);
+          const vehStopIdx = Math.max(0, (vehNearestStop.fromSeq || 1) - 1);
+          const isUpstreamDirect = (vehStopIdx <= targetStopIdx);
 
-            const targetLat = targetStopObj.latitude !== undefined ? parseFloat(targetStopObj.latitude) : targetStopObj.lat;
-            const targetLon = targetStopObj.longitude !== undefined ? parseFloat(targetStopObj.longitude) : targetStopObj.lon;
+          if (!isUpstreamDirect) return; // Bus has passed this stop on this run; do not fabricate synthetic multi-hop loops!
 
-            if (vehStopIdx <= targetStopIdx) {
-              // Upstream: vehicle is approaching this stop directly on this run
-              const remainingStops = targetStopIdx - vehStopIdx;
-              const remainingMeters = this.calculatePolylineDistanceBetween(routePolyCoords, snapped.lat, snapped.lon, targetLat || veh.lat, targetLon || veh.lon);
-              const speedMps = Math.max(4.5, (veh.speedKmh || 22) / 3.6);
-              let transitTravelSec = Math.round(remainingMeters / speedMps) + (remainingStops * 25);
+          const targetLat = targetStopObj.latitude !== undefined ? parseFloat(targetStopObj.latitude) : targetStopObj.lat;
+          const targetLon = targetStopObj.longitude !== undefined ? parseFloat(targetStopObj.longitude) : targetStopObj.lon;
 
-              // If vehicle is parked/regulating at the origin terminal (first stop, speed <= 5):
-              // Factor in the scheduled departure time so downstream stops don't show phantom early arrivals
-              if (vehStopIdx === 0 && (veh.speedKmh === 0 || veh.speedKmh <= 5)) {
-                const netNow = timeEngine.getNetworkTime(this.agencyTimezone, new Date(now));
-                const currentSec = netNow.hour * 3600 + netNow.minute * 60 + netNow.second;
-                const dateComp = calendarEngine.getDateComponents(new Date(now), this.agencyTimezone);
-                const dayType = dateComp.isSunday ? 'sunday' : (dateComp.isSaturday ? 'saturday' : 'weekday');
-                const dirSched = mataroSchedules.getDirectionSchedule(lId, String(route.id || '0'), dayType);
-                if (dirSched && Array.isArray(dirSched.departures)) {
-                  const nextTrip = dirSched.departures.find(t => timeEngine.timeToSec(t) >= currentSec - 60);
-                  if (nextTrip) {
-                    const nextSec = timeEngine.timeToSec(nextTrip);
-                    const regWaitSec = Math.max(0, nextSec - currentSec);
-                    transitTravelSec = Math.max(transitTravelSec, regWaitSec + transitTravelSec);
-                  }
-                }
+          const remainingStops = targetStopIdx - vehStopIdx;
+          const remainingMeters = this.calculatePolylineDistanceBetween(routePolyCoords, snapped.lat, snapped.lon, targetLat || veh.lat, targetLon || veh.lon);
+          const speedMps = Math.max(4.5, (veh.speedKmh || 22) / 3.6);
+          let transitTravelSec = Math.round(remainingMeters / speedMps) + (remainingStops * 25);
+
+          // If vehicle is parked/regulating at origin terminal:
+          if (vehStopIdx === 0 && (veh.speedKmh === 0 || veh.speedKmh <= 5)) {
+            if (dirSched && Array.isArray(dirSched.departures)) {
+              const nextTrip = dirSched.departures.find(t => timeEngine.timeStringToSeconds(t) >= currentSec - 60);
+              if (nextTrip) {
+                const nextSec = timeEngine.timeStringToSeconds(nextTrip);
+                const regWaitSec = Math.max(0, nextSec - currentSec);
+                transitTravelSec = Math.max(transitTravelSec, regWaitSec + transitTravelSec);
               }
-
-              totalTravelSec = transitTravelSec;
-            } else {
-              // Downstream on loop: vehicle passed this stop, will loop through other direction & come back
-              const otherRoute = routes[1 - routeIdx] || routes[0];
-              const lastStop = routeStops[routeStops.length - 1] || {};
-              const lastLat = lastStop.latitude !== undefined ? parseFloat(lastStop.latitude) : lastStop.lat;
-              const lastLon = lastStop.longitude !== undefined ? parseFloat(lastStop.longitude) : lastStop.lon;
-              const firstStop = routeStops[0] || {};
-              const firstLat = firstStop.latitude !== undefined ? parseFloat(firstStop.latitude) : firstStop.lat;
-              const firstLon = firstStop.longitude !== undefined ? parseFloat(firstStop.longitude) : firstStop.lon;
-
-              const remainingOnCurrent = this.calculatePolylineDistanceBetween(routePolyCoords, snapped.lat, snapped.lon, lastLat || veh.lat, lastLon || veh.lon);
-              const otherDist = this.calculateRouteTotalDistance((otherRoute.coords || []).map(c => ({ lat: parseFloat(c.Latitude), lon: parseFloat(c.Longitude) })));
-              const nextRunDist = this.calculatePolylineDistanceBetween(routePolyCoords, firstLat || veh.lat, firstLon || veh.lon, targetLat || veh.lat, targetLon || veh.lon);
-
-              const totalMeters = remainingOnCurrent + otherDist + nextRunDist;
-              const speedMps = 20 / 3.6;
-              totalTravelSec = Math.round(totalMeters / speedMps) + (routeStops.length * 25) + 300; // 5 min layover
             }
-          } else {
-            // Vehicle is on opposite direction
-            const oppRoute = routes[vehRouteIdx] || routes[0];
-            const oppPolyCoords = (oppRoute.coords || []).map(c => ({ lat: parseFloat(c.Latitude), lon: parseFloat(c.Longitude) }));
-            const oppStops = oppRoute.stops || [];
-            const snapped = this.snapPointToPolyline(veh.lat, veh.lon, oppPolyCoords);
-            const oppLastStop = oppStops[oppStops.length - 1] || {};
-            const oppLastLat = oppLastStop.latitude !== undefined ? parseFloat(oppLastStop.latitude) : oppLastStop.lat;
-            const oppLastLon = oppLastStop.longitude !== undefined ? parseFloat(oppLastStop.longitude) : oppLastStop.lon;
-            const targetLat = targetStopObj.latitude !== undefined ? parseFloat(targetStopObj.latitude) : targetStopObj.lat;
-            const targetLon = targetStopObj.longitude !== undefined ? parseFloat(targetStopObj.longitude) : targetStopObj.lon;
-            const firstStop = routeStops[0] || {};
-            const firstLat = firstStop.latitude !== undefined ? parseFloat(firstStop.latitude) : firstStop.lat;
-            const firstLon = firstStop.longitude !== undefined ? parseFloat(firstStop.longitude) : firstStop.lon;
-
-            const oppRemainingMeters = this.calculatePolylineDistanceBetween(oppPolyCoords, snapped.lat, snapped.lon, oppLastLat || veh.lat, oppLastLon || veh.lon);
-            const runDist = this.calculatePolylineDistanceBetween(routePolyCoords, firstLat || targetLat, firstLon || targetLon, targetLat, targetLon);
-
-            const totalMeters = oppRemainingMeters + runDist;
-            const speedMps = 20 / 3.6;
-            totalTravelSec = Math.round(totalMeters / speedMps) + (targetStopIdx * 25) + 240; // 4 min layover
           }
 
-          const minutesAway = Math.max(1, Math.round(totalTravelSec / 60));
+          const minutesAway = Math.max(0, Math.round(transitTravelSec / 60));
 
-          // Include within the extended 120-minute window
-          if (minutesAway >= 1 && minutesAway <= 120) {
+          // Bound within 45 minutes
+          if (minutesAway <= 45) {
             const arrDate = new Date(now + minutesAway * 60000);
             const formattedTime = timeUtils.formatTimeToTimezone(arrDate, this.agencyTimezone);
 
@@ -693,18 +655,18 @@ class MataroTracker extends BaseTracker {
               directionName: route.name,
               destination: route.name,
               vehicleId: veh.vehicleId,
-              distanceFromStop: `${Math.round(totalTravelSec * 5.5)}m`,
+              distanceFromStop: `${Math.round(transitTravelSec * 5.5)}m`,
               departureTime: formattedTime,
               expectedIso: arrDate.toISOString(),
               aimedIso: arrDate.toISOString(),
               minutesAway,
-              formattedStatus: `${minutesAway} min`,
+              formattedStatus: minutesAway === 0 ? 'Imminent' : (minutesAway === 1 ? '1 min' : `${minutesAway} min`),
               delayMins: veh.delayMins || 0,
-              delayBadgeText: isUpstreamDirect ? `⚡ En ruta (Bus #${veh.vehicleId})` : `⚡ Circuit complet (Bus #${veh.vehicleId})`,
+              delayBadgeText: `⚡ En ruta (Bus #${veh.vehicleId})`,
               delayStatus: 'estimated',
               isRealTime: false,
               isEstimated: true,
-              isUpstreamDirect,
+              isUpstreamDirect: true,
               busCoords: { lat: veh.lat, lon: veh.lon }
             });
 

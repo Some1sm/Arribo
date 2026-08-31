@@ -1781,15 +1781,16 @@ class TransitApp {
         : (dep.departureTime || '--:--');
       const clockTime = String(rawTime).replace(/^[A-Za-zÀ-ÿ\.]+\s*(a\s*les\s*)?/i, '').trim();
 
-      const rawSched = (dep.aimedIso && !dep.aimedIso.startsWith('0001-') && !dep.aimedIso.startsWith('1970-'))
-        ? new Date(dep.aimedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
-        : (dep.isRealTime ? dep.departureTime : null);
+      const rawSched = dep.scheduledTime ||
+        ((dep.aimedIso && !dep.isEstimated && !dep.aimedIso.startsWith('0001-') && !dep.aimedIso.startsWith('1970-'))
+          ? new Date(dep.aimedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+          : (dep.isRealTime && dep.scheduledTime ? dep.scheduledTime : null));
       const schedTime = rawSched ? String(rawSched).replace(/^[A-Za-zÀ-ÿ\.]+\s*(a\s*les\s*)?/i, '').trim() : null;
 
       const isTomorrow = dep.isToday === false && !dep.isRealTime && !dep.isEstimated;
       const isFirstMorning = isTomorrow && (dep.isFirstOfDay === true || idx === 0) && !dep.isRealTime && !dep.isEstimated;
       const isFirstToday = dep.isToday === true && dep.isFirstOfDay === true && !dep.isRealTime && !dep.isEstimated;
-      const isDiff = schedTime && schedTime !== clockTime;
+      const isDiff = schedTime && schedTime !== clockTime && !dep.isEstimated;
       const rawDelayMins = dep.delayMins !== undefined && dep.delayMins !== null ? Number(dep.delayMins) : 0;
       const delayText = rawDelayMins >= 2
         ? `+${rawDelayMins} min retard`
@@ -1853,9 +1854,13 @@ class TransitApp {
                     ? `<span>📅 Primer servei d'avui (a les ${clockTime})</span>`
                     : (isTomorrow
                         ? `<span>📅 Horari teòric: <strong class="sched-strong">Demà a les ${clockTime}</strong></span>`
-                        : (schedTime
-                            ? `<span>📅 Horari oficial: <strong class="sched-strong">${schedTime}</strong> <span class="dep-delay-note ${rawDelayMins >= 2 ? 'delay' : (rawDelayMins <= -2 ? 'early' : 'on-time')}">(${delayText})</span></span>`
-                            : `<span>📅 Horari previst</span>`)))}
+                        : (dep.isRealTime
+                            ? (schedTime && isDiff
+                                ? `<span>📅 Horari teòric: <strong class="sched-strong">${schedTime}</strong> <span class="dep-delay-note ${rawDelayMins >= 2 ? 'delay' : (rawDelayMins <= -2 ? 'early' : 'on-time')}">(${delayText})</span></span>`
+                                : `<span>🟢 Arribada en temps real (SIRI Avanza)</span>`)
+                            : (dep.isEstimated
+                                ? `<span>⚡ Estimació de pas segons telemetria GPS</span>`
+                                : `<span>📅 Horari teòric programat</span>`))))}
             </div>
           </div>
           <div class="dep-status">
@@ -2487,16 +2492,17 @@ class TransitApp {
         : (d.departureTime || '--:--');
       const estTime = String(rawTime).replace(/^[A-Za-zÀ-ÿ\.]+\s*(a\s*les\s*)?/i, '').trim();
 
-      const rawSched = (d.aimedIso && !d.aimedIso.startsWith('0001-') && !d.aimedIso.startsWith('1970-'))
-        ? new Date(d.aimedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
-        : (d.isEstimated ? estTime : null);
+      const rawSched = d.scheduledTime ||
+        ((d.aimedIso && !d.isEstimated && !d.aimedIso.startsWith('0001-') && !d.aimedIso.startsWith('1970-'))
+          ? new Date(d.aimedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+          : (d.isRealTime && d.scheduledTime ? d.scheduledTime : null));
       const schedTime = rawSched ? String(rawSched).replace(/^[A-Za-zÀ-ÿ\.]+\s*(a\s*les\s*)?/i, '').trim() : null;
 
       const isTomorrow = d.isToday === false && !d.isRealTime && !d.isEstimated;
       const isFirstMorning = isTomorrow && (d.isFirstOfDay === true || idx === 0) && !d.isRealTime && !d.isEstimated;
       const isFirstToday = d.isToday === true && d.isFirstOfDay === true && !d.isRealTime && !d.isEstimated;
 
-      const isDiff = schedTime && schedTime !== estTime;
+      const isDiff = schedTime && schedTime !== estTime && !d.isEstimated;
       const rawDelayMins = d.delayMins !== undefined && d.delayMins !== null ? Number(d.delayMins) : 0;
       const delayText = rawDelayMins >= 2
         ? `+${rawDelayMins} min retard`
@@ -2556,9 +2562,13 @@ class TransitApp {
                 <span>📅 Primer servei d'avui (a les ${estTime})</span>
               ` : (isTomorrow ? `
                 <span>📅 Horari teòric: <strong class="sched-strong">Demà a les ${estTime}</strong></span>
-              ` : (schedTime ? `
-                <span>📅 Horari oficial: <strong class="sched-strong">${schedTime}</strong> <span class="dep-delay-note ${rawDelayMins >= 2 ? 'delay' : (rawDelayMins <= -2 ? 'early' : 'on-time')}">(${delayText})</span></span>
-              ` : `<span>📅 Horari previst</span>`)))}
+              ` : (d.isRealTime ? (
+                schedTime && isDiff
+                  ? `<span>📅 Horari teòric: <strong class="sched-strong">${schedTime}</strong> <span class="dep-delay-note ${rawDelayMins >= 2 ? 'delay' : (rawDelayMins <= -2 ? 'early' : 'on-time')}">(${delayText})</span></span>`
+                  : `<span>🟢 Arribada en temps real (SIRI Avanza)</span>`
+              ) : (d.isEstimated ? `
+                <span>⚡ Estimació de pas segons telemetria GPS</span>
+              ` : `<span>📅 Horari teòric programat</span>`))))}
             </div>
           </div>
 
