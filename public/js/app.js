@@ -898,8 +898,7 @@ class TransitApp {
           secondaryColor,
           lId,
           dir,
-          lData.geometryEstimated === undefined ? null : { estimated: Boolean(lData.geometryEstimated), source: String(lData.geometrySource || '') },
-          lData.detour || null
+          lData.geometryEstimated === undefined ? null : { estimated: Boolean(lData.geometryEstimated), source: String(lData.geometrySource || '') }
         );
         this.mapController.updateBusMarkers(
           this.activeBuses, 
@@ -1094,42 +1093,25 @@ class TransitApp {
       )
     );
 
-    const detour = lData.detour;
-    const hasActiveDetour = Boolean(detour && detour.hasDetour);
-
     if (chipCount) {
-      const count = Math.max(disruptions.length, hasActiveDetour ? 1 : 0);
-      chipCount.textContent = count > 0 ? `${count} Avisos` : 'Avisos';
+      chipCount.textContent = disruptions.length > 0 ? `${disruptions.length} Avisos` : 'Avisos';
     }
 
     if (!banner || !titleEl || !descEl) return;
 
-    if (hasActiveDetour || disruptions.length > 0) {
-      const d = disruptions[0] || detour;
-      
-      if (hasActiveDetour) {
-        titleEl.textContent = `⚠️ Desviament actiu: ${this.decodeHtml(detour.title)}`;
-        const cancText = detour.cancelledStops?.length > 0 ? `${detour.cancelledStops.length} parades anul·lades (${detour.cancelledStops.map(s => s.name).join(', ')}).` : '';
-        const provText = detour.provisionalStops?.length > 0 ? ` Parades provisionals habilitades: ${detour.provisionalStops.map(s => s.name).join(', ')}.` : '';
-        descEl.textContent = this.decodeHtml(`${cancText}${provText}`);
-      } else {
-        titleEl.textContent = `⚠️ Avís de servei: ${this.decodeHtml(d.title)}`;
-        descEl.textContent = this.decodeHtml(d.description || d.affectedStops || 'Afectacions al recorregut habitual d\'aquesta línia.');
-      }
+    if (disruptions.length > 0) {
+      const d = disruptions[0];
+      titleEl.textContent = `⚠️ Avís de servei: ${this.decodeHtml(d.title)}`;
+      descEl.textContent = this.decodeHtml(d.description || d.affectedStops || 'Afectacions al recorregut habitual d\'aquesta línia.');
 
-      const btnDetour = document.getElementById('btn-view-disruption-details');
-      if (btnDetour) {
-        btnDetour.textContent = hasActiveDetour ? '📍 Veure traçat al mapa' : 'Veure detall';
-        btnDetour.onclick = (e) => {
+      const btn = document.getElementById('btn-view-disruption-details');
+      if (btn) {
+        btn.textContent = 'Veure detall';
+        btn.onclick = (e) => {
           e.preventDefault();
-          if (hasActiveDetour && this.mapController) {
-            this.mapController.focusDetour(detour);
-          } else {
-            this.openDisruptionsModal();
-          }
+          this.openDisruptionsModal();
         };
       }
-
       banner.style.display = 'flex';
     } else {
       banner.style.display = 'none';
@@ -2267,19 +2249,12 @@ class TransitApp {
               ${dirStops.map((s, i) => {
                 const id = String(s.mouteStopId || s.id || s.code);
                 const isTarget = id === String(currentTargetId);
-                const isCancelled = Boolean(s.isCancelled);
-                const isProvisional = Boolean(s.isProvisional);
-                const rowClass = isCancelled ? 'cancelled-stop' : (isProvisional ? 'provisional-stop' : '');
                 return `
-                  <div class="stop-row-item ${isTarget ? 'target-stop' : ''} ${rowClass}" data-stop-id="${id}" data-stop-name="${this.esc(s.name)}" data-dir-id="${d.dirId}">
+                  <div class="stop-row-item ${isTarget ? 'target-stop' : ''}" data-stop-id="${id}" data-stop-name="${this.esc(s.name)}" data-dir-id="${d.dirId}">
                     <div class="stop-row-left">
-                      <span class="stop-seq-badge ${isCancelled ? 'cancelled' : ''}">#${i + 1}</span>
+                      <span class="stop-seq-badge">#${i + 1}</span>
                       <div>
-                        <div class="stop-row-name">
-                          ${this.esc(s.name)} ${isTarget ? '⭐' : ''}
-                          ${isCancelled ? '<span class="stop-status-badge cancelled">❌ Anul·lada per tall</span>' : ''}
-                          ${isProvisional ? '<span class="stop-status-badge provisional">🔄 Parada Provisional</span>' : ''}
-                        </div>
+                        <div class="stop-row-name">${this.esc(s.name)} ${isTarget ? '⭐' : ''}</div>
                         <div class="stop-row-zone">${this.esc(s.zone || 'Parada')} ${s.code ? `• Codi: ${this.esc(s.code)}` : ''}</div>
                       </div>
                     </div>
@@ -2303,19 +2278,12 @@ class TransitApp {
       container.innerHTML = stops.map((s, i) => {
         const id = String(s.mouteStopId || s.id || s.code);
         const isTarget = id === String(currentTargetId);
-        const isCancelled = Boolean(s.isCancelled);
-        const isProvisional = Boolean(s.isProvisional);
-        const rowClass = isCancelled ? 'cancelled-stop' : (isProvisional ? 'provisional-stop' : '');
         return `
-          <div class="stop-row-item ${isTarget ? 'target-stop' : ''} ${rowClass}" data-stop-id="${id}" data-stop-name="${this.esc(s.name)}">
+          <div class="stop-row-item ${isTarget ? 'target-stop' : ''}" data-stop-id="${id}" data-stop-name="${this.esc(s.name)}">
             <div class="stop-row-left">
-              <span class="stop-seq-badge ${isCancelled ? 'cancelled' : ''}">#${i + 1}</span>
+              <span class="stop-seq-badge">#${i + 1}</span>
               <div>
-                <div class="stop-row-name">
-                  ${this.esc(s.name)} ${isTarget ? '⭐' : ''}
-                  ${isCancelled ? '<span class="stop-status-badge cancelled">❌ Anul·lada per tall</span>' : ''}
-                  ${isProvisional ? '<span class="stop-status-badge provisional">🔄 Parada Provisional</span>' : ''}
-                </div>
+                <div class="stop-row-name">${this.esc(s.name)} ${isTarget ? '⭐' : ''}</div>
                 <div class="stop-row-zone">${this.esc(s.zone || 'Parada')} ${s.code ? `• Codi: ${this.esc(s.code)}` : ''}</div>
               </div>
             </div>

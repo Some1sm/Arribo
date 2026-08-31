@@ -2421,57 +2421,6 @@ body {
   background: var(--bg-target-gradient);
 }
 
-.stop-row-item.cancelled-stop {
-  opacity: 0.7;
-  background: rgba(239, 68, 68, 0.08);
-  border-left: 3px solid #ef4444;
-}
-
-.stop-row-item.cancelled-stop:hover {
-  background: rgba(239, 68, 68, 0.14);
-}
-
-.stop-row-item.cancelled-stop .stop-row-name {
-  text-decoration: line-through;
-  color: #f87171;
-}
-
-.stop-row-item.provisional-stop {
-  background: rgba(245, 158, 11, 0.1);
-  border-left: 3px solid #f59e0b;
-}
-
-.stop-row-item.provisional-stop:hover {
-  background: rgba(245, 158, 11, 0.16);
-}
-
-.stop-row-item.provisional-stop .stop-row-name {
-  color: #fbbf24;
-}
-
-.stop-status-badge.cancelled {
-  background: rgba(239, 68, 68, 0.25);
-  color: #fca5a5;
-  font-size: 0.65rem;
-  font-weight: 800;
-  padding: 1px 6px;
-  border-radius: var(--radius-sm);
-  margin-left: 6px;
-  text-decoration: none !important;
-  display: inline-block;
-}
-
-.stop-status-badge.provisional {
-  background: rgba(245, 158, 11, 0.25);
-  color: #fde047;
-  font-size: 0.65rem;
-  font-weight: 800;
-  padding: 1px 6px;
-  border-radius: var(--radius-sm);
-  margin-left: 6px;
-  display: inline-block;
-}
-
 .stop-row-left {
   display: flex;
   align-items: center;
