@@ -156,26 +156,10 @@ class IngestionDaemon {
 
   async pollDisruptions() {
     try {
-      const p = path.join(__dirname, '..', 'data', 'cities', 'mataro', 'mataro_avisos.json');
-      let disruptions = [];
-      if (fs.existsSync(p)) {
-        const raw = JSON.parse(fs.readFileSync(p, 'utf8'));
-        if (Array.isArray(raw.message)) {
-          disruptions = raw.message.map(a => ({
-            id: String(a.id),
-            title: a.title_ca || a.title_es || 'Avís Mataró Bus',
-            description: a.text_ca || a.text_es || '',
-            agency: 'Mataró Bus',
-            severity: 'info',
-            linesAffected: ['1', '2', '3', '4', '5', '6', '7', '8'],
-            active: a.estado === 1
-          }));
-        }
-      }
-
+      const disruptions = await mataroTracker.getDisruptions();
       this.emitIpc('DISRUPTIONS_UPDATE', {
         timestamp: Date.now(),
-        disruptions
+        disruptions: Array.isArray(disruptions) ? disruptions : []
       });
     } catch (e) {
       this.warnThrottled('pollDisruptions', `Disruptions poll failed: ${e.message}`);

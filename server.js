@@ -423,32 +423,18 @@ app.get('/api/mataro/stop/:stopId/departures', async (req, res) => {
   }
 });
 
-// Disruptions / Notices for Mataró Bus
-app.get('/api/disruptions', (req, res) => {
+// Disruptions / Notices for Mataró Bus (Live official Avanza notices)
+app.get('/api/disruptions', async (req, res) => {
   try {
-    const p = path.join(__dirname, 'data', 'cities', 'mataro', 'mataro_avisos.json');
-    let disruptions = [];
-    if (fs.existsSync(p)) {
-      const raw = JSON.parse(fs.readFileSync(p, 'utf8'));
-      if (Array.isArray(raw.message)) {
-        disruptions = raw.message.map(a => ({
-          id: String(a.id),
-          title: a.title_ca || a.title_es || 'Avís de servei',
-          description: a.text_ca || a.text_es || '',
-          agency: 'Mataró Bus',
-          severity: 'info',
-          linesAffected: ['1', '2', '3', '4', '5', '6', '7', '8'],
-          active: a.estado === 1
-        }));
-      }
-    }
+    const lineId = req.query.line || null;
+    const disruptions = await mataroTracker.getDisruptions(lineId);
     res.json({
       success: true,
       count: disruptions.length,
       disruptions
     });
   } catch (err) {
-    sendInternalError(req, res, err, { disruptions: [] });
+    sendInternalError(req, res, err, { count: 0, disruptions: [] });
   }
 });
 

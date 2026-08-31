@@ -23,8 +23,138 @@ class MataroTracker extends BaseTracker {
     this.vehicleHistory = new Map(); // Vehicle tracking history with 10-minute retention
     this.stopDeparturesMemoryCache = new Map(); // In-memory pre-computed stop departures cache
     this.stopCacheTtlMs = 35000; // 35-second TTL (sub-millisecond instant serving)
+    this.avisosCache = null;
+    this.avisosCacheTime = 0;
+    this.avisosCacheTtlMs = 5 * 60 * 1000; // 5-minute cache for official Avanza notices
     this.loadDatasets();
     this.precompileStaticRoutes();
+  }
+
+  async fetchAvisos() {
+    const now = Date.now();
+    if (this.avisosCache && (now - this.avisosCacheTime < this.avisosCacheTtlMs)) {
+      return this.avisosCache;
+    }
+
+    const fetchOnline = () => new Promise((resolve) => {
+      const https = require('https');
+      const req = https.get('https://mataro.avanzagrupo.com/ca/avisos', {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Cookie': 'GUEST_LANGUAGE_ID=ca_ES'
+        },
+        timeout: 6000,
+        rejectUnauthorized: false
+      }, (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          const avisos = [];
+          const panes = data.split(/<div class=\"tab-pane/i).slice(1);
+          panes.forEach((pane, idx) => {
+            const titleMatch = pane.match(/<h2 class=\"warning-title\">([\s\S]*?)<\/h2>/i);
+            if (!titleMatch) return;
+            const title = titleMatch[1].replace(/<[^>]+>/g, '').trim();
+
+            let descHtml = '';
+            const detailMatch = pane.match(/class=\"warning-detail\"[^>]*>([\s\S]*?)(?:<\/div>\s*<\/div>|<\/div>\s*<button|$)/i);
+            if (detailMatch) {
+              descHtml = detailMatch[1].trim();
+            } else {
+              descHtml = pane.replace(/<h2[\s\S]*?<\/h2>/i, '').trim();
+            }
+
+            const plainText = descHtml
+              .replace(/<br\s*\/?>/gi, '\n')
+              .replace(/<\/p>/gi, '\n\n')
+              .replace(/&nbsp;/gi, ' ')
+              .replace(/&ccedil;/gi, 'ç')
+              .replace(/&eacute;/gi, 'é')
+              .replace(/&egrave;/gi, 'è')
+              .replace(/&agrave;/gi, 'à')
+              .replace(/&iacute;/gi, 'í')
+              .replace(/&oacute;/gi, 'ó')
+              .replace(/&ograve;/gi, 'ò')
+              .replace(/&uacute;/gi, 'ú')
+              .replace(/&middot;/gi, '·')
+              .replace(/<[^>]+>/g, '')
+              .trim();
+
+            const normText = (title + ' ' + plainText)
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .toLowerCase();
+
+            const linesAffected = new Set();
+            for (let i = 1; i <= 8; i++) {
+              const re = new RegExp('(?:linia|linea|l)\\s*' + i + '(?:[^0-9]|$)', 'i');
+              if (re.test(normText)) {
+                linesAffected.add(String(i));
+              }
+            }
+
+            avisos.push({
+              id: 'aviso_' + (idx + 1),
+              title,
+              description: plainText || title,
+              linesAffected: linesAffected.size > 0 ? Array.from(linesAffected) : ['1', '2', '3', '4', '5', '6', '7', '8'],
+              affectedLines: linesAffected.size > 0 ? Array.from(linesAffected).map(l => 'L' + l).join(', ') : 'Totes les línies',
+              agency: 'Mataró Bus (Avanza)',
+              severity: /tall|corte|anul|desvi/i.test(title) ? 'warning' : 'info',
+              url: 'https://mataro.avanzagrupo.com/ca/avisos',
+              active: true
+            });
+          });
+
+          resolve(avisos);
+        });
+      });
+      req.on('error', () => resolve(null));
+      req.on('timeout', () => { req.destroy(); resolve(null); });
+    });
+
+    try {
+      const onlineAvisos = await fetchOnline();
+      if (Array.isArray(onlineAvisos) && onlineAvisos.length > 0) {
+        this.avisosCache = onlineAvisos;
+        this.avisosCacheTime = now;
+        return onlineAvisos;
+      }
+    } catch (_) {}
+
+    // Fallback to local JSON if offline
+    try {
+      const p = path.join(__dirname, '..', 'data', 'cities', 'mataro', 'mataro_avisos.json');
+      if (fs.existsSync(p)) {
+        const raw = JSON.parse(fs.readFileSync(p, 'utf8'));
+        if (Array.isArray(raw.message)) {
+          const fallback = raw.message.map(a => ({
+            id: String(a.id),
+            title: a.title_ca || a.title_es || 'Avís Mataró Bus',
+            description: a.text_ca || a.text_es || '',
+            agency: 'Mataró Bus (Avanza)',
+            linesAffected: ['1', '2', '3', '4', '5', '6', '7', '8'],
+            affectedLines: 'Totes les línies',
+            severity: 'info',
+            url: 'https://mataro.avanzagrupo.com/ca/avisos',
+            active: true
+          }));
+          this.avisosCache = fallback;
+          this.avisosCacheTime = now;
+          return fallback;
+        }
+      }
+    } catch (_) {}
+
+    return this.avisosCache || [];
+  }
+
+  async getDisruptions(lineId = null) {
+    const all = await this.fetchAvisos();
+    if (!lineId) return all;
+    const cleanId = this.normalizeLineId(lineId);
+    return all.filter(a => (a.linesAffected || []).includes(cleanId) || (a.linesAffected || []).length === 8);
   }
 
   precompileStaticRoutes() {
@@ -307,6 +437,7 @@ class MataroTracker extends BaseTracker {
 
     const hasLiveGps = processedBuses.some(b => !b.isEstimated);
     const isOnlyEstimated = processedBuses.length > 0 && processedBuses.every(b => b.isEstimated);
+    const disruptions = await this.getDisruptions(lId);
 
     return {
       ...(staticTemplate || {}),
@@ -340,7 +471,8 @@ class MataroTracker extends BaseTracker {
       isRealTime: hasLiveGps,
       isEstimated: isOnlyEstimated,
       isScheduleBaseline: processedBuses.length === 0,
-      lastSyncTimestamp: Date.now()
+      lastSyncTimestamp: Date.now(),
+      disruptions
     };
   }
 
