@@ -471,20 +471,19 @@ class C10Map {
 
         const markerHtml = isCancelled ? `
           <div class="stop-marker-dot cancelled" style="
-            width: ${isTarget ? '22px' : '16px'};
-            height: ${isTarget ? '22px' : '16px'};
-            background-color: #ef4444;
+            width: 20px;
+            height: 20px;
+            background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
             border: 2px solid #ffffff;
             border-radius: 50%;
-            box-shadow: 0 0 10px rgba(239, 68, 68, 0.9);
+            box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.45), 0 0 14px rgba(239, 68, 68, 0.9);
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: ${isTarget ? '12px' : '9px'};
+            font-size: 11px;
             color: #ffffff;
             font-weight: 900;
-            ${isTarget ? 'animation: pulse-dot 1.5s infinite;' : ''}
           ">✕</div>
         ` : `
           <div class="stop-marker-dot" style="
@@ -503,8 +502,8 @@ class C10Map {
         const customIcon = L.divIcon({
           html: markerHtml,
           className: `c10-stop-marker ${isCancelled ? 'cancelled' : ''}`,
-          iconSize: [isTarget ? 22 : (isCancelled ? 16 : 14), isTarget ? 22 : (isCancelled ? 16 : 14)],
-          iconAnchor: [isTarget ? 11 : (isCancelled ? 8 : 7), isTarget ? 11 : (isCancelled ? 8 : 7)]
+          iconSize: [isCancelled ? 20 : (isTarget ? 22 : 14), isCancelled ? 20 : (isTarget ? 22 : 14)],
+          iconAnchor: [isCancelled ? 10 : (isTarget ? 11 : 7), isCancelled ? 10 : (isTarget ? 11 : 7)]
         });
 
         const marker = L.marker(markerLatLng, { icon: customIcon }).addTo(this.map);
@@ -677,6 +676,15 @@ class C10Map {
       if (!dot && root) dot = root.querySelector('.stop-marker-dot');
       marker._dotEl = dot || null;
       if (!dot) return;
+
+      if (meta.isCancelled) {
+        dot.style.background = 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)';
+        dot.style.border = '2px solid #ffffff';
+        dot.style.boxShadow = '0 0 0 3px rgba(220, 38, 38, 0.45), 0 0 14px rgba(239, 68, 68, 0.9)';
+        dot.style.width = '20px';
+        dot.style.height = '20px';
+        return;
+      }
 
       const isTarget = !!targetStr && meta.id === targetStr;
       dot.classList.toggle('target', isTarget);

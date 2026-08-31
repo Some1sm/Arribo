@@ -2447,6 +2447,17 @@ body {
   display: inline-block;
 }
 
+.stop-marker-dot.cancelled {
+  background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%) !important;
+  border: 2px solid #ffffff !important;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.45), 0 0 14px rgba(239, 68, 68, 0.9) !important;
+  color: #ffffff !important;
+  font-weight: 900 !important;
+  font-size: 11px !important;
+  width: 20px !important;
+  height: 20px !important;
+}
+
 .stop-row-left {
   display: flex;
   align-items: center;
