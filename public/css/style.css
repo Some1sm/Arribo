@@ -2421,6 +2421,32 @@ body {
   background: var(--bg-target-gradient);
 }
 
+.stop-row-item.cancelled-stop {
+  opacity: 0.75;
+  background: rgba(239, 68, 68, 0.08);
+  border-left: 3px solid #ef4444;
+}
+
+.stop-row-item.cancelled-stop:hover {
+  background: rgba(239, 68, 68, 0.14);
+}
+
+.stop-seq-badge.cancelled {
+  color: #f87171;
+}
+
+.stop-status-badge.cancelled {
+  background: rgba(239, 68, 68, 0.25);
+  color: #fca5a5;
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  margin-left: 6px;
+  text-decoration: none !important;
+  display: inline-block;
+}
+
 .stop-row-left {
   display: flex;
   align-items: center;

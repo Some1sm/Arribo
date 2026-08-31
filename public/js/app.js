@@ -1900,7 +1900,7 @@ class TransitApp {
       </div>
     ` : '';
 
-    container.innerHTML = itemsHtml + footerHint;
+    container.innerHTML = cancelledBanner + itemsHtml + footerHint;
   }
 
   // ==========================================
@@ -2249,12 +2249,17 @@ class TransitApp {
               ${dirStops.map((s, i) => {
                 const id = String(s.mouteStopId || s.id || s.code);
                 const isTarget = id === String(currentTargetId);
+                const isCancelled = Boolean(s.isCancelled);
                 return `
-                  <div class="stop-row-item ${isTarget ? 'target-stop' : ''}" data-stop-id="${id}" data-stop-name="${this.esc(s.name)}" data-dir-id="${d.dirId}">
+                  <div class="stop-row-item ${isTarget ? 'target-stop' : ''} ${isCancelled ? 'cancelled-stop' : ''}" data-stop-id="${id}" data-stop-name="${this.esc(s.name)}" data-dir-id="${d.dirId}">
                     <div class="stop-row-left">
-                      <span class="stop-seq-badge">#${i + 1}</span>
+                      <span class="stop-seq-badge ${isCancelled ? 'cancelled' : ''}">#${i + 1}</span>
                       <div>
-                        <div class="stop-row-name">${this.esc(s.name)} ${isTarget ? '⭐' : ''}</div>
+                        <div class="stop-row-name">
+                          <span style="${isCancelled ? 'text-decoration:line-through; color:#f87171;' : ''}">${this.esc(s.name)}</span>
+                          ${isTarget ? '⭐' : ''}
+                          ${isCancelled ? '<span class="stop-status-badge cancelled" style="margin-left:6px; background:rgba(239,68,68,0.25); color:#fca5a5; font-size:0.65rem; font-weight:800; padding:1px 6px; border-radius:4px; display:inline-block;">❌ Fora de servei</span>' : ''}
+                        </div>
                         <div class="stop-row-zone">${this.esc(s.zone || 'Parada')} ${s.code ? `• Codi: ${this.esc(s.code)}` : ''}</div>
                       </div>
                     </div>
@@ -2278,12 +2283,17 @@ class TransitApp {
       container.innerHTML = stops.map((s, i) => {
         const id = String(s.mouteStopId || s.id || s.code);
         const isTarget = id === String(currentTargetId);
+        const isCancelled = Boolean(s.isCancelled);
         return `
-          <div class="stop-row-item ${isTarget ? 'target-stop' : ''}" data-stop-id="${id}" data-stop-name="${this.esc(s.name)}">
+          <div class="stop-row-item ${isTarget ? 'target-stop' : ''} ${isCancelled ? 'cancelled-stop' : ''}" data-stop-id="${id}" data-stop-name="${this.esc(s.name)}">
             <div class="stop-row-left">
-              <span class="stop-seq-badge">#${i + 1}</span>
+              <span class="stop-seq-badge ${isCancelled ? 'cancelled' : ''}">#${i + 1}</span>
               <div>
-                <div class="stop-row-name">${this.esc(s.name)} ${isTarget ? '⭐' : ''}</div>
+                <div class="stop-row-name">
+                  <span style="${isCancelled ? 'text-decoration:line-through; color:#f87171;' : ''}">${this.esc(s.name)}</span>
+                  ${isTarget ? '⭐' : ''}
+                  ${isCancelled ? '<span class="stop-status-badge cancelled" style="margin-left:6px; background:rgba(239,68,68,0.25); color:#fca5a5; font-size:0.65rem; font-weight:800; padding:1px 6px; border-radius:4px; display:inline-block;">❌ Fora de servei</span>' : ''}
+                </div>
                 <div class="stop-row-zone">${this.esc(s.zone || 'Parada')} ${s.code ? `• Codi: ${this.esc(s.code)}` : ''}</div>
               </div>
             </div>
@@ -2500,6 +2510,13 @@ class TransitApp {
 
     const currStop = (currIndex >= 0 && stopsList) ? stopsList[currIndex] : null;
     const stopSeq = currStop?.seq || (currIndex >= 0 ? currIndex + 1 : null);
+
+    const cancelledBanner = currStop?.isCancelled ? `
+      <div style="background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.4); border-radius:8px; padding:0.65rem 0.9rem; margin-bottom:0.85rem; font-size:0.82rem; color:#fca5a5; display:flex; align-items:center; gap:8px;">
+        <span style="font-size:1.1rem;">⚠️</span>
+        <div><strong>Parada fora de servei:</strong> Aquesta parada està temporalment anul·lada per obres / desviament. Els autobusos d'aquesta línia no s'aturen aquí.</div>
+      </div>
+    ` : '';
 
     const modalItemsHtml = deps.map((d, idx) => {
       const rawTime = (d.expectedIso && !d.expectedIso.startsWith('0001-') && !d.expectedIso.startsWith('1970-'))

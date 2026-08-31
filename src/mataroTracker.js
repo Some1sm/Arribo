@@ -162,6 +162,43 @@ class MataroTracker extends BaseTracker {
     return all.filter(a => a.severity === 'warning' && Array.isArray(a.linesAffected) && a.linesAffected.includes(cleanId));
   }
 
+  getCancelledStopsForLine(lineId, avisos = []) {
+    const lId = String(lineId).replace(/^l/i, '');
+    const cancelledMap = new Map();
+
+    for (const aviso of avisos) {
+      if (aviso.severity !== 'warning') continue;
+      const desc = (aviso.description || aviso.descriptionHtml || '');
+      const norm = desc.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[·\.]/g, '');
+      const lineBlocks = norm.split(/(?:linia|linea)\s*([1-8])/gi);
+
+      for (let i = 1; i < lineBlocks.length; i += 2) {
+        const blockLineId = String(lineBlocks[i]);
+        if (blockLineId !== lId) continue;
+        const block = lineBlocks[i + 1] || '';
+
+        const match = block.match(/parades?\s*anul+ades?\s*:\s*([^\n\r]+)/i);
+        if (match && match[1]) {
+          const names = match[1].split(/(?:,\s*|\s+i\s+|\s+y\s+|\s+e\s+|;\s*)/i).map(s => s.trim().toLowerCase()).filter(Boolean);
+          names.forEach(name => {
+            let id = null;
+            if (name.includes('tereses')) id = '1060';
+            else if (name.includes('lepant')) id = '1059';
+            else if (name.includes('isidor')) id = '1061';
+            else if (name.includes('isern')) id = '1117';
+            else if (name.includes('biada')) id = '1107';
+            else if (name.includes('queralbs')) id = '1044';
+            if (id) {
+              cancelledMap.set(id, aviso.title);
+            }
+          });
+        }
+      }
+    }
+
+    return cancelledMap;
+  }
+
   precompileStaticRoutes() {
     try {
       for (const line of this.linesData) {
@@ -443,6 +480,17 @@ class MataroTracker extends BaseTracker {
     const hasLiveGps = processedBuses.some(b => !b.isEstimated);
     const isOnlyEstimated = processedBuses.length > 0 && processedBuses.every(b => b.isEstimated);
     const disruptions = await this.getDisruptions(lId);
+    const cancelledStopsMap = this.getCancelledStopsForLine(lId, disruptions);
+
+    const stopsWithStatus = (stops || []).map(s => {
+      const sId = String(s.id);
+      const isCancelled = cancelledStopsMap.has(sId);
+      return {
+        ...s,
+        isCancelled,
+        cancelledReason: isCancelled ? cancelledStopsMap.get(sId) : null
+      };
+    });
 
     return {
       ...(staticTemplate || {}),
@@ -460,8 +508,8 @@ class MataroTracker extends BaseTracker {
         name: r.name,
         stopsCount: r.stops ? r.stops.length : 0
       })),
-      totalStops: stops.length,
-      stops,
+      totalStops: stopsWithStatus.length,
+      stops: stopsWithStatus,
       coords: polyline,
       polyline,
       geometrySource: 'gtfs',

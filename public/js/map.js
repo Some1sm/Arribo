@@ -467,8 +467,26 @@ class C10Map {
         const stopIdentifier = String(stop.mouteStopId || stop.id || stop.code || '');
         const isTarget = stopIdentifier === String(targetStopId);
         const isMaresme = stop.zone === 'Zona Maresme' || (stop.lon && stop.lon >= 2.289);
+        const isCancelled = Boolean(stop.isCancelled);
 
-        const markerHtml = `
+        const markerHtml = isCancelled ? `
+          <div class="stop-marker-dot cancelled" style="
+            width: ${isTarget ? '22px' : '16px'};
+            height: ${isTarget ? '22px' : '16px'};
+            background-color: #ef4444;
+            border: 2px solid #ffffff;
+            border-radius: 50%;
+            box-shadow: 0 0 10px rgba(239, 68, 68, 0.9);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: ${isTarget ? '12px' : '9px'};
+            color: #ffffff;
+            font-weight: 900;
+            ${isTarget ? 'animation: pulse-dot 1.5s infinite;' : ''}
+          ">✕</div>
+        ` : `
           <div class="stop-marker-dot" style="
             width: ${isTarget ? '22px' : '14px'};
             height: ${isTarget ? '22px' : '14px'};
@@ -484,20 +502,30 @@ class C10Map {
 
         const customIcon = L.divIcon({
           html: markerHtml,
-          className: 'c10-stop-marker',
-          iconSize: [isTarget ? 22 : 14, isTarget ? 22 : 14],
-          iconAnchor: [isTarget ? 11 : 7, isTarget ? 11 : 7]
+          className: `c10-stop-marker ${isCancelled ? 'cancelled' : ''}`,
+          iconSize: [isTarget ? 22 : (isCancelled ? 16 : 14), isTarget ? 22 : (isCancelled ? 16 : 14)],
+          iconAnchor: [isTarget ? 11 : (isCancelled ? 8 : 7), isTarget ? 11 : (isCancelled ? 8 : 7)]
         });
 
         const marker = L.marker(markerLatLng, { icon: customIcon }).addTo(this.map);
 
         // Hover tooltip
-        marker.bindTooltip(`
+        const tooltipHtml = isCancelled ? `
+          <div style="display:flex; flex-direction:column; gap:2px;">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="background:#ef4444; color:#fff; font-size:10px; font-weight:800; padding:1px 5px; border-radius:3px;">❌ FORA DE SERVEI</span>
+              <span style="text-decoration:line-through; color:#f87171; font-weight:700;">${escHtml(stop.name)}</span>
+            </div>
+            <div style="font-size:10px; color:#cbd5e1;">Parada anul·lada temporalment per obres/tall</div>
+          </div>
+        ` : `
           <div style="display:flex; align-items:center; gap:6px;">
             <span style="background:${lineColor}; color:#fff; font-size:10px; font-weight:800; padding:1px 5px; border-radius:3px;">#${stop.seq || index + 1}</span>
             <span>${escHtml(stop.name)}</span>
           </div>
-        `, {
+        `;
+
+        marker.bindTooltip(tooltipHtml, {
           direction: 'top',
           offset: [0, -8],
           className: 'stop-hover-tooltip',
