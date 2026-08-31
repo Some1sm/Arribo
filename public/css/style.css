@@ -1411,6 +1411,16 @@ body {
   color: var(--accent-scheduled);
 }
 
+.dep-delay-pill.regulating {
+  background: rgba(168, 85, 247, 0.18);
+  color: #c084fc;
+}
+
+.eta-status-pill.regulating {
+  background: rgba(168, 85, 247, 0.18);
+  color: #c084fc;
+}
+
 /* ===================================================================
    7. TELEMETRY COCKPIT & ROUTE TIMELINE
    =================================================================== */

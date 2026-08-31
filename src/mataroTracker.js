@@ -808,12 +808,32 @@ class MataroTracker extends BaseTracker {
       .sort((a, b) => a.minutesAway - b.minutesAway);
 
     const cleanStopName = (stopInfo.name || '').toLowerCase().trim();
+    const routesForStop = this.findRoutesServingStop(sId, lineId);
     const filteredDepartures = [];
 
     for (const dep of sorted) {
       const vId = dep.vehicleId ? String(dep.vehicleId).trim() : null;
       const destName = (dep.destination || '').toLowerCase().trim();
-      const isTerminatingHere = destName && (destName === cleanStopName || cleanStopName.startsWith(destName));
+      const isTerminatingHere = destName && (destName === cleanStopName || cleanStopName.startsWith(destName) || cleanStopName.includes(destName));
+
+      // Terminal Turnaround & Regulating Transition:
+      // If an incoming vehicle is arriving at this terminal stop, transfer its live telemetry
+      // to the outbound route departing FROM this terminal stop so riders see the departing run.
+      if (isTerminatingHere) {
+        const outboundRoute = routesForStop.find(r => 
+          String(r.id_linea) === String(dep.lineId) && 
+          (r.stops || []).findIndex(s => String(s.id) === sId) === 0
+        );
+        if (outboundRoute) {
+          dep.destination = outboundRoute.name;
+          dep.directionId = String(outboundRoute.id || '0');
+          dep.isRegulating = true;
+          dep.delayStatus = 'regulating';
+          dep.delayBadgeText = '⏱️ Regulació';
+          dep.formattedStatus = (dep.minutesAway <= 0) ? 'En regulació' : `${dep.minutesAway} min`;
+          dep.statusText = '🅿️ Regulant sortida a capçalera';
+        }
+      }
 
       // 1. Same vehicleId deduplication within 7 minutes (e.g. terminal arrival + departure turnaround)
       if (vId) {
@@ -866,13 +886,22 @@ class MataroTracker extends BaseTracker {
     const dateCompTomorrow = calendarEngine.getDateComponents(tomorrow, this.agencyTimezone);
     const dayTypeTomorrow = dateCompTomorrow.isSunday ? 'sunday' : (dateCompTomorrow.isSaturday ? 'saturday' : 'weekday');
 
-    const routesForStop = this.findRoutesServingStop(sId, lineId);
     let allSynthesizedDepartures = [];
     const assignedLive = new Set();
 
     routesForStop.forEach(r => {
       const lIdStr = String(r.id_linea || lineId || '1');
       const dirKey = String(r.id || '0');
+      const stopIdx = (r.stops || []).findIndex(s => String(s.id) === sId);
+      const isTerminus = (stopIdx === (r.stops.length - 1)) && r.stops.length > 1;
+      const isOrigin = (stopIdx === 0);
+
+      // If this stop is the TERMINAL end of this route direction (and not a circular loop),
+      // do not compile departures for it because buses terminate at this stop.
+      if (isTerminus && !isOrigin) {
+        return;
+      }
+
       const dirSchedToday = mataroSchedules.getDirectionSchedule(lIdStr, dirKey, dayTypeToday);
       const dirSchedTomorrow = mataroSchedules.getDirectionSchedule(lIdStr, dirKey, dayTypeTomorrow);
 
@@ -893,6 +922,12 @@ class MataroTracker extends BaseTracker {
         const rNameLower = String(r.name || '').toLowerCase();
         const liveKey = d.vehicleId ? `veh_${d.vehicleId}` : `time_${d.departureTime}`;
         if (assignedLive.has(liveKey)) return false;
+
+        // If this live departure was tagged as regulating for this specific direction
+        if (d.isRegulating && d.directionId && d.directionId === dirKey) {
+          assignedLive.add(liveKey);
+          return true;
+        }
 
         if (routesForStop.length > 1) {
           const rKeywords = rNameLower.split(/[\s\-–\(\)\/]+/).filter(w => w.length > 3);

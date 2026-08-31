@@ -1729,7 +1729,10 @@ class TransitApp {
 
         if (etaPillEl && etaStatusText) {
           etaPillEl.className = 'eta-status-pill';
-          if (next.delayStatus === 'delayed') {
+          if (next.delayStatus === 'regulating' || next.isRegulating || next.isTerminalLayover) {
+            etaPillEl.classList.add('regulating');
+            etaStatusText.textContent = 'Regulant a capçalera';
+          } else if (next.delayStatus === 'delayed') {
             etaPillEl.classList.add('delayed');
             const cleanDelay = (next.delayBadgeText || '+2 min').replace(/retard/gi, '').trim();
             etaStatusText.textContent = `Retard (${cleanDelay})`;
@@ -1808,15 +1811,22 @@ class TransitApp {
                     ? (dep.minutesAway <= 0 ? 'Ara' : (dep.minutesAway === 1 ? '1 min' : `${dep.minutesAway} min`))
                     : `${clockTime}`)));
 
-      const tagLabel = (isFirstMorning || isFirstToday)
-        ? '🌅 1r Servei'
-        : (isTomorrow ? 'Programat' : (dep.isEstimated ? '⚡ En ruta' : (dep.isRealTime ? '🟢 Temps Real' : 'Programat')));
+      const isRegulating = Boolean(dep.delayStatus === 'regulating' || dep.isRegulating || dep.isTerminalLayover);
+      const tagLabel = isRegulating
+        ? '⏱️ En Regulació'
+        : ((isFirstMorning || isFirstToday)
+          ? '🌅 1r Servei'
+          : (isTomorrow ? 'Programat' : (dep.isEstimated ? '⚡ En ruta' : (dep.isRealTime ? '🟢 Temps Real' : 'Programat'))));
 
-      const pillLabel = (isFirstMorning || isFirstToday)
-        ? '1r Servei'
-        : (isTomorrow ? 'Programat' : (dep.isEstimated ? '⚡ En ruta' : (dep.delayBadgeText || 'Puntual')));
+      const pillLabel = isRegulating
+        ? (dep.delayBadgeText || '⏱️ Regulació')
+        : ((isFirstMorning || isFirstToday)
+          ? '1r Servei'
+          : (isTomorrow ? 'Programat' : (dep.isEstimated ? '⚡ En ruta' : (dep.delayBadgeText || 'Puntual'))));
 
-      const pillClass = (isTomorrow || isFirstToday) ? 'scheduled' : (rawDelayMins >= 2 ? 'delayed' : (rawDelayMins <= -2 ? 'early' : (dep.delayStatus || 'on-time')));
+      const pillClass = isRegulating
+        ? 'regulating'
+        : ((isTomorrow || isFirstToday) ? 'scheduled' : (rawDelayMins >= 2 ? 'delayed' : (rawDelayMins <= -2 ? 'early' : (dep.delayStatus || 'on-time'))));
 
       return `
         <div class="departure-item ${idx === 0 ? 'highlight-next' : ''} ${hasActiveBus ? 'clickable-bus-dep' : ''}"

@@ -32,6 +32,18 @@ function computeDelayStatus(delayMinutes, isRealTime = false, options = {}) {
   const punctualStyle = options.punctualStyle || 'short';
   const punctualText = punctualStyle === 'long' ? "A l'hora (Puntual)" : 'Puntual';
 
+  // 0. Bus is regulating / laying over at terminal
+  if (options.isRegulating || options.isTerminalLayover || options.delayStatus === 'regulating') {
+    return {
+      delayMinutes: delay,
+      delayMins: delay,
+      delayStatus: 'regulating',
+      delayBadgeText: options.delayBadgeText || '⏱️ Regulació',
+      delayFormatted: 'Regulant a capçalera',
+      comparisonText: scheduledTime ? `Regulant a capçalera (Sortida: ${scheduledTime})` : 'Regulant a capçalera'
+    };
+  }
+
   // 1. Bus / Train has physically passed this stop
   if (options.isPassed) {
     return {
@@ -223,6 +235,7 @@ function standardizeDeparture(dep = {}, defaults = {}) {
   const isRealTime = Boolean(d.isRealTime !== undefined ? d.isRealTime : d.isRealtime);
   const rawDelay = d.delayMinutes !== undefined ? d.delayMinutes : (d.delayMins !== undefined ? d.delayMins : 0);
   
+  const isRegulating = Boolean(d.isRegulating || d.isTerminalLayover || d.delayStatus === 'regulating');
   const delayEval = computeDelayStatus(rawDelay, isRealTime, {
     scheduledTime: d.scheduledTime || d.departureTime,
     realtimeTime: d.departureTime,
@@ -230,12 +243,14 @@ function standardizeDeparture(dep = {}, defaults = {}) {
     isNextService: Boolean(d.isNextService),
     isPassed: Boolean(d.isPassed),
     isEstimated: Boolean(d.isEstimated),
+    isRegulating,
     isTrain: Boolean(d.isTrain),
+    delayBadgeText: d.delayBadgeText,
     punctualStyle: 'short'
   });
 
   const minutesAway = d.minutesAway !== undefined ? Number(d.minutesAway) : 0;
-  const formattedStatus = d.formattedStatus || formatCountdownStatus(minutesAway);
+  const formattedStatus = d.formattedStatus || (isRegulating ? 'En regulació' : formatCountdownStatus(minutesAway));
 
   return {
     lineId: String(d.lineId || def.lineId || 'line'),
