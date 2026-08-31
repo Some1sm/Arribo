@@ -913,7 +913,7 @@ class MataroTracker extends BaseTracker {
         limit: options.limit !== undefined ? Number(options.limit) : 10,
         minCountBeforeMorning: options.minCountBeforeMorning !== undefined ? Number(options.minCountBeforeMorning) : 5,
         maxMorningCount: options.maxMorningCount !== undefined ? Number(options.maxMorningCount) : 10,
-        duplicateWindowMinutes: 3,
+        duplicateWindowMinutes: 8,
         dateObj: targetDate,
         timezone: this.agencyTimezone,
         lineId: lIdStr,

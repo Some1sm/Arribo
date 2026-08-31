@@ -363,6 +363,7 @@ function compileStopDepartures(options = {}) {
   // 1. Process and standardize live telemetry departures
   const liveDepartures = [];
   const liveMinutesOfDay = [];
+  const liveAimedMinutesOfDay = [];
 
   for (const raw of rawLive) {
     if (!raw) continue;
@@ -374,6 +375,8 @@ function compileStopDepartures(options = {}) {
     std.badgeText = std.delayBadgeText;
 
     let depMin = null;
+    let aimedMin = null;
+
     if (std.departureTime && std.departureTime !== '--:--' && std.departureTime.includes(':')) {
       const [h, m] = std.departureTime.split(':').map(Number);
       if (!isNaN(h) && !isNaN(m)) {
@@ -383,19 +386,61 @@ function compileStopDepartures(options = {}) {
       depMin = (nowMinOfDay + Math.round(Number(std.minutesAway))) % 1440;
     }
 
+    if (std.aimedIso && !std.aimedIso.startsWith('0001-') && !std.aimedIso.startsWith('1970-')) {
+      const d = new Date(std.aimedIso);
+      if (!isNaN(d.getTime())) {
+        const aimedNet = timeEngine.getNetworkTime(timezone, d);
+        aimedMin = (aimedNet.hour * 60 + aimedNet.minute) % 1440;
+      }
+    } else if (std.scheduledTime && std.scheduledTime.includes(':')) {
+      const [sh, sm] = std.scheduledTime.split(':').map(Number);
+      if (!isNaN(sh) && !isNaN(sm)) {
+        aimedMin = (sh % 24) * 60 + (sm % 60);
+      }
+    } else if (depMin !== null) {
+      const delay = std.delayMins || 0;
+      aimedMin = (depMin - delay + 1440) % 1440;
+    }
+
     if (depMin !== null) {
       liveMinutesOfDay.push(depMin);
+      liveAimedMinutesOfDay.push(aimedMin !== null ? aimedMin : depMin);
     }
     liveDepartures.push(std);
   }
 
-  // Helper to check circular duplicate window against live departures
+  // Helper to check whether a scheduled trip is already operated by an active live bus
   function isDuplicateWithLive(scheduledMinOfDay) {
-    for (const liveMin of liveMinutesOfDay) {
-      let diff = Math.abs(liveMin - scheduledMinOfDay);
-      if (diff > 720) diff = 1440 - diff;
-      if (diff <= duplicateWindowMinutes) {
+    for (let i = 0; i < liveMinutesOfDay.length; i++) {
+      const liveMin = liveMinutesOfDay[i];
+      const liveAimedMin = liveAimedMinutesOfDay[i];
+      const liveDep = liveDepartures[i];
+
+      // 1. If live departure has an explicit aimed/scheduled time or aimedIso
+      if (liveDep && (liveDep.aimedIso || liveDep.scheduledTime)) {
+        let diffAimed = Math.abs(liveAimedMin - scheduledMinOfDay);
+        if (diffAimed > 720) diffAimed = 1440 - diffAimed;
+        if (diffAimed <= 3) {
+          return true;
+        }
+      }
+
+      // 2. Proximity to live arrival time (within duplicateWindowMinutes)
+      let diffLive = Math.abs(liveMin - scheduledMinOfDay);
+      if (diffLive > 720) diffLive = 1440 - diffLive;
+      if (diffLive <= duplicateWindowMinutes) {
         return true;
+      }
+
+      // 3. Delayed in-flight trip match if liveDep has delayMins
+      const delay = liveDep?.delayMins || 0;
+      if (delay !== 0 && liveDep && (liveDep.aimedIso || liveDep.scheduledTime)) {
+        const expectedSchedMin = (liveMin - delay + 1440) % 1440;
+        let diffDelayed = Math.abs(expectedSchedMin - scheduledMinOfDay);
+        if (diffDelayed > 720) diffDelayed = 1440 - diffDelayed;
+        if (diffDelayed <= 3) {
+          return true;
+        }
       }
     }
     return false;
