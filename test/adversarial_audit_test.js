@@ -121,10 +121,10 @@ assert.strictEqual(delay1.delayStatus, 'on_time');
 const delay2 = delayEngine.computeDelayStatus(2, true);
 assert.strictEqual(delay2.delayStatus, 'delayed');
 
-const early1 = delayEngine.computeDelayStatus(-1, true);
+const early1 = delayEngine.computeDelayStatus(-1, true, { thresholdEarlyMinutes: -2 });
 assert.strictEqual(early1.delayStatus, 'on_time');
 
-const early2 = delayEngine.computeDelayStatus(-2, true);
+const early2 = delayEngine.computeDelayStatus(-2, true, { thresholdEarlyMinutes: -2 });
 assert.strictEqual(early2.delayStatus, 'early');
 
 // Midnight Wrap-Around Delay Matching:

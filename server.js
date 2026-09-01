@@ -499,7 +499,7 @@ app.get('/api/line/:lineId/stats', async (req, res) => {
 });
 
 // Observatori & Analytics Reports
-app.get('/api/analytics/journalism', async (req, res) => {
+app.get(['/api/analytics/journalism', '/api/retards/journalism'], async (req, res) => {
   const hours = Math.max(1, Math.min(168, parseInt(req.query.hours, 10) || 24));
   const allLines = trackerRegistry.getAllLines();
   try {
@@ -513,6 +513,18 @@ app.get('/api/analytics/journalism', async (req, res) => {
       return res.status(503).json({ success: false, error: 'Report is warming up, retry shortly.' });
     }
     res.json({ success: true, ...report, report });
+  } catch (err) {
+    sendInternalError(req, res, err);
+  }
+});
+
+app.get(['/api/analytics/export/csv', '/api/retards/export/csv'], async (req, res) => {
+  const hours = Math.max(1, Math.min(168, parseInt(req.query.hours, 10) || 48));
+  try {
+    const csv = await flightRecorder.exportCsv(hours);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="transit_delays_${hours}h.csv"`);
+    res.send(csv);
   } catch (err) {
     sendInternalError(req, res, err);
   }

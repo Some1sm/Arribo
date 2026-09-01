@@ -239,21 +239,32 @@ class MataroSiriClient {
     }
   }
 
+  normalizeStopId(stopId) {
+    if (!stopId) return '';
+    const s = String(stopId).trim();
+    const num = parseInt(s, 10);
+    if (!isNaN(num) && num > 0 && num < 1000) {
+      return String(1000 + num);
+    }
+    return s;
+  }
+
   // 2. Get Real-Time Arrival Countdowns for a Specific Stop
   async getStopArrivals(stopId, lineRef = '') {
-    this.assertSafeRef(stopId, 'stopId');
+    const normStopId = this.normalizeStopId(stopId);
+    this.assertSafeRef(normStopId, 'stopId');
     this.assertSafeRef(lineRef, 'lineRef');
 
     if (typeof this._rpcBackend === 'function') {
       try {
-        const res = await this._rpcBackend('getMataroStopArrivals', { stopId, lineRef });
+        const res = await this._rpcBackend('getMataroStopArrivals', { stopId: normStopId, lineRef });
         return Array.isArray(res) ? res : [];
       } catch (err) {
         return [];
       }
     }
 
-    const cacheKey = `stop_${stopId}_${lineRef}`;
+    const cacheKey = `stop_${normStopId}_${lineRef}`;
     const cached = this.cache.get(cacheKey);
     if (cached && Date.now() - cached.ts < this.cacheTtlMs) {
       return cached.data;
@@ -272,7 +283,7 @@ class MataroSiriClient {
         </ServiceRequestInfo>
         <Request xmlns="">
           <RequestTimestamp xmlns="http://www.siri.org.uk/siri">${ts}</RequestTimestamp>
-          <MonitoringRef xmlns="http://www.siri.org.uk/siri">${this.xmlEscape(stopId)}</MonitoringRef>
+          <MonitoringRef xmlns="http://www.siri.org.uk/siri">${this.xmlEscape(normStopId)}</MonitoringRef>
           <LineRef xmlns="http://www.siri.org.uk/siri">${this.xmlEscape(lineRef)}</LineRef>
         </Request>
       </request>

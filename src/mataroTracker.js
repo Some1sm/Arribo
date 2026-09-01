@@ -357,6 +357,23 @@ class MataroTracker extends BaseTracker {
       .replace(/^l(?=[1-8]$)/, '');
   }
 
+  // Normalize stop identifier (e.g. '11' -> '1011', 11 -> '1011', '1011' -> '1011')
+  normalizeStopId(stopId) {
+    if (stopId === null || stopId === undefined) return '';
+    const s = String(stopId).trim();
+    if (!s) return '';
+    if (this.allStopsMap.has(s)) return s;
+
+    const num = parseInt(s, 10);
+    if (!isNaN(num) && num > 0 && num < 1000) {
+      const candidate = String(1000 + num);
+      if (this.allStopsMap.has(candidate)) {
+        return candidate;
+      }
+    }
+    return s;
+  }
+
   // 1. Get all Mataro urban lines (L1..L8)
   getLines() {
     return this.linesData.map(l => {
@@ -731,9 +748,15 @@ class MataroTracker extends BaseTracker {
     return details && Array.isArray(details.activeBuses) ? details.activeBuses : [];
   }
 
+  async fetchStopArrivals(stopId, lineId = '', direction = '0') {
+    const sId = this.normalizeStopId(stopId);
+    const deps = await this.getStopDepartures(sId, lineId, direction);
+    return deps && Array.isArray(deps.departures) ? deps.departures : [];
+  }
+
   // Estimate arrival ETA to stopId from active live vehicles along the route
   async estimateArrivalsForStop(stopId, lineId = '', existingArrivals = []) {
-    const sId = String(stopId);
+    const sId = this.normalizeStopId(stopId);
     const cleanLineId = lineId ? this.normalizeLineId(lineId) : '';
     const existingVehicleIds = new Set(existingArrivals.map(a => a.vehicleId).filter(Boolean));
     const estimatedArrivals = [];
@@ -865,7 +888,7 @@ class MataroTracker extends BaseTracker {
   }
 
   findRoutesServingStop(stopId, lineId = '') {
-    const sId = String(stopId);
+    const sId = this.normalizeStopId(stopId);
     const cleanLineId = lineId ? this.normalizeLineId(lineId) : '';
     const results = [];
 
@@ -905,7 +928,7 @@ class MataroTracker extends BaseTracker {
       options = direction;
       direction = '0';
     }
-    const sId = String(stopId);
+    const sId = this.normalizeStopId(stopId);
     const cleanLineId = lineId ? this.normalizeLineId(lineId) : '';
     const dirKey = String(direction || '0');
     const lIdKey = cleanLineId || '';
@@ -1222,7 +1245,8 @@ class MataroTracker extends BaseTracker {
     let chosenStop = null;
 
     if (stopId) {
-      chosenStop = routeStops.find(s => String(s.id) === String(stopId)) || this.allStopsMap.get(String(stopId));
+      const normalizedStop = this.normalizeStopId(stopId);
+      chosenStop = routeStops.find(s => String(s.id) === normalizedStop) || this.allStopsMap.get(normalizedStop);
     }
 
     if (!chosenStop && routeStops.length > 0) {

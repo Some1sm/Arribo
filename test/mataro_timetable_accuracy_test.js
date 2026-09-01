@@ -443,6 +443,21 @@ async function runMataroTimetableAccuracyTests() {
   assert(teresesDeps && teresesDeps.departures.length > 0);
   totalAssertions += 2;
 
+  // 4.3.1 Shorthand Stop Normalization (e.g. Stop '11' -> '1011' Parc Central, Stop '1' -> '1001', Stop '16' -> '1016')
+  console.log('  Testing Stop ID shorthand normalization (Stop 11 -> 1011 Parc Central)...');
+  const stop11Deps = await mataroTracker.getStopDepartures('11', '1');
+  assert(stop11Deps && stop11Deps.stop, 'Stop 11 query must return stop object');
+  assert.strictEqual(stop11Deps.stop.id, '1011', 'Stop 11 must normalize to canonical stop ID 1011');
+  assert.strictEqual(stop11Deps.stop.name, 'Parc Central', 'Stop 11 must have correct stop name Parc Central');
+  assert(Array.isArray(stop11Deps.departures) && stop11Deps.departures.length > 0, 'Stop 11 must return valid departures');
+
+  const stop1Deps = await mataroTracker.getStopDepartures('1', '1');
+  assert.strictEqual(stop1Deps.stop.id, '1001', 'Stop 1 must normalize to canonical stop ID 1001');
+
+  const stop16Deps = await mataroTracker.getStopDepartures('16', '1');
+  assert.strictEqual(stop16Deps.stop.id, '1016', 'Stop 16 must normalize to canonical stop ID 1016');
+  totalAssertions += 6;
+
   // 4.4 Passenger Flow: getTargetStopETA for L1, L2, L3, L5, L8
   console.log('  Testing Passenger Flow: Target Stop ETA across lines...');
   const linesToTest = ['1', '2', '3', '5', '8'];
