@@ -208,14 +208,14 @@ async function bootWorker() {
   // 1. Initialize SQLite Database exclusively in worker
   try {
     historyDb.init();
+    reportCacheService.setDatabase(historyDb);
+    reportCacheService.setIpcCallback((type, payload) => sendToMaster(type, payload));
   } catch (err) {
     console.error('[Worker] Fatal: SQLite initialization failed:', err.message);
   }
 
   // 2. Enable persistence on FlightRecorder
-  flightRecorder.enablePersistence((snapshot) => {
-    historyDb.recordVehicleSnapshot(snapshot);
-  });
+  flightRecorder.enablePersistence(historyDb);
 
   // Wire flightRecorder historical queries directly through the worker's DB execution
   flightRecorder.setHistoryGateway((op, args) => Promise.resolve(executeDbOperation(op, args)));

@@ -512,7 +512,7 @@ app.get('/api/analytics/journalism', async (req, res) => {
     if (!report) {
       return res.status(503).json({ success: false, error: 'Report is warming up, retry shortly.' });
     }
-    res.json({ success: true, ...report });
+    res.json({ success: true, ...report, report });
   } catch (err) {
     sendInternalError(req, res, err);
   }

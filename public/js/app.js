@@ -1194,7 +1194,7 @@ class TransitApp {
         fetch(`/api/routes/snapshots`).then(r => r.json())
       ]);
 
-      const journalismData = res.status === 'fulfilled' && res.value?.success ? res.value.report : null;
+      const journalismData = res.status === 'fulfilled' && res.value?.success ? (res.value.report || res.value) : null;
       const snapshotsData = snapshotRes.status === 'fulfilled' && snapshotRes.value?.success ? snapshotRes.value : null;
 
       if (journalismData) {
