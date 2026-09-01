@@ -1783,6 +1783,13 @@ class TransitApp {
 
     const targetStopSeq = this.activeLineData?.targetStop?.seq || null;
     const targetStopId = this.targetStopId || this.activeLineData?.targetStop?.id || null;
+    const targetStop = (this.activeLineData?.stops || []).find(s => String(s.id) === String(targetStopId)) || this.activeLineData?.targetStop || null;
+    const cancelledBanner = targetStop?.isCancelled ? `
+      <div style="background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.4); border-radius:8px; padding:0.65rem 0.9rem; margin-bottom:0.85rem; font-size:0.82rem; color:#fca5a5; display:flex; align-items:center; gap:8px;">
+        <span style="font-size:1.1rem;">⚠️</span>
+        <div><strong>Parada fora de servei:</strong> Aquesta parada està temporalment anul·lada per obres / desviament. Els autobusos d'aquesta línia no s'aturen aquí.</div>
+      </div>
+    ` : '';
 
     const itemsHtml = departures.map((dep, idx) => {
       const rawTime = (dep.expectedIso && !dep.expectedIso.startsWith('0001-') && !dep.expectedIso.startsWith('1970-'))
