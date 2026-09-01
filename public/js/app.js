@@ -643,7 +643,11 @@ class TransitApp {
 
   resolveBusForDeparture(dep, stopSeq = null, stopId = null, depIndex = 0) {
     const buses = this.activeLineData?.activeBuses || [];
-    if (buses.length === 0) return null;
+    if (buses.length === 0 || !dep) return null;
+
+    // A departure can only be linked to a physical bus if it has active telemetry
+    const isLive = Boolean(dep.isRealTime || dep.isEstimated || dep.vehicleId || dep.tripId || dep.busCoords);
+    if (!isLive) return null;
 
     // Resolve stop sequence from stops array if not given
     if (stopSeq === null && stopId && this.activeLineData?.stops) {
@@ -663,20 +667,6 @@ class TransitApp {
       const targetId = String(dep.vehicleId || dep.tripId).trim();
       const explicitBus = buses.find(b => this.mapController?.isBusSelected(b, targetId));
       if (explicitBus) {
-        const busSeq = explicitBus.fromSeq || explicitBus.currentStopSeq || null;
-        // Check if this vehicle has already passed this stop on this run
-        if (stopSeq !== null && busSeq !== null && busSeq > stopSeq) {
-          // Bus already passed the stop! Find an upstream approaching bus (before the stop in sequence)
-          const upstreamBuses = buses.filter(b => {
-            const bSeq = b.fromSeq || b.currentStopSeq || 0;
-            return bSeq <= stopSeq;
-          }).sort((a, b) => (b.fromSeq || b.currentStopSeq || 0) - (a.fromSeq || a.currentStopSeq || 0));
-
-          if (upstreamBuses.length > 0) {
-            const pickedIdx = Math.min(depIndex, upstreamBuses.length - 1);
-            return upstreamBuses[pickedIdx];
-          }
-        }
         return explicitBus;
       }
     }
@@ -688,28 +678,27 @@ class TransitApp {
         Math.abs(b.lon - dep.busCoords.lon) < 0.001
       );
       if (coordBus) {
-        const busSeq = coordBus.fromSeq || coordBus.currentStopSeq || null;
-        if (stopSeq === null || busSeq === null || busSeq <= stopSeq) {
-          return coordBus;
-        }
+        return coordBus;
       }
     }
 
-    // 3. Find all upstream approaching buses (stop sequence is ahead of bus)
+    // 3. Find upstream approaching buses strictly ordered by proximity to target stop
     if (stopSeq !== null) {
       const upstreamBuses = buses.filter(b => {
         const bSeq = b.fromSeq || b.currentStopSeq || 0;
         return bSeq <= stopSeq;
-      }).sort((a, b) => (b.fromSeq || b.currentStopSeq || 0) - (a.fromSeq || a.currentStopSeq || 0));
+      }).sort((a, b) => {
+        const aSeq = a.fromSeq || a.currentStopSeq || 0;
+        const bSeq = b.fromSeq || b.currentStopSeq || 0;
+        return bSeq - aSeq; // Closest upstream bus first
+      });
 
-      if (upstreamBuses.length > 0) {
-        const pickedIdx = Math.min(depIndex, upstreamBuses.length - 1);
-        return upstreamBuses[pickedIdx];
+      if (depIndex < upstreamBuses.length) {
+        return upstreamBuses[depIndex];
       }
     }
 
-    // 4. Fallback: if all buses are downstream or stopSeq is unknown, pick nearest
-    return buses[Math.min(depIndex, buses.length - 1)] || buses[0];
+    return null;
   }
 
   focusBusOnMap(vehicleId, coords = null, stopSeq = null, stopId = null, depIndex = 0) {
@@ -1811,11 +1800,12 @@ class TransitApp {
         ? `+${rawDelayMins} min retard`
         : (rawDelayMins <= -2 ? `${Math.abs(rawDelayMins)} min avançat` : 'Puntual');
 
-      const matchedBus = this.resolveBusForDeparture(dep, targetStopSeq, targetStopId, idx);
-      const resolvedVehicleId = matchedBus?.vehicleId || matchedBus?.tripId || dep.vehicleId || '';
-      const resolvedLat = matchedBus?.lat || dep.busCoords?.lat || '';
-      const resolvedLon = matchedBus?.lon || dep.busCoords?.lon || '';
-      const hasActiveBus = Boolean(resolvedVehicleId || (resolvedLat && resolvedLon) || dep.tripId || dep.isRealTime || dep.isEstimated || (this.activeLineData?.activeBuses?.length > 0 && dep.minutesAway <= 60));
+      const isLiveOrEstimated = Boolean(dep.isRealTime || dep.isEstimated || dep.vehicleId);
+      const matchedBus = isLiveOrEstimated ? this.resolveBusForDeparture(dep, targetStopSeq, targetStopId, idx) : null;
+      const resolvedVehicleId = matchedBus?.vehicleId || matchedBus?.tripId || (dep.isRealTime ? dep.vehicleId : '');
+      const resolvedLat = matchedBus?.lat || (dep.isRealTime ? dep.busCoords?.lat : '');
+      const resolvedLon = matchedBus?.lon || (dep.isRealTime ? dep.busCoords?.lon : '');
+      const hasActiveBus = Boolean(matchedBus && (resolvedVehicleId || (resolvedLat && resolvedLon)));
 
       const minsText = isFirstMorning
         ? `🌅 Demà ${clockTime}`
@@ -2540,11 +2530,12 @@ class TransitApp {
         ? `+${rawDelayMins} min retard`
         : (rawDelayMins <= -2 ? `${Math.abs(rawDelayMins)} min avançat` : 'Puntual');
 
-      const matchedBus = this.resolveBusForDeparture(d, stopSeq, stopId, idx);
-      const resolvedVehicleId = matchedBus?.vehicleId || matchedBus?.tripId || d.vehicleId || '';
-      const resolvedLat = matchedBus?.lat || d.busCoords?.lat || '';
-      const resolvedLon = matchedBus?.lon || d.busCoords?.lon || '';
-      const hasActiveBus = Boolean(resolvedVehicleId || (resolvedLat && resolvedLon) || d.tripId || d.isRealTime || d.isEstimated || (this.activeLineData?.activeBuses?.length > 0 && d.minutesAway <= 60));
+      const isLiveOrEstimated = Boolean(d.isRealTime || d.isEstimated || d.vehicleId);
+      const matchedBus = isLiveOrEstimated ? this.resolveBusForDeparture(d, stopSeq, stopId, idx) : null;
+      const resolvedVehicleId = matchedBus?.vehicleId || matchedBus?.tripId || (d.isRealTime ? d.vehicleId : '');
+      const resolvedLat = matchedBus?.lat || (d.isRealTime ? d.busCoords?.lat : '');
+      const resolvedLon = matchedBus?.lon || (d.isRealTime ? d.busCoords?.lon : '');
+      const hasActiveBus = Boolean(matchedBus && (resolvedVehicleId || (resolvedLat && resolvedLon)));
 
       const minsText = isFirstMorning
         ? `🌅 Demà ${estTime}`
