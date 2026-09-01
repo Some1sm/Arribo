@@ -3960,3 +3960,305 @@ body {
   pointer-events: none;
   display: none;
 }
+
+/* ===================================================================
+   11. FAVORITE STOPS, NEARBY STOPS & ZONE SELECTOR UI
+   =================================================================== */
+
+.landing-hero-actions-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  margin-top: -0.5rem;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.btn-hero-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 1.1rem;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface-elevated);
+  color: var(--text-primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.btn-hero-action:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+}
+
+.btn-hero-geo {
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.2) 0%, rgba(14, 165, 233, 0.08) 100%);
+  border-color: rgba(14, 165, 233, 0.45);
+  color: #38bdf8;
+}
+
+.btn-hero-geo:hover {
+  background: rgba(14, 165, 233, 0.3);
+  border-color: #38bdf8;
+  color: #ffffff;
+}
+
+.btn-hero-zones {
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.2) 0%, rgba(168, 85, 247, 0.08) 100%);
+  border-color: rgba(168, 85, 247, 0.45);
+  color: #c084fc;
+}
+
+.btn-hero-zones:hover {
+  background: rgba(168, 85, 247, 0.3);
+  border-color: #c084fc;
+  color: #ffffff;
+}
+
+/* Favorite Stops Hub Grid */
+.landing-favorites-section,
+.landing-nearby-section {
+  margin-bottom: 2rem;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.landing-favorites-grid,
+.landing-nearby-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 0.85rem;
+}
+
+.landing-fav-card,
+.landing-nearby-card {
+  background: var(--bg-card-gradient);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+}
+
+.landing-fav-card:hover,
+.landing-nearby-card:hover {
+  border-color: var(--c10-primary);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+}
+
+.landing-fav-card-header,
+.landing-nearby-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.landing-fav-title,
+.landing-nearby-title {
+  font-size: 0.96rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+
+.landing-fav-lines,
+.landing-nearby-lines {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  align-items: center;
+}
+
+.landing-fav-arrivals {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding-top: 0.45rem;
+  border-top: 1px dashed var(--border-subtle);
+}
+
+.landing-fav-arrival-pill {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 0.3rem 0.6rem;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+}
+
+.landing-fav-arrival-pill strong {
+  color: var(--text-primary);
+}
+
+.nearby-dist-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #38bdf8;
+  background: rgba(14, 165, 233, 0.15);
+  border: 1px solid rgba(14, 165, 233, 0.3);
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+}
+
+.btn-nearby-change-zone {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-nearby-change-zone:hover {
+  color: var(--text-primary);
+  border-color: var(--c10-primary);
+}
+
+.btn-nearby-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.3rem;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0.1rem 0.4rem;
+}
+
+.btn-nearby-close:hover {
+  color: var(--text-primary);
+}
+
+/* Zone Picker Grid & Cards */
+.zone-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+}
+
+.zone-card {
+  background: var(--bg-surface-elevated);
+  border: 1.5px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  text-align: left;
+}
+
+.zone-card:hover {
+  background: rgba(14, 165, 233, 0.1);
+  border-color: var(--c10-primary);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+}
+
+.zone-card-icon {
+  font-size: 1.6rem;
+  flex-shrink: 0;
+}
+
+.zone-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.zone-card-title {
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.zone-card-desc {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+/* Modal Star Button */
+.btn-star-fav {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--bg-surface-elevated);
+  border: 1.5px solid var(--border-subtle);
+  color: var(--text-secondary);
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-family: inherit;
+}
+
+.btn-star-fav:hover {
+  border-color: #fbbf24;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.1);
+}
+
+.btn-star-fav.is-favorite {
+  background: rgba(251, 191, 36, 0.18);
+  border-color: #fbbf24;
+  color: #fbbf24;
+}
+
+.btn-star-fav.is-favorite .star-icon {
+  animation: star-sparkle 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes star-sparkle {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.45) rotate(15deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+
+.landing-fav-code,
+.landing-nearby-code {
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.btn-fav-remove {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1.1rem;
+  padding: 0.1rem 0.3rem;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+  line-height: 1;
+}
+
+.btn-fav-remove:hover {
+  color: var(--danger);
+  background: rgba(239, 68, 68, 0.15);
+}
+

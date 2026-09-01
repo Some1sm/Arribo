@@ -1,0 +1,22 @@
+{
+  "name": "Arribo! Mataró Bus",
+  "short_name": "Arribo! Mataró",
+  "description": "Telemetria GPS i seguiment d'autobusos urbans en temps real per a les línies L1 a L8 de Mataró Bus",
+  "start_url": "/",
+  "id": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0ea5e9",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%230ea5e9'/><text y='72' x='14' font-size='62'>🚌</text></svg>",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["travel", "navigation", "utilities"],
+  "lang": "ca",
+  "dir": "ltr"
+}

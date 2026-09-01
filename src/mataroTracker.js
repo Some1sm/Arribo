@@ -400,6 +400,57 @@ class MataroTracker extends BaseTracker {
     const cleanId = this.normalizeLineId(lineId);
     return this.linesData.find(l => String(l.id).toLowerCase() === cleanId) || null;
   }
+  // Get Mataró bus stops closest to coordinates (lat, lon)
+  getNearbyStops(lat, lon, radiusMeters = 800, limit = 6) {
+    const userLat = parseFloat(lat);
+    const userLon = parseFloat(lon);
+    if (isNaN(userLat) || isNaN(userLon)) return [];
+
+    const candidates = [];
+    this.allStopsMap.forEach((stop) => {
+      if (!stop.lat || !stop.lon) return;
+      const dist = geoEngine.calculateDistanceMeters(userLat, userLon, stop.lat, stop.lon);
+      if (dist <= radiusMeters) {
+        candidates.push({
+          id: stop.id,
+          code: stop.id,
+          name: stop.name,
+          lat: stop.lat,
+          lon: stop.lon,
+          lines: (stop.lineas || []).map(l => ({ id: String(l.id), code: `L${l.id}`, name: l.name })),
+          distanceMeters: Math.round(dist),
+          walkingMinutes: Math.max(1, Math.round(dist / 80))
+        });
+      }
+    });
+
+    candidates.sort((a, b) => a.distanceMeters - b.distanceMeters);
+    return candidates.slice(0, limit);
+  }
+
+  // Get nearby stops enriched with the next upcoming departures
+  async getNearbyStopsWithDepartures(lat, lon, radiusMeters = 800, limit = 5) {
+    const stops = this.getNearbyStops(lat, lon, radiusMeters, limit);
+    const results = await Promise.all(stops.map(async (stop) => {
+      try {
+        const depData = await this.getStopDepartures(stop.id);
+        const upcoming = (depData?.departures || []).slice(0, 3);
+        return {
+          ...stop,
+          departures: upcoming,
+          totalDepartures: depData?.departures?.length || 0
+        };
+      } catch (e) {
+        return {
+          ...stop,
+          departures: [],
+          totalDepartures: 0
+        };
+      }
+    }));
+    return results;
+  }
+
 
   // Deterministically match a SIRI live vehicle to route index (0 = Anada, 1 = Tornada)
   matchVehicleToRouteIndex(vehicle, routes) {

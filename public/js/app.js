@@ -1,6 +1,18 @@
 // Arribo! - Plataforma de Telemetria i Seguiment d'Autobusos en Temps Real
 // Suport universal per a totes les línies d'autobús urbà i interurbà de Catalunya
 
+const MATARO_ZONES = [
+  { id: 'tereses', name: 'Pl. de les Tereses / Centre', icon: '🏛️', desc: 'Línies L1, L2, L3, L4, L5, L7, L8', lat: 41.5392, lon: 2.4445 },
+  { id: 'rodalies', name: 'Estació Rodalies Renfe', icon: '🚆', desc: 'Línies L1, L2, L3, L4, L5, L8', lat: 41.5327, lon: 2.4440 },
+  { id: 'hospital', name: 'Hospital de Mataró', icon: '🏥', desc: 'Línies L1, L2, L3, L4, L5, L6, L7, L8', lat: 41.5562, lon: 2.4355 },
+  { id: 'parc_central', name: 'Parc Central / Geganta', icon: '🌳', desc: 'Línies L1, L2, L3, L5, L6, L7', lat: 41.5430, lon: 2.4390 },
+  { id: 'boet', name: "Pla d'en Boet / Camí del Mig", icon: '🏭', desc: 'Línies L1, L2, L6, L8', lat: 41.5320, lon: 2.4300 },
+  { id: 'cerdanyola', name: 'Cerdanyola / Puig i Cadafalch', icon: '🏢', desc: 'Línies L2, L5, L6, L7', lat: 41.5390, lon: 2.4280 },
+  { id: 'rocafonda', name: 'Rocafonda / El Palau', icon: '🏘️', desc: 'Línies L1, L3, L4, L6', lat: 41.5470, lon: 2.4530 },
+  { id: 'molins', name: 'Els Molins / Torner', icon: '🏞️', desc: 'Línies L1, L2, L3, L4, L7', lat: 41.5510, lon: 2.4430 },
+  { id: 'llantia', name: 'La Llàntia / Via Europa', icon: '🏫', desc: 'Línies L1, L2, L5, L8', lat: 41.5480, lon: 2.4320 }
+];
+
 class TransitApp {
   constructor() {
     this.activeLineId = null;
@@ -10,6 +22,10 @@ class TransitApp {
     this.activeLineData = null;
     
     this.targetStopsByLine = JSON.parse(localStorage.getItem('bad_amb_target_stops') || '{}');
+    this.favoriteStops = this.loadFavoriteStops();
+    this.currentNearbyStops = [];
+    this.activeNearbyZone = null;
+
     this.lineCache = new Map(); // LRU bounded to max 8 active routes
     this.stopDeparturesCache = new Map(); // Client-side SWR stop departures cache
     this.activeRequestSeq = 0; // Monotonic request sequence ID to prevent race conditions
@@ -44,7 +60,69 @@ class TransitApp {
     this.initTheme();
 
     this.mapController = null;
+    this.registerServiceWorker();
     this.init();
+  }
+
+  registerServiceWorker() {
+    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch((err) => {
+          console.warn('[SW] Registration notice:', err?.message || err);
+        });
+      });
+    }
+  }
+
+  loadFavoriteStops() {
+    try {
+      const raw = localStorage.getItem('arribo_mataro_fav_stops');
+      return raw ? JSON.parse(raw) : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  saveFavoriteStops() {
+    try {
+      localStorage.setItem('arribo_mataro_fav_stops', JSON.stringify(this.favoriteStops));
+    } catch (_) {}
+    this.updateHeaderFavoritesBadge();
+  }
+
+  isFavoriteStop(stopId) {
+    if (!stopId) return false;
+    const sId = String(stopId).trim();
+    return this.favoriteStops.some(s => String(s.id).trim() === sId || String(s.code).trim() === sId);
+  }
+
+  toggleFavoriteStop(stopId, stopName = '', lines = []) {
+    if (!stopId) return;
+    const sId = String(stopId).trim();
+    const idx = this.favoriteStops.findIndex(s => String(s.id).trim() === sId || String(s.code).trim() === sId);
+    
+    if (idx >= 0) {
+      this.favoriteStops.splice(idx, 1);
+    } else {
+      this.favoriteStops.push({
+        id: sId,
+        code: sId,
+        name: stopName || `Parada ${sId}`,
+        lines: lines || [],
+        addedAt: Date.now()
+      });
+    }
+
+    this.saveFavoriteStops();
+    this.renderLandingFavorites();
+  }
+
+  updateHeaderFavoritesBadge() {
+    const badge = document.getElementById('header-favs-count-text');
+    if (badge) {
+      const count = this.favoriteStops.length;
+      badge.textContent = count > 0 ? `Preferides (${count})` : 'Preferides';
+    }
   }
 
   // LRU Bounded Cache to prevent unbounded memory growth
@@ -518,6 +596,9 @@ class TransitApp {
     const clearBtn = document.getElementById('btn-landing-search-clear');
     const filterTabs = document.querySelectorAll('#landing-filter-tabs .landing-filter-tab');
     const container = document.getElementById('landing-lines-container');
+    const favGrid = document.getElementById('landing-favorites-grid');
+    const nearbyGrid = document.getElementById('landing-nearby-grid');
+    const zoneGrid = document.getElementById('zone-picker-grid');
 
     heroInput?.addEventListener('input', (e) => {
       const q = e.target.value;
@@ -550,6 +631,102 @@ class TransitApp {
       });
     });
 
+    // Action buttons: Nearby Stops GPS & Mataró Zones
+    document.getElementById('btn-hero-geo')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.handleNearbyStopsRequest();
+    });
+
+    document.getElementById('btn-hero-zones')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.openZonePicker();
+    });
+
+    document.getElementById('btn-nearby-change-zone')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.openZonePicker();
+    });
+
+    document.getElementById('btn-nearby-close')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      const sec = document.getElementById('landing-nearby-section');
+      if (sec) sec.style.display = 'none';
+    });
+
+    document.getElementById('btn-header-favorites')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (this.activeLineId) {
+        this.navigateToLanding();
+      }
+      const favSection = document.getElementById('landing-favorites-section');
+      if (favSection && this.favoriteStops.length > 0) {
+        favSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else {
+        this.openZonePicker();
+      }
+    });
+
+    document.getElementById('zone-picker-close-btn')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.closeZonePicker();
+    });
+
+    document.getElementById('zone-picker-modal-backdrop')?.addEventListener('click', (e) => {
+      if (e.target.id === 'zone-picker-modal-backdrop') {
+        this.closeZonePicker();
+      }
+    });
+
+    // Favorites Grid Event Delegation
+    favGrid?.addEventListener('click', (e) => {
+      const removeBtn = e.target.closest('.btn-fav-remove');
+      if (removeBtn) {
+        e.stopPropagation();
+        e.preventDefault();
+        const stopId = removeBtn.getAttribute('data-stop-id');
+        this.toggleFavoriteStop(stopId);
+        return;
+      }
+
+      const card = e.target.closest('.landing-fav-card');
+      if (card) {
+        e.preventDefault();
+        const stopId = card.getAttribute('data-stop-id');
+        const stopName = card.getAttribute('data-stop-name');
+        if (stopId) {
+          this.inspectStop(stopId, stopName);
+        }
+      }
+    });
+
+    // Nearby Grid Event Delegation
+    nearbyGrid?.addEventListener('click', (e) => {
+      const card = e.target.closest('.landing-nearby-card');
+      if (card) {
+        e.preventDefault();
+        const stopId = card.getAttribute('data-stop-id');
+        const stopName = card.getAttribute('data-stop-name');
+        if (stopId) {
+          this.inspectStop(stopId, stopName);
+        }
+      }
+    });
+
+    // Zone Picker Grid Event Delegation
+    zoneGrid?.addEventListener('click', (e) => {
+      const card = e.target.closest('.zone-card');
+      if (card) {
+        e.preventDefault();
+        const lat = parseFloat(card.getAttribute('data-lat'));
+        const lon = parseFloat(card.getAttribute('data-lon'));
+        const name = card.getAttribute('data-name');
+        if (!isNaN(lat) && !isNaN(lon)) {
+          this.closeZonePicker();
+          this.loadNearbyStops(lat, lon, name);
+        }
+      }
+    });
+
     // Single delegated click listener on container (eliminates thousands of closure allocations)
     container?.addEventListener('click', (e) => {
       const card = e.target.closest('.landing-line-card');
@@ -575,6 +752,9 @@ class TransitApp {
   }
 
   renderLandingLines() {
+    this.renderLandingFavorites();
+    this.updateHeaderFavoritesBadge();
+
     const container = document.getElementById('landing-lines-container');
     if (!container) return;
 
@@ -640,6 +820,227 @@ class TransitApp {
 
     container.innerHTML = html;
   }
+  renderLandingFavorites() {
+    const section = document.getElementById('landing-favorites-section');
+    const grid = document.getElementById('landing-favorites-grid');
+    const badge = document.getElementById('fav-stops-count-badge');
+    if (!section || !grid) return;
+
+    if (!this.favoriteStops || this.favoriteStops.length === 0) {
+      section.style.display = 'none';
+      return;
+    }
+
+    section.style.display = 'block';
+    if (badge) badge.textContent = `${this.favoriteStops.length} parada${this.favoriteStops.length === 1 ? '' : 'es'}`;
+
+    grid.innerHTML = this.favoriteStops.map(stop => {
+      const linePills = (stop.lines && stop.lines.length > 0)
+        ? stop.lines.map(l => `<span class="line-badge-sm" style="font-size:0.7rem; padding:1px 6px; background:var(--c10-primary);">${this.esc(l.code || l.id || l)}</span>`).join('')
+        : '<span class="line-badge-sm" style="font-size:0.7rem; padding:1px 6px; background:var(--c10-primary);">L1..L8</span>';
+
+      return `
+        <div class="landing-fav-card" data-stop-id="${this.esc(stop.id)}" data-stop-name="${this.esc(stop.name)}">
+          <div class="landing-fav-card-header">
+            <div>
+              <div class="landing-fav-title">${this.esc(stop.name)}</div>
+              <div class="landing-fav-code">Codi #${this.esc(stop.code || stop.id)}</div>
+            </div>
+            <button type="button" class="btn-fav-remove" data-stop-id="${this.esc(stop.id)}" title="Treure de preferides">&times;</button>
+          </div>
+          <div class="landing-fav-lines">${linePills}</div>
+          <div class="landing-fav-arrivals" id="fav-arrivals-${this.esc(stop.id)}">
+            <div style="font-size:0.75rem; color:var(--text-muted); display:flex; align-items:center; gap:4px;">
+              <span class="loading-spinner-inline" style="width:10px;height:10px;border-width:1.5px;"></span> Carregant arribades en directe...
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    for (const stop of this.favoriteStops) {
+      this.fetchAndRenderFavArrivals(stop.id);
+    }
+  }
+
+  async fetchAndRenderFavArrivals(stopId) {
+    const el = document.getElementById(`fav-arrivals-${stopId}`);
+    if (!el) return;
+
+    try {
+      const res = await fetch(`/api/mataro/stop/${stopId}/departures`).then(r => r.json());
+      const deps = res?.data?.departures || [];
+
+      if (!document.getElementById(`fav-arrivals-${stopId}`)) return;
+
+      if (deps.length === 0) {
+        el.innerHTML = '<div style="font-size:0.75rem; color:var(--text-muted);">Sense busos previstos en els propers minuts</div>';
+        return;
+      }
+
+      const topDeps = deps.slice(0, 2);
+      el.innerHTML = topDeps.map(d => {
+        const lineCode = d.lineId ? `L${String(d.lineId).replace(/^L/i, '')}` : 'Bus';
+        const minsAway = d.minutesAway !== undefined && d.minutesAway !== null ? d.minutesAway : null;
+        const minsText = minsAway !== null
+          ? (minsAway <= 0 ? 'Ara' : (minsAway === 1 ? '1 min' : `${minsAway} min`))
+          : (d.departureTime || '--:--');
+
+        const delayBadge = d.isRealTime
+          ? (d.delayBadgeText ? `<span style="color:#10b981; font-weight:700;">🟢 ${this.esc(d.delayBadgeText)}</span>` : '<span style="color:#10b981;">🟢 Temps Real</span>')
+          : `<span style="color:var(--text-muted);">📅 Teòric</span>`;
+
+        return `
+          <div class="landing-fav-arrival-pill">
+            <span><strong>${this.esc(lineCode)}</strong> cap a ${this.esc((d.destination || 'Destí').replace(/^Cap a\s+/i, ''))}</span>
+            <span style="display:flex; align-items:center; gap:6px;">
+              ${delayBadge}
+              <strong style="color:${minsAway !== null && minsAway <= 3 ? '#10b981' : 'var(--text-primary)'};">${minsText}</strong>
+            </span>
+          </div>
+        `;
+      }).join('');
+    } catch (_) {
+      if (document.getElementById(`fav-arrivals-${stopId}`)) {
+        el.innerHTML = '<div style="font-size:0.75rem; color:var(--text-muted);">Horari disponible en consultar</div>';
+      }
+    }
+  }
+
+  handleNearbyStopsRequest() {
+    const geoBtn = document.getElementById('btn-hero-geo');
+    const originalHtml = geoBtn ? geoBtn.innerHTML : '';
+
+    if (geoBtn) {
+      geoBtn.innerHTML = '<span class="loading-spinner-inline" style="width:12px;height:12px;"></span> <span>Localitzant...</span>';
+    }
+
+    const fallbackToZonePicker = () => {
+      if (geoBtn) geoBtn.innerHTML = originalHtml;
+      this.openZonePicker();
+    };
+
+    if (typeof navigator !== 'undefined' && 'geolocation' in navigator && window.isSecureContext !== false) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          if (geoBtn) geoBtn.innerHTML = originalHtml;
+          const { latitude, longitude } = pos.coords;
+          if (latitude >= 41.45 && latitude <= 41.60 && longitude >= 2.35 && longitude <= 2.52) {
+            this.loadNearbyStops(latitude, longitude, 'La teva posició GPS 📍');
+          } else {
+            this.openZonePicker();
+          }
+        },
+        (err) => {
+          console.log('[Geo] Geolocation skipped/denied:', err?.message || err);
+          fallbackToZonePicker();
+        },
+        { timeout: 5000, maximumAge: 60000, enableHighAccuracy: false }
+      );
+    } else {
+      fallbackToZonePicker();
+    }
+  }
+
+  openZonePicker() {
+    const modal = document.getElementById('zone-picker-modal-backdrop');
+    const grid = document.getElementById('zone-picker-grid');
+    if (!modal || !grid) return;
+
+    grid.innerHTML = MATARO_ZONES.map(z => `
+      <div class="zone-card" data-zone-id="${this.esc(z.id)}" data-lat="${z.lat}" data-lon="${z.lon}" data-name="${this.esc(z.name)}">
+        <div class="zone-card-icon">${z.icon}</div>
+        <div class="zone-card-info">
+          <div class="zone-card-title">${this.esc(z.name)}</div>
+          <div class="zone-card-desc">${this.esc(z.desc)}</div>
+        </div>
+      </div>
+    `).join('');
+
+    modal.classList.add('active');
+  }
+
+  closeZonePicker() {
+    const modal = document.getElementById('zone-picker-modal-backdrop');
+    if (modal) modal.classList.remove('active');
+  }
+  async loadNearbyStops(lat, lon, label = 'A prop') {
+    const section = document.getElementById('landing-nearby-section');
+    const titleEl = document.getElementById('nearby-zone-title');
+    const grid = document.getElementById('landing-nearby-grid');
+    if (!section || !grid) return;
+
+    this.activeNearbyZone = { lat, lon, label };
+    if (titleEl) titleEl.textContent = label;
+    section.style.display = 'block';
+    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    grid.innerHTML = `
+      <div style="grid-column: 1 / -1; padding: 2rem; text-align: center; color: var(--text-muted);">
+        <span class="loading-spinner-inline" style="width:16px;height:16px;margin-bottom:0.5rem;"></span>
+        <div>Cercant parades properes i horaris en directe...</div>
+      </div>
+    `;
+
+    try {
+      const res = await fetch(`/api/mataro/stops/nearby?lat=${lat}&lon=${lon}&radius=800&limit=6`).then(r => r.json());
+      const stops = res?.stops || [];
+
+      if (stops.length === 0) {
+        grid.innerHTML = `
+          <div style="grid-column: 1 / -1; padding: 2rem; text-align: center; color: var(--text-muted); background:var(--bg-surface-elevated); border-radius:var(--radius-md);">
+            <div style="font-size:1.6rem; margin-bottom:0.4rem;">🚏</div>
+            <div style="font-weight:700; color:var(--text-primary); margin-bottom:0.25rem;">Cap parada a menys de 800m</div>
+            <div style="font-size:0.82rem;">Tria un altre barri o zona de Mataró per consultar les parades.</div>
+          </div>
+        `;
+        return;
+      }
+
+      this.currentNearbyStops = stops;
+      grid.innerHTML = stops.map(s => {
+        const linePills = (s.lines && s.lines.length > 0)
+          ? s.lines.map(l => `<span class="line-badge-sm" style="font-size:0.7rem; padding:1px 6px; background:var(--c10-primary);">${this.esc(l.code || l.id || l)}</span>`).join('')
+          : '<span class="line-badge-sm" style="font-size:0.7rem; padding:1px 6px; background:var(--c10-primary);">L1..L8</span>';
+
+        const arrivalsHtml = (s.departures && s.departures.length > 0)
+          ? s.departures.map(d => {
+              const lineCode = d.lineId ? `L${String(d.lineId).replace(/^L/i, '')}` : 'Bus';
+              const minsAway = d.minutesAway !== undefined && d.minutesAway !== null ? d.minutesAway : null;
+              const minsText = minsAway !== null
+                ? (minsAway <= 0 ? 'Ara' : (minsAway === 1 ? '1 min' : `${minsAway} min`))
+                : (d.departureTime || '--:--');
+
+              return `
+                <div class="landing-fav-arrival-pill">
+                  <span><strong>${this.esc(lineCode)}</strong> cap a ${this.esc((d.destination || 'Destí').replace(/^Cap a\s+/i, ''))}</span>
+                  <strong style="color:${minsAway !== null && minsAway <= 3 ? '#10b981' : 'var(--text-primary)'};">${minsText}</strong>
+                </div>
+              `;
+            }).join('')
+          : '<div style="font-size:0.75rem; color:var(--text-muted);">Fes clic per veure sortides completes</div>';
+
+        return `
+          <div class="landing-nearby-card" data-stop-id="${this.esc(s.id)}" data-stop-name="${this.esc(s.name)}">
+            <div class="landing-nearby-card-header">
+              <div>
+                <div class="landing-nearby-title">${this.esc(s.name)}</div>
+                <div class="landing-nearby-code">Codi #${this.esc(s.code || s.id)}</div>
+              </div>
+              <span class="nearby-dist-badge">🚶 ${s.distanceMeters}m • ${s.walkingMinutes} min</span>
+            </div>
+            <div class="landing-nearby-lines">${linePills}</div>
+            <div class="landing-fav-arrivals">${arrivalsHtml}</div>
+          </div>
+        `;
+      }).join('');
+    } catch (err) {
+      console.error('Nearby stops fetch error:', err);
+      grid.innerHTML = '<div style="color:var(--danger); padding:1rem; text-align:center;">Error en carregar les parades properes.</div>';
+    }
+  }
+
+
 
   resolveBusForDeparture(dep, stopSeq = null, stopId = null, depIndex = 0) {
     const buses = this.activeLineData?.activeBuses || [];
@@ -2467,13 +2868,37 @@ class TransitApp {
       };
     }
 
+    const favBtn = document.getElementById('modal-toggle-fav-btn');
+    const updateFavBtnState = () => {
+      if (!favBtn) return;
+      const isFav = this.isFavoriteStop(stopId);
+      favBtn.classList.toggle('is-favorite', isFav);
+      const starIcon = favBtn.querySelector('#modal-star-icon') || favBtn.querySelector('.star-icon');
+      const starLabel = favBtn.querySelector('#modal-star-label') || favBtn.querySelector('.star-label');
+      if (starIcon) starIcon.textContent = isFav ? '⭐' : '☆';
+      if (starLabel) starLabel.textContent = isFav ? 'Desada' : 'Desar';
+      favBtn.setAttribute('title', isFav ? 'Treure de parades preferides' : 'Afegir a parades preferides');
+    };
+
+    updateFavBtnState();
+
+    if (favBtn) {
+      favBtn.onclick = (e) => {
+        e.preventDefault();
+        this.toggleFavoriteStop(stopId, displayName);
+        updateFavBtnState();
+      };
+    }
+
     // Silent background fetch / SWR revalidation
     try {
-      let fetchDirection = this.activeDirection;
+      let fetchDirection = this.activeDirection || '0';
       if (String(fetchDirection) === 'both' && this._resolvedStopDirection) {
         fetchDirection = this._resolvedStopDirection;
       }
-      const endpoint = `/api/line/${this.activeLineId}/stop/${stopId}/departures?direction=${fetchDirection}`;
+      const endpoint = this.activeLineId
+        ? `/api/line/${this.activeLineId}/stop/${stopId}/departures?direction=${fetchDirection}`
+        : `/api/mataro/stop/${stopId}/departures`;
       const res = await fetch(endpoint).then(r => r.json());
 
       if (res.success && res.data) {
