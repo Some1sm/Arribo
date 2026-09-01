@@ -26,7 +26,7 @@ function computeDelayStatus(delayMinutes, isRealTime = false, options = {}) {
   const delay = isNaN(rawDelay) ? 0 : Math.round(rawDelay);
 
   const thresholdDelay = options.thresholdDelayMinutes !== undefined ? options.thresholdDelayMinutes : 2;
-  const thresholdEarly = options.thresholdEarlyMinutes !== undefined ? options.thresholdEarlyMinutes : -2;
+  const thresholdEarly = options.thresholdEarlyMinutes !== undefined ? options.thresholdEarlyMinutes : -1;
   const scheduledTime = options.scheduledTime || null;
   const realtimeTime = options.realtimeTime || null;
   const punctualStyle = options.punctualStyle || 'short';

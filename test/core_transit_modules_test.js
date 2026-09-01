@@ -271,6 +271,14 @@ async function runTests() {
   assert.strictEqual(onTime.delayStatus, 'on_time');
   assert.strictEqual(onTime.delayBadgeText, 'Puntual');
 
+  const early1 = delayEngine.computeDelayStatus(-1, true);
+  assert.strictEqual(early1.delayStatus, 'early');
+  assert.strictEqual(early1.delayBadgeText, '1 min avançat');
+
+  const early2 = delayEngine.computeDelayStatus(-2, true);
+  assert.strictEqual(early2.delayStatus, 'early');
+  assert.strictEqual(early2.delayBadgeText, '2 min avançat');
+
   const early = delayEngine.computeDelayStatus(-3, true);
   assert.strictEqual(early.delayStatus, 'early');
   assert.strictEqual(early.delayBadgeText, '3 min avançat');

@@ -347,8 +347,8 @@ class MataroSiriClient {
             minutesAway,
             formattedStatus: minutesAway === 0 ? 'Imminent' : (minutesAway === 1 ? '1 min' : `${minutesAway} min`),
             delayMins,
-            delayBadgeText: delayMins >= 2 ? `+${delayMins} min retard` : (delayMins <= -2 ? `${Math.abs(delayMins)} min avançat` : 'Puntual'),
-            delayStatus: delayMins >= 2 ? 'delayed' : (delayMins <= -2 ? 'early' : 'on-time'),
+            delayBadgeText: delayMins >= 2 ? `+${delayMins} min retard` : (delayMins <= -1 ? `${Math.abs(delayMins)} min avançat` : 'Puntual'),
+            delayStatus: delayMins >= 2 ? 'delayed' : (delayMins <= -1 ? 'early' : 'on-time'),
             isRealTime: true,
             busCoords: lat && lon ? { lat, lon } : null
           });

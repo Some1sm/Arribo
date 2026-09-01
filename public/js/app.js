@@ -1803,7 +1803,7 @@ class TransitApp {
       const rawDelayMins = dep.delayMins !== undefined && dep.delayMins !== null ? Number(dep.delayMins) : 0;
       const delayText = rawDelayMins >= 2
         ? `+${rawDelayMins} min retard`
-        : (rawDelayMins <= -2 ? `${Math.abs(rawDelayMins)} min avançat` : 'Puntual');
+        : (rawDelayMins <= -1 ? `${Math.abs(rawDelayMins)} min avançat` : 'Puntual');
 
       const isLiveOrEstimated = Boolean(dep.isRealTime || dep.isEstimated || dep.vehicleId);
       const matchedBus = isLiveOrEstimated ? this.resolveBusForDeparture(dep, targetStopSeq, targetStopId, idx) : null;
@@ -1840,7 +1840,7 @@ class TransitApp {
 
       const pillClass = isRegulating
         ? 'regulating'
-        : ((isTomorrow || isFirstToday) ? 'scheduled' : (rawDelayMins >= 2 ? 'delayed' : (rawDelayMins <= -2 ? 'early' : (dep.delayStatus || 'on-time'))));
+        : ((isTomorrow || isFirstToday) ? 'scheduled' : (rawDelayMins >= 2 ? 'delayed' : (rawDelayMins <= -1 ? 'early' : (dep.delayStatus || 'on-time'))));
 
       return `
         <div class="departure-item ${idx === 0 ? 'highlight-next' : ''} ${hasActiveBus ? 'clickable-bus-dep' : ''}"
@@ -1873,7 +1873,7 @@ class TransitApp {
                             ? `<span>📅 Horari teòric: <strong class="sched-strong">Demà a les ${clockTime}</strong></span>`
                             : (dep.isRealTime
                                 ? (schedTime && isDiff
-                                    ? `<span>📅 Horari teòric: <strong class="sched-strong">${schedTime}</strong> <span class="dep-delay-note ${rawDelayMins >= 2 ? 'delay' : (rawDelayMins <= -2 ? 'early' : 'on-time')}">(${delayText})</span></span>`
+                                    ? `<span>📅 Horari teòric: <strong class="sched-strong">${schedTime}</strong> <span class="dep-delay-note ${rawDelayMins >= 2 ? 'delay' : (rawDelayMins <= -1 ? 'early' : 'on-time')}">(${delayText})</span></span>`
                                     : `<span>🟢 Arribada en temps real (SIRI Avanza)</span>`)
                                 : (dep.isEstimated
                                     ? `<span>⚡ Estimació de pas segons telemetria GPS</span>`
@@ -2540,7 +2540,7 @@ class TransitApp {
       const rawDelayMins = d.delayMins !== undefined && d.delayMins !== null ? Number(d.delayMins) : 0;
       const delayText = rawDelayMins >= 2
         ? `+${rawDelayMins} min retard`
-        : (rawDelayMins <= -2 ? `${Math.abs(rawDelayMins)} min avançat` : 'Puntual');
+        : (rawDelayMins <= -1 ? `${Math.abs(rawDelayMins)} min avançat` : 'Puntual');
 
       const isLiveOrEstimated = Boolean(d.isRealTime || d.isEstimated || d.vehicleId);
       const matchedBus = isLiveOrEstimated ? this.resolveBusForDeparture(d, stopSeq, stopId, idx) : null;
@@ -2577,7 +2577,7 @@ class TransitApp {
 
       const pillClass = isRegulating
         ? 'regulating'
-        : ((isTomorrow || isFirstToday) ? 'scheduled' : (rawDelayMins >= 2 ? 'delayed' : (rawDelayMins <= -2 ? 'early' : (d.delayStatus || 'on-time'))));
+        : ((isTomorrow || isFirstToday) ? 'scheduled' : (rawDelayMins >= 2 ? 'delayed' : (rawDelayMins <= -1 ? 'early' : (d.delayStatus || 'on-time'))));
 
       return `
         <div class="departure-item ${idx === 0 ? 'highlight-next' : ''} ${hasActiveBus ? 'clickable-bus-dep' : ''}"
@@ -2613,7 +2613,7 @@ class TransitApp {
                 <span>📅 Horari teòric: <strong class="sched-strong">Demà a les ${estTime}</strong></span>
               ` : (d.isRealTime ? (
                 schedTime && isDiff
-                  ? `<span>📅 Horari teòric: <strong class="sched-strong">${schedTime}</strong> <span class="dep-delay-note ${rawDelayMins >= 2 ? 'delay' : (rawDelayMins <= -2 ? 'early' : 'on-time')}">(${delayText})</span></span>`
+                  ? `<span>📅 Horari teòric: <strong class="sched-strong">${schedTime}</strong> <span class="dep-delay-note ${rawDelayMins >= 2 ? 'delay' : (rawDelayMins <= -1 ? 'early' : 'on-time')}">(${delayText})</span></span>`
                   : `<span>🟢 Arribada en temps real (SIRI Avanza)</span>`
               ) : (d.isEstimated ? `
                 <span>⚡ Estimació de pas segons telemetria GPS</span>
