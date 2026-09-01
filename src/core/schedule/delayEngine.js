@@ -276,7 +276,11 @@ function standardizeDeparture(dep = {}, defaults = {}) {
     delayStatus: delayEval.delayStatus,
     delayBadgeText: d.delayBadgeText || delayEval.delayBadgeText,
     delayFormatted: delayEval.delayFormatted,
-    comparisonText: d.comparisonText || delayEval.comparisonText,
+    comparisonText: (d.arrivalTime && d.departureTime && d.arrivalTime !== d.departureTime) 
+      ? `Arribada: ${d.arrivalTime} • Sortida: ${d.departureTime}` 
+      : (d.comparisonText || delayEval.comparisonText),
+    arrivalTime: d.arrivalTime || null,
+    isRegulating,
     vehicleId: d.vehicleId || null,
     busCoords: d.busCoords || null
   };

@@ -956,6 +956,18 @@ class MataroTracker extends BaseTracker {
 
     const cleanStopName = (stopInfo.name || '').toLowerCase().trim();
     const routesForStop = this.findRoutesServingStop(sId, lineId);
+
+    const targetDate = options.dateObj ? new Date(options.dateObj) :
+      (options.targetDate ? new Date(options.targetDate) :
+      (options.referenceDate ? new Date(options.referenceDate) : new Date()));
+
+    const dateCompToday = calendarEngine.getDateComponents(targetDate, this.agencyTimezone);
+    const dayTypeToday = dateCompToday.isSunday ? 'sunday' : (dateCompToday.isSaturday ? 'saturday' : 'weekday');
+
+    const tomorrow = new Date(targetDate.getTime() + 24 * 3600 * 1000);
+    const dateCompTomorrow = calendarEngine.getDateComponents(tomorrow, this.agencyTimezone);
+    const dayTypeTomorrow = dateCompTomorrow.isSunday ? 'sunday' : (dateCompTomorrow.isSaturday ? 'saturday' : 'weekday');
+
     const filteredDepartures = [];
 
     for (const dep of sorted) {
@@ -972,13 +984,29 @@ class MataroTracker extends BaseTracker {
           (r.stops || []).findIndex(s => String(s.id) === sId) === 0
         );
         if (outboundRoute) {
+          const arrTime = dep.departureTime || timeUtils.formatTimeToTimezone(new Date(), this.agencyTimezone);
+          const dirKey = String(outboundRoute.id || '0');
+          const dirSched = mataroSchedules.getDirectionSchedule(String(dep.lineId), dirKey, dayTypeToday);
+
+          // Find next outbound scheduled departure time
+          let nextDepTime = arrTime;
+          if (dirSched && Array.isArray(dirSched.departures)) {
+            const arrSec = timeEngine.timeStringToSeconds(arrTime);
+            const foundTrip = dirSched.departures.find(t => timeEngine.timeStringToSeconds(t) >= arrSec - 60);
+            if (foundTrip) {
+              nextDepTime = foundTrip;
+            }
+          }
+
           dep.destination = outboundRoute.name;
           dep.directionId = String(outboundRoute.id || '0');
+          dep.arrivalTime = arrTime;
+          dep.departureTime = nextDepTime;
           dep.isRegulating = true;
           dep.delayStatus = 'regulating';
           dep.delayBadgeText = '⏱️ Regulació';
           dep.formattedStatus = (dep.minutesAway <= 0) ? 'En regulació' : `${dep.minutesAway} min`;
-          dep.statusText = '🅿️ Regulant sortida a capçalera';
+          dep.statusText = `🅿️ Regulant (Arribada: ${arrTime} • Sortida: ${nextDepTime})`;
         }
       }
 
@@ -1022,17 +1050,6 @@ class MataroTracker extends BaseTracker {
     }
 
     // 4. Merge full daily scheduled timetable departures for this stop using scheduleSynthesizer
-    const targetDate = options.dateObj ? new Date(options.dateObj) :
-      (options.targetDate ? new Date(options.targetDate) :
-      (options.referenceDate ? new Date(options.referenceDate) : new Date()));
-
-    const dateCompToday = calendarEngine.getDateComponents(targetDate, this.agencyTimezone);
-    const dayTypeToday = dateCompToday.isSunday ? 'sunday' : (dateCompToday.isSaturday ? 'saturday' : 'weekday');
-
-    const tomorrow = new Date(targetDate.getTime() + 24 * 3600 * 1000);
-    const dateCompTomorrow = calendarEngine.getDateComponents(tomorrow, this.agencyTimezone);
-    const dayTypeTomorrow = dateCompTomorrow.isSunday ? 'sunday' : (dateCompTomorrow.isSaturday ? 'saturday' : 'weekday');
-
     let allSynthesizedDepartures = [];
     const assignedLive = new Set();
 
