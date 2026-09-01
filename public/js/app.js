@@ -1822,9 +1822,9 @@ class TransitApp {
                     ? (dep.minutesAway <= 0 ? 'Ara' : (dep.minutesAway === 1 ? '1 min' : `${dep.minutesAway} min`))
                     : `${clockTime}`)));
 
-      const isRegulating = Boolean(dep.delayStatus === 'regulating' || dep.isRegulating || dep.isTerminalLayover || (dep.arrivalTime && dep.departureTime && dep.arrivalTime !== dep.departureTime));
+      const isRegulating = Boolean(dep.delayStatus === 'regulating' || dep.isRegulating || dep.isTerminalLayover || dep.arrivalTime);
       const arrTime = dep.arrivalTime ? String(dep.arrivalTime).trim() : null;
-      const depTime = clockTime;
+      const depTime = (dep.departureTime && dep.departureTime !== '--:--') ? String(dep.departureTime).trim() : clockTime;
 
       const tagLabel = isRegulating
         ? '⏱️ En Regulació'
@@ -1854,8 +1854,8 @@ class TransitApp {
           <div class="dep-time-group">
             <div class="dep-time-row">
               <span class="dep-clock">${depTime}</span>
-              ${(isRegulating && arrTime && depTime && arrTime !== depTime)
-                ? `<span class="dep-regulating-pill" style="font-size:0.75rem; color:#c084fc; font-weight:700; background:rgba(168,85,247,0.18); padding:2px 8px; border-radius:12px; margin-left:6px; border:1px solid rgba(168,85,247,0.35);">🚏 Arriba: <strong>${arrTime}</strong> ➔ Surt: <strong>${depTime}</strong></span>`
+              ${isRegulating
+                ? `<span class="dep-regulating-pill" style="font-size:0.75rem; color:#c084fc; font-weight:700; background:rgba(168,85,247,0.18); padding:2px 8px; border-radius:12px; margin-left:6px; border:1px solid rgba(168,85,247,0.35);">${arrTime && arrTime !== depTime ? `🚏 Arriba: <strong>${arrTime}</strong> ➔ Surt: <strong>${depTime}</strong>` : '🚏 En Regulació'}</span>`
                 : (isDiff ? `<span class="dep-sched-pill" title="Horari oficial teòric">Oficial: ${schedTime}</span>` : '')}
               <span class="dep-tag-sub ${(isFirstMorning || isFirstToday) ? 'first-service' : ''}">${tagLabel}</span>
             </div>
@@ -1863,8 +1863,8 @@ class TransitApp {
               Cap a <strong>${this.esc((dep.destination || 'Destí').replace(/^Cap a\s+/i, ''))}</strong>
             </div>
             <div class="dep-time-sub">
-              ${(isRegulating && arrTime && depTime && arrTime !== depTime)
-                ? `<span>⏱️ <strong>Regulació a capçalera:</strong> Arriba a les <strong>${arrTime}</strong> • Surt cap a <strong>${this.esc((dep.destination || 'destí').replace(/^Cap a\s+/i, ''))}</strong> a les <strong>${depTime}</strong></span>`
+              ${isRegulating
+                ? `<span>⏱️ <strong>Regulació a capçalera:</strong> ${arrTime ? `Arriba a les <strong>${arrTime}</strong> • ` : ''}Surt cap a <strong>${this.esc((dep.destination || 'destí').replace(/^Cap a\s+/i, ''))}</strong> a les <strong>${depTime}</strong></span>`
                 : (isFirstMorning
                     ? `<span>📅 Primer autobús del matí (Demà a les ${clockTime})</span>`
                     : (isFirstToday
@@ -2559,9 +2559,9 @@ class TransitApp {
                     ? (d.minutesAway <= 0 ? 'Ara' : (d.minutesAway === 1 ? '1 min' : `${d.minutesAway} min`))
                     : `${estTime}`)));
 
-      const isRegulating = Boolean(d.delayStatus === 'regulating' || d.isRegulating || d.isTerminalLayover || (d.arrivalTime && d.departureTime && d.arrivalTime !== d.departureTime));
+      const isRegulating = Boolean(d.delayStatus === 'regulating' || d.isRegulating || d.isTerminalLayover || d.arrivalTime);
       const arrTime = d.arrivalTime ? String(d.arrivalTime).trim() : null;
-      const depTime = estTime;
+      const depTime = (d.departureTime && d.departureTime !== '--:--') ? String(d.departureTime).trim() : estTime;
 
       const tagLabel = isRegulating
         ? '⏱️ En Regulació'
@@ -2591,8 +2591,8 @@ class TransitApp {
           <div class="dep-time-group">
             <div class="dep-time-row">
               <span class="dep-clock">${depTime}</span>
-              ${(isRegulating && arrTime && depTime && arrTime !== depTime)
-                ? `<span class="dep-regulating-pill" style="font-size:0.75rem; color:#c084fc; font-weight:700; background:rgba(168,85,247,0.18); padding:2px 8px; border-radius:12px; margin-left:6px; border:1px solid rgba(168,85,247,0.35);">🚏 Arriba: <strong>${arrTime}</strong> ➔ Surt: <strong>${depTime}</strong></span>`
+              ${isRegulating
+                ? `<span class="dep-regulating-pill" style="font-size:0.75rem; color:#c084fc; font-weight:700; background:rgba(168,85,247,0.18); padding:2px 8px; border-radius:12px; margin-left:6px; border:1px solid rgba(168,85,247,0.35);">${arrTime && arrTime !== depTime ? `🚏 Arriba: <strong>${arrTime}</strong> ➔ Surt: <strong>${depTime}</strong>` : '🚏 En Regulació'}</span>`
                 : (isDiff ? `<span class="dep-sched-pill" title="Horari oficial teòric">Oficial: ${schedTime}</span>` : '')}
               <span class="dep-tag-sub ${(isFirstMorning || isFirstToday) ? 'first-service' : ''}">${tagLabel}</span>
             </div>
@@ -2603,8 +2603,8 @@ class TransitApp {
             </div>
 
             <div class="dep-time-sub">
-              ${(isRegulating && arrTime && depTime && arrTime !== depTime) ? `
-                <span>⏱️ <strong>Regulació a capçalera:</strong> Arriba a les <strong>${arrTime}</strong> • Surt cap a <strong>${this.esc((d.destination || 'destí').replace(/^Cap a\s+/i, ''))}</strong> a les <strong>${depTime}</strong></span>
+              ${isRegulating ? `
+                <span>⏱️ <strong>Regulació a capçalera:</strong> ${arrTime ? `Arriba a les <strong>${arrTime}</strong> • ` : ''}Surt cap a <strong>${this.esc((d.destination || 'destí').replace(/^Cap a\s+/i, ''))}</strong> a les <strong>${depTime}</strong></span>
               ` : (isFirstMorning ? `
                 <span>📅 Primer autobús del matí (Demà a les ${estTime})</span>
               ` : (isFirstToday ? `
