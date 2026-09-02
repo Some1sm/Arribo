@@ -122,9 +122,45 @@ class TransitRouter {
       const nLat = parseFloat(query.lat);
       const nLon = parseFloat(query.lon);
       if (!Number.isFinite(nLat) || !Number.isFinite(nLon)) return [];
+
+      const maxRadiusMeters = query.radiusMeters || 500;
+      const nearby = [];
+
+      for (const [id, s] of allStops.entries()) {
+        const sLat = parseFloat(s.lat ?? s.latitude);
+        const sLon = parseFloat(s.lon ?? s.longitude);
+        if (!Number.isFinite(sLat) || !Number.isFinite(sLon)) continue;
+
+        const d = geoEngine.calculateDistanceMeters(nLat, nLon, sLat, sLon);
+        if (Number.isFinite(d) && d <= maxRadiusMeters) {
+          nearby.push({
+            id: String(s.id),
+            shorthandId: String(s.id).replace(/^10*/, ''),
+            name: (s.name || '').replace(/ - \d+$/, '').trim(),
+            lat: sLat,
+            lon: sLon,
+            distanceMeters: Math.round(d),
+            walkingMinutes: Math.max(1, Math.round(d / 80)),
+            isWalkPoint: true,
+            pointName: query.name || null,
+            pointCoord: { lat: nLat, lon: nLon }
+          });
+        }
+      }
+
+      nearby.sort((a, b) => a.distanceMeters - b.distanceMeters);
+      if (nearby.length > 0) {
+        return nearby.slice(0, 5);
+      }
+
       const nearest = this.findNearestStop(nLat, nLon);
-      if (!nearest) return [];
-      return [nearest];
+      if (nearest) {
+        nearest.isWalkPoint = true;
+        nearest.pointName = query.name || null;
+        nearest.pointCoord = { lat: nLat, lon: nLon };
+        return [nearest];
+      }
+      return [];
     }
 
     const qStr = String(query || '').trim();
@@ -310,7 +346,32 @@ class TransitRouter {
           const intermediateStops = route.stops.slice(origIdx, destIdx + 1);
           const stopsCount = destIdx - origIdx;
           const rideMinutes = Math.max(3, Math.round(stopsCount * 1.8));
-          const totalDur = rideMinutes + (o.walkingMinutes || 0) + (d.walkingMinutes || 0);
+
+          let walkToFirstStop = null;
+          if (o.pointCoord && o.distanceMeters) {
+            walkToFirstStop = {
+              from: [o.pointCoord.lat, o.pointCoord.lon],
+              to: [intermediateStops[0].lat, intermediateStops[0].lon],
+              fromName: o.pointName || 'Origen',
+              toName: intermediateStops[0].name,
+              distanceMeters: o.distanceMeters,
+              walkingMinutes: o.walkingMinutes || Math.max(1, Math.round(o.distanceMeters / 80))
+            };
+          }
+
+          let walkFromLastStop = null;
+          if (d.pointCoord && d.distanceMeters) {
+            walkFromLastStop = {
+              from: [intermediateStops[intermediateStops.length - 1].lat, intermediateStops[intermediateStops.length - 1].lon],
+              to: [d.pointCoord.lat, d.pointCoord.lon],
+              fromName: intermediateStops[intermediateStops.length - 1].name,
+              toName: d.pointName || 'Destinació',
+              distanceMeters: d.distanceMeters,
+              walkingMinutes: d.walkingMinutes || Math.max(1, Math.round(d.distanceMeters / 80))
+            };
+          }
+
+          const totalDur = (walkToFirstStop?.walkingMinutes || 0) + rideMinutes + (walkFromLastStop?.walkingMinutes || 0);
 
           const polyline = this.sliceRoutePolyline(route.coords, intermediateStops[0], intermediateStops[intermediateStops.length - 1]);
 
@@ -324,6 +385,8 @@ class TransitRouter {
             totalDurationMins: totalDur,
             originStop: o,
             destStop: d,
+            walkToFirstStop,
+            walkFromLastStop,
             legs: [
               {
                 lineId: route.lineId,
@@ -363,93 +426,133 @@ class TransitRouter {
             for (const route2 of this.routesGraph) {
               if (route2.lineId === route1.lineId) continue;
 
-              const t2Idx = route2.stops.findIndex(s => s.id === transferStop.id || s.shorthandId === transferStop.id);
-              if (t2Idx === -1) continue;
-
-              const destIdx = route2.stops.findIndex(s => s.id === d.id || s.shorthandId === d.id);
-              if (destIdx === -1 || destIdx <= t2Idx) continue;
-
-              const transferKey = `${route1.lineId}_${route2.lineId}_${transferStop.id}_${o.id}_${d.id}`;
-              if (seenTransferKeys.has(transferKey)) continue;
-              seenTransferKeys.add(transferKey);
-
-              const leg1Stops = route1.stops.slice(origIdx, t1Idx + 1);
-              const leg2Stops = route2.stops.slice(t2Idx, destIdx + 1);
-
-              const leg1StopsCount = t1Idx - origIdx;
-              const leg2StopsCount = destIdx - t2Idx;
-              const leg1RideMinutes = Math.max(2, Math.round(leg1StopsCount * 1.8));
-              const leg2RideMinutes = Math.max(2, Math.round(leg2StopsCount * 1.8));
-              const transferWaitMinutes = 5;
-
-              const leg1Polyline = this.sliceRoutePolyline(route1.coords, leg1Stops[0], leg1Stops[leg1Stops.length - 1]);
-              const leg2Polyline = this.sliceRoutePolyline(route2.coords, leg2Stops[0], leg2Stops[leg2Stops.length - 1]);
-
-              const rawTransferDist = geoEngine.calculateDistanceMeters(
-                leg1Stops[leg1Stops.length - 1].lat, leg1Stops[leg1Stops.length - 1].lon,
-                leg2Stops[0].lat, leg2Stops[0].lon
-              );
-              const transferDist = Number.isFinite(rawTransferDist) ? rawTransferDist : 0;
-              const transferWalk = {
-                from: [leg1Stops[leg1Stops.length - 1].lat, leg1Stops[leg1Stops.length - 1].lon],
-                to: [leg2Stops[0].lat, leg2Stops[0].lon],
-                distanceMeters: Math.round(transferDist),
-                walkingMinutes: Math.max(0, Math.round(transferDist / 80))
-              };
-
-              const totalDuration = leg1RideMinutes + transferWaitMinutes + leg2RideMinutes +
-                transferWalk.walkingMinutes + (o.walkingMinutes || 0) + (d.walkingMinutes || 0);
-
-              oneTransferRoutes.push({
-                type: 'transfer',
-                transfersCount: 1,
-                transferStop,
-                transferWalk,
-                stopsCount: leg1StopsCount + leg2StopsCount,
-                stopCount: leg1StopsCount + leg2StopsCount,
-                rideMinutes: leg1RideMinutes + leg2RideMinutes,
-                transferWaitMinutes,
-                totalDurationMinutes: totalDuration,
-                totalDurationMins: totalDuration,
-                originStop: o,
-                destStop: d,
-                legs: [
-                  {
-                    lineId: route1.lineId,
-                    lineCode: route1.lineCode,
-                    lineColor: route1.color,
-                    color: route1.color,
-                    direction: route1.direction,
-                    destination: route1.destName || (leg1Stops[leg1Stops.length - 1] && leg1Stops[leg1Stops.length - 1].name) || 'Destinació',
-                    fromStop: leg1Stops[0],
-                    toStop: leg1Stops[leg1Stops.length - 1],
-                    intermediateStops: leg1Stops,
-                    polyline: leg1Polyline,
-                    stopsCount: leg1StopsCount,
-                    stopCount: leg1StopsCount,
-                    durationMinutes: leg1RideMinutes,
-                    durationMins: leg1RideMinutes,
-                    travelTimeMins: leg1RideMinutes
-                  },
-                  {
-                    lineId: route2.lineId,
-                    lineCode: route2.lineCode,
-                    lineColor: route2.color,
-                    color: route2.color,
-                    direction: route2.direction,
-                    destination: route2.destName || (leg2Stops[leg2Stops.length - 1] && leg2Stops[leg2Stops.length - 1].name) || 'Destinació',
-                    fromStop: leg2Stops[0],
-                    toStop: leg2Stops[leg2Stops.length - 1],
-                    intermediateStops: leg2Stops,
-                    polyline: leg2Polyline,
-                    stopsCount: leg2StopsCount,
-                    stopCount: leg2StopsCount,
-                    durationMinutes: leg2RideMinutes,
-                    durationMins: leg2RideMinutes,
-                    travelTimeMins: leg2RideMinutes
+              // Match transfer stops: exact ID, shorthand ID, same clean name, or nearby within 160m
+              const possibleT2 = [];
+              for (let i = 0; i < route2.stops.length; i++) {
+                const s2 = route2.stops[i];
+                if (s2.id === transferStop.id || s2.shorthandId === transferStop.id) {
+                  possibleT2.push({ idx: i, stop: s2, dist: 0 });
+                } else if (s2.name.toLowerCase() === transferStop.name.toLowerCase()) {
+                  possibleT2.push({ idx: i, stop: s2, dist: 25 });
+                } else {
+                  const dist = geoEngine.calculateDistanceMeters(transferStop.lat, transferStop.lon, s2.lat, s2.lon);
+                  if (dist <= 160) {
+                    possibleT2.push({ idx: i, stop: s2, dist });
                   }
-                ]
-              });
+                }
+              }
+
+              for (const { idx: t2Idx, stop: t2Stop, dist: transferDist } of possibleT2) {
+                const destIdx = route2.stops.findIndex(s => s.id === d.id || s.shorthandId === d.id);
+                if (destIdx === -1 || destIdx <= t2Idx) continue;
+
+                const transferKey = `${route1.lineId}_${route2.lineId}_${transferStop.id}_${t2Stop.id}_${o.id}_${d.id}`;
+                if (seenTransferKeys.has(transferKey)) continue;
+                seenTransferKeys.add(transferKey);
+
+                const leg1Stops = route1.stops.slice(origIdx, t1Idx + 1);
+                const leg2Stops = route2.stops.slice(t2Idx, destIdx + 1);
+
+                const leg1StopsCount = t1Idx - origIdx;
+                const leg2StopsCount = destIdx - t2Idx;
+                const leg1RideMinutes = Math.max(2, Math.round(leg1StopsCount * 1.8));
+                const leg2RideMinutes = Math.max(2, Math.round(leg2StopsCount * 1.8));
+                const transferWaitMinutes = 5;
+
+                const leg1Polyline = this.sliceRoutePolyline(route1.coords, leg1Stops[0], leg1Stops[leg1Stops.length - 1]);
+                const leg2Polyline = this.sliceRoutePolyline(route2.coords, leg2Stops[0], leg2Stops[leg2Stops.length - 1]);
+
+                const transferWalk = {
+                  from: [leg1Stops[leg1Stops.length - 1].lat, leg1Stops[leg1Stops.length - 1].lon],
+                  to: [leg2Stops[0].lat, leg2Stops[0].lon],
+                  fromStop: leg1Stops[leg1Stops.length - 1],
+                  toStop: leg2Stops[0],
+                  distanceMeters: Math.round(transferDist),
+                  walkingMinutes: Math.max(0, Math.round(transferDist / 80))
+                };
+
+                let walkToFirstStop = null;
+                if (o.pointCoord && o.distanceMeters) {
+                  walkToFirstStop = {
+                    from: [o.pointCoord.lat, o.pointCoord.lon],
+                    to: [leg1Stops[0].lat, leg1Stops[0].lon],
+                    fromName: o.pointName || 'Origen',
+                    toName: leg1Stops[0].name,
+                    distanceMeters: o.distanceMeters,
+                    walkingMinutes: o.walkingMinutes || Math.max(1, Math.round(o.distanceMeters / 80))
+                  };
+                }
+
+                let walkFromLastStop = null;
+                if (d.pointCoord && d.distanceMeters) {
+                  walkFromLastStop = {
+                    from: [leg2Stops[leg2Stops.length - 1].lat, leg2Stops[leg2Stops.length - 1].lon],
+                    to: [d.pointCoord.lat, d.pointCoord.lon],
+                    fromName: leg2Stops[leg2Stops.length - 1].name,
+                    toName: d.pointName || 'Destinació',
+                    distanceMeters: d.distanceMeters,
+                    walkingMinutes: d.walkingMinutes || Math.max(1, Math.round(d.distanceMeters / 80))
+                  };
+                }
+
+                const totalDuration = (walkToFirstStop?.walkingMinutes || 0) +
+                  leg1RideMinutes + transferWaitMinutes + leg2RideMinutes +
+                  transferWalk.walkingMinutes +
+                  (walkFromLastStop?.walkingMinutes || 0);
+
+                oneTransferRoutes.push({
+                  type: 'transfer',
+                  transfersCount: 1,
+                  transferStop,
+                  transferWalk,
+                  walkToFirstStop,
+                  walkFromLastStop,
+                  stopsCount: leg1StopsCount + leg2StopsCount,
+                  stopCount: leg1StopsCount + leg2StopsCount,
+                  rideMinutes: leg1RideMinutes + leg2RideMinutes,
+                  transferWaitMinutes,
+                  totalDurationMinutes: totalDuration,
+                  totalDurationMins: totalDuration,
+                  originStop: o,
+                  destStop: d,
+                  legs: [
+                    {
+                      lineId: route1.lineId,
+                      lineCode: route1.lineCode,
+                      lineColor: route1.color,
+                      color: route1.color,
+                      direction: route1.direction,
+                      destination: route1.destName || (leg1Stops[leg1Stops.length - 1] && leg1Stops[leg1Stops.length - 1].name) || 'Destinació',
+                      fromStop: leg1Stops[0],
+                      toStop: leg1Stops[leg1Stops.length - 1],
+                      intermediateStops: leg1Stops,
+                      polyline: leg1Polyline,
+                      stopsCount: leg1StopsCount,
+                      stopCount: leg1StopsCount,
+                      durationMinutes: leg1RideMinutes,
+                      durationMins: leg1RideMinutes,
+                      travelTimeMins: leg1RideMinutes
+                    },
+                    {
+                      lineId: route2.lineId,
+                      lineCode: route2.lineCode,
+                      lineColor: route2.color,
+                      color: route2.color,
+                      direction: route2.direction,
+                      destination: route2.destName || (leg2Stops[leg2Stops.length - 1] && leg2Stops[leg2Stops.length - 1].name) || 'Destinació',
+                      fromStop: leg2Stops[0],
+                      toStop: leg2Stops[leg2Stops.length - 1],
+                      intermediateStops: leg2Stops,
+                      polyline: leg2Polyline,
+                      stopsCount: leg2StopsCount,
+                      stopCount: leg2StopsCount,
+                      durationMinutes: leg2RideMinutes,
+                      durationMins: leg2RideMinutes,
+                      travelTimeMins: leg2RideMinutes
+                    }
+                  ]
+                });
+              }
             }
           }
         }

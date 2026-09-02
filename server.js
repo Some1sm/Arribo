@@ -569,10 +569,18 @@ app.get(['/api/mataro/plan', '/api/plan'], async (req, res) => {
   let origin = from;
   let destination = to;
   if (req.query.fromLat && req.query.fromLon) {
-    origin = { lat: parseFloat(req.query.fromLat), lon: parseFloat(req.query.fromLon) };
+    origin = {
+      lat: parseFloat(req.query.fromLat),
+      lon: parseFloat(req.query.fromLon),
+      name: req.query.fromName || from
+    };
   }
   if (req.query.toLat && req.query.toLon) {
-    destination = { lat: parseFloat(req.query.toLat), lon: parseFloat(req.query.toLon) };
+    destination = {
+      lat: parseFloat(req.query.toLat),
+      lon: parseFloat(req.query.toLon),
+      name: req.query.toName || to
+    };
   }
 
   // Geocode origin / destination if they are street names not matching a known stop
@@ -582,7 +590,7 @@ app.get(['/api/mataro/plan', '/api/plan'], async (req, res) => {
       try {
         const found = await streetGeocoder.searchStreets(origin, 1);
         if (found.length > 0) {
-          origin = { lat: found[0].lat, lon: found[0].lon };
+          origin = { lat: found[0].lat, lon: found[0].lon, name: found[0].name || origin };
         }
       } catch (_) {}
     }
@@ -594,7 +602,7 @@ app.get(['/api/mataro/plan', '/api/plan'], async (req, res) => {
       try {
         const found = await streetGeocoder.searchStreets(destination, 1);
         if (found.length > 0) {
-          destination = { lat: found[0].lat, lon: found[0].lon };
+          destination = { lat: found[0].lat, lon: found[0].lon, name: found[0].name || destination };
         }
       } catch (_) {}
     }

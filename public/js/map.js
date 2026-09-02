@@ -783,7 +783,48 @@ class C10Map {
       }
     });
 
-    // 2. Render walking transfer dashed path if applicable
+    // 2. Render origin walking leg if starting from street/coordinate
+    if (itinerary.walkToFirstStop && itinerary.walkToFirstStop.distanceMeters > 5) {
+      const walkFrom = itinerary.walkToFirstStop.from;
+      const walkTo = itinerary.walkToFirstStop.to;
+      if (Array.isArray(walkFrom) && Array.isArray(walkTo) &&
+          Number.isFinite(walkFrom[0]) && Number.isFinite(walkFrom[1]) &&
+          Number.isFinite(walkTo[0]) && Number.isFinite(walkTo[1])) {
+        allPoints.push(walkFrom, walkTo);
+        const walkLine = L.polyline([walkFrom, walkTo], {
+          color: '#38bdf8',
+          weight: 4,
+          opacity: 0.9,
+          dashArray: '6, 8',
+          lineCap: 'round'
+        });
+        walkLine.bindTooltip(`🚶 Caminar des d'origen (~${itinerary.walkToFirstStop.distanceMeters} m, ~${itinerary.walkToFirstStop.walkingMinutes} min a peu)`, {
+          sticky: true,
+          className: 'stop-hover-tooltip'
+        });
+        this.itineraryLayerGroup.addLayer(walkLine);
+
+        // Origin Address Pin
+        const origPinIcon = L.divIcon({
+          className: 'custom-itinerary-marker',
+          html: `
+            <div class="itinerary-node-badge node-walk-origin" style="--node-color:#38bdf8">
+              <span class="node-icon">📍</span>
+              <div class="node-label">
+                <div class="node-action">Origen</div>
+                <div class="node-name">${escHtml(itinerary.walkToFirstStop.fromName || 'Punt d\'origen')}</div>
+              </div>
+            </div>
+          `,
+          iconSize: [160, 36],
+          iconAnchor: [20, 18]
+        });
+        const mOrig = L.marker(walkFrom, { icon: origPinIcon, zIndexOffset: 2500 });
+        this.itineraryLayerGroup.addLayer(mOrig);
+      }
+    }
+
+    // 3. Render walking transfer dashed path if applicable
     if (itinerary.transferWalk && itinerary.transferWalk.distanceMeters > 5) {
       const walkFrom = itinerary.transferWalk.from;
       const walkTo = itinerary.transferWalk.to;
@@ -806,7 +847,48 @@ class C10Map {
       }
     }
 
-    // 3. Render Major Turn Points: Boarding, Transfer(s), Destination
+    // 4. Render destination walking leg if ending at street/coordinate
+    if (itinerary.walkFromLastStop && itinerary.walkFromLastStop.distanceMeters > 5) {
+      const walkFrom = itinerary.walkFromLastStop.from;
+      const walkTo = itinerary.walkFromLastStop.to;
+      if (Array.isArray(walkFrom) && Array.isArray(walkTo) &&
+          Number.isFinite(walkFrom[0]) && Number.isFinite(walkFrom[1]) &&
+          Number.isFinite(walkTo[0]) && Number.isFinite(walkTo[1])) {
+        allPoints.push(walkFrom, walkTo);
+        const walkLine = L.polyline([walkFrom, walkTo], {
+          color: '#f59e0b',
+          weight: 4,
+          opacity: 0.9,
+          dashArray: '6, 8',
+          lineCap: 'round'
+        });
+        walkLine.bindTooltip(`🚶 Caminar fins a destinació (~${itinerary.walkFromLastStop.distanceMeters} m, ~${itinerary.walkFromLastStop.walkingMinutes} min a peu)`, {
+          sticky: true,
+          className: 'stop-hover-tooltip'
+        });
+        this.itineraryLayerGroup.addLayer(walkLine);
+
+        // Destination Address Pin
+        const destPinIcon = L.divIcon({
+          className: 'custom-itinerary-marker',
+          html: `
+            <div class="itinerary-node-badge node-walk-dest" style="--node-color:#f59e0b">
+              <span class="node-icon">🏁</span>
+              <div class="node-label">
+                <div class="node-action">Destinació</div>
+                <div class="node-name">${escHtml(itinerary.walkFromLastStop.toName || 'Punt de destinació')}</div>
+              </div>
+            </div>
+          `,
+          iconSize: [160, 36],
+          iconAnchor: [20, 18]
+        });
+        const mDest = L.marker(walkTo, { icon: destPinIcon, zIndexOffset: 2500 });
+        this.itineraryLayerGroup.addLayer(mDest);
+      }
+    }
+
+    // 5. Render Major Turn Points: Boarding, Transfer(s), Destination
     const legs = itinerary.legs;
     const firstLeg = legs[0];
     const lastLeg = legs[legs.length - 1];
@@ -869,7 +951,7 @@ class C10Map {
       }
     }
 
-    // 🏁 Destination Marker
+    // 🏁 Destination Alighting Marker
     if (lastLeg && lastLeg.toStop) {
       const dLat = parseFloat(lastLeg.toStop.lat || lastLeg.toStop.latitude);
       const dLon = parseFloat(lastLeg.toStop.lon || lastLeg.toStop.longitude);
@@ -881,7 +963,7 @@ class C10Map {
             <div class="itinerary-node-badge node-destination" style="--node-color:#ef4444">
               <span class="node-icon">🏁</span>
               <div class="node-label">
-                <div class="node-action">Arribada (Baixar)</div>
+                <div class="node-action">Baixar de ${escHtml(lastLeg.lineCode)}</div>
                 <div class="node-name">${escHtml(lastLeg.toStop.name)}</div>
               </div>
             </div>
@@ -894,7 +976,7 @@ class C10Map {
       }
     }
 
-    // 4. Fit bounds
+    // 6. Fit bounds
     if (allPoints.length > 1) {
       const bounds = L.latLngBounds(allPoints);
       if (bounds && bounds.isValid()) {

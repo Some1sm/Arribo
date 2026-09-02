@@ -4416,9 +4416,25 @@ class TransitApp {
           </div>
 
           <div class="planner-legs-flow">
+            ${it.walkToFirstStop && it.walkToFirstStop.distanceMeters > 15 ? `
+              <div style="display:flex; align-items:center; gap:8px; padding:3px 0 5px 0; color:var(--text-secondary); font-size:0.8rem; border-bottom:1px dashed var(--border-subtle); margin-bottom:5px;">
+                <span style="font-size:1rem; line-height:1;">🚶</span>
+                <div>
+                  <span>Caminar des de <strong>${this.esc(it.walkToFirstStop.fromName || 'l\'origen')}</strong></span>
+                  <span style="font-size:0.75rem; color:var(--text-muted); margin-left:4px;">(~${it.walkToFirstStop.walkingMinutes} min • ${it.walkToFirstStop.distanceMeters} m)</span>
+                </div>
+              </div>
+            ` : ''}
+
             ${it.legs.map((leg, lIdx) => {
               const destText = leg.destination || (leg.toStop && leg.toStop.name) || '';
               return `
+              ${lIdx > 0 && it.transferWalk && it.transferWalk.distanceMeters > 15 ? `
+                <div style="display:flex; align-items:center; gap:8px; padding:3px 0 5px 0; color:var(--text-muted); font-size:0.78rem; margin-bottom:4px;">
+                  <span>🔄🚶</span>
+                  <span>Enllaç a peu fins a <strong>${this.esc(leg.fromStop.name)}</strong> (~${it.transferWalk.walkingMinutes} min • ${it.transferWalk.distanceMeters} m)</span>
+                </div>
+              ` : ''}
               <div class="planner-leg-item">
                 <div>
                   <div style="display:flex; align-items:center; gap:6px; margin-bottom:2px;">
@@ -4439,6 +4455,16 @@ class TransitApp {
               </div>
             `;
             }).join('')}
+
+            ${it.walkFromLastStop && it.walkFromLastStop.distanceMeters > 15 ? `
+              <div style="display:flex; align-items:center; gap:8px; padding:5px 0 2px 0; color:var(--text-secondary); font-size:0.8rem; border-top:1px dashed var(--border-subtle); margin-top:5px;">
+                <span style="font-size:1rem; line-height:1;">🚶</span>
+                <div>
+                  <span>Caminar fins a <strong>${this.esc(it.walkFromLastStop.toName || 'la destinació')}</strong></span>
+                  <span style="font-size:0.75rem; color:var(--text-muted); margin-left:4px;">(~${it.walkFromLastStop.walkingMinutes} min • ${it.walkFromLastStop.distanceMeters} m)</span>
+                </div>
+              </div>
+            ` : ''}
           </div>
 
           <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.75rem; border-top:1px solid var(--border-subtle); padding-top:0.6rem;">
