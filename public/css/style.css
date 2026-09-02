@@ -4269,7 +4269,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  background: var(--bg-card);
+  background: var(--bg-surface);
   padding: 1rem;
   border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
@@ -4281,6 +4281,11 @@ body {
   flex-direction: column;
   gap: 0.35rem;
   position: relative;
+  z-index: 10;
+}
+
+.planner-input-group:focus-within {
+  z-index: 200;
 }
 
 .planner-label {
@@ -4337,7 +4342,7 @@ body {
 
 .btn-planner-swap {
   align-self: center;
-  background: var(--bg-surface);
+  background: var(--bg-surface-elevated);
   border: 1px solid var(--border-subtle);
   color: var(--text-secondary);
   width: 32px;
@@ -4367,32 +4372,36 @@ body {
   border-radius: var(--radius-md);
   margin-top: 0.25rem;
   justify-content: center;
+  position: relative;
+  z-index: 1;
 }
 
 .planner-dropdown {
   position: absolute;
-  top: 100%;
+  top: calc(100% + 4px);
   left: 0;
   right: 0;
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.35);
+  background: var(--bg-surface-elevated, #1a2337);
+  border: 1px solid var(--border-subtle, #334155);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.75);
   max-height: 220px;
   overflow-y: auto;
-  z-index: 100;
+  z-index: 500;
   display: none;
-  margin-top: 4px;
+  margin-top: 0;
 }
 
 .planner-dropdown-item {
-  padding: 0.6rem 0.85rem;
+  padding: 0.65rem 0.85rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
   cursor: pointer;
   border-bottom: 1px solid var(--border-subtle);
   font-size: 0.88rem;
+  background: var(--bg-surface-elevated, #1a2337);
+  color: var(--text-primary);
   transition: background var(--transition-fast);
 }
 
@@ -4401,12 +4410,12 @@ body {
 }
 
 .planner-dropdown-item:hover {
-  background: rgba(14, 165, 233, 0.12);
-  color: var(--c10-primary);
+  background: rgba(14, 165, 233, 0.2);
+  color: #38bdf8;
 }
 
 .planner-itinerary-card {
-  background: var(--bg-card);
+  background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   padding: 1rem;
