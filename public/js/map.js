@@ -79,6 +79,7 @@ class C10Map {
     }).setView([41.54, 2.44], 13);
 
     this.trafficLayerGroup = L.layerGroup().addTo(this.map);
+    this.itineraryLayerGroup = L.layerGroup().addTo(this.map);
     this.updateTileLayer();
     this.setupResizeObserver();
     this.requestUserLocation();
@@ -701,6 +702,211 @@ class C10Map {
       this.clearCongestionHeatmap();
     } else if (segments && segments.length > 0) {
       this.renderCongestionHeatmap(segments);
+    }
+  }
+
+  renderItinerary(itinerary) {
+    if (!this.map || !itinerary || !Array.isArray(itinerary.legs)) return;
+    this.isItineraryMode = true;
+
+    // Clear standard line layers & stops
+    this.clearAll();
+    if (this.itineraryLayerGroup) {
+      this.itineraryLayerGroup.clearLayers();
+    }
+
+    const allPoints = [];
+
+    // 1. Render each leg with sliced polyline and intermediate stops
+    itinerary.legs.forEach((leg, legIdx) => {
+      const rawColor = leg.lineColor || leg.color || (legIdx === 0 ? '#0ea5e9' : '#10b981');
+      const legColor = (typeof rawColor === 'string' && /^#[0-9a-fA-F]{3,8}$|^rgba?\([0-9,.\s%]+\)$/.test(rawColor.trim()))
+        ? rawColor.trim()
+        : (legIdx === 0 ? '#0ea5e9' : '#10b981');
+      const rawPoly = Array.isArray(leg.polyline) ? leg.polyline : [];
+      const polyline = rawPoly.filter(p => Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]));
+
+      if (polyline.length > 1) {
+        allPoints.push(...polyline);
+
+        // Draw casing / shadow under the line
+        const casing = L.polyline(polyline, {
+          color: '#000000',
+          weight: 8,
+          opacity: 0.45,
+          lineCap: 'round',
+          lineJoin: 'round'
+        });
+        this.itineraryLayerGroup.addLayer(casing);
+
+        // Core leg polyline
+        const line = L.polyline(polyline, {
+          color: legColor,
+          weight: 5.5,
+          opacity: 0.95,
+          lineCap: 'round',
+          lineJoin: 'round'
+        });
+        line.bindTooltip(`<strong>${escHtml(leg.lineCode)}</strong> Cap a ${escHtml(leg.destination || '')} (${leg.stopsCount || leg.stopCount} parades, ~${leg.durationMinutes || leg.travelTimeMins} min)`, {
+          sticky: true,
+          className: 'stop-hover-tooltip'
+        });
+        this.itineraryLayerGroup.addLayer(line);
+
+        // Direction chevrons
+        const arrows = this.createDirectionalArrows(polyline, legColor);
+        arrows.forEach(a => this.itineraryLayerGroup.addLayer(a));
+      }
+
+      // Intermediate stops (subtle waypoint dots)
+      if (Array.isArray(leg.intermediateStops)) {
+        leg.intermediateStops.slice(1, -1).forEach(s => {
+          const sLat = parseFloat(s.lat || s.latitude);
+          const sLon = parseFloat(s.lon || s.longitude);
+          if (Number.isFinite(sLat) && Number.isFinite(sLon)) {
+            allPoints.push([sLat, sLon]);
+            const dot = L.circleMarker([sLat, sLon], {
+              radius: 4.5,
+              fillColor: '#ffffff',
+              fillOpacity: 0.9,
+              color: legColor,
+              weight: 2
+            });
+            dot.bindTooltip(`<strong>${escHtml(s.name)}</strong><br><span style="font-size:11px; color:var(--text-secondary);">${escHtml(leg.lineCode)}</span>`, {
+              direction: 'top',
+              offset: [0, -4],
+              className: 'stop-hover-tooltip'
+            });
+            this.itineraryLayerGroup.addLayer(dot);
+          }
+        });
+      }
+    });
+
+    // 2. Render walking transfer dashed path if applicable
+    if (itinerary.transferWalk && itinerary.transferWalk.distanceMeters > 5) {
+      const walkFrom = itinerary.transferWalk.from;
+      const walkTo = itinerary.transferWalk.to;
+      if (Array.isArray(walkFrom) && Array.isArray(walkTo) &&
+          Number.isFinite(walkFrom[0]) && Number.isFinite(walkFrom[1]) &&
+          Number.isFinite(walkTo[0]) && Number.isFinite(walkTo[1])) {
+        allPoints.push(walkFrom, walkTo);
+        const walkLine = L.polyline([walkFrom, walkTo], {
+          color: '#f59e0b',
+          weight: 4,
+          opacity: 0.9,
+          dashArray: '6, 8',
+          lineCap: 'round'
+        });
+        walkLine.bindTooltip(`🚶 Caminada de transbordament (~${itinerary.transferWalk.distanceMeters} m, ~${itinerary.transferWalk.walkingMinutes} min)`, {
+          sticky: true,
+          className: 'stop-hover-tooltip'
+        });
+        this.itineraryLayerGroup.addLayer(walkLine);
+      }
+    }
+
+    // 3. Render Major Turn Points: Boarding, Transfer(s), Destination
+    const legs = itinerary.legs;
+    const firstLeg = legs[0];
+    const lastLeg = legs[legs.length - 1];
+
+    // 🟢 Origin / Boarding Marker
+    if (firstLeg && firstLeg.fromStop) {
+      const oLat = parseFloat(firstLeg.fromStop.lat || firstLeg.fromStop.latitude);
+      const oLon = parseFloat(firstLeg.fromStop.lon || firstLeg.fromStop.longitude);
+      if (Number.isFinite(oLat) && Number.isFinite(oLon)) {
+        allPoints.push([oLat, oLon]);
+        const originColor = (firstLeg.lineColor || firstLeg.color || '#10b981');
+        const safeOriginColor = (typeof originColor === 'string' && /^#[0-9a-fA-F]{3,8}$|^rgba?\([0-9,.\s%]+\)$/.test(originColor.trim()))
+          ? originColor.trim() : '#10b981';
+        const originIcon = L.divIcon({
+          className: 'custom-itinerary-marker',
+          html: `
+            <div class="itinerary-node-badge node-origin" style="--node-color:${safeOriginColor}">
+              <span class="node-icon">🟢</span>
+              <div class="node-label">
+                <div class="node-action">Pujar a ${escHtml(firstLeg.lineCode)}</div>
+                <div class="node-name">${escHtml(firstLeg.fromStop.name)}</div>
+              </div>
+            </div>
+          `,
+          iconSize: [160, 36],
+          iconAnchor: [20, 18]
+        });
+        const m = L.marker([oLat, oLon], { icon: originIcon, zIndexOffset: 2000 });
+        this.itineraryLayerGroup.addLayer(m);
+      }
+    }
+
+    // 🔄 Transfer Marker(s)
+    for (let i = 0; i < legs.length - 1; i++) {
+      const curLeg = legs[i];
+      const nextLeg = legs[i + 1];
+      const tStop = curLeg.toStop || nextLeg.fromStop;
+      if (tStop) {
+        const tLat = parseFloat(tStop.lat || tStop.latitude);
+        const tLon = parseFloat(tStop.lon || tStop.longitude);
+        if (Number.isFinite(tLat) && Number.isFinite(tLon)) {
+          allPoints.push([tLat, tLon]);
+          const transferIcon = L.divIcon({
+            className: 'custom-itinerary-marker',
+            html: `
+              <div class="itinerary-node-badge node-transfer" style="--node-color:#f59e0b">
+                <span class="node-icon">🔄</span>
+                <div class="node-label">
+                  <div class="node-action">Transbordament ${escHtml(curLeg.lineCode)} ➔ ${escHtml(nextLeg.lineCode)}</div>
+                  <div class="node-name">${escHtml(tStop.name)}</div>
+                </div>
+              </div>
+            `,
+            iconSize: [180, 36],
+            iconAnchor: [20, 18]
+          });
+          const m = L.marker([tLat, tLon], { icon: transferIcon, zIndexOffset: 2000 });
+          this.itineraryLayerGroup.addLayer(m);
+        }
+      }
+    }
+
+    // 🏁 Destination Marker
+    if (lastLeg && lastLeg.toStop) {
+      const dLat = parseFloat(lastLeg.toStop.lat || lastLeg.toStop.latitude);
+      const dLon = parseFloat(lastLeg.toStop.lon || lastLeg.toStop.longitude);
+      if (Number.isFinite(dLat) && Number.isFinite(dLon)) {
+        allPoints.push([dLat, dLon]);
+        const destIcon = L.divIcon({
+          className: 'custom-itinerary-marker',
+          html: `
+            <div class="itinerary-node-badge node-destination" style="--node-color:#ef4444">
+              <span class="node-icon">🏁</span>
+              <div class="node-label">
+                <div class="node-action">Arribada (Baixar)</div>
+                <div class="node-name">${escHtml(lastLeg.toStop.name)}</div>
+              </div>
+            </div>
+          `,
+          iconSize: [160, 36],
+          iconAnchor: [20, 18]
+        });
+        const m = L.marker([dLat, dLon], { icon: destIcon, zIndexOffset: 2000 });
+        this.itineraryLayerGroup.addLayer(m);
+      }
+    }
+
+    // 4. Fit bounds
+    if (allPoints.length > 1) {
+      const bounds = L.latLngBounds(allPoints);
+      if (bounds && bounds.isValid()) {
+        this.map.fitBounds(bounds, { padding: [60, 60], maxZoom: 16 });
+      }
+    }
+  }
+
+  clearItinerary() {
+    this.isItineraryMode = false;
+    if (this.itineraryLayerGroup) {
+      this.itineraryLayerGroup.clearLayers();
     }
   }
 

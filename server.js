@@ -268,6 +268,11 @@ function harmonizeTargetEta(data, tracker, lineId, direction) {
 // 1. PUBLIC REST API ENDPOINTS
 // ==========================================
 
+// Dedicated Journey Planner Full Page
+app.get(['/plan', '/com-anar-hi', '/itinerari'], (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'plan.html'));
+});
+
 // Health Check
 app.get('/api/health', (req, res) => {
   res.json({

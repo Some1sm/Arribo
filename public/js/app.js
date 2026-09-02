@@ -3985,6 +3985,22 @@ class TransitApp {
       if (modal) modal.classList.remove('active');
     });
 
+    const backToPlannerBtn = document.getElementById('btn-itinerary-back-to-planner');
+    const closeItineraryBtn = document.getElementById('btn-itinerary-close');
+    const floatingBar = document.getElementById('itinerary-floating-bar');
+
+    backToPlannerBtn?.addEventListener('click', () => {
+      if (modal) modal.classList.add('active');
+    });
+
+    closeItineraryBtn?.addEventListener('click', () => {
+      if (floatingBar) floatingBar.classList.remove('active');
+      if (this.mapController && typeof this.mapController.clearItinerary === 'function') {
+        this.mapController.clearItinerary();
+      }
+      this.refreshAllData(false);
+    });
+
     modal?.addEventListener('click', (e) => {
       if (e.target === modal) modal.classList.remove('active');
     });
@@ -4047,7 +4063,7 @@ class TransitApp {
         const res = await fetch(url).then(r => r.json());
         if (!res.success || !res.itineraries || res.itineraries.length === 0) {
           if (resultsContainer) {
-            resultsContainer.innerHTML = `<div style="text-align:center; padding:2rem; color:var(--text-muted);">${this.esc(res.error || 'No s\'ha trobat cap ruta directa o amb 1 transbordament.')}</div>`;
+            resultsContainer.innerHTML = `<div style="text-align:center; padding:2rem; color:var(--text-muted);">${this.esc(res.message || res.error || 'No s\'ha trobat cap ruta directa o amb 1 transbordament.')}</div>`;
           }
           return;
         }
@@ -4147,12 +4163,26 @@ class TransitApp {
     const container = document.getElementById('planner-results-container');
     if (!container) return;
 
+    this._lastPlannedItineraries = itineraries;
+    this._lastPlannerOrigin = originStop;
+    this._lastPlannerDest = destStop;
+
     if (!Array.isArray(itineraries) || itineraries.length === 0) {
       container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);">No s\'ha trobat cap combinació de trajecte.</div>';
       return;
     }
 
-    container.innerHTML = itineraries.map((it) => {
+    const origName = originStop ? originStop.name : '';
+    const destName = destStop ? destStop.name : '';
+
+    container.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; padding:0 4px;">
+        <span style="font-size:0.8rem; font-weight:700; color:var(--text-muted);">${itineraries.length} ${itineraries.length === 1 ? 'OPCIÓ' : 'OPCIONS'}:</span>
+        <a href="/plan?from=${encodeURIComponent(origName)}&to=${encodeURIComponent(destName)}" target="_blank" class="maps-link" style="font-size:0.75rem; text-decoration:none; display:inline-flex; align-items:center; gap:4px;" title="Obrir planificador a pantalla completa">
+          <span>↗️ Pàgina completa</span>
+        </a>
+      </div>
+    ` + itineraries.map((it, idx) => {
       const isDirect = it.type === 'direct';
       const firstLeg = it.legs[0];
       const waitMin = Number.isFinite(firstLeg?.nextDepartureMins) 
@@ -4163,7 +4193,7 @@ class TransitApp {
       const waitText = Number.isFinite(waitMin) ? ` • Surt en ${waitMin} min` : '';
 
       return `
-        <div class="planner-itinerary-card">
+        <div class="planner-itinerary-card" data-itinerary-idx="${idx}" style="cursor:pointer;" title="Fes clic per veure la ruta al mapa">
           <div class="planner-card-header">
             <div class="planner-total-duration">
               <span>⏱️ ~${it.totalDurationMins} min</span>
@@ -4175,7 +4205,7 @@ class TransitApp {
           </div>
 
           <div class="planner-legs-flow">
-            ${it.legs.map((leg) => {
+            ${it.legs.map((leg, lIdx) => {
               const destText = leg.destination || (leg.toStop && leg.toStop.name) || '';
               return `
               <div class="planner-leg-item">
@@ -4189,10 +4219,10 @@ class TransitApp {
                     </span>
                   </div>
                   <div style="font-size:0.82rem; color:var(--text-secondary);">
-                    Pujar a: <strong>${this.esc(leg.fromStop.name)}</strong>
+                    🟢 Pujar a: <strong>${this.esc(leg.fromStop.name)}</strong>
                   </div>
                   <div style="font-size:0.82rem; color:var(--text-secondary);">
-                    Baixar a: <strong>${this.esc(leg.toStop.name)}</strong> (${leg.stopCount} parades, ~${leg.travelTimeMins} min)
+                    ${lIdx === it.legs.length - 1 ? '🏁' : '🔄'} Baixar a: <strong>${this.esc(leg.toStop.name)}</strong> (${leg.stopCount || leg.stopsCount} parades, ~${leg.travelTimeMins || leg.durationMinutes} min)
                   </div>
                 </div>
               </div>
@@ -4200,34 +4230,57 @@ class TransitApp {
             }).join('')}
           </div>
 
-          <div style="display:flex; justify-content:flex-end; margin-top:0.75rem;">
-            <button type="button" class="btn-primary btn-view-itinerary-line" data-line-id="${this.esc(firstLeg.lineId)}" data-dir-id="${this.esc(firstLeg.direction)}" data-stop-id="${this.esc(firstLeg.fromStop.id)}" style="padding:0.4rem 0.8rem; font-size:0.82rem;">
-              <span>🗺️ Veure Línia ${this.esc(firstLeg.lineCode)} al mapa</span>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.75rem; border-top:1px solid var(--border-subtle); padding-top:0.6rem;">
+            <span style="font-size:0.75rem; color:var(--text-muted); font-weight:600;">Fes clic per veure al mapa</span>
+            <button type="button" class="btn-primary btn-view-itinerary-map" data-itinerary-idx="${idx}" style="padding:0.35rem 0.8rem; font-size:0.82rem;">
+              <span>🗺️ Veure ruta al mapa</span>
             </button>
           </div>
         </div>
       `;
     }).join('');
 
-    container.querySelectorAll('.btn-view-itinerary-line').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        const lId = btn.getAttribute('data-line-id');
-        const dId = btn.getAttribute('data-dir-id');
-        const sId = btn.getAttribute('data-stop-id');
-        const modal = document.getElementById('planner-modal-backdrop');
-        if (modal) modal.classList.remove('active');
-        if (lId) {
-          if (dId) this.activeDirection = dId;
-          this.switchLine(lId);
-          if (sId) {
-            setTimeout(() => {
-              this.setTargetStop(sId);
-            }, 600);
-          }
+    container.querySelectorAll('.planner-itinerary-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const idx = parseInt(card.getAttribute('data-itinerary-idx'), 10);
+        if (!isNaN(idx) && this._lastPlannedItineraries && this._lastPlannedItineraries[idx]) {
+          this.showItineraryOnMap(this._lastPlannedItineraries[idx]);
         }
       });
     });
+  }
+
+  showItineraryOnMap(itinerary) {
+    if (!itinerary) return;
+
+    // 1. Close the modal
+    const modal = document.getElementById('planner-modal-backdrop');
+    if (modal) modal.classList.remove('active');
+
+    // 2. Render on Map
+    if (this.mapController && typeof this.mapController.renderItinerary === 'function') {
+      this.mapController.renderItinerary(itinerary);
+    }
+
+    // 3. Show floating guidance bar on the map
+    const bar = document.getElementById('itinerary-floating-bar');
+    const titleText = document.getElementById('itinerary-summary-text');
+    const stepsContainer = document.getElementById('itinerary-bar-steps');
+
+    if (bar && titleText && stepsContainer) {
+      titleText.textContent = `${itinerary.legs.map(l => l.lineCode).join(' ➔ ')} (~${itinerary.totalDurationMins} min)`;
+
+      stepsContainer.innerHTML = itinerary.legs.map((leg) => {
+        return `
+          <div class="itinerary-step-chip">
+            <span class="planner-leg-badge" style="background:${leg.lineColor || '#0ea5e9'}; padding:1px 5px; font-size:10px;">${this.esc(leg.lineCode)}</span>
+            <span>${this.esc(leg.fromStop.name)} ➔ ${this.esc(leg.toStop.name)}</span>
+          </div>
+        `;
+      }).join('<span style="color:var(--text-muted); font-size:0.8rem;">➔</span>');
+
+      bar.classList.add('active');
+    }
   }
 
   // ==========================================

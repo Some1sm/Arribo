@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ca" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Com anar-hi a Mataró — Planificador de Rutes | Arribo!</title>
+  <meta name="description" content="Planificador de viatges i connexions d'autobús urbà i Rodalies a Mataró. Descobreix la millor ruta directa o amb transbordament.">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  <link rel="stylesheet" href="/css/style.css?v=6.0.2">
+  <style>
+    /* Dedicated Full-Page Planner Layout */
+    body.planner-page-body {
+      margin: 0;
+      padding: 0;
+      height: 100vh;
+      height: 100dvh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-body, #0a0e17);
+      color: var(--text-primary, #f1f5f9);
+      font-family: var(--font-main, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+    }
+
+    .plan-header {
+      height: 56px;
+      background: var(--bg-surface-elevated, #111827);
+      border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 1.25rem;
+      flex-shrink: 0;
+      z-index: 1000;
+    }
+
+    .plan-logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-decoration: none;
+      color: var(--text-primary, #fff);
+      font-weight: 800;
+      font-size: 1.15rem;
+    }
+
+    .plan-main-container {
+      flex: 1;
+      display: flex;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Sidebar / Search Column */
+    .plan-sidebar {
+      width: 420px;
+      max-width: 100%;
+      height: 100%;
+      background: var(--bg-surface, #0f172a);
+      border-right: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      z-index: 500;
+      box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
+    }
+
+    .plan-search-box {
+      padding: 1.25rem;
+      border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+      background: var(--bg-surface-elevated, #1a2337);
+      flex-shrink: 0;
+    }
+
+    .plan-results-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* Full-screen Map */
+    .plan-map-view {
+      flex: 1;
+      height: 100%;
+      position: relative;
+    }
+
+    #plan-map {
+      width: 100%;
+      height: 100%;
+      background: #0f172a;
+    }
+
+    /* Preset Hub Chips */
+    .plan-presets {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      overflow-x: auto;
+      margin-top: 0.75rem;
+      padding-bottom: 4px;
+    }
+
+    .plan-preset-chip {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.15));
+      border-radius: 12px;
+      color: var(--text-secondary, #94a3b8);
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 3px 8px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.15s ease;
+    }
+
+    .plan-preset-chip:hover {
+      background: rgba(14, 165, 233, 0.2);
+      color: #38bdf8;
+      border-color: rgba(14, 165, 233, 0.4);
+    }
+
+    .plan-itinerary-active {
+      border: 2px solid #38bdf8 !important;
+      box-shadow: 0 0 16px rgba(56, 189, 248, 0.35) !important;
+    }
+
+    /* Responsive Mobile adjustments */
+    @media (max-width: 768px) {
+      .plan-main-container {
+        flex-direction: column-reverse;
+      }
+
+      .plan-sidebar {
+        width: 100%;
+        height: 55%;
+        border-right: none;
+        border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.15));
+        box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.6);
+      }
+
+      .plan-map-view {
+        height: 45%;
+      }
+
+      .plan-search-box {
+        padding: 0.85rem;
+      }
+    }
+  </style>
+</head>
+<body class="planner-page-body">
+  <!-- Top Navigation Bar -->
+  <header class="plan-header">
+    <a href="/" class="plan-logo" title="Tornar al visor complet d'Arribo!">
+      <span style="font-size:1.3rem;">🚌</span>
+      <span>Arribo!</span>
+      <span style="font-size:0.75rem; font-weight:600; background:rgba(14,165,233,0.2); color:#38bdf8; padding:2px 6px; border-radius:4px; margin-left:4px;">Rutes</span>
+    </a>
+
+    <div style="display:flex; align-items:center; gap:8px;">
+      <a href="/" class="btn-itinerary-back" style="text-decoration:none;">
+        <span>🗺️</span>
+        <span>Mapa general</span>
+      </a>
+      <button type="button" class="btn-icon btn-theme-toggle" id="btn-page-theme-toggle" title="Canviar tema" style="background:transparent; border:none; font-size:1.1rem; cursor:pointer;">
+        🌓
+      </button>
+    </div>
+  </header>
+
+  <main class="plan-main-container">
+    <!-- Left Sidebar: Search & Results -->
+    <aside class="plan-sidebar">
+      <div class="plan-search-box">
+        <div class="planner-form-container" style="padding:0; background:transparent; border:none; box-shadow:none;">
+          <!-- Origin Input -->
+          <div class="planner-input-group" style="margin-bottom:0.6rem;">
+            <label class="planner-label" for="page-planner-origin">
+              <span class="planner-dot dot-origin"></span>
+              <span>ORIGEN:</span>
+            </label>
+            <div class="planner-input-wrapper">
+              <input type="text" id="page-planner-origin" class="planner-input" placeholder="Parada d'origen (ex: Roca Blanca)" autocomplete="off">
+              <button type="button" class="btn-planner-gps" id="btn-page-planner-gps" title="Utilitzar la meva ubicació actual">
+                <span>📍 GPS</span>
+              </button>
+            </div>
+            <div id="page-planner-origin-dropdown" class="planner-dropdown" style="display:none;"></div>
+          </div>
+
+          <!-- Swap Button -->
+          <div style="display:flex; justify-content:center; margin:-6px 0 2px 0;">
+            <button type="button" class="btn-planner-swap" id="btn-page-planner-swap" title="Intercanviar origen i destinació">
+              <span>⇅</span>
+            </button>
+          </div>
+
+          <!-- Destination Input -->
+          <div class="planner-input-group" style="margin-bottom:0.75rem;">
+            <label class="planner-label" for="page-planner-dest">
+              <span class="planner-dot dot-dest"></span>
+              <span>DESTINACIÓ:</span>
+            </label>
+            <div class="planner-input-wrapper">
+              <input type="text" id="page-planner-dest" class="planner-input" placeholder="Parada de destí (ex: Rodalies)" autocomplete="off">
+            </div>
+            <div id="page-planner-dest-dropdown" class="planner-dropdown" style="display:none;"></div>
+          </div>
+
+          <!-- Search Button -->
+          <button type="button" class="btn-planner-search" id="btn-page-planner-search" style="padding:0.7rem; font-size:0.92rem;">
+            <span>🔍 Cercar la millor ruta</span>
+          </button>
+
+          <!-- Quick Presets -->
+          <div class="plan-presets">
+            <span style="font-size:0.7rem; color:var(--text-muted); font-weight:700;">DESTINACIONS:</span>
+            <button type="button" class="plan-preset-chip" data-stop="Hospital de Mataró">🏥 Hospital</button>
+            <button type="button" class="plan-preset-chip" data-stop="Estació Rodalies">🚆 Rodalies</button>
+            <button type="button" class="plan-preset-chip" data-stop="Mataró Parc">🛍️ Mataró Parc</button>
+            <button type="button" class="plan-preset-chip" data-stop="Pl. de les Tereses">🏛️ Pl. Tereses</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Results List -->
+      <div class="plan-results-area" id="page-planner-results">
+        <div style="text-align:center; padding:3rem 1rem; color:var(--text-secondary);">
+          <div style="font-size:2.5rem; margin-bottom:0.75rem;">🧭</div>
+          <div style="font-weight:700; font-size:1rem; color:var(--text-primary); margin-bottom:0.35rem;">On vols anar a Mataró?</div>
+          <div style="font-size:0.85rem; line-height:1.4;">Introdueix una parada d'origen i una de destinació per calcular la combinació més ràpida de bus.</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Right Area: Interactive Leaflet Map -->
+    <section class="plan-map-view" aria-label="Visualització del mapa del trajecte">
+      <div id="plan-map"></div>
+    </section>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="/js/map.js?v=6.0.2"></script>
+  <script src="/js/plan.js?v=6.0.2"></script>
+</body>
+</html>

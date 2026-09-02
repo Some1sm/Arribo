@@ -42,6 +42,11 @@ class TransitRouter {
           lon: parseFloat(s.longitude || (s.coords && s.coords.lon) || 0)
         }));
 
+        const rawCoords = (r.coords || []).map(c => [
+          parseFloat(c.Latitude || c.lat || c.latitude),
+          parseFloat(c.Longitude || c.lon || c.longitude)
+        ]).filter(c => Number.isFinite(c[0]) && Number.isFinite(c[1]));
+
         if (stopsList.length > 1) {
           this.routesGraph.push({
             lineId: String(lineId),
@@ -51,13 +56,54 @@ class TransitRouter {
             routeName: r.name || `${stopsList[0].name} ➔ ${stopsList[stopsList.length - 1].name}`,
             originName: stopsList[0].name,
             destName: stopsList[stopsList.length - 1].name,
-            stops: stopsList
+            stops: stopsList,
+            coords: rawCoords
           });
         }
       });
     }
 
     this.isBuilt = true;
+  }
+
+  sliceRoutePolyline(rawCoords, fromStop, toStop) {
+    if (!fromStop || !toStop) return [];
+    const fromLat = parseFloat(fromStop.lat ?? fromStop.latitude ?? 0);
+    const fromLon = parseFloat(fromStop.lon ?? fromStop.longitude ?? 0);
+    const toLat = parseFloat(toStop.lat ?? toStop.latitude ?? 0);
+    const toLon = parseFloat(toStop.lon ?? toStop.longitude ?? 0);
+
+    const fallback = [[fromLat, fromLon], [toLat, toLon]];
+    if (!Array.isArray(rawCoords) || rawCoords.length < 2) {
+      return fallback;
+    }
+
+    const findClosestIndex = (lat, lon, polyline, startIdx = 0) => {
+      let bestIdx = startIdx;
+      let bestDist = Infinity;
+      for (let i = startIdx; i < polyline.length; i++) {
+        const pt = polyline[i];
+        if (!Array.isArray(pt) || !Number.isFinite(pt[0]) || !Number.isFinite(pt[1])) continue;
+        const d = geoEngine.calculateDistanceMeters(lat, lon, pt[0], pt[1]);
+        if (Number.isFinite(d) && d < bestDist) {
+          bestDist = d;
+          bestIdx = i;
+        }
+      }
+      return bestIdx;
+    };
+
+    const iStart = findClosestIndex(fromLat, fromLon, rawCoords, 0);
+    const iEnd = findClosestIndex(toLat, toLon, rawCoords, iStart);
+
+    let sliced = rawCoords.slice(iStart, iEnd + 1);
+    if (sliced.length < 2) {
+      sliced = fallback;
+    } else {
+      sliced[0] = [fromLat, fromLon];
+      sliced[sliced.length - 1] = [toLat, toLon];
+    }
+    return sliced;
   }
 
   _resolveStop(query) {
@@ -69,9 +115,14 @@ class TransitRouter {
     if (!this.tracker || !this.tracker.allStopsMap) return [];
     const allStops = this.tracker.allStopsMap;
 
+    if (query === null || query === undefined) return [];
+
     // Coordinate object { lat, lon }
-    if (typeof query === 'object' && query !== null && query.lat !== undefined && query.lon !== undefined) {
-      const nearest = this.findNearestStop(query.lat, query.lon);
+    if (typeof query === 'object' && query.lat !== undefined && query.lon !== undefined) {
+      const nLat = parseFloat(query.lat);
+      const nLon = parseFloat(query.lon);
+      if (!Number.isFinite(nLat) || !Number.isFinite(nLon)) return [];
+      const nearest = this.findNearestStop(nLat, nLon);
       if (!nearest) return [];
       return [nearest];
     }
@@ -167,6 +218,10 @@ class TransitRouter {
 
   findNearestStop(lat, lon, maxDistanceMeters = 800) {
     if (!this.tracker || !this.tracker.allStopsMap) return null;
+    const nLat = parseFloat(lat);
+    const nLon = parseFloat(lon);
+    if (!Number.isFinite(nLat) || !Number.isFinite(nLon)) return null;
+
     let closest = null;
     let minDistance = Infinity;
 
@@ -175,8 +230,8 @@ class TransitRouter {
       const sLon = parseFloat(s.lon || s.longitude);
       if (!Number.isFinite(sLat) || !Number.isFinite(sLon)) continue;
 
-      const dist = geoEngine.calculateDistanceMeters(lat, lon, sLat, sLon);
-      if (dist < minDistance && dist <= maxDistanceMeters) {
+      const dist = geoEngine.calculateDistanceMeters(nLat, nLon, sLat, sLon);
+      if (Number.isFinite(dist) && dist < minDistance && dist <= maxDistanceMeters) {
         minDistance = dist;
         closest = {
           id: String(s.id),
@@ -257,6 +312,8 @@ class TransitRouter {
           const rideMinutes = Math.max(3, Math.round(stopsCount * 1.8));
           const totalDur = rideMinutes + (o.walkingMinutes || 0) + (d.walkingMinutes || 0);
 
+          const polyline = this.sliceRoutePolyline(route.coords, intermediateStops[0], intermediateStops[intermediateStops.length - 1]);
+
           directRoutes.push({
             type: 'direct',
             transfersCount: 0,
@@ -278,6 +335,7 @@ class TransitRouter {
                 fromStop: intermediateStops[0],
                 toStop: intermediateStops[intermediateStops.length - 1],
                 intermediateStops,
+                polyline,
                 stopsCount,
                 stopCount: stopsCount,
                 durationMinutes: rideMinutes,
@@ -324,13 +382,29 @@ class TransitRouter {
               const leg2RideMinutes = Math.max(2, Math.round(leg2StopsCount * 1.8));
               const transferWaitMinutes = 5;
 
+              const leg1Polyline = this.sliceRoutePolyline(route1.coords, leg1Stops[0], leg1Stops[leg1Stops.length - 1]);
+              const leg2Polyline = this.sliceRoutePolyline(route2.coords, leg2Stops[0], leg2Stops[leg2Stops.length - 1]);
+
+              const rawTransferDist = geoEngine.calculateDistanceMeters(
+                leg1Stops[leg1Stops.length - 1].lat, leg1Stops[leg1Stops.length - 1].lon,
+                leg2Stops[0].lat, leg2Stops[0].lon
+              );
+              const transferDist = Number.isFinite(rawTransferDist) ? rawTransferDist : 0;
+              const transferWalk = {
+                from: [leg1Stops[leg1Stops.length - 1].lat, leg1Stops[leg1Stops.length - 1].lon],
+                to: [leg2Stops[0].lat, leg2Stops[0].lon],
+                distanceMeters: Math.round(transferDist),
+                walkingMinutes: Math.max(0, Math.round(transferDist / 80))
+              };
+
               const totalDuration = leg1RideMinutes + transferWaitMinutes + leg2RideMinutes +
-                (o.walkingMinutes || 0) + (d.walkingMinutes || 0);
+                transferWalk.walkingMinutes + (o.walkingMinutes || 0) + (d.walkingMinutes || 0);
 
               oneTransferRoutes.push({
                 type: 'transfer',
                 transfersCount: 1,
                 transferStop,
+                transferWalk,
                 stopsCount: leg1StopsCount + leg2StopsCount,
                 stopCount: leg1StopsCount + leg2StopsCount,
                 rideMinutes: leg1RideMinutes + leg2RideMinutes,
@@ -350,6 +424,7 @@ class TransitRouter {
                     fromStop: leg1Stops[0],
                     toStop: leg1Stops[leg1Stops.length - 1],
                     intermediateStops: leg1Stops,
+                    polyline: leg1Polyline,
                     stopsCount: leg1StopsCount,
                     stopCount: leg1StopsCount,
                     durationMinutes: leg1RideMinutes,
@@ -366,6 +441,7 @@ class TransitRouter {
                     fromStop: leg2Stops[0],
                     toStop: leg2Stops[leg2Stops.length - 1],
                     intermediateStops: leg2Stops,
+                    polyline: leg2Polyline,
                     stopsCount: leg2StopsCount,
                     stopCount: leg2StopsCount,
                     durationMinutes: leg2RideMinutes,
