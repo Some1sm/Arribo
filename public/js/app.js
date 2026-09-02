@@ -888,22 +888,40 @@ class TransitApp {
       const topDeps = deps.slice(0, 2);
       el.innerHTML = topDeps.map(d => {
         const lineCode = d.lineId ? `L${String(d.lineId).replace(/^L/i, '')}` : 'Bus';
+        const lineObj = this.availableLines?.find(l => String(l.id) === String(d.lineId) || String(l.code) === lineCode);
+        const lineColor = lineObj?.color || d.lineColor || '#0ea5e9';
+        const contrastColor = this.getContrastColor(lineColor);
+
         const minsAway = d.minutesAway !== undefined && d.minutesAway !== null ? d.minutesAway : null;
         const minsText = minsAway !== null
           ? (minsAway <= 0 ? 'Ara' : (minsAway === 1 ? '1 min' : `${minsAway} min`))
           : (d.departureTime || '--:--');
 
-        const delayBadge = d.isRealTime
-          ? (d.delayBadgeText ? `<span style="color:#10b981; font-weight:700;">🟢 ${this.esc(d.delayBadgeText)}</span>` : '<span style="color:#10b981;">🟢 Temps Real</span>')
-          : `<span style="color:var(--text-muted);">📅 Teòric</span>`;
+        // Clean delay badge without duplicated emojis or wrapping
+        let delayBadge = '';
+        if (d.isRealTime) {
+          const rawText = String(d.delayBadgeText || '').replace(/^[🟢⏱️⚠️]\s*/, '').trim();
+          if (rawText.toLowerCase().includes('regulaci') || (d.delayBadgeText && d.delayBadgeText.includes('⏱️'))) {
+            delayBadge = `<span class="fav-status-badge status-regulation">⏱️ Regulació</span>`;
+          } else if (rawText.toLowerCase().includes('retard') || (d.delayMinutes && d.delayMinutes > 2)) {
+            delayBadge = `<span class="fav-status-badge status-delay">+${d.delayMinutes || 3}m</span>`;
+          } else {
+            delayBadge = `<span class="fav-status-badge status-ontime">🟢 Puntual</span>`;
+          }
+        } else {
+          delayBadge = `<span class="fav-status-badge status-scheduled">📅 Teòric</span>`;
+        }
+
+        const cleanDest = (d.destination || 'Destí').replace(/^Cap a\s+/i, '').trim();
 
         return `
           <div class="landing-fav-arrival-pill">
-            <span><strong>${this.esc(lineCode)}</strong> cap a ${this.esc((d.destination || 'Destí').replace(/^Cap a\s+/i, ''))}</span>
-            <span style="display:flex; align-items:center; gap:6px;">
-              ${delayBadge}
-              <strong style="color:${minsAway !== null && minsAway <= 3 ? '#10b981' : 'var(--text-primary)'};">${minsText}</strong>
-            </span>
+            <div class="fav-arrival-route">
+              <span class="fav-line-chip" style="background:${this.esc(lineColor)}; color:${contrastColor};">${this.esc(lineCode)}</span>
+              <span class="fav-dest-text" title="${this.esc(cleanDest)}">${this.esc(cleanDest)}</span>
+            </div>
+            ${delayBadge}
+            <span class="fav-countdown-badge ${minsAway !== null && minsAway <= 1 ? 'countdown-now' : ''}">${this.esc(minsText)}</span>
           </div>
         `;
       }).join('');
@@ -1641,6 +1659,13 @@ class TransitApp {
     }
   }
 
+  setWorstStopsLimit(limit) {
+    this.journalismWorstStopsLimit = Number(limit) || 10;
+    if (this.currentJournalismReport) {
+      this.renderJournalismReport(this.currentJournalismReport);
+    }
+  }
+
   renderJournalismReport(report) {
     const container = document.getElementById('journalism-content-container');
     if (!container) return;
@@ -1737,13 +1762,13 @@ class TransitApp {
 
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
           <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Retard Mitjà Xarxa</div>
-          <div style="font-size:1.6rem; font-weight:700; color:#38bdf8; margin-top:0.2rem;">+${s.networkAvgDelay || 0} min</div>
+          <div style="font-size:1.6rem; font-weight:700; color:#38bdf8; margin-top:0.2rem;">${Number(s.networkAvgDelay) > 0 ? '+' : ''}${s.networkAvgDelay || 0} min</div>
           <div style="font-size:0.72rem; color:var(--text-muted);">Puntualitat de referència</div>
         </div>
 
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
           <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Retard Màxim Registrat</div>
-          <div style="font-size:1.6rem; font-weight:700; color:#ef4444; margin-top:0.2rem;">+${s.networkMaxDelay || 0} min</div>
+          <div style="font-size:1.6rem; font-weight:700; color:#ef4444; margin-top:0.2rem;">${Number(s.networkMaxDelay) > 0 ? '+' : ''}${s.networkMaxDelay || 0} min</div>
           <div style="font-size:0.72rem; color:var(--text-muted);">Afectació puntual extrema</div>
         </div>
       </div>
@@ -1767,20 +1792,23 @@ class TransitApp {
                 </tr>
               </thead>
               <tbody>
-                ${mostDelayed.map((l, i) => `
+                ${mostDelayed.map((l, i) => {
+                  const avgStr = Number(l.avgDelay) > 0 ? `+${l.avgDelay} min` : (Number(l.avgDelay) < 0 ? `${l.avgDelay} min` : '0.0 min');
+                  const maxStr = Number(l.maxDelay) > 0 ? `+${l.maxDelay} min` : `${l.maxDelay || 0} min`;
+                  return `
                   <tr onclick="window.transitApp.closeJournalismModal(); window.transitApp.switchLine('${this.jsSafe(l.lineId || l.lineCode)}');" style="border-bottom:1px solid var(--border-subtle); background:${i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'}; cursor:pointer;" title="Clica per veure la línia ${this.esc(l.lineCode)} al mapa">
                     <td style="padding:0.6rem 0.8rem; font-weight:700; color:var(--brand-primary);">
                       <span style="background:${this.esc(l.color || 'var(--brand-primary)')}; color:#fff; padding:0.15rem 0.45rem; border-radius:6px; margin-right:0.4rem; font-size:0.75rem; display:inline-block;">${this.esc(l.lineCode)}</span>
                       <span style="font-size:0.78rem; color:var(--text-secondary); font-weight:500;">${l.name && l.name !== l.lineCode ? this.esc(l.name) : ''}</span>
                     </td>
                     <td style="padding:0.6rem 0.8rem; color:var(--text-muted);">${this.esc(l.agency)}</td>
-                    <td style="padding:0.6rem 0.8rem; font-weight:700; color:#ef4444;">+${l.avgDelay} min</td>
-                    <td style="padding:0.6rem 0.8rem; color:var(--text-muted);">+${l.maxDelay} min</td>
+                    <td style="padding:0.6rem 0.8rem; font-weight:700; color:${Number(l.avgDelay) > 0 ? '#ef4444' : '#10b981'};">${avgStr}</td>
+                    <td style="padding:0.6rem 0.8rem; color:var(--text-muted);">${maxStr}</td>
                     <td style="padding:0.6rem 0.8rem;">
                       <span style="background:rgba(239,68,68,0.15); color:#f87171; padding:0.15rem 0.45rem; border-radius:6px; font-weight:600;">${l.latePercentage}%</span>
                     </td>
                   </tr>
-                `).join('')}
+                `;}).join('')}
               </tbody>
             </table>
           </div>
@@ -1788,47 +1816,83 @@ class TransitApp {
       </div>
 
       <!-- Ranking: Worst Stops (Bottlenecks) -->
-      <div style="margin-bottom:1.5rem;">
-        <h4 style="font-size:0.95rem; font-weight:700; margin-bottom:0.6rem; display:flex; align-items:center; justify-content:space-between;">
-          <span style="display:flex; align-items:center; gap:0.4rem;">📍 Colls d'Ampolla: Parades amb Més Retard</span>
-          <span style="font-size:0.75rem; font-weight:400; color:var(--text-muted);">Clica a les capçaleres per ordenar ↕</span>
-        </h4>
-        ${worstStops.length === 0 ? '<div style="color:var(--text-muted); font-size:0.85rem; padding:0.8rem; background:var(--bg-elevated); border-radius:8px;">Sense punts negres registrats o cap parada coincideix amb el filtre.</div>' : `
-          <div style="border:1px solid var(--border-subtle); border-radius:10px; overflow:hidden;">
-            <table style="width:100%; border-collapse:collapse; font-size:0.83rem; text-align:left;">
-              <thead>
-                <tr style="background:var(--bg-surface); border-bottom:1px solid var(--border-subtle); color:var(--text-muted); font-size:0.72rem; text-transform:uppercase;">
-                  <th onclick="window.transitApp.handleJournalismSort('worstStops', 'stopName')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">Parada (Punt Negre) ${getSortIndicator('worstStops', 'stopName')}</th>
-                  <th onclick="window.transitApp.handleJournalismSort('worstStops', 'lineCode')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">Línia ${getSortIndicator('worstStops', 'lineCode')}</th>
-                  <th onclick="window.transitApp.handleJournalismSort('worstStops', 'agency')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">Operador ${getSortIndicator('worstStops', 'agency')}</th>
-                  <th onclick="window.transitApp.handleJournalismSort('worstStops', 'avgDelay')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">Retard Mitjà ${getSortIndicator('worstStops', 'avgDelay')}</th>
-                  <th onclick="window.transitApp.handleJournalismSort('worstStops', 'maxDelay')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">Retard Màx. ${getSortIndicator('worstStops', 'maxDelay')}</th>
-                  <th onclick="window.transitApp.handleJournalismSort('worstStops', 'severeLatePct')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">% Retards Greus ${getSortIndicator('worstStops', 'severeLatePct')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${worstStops.map((st, i) => `
-                  <tr style="border-bottom:1px solid var(--border-subtle); background:${i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'};">
-                    <td style="padding:0.6rem 0.8rem; font-weight:600; color:var(--text-primary);">
-                      <div style="display:flex; align-items:center; gap:0.4rem;">
-                        <span style="color:#f59e0b;">📍</span>
-                        <span>${this.esc(st.stopName)}</span>
-                      </div>
-                    </td>
-                    <td style="padding:0.6rem 0.8rem; font-weight:700; color:var(--brand-primary);">${this.esc(st.lineCode)}</td>
-                    <td style="padding:0.6rem 0.8rem; color:var(--text-muted);">${this.esc(st.agency)}</td>
-                    <td style="padding:0.6rem 0.8rem; font-weight:700; color:#ef4444;">+${st.avgDelay} min</td>
-                    <td style="padding:0.6rem 0.8rem; color:var(--text-muted);">+${st.maxDelay} min</td>
-                    <td style="padding:0.6rem 0.8rem;">
-                      <span style="background:${st.severeLatePct >= 30 ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.15)'}; color:${st.severeLatePct >= 30 ? '#f87171' : '#fbbf24'}; padding:0.15rem 0.45rem; border-radius:6px; font-weight:600;">${st.severeLatePct}%</span>
-                    </td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
+      ${(() => {
+        const worstLimit = this.journalismWorstStopsLimit || 10;
+        const totalWorst = worstStops.length;
+        const displayedWorstStops = worstStops.slice(0, worstLimit);
+        const hasMoreWorst = totalWorst > worstLimit;
+
+        return `
+        <div style="margin-bottom:1.5rem;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.65rem;">
+            <h4 style="font-size:0.95rem; font-weight:700; margin:0; display:flex; align-items:center; gap:0.4rem;">
+              <span>📍 Colls d'Ampolla: Parades amb Més Retard</span>
+              <span style="font-size:0.75rem; font-weight:500; color:var(--text-muted);">(Mostrant ${displayedWorstStops.length} de ${totalWorst})</span>
+            </h4>
+            <div style="display:flex; align-items:center; gap:0.35rem;">
+              <span style="font-size:0.72rem; color:var(--text-muted); margin-right:2px;">Filtre:</span>
+              <button type="button" class="btn-secondary" onclick="window.transitApp.setWorstStopsLimit(10)" style="padding:0.25rem 0.65rem; font-size:0.72rem; border-radius:6px; cursor:pointer; ${worstLimit === 10 ? 'background:var(--brand-primary); color:#fff; font-weight:700;' : ''}">Top 10</button>
+              <button type="button" class="btn-secondary" onclick="window.transitApp.setWorstStopsLimit(25)" style="padding:0.25rem 0.65rem; font-size:0.72rem; border-radius:6px; cursor:pointer; ${worstLimit === 25 ? 'background:var(--brand-primary); color:#fff; font-weight:700;' : ''}">Top 25</button>
+              <button type="button" class="btn-secondary" onclick="window.transitApp.setWorstStopsLimit(9999)" style="padding:0.25rem 0.65rem; font-size:0.72rem; border-radius:6px; cursor:pointer; ${worstLimit >= 9999 ? 'background:var(--brand-primary); color:#fff; font-weight:700;' : ''}">Totes (${totalWorst})</button>
+            </div>
           </div>
-        `}
-      </div>
+          ${totalWorst === 0 ? '<div style="color:var(--text-muted); font-size:0.85rem; padding:0.8rem; background:var(--bg-elevated); border-radius:8px;">Sense punts negres registrats o cap parada coincideix amb el filtre.</div>' : `
+            <div style="border:1px solid var(--border-subtle); border-radius:10px; overflow:hidden;">
+              <table style="width:100%; border-collapse:collapse; font-size:0.83rem; text-align:left;">
+                <thead>
+                  <tr style="background:var(--bg-surface); border-bottom:1px solid var(--border-subtle); color:var(--text-muted); font-size:0.72rem; text-transform:uppercase;">
+                    <th onclick="window.transitApp.handleJournalismSort('worstStops', 'stopName')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">Parada (Punt Negre) ${getSortIndicator('worstStops', 'stopName')}</th>
+                    <th onclick="window.transitApp.handleJournalismSort('worstStops', 'lineCode')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">Línia ${getSortIndicator('worstStops', 'lineCode')}</th>
+                    <th onclick="window.transitApp.handleJournalismSort('worstStops', 'agency')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">Operador ${getSortIndicator('worstStops', 'agency')}</th>
+                    <th onclick="window.transitApp.handleJournalismSort('worstStops', 'avgDelay')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">Retard Mitjà ${getSortIndicator('worstStops', 'avgDelay')}</th>
+                    <th onclick="window.transitApp.handleJournalismSort('worstStops', 'maxDelay')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">Retard Màx. ${getSortIndicator('worstStops', 'maxDelay')}</th>
+                    <th onclick="window.transitApp.handleJournalismSort('worstStops', 'severeLatePct')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">% Retards Greus ${getSortIndicator('worstStops', 'severeLatePct')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${displayedWorstStops.map((st, i) => {
+                    const sAvgStr = Number(st.avgDelay) > 0 ? `+${st.avgDelay} min` : (Number(st.avgDelay) < 0 ? `${st.avgDelay} min` : '0.0 min');
+                    const sMaxStr = Number(st.maxDelay) > 0 ? `+${st.maxDelay} min` : `${st.maxDelay || 0} min`;
+                    return `
+                    <tr style="border-bottom:1px solid var(--border-subtle); background:${i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'};">
+                      <td style="padding:0.6rem 0.8rem; font-weight:600; color:var(--text-primary);">
+                        <div style="display:flex; align-items:center; gap:0.4rem;">
+                          <span style="color:#f59e0b;">📍</span>
+                          <span>${this.esc(st.stopName)}</span>
+                        </div>
+                      </td>
+                      <td style="padding:0.6rem 0.8rem; font-weight:700; color:var(--brand-primary);">${this.esc(st.lineCode)}</td>
+                      <td style="padding:0.6rem 0.8rem; color:var(--text-muted);">${this.esc(st.agency)}</td>
+                      <td style="padding:0.6rem 0.8rem; font-weight:700; color:${Number(st.avgDelay) > 0 ? '#ef4444' : '#10b981'};">${sAvgStr}</td>
+                      <td style="padding:0.6rem 0.8rem; color:var(--text-muted);">${sMaxStr}</td>
+                      <td style="padding:0.6rem 0.8rem;">
+                        <span style="background:${st.severeLatePct >= 30 ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.15)'}; color:${st.severeLatePct >= 30 ? '#f87171' : '#fbbf24'}; padding:0.15rem 0.45rem; border-radius:6px; font-weight:600;">${st.severeLatePct}%</span>
+                      </td>
+                    </tr>
+                  `;}).join('')}
+                </tbody>
+              </table>
+              ${hasMoreWorst ? `
+                <div style="display:flex; justify-content:center; align-items:center; gap:0.5rem; padding:0.65rem; background:var(--bg-elevated); border-top:1px solid var(--border-subtle);">
+                  <button type="button" class="btn-primary" onclick="window.transitApp.setWorstStopsLimit(${worstLimit + 15})" style="padding:0.35rem 0.85rem; font-size:0.78rem; cursor:pointer;">
+                    ⬇️ Mostra'n 15 més (${displayedWorstStops.length} de ${totalWorst})
+                  </button>
+                  <button type="button" class="btn-secondary" onclick="window.transitApp.setWorstStopsLimit(9999)" style="padding:0.35rem 0.85rem; font-size:0.78rem; cursor:pointer;">
+                    Veure totes (${totalWorst})
+                  </button>
+                </div>
+              ` : (worstLimit > 10 ? `
+                <div style="display:flex; justify-content:center; align-items:center; padding:0.55rem; background:var(--bg-elevated); border-top:1px solid var(--border-subtle);">
+                  <button type="button" class="btn-secondary" onclick="window.transitApp.setWorstStopsLimit(10)" style="padding:0.3rem 0.8rem; font-size:0.78rem; cursor:pointer;">
+                    ⬆️ Reduir al Top 10
+                  </button>
+                </div>
+              ` : '')}
+            </div>
+          `}
+        </div>
+        `;
+      })()}
 
       <!-- Ranking: Operators Performance -->
       <div style="margin-bottom:1.5rem;">
@@ -3976,10 +4040,14 @@ class TransitApp {
     const originGeoBtn = document.getElementById('btn-planner-origin-geo');
     const resultsContainer = document.getElementById('planner-results-container');
 
-    openBtns.forEach(b => b?.addEventListener('click', (e) => {
-      e.preventDefault();
-      if (modal) modal.classList.add('active');
-    }));
+    openBtns.forEach(b => {
+      if (b && b.tagName !== 'A') {
+        b.addEventListener('click', (e) => {
+          e.preventDefault();
+          if (modal) modal.classList.add('active');
+        });
+      }
+    });
 
     closeBtn?.addEventListener('click', () => {
       if (modal) modal.classList.remove('active');
@@ -3995,6 +4063,10 @@ class TransitApp {
 
     closeItineraryBtn?.addEventListener('click', () => {
       if (floatingBar) floatingBar.classList.remove('active');
+      const busCounter = document.getElementById('map-bus-counter-tag');
+      if (busCounter) busCounter.style.display = '';
+      const mapTitle = document.getElementById('map-line-title');
+      if (mapTitle && this._savedMapTitle) mapTitle.textContent = this._savedMapTitle;
       if (this.mapController && typeof this.mapController.clearItinerary === 'function') {
         this.mapController.clearItinerary();
       }
@@ -4088,8 +4160,10 @@ class TransitApp {
     if (!inputEl) return;
     const dropdown = document.getElementById(dropdownId);
     if (!dropdown) return;
+    let debounceTimer = null;
 
     inputEl.addEventListener('input', () => {
+      clearTimeout(debounceTimer);
       const q = inputEl.value.trim().toLowerCase();
       if (!q || q.length < 2) {
         dropdown.style.display = 'none';
@@ -4097,49 +4171,58 @@ class TransitApp {
         return;
       }
 
-      const seen = new Set();
-      const matches = [];
+      debounceTimer = setTimeout(async () => {
+        const seen = new Set();
+        const matches = [];
 
-      const pois = [
-        { name: 'Estació Rodalies Mataró (Renfe)', id: '1016' },
-        { name: 'Plaça de les Tereses (Centre)', id: '1' },
-        { name: 'Hospital de Mataró', id: '344' },
-        { name: 'Mataró Parc (Centre Comercial)', id: '333' },
-        { name: 'TecnoCampus Mataró', id: '277' },
-        { name: 'Parc Central', id: '15' }
-      ];
+        const pois = [
+          { name: 'Estació Rodalies Mataró (Renfe)', id: '1016' },
+          { name: 'Plaça de les Tereses (Centre)', id: '1060' },
+          { name: 'Hospital de Mataró', id: '1001' },
+          { name: 'Mataró Parc (Centre Comercial)', id: '1002' },
+          { name: 'TecnoCampus Mataró', id: '1080' },
+          { name: 'Parc Central', id: '1015' }
+        ];
 
-      for (const poi of pois) {
-        if (poi.name.toLowerCase().includes(q)) {
-          matches.push({ name: poi.name, id: poi.id, isPoi: true });
-          seen.add(poi.id);
-        }
-      }
-
-      if (Array.isArray(this.allStops)) {
-        for (const s of this.allStops) {
-          const sId = String(s.id || s.mouteStopId || s.code || '');
-          const sName = String(s.name || '');
-          if (!seen.has(sId) && (sName.toLowerCase().includes(q) || sId === q)) {
-            seen.add(sId);
-            matches.push({ name: sName, id: sId });
-            if (matches.length >= 7) break;
+        for (const poi of pois) {
+          if (poi.name.toLowerCase().includes(q)) {
+            matches.push({ name: poi.name, id: poi.id, isPoi: true });
+            seen.add(poi.id);
           }
         }
-      }
 
-      if (matches.length === 0) {
-        dropdown.style.display = 'none';
-        return;
-      }
+        try {
+          const res = await fetch(`/api/search/stops?q=${encodeURIComponent(q)}`).then(r => r.json());
+          const stops = Array.isArray(res.stops) 
+            ? res.stops 
+            : (Array.isArray(res.results) 
+                ? res.results.filter(r => r.type === 'stop').map(r => ({ id: r.stopId || r.code, name: r.stopName, code: r.code || r.stopId })) 
+                : []);
 
-      dropdown.innerHTML = matches.map(m => `
-        <div class="planner-dropdown-item" data-id="${this.esc(m.id)}" data-name="${this.esc(m.name)}">
-          <span>${m.isPoi ? '📍' : '🚏'} <strong>${this.esc(m.name)}</strong></span>
-          <span style="font-size:0.75rem; color:var(--text-muted); font-family:var(--font-mono);">#${this.esc(m.id)}</span>
-        </div>
-      `).join('');
-      dropdown.style.display = 'block';
+          for (const s of stops) {
+            const sId = String(s.id || s.code || '');
+            const sName = String(s.name || s.stopName || '');
+            if (!seen.has(sId)) {
+              seen.add(sId);
+              matches.push({ name: sName, id: sId });
+              if (matches.length >= 8) break;
+            }
+          }
+        } catch (_) {}
+
+        if (matches.length === 0) {
+          dropdown.style.display = 'none';
+          return;
+        }
+
+        dropdown.innerHTML = matches.map(m => `
+          <div class="planner-dropdown-item" data-id="${this.esc(m.id)}" data-name="${this.esc(m.name)}">
+            <span>${m.isPoi ? '📍' : '🚏'} <strong>${this.esc(m.name)}</strong></span>
+            <span style="font-size:0.75rem; color:var(--text-muted); font-family:var(--font-mono);">#${this.esc(m.id)}</span>
+          </div>
+        `).join('');
+        dropdown.style.display = 'block';
+      }, 120);
     });
 
     dropdown.addEventListener('click', (e) => {
@@ -4243,9 +4326,10 @@ class TransitApp {
     container.querySelectorAll('.planner-itinerary-card').forEach(card => {
       card.addEventListener('click', () => {
         const idx = parseInt(card.getAttribute('data-itinerary-idx'), 10);
-        if (!isNaN(idx) && this._lastPlannedItineraries && this._lastPlannedItineraries[idx]) {
-          this.showItineraryOnMap(this._lastPlannedItineraries[idx]);
-        }
+        const origName = this._lastPlannerOrigin ? this._lastPlannerOrigin.name : (document.getElementById('planner-origin-input')?.value || '');
+        const destName = this._lastPlannerDest ? this._lastPlannerDest.name : (document.getElementById('planner-dest-input')?.value || '');
+        // Navigate directly to the dedicated /plan page without confusion!
+        window.location.href = `/plan?from=${encodeURIComponent(origName)}&to=${encodeURIComponent(destName)}&itin=${idx}`;
       });
     });
   }
@@ -4262,7 +4346,16 @@ class TransitApp {
       this.mapController.renderItinerary(itinerary);
     }
 
-    // 3. Show floating guidance bar on the map
+    // 3. Update map header title and hide bus counter tag
+    const mapTitle = document.getElementById('map-line-title');
+    const busCounter = document.getElementById('map-bus-counter-tag');
+    if (mapTitle) {
+      if (!this._savedMapTitle) this._savedMapTitle = mapTitle.textContent;
+      mapTitle.textContent = `🧭 Itinerari: ${itinerary.originStop?.name || 'Origen'} ➔ ${itinerary.destStop?.name || 'Destinació'}`;
+    }
+    if (busCounter) busCounter.style.display = 'none';
+
+    // 4. Show floating guidance bar on the map
     const bar = document.getElementById('itinerary-floating-bar');
     const titleText = document.getElementById('itinerary-summary-text');
     const stepsContainer = document.getElementById('itinerary-bar-steps');

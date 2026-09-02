@@ -126,7 +126,9 @@ class IngestionDaemon {
                 isRealTime: !b.isEstimated
               });
 
-              if (b.delayMins !== undefined) {
+              // Sanity check: Do NOT record delay logs for ghost buses, parked vehicles, or terminal layovers
+              const isLayover = b.isTerminalLayover || (b.speedKmh <= 3 && (b.delayMins > 10 || b.delayMins < -5));
+              if (b.delayMins !== undefined && !isLayover && b.delayMins <= 25 && b.delayMins >= -15) {
                 historyDb.recordDelayLog({
                   lineId: lId,
                   lineCode: `L${lId}`,

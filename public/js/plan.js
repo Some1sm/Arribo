@@ -99,6 +99,8 @@ class PlannerPageApp {
     const params = new URLSearchParams(window.location.search);
     const from = params.get('from') || params.get('origin');
     const to = params.get('to') || params.get('dest') || params.get('destination');
+    const itin = params.get('itin');
+    const itinIdx = itin !== null && !isNaN(parseInt(itin, 10)) ? parseInt(itin, 10) : 0;
 
     const originInput = document.getElementById('page-planner-origin');
     const destInput = document.getElementById('page-planner-dest');
@@ -107,7 +109,7 @@ class PlannerPageApp {
     if (to && destInput) destInput.value = to;
 
     if (from && to) {
-      this.runSearch();
+      this.runSearch(itinIdx);
     }
   }
 
@@ -198,7 +200,7 @@ class PlannerPageApp {
     );
   }
 
-  async runSearch() {
+  async runSearch(targetIndex = 0) {
     const origin = document.getElementById('page-planner-origin')?.value.trim();
     const dest = document.getElementById('page-planner-dest')?.value.trim();
     const resultsContainer = document.getElementById('page-planner-results');
@@ -249,11 +251,12 @@ class PlannerPageApp {
       // Render Itineraries
       this.renderItineraries(this.currentItineraries, data.originStop, data.destStop);
 
-      // Select first itinerary by default and paint on map
-      this.selectItinerary(0);
+      // Select target itinerary and paint on map
+      const selectIdx = (targetIndex >= 0 && targetIndex < this.currentItineraries.length) ? targetIndex : 0;
+      this.selectItinerary(selectIdx);
 
       // Update URL without reload
-      const newUrl = `${window.location.pathname}?from=${encodeURIComponent(origin)}&to=${encodeURIComponent(dest)}`;
+      const newUrl = `${window.location.pathname}?from=${encodeURIComponent(origin)}&to=${encodeURIComponent(dest)}&itin=${selectIdx}`;
       window.history.replaceState({}, '', newUrl);
 
     } catch (err) {

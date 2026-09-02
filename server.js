@@ -301,14 +301,27 @@ app.get('/api/lines', (req, res) => {
 app.get('/api/search/stops', (req, res) => {
   const q = req.query.q || '';
   if (!q.trim()) {
-    return res.json({ success: true, query: '', results: [] });
+    return res.json({ success: true, query: '', results: [], stops: [] });
   }
 
   const results = trackerRegistry.searchStopsAndLines(q, 35);
+  const stops = results
+    .filter(r => r.type === 'stop')
+    .map(r => ({
+      id: r.stopId || r.code,
+      name: r.stopName,
+      code: r.code || r.stopId,
+      zone: r.zone || 'Mataró Urbà',
+      lineCode: r.lineCode,
+      lat: r.lat,
+      lon: r.lon
+    }));
+
   res.json({
     success: true,
     query: q,
-    results
+    results,
+    stops
   });
 });
 

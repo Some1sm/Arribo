@@ -414,7 +414,7 @@ class C10Map {
 
   // Render stops and road polyline on map (with support for both directions simultaneously)
   renderStops(stops, targetStopId = '', onStopClick = null, shouldFitBounds = false, lineColor = '#009485', customPolyline = null, secondaryPolyline = null, secondaryStops = null, secondaryColor = '#38bdf8', lineId = '', direction = '', geometryInfo = null) {
-    if (!this.map) return;
+    if (!this.map || this.isItineraryMode) return;
     this.updateRouteSourceBadge(geometryInfo);
 
     // NOTE: targetStopId intentionally excluded from fingerprint so clicking a new
@@ -974,7 +974,7 @@ class C10Map {
 
   // Draw or update the road polyline on map
   renderPolyline(coords, color = '#009485') {
-    if (!this.map || !coords || coords.length < 2) return;
+    if (!this.map || this.isItineraryMode || !coords || coords.length < 2) return;
     if (this.routePolyline) {
       this.map.removeLayer(this.routePolyline);
       this.routePolyline = null;
@@ -1098,7 +1098,10 @@ class C10Map {
 
   // Update active bus markers and attach road subpaths
   updateBusMarkers(activeBuses, lineColor = '#009485', secondaryColor = '#38bdf8', selectedVehicleId = null, onBusClick = null, lineId = null) {
-    if (!this.map) return;
+    if (!this.map || this.isItineraryMode) {
+      if (this.isItineraryMode && this.busMarkersMap.size > 0) this.clearAllBusMarkers();
+      return;
+    }
 
     if (lineId && this.currentLineId && String(this.currentLineId) !== String(lineId)) {
       this.clearAllBusMarkers();

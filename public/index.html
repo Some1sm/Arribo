@@ -21,7 +21,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
   
   <!-- App Styles -->
-  <link rel="stylesheet" href="/css/style.css?v=6.0.2">
+  <link rel="stylesheet" href="/css/style.css?v=6.0.3">
 </head>
 <body>
 
@@ -52,10 +52,10 @@
         </button>
 
         <!-- Journey Planner Navigation Button -->
-        <button type="button" class="btn-header-nav planner-btn" id="btn-header-planner" title="Com anar-hi: Planificador de viatges A a B">
+        <a href="/plan" class="btn-header-nav planner-btn" id="btn-header-planner" title="Com anar-hi: Planificador de viatges A a B" style="text-decoration:none;">
           <span class="nav-icon">🧭</span>
           <span>Com anar-hi</span>
-        </button>
+        </a>
 
         <!-- Favorite Stops Hub Button -->
         <button type="button" class="btn-header-nav favorites-btn" id="btn-header-favorites" title="Veure les meves parades preferides">
@@ -140,10 +140,10 @@
 
         <!-- Quick GPS, Journey Planner & Mataró Zone Actions -->
         <div class="landing-hero-actions-row">
-          <button type="button" class="btn-hero-action btn-hero-planner" id="btn-hero-planner" title="Com anar-hi: Planifica la teva ruta entre dues parades">
+          <a href="/plan" class="btn-hero-action btn-hero-planner" id="btn-hero-planner" title="Com anar-hi: Planifica la teva ruta entre dues parades" style="text-decoration:none;">
             <span class="hero-action-icon">🧭</span>
             <span>Com anar-hi</span>
-          </button>
+          </a>
           <button type="button" class="btn-hero-action btn-hero-geo" id="btn-hero-geo" title="Troba les parades més properes amb GPS o per barri">
             <span class="hero-action-icon">📍</span>
             <span>Parades a prop</span>
@@ -705,10 +705,15 @@
     <div class="modal-card" style="max-width: 760px; max-height: 88vh;">
       <button type="button" class="modal-close-btn" id="planner-modal-close-btn" aria-label="Tancar">&times;</button>
       
-      <div class="line-picker-header" style="margin-bottom:0.75rem;">
-        <div class="target-badge" style="background:rgba(16, 185, 129, 0.15); color:#10b981; border:1px solid rgba(16, 185, 129, 0.35);">🧭 Planificador de Rutes</div>
-        <h3 class="line-picker-title" id="planner-modal-title">Com anar-hi a Mataró</h3>
-        <p class="line-picker-subtitle">Cerca el millor trajecte directe o amb transbordament entre dues parades</p>
+      <div class="line-picker-header" style="margin-bottom:0.75rem; display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:0.5rem;">
+        <div>
+          <div class="target-badge" style="background:rgba(16, 185, 129, 0.15); color:#10b981; border:1px solid rgba(16, 185, 129, 0.35);">🧭 Planificador de Rutes</div>
+          <h3 class="line-picker-title" id="planner-modal-title">Com anar-hi a Mataró</h3>
+          <p class="line-picker-subtitle">Cerca el millor trajecte directe o amb transbordament entre dues parades</p>
+        </div>
+        <a href="/plan" class="btn-itinerary-back" style="text-decoration:none; padding:0.4rem 0.8rem; font-size:0.8rem; margin-right:2rem;" title="Obrir planificador en pàgina completa">
+          <span>↗️ Pàgina completa</span>
+        </a>
       </div>
 
       <!-- Route Inputs Row -->
@@ -778,7 +783,7 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   
   <!-- App Scripts -->
-  <script src="/js/map.js?v=6.0.2"></script>
-  <script src="/js/app.js?v=6.0.2"></script>
+  <script src="/js/map.js?v=6.0.5"></script>
+  <script src="/js/app.js?v=6.0.7"></script>
 </body>
 </html>

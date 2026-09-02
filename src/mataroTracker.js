@@ -652,6 +652,15 @@ class MataroTracker extends BaseTracker {
       // Calculate progress and segment along stops
       const segInfo = this.findNearestSegment(roadLat, roadLon, stops, polyCoords);
 
+      // Sanity check for terminal layovers / ghost buses (e.g. parked with velocity 0 at terminus)
+      const isTerminal = (b.speedKmh <= 3 || b.speedKmh === undefined) && (segInfo.totalProgress > 92 || segInfo.totalProgress < 8);
+      const isGhostDelay = isTerminal && b.delayMins > 10;
+      const cleanDelayMins = isGhostDelay ? 0 : Math.min(25, Math.max(-10, b.delayMins || 0));
+      const cleanDelayFormatted = isGhostDelay 
+        ? 'Regulant a capçalera' 
+        : (cleanDelayMins > 0 ? `+${cleanDelayMins} min retard` : (cleanDelayMins < 0 ? `${cleanDelayMins} min avançat` : 'Puntual'));
+      const statusText = isGhostDelay ? '⏱️ Regulant a capçalera' : '🟢 Senyal GPS Actiu';
+
       result.push({
         tripId: `mataro_${b.vehicleId}`,
         vehicleId: b.vehicleId,
@@ -666,15 +675,15 @@ class MataroTracker extends BaseTracker {
         bearing: roadBearing,
         compass: geoUtils.bearingToCompassName(roadBearing),
         speedKmh: b.speedKmh,
-        delayMins: b.delayMins,
-        delayFormatted: b.delayFormatted,
+        delayMins: cleanDelayMins,
+        delayFormatted: cleanDelayFormatted,
         isEstimated: false,
         isRealTime: true,
         recordedAt: b.recordedAt || new Date().toISOString(),
         timestamp: b.timestamp || now,
         origin: b.origin || '',
         destination: b.destination || '',
-        statusText: '🟢 Senyal GPS Actiu',
+        statusText,
         fromStop: segInfo.fromStop,
         toStop: segInfo.toStop,
         fromSeq: segInfo.fromSeq,
@@ -687,7 +696,7 @@ class MataroTracker extends BaseTracker {
         toCoords: segInfo.toCoords,
         segStartSec: Math.floor(now / 1000) - 10,
         segEndSec: Math.floor(now / 1000) + Math.max(15, segInfo.secondsToNextStop),
-        isTerminalLayover: b.speedKmh === 0 && (segInfo.totalProgress > 95 || segInfo.totalProgress < 5)
+        isTerminalLayover: isTerminal || isGhostDelay
       });
     });
 
