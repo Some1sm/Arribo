@@ -57,6 +57,8 @@ class C10Map {
     this.tileLayer = null;
     this.renderer = null;
     this.resizeObserver = null;
+    this.trafficLayerGroup = null;
+    this.isTrafficEnabled = false;
     this.currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
     this.initMap();
   }
@@ -76,6 +78,7 @@ class C10Map {
       zoomAnimation: true
     }).setView([41.54, 2.44], 13);
 
+    this.trafficLayerGroup = L.layerGroup().addTo(this.map);
     this.updateTileLayer();
     this.setupResizeObserver();
     this.requestUserLocation();
@@ -663,6 +666,44 @@ class C10Map {
     this.applyStopTargetStyles(targetStopId);
   }
 
+  // Dynamic Congestion & Traffic Heatmap Rendering
+  renderCongestionHeatmap(segments) {
+    if (!this.map || !this.trafficLayerGroup) return;
+    this.trafficLayerGroup.clearLayers();
+    if (!Array.isArray(segments) || segments.length === 0) return;
+
+    segments.forEach(seg => {
+      if (!seg.coords || seg.coords.length < 2) return;
+      const poly = L.polyline(seg.coords, {
+        color: seg.color || '#10b981',
+        weight: 6,
+        opacity: 0.85,
+        lineCap: 'round',
+        lineJoin: 'round'
+      });
+      poly.bindTooltip(`<strong>${escHtml(seg.label)}</strong> • ${seg.avgSpeedKmh} km/h`, {
+        sticky: true,
+        className: 'traffic-tooltip'
+      });
+      this.trafficLayerGroup.addLayer(poly);
+    });
+  }
+
+  clearCongestionHeatmap() {
+    if (this.trafficLayerGroup) {
+      this.trafficLayerGroup.clearLayers();
+    }
+  }
+
+  toggleTrafficHeatmap(enable, segments = []) {
+    this.isTrafficEnabled = Boolean(enable);
+    if (!this.isTrafficEnabled) {
+      this.clearCongestionHeatmap();
+    } else if (segments && segments.length > 0) {
+      this.renderCongestionHeatmap(segments);
+    }
+  }
+
   // Applies/removes target styling on the cached stop markers by mutating the
   // existing marker DOM instead of tearing down and rebuilding every marker.
   applyStopTargetStyles(targetStopId = '') {
@@ -971,6 +1012,7 @@ class C10Map {
             <span class="map-popup-badge ${isEst ? 'estimated' : 'live'}" style="background:${isSecDir ? 'rgba(56, 189, 248, 0.2)' : ''}; color:${isSecDir ? '#38bdf8' : ''};">
               ${isEst ? '⚡ Estimació' : isSecDir ? '🔄 Sentit 2' : '🟢 GPS Directe'}
             </span>
+            ${bus.isElectric ? '<span class="map-popup-badge electric" style="background:rgba(16, 185, 129, 0.25); color:#10b981; border:1px solid #10b981;">⚡ 100% Elèctric</span>' : (bus.isHybrid ? '<span class="map-popup-badge hybrid" style="background:rgba(56, 189, 248, 0.2); color:#38bdf8;">🌱 Híbrid Eco</span>' : '')}
           </div>
 
           <div class="map-popup-route" style="color:${busColor};">
@@ -996,6 +1038,16 @@ class C10Map {
               <span class="map-popup-item-label">🚦 Estat</span>
               <span class="map-popup-item-val">${escHtml(bus.delayFormatted || 'Puntual')}</span>
             </div>
+            ${bus.isAccessible ? `
+            <div class="map-popup-item">
+              <span class="map-popup-item-label">Accessibilitat</span>
+              <span class="map-popup-item-val" style="color:#38bdf8;">♿ Adaptat PMR</span>
+            </div>` : ''}
+            ${bus.modelName ? `
+            <div class="map-popup-item">
+              <span class="map-popup-item-label">Model Bus</span>
+              <span class="map-popup-item-val">${escHtml(bus.modelName)}</span>
+            </div>` : ''}
             ${bus.tripStartTime ? `
             <div class="map-popup-item">
               <span class="map-popup-item-label">🕐 Inici trajecte</span>
@@ -1025,6 +1077,7 @@ class C10Map {
         obj.targetLon = snapped.lon;
         obj.targetBearing = bearingAngle;
         obj.subpath = subpath;
+        obj.targetPolyline = targetPolyline;
         obj.lastUpdated = now;
         obj.marker.setPopupContent(popupHtml);
 
@@ -1105,6 +1158,7 @@ class C10Map {
           isFacingWest: isHeadingWest,
           lastUpdated: now,
           subpath,
+          targetPolyline,
           wrapEl: busRoot ? busRoot.querySelector('.live-bus-marker-wrap') : null,
           ringEl: busRoot ? busRoot.querySelector('.bus-selection-ring') : null,
           pinEl: busRoot ? busRoot.querySelector('.live-bus-pin') : null,
@@ -1148,7 +1202,23 @@ class C10Map {
         // Smooth forward glide (8% step per frame = ~0.8s smooth transition without rollback)
         const smoothLat = currentPos.lat + dLat * 0.08;
         const smoothLon = currentPos.lng + dLon * 0.08;
-        obj.marker.setLatLng([smoothLat, smoothLon]);
+        
+        // Road-Following Curved Polyline Snapping:
+        // When navigating street curves, snap intermediate positions directly to the street polyline
+        // so the bus glides around corners instead of cutting across city blocks.
+        if (obj.targetPolyline && obj.targetPolyline.length > 2 && distDeg < 0.003) {
+          const snappedStep = this.snapToPolyline(smoothLat, smoothLon, obj.targetPolyline);
+          if (snappedStep && snappedStep.distanceMeters < 40) {
+            obj.marker.setLatLng([snappedStep.lat, snappedStep.lon]);
+            if (snappedStep.bearing !== undefined && Number.isFinite(snappedStep.bearing)) {
+              obj.targetBearing = snappedStep.bearing;
+            }
+          } else {
+            obj.marker.setLatLng([smoothLat, smoothLon]);
+          }
+        } else {
+          obj.marker.setLatLng([smoothLat, smoothLon]);
+        }
       }
 
       // 3. Smooth shortest-angle rotation interpolation for direction cone

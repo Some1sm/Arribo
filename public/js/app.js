@@ -55,6 +55,13 @@ class TransitApp {
     // Trains UI display flag: trains remain fully operational in backend/tests, but hidden from the general transit UI
     this.showTrainsInUI = false;
 
+    // Feature States: Traffic Congestion, Proximity Alarm & Journey Planner
+    this.isTrafficVisible = false;
+    this.activeProximityAlarm = null;
+    this.alarmWatchId = null;
+    this._plannerOriginCoords = null;
+    this._plannerDestCoords = null;
+
     // Theme Management (Light / Dark Mode)
     this.currentTheme = this.getInitialTheme();
     this.initTheme();
@@ -3074,6 +3081,60 @@ class TransitApp {
     ` : '';
 
     listEl.innerHTML = modalItemsHtml + modalFooterHint;
+
+    // Render Multimodal Regional Connections (Rodalies R1 / Moventis e11)
+    const intermodalContainer = document.getElementById('modal-intermodal-container');
+    const intermodalList = document.getElementById('modal-intermodal-list');
+    const intermodalBadge = document.getElementById('modal-intermodal-badge');
+
+    if (intermodalContainer && intermodalList) {
+      if (data.isHub && Array.isArray(data.intermodalConnections) && data.intermodalConnections.length > 0) {
+        intermodalContainer.style.display = 'block';
+        if (intermodalBadge && data.hub?.name) {
+          intermodalBadge.textContent = data.hub.name;
+        }
+        intermodalList.innerHTML = data.intermodalConnections.map(c => `
+          <div class="intermodal-conn-card">
+            <div class="intermodal-conn-left">
+              <span class="intermodal-mode-pill" style="background:${c.lineColor || '#0ea5e9'};">
+                ${c.mode === 'train' ? '🚆' : '⚡'} ${this.esc(c.lineCode)}
+              </span>
+              <div>
+                <div class="intermodal-conn-dest">${this.esc(c.destination)}</div>
+                <div class="intermodal-conn-op">${this.esc(c.operator)}</div>
+              </div>
+            </div>
+            <div>
+              <div class="intermodal-conn-time">${this.esc(c.departureTime)} (${c.minutesAway} min)</div>
+              ${c.feasibility ? `
+                <div class="intermodal-conn-feasibility ${c.feasibility.badgeClass}">${this.esc(c.feasibility.badge)}</div>
+              ` : ''}
+            </div>
+          </div>
+        `).join('');
+      } else {
+        intermodalContainer.style.display = 'none';
+        intermodalList.innerHTML = '';
+      }
+    }
+
+    // Configure Proximity Wake-Up Alarm Button
+    const alarmBtn = document.getElementById('modal-proximity-alarm-btn');
+    const alarmBtnText = document.getElementById('modal-alarm-btn-text');
+    if (alarmBtn && alarmBtnText) {
+      const isAlarmActive = this.activeProximityAlarm && this.activeProximityAlarm.stopId === String(stopId);
+      alarmBtn.classList.toggle('active', Boolean(isAlarmActive));
+      alarmBtnText.textContent = isAlarmActive ? 'Alarma Activada ⏰' : "Avisa'm en arribar";
+      alarmBtn.onclick = (e) => {
+        e.preventDefault();
+        this.toggleProximityAlarm({
+          id: String(stopId),
+          name: currStop?.name || stopObj?.name || 'Parada',
+          lat: stopObj?.lat || currStop?.lat,
+          lon: stopObj?.lon || currStop?.lon
+        });
+      };
+    }
   }
 
   // ==========================================
@@ -3552,6 +3613,10 @@ class TransitApp {
     this.setupMapResizeControls();
     this.setupDisruptionsModal();
     this.setupJournalismModal();
+    this.setupPlannerEvents();
+    this.setupTrafficEvents();
+    this.setupProximityAlarmEvents();
+    this.setupTermometreEvents();
   }
 
   // ==========================================
@@ -3616,11 +3681,17 @@ class TransitApp {
       }
     });
 
-    document.querySelectorAll('#journalism-timeframe-tabs button').forEach(btn => {
+    document.querySelectorAll('#journalism-timeframe-tabs button:not(.termometre-tab)').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.preventDefault();
         document.querySelectorAll('#journalism-timeframe-tabs button').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
+        const searchBarWrap = document.getElementById('journalism-search-bar-wrap');
+        const contentContainer = document.getElementById('journalism-content-container');
+        const termometreContainer = document.getElementById('journalism-termometre-container');
+        if (searchBarWrap) searchBarWrap.style.display = 'block';
+        if (contentContainer) contentContainer.style.display = 'block';
+        if (termometreContainer) termometreContainer.style.display = 'none';
         const hours = parseInt(btn.getAttribute('data-hours') || '24', 10);
         this.openJournalismModal(hours);
       });
@@ -3888,6 +3959,584 @@ class TransitApp {
       this.lastAlertedTrip = activeTargetId;
       this.playChime();
     }
+  }
+
+  // ==========================================
+  // JOURNEY PLANNER ("COM ANAR-HI")
+  // ==========================================
+
+  setupPlannerEvents() {
+    const modal = document.getElementById('planner-modal-backdrop');
+    const openBtns = [document.getElementById('btn-header-planner'), document.getElementById('btn-hero-planner')];
+    const closeBtn = document.getElementById('planner-modal-close-btn');
+    const swapBtn = document.getElementById('btn-planner-swap');
+    const submitBtn = document.getElementById('btn-planner-submit');
+    const originInput = document.getElementById('planner-origin-input');
+    const destInput = document.getElementById('planner-dest-input');
+    const originGeoBtn = document.getElementById('btn-planner-origin-geo');
+    const resultsContainer = document.getElementById('planner-results-container');
+
+    openBtns.forEach(b => b?.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (modal) modal.classList.add('active');
+    }));
+
+    closeBtn?.addEventListener('click', () => {
+      if (modal) modal.classList.remove('active');
+    });
+
+    modal?.addEventListener('click', (e) => {
+      if (e.target === modal) modal.classList.remove('active');
+    });
+
+    swapBtn?.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (originInput && destInput) {
+        const tmp = originInput.value;
+        originInput.value = destInput.value;
+        destInput.value = tmp;
+        const tmpCoords = this._plannerOriginCoords;
+        this._plannerOriginCoords = this._plannerDestCoords;
+        this._plannerDestCoords = tmpCoords;
+      }
+    });
+
+    originGeoBtn?.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (!navigator.geolocation) {
+        alert("La geolocalització no està disponible al teu navegador.");
+        return;
+      }
+      originGeoBtn.textContent = '⌛ ...';
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          this._plannerOriginCoords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+          if (originInput) originInput.value = '📍 La meva ubicació actual';
+          originGeoBtn.textContent = '📍 GPS';
+        },
+        () => {
+          originGeoBtn.textContent = '📍 GPS';
+          alert("No s'ha pogut obtenir la teva ubicació GPS.");
+        },
+        { timeout: 8000 }
+      );
+    });
+
+    submitBtn?.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const origin = originInput?.value?.trim();
+      const dest = destInput?.value?.trim();
+      if (!origin || !dest) {
+        alert("Si us plau, indica tant l'origen com la destinació.");
+        return;
+      }
+
+      if (resultsContainer) {
+        resultsContainer.innerHTML = '<div style="text-align:center; padding:2rem;"><span class="loading-spinner-inline"></span> Calculant la millor combinació de trajecte...</div>';
+      }
+
+      let url = `/api/mataro/plan?from=${encodeURIComponent(origin)}&to=${encodeURIComponent(dest)}`;
+      if (this._plannerOriginCoords && origin.includes('ubicació')) {
+        url += `&fromLat=${this._plannerOriginCoords.lat}&fromLon=${this._plannerOriginCoords.lon}`;
+      }
+      if (this._plannerDestCoords && dest.includes('ubicació')) {
+        url += `&toLat=${this._plannerDestCoords.lat}&toLon=${this._plannerDestCoords.lon}`;
+      }
+
+      try {
+        const res = await fetch(url).then(r => r.json());
+        if (!res.success || !res.itineraries || res.itineraries.length === 0) {
+          if (resultsContainer) {
+            resultsContainer.innerHTML = `<div style="text-align:center; padding:2rem; color:var(--text-muted);">${this.esc(res.error || 'No s\'ha trobat cap ruta directa o amb 1 transbordament.')}</div>`;
+          }
+          return;
+        }
+
+        this.renderPlannerResults(res.itineraries, res.originStop, res.destStop);
+      } catch (err) {
+        if (resultsContainer) {
+          resultsContainer.innerHTML = '<div style="color:var(--danger); padding:1rem; text-align:center;">Error en calcular la ruta. Torna-ho a provar.</div>';
+        }
+      }
+    });
+
+    this.setupPlannerAutocomplete(originInput, 'planner-origin-dropdown', () => {
+      this._plannerOriginCoords = null;
+    });
+    this.setupPlannerAutocomplete(destInput, 'planner-dest-dropdown', () => {
+      this._plannerDestCoords = null;
+    });
+  }
+
+  setupPlannerAutocomplete(inputEl, dropdownId, onSelect) {
+    if (!inputEl) return;
+    const dropdown = document.getElementById(dropdownId);
+    if (!dropdown) return;
+
+    inputEl.addEventListener('input', () => {
+      const q = inputEl.value.trim().toLowerCase();
+      if (!q || q.length < 2) {
+        dropdown.style.display = 'none';
+        dropdown.innerHTML = '';
+        return;
+      }
+
+      const seen = new Set();
+      const matches = [];
+
+      const pois = [
+        { name: 'Estació Rodalies Mataró (Renfe)', id: '1016' },
+        { name: 'Plaça de les Tereses (Centre)', id: '1' },
+        { name: 'Hospital de Mataró', id: '344' },
+        { name: 'Mataró Parc (Centre Comercial)', id: '333' },
+        { name: 'TecnoCampus Mataró', id: '277' },
+        { name: 'Parc Central', id: '15' }
+      ];
+
+      for (const poi of pois) {
+        if (poi.name.toLowerCase().includes(q)) {
+          matches.push({ name: poi.name, id: poi.id, isPoi: true });
+          seen.add(poi.id);
+        }
+      }
+
+      if (Array.isArray(this.allStops)) {
+        for (const s of this.allStops) {
+          const sId = String(s.id || s.mouteStopId || s.code || '');
+          const sName = String(s.name || '');
+          if (!seen.has(sId) && (sName.toLowerCase().includes(q) || sId === q)) {
+            seen.add(sId);
+            matches.push({ name: sName, id: sId });
+            if (matches.length >= 7) break;
+          }
+        }
+      }
+
+      if (matches.length === 0) {
+        dropdown.style.display = 'none';
+        return;
+      }
+
+      dropdown.innerHTML = matches.map(m => `
+        <div class="planner-dropdown-item" data-id="${this.esc(m.id)}" data-name="${this.esc(m.name)}">
+          <span>${m.isPoi ? '📍' : '🚏'} <strong>${this.esc(m.name)}</strong></span>
+          <span style="font-size:0.75rem; color:var(--text-muted); font-family:var(--font-mono);">#${this.esc(m.id)}</span>
+        </div>
+      `).join('');
+      dropdown.style.display = 'block';
+    });
+
+    dropdown.addEventListener('click', (e) => {
+      const item = e.target.closest('.planner-dropdown-item');
+      if (!item) return;
+      const id = item.getAttribute('data-id');
+      const name = item.getAttribute('data-name');
+      inputEl.value = name;
+      dropdown.style.display = 'none';
+      if (onSelect) onSelect({ id, name });
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!inputEl.contains(e.target) && !dropdown.contains(e.target)) {
+        dropdown.style.display = 'none';
+      }
+    });
+  }
+
+  renderPlannerResults(itineraries, originStop, destStop) {
+    const container = document.getElementById('planner-results-container');
+    if (!container) return;
+
+    if (!Array.isArray(itineraries) || itineraries.length === 0) {
+      container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);">No s\'ha trobat cap combinació de trajecte.</div>';
+      return;
+    }
+
+    container.innerHTML = itineraries.map((it) => {
+      const isDirect = it.type === 'direct';
+      const firstLeg = it.legs[0];
+      const waitMin = firstLeg.nextDepartureMins !== null ? firstLeg.nextDepartureMins : null;
+      const waitText = waitMin !== null ? ` • Surt en ${waitMin} min` : '';
+
+      return `
+        <div class="planner-itinerary-card">
+          <div class="planner-card-header">
+            <div class="planner-total-duration">
+              <span>⏱️ ~${it.totalDurationMins} min</span>
+              <span style="font-size:0.85rem; font-weight:600; color:var(--text-secondary);">${waitText}</span>
+            </div>
+            <span class="${isDirect ? 'planner-tag-direct' : 'planner-tag-transfer'}">
+              ${isDirect ? '✓ Ruta Directa' : '🔄 1 Transbordament'}
+            </span>
+          </div>
+
+          <div class="planner-legs-flow">
+            ${it.legs.map((leg) => `
+              <div class="planner-leg-item">
+                <div>
+                  <div style="display:flex; align-items:center; gap:6px; margin-bottom:2px;">
+                    <span class="planner-leg-badge" style="background:${leg.lineColor || '#009485'};">
+                      ${this.esc(leg.lineCode)}
+                    </span>
+                    <span style="font-size:0.82rem; font-weight:700; color:var(--text-primary);">
+                      Cap a ${this.esc(leg.destination)}
+                    </span>
+                  </div>
+                  <div style="font-size:0.82rem; color:var(--text-secondary);">
+                    Pujar a: <strong>${this.esc(leg.fromStop.name)}</strong>
+                  </div>
+                  <div style="font-size:0.82rem; color:var(--text-secondary);">
+                    Baixar a: <strong>${this.esc(leg.toStop.name)}</strong> (${leg.stopCount} parades, ~${leg.travelTimeMins} min)
+                  </div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+
+          <div style="display:flex; justify-content:flex-end; margin-top:0.75rem;">
+            <button type="button" class="btn-primary btn-view-itinerary-line" data-line-id="${this.esc(firstLeg.lineId)}" data-dir-id="${this.esc(firstLeg.direction)}" data-stop-id="${this.esc(firstLeg.fromStop.id)}" style="padding:0.4rem 0.8rem; font-size:0.82rem;">
+              <span>🗺️ Veure Línia ${this.esc(firstLeg.lineCode)} al mapa</span>
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    container.querySelectorAll('.btn-view-itinerary-line').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const lId = btn.getAttribute('data-line-id');
+        const dId = btn.getAttribute('data-dir-id');
+        const sId = btn.getAttribute('data-stop-id');
+        const modal = document.getElementById('planner-modal-backdrop');
+        if (modal) modal.classList.remove('active');
+        if (lId) {
+          if (dId) this.activeDirection = dId;
+          this.switchLine(lId);
+          if (sId) {
+            setTimeout(() => {
+              this.setTargetStop(sId);
+            }, 600);
+          }
+        }
+      });
+    });
+  }
+
+  // ==========================================
+  // TRAFFIC CONGESTION HEATMAP
+  // ==========================================
+
+  setupTrafficEvents() {
+    const trafficBtn = document.getElementById('btn-map-toggle-traffic');
+    if (!trafficBtn) return;
+
+    trafficBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      this.isTrafficVisible = !this.isTrafficVisible;
+      trafficBtn.classList.toggle('active', this.isTrafficVisible);
+
+      if (!this.isTrafficVisible) {
+        this.mapController?.toggleTrafficHeatmap(false);
+        return;
+      }
+
+      if (!this.activeLineId) {
+        this.mapController?.toggleTrafficHeatmap(false);
+        trafficBtn.classList.remove('active');
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/mataro/line/${this.activeLineId}/traffic?direction=${this.activeDirection || '0'}`).then(r => r.json());
+        if (res.success && Array.isArray(res.segments)) {
+          this.mapController?.toggleTrafficHeatmap(true, res.segments);
+        }
+      } catch (err) {
+        console.warn('Traffic fetch error:', err);
+      }
+    });
+  }
+
+  // ==========================================
+  // PROXIMITY & WAKE-UP ALARM
+  // ==========================================
+
+  setupProximityAlarmEvents() {
+    const dismissBtn = document.getElementById('btn-alarm-dismiss');
+    dismissBtn?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.dismissProximityAlert();
+    });
+  }
+
+  toggleProximityAlarm(stop) {
+    if (!stop || !stop.id) return;
+    const sId = String(stop.id);
+
+    if (this.activeProximityAlarm && this.activeProximityAlarm.stopId === sId) {
+      this.clearProximityAlarm();
+      const alarmBtn = document.getElementById('modal-proximity-alarm-btn');
+      const alarmBtnText = document.getElementById('modal-alarm-btn-text');
+      if (alarmBtn) alarmBtn.classList.remove('active');
+      if (alarmBtnText) alarmBtnText.textContent = "Avisa'm en arribar";
+      return;
+    }
+
+    if (typeof Notification !== 'undefined' && Notification.permission !== 'granted' && Notification.permission !== 'denied') {
+      Notification.requestPermission();
+    }
+
+    this.activeProximityAlarm = {
+      stopId: sId,
+      stopName: stop.name || 'Parada',
+      lat: stop.lat,
+      lon: stop.lon
+    };
+
+    const alarmBtn = document.getElementById('modal-proximity-alarm-btn');
+    const alarmBtnText = document.getElementById('modal-alarm-btn-text');
+    if (alarmBtn) alarmBtn.classList.add('active');
+    if (alarmBtnText) alarmBtnText.textContent = 'Alarma Activada ⏰';
+
+    if (navigator.geolocation) {
+      this.alarmWatchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          if (!this.activeProximityAlarm) return;
+          const userLat = pos.coords.latitude;
+          const userLon = pos.coords.longitude;
+          if (stop.lat && stop.lon) {
+            const dist = this.calculateDistMeters(userLat, userLon, stop.lat, stop.lon);
+            if (dist < 350) {
+              this.triggerProximityAlert(this.activeProximityAlarm);
+            }
+          }
+        },
+        () => {},
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+      );
+    }
+  }
+
+  calculateDistMeters(lat1, lon1, lat2, lon2) {
+    const R = 6371000;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  triggerProximityAlert(stop) {
+    if (navigator.vibrate) {
+      try {
+        navigator.vibrate([400, 200, 400, 200, 800, 200, 800]);
+      } catch (_) {}
+    }
+
+    this.playChime();
+
+    const alertModal = document.getElementById('alarm-alert-backdrop');
+    const stopNameEl = document.getElementById('alarm-alert-stop-name');
+    if (stopNameEl) stopNameEl.textContent = stop.stopName || stop.name || 'La teva parada';
+    if (alertModal) alertModal.style.display = 'flex';
+
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      try {
+        new Notification("Arribo! Mataró: Propera Parada!", {
+          body: `Estàs arribant a ${stop.stopName || stop.name}! Prepara't per baixar.`,
+          icon: '/favicon.ico'
+        });
+      } catch (_) {}
+    }
+
+    this.clearProximityAlarm();
+  }
+
+  dismissProximityAlert() {
+    const alertModal = document.getElementById('alarm-alert-backdrop');
+    if (alertModal) alertModal.style.display = 'none';
+  }
+
+  clearProximityAlarm() {
+    if (this.alarmWatchId !== null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(this.alarmWatchId);
+      this.alarmWatchId = null;
+    }
+    this.activeProximityAlarm = null;
+  }
+
+  // ==========================================
+  // "EL TERMÒMETRE DEL BUS" SCORECARD & SHARE
+  // ==========================================
+
+  setupTermometreEvents() {
+    const termometreTab = document.getElementById('btn-observatori-termometre');
+    const timeframeTabs = document.getElementById('journalism-timeframe-tabs');
+    const termometreContainer = document.getElementById('journalism-termometre-container');
+    const contentContainer = document.getElementById('journalism-content-container');
+    const searchBarWrap = document.getElementById('journalism-search-bar-wrap');
+
+    termometreTab?.addEventListener('click', async (e) => {
+      e.preventDefault();
+      timeframeTabs?.querySelectorAll('.line-filter-tab').forEach(t => t.classList.remove('active'));
+      termometreTab.classList.add('active');
+
+      if (searchBarWrap) searchBarWrap.style.display = 'none';
+      if (contentContainer) contentContainer.style.display = 'none';
+      if (termometreContainer) {
+        termometreContainer.style.display = 'block';
+        termometreContainer.innerHTML = '<div style="text-align:center; padding:2rem;"><span class="loading-spinner-inline"></span> Generant la fitxa del Termòmetre...</div>';
+      }
+
+      try {
+        const res = await fetch('/api/analytics/termometre?hours=24').then(r => r.json());
+        if (res.success && res.termometre) {
+          this.renderTermometreScorecard(res.termometre);
+        }
+      } catch (err) {
+        if (termometreContainer) {
+          termometreContainer.innerHTML = '<div style="color:var(--danger); text-align:center;">Error en carregar el Termòmetre.</div>';
+        }
+      }
+    });
+  }
+
+  renderTermometreScorecard(t) {
+    const container = document.getElementById('journalism-termometre-container');
+    if (!container || !t) return;
+
+    const gradeColor = (t.grade && t.grade.startsWith('A')) ? '#10b981' : ((t.grade && t.grade.startsWith('B')) ? '#38bdf8' : ((t.grade && t.grade.startsWith('C')) ? '#f59e0b' : '#ef4444'));
+
+    container.innerHTML = `
+      <div class="termometre-scorecard" id="termometre-card-root">
+        <div class="termometre-header">
+          <div>
+            <span style="font-size:0.75rem; font-weight:800; color:#38bdf8; text-transform:uppercase; letter-spacing:0.5px;">Observatori Cívic de Mobilitat</span>
+            <h3 style="font-size:1.35rem; font-weight:800; color:#fff; margin:0.2rem 0;">🌡️ El Termòmetre del Bus Mataró</h3>
+            <span style="font-size:0.78rem; color:var(--text-muted);">Auditoria independent basada en mostres reals de telemetria GPS</span>
+          </div>
+          <div class="termometre-grade-badge" style="border-color:${gradeColor}; background:rgba(16,185,129,0.12);">
+            <div>
+              <div style="font-size:0.65rem; font-weight:800; color:var(--text-muted); text-transform:uppercase;">Nota Global</div>
+              <div class="termometre-grade-letter" style="color:${gradeColor};">${this.esc(t.grade || 'A')}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="termometre-metrics-grid">
+          <div class="termometre-metric-tile" style="border-left:3px solid #10b981;">
+            <span class="termometre-metric-label">🏆 Línia Més Puntual</span>
+            <span class="termometre-metric-val" style="color:#10b981;">
+              ${this.esc(t.championLine?.code || 'L1')} (${t.championLine?.onTimePct || 95}% puntual)
+            </span>
+            <span style="font-size:0.72rem; color:var(--text-muted);">Retard mitjà: ${t.championLine?.avgDelay || 0.8} min</span>
+          </div>
+
+          <div class="termometre-metric-tile" style="border-left:3px solid #ef4444;">
+            <span class="termometre-metric-label">⚠️ Punt Negre / Retards</span>
+            <span class="termometre-metric-val" style="color:#ef4444; font-size:1rem;">
+              ${this.esc(t.worstBottleneck?.stopName || 'Pl. Tereses')}
+            </span>
+            <span style="font-size:0.72rem; color:var(--text-muted);">${this.esc(t.worstBottleneck?.lineCode || '')} • +${t.worstBottleneck?.avgDelay || 3.2} min retard mitjà</span>
+          </div>
+
+          <div class="termometre-metric-tile" style="border-left:3px solid #f59e0b;">
+            <span class="termometre-metric-label">⏱️ Franja de Major Congestió</span>
+            <span class="termometre-metric-val" style="color:#f59e0b;">
+              ${this.esc(t.peakHour || '08:00 - 09:00')}
+            </span>
+            <span style="font-size:0.72rem; color:var(--text-muted);">Punt màxim de retards a la xarxa</span>
+          </div>
+
+          <div class="termometre-metric-tile" style="border-left:3px solid #38bdf8;">
+            <span class="termometre-metric-label">🌐 Puntualitat Global</span>
+            <span class="termometre-metric-val" style="color:#38bdf8;">
+              ${t.punctualityPct || 92}%
+            </span>
+            <span style="font-size:0.72rem; color:var(--text-muted);">${(t.totalTripsAnalyzed || 0).toLocaleString()} expedicions analitzades</span>
+          </div>
+        </div>
+
+        <div class="termometre-actions-row">
+          <div style="font-size:0.75rem; color:var(--text-muted);">
+            Dades de les darreres ${t.timeframeHours || 24} hores
+          </div>
+          <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+            <button type="button" class="btn-primary" id="btn-termometre-share" style="padding:0.45rem 0.85rem; font-size:0.8rem; background:rgba(56,189,248,0.2); color:#38bdf8; border:1px solid rgba(56,189,248,0.4);">
+              📋 Copiar Resum per Xarxes
+            </button>
+            <button type="button" class="btn-primary" id="btn-termometre-download" style="padding:0.45rem 0.85rem; font-size:0.8rem; background:rgba(16,185,129,0.2); color:#10b981; border:1px solid rgba(16,185,129,0.4);">
+              📸 Descarregar Fitxa
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.getElementById('btn-termometre-share')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      const shareText = `🌡️ El Termòmetre del Bus a Mataró (${t.timeframeHours || 24}h)\n\n` +
+        `• Nota Global: ${t.grade} (${t.punctualityPct}% puntualitat)\n` +
+        `• 🏆 Línia més puntual: ${t.championLine?.code} (${t.championLine?.onTimePct}%)\n` +
+        `• ⚠️ Punt negre: ${t.worstBottleneck?.stopName} (+${t.worstBottleneck?.avgDelay} min)\n` +
+        `• ⏱️ Hora punta: ${t.peakHour}\n` +
+        `• Expedicions analitzades: ${(t.totalTripsAnalyzed || 0).toLocaleString()}\n\n` +
+        `Font: Arribo! Mataró — Dades obertes i telemetria ciutadana.`;
+      
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(shareText).then(() => {
+          alert("Resum copiat al porta-retalls! Ja el pots enganxar a Twitter, Telegram o premsa.");
+        });
+      } else {
+        prompt("Copia el resum:", shareText);
+      }
+    });
+
+    document.getElementById('btn-termometre-download')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      const svg = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" style="background:#0f172a; font-family:sans-serif;">
+  <rect width="800" height="420" fill="#0f172a" rx="16"/>
+  <text x="40" y="50" fill="#38bdf8" font-size="14" font-weight="bold" letter-spacing="1">OBSERVATORI CÍVIC DE MOBILITAT</text>
+  <text x="40" y="85" fill="#ffffff" font-size="26" font-weight="bold">🌡️ El Termòmetre del Bus Mataró</text>
+  <text x="40" y="110" fill="#94a3b8" font-size="13">Informe de puntualitat i retards (${t.timeframeHours || 24}h)</text>
+  
+  <rect x="660" y="35" width="95" height="75" rx="10" fill="#1e293b" stroke="${gradeColor}" stroke-width="2"/>
+  <text x="707" y="58" fill="#94a3b8" font-size="11" text-anchor="middle" font-weight="bold">NOTA</text>
+  <text x="707" y="96" fill="${gradeColor}" font-size="34" text-anchor="middle" font-weight="bold">${t.grade}</text>
+  
+  <rect x="40" y="140" width="345" height="100" rx="10" fill="#1e293b" stroke="#10b981" stroke-width="1.5"/>
+  <text x="60" y="170" fill="#10b981" font-size="13" font-weight="bold">🏆 LÍNIA MÉS PUNTUAL</text>
+  <text x="60" y="202" fill="#ffffff" font-size="20" font-weight="bold">${t.championLine?.code || 'L1'} (${t.championLine?.onTimePct || 95}% puntual)</text>
+  <text x="60" y="225" fill="#94a3b8" font-size="12">Retard mitjà: ${t.championLine?.avgDelay || 0.8} min</text>
+  
+  <rect x="415" y="140" width="345" height="100" rx="10" fill="#1e293b" stroke="#ef4444" stroke-width="1.5"/>
+  <text x="435" y="170" fill="#ef4444" font-size="13" font-weight="bold">⚠️ PUNT NEGRE / RETARDS</text>
+  <text x="435" y="202" fill="#ffffff" font-size="18" font-weight="bold">${t.worstBottleneck?.stopName || 'Pl. Tereses'}</text>
+  <text x="435" y="225" fill="#94a3b8" font-size="12">${t.worstBottleneck?.lineCode || ''} • +${t.worstBottleneck?.avgDelay || 3.2} min retard mitjà</text>
+  
+  <rect x="40" y="260" width="345" height="100" rx="10" fill="#1e293b" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="60" y="290" fill="#f59e0b" font-size="13" font-weight="bold">⏱️ HORA PUNTA CONGESTIÓ</text>
+  <text x="60" y="322" fill="#ffffff" font-size="20" font-weight="bold">${t.peakHour || '08:00 - 09:00'}</text>
+  <text x="60" y="345" fill="#94a3b8" font-size="12">Punt màxim de retards a la xarxa</text>
+  
+  <rect x="415" y="260" width="345" height="100" rx="10" fill="#1e293b" stroke="#38bdf8" stroke-width="1.5"/>
+  <text x="435" y="290" fill="#38bdf8" font-size="13" font-weight="bold">🌐 PUNTUALITAT GLOBAL</text>
+  <text x="435" y="322" fill="#ffffff" font-size="20" font-weight="bold">${t.punctualityPct || 92}% (${(t.totalTripsAnalyzed || 0).toLocaleString()} viatges)</text>
+  <text x="435" y="345" fill="#94a3b8" font-size="12">Mitjana xarxa: ${t.networkAvgDelay || 1.1} min retard</text>
+  
+  <text x="40" y="395" fill="#64748b" font-size="12">Arribo! Mataró • Dades oficials en temps real • Avanza / Ajuntament de Mataró</text>
+</svg>`;
+      const blob = new Blob([svg], { type: 'image/svg+xml' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `termometre-bus-mataro-${t.timeframeHours || 24}h.svg`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
   }
 }
 

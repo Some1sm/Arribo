@@ -11,6 +11,9 @@ const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
 const flightRecorder = require('./flightRecorder');
 const BaseTracker = require('./core/BaseTracker');
+const transitRouter = require('./core/schedule/transitRouter');
+const intermodalHub = require('./core/intermodalHub');
+const mataroFleet = require('./data/mataroFleet');
 
 class MataroTracker extends BaseTracker {
   constructor() {
@@ -28,6 +31,7 @@ class MataroTracker extends BaseTracker {
     this.avisosCacheTtlMs = 5 * 60 * 1000; // 5-minute cache for official Avanza notices
     this.loadDatasets();
     this.precompileStaticRoutes();
+    transitRouter.setTracker(this);
   }
 
   async fetchAvisos() {
@@ -543,7 +547,20 @@ class MataroTracker extends BaseTracker {
         }
       }
     });
-    processedBuses = Array.from(uniqueBusesMap.values());
+    processedBuses = Array.from(uniqueBusesMap.values()).map(b => {
+      const fleetInfo = mataroFleet.getVehicleFleetInfo(b.vehicleId || b.tripId);
+      return {
+        ...b,
+        propulsion: fleetInfo.propulsion,
+        isElectric: fleetInfo.isElectric,
+        isHybrid: fleetInfo.isHybrid,
+        propulsionBadge: fleetInfo.badgeText,
+        propulsionIcon: fleetInfo.badgeIcon,
+        propulsionClass: fleetInfo.badgeClass,
+        modelName: fleetInfo.modelName,
+        isAccessible: fleetInfo.isAccessible
+      };
+    });
 
     const hasLiveGps = processedBuses.some(b => !b.isEstimated);
     const isOnlyEstimated = processedBuses.length > 0 && processedBuses.every(b => b.isEstimated);
@@ -1232,6 +1249,15 @@ class MataroTracker extends BaseTracker {
       }
     }
 
+    let intermodal = null;
+    try {
+      intermodal = await intermodalHub.getConnectionsForStop(sId, {
+        stopName: stopInfo.name,
+        lat: stopInfo.lat,
+        lon: stopInfo.lon
+      });
+    } catch (_) {}
+
     const result = {
       stop: {
         id: sId,
@@ -1241,7 +1267,10 @@ class MataroTracker extends BaseTracker {
         zone: 'Mataró Urbà'
       },
       departures: finalDepartures,
-      totalDepartures: finalDepartures.length
+      totalDepartures: finalDepartures.length,
+      isHub: intermodal ? Boolean(intermodal.isHub) : false,
+      hub: intermodal?.hub || null,
+      intermodalConnections: intermodal?.connections || []
     };
 
     // Store in memory cache for sub-millisecond retrieval
@@ -1366,6 +1395,107 @@ class MataroTracker extends BaseTracker {
           ? 'Servei en funcionament' 
           : (nextBus ? `Servei programat • Proper servei a les ${nextBus.departureTime}` : `Servei fora d'horari • Represa demà a les ${firstTimeTomorrow}`)
       }
+    };
+  }
+
+  // 4. In-Memory Journey Planner ("Com anar-hi")
+  async planJourney(origin, destination, options = {}) {
+    return transitRouter.planJourney(origin, destination, options);
+  }
+
+  // 5. Intermodal Multimodal Connections for Hubs (Rodalies R1 & Moventis e11)
+  async getIntermodalConnections(stopId, options = {}) {
+    return intermodalHub.getConnectionsForStop(stopId, options);
+  }
+
+  // 6. Dynamic Traffic Congestion & Slowdown Heatmap for Route Polylines
+  async getLineCongestion(lineId, direction = '0') {
+    const lId = String(lineId).replace(/^l/i, '');
+    const dirIdx = parseInt(direction, 10) || 0;
+    const routes = this.routesData[lId] || [];
+    const route = routes[dirIdx] || routes[0];
+    if (!route || !route.coords || route.coords.length < 2) {
+      return { lineId: lId, direction: String(dirIdx), segments: [] };
+    }
+
+    // Retrieve active vehicles on this line
+    const frVehicles = flightRecorder.getLineVehicles(`L${lId}`) || [];
+    let liveBuses = [];
+    try {
+      liveBuses = await this.fetchLiveVehicles(lId);
+    } catch (_) {}
+    const combinedVehicles = [...frVehicles, ...(liveBuses || [])];
+
+    const polyline = (route.coords || []).map(c => [
+      parseFloat(c.Latitude),
+      parseFloat(c.Longitude)
+    ]);
+
+    const stops = route.stops || [];
+    const segmentCount = Math.max(4, Math.min(12, stops.length - 1 || 8));
+    const step = Math.floor(polyline.length / segmentCount);
+    const segments = [];
+
+    for (let i = 0; i < segmentCount; i++) {
+      const startIdx = i * step;
+      const endIdx = (i === segmentCount - 1) ? polyline.length : Math.min(polyline.length, (i + 1) * step + 1);
+      const coords = polyline.slice(startIdx, endIdx);
+      if (coords.length < 2) continue;
+
+      const midCoord = coords[Math.floor(coords.length / 2)];
+      let segmentSpeed = 26; // Default fluid speed
+      let segmentDelay = 0;
+      let vehicleFound = false;
+
+      for (const v of combinedVehicles) {
+        const vLat = v.lat !== undefined ? v.lat : v.latitude;
+        const vLon = v.lon !== undefined ? v.lon : v.longitude;
+        if (vLat === undefined || vLon === undefined) continue;
+
+        const dist = geoEngine.calculateDistanceMeters(vLat, vLon, midCoord[0], midCoord[1]);
+        if (dist < 500) {
+          const spd = Number(v.speedKmh !== undefined ? v.speedKmh : v.speed);
+          if (Number.isFinite(spd) && spd >= 0) {
+            segmentSpeed = spd;
+            segmentDelay = Number(v.delayMinutes !== undefined ? v.delayMinutes : (v.delayMins || 0));
+            vehicleFound = true;
+            break;
+          }
+        }
+      }
+
+      let status = 'fluid';
+      let color = '#10b981'; // Green
+      let label = 'Fluid';
+
+      if (segmentSpeed < 10 || segmentDelay >= 4) {
+        status = 'congested';
+        color = '#ef4444'; // Red
+        label = 'Congestió';
+      } else if (segmentSpeed < 20 || segmentDelay >= 2) {
+        status = 'moderate';
+        color = '#f59e0b'; // Amber
+        label = 'Trànsit Dens';
+      }
+
+      segments.push({
+        segmentIndex: i,
+        status,
+        color,
+        label,
+        avgSpeedKmh: Math.round(segmentSpeed),
+        delayMins: Math.round(segmentDelay),
+        hasLiveVehicle: vehicleFound,
+        coords
+      });
+    }
+
+    return {
+      lineId: lId,
+      lineCode: `L${lId}`,
+      direction: String(dirIdx),
+      segmentsCount: segments.length,
+      segments
     };
   }
 }

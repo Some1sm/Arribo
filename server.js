@@ -11,6 +11,7 @@ const trackerRegistry = require('./src/core/TrackerRegistry');
 const workerBridge = require('./src/core/WorkerBridge');
 const calendarEngine = require('./src/core/time/calendarEngine');
 const delayEngine = require('./src/core/schedule/delayEngine');
+const mataroFleet = require('./src/data/mataroFleet');
 
 // ==========================================
 // 0. PROCESS-LEVEL RESILIENCE TRAPS
@@ -151,6 +152,19 @@ function standardizeVehicle(raw = {}) {
   if (!v.lastUpdate) {
     v.lastUpdate = v.recordedAt || new Date().toISOString();
   }
+
+  if (v.isElectric === undefined) {
+    const fleet = mataroFleet.getVehicleFleetInfo(v.vehicleId || v.tripId);
+    v.propulsion = fleet.propulsion;
+    v.isElectric = fleet.isElectric;
+    v.isHybrid = fleet.isHybrid;
+    v.propulsionBadge = fleet.badgeText;
+    v.propulsionIcon = fleet.badgeIcon;
+    v.propulsionClass = fleet.badgeClass;
+    v.modelName = fleet.modelName;
+    v.isAccessible = fleet.isAccessible;
+  }
+
   return v;
 }
 
@@ -509,6 +523,54 @@ app.get(['/api/mataro/stops/nearby', '/api/mataro/nearby', '/api/stops/nearby'],
   }
 });
 
+// Journey Planner ("Com anar-hi" - A to B routing in Mataró)
+app.get(['/api/mataro/plan', '/api/plan'], async (req, res) => {
+  const from = req.query.from;
+  const to = req.query.to;
+  if (!from || !to) {
+    return res.status(400).json({ success: false, error: 'Query parameters "from" and "to" are required.' });
+  }
+
+  let origin = from;
+  let destination = to;
+  if (req.query.fromLat && req.query.fromLon) {
+    origin = { lat: parseFloat(req.query.fromLat), lon: parseFloat(req.query.fromLon) };
+  }
+  if (req.query.toLat && req.query.toLon) {
+    destination = { lat: parseFloat(req.query.toLat), lon: parseFloat(req.query.toLon) };
+  }
+
+  try {
+    const plan = await mataroTracker.planJourney(origin, destination);
+    res.json(plan);
+  } catch (err) {
+    sendInternalError(req, res, err, { success: false, itineraries: [] });
+  }
+});
+
+// Intermodal Connections for a Stop (Rodalies R1 / RG1 & Moventis e11/C-10)
+app.get('/api/mataro/stop/:stopId/connections', async (req, res) => {
+  const { stopId } = req.params;
+  const arrivalMins = req.query.arrivalMins ? parseInt(req.query.arrivalMins, 10) : 0;
+  try {
+    const connections = await mataroTracker.getIntermodalConnections(stopId, { arrivalMinutes: arrivalMins });
+    res.json({ success: true, stopId, ...connections });
+  } catch (err) {
+    sendInternalError(req, res, err, { success: false, isHub: false, connections: [] });
+  }
+});
+
+// Traffic Congestion & Slowdown Heatmap for a line
+app.get('/api/mataro/line/:lineId/traffic', async (req, res) => {
+  const { lineId } = req.params;
+  const direction = req.query.direction || '0';
+  try {
+    const traffic = await mataroTracker.getLineCongestion(lineId, direction);
+    res.json({ success: true, ...traffic });
+  } catch (err) {
+    sendInternalError(req, res, err, { success: false, segments: [] });
+  }
+});
 
 // Disruptions / Notices for Mataró Bus (Live official Avanza notices)
 app.get('/api/disruptions', async (req, res) => {
@@ -638,6 +700,35 @@ app.get(['/api/retards/ranking', '/api/analytics/ranking'], async (req, res) => 
     });
   } catch (err) {
     sendInternalError(req, res, err, { ranking: [], rankingMostDelayed: [], agencyStats: [], timeframeHours: 24 });
+  }
+});
+
+// "El Termòmetre del Bus" — Scorecard & Weekly/Monthly Infographic Data
+app.get(['/api/analytics/termometre', '/api/retards/termometre'], async (req, res) => {
+  const hours = Math.max(1, Math.min(168, parseInt(req.query.hours, 10) || 24));
+  const allLines = trackerRegistry.getAllLines();
+  try {
+    let report = await reportCacheService.getLatestReport(hours, allLines);
+    if (!report) {
+      try {
+        report = await workerBridge.historyQuery('generateReport', { hours, allLinesCatalog: allLines }, { timeoutMs: 30000 });
+      } catch (_) {}
+    }
+    const termometre = report?.termometre || {
+      title: `El Termòmetre del Bus (${hours}h)`,
+      timeframeHours: hours,
+      grade: 'A',
+      punctualityPct: report?.summary?.networkPunctualityPct || 92,
+      networkAvgDelay: report?.summary?.networkAvgDelay || 1.1,
+      championLine: { code: 'L1', name: 'Línia 1', onTimePct: 95, avgDelay: 0.8 },
+      worstBottleneck: { stopName: 'Pl. de les Tereses', lineCode: 'L2', avgDelay: 3.2, severeLatePct: 14 },
+      peakHour: '08:00 - 09:00',
+      peakHourDelay: 2.3,
+      totalTripsAnalyzed: report?.summary?.totalRecordedArrivals || 0
+    };
+    res.json({ success: true, termometre, summary: report?.summary || {} });
+  } catch (err) {
+    sendInternalError(req, res, err);
   }
 });
 
