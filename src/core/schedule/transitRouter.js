@@ -637,58 +637,90 @@ class TransitRouter {
       itineraries = filterDominatedRoutes(oneTransferRoutes, 4);
     }
 
-    // Enrich first leg with live departure countdown if available, falling back to official schedules
+    // Enrich ALL legs with real-time departure countdowns and scheduled timetable fallbacks
+    const dateComp = calendarEngine.getDateComponents(new Date(), 'Europe/Madrid');
+    const currentSec = dateComp.hour * 3600 + dateComp.minute * 60 + (dateComp.second || 0);
+    const dayType = dateComp.isSunday ? 'sunday' : (dateComp.isSaturday ? 'saturday' : 'weekday');
+    let mataroSchedules = null;
+    try {
+      mataroSchedules = require('../../data/mataroSchedules');
+    } catch (_) {}
+
     for (const itin of itineraries) {
-      const firstLeg = itin.legs[0];
-      let waitMinutes = 8;
-      let depTime = 'En breu';
-      let isRealTime = false;
+      let cumulativeMins = itin.walkToFirstStop?.walkingMinutes || 0;
 
-      if (this.tracker && typeof this.tracker.getStopDepartures === 'function') {
-        try {
-          const boardStopId = firstLeg.fromStop && firstLeg.fromStop.id ? firstLeg.fromStop.id : origCandidates[0].id;
-          const depData = await this.tracker.getStopDepartures(boardStopId, firstLeg.lineId, firstLeg.direction);
-          if (depData && Array.isArray(depData.departures) && depData.departures.length > 0) {
-            const upcoming = depData.departures.filter(d => Number.isFinite(d.minutesAway) && d.minutesAway >= 0);
-            const nextDep = upcoming.length > 0 ? upcoming[0] : depData.departures[0];
-            if (nextDep && Number.isFinite(nextDep.minutesAway)) {
-              waitMinutes = nextDep.minutesAway;
-              depTime = nextDep.departureTime || `${nextDep.minutesAway} min`;
-              isRealTime = Boolean(nextDep.isRealTime);
+      for (let lIdx = 0; lIdx < itin.legs.length; lIdx++) {
+        const leg = itin.legs[lIdx];
+        let waitMinutes = 8;
+        let depTime = 'En breu';
+        let isRealTime = false;
+
+        // Earliest arrival at this boarding stop (in seconds from midnight)
+        const earliestArrivalSec = currentSec + (cumulativeMins * 60);
+
+        if (this.tracker && typeof this.tracker.getStopDepartures === 'function') {
+          try {
+            const boardStopId = leg.fromStop?.id || (lIdx === 0 ? origCandidates[0].id : null);
+            if (boardStopId) {
+              const depData = await this.tracker.getStopDepartures(boardStopId, leg.lineId, leg.direction);
+              if (depData && Array.isArray(depData.departures) && depData.departures.length > 0) {
+                // Find first upcoming departure that leaves at or after earliestArrivalSec (-60s grace)
+                const valid = depData.departures.filter(d => {
+                  if (d.departureTime && /^\d{1,2}:\d{2}$/.test(d.departureTime.trim())) {
+                    const depSec = timeEngine.timeStringToSeconds(d.departureTime.trim());
+                    return depSec >= earliestArrivalSec - 60;
+                  }
+                  return Number.isFinite(d.minutesAway) && d.minutesAway >= cumulativeMins - 1;
+                });
+
+                const targetDep = valid.length > 0 ? valid[0] : depData.departures[0];
+                if (targetDep) {
+                  depTime = targetDep.departureTime || (Number.isFinite(targetDep.minutesAway) ? `${targetDep.minutesAway} min` : 'En breu');
+                  isRealTime = Boolean(targetDep.isRealTime);
+                  if (targetDep.departureTime && /^\d{1,2}:\d{2}$/.test(targetDep.departureTime.trim())) {
+                    const depSec = timeEngine.timeStringToSeconds(targetDep.departureTime.trim());
+                    waitMinutes = Math.max(0, Math.round((depSec - currentSec) / 60));
+                  } else if (Number.isFinite(targetDep.minutesAway)) {
+                    waitMinutes = targetDep.minutesAway;
+                  }
+                }
+              }
             }
-          }
-        } catch (_) {}
-      }
+          } catch (_) {}
+        }
 
-      // If no live or stop departures found, fallback to official timetable schedule
-      if (depTime === 'En breu') {
-        try {
-          const mataroSchedules = require('../../data/mataroSchedules');
-          const dateComp = calendarEngine.getDateComponents(new Date(), 'Europe/Madrid');
-          const dayType = dateComp.isSunday ? 'sunday' : (dateComp.isSaturday ? 'saturday' : 'weekday');
-          const sched = mataroSchedules.getDirectionSchedule(firstLeg.lineId, firstLeg.direction, dayType);
-          if (sched && Array.isArray(sched.departures) && sched.departures.length > 0) {
-            const currentSec = dateComp.hour * 3600 + dateComp.minute * 60 + (dateComp.second || 0);
-            const nextTrip = sched.departures.find(t => timeEngine.timeStringToSeconds(t) >= currentSec);
-            if (nextTrip) {
-              const tripSec = timeEngine.timeStringToSeconds(nextTrip);
-              waitMinutes = Math.max(1, Math.round((tripSec - currentSec) / 60));
-              depTime = nextTrip;
-              isRealTime = false;
+        // Timetable schedule fallback
+        if (depTime === 'En breu' && mataroSchedules) {
+          try {
+            const sched = mataroSchedules.getDirectionSchedule(leg.lineId, leg.direction, dayType);
+            if (sched && Array.isArray(sched.departures) && sched.departures.length > 0) {
+              const nextTrip = sched.departures.find(t => timeEngine.timeStringToSeconds(t) >= earliestArrivalSec - 60);
+              if (nextTrip) {
+                const tripSec = timeEngine.timeStringToSeconds(nextTrip);
+                waitMinutes = Math.max(0, Math.round((tripSec - currentSec) / 60));
+                depTime = nextTrip;
+                isRealTime = false;
+              }
             }
-          }
-        } catch (_) {}
+          } catch (_) {}
+        }
+
+        leg.departureTime = depTime;
+        leg.isRealTime = isRealTime;
+        leg.nextDepartureMinutes = waitMinutes;
+        leg.nextDepartureMins = waitMinutes;
+
+        // If this is first leg, attach to itinerary root level
+        if (lIdx === 0) {
+          itin.departureTime = depTime;
+          itin.isRealTime = isRealTime;
+          itin.nextDepartureMinutes = waitMinutes;
+          itin.nextDepartureMins = waitMinutes;
+        }
+
+        // Cumulative minutes for the next transfer leg
+        cumulativeMins = Math.max(cumulativeMins, waitMinutes) + (leg.durationMinutes || 10) + (itin.transferWalk?.walkingMinutes || 0);
       }
-
-      itin.nextDepartureMinutes = waitMinutes;
-      itin.nextDepartureMins = waitMinutes;
-      itin.departureTime = depTime;
-      itin.isRealTime = isRealTime;
-
-      firstLeg.nextDepartureMinutes = waitMinutes;
-      firstLeg.nextDepartureMins = waitMinutes;
-      firstLeg.departureTime = depTime;
-      firstLeg.isRealTime = isRealTime;
     }
 
     return {

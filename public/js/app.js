@@ -4437,15 +4437,22 @@ class TransitApp {
               ` : ''}
               <div class="planner-leg-item">
                 <div>
-                  <div style="display:flex; align-items:center; gap:6px; margin-bottom:2px;">
-                    <span class="planner-leg-badge" style="background:${leg.lineColor || '#009485'};">
-                      ${this.esc(leg.lineCode)}
-                    </span>
-                    <span style="font-size:0.82rem; font-weight:700; color:var(--text-primary);">
-                      ${destText ? `Cap a ${this.esc(destText)}` : ''}
-                    </span>
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:2px;">
+                    <div style="display:flex; align-items:center; gap:6px;">
+                      <span class="planner-leg-badge" style="background:${leg.lineColor || '#009485'};">
+                        ${this.esc(leg.lineCode)}
+                      </span>
+                      <span style="font-size:0.82rem; font-weight:700; color:var(--text-primary);">
+                        ${destText ? `Cap a ${this.esc(destText)}` : ''}
+                      </span>
+                    </div>
+                    ${leg.departureTime && leg.departureTime !== 'En breu' ? `
+                      <span style="font-size:0.72rem; font-weight:700; color:${leg.isRealTime ? '#10b981' : '#f59e0b'}; background:${leg.isRealTime ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)'}; padding:2px 5px; border-radius:4px;">
+                        🕐 ${this.esc(leg.departureTime)}${leg.isRealTime ? ' • En viu' : ' • Horari'}
+                      </span>
+                    ` : ''}
                   </div>
-                  <div style="font-size:0.82rem; color:var(--text-secondary);">
+                  <div style="font-size:0.82rem; color:var(--text-secondary); margin-top:2px;">
                     🟢 Pujar a: <strong>${this.esc(leg.fromStop.name)}</strong>
                   </div>
                   <div style="font-size:0.82rem; color:var(--text-secondary);">

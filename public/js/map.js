@@ -804,22 +804,23 @@ class C10Map {
         });
         this.itineraryLayerGroup.addLayer(walkLine);
 
-        // Origin Address Pin
+        // Origin Address Pin (Compact dot marker to prevent overlapping the bus stop badge)
         const origPinIcon = L.divIcon({
-          className: 'custom-itinerary-marker',
+          className: 'custom-itinerary-pin',
           html: `
-            <div class="itinerary-node-badge node-walk-origin" style="--node-color:#38bdf8">
-              <span class="node-icon">📍</span>
-              <div class="node-label">
-                <div class="node-action">Origen</div>
-                <div class="node-name">${escHtml(itinerary.walkToFirstStop.fromName || 'Punt d\'origen')}</div>
-              </div>
+            <div style="display:flex; align-items:center; justify-content:center; width:28px; height:28px; border-radius:50%; background:#0284c7; border:2.5px solid #ffffff; box-shadow:0 3px 12px rgba(0,0,0,0.55); cursor:pointer;">
+              <span style="font-size:14px; line-height:1;">📍</span>
             </div>
           `,
-          iconSize: [160, 36],
-          iconAnchor: [20, 18]
+          iconSize: [28, 28],
+          iconAnchor: [14, 14]
         });
         const mOrig = L.marker(walkFrom, { icon: origPinIcon, zIndexOffset: 2500 });
+        mOrig.bindTooltip(`📍 <strong>Origen</strong>: ${escHtml(itinerary.walkToFirstStop.fromName || 'Punt d\'origen')}<br><span style="color:#94a3b8; font-size:11px;">(~${itinerary.walkToFirstStop.distanceMeters} m • ${itinerary.walkToFirstStop.walkingMinutes} min a peu)</span>`, {
+          direction: 'top',
+          offset: [0, -12],
+          className: 'stop-hover-tooltip'
+        });
         this.itineraryLayerGroup.addLayer(mOrig);
       }
     }
@@ -868,22 +869,23 @@ class C10Map {
         });
         this.itineraryLayerGroup.addLayer(walkLine);
 
-        // Destination Address Pin
+        // Destination Address Pin (Compact dot marker to prevent overlapping the bus stop badge)
         const destPinIcon = L.divIcon({
-          className: 'custom-itinerary-marker',
+          className: 'custom-itinerary-pin',
           html: `
-            <div class="itinerary-node-badge node-walk-dest" style="--node-color:#f59e0b">
-              <span class="node-icon">🏁</span>
-              <div class="node-label">
-                <div class="node-action">Destinació</div>
-                <div class="node-name">${escHtml(itinerary.walkFromLastStop.toName || 'Punt de destinació')}</div>
-              </div>
+            <div style="display:flex; align-items:center; justify-content:center; width:28px; height:28px; border-radius:50%; background:#ef4444; border:2.5px solid #ffffff; box-shadow:0 3px 12px rgba(0,0,0,0.55); cursor:pointer;">
+              <span style="font-size:14px; line-height:1;">🏁</span>
             </div>
           `,
-          iconSize: [160, 36],
-          iconAnchor: [20, 18]
+          iconSize: [28, 28],
+          iconAnchor: [14, 14]
         });
         const mDest = L.marker(walkTo, { icon: destPinIcon, zIndexOffset: 2500 });
+        mDest.bindTooltip(`🏁 <strong>Destinació</strong>: ${escHtml(itinerary.walkFromLastStop.toName || 'Punt de destinació')}<br><span style="color:#94a3b8; font-size:11px;">(~${itinerary.walkFromLastStop.distanceMeters} m • ${itinerary.walkFromLastStop.walkingMinutes} min a peu)</span>`, {
+          direction: 'top',
+          offset: [0, -12],
+          className: 'stop-hover-tooltip'
+        });
         this.itineraryLayerGroup.addLayer(mDest);
       }
     }
@@ -902,19 +904,33 @@ class C10Map {
         const originColor = (firstLeg.lineColor || firstLeg.color || '#10b981');
         const safeOriginColor = (typeof originColor === 'string' && /^#[0-9a-fA-F]{3,8}$|^rgba?\([0-9,.\s%]+\)$/.test(originColor.trim()))
           ? originColor.trim() : '#10b981';
+
+        const depTimeHtml = firstLeg.departureTime && firstLeg.departureTime !== 'En breu'
+          ? `<span style="font-size:11px; font-weight:800; color:#10b981; background:rgba(16,185,129,0.15); padding:1px 5px; border-radius:4px; margin-left:auto;">🕐 ${escHtml(firstLeg.departureTime)}</span>`
+          : '';
+        const rtBadge = firstLeg.isRealTime
+          ? '<span style="font-size:10px; color:#10b981; font-weight:700;">🟢 En viu</span>'
+          : '<span style="font-size:10px; color:#94a3b8;">📅 Horari</span>';
+
         const originIcon = L.divIcon({
           className: 'custom-itinerary-marker',
           html: `
-            <div class="itinerary-node-badge node-origin" style="--node-color:${safeOriginColor}">
+            <div class="itinerary-node-badge node-origin" style="--node-color:${safeOriginColor}; min-width:185px;">
               <span class="node-icon">🟢</span>
               <div class="node-label">
-                <div class="node-action">Pujar a ${escHtml(firstLeg.lineCode)}</div>
-                <div class="node-name">${escHtml(firstLeg.fromStop.name)}</div>
+                <div class="node-action" style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+                  <span>Pujar a ${escHtml(firstLeg.lineCode)}</span>
+                  ${depTimeHtml}
+                </div>
+                <div class="node-name" style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+                  <span>${escHtml(firstLeg.fromStop.name)}</span>
+                  ${rtBadge}
+                </div>
               </div>
             </div>
           `,
-          iconSize: [160, 36],
-          iconAnchor: [20, 18]
+          iconSize: [185, 42],
+          iconAnchor: [20, 21]
         });
         const m = L.marker([oLat, oLon], { icon: originIcon, zIndexOffset: 2000 });
         this.itineraryLayerGroup.addLayer(m);
@@ -931,19 +947,33 @@ class C10Map {
         const tLon = parseFloat(tStop.lon || tStop.longitude);
         if (Number.isFinite(tLat) && Number.isFinite(tLon)) {
           allPoints.push([tLat, tLon]);
+
+          const tDepTimeHtml = nextLeg.departureTime && nextLeg.departureTime !== 'En breu'
+            ? `<span style="font-size:11px; font-weight:800; color:#f59e0b; background:rgba(245,158,11,0.15); padding:1px 5px; border-radius:4px; margin-left:auto;">🕐 ${escHtml(nextLeg.departureTime)}</span>`
+            : '';
+          const tRtBadge = nextLeg.isRealTime
+            ? '<span style="font-size:10px; color:#10b981; font-weight:700;">🟢 En viu</span>'
+            : '<span style="font-size:10px; color:#94a3b8;">📅 Horari</span>';
+
           const transferIcon = L.divIcon({
             className: 'custom-itinerary-marker',
             html: `
-              <div class="itinerary-node-badge node-transfer" style="--node-color:#f59e0b">
+              <div class="itinerary-node-badge node-transfer" style="--node-color:#f59e0b; min-width:195px;">
                 <span class="node-icon">🔄</span>
                 <div class="node-label">
-                  <div class="node-action">Transbordament ${escHtml(curLeg.lineCode)} ➔ ${escHtml(nextLeg.lineCode)}</div>
-                  <div class="node-name">${escHtml(tStop.name)}</div>
+                  <div class="node-action" style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+                    <span>Pujar a ${escHtml(nextLeg.lineCode)}</span>
+                    ${tDepTimeHtml}
+                  </div>
+                  <div class="node-name" style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+                    <span>${escHtml(tStop.name)}</span>
+                    ${tRtBadge}
+                  </div>
                 </div>
               </div>
             `,
-            iconSize: [180, 36],
-            iconAnchor: [20, 18]
+            iconSize: [195, 42],
+            iconAnchor: [20, 21]
           });
           const m = L.marker([tLat, tLon], { icon: transferIcon, zIndexOffset: 2000 });
           this.itineraryLayerGroup.addLayer(m);
