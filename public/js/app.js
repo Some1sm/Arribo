@@ -4155,8 +4155,12 @@ class TransitApp {
     container.innerHTML = itineraries.map((it) => {
       const isDirect = it.type === 'direct';
       const firstLeg = it.legs[0];
-      const waitMin = firstLeg.nextDepartureMins !== null ? firstLeg.nextDepartureMins : null;
-      const waitText = waitMin !== null ? ` • Surt en ${waitMin} min` : '';
+      const waitMin = Number.isFinite(firstLeg?.nextDepartureMins) 
+        ? firstLeg.nextDepartureMins 
+        : (Number.isFinite(it.nextDepartureMinutes) 
+            ? it.nextDepartureMinutes 
+            : (Number.isFinite(it.nextDepartureMins) ? it.nextDepartureMins : null));
+      const waitText = Number.isFinite(waitMin) ? ` • Surt en ${waitMin} min` : '';
 
       return `
         <div class="planner-itinerary-card">
@@ -4171,7 +4175,9 @@ class TransitApp {
           </div>
 
           <div class="planner-legs-flow">
-            ${it.legs.map((leg) => `
+            ${it.legs.map((leg) => {
+              const destText = leg.destination || (leg.toStop && leg.toStop.name) || '';
+              return `
               <div class="planner-leg-item">
                 <div>
                   <div style="display:flex; align-items:center; gap:6px; margin-bottom:2px;">
@@ -4179,7 +4185,7 @@ class TransitApp {
                       ${this.esc(leg.lineCode)}
                     </span>
                     <span style="font-size:0.82rem; font-weight:700; color:var(--text-primary);">
-                      Cap a ${this.esc(leg.destination)}
+                      ${destText ? `Cap a ${this.esc(destText)}` : ''}
                     </span>
                   </div>
                   <div style="font-size:0.82rem; color:var(--text-secondary);">
@@ -4190,7 +4196,8 @@ class TransitApp {
                   </div>
                 </div>
               </div>
-            `).join('')}
+            `;
+            }).join('')}
           </div>
 
           <div style="display:flex; justify-content:flex-end; margin-top:0.75rem;">
