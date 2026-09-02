@@ -476,7 +476,7 @@ class TransitRouter {
       itineraries = oneTransferRoutes.slice(0, 4);
     }
 
-    // Enrich first leg with live departure countdown if available
+    // Enrich first leg with live departure countdown if available, falling back to official schedules
     for (const itin of itineraries) {
       const firstLeg = itin.legs[0];
       let waitMinutes = 8;
@@ -488,11 +488,32 @@ class TransitRouter {
           const boardStopId = firstLeg.fromStop && firstLeg.fromStop.id ? firstLeg.fromStop.id : origCandidates[0].id;
           const depData = await this.tracker.getStopDepartures(boardStopId, firstLeg.lineId, firstLeg.direction);
           if (depData && Array.isArray(depData.departures) && depData.departures.length > 0) {
-            const nextDep = depData.departures[0];
-            if (Number.isFinite(nextDep.minutesAway)) {
+            const upcoming = depData.departures.filter(d => Number.isFinite(d.minutesAway) && d.minutesAway >= 0);
+            const nextDep = upcoming.length > 0 ? upcoming[0] : depData.departures[0];
+            if (nextDep && Number.isFinite(nextDep.minutesAway)) {
               waitMinutes = nextDep.minutesAway;
               depTime = nextDep.departureTime || `${nextDep.minutesAway} min`;
               isRealTime = Boolean(nextDep.isRealTime);
+            }
+          }
+        } catch (_) {}
+      }
+
+      // If no live or stop departures found, fallback to official timetable schedule
+      if (depTime === 'En breu') {
+        try {
+          const mataroSchedules = require('../../data/mataroSchedules');
+          const dateComp = calendarEngine.getDateComponents(new Date(), 'Europe/Madrid');
+          const dayType = dateComp.isSunday ? 'sunday' : (dateComp.isSaturday ? 'saturday' : 'weekday');
+          const sched = mataroSchedules.getDirectionSchedule(firstLeg.lineId, firstLeg.direction, dayType);
+          if (sched && Array.isArray(sched.departures) && sched.departures.length > 0) {
+            const currentSec = dateComp.hour * 3600 + dateComp.minute * 60 + (dateComp.second || 0);
+            const nextTrip = sched.departures.find(t => timeEngine.timeStringToSeconds(t) >= currentSec);
+            if (nextTrip) {
+              const tripSec = timeEngine.timeStringToSeconds(nextTrip);
+              waitMinutes = Math.max(1, Math.round((tripSec - currentSec) / 60));
+              depTime = nextTrip;
+              isRealTime = false;
             }
           }
         } catch (_) {}

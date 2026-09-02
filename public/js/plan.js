@@ -8,6 +8,10 @@ class PlannerPageApp {
     this.currentItineraries = [];
     this.activeItineraryIndex = 0;
     this.searchAbortController = null;
+    this.pollTimer = null;
+    this.lastSearchUrl = null;
+    this.lastOriginStop = null;
+    this.lastDestStop = null;
     this.init();
   }
 
@@ -16,6 +20,16 @@ class PlannerPageApp {
     this.initMap();
     this.bindEvents();
     this.checkUrlParams();
+
+    // Suspend polling when tab is hidden, resume when visible
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        this.stopPolling();
+      } else if (this.lastSearchUrl && this.currentItineraries.length > 0) {
+        this.refreshLiveDepartures();
+        this.startPolling();
+      }
+    });
   }
 
   initTheme() {
@@ -362,6 +376,12 @@ class PlannerPageApp {
         return;
       }
 
+      // Save search state and start live polling (refreshes every 15s)
+      this.lastSearchUrl = url;
+      this.lastOriginStop = data.originStop;
+      this.lastDestStop = data.destStop;
+      this.startPolling();
+
       // Render Itineraries
       this.renderItineraries(this.currentItineraries, data.originStop, data.destStop);
 
@@ -406,8 +426,13 @@ class PlannerPageApp {
     if (!container) return;
 
     container.innerHTML = `
-      <div style="font-size:0.82rem; color:var(--text-muted); font-weight:700; margin-bottom:4px;">
-        ${itineraries.length} ${itineraries.length === 1 ? 'OPCIÓ TROBADA' : 'OPCIONS TROBADES'}:
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+        <span style="font-size:0.82rem; color:var(--text-muted); font-weight:700;">
+          ${itineraries.length} ${itineraries.length === 1 ? 'OPCIÓ TROBADA' : 'OPCIONS TROBADES'}:
+        </span>
+        <span style="font-size:0.72rem; color:var(--text-muted); display:inline-flex; align-items:center; gap:4px;">
+          <span style="width:6px; height:6px; background:#10b981; border-radius:50%; display:inline-block;"></span> Actualitzant en viu
+        </span>
       </div>
       ${itineraries.map((it, idx) => {
         const isDirect = it.type === 'direct';
@@ -417,14 +442,23 @@ class PlannerPageApp {
           : (Number.isFinite(it.nextDepartureMinutes) 
               ? it.nextDepartureMinutes 
               : (Number.isFinite(it.nextDepartureMins) ? it.nextDepartureMins : null));
-        const waitText = Number.isFinite(waitMin) ? ` • Surt en ${waitMin} min` : '';
+
+        const isRealTime = Boolean(firstLeg?.isRealTime ?? it.isRealTime);
+        const waitBadge = isRealTime
+          ? `<span style="display:inline-flex; align-items:center; gap:5px; font-size:0.75rem; color:#10b981; font-weight:700; background:rgba(16,185,129,0.12); border:1px solid rgba(16,185,129,0.25); padding:2px 7px; border-radius:4px;">
+               <span style="width:6px; height:6px; background:#10b981; border-radius:50%; box-shadow:0 0 6px #10b981;"></span>
+               ${Number.isFinite(waitMin) ? `En temps real: ${waitMin} min` : 'En temps real'}
+             </span>`
+          : `<span style="display:inline-flex; align-items:center; gap:5px; font-size:0.75rem; color:#f59e0b; font-weight:600; background:rgba(245,158,11,0.1); border:1px solid rgba(245,158,11,0.2); padding:2px 7px; border-radius:4px;">
+               <span>📅</span> Horari oficial: ${firstLeg?.departureTime || (Number.isFinite(waitMin) ? `${waitMin} min` : 'Teòric')}
+             </span>`;
 
         return `
-          <div class="planner-itinerary-card ${idx === 0 ? 'plan-itinerary-active' : ''}" data-itinerary-index="${idx}" style="cursor:pointer;">
+          <div class="planner-itinerary-card ${idx === this.activeItineraryIndex ? 'plan-itinerary-active' : ''}" data-itinerary-index="${idx}" style="cursor:pointer;">
             <div class="planner-card-header">
-              <div class="planner-total-duration">
+              <div class="planner-total-duration" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                 <span>⏱️ ~${it.totalDurationMins} min</span>
-                <span style="font-size:0.85rem; font-weight:600; color:var(--text-secondary);">${waitText}</span>
+                ${waitBadge}
               </div>
               <span class="${isDirect ? 'planner-tag-direct' : 'planner-tag-transfer'}">
                 ${isDirect ? '✓ Ruta Directa' : '🔄 1 Transbordament'}
@@ -481,7 +515,7 @@ class PlannerPageApp {
     });
   }
 
-  selectItinerary(index) {
+  selectItinerary(index, repaintMap = true) {
     if (!this.currentItineraries[index]) return;
     this.activeItineraryIndex = index;
 
@@ -494,10 +528,47 @@ class PlannerPageApp {
       }
     });
 
-    const it = this.currentItineraries[index];
-    if (this.mapController && typeof this.mapController.renderItinerary === 'function') {
-      this.mapController.renderItinerary(it);
+    if (repaintMap) {
+      const it = this.currentItineraries[index];
+      if (this.mapController && typeof this.mapController.renderItinerary === 'function') {
+        this.mapController.renderItinerary(it);
+      }
     }
+  }
+
+  startPolling() {
+    this.stopPolling();
+    this.pollTimer = setInterval(() => {
+      if (document.hidden) return;
+      this.refreshLiveDepartures();
+    }, 15000);
+  }
+
+  stopPolling() {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+    }
+  }
+
+  async refreshLiveDepartures() {
+    if (!this.lastSearchUrl || this.currentItineraries.length === 0) return;
+    try {
+      const res = await fetch(this.lastSearchUrl);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data.success || !Array.isArray(data.itineraries) || data.itineraries.length === 0) return;
+
+      this.currentItineraries = data.itineraries;
+      this.lastOriginStop = data.originStop || this.lastOriginStop;
+      this.lastDestStop = data.destStop || this.lastDestStop;
+
+      // Re-render itinerary cards with fresh real-time/scheduled data
+      this.renderItineraries(this.currentItineraries, this.lastOriginStop, this.lastDestStop);
+
+      // Preserve active card without re-fitting map bounds
+      this.selectItinerary(this.activeItineraryIndex, false);
+    } catch (_) {}
   }
 
   esc(str) {
