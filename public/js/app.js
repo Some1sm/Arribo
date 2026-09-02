@@ -4125,7 +4125,7 @@ class TransitApp {
 
       const fromQuery = originInput?.dataset?.stopId || origin.replace(/\s*\([^)]*\)$/, '').trim();
       const toQuery = destInput?.dataset?.stopId || dest.replace(/\s*\([^)]*\)$/, '').trim();
-      let url = `/api/mataro/plan?from=${encodeURIComponent(fromQuery)}&to=${encodeURIComponent(toQuery)}`;
+      let url = `/api/mataro/plan?from=${encodeURIComponent(fromQuery)}&to=${encodeURIComponent(toQuery)}&fromName=${encodeURIComponent(origin)}&toName=${encodeURIComponent(dest)}`;
       if (originInput?.dataset?.lat && originInput?.dataset?.lon) {
         url += `&fromLat=${originInput.dataset.lat}&fromLon=${originInput.dataset.lon}`;
       } else if (this._plannerOriginCoords && origin.includes('ubicació')) {
@@ -4420,7 +4420,7 @@ class TransitApp {
               <div style="display:flex; align-items:center; gap:8px; padding:3px 0 5px 0; color:var(--text-secondary); font-size:0.8rem; border-bottom:1px dashed var(--border-subtle); margin-bottom:5px;">
                 <span style="font-size:1rem; line-height:1;">🚶</span>
                 <div>
-                  <span>Caminar des de <strong>${this.esc(it.walkToFirstStop.fromName || 'l\'origen')}</strong></span>
+                  <span>Caminar des de <strong>${this.esc((it.walkToFirstStop.fromName && !/^\d+$/.test(it.walkToFirstStop.fromName.trim())) ? it.walkToFirstStop.fromName : (origName || 'l\'origen'))}</strong></span>
                   <span style="font-size:0.75rem; color:var(--text-muted); margin-left:4px;">(~${it.walkToFirstStop.walkingMinutes} min • ${it.walkToFirstStop.distanceMeters} m)</span>
                 </div>
               </div>
@@ -4460,7 +4460,7 @@ class TransitApp {
               <div style="display:flex; align-items:center; gap:8px; padding:5px 0 2px 0; color:var(--text-secondary); font-size:0.8rem; border-top:1px dashed var(--border-subtle); margin-top:5px;">
                 <span style="font-size:1rem; line-height:1;">🚶</span>
                 <div>
-                  <span>Caminar fins a <strong>${this.esc(it.walkFromLastStop.toName || 'la destinació')}</strong></span>
+                  <span>Caminar fins a <strong>${this.esc((it.walkFromLastStop.toName && !/^\d+$/.test(it.walkFromLastStop.toName.trim())) ? it.walkFromLastStop.toName : (destName || 'la destinació'))}</strong></span>
                   <span style="font-size:0.75rem; color:var(--text-muted); margin-left:4px;">(~${it.walkFromLastStop.walkingMinutes} min • ${it.walkFromLastStop.distanceMeters} m)</span>
                 </div>
               </div>

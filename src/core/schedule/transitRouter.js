@@ -349,10 +349,12 @@ class TransitRouter {
 
           let walkToFirstStop = null;
           if (o.pointCoord && o.distanceMeters) {
+            const rawOrig = (o.pointName || options.originName || (typeof origin === 'object' ? origin.name : '') || '').trim();
+            const fromName = (rawOrig && !/^\d+$/.test(rawOrig)) ? rawOrig : 'l\'origen';
             walkToFirstStop = {
               from: [o.pointCoord.lat, o.pointCoord.lon],
               to: [intermediateStops[0].lat, intermediateStops[0].lon],
-              fromName: o.pointName || 'Origen',
+              fromName,
               toName: intermediateStops[0].name,
               distanceMeters: o.distanceMeters,
               walkingMinutes: o.walkingMinutes || Math.max(1, Math.round(o.distanceMeters / 80))
@@ -361,11 +363,13 @@ class TransitRouter {
 
           let walkFromLastStop = null;
           if (d.pointCoord && d.distanceMeters) {
+            const rawDest = (d.pointName || options.destName || (typeof destination === 'object' ? destination.name : '') || '').trim();
+            const toName = (rawDest && !/^\d+$/.test(rawDest)) ? rawDest : 'la destinació';
             walkFromLastStop = {
               from: [intermediateStops[intermediateStops.length - 1].lat, intermediateStops[intermediateStops.length - 1].lon],
               to: [d.pointCoord.lat, d.pointCoord.lon],
               fromName: intermediateStops[intermediateStops.length - 1].name,
-              toName: d.pointName || 'Destinació',
+              toName,
               distanceMeters: d.distanceMeters,
               walkingMinutes: d.walkingMinutes || Math.max(1, Math.round(d.distanceMeters / 80))
             };
@@ -473,10 +477,12 @@ class TransitRouter {
 
                 let walkToFirstStop = null;
                 if (o.pointCoord && o.distanceMeters) {
+                  const rawOrig = (o.pointName || options.originName || (typeof origin === 'object' ? origin.name : '') || '').trim();
+                  const fromName = (rawOrig && !/^\d+$/.test(rawOrig)) ? rawOrig : 'l\'origen';
                   walkToFirstStop = {
                     from: [o.pointCoord.lat, o.pointCoord.lon],
                     to: [leg1Stops[0].lat, leg1Stops[0].lon],
-                    fromName: o.pointName || 'Origen',
+                    fromName,
                     toName: leg1Stops[0].name,
                     distanceMeters: o.distanceMeters,
                     walkingMinutes: o.walkingMinutes || Math.max(1, Math.round(o.distanceMeters / 80))
@@ -485,11 +491,13 @@ class TransitRouter {
 
                 let walkFromLastStop = null;
                 if (d.pointCoord && d.distanceMeters) {
+                  const rawDest = (d.pointName || options.destName || (typeof destination === 'object' ? destination.name : '') || '').trim();
+                  const toName = (rawDest && !/^\d+$/.test(rawDest)) ? rawDest : 'la destinació';
                   walkFromLastStop = {
                     from: [leg2Stops[leg2Stops.length - 1].lat, leg2Stops[leg2Stops.length - 1].lon],
                     to: [d.pointCoord.lat, d.pointCoord.lon],
                     fromName: leg2Stops[leg2Stops.length - 1].name,
-                    toName: d.pointName || 'Destinació',
+                    toName,
                     distanceMeters: d.distanceMeters,
                     walkingMinutes: d.walkingMinutes || Math.max(1, Math.round(d.distanceMeters / 80))
                   };
@@ -559,24 +567,74 @@ class TransitRouter {
       }
     }
 
-    // Sort: direct routes first by duration, then transfers by duration
-    directRoutes.sort((a, b) => a.totalDurationMinutes - b.totalDurationMinutes);
-    oneTransferRoutes.sort((a, b) => a.totalDurationMinutes - b.totalDurationMinutes);
+    // Deduplication & Dominance Filtering:
+    // Prunes strictly dominated routes (e.g. walking further to catch the exact same bus)
+    // and prioritizes diverse transit choices (different lines / interchange points).
+    const filterDominatedRoutes = (routesList, maxResults = 4) => {
+      routesList.sort((a, b) => {
+        if (a.totalDurationMinutes !== b.totalDurationMinutes) {
+          return a.totalDurationMinutes - b.totalDurationMinutes;
+        }
+        const aWalk = (a.walkToFirstStop?.distanceMeters || 0) + (a.walkFromLastStop?.distanceMeters || 0) + (a.transferWalk?.distanceMeters || 0);
+        const bWalk = (b.walkToFirstStop?.distanceMeters || 0) + (b.walkFromLastStop?.distanceMeters || 0) + (b.transferWalk?.distanceMeters || 0);
+        return aWalk - bWalk;
+      });
 
-    // Pick top itineraries: prioritize direct routes, fallback to transfers
+      const selected = [];
+      const seenLineSignatures = new Map();
+
+      for (const itin of routesList) {
+        const lineSig = itin.legs.map(l => l.lineId).join('->');
+        const origWalk = itin.walkToFirstStop?.distanceMeters || 0;
+        const destWalk = itin.walkFromLastStop?.distanceMeters || 0;
+        const totalWalk = origWalk + destWalk + (itin.transferWalk?.distanceMeters || 0);
+
+        if (!seenLineSignatures.has(lineSig)) {
+          seenLineSignatures.set(lineSig, { itin, totalWalk, origWalk, destWalk });
+          selected.push(itin);
+        } else {
+          const existing = seenLineSignatures.get(lineSig);
+          const origWalkDiff = origWalk - existing.origWalk;
+
+          // If the user has to walk 40+ meters MORE at origin to catch the EXACT SAME line, discard it!
+          if (origWalkDiff > 40) {
+            continue;
+          }
+
+          // If durations are close (within 3 mins) and same lines:
+          if (Math.abs(itin.totalDurationMinutes - existing.itin.totalDurationMinutes) <= 3) {
+            // If this route drops off closer to destination (by at least 25m) without adding origin walking, prefer it!
+            if (destWalk < existing.destWalk - 25 && origWalk <= existing.origWalk + 20) {
+              const idx = selected.indexOf(existing.itin);
+              if (idx !== -1) selected[idx] = itin;
+              seenLineSignatures.set(lineSig, { itin, totalWalk, origWalk, destWalk });
+            }
+            continue;
+          }
+
+          if (selected.length < maxResults) {
+            selected.push(itin);
+          }
+        }
+
+        if (selected.length >= maxResults) break;
+      }
+
+      return selected;
+    };
+
     let itineraries = [];
     if (directRoutes.length > 0) {
-      itineraries = [...directRoutes.slice(0, 3)];
-      // Only add transfer options if they offer a completely different line combination
-      const usedLinePairs = new Set(directRoutes.map(d => d.legs[0].lineId));
-      for (const t of oneTransferRoutes) {
-        if (!usedLinePairs.has(t.legs[0].lineId)) {
-          itineraries.push(t);
-          if (itineraries.length >= 4) break;
-        }
-      }
+      const bestDirect = filterDominatedRoutes(directRoutes, 3);
+      itineraries.push(...bestDirect);
+
+      // Only add transfer options that offer a different line
+      const usedFirstLines = new Set(bestDirect.map(d => d.legs[0].lineId));
+      const transferCandidates = oneTransferRoutes.filter(t => !usedFirstLines.has(t.legs[0].lineId));
+      const bestTransfers = filterDominatedRoutes(transferCandidates, 2);
+      itineraries.push(...bestTransfers);
     } else {
-      itineraries = oneTransferRoutes.slice(0, 4);
+      itineraries = filterDominatedRoutes(oneTransferRoutes, 4);
     }
 
     // Enrich first leg with live departure countdown if available, falling back to official schedules

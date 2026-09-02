@@ -609,7 +609,12 @@ app.get(['/api/mataro/plan', '/api/plan'], async (req, res) => {
   }
 
   try {
-    const plan = await mataroTracker.planJourney(origin, destination);
+    const origLabel = (typeof origin === 'object' && origin.name) ? origin.name : (req.query.fromName || from);
+    const destLabel = (typeof destination === 'object' && destination.name) ? destination.name : (req.query.toName || to);
+    const plan = await mataroTracker.planJourney(origin, destination, {
+      originName: origLabel,
+      destName: destLabel
+    });
     res.json(plan);
   } catch (err) {
     sendInternalError(req, res, err, { success: false, itineraries: [] });
