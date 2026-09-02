@@ -4126,26 +4126,66 @@ class TransitApp {
       const fromQuery = originInput?.dataset?.stopId || origin.replace(/\s*\([^)]*\)$/, '').trim();
       const toQuery = destInput?.dataset?.stopId || dest.replace(/\s*\([^)]*\)$/, '').trim();
       let url = `/api/mataro/plan?from=${encodeURIComponent(fromQuery)}&to=${encodeURIComponent(toQuery)}`;
-      if (this._plannerOriginCoords && origin.includes('ubicació')) {
+      if (originInput?.dataset?.lat && originInput?.dataset?.lon) {
+        url += `&fromLat=${originInput.dataset.lat}&fromLon=${originInput.dataset.lon}`;
+      } else if (this._plannerOriginCoords && origin.includes('ubicació')) {
         url += `&fromLat=${this._plannerOriginCoords.lat}&fromLon=${this._plannerOriginCoords.lon}`;
       }
-      if (this._plannerDestCoords && dest.includes('ubicació')) {
+      if (destInput?.dataset?.lat && destInput?.dataset?.lon) {
+        url += `&toLat=${destInput.dataset.lat}&toLon=${destInput.dataset.lon}`;
+      } else if (this._plannerDestCoords && dest.includes('ubicació')) {
         url += `&toLat=${this._plannerDestCoords.lat}&toLon=${this._plannerDestCoords.lon}`;
       }
 
       try {
-        const res = await fetch(url).then(r => r.json());
+        const fetchRes = await fetch(url);
+        if (!fetchRes.ok) {
+          let serverMsg = `El servidor d'Arribo! ha retornat error HTTP ${fetchRes.status}.`;
+          try {
+            const errBody = await fetchRes.json();
+            if (errBody.error) serverMsg = errBody.error;
+          } catch (_) {}
+          throw new Error(serverMsg);
+        }
+
+        const res = await fetchRes.json();
         if (!res.success || !res.itineraries || res.itineraries.length === 0) {
           if (resultsContainer) {
-            resultsContainer.innerHTML = `<div style="text-align:center; padding:2rem; color:var(--text-muted);">${this.esc(res.message || res.error || 'No s\'ha trobat cap ruta directa o amb 1 transbordament.')}</div>`;
+            resultsContainer.innerHTML = `
+              <div style="text-align:center; padding:2rem; color:var(--text-secondary);">
+                <div style="font-size:1.8rem; margin-bottom:0.4rem;">🔍</div>
+                <div style="font-weight:700; color:var(--text-primary); margin-bottom:0.25rem;">Cap ruta trobada</div>
+                <div style="font-size:0.85rem; max-width:340px; margin:0 auto;">${this.esc(res.message || res.error || 'No s\'ha trobat cap combinació directa o amb 1 sol transbordament.')}</div>
+                <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.4rem;">Consell: prova de triar la parada o carrer directament del menú desplegable.</div>
+              </div>
+            `;
           }
           return;
         }
 
         this.renderPlannerResults(res.itineraries, res.originStop, res.destStop);
       } catch (err) {
+        let errTitle = "No s'ha pogut connectar amb el servei";
+        let errDetail = "No s'ha pogut obtenir la planificació del servidor d'Arribo!.";
+
+        if (!navigator.onLine) {
+          errTitle = "Sense connexió a Internet";
+          errDetail = "El teu dispositiu no té connexió. Revisa el Wi-Fi o les dades mòbils.";
+        } else if (err.name === 'TypeError' && String(err.message).toLowerCase().includes('fetch')) {
+          errTitle = "Servidor d'Arribo! no disponible";
+          errDetail = "El navegador no ha pogut contactar amb el servidor local/API d'Arribo!. Comprova que el servei estigui actiu.";
+        } else if (err.message) {
+          errDetail = err.message;
+        }
+
         if (resultsContainer) {
-          resultsContainer.innerHTML = '<div style="color:var(--danger); padding:1rem; text-align:center;">Error en calcular la ruta. Torna-ho a provar.</div>';
+          resultsContainer.innerHTML = `
+            <div style="padding:1.5rem; text-align:center; color:var(--text-secondary); background:rgba(239, 68, 68, 0.06); border:1px solid rgba(239, 68, 68, 0.2); border-radius:10px; margin:1rem 0;">
+              <div style="font-size:1.8rem; margin-bottom:0.4rem;">⚠️</div>
+              <div style="font-weight:700; color:#ef4444; margin-bottom:0.25rem;">${this.esc(errTitle)}</div>
+              <div style="font-size:0.85rem; line-height:1.4; max-width:340px; margin:0 auto;">${this.esc(errDetail)}</div>
+            </div>
+          `;
         }
       }
     });
@@ -4172,6 +4212,8 @@ class TransitApp {
       clearTimeout(debounceTimer);
       delete inputEl.dataset.stopId;
       delete inputEl.dataset.direction;
+      delete inputEl.dataset.lat;
+      delete inputEl.dataset.lon;
       const q = inputEl.value.trim().toLowerCase();
       if (!q || q.length < 2) {
         closeDropdown();
@@ -4204,7 +4246,7 @@ class TransitApp {
           const stops = Array.isArray(res.stops) 
             ? res.stops 
             : (Array.isArray(res.results) 
-                ? res.results.filter(r => r.type === 'stop').map(r => ({ id: r.stopId || r.code, name: r.stopName, code: r.code || r.stopId, directionText: r.directionText })) 
+                ? res.results.filter(r => r.type === 'stop').map(r => ({ id: r.stopId || r.code, name: r.stopName, code: r.code || r.stopId, directionText: r.directionText, lat: r.lat, lon: r.lon })) 
                 : []);
 
           for (const s of stops) {
@@ -4212,8 +4254,24 @@ class TransitApp {
             const sName = String(s.name || s.stopName || '');
             if (!seen.has(sId)) {
               seen.add(sId);
-              matches.push({ name: sName, id: sId, directionText: s.directionText || '' });
-              if (matches.length >= 8) break;
+              matches.push({ name: sName, id: sId, directionText: s.directionText || '', lat: s.lat, lon: s.lon, type: 'stop' });
+              if (matches.length >= 6) break;
+            }
+          }
+
+          if (Array.isArray(res.streets)) {
+            for (const st of res.streets.slice(0, 4)) {
+              matches.push({
+                name: st.name,
+                id: st.id,
+                isStreet: true,
+                lat: st.lat,
+                lon: st.lon,
+                nearestId: st.nearestStop?.id,
+                subtitle: st.subtitle,
+                cityName: st.cityName,
+                type: 'street'
+              });
             }
           }
         } catch (_) {}
@@ -4223,17 +4281,30 @@ class TransitApp {
           return;
         }
 
-        dropdown.innerHTML = matches.map(m => `
-          <div class="planner-dropdown-item" data-id="${this.esc(m.id)}" data-name="${this.esc(m.name)}" data-direction="${this.esc(m.directionText || '')}">
-            <div style="display:flex; flex-direction:column; gap:2px;">
-              <span>${m.isPoi ? '📍' : '🚏'} <strong>${this.esc(m.name)}</strong></span>
-              ${m.directionText ? `
-                <span style="font-size:0.75rem; color:#38bdf8; font-weight:600; padding-left:1.3rem;">➔ ${this.esc(m.directionText)}</span>
-              ` : ''}
+        dropdown.innerHTML = matches.map(m => {
+          if (m.isStreet) {
+            return `
+              <div class="planner-dropdown-item" data-id="${this.esc(m.id)}" data-name="${this.esc(m.name)}" data-type="street" data-lat="${m.lat}" data-lon="${m.lon}" data-nearest-id="${this.esc(m.nearestId || '')}">
+                <div style="display:flex; flex-direction:column; gap:2px;">
+                  <span style="display:flex; align-items:center; gap:6px;"><span style="color:#f59e0b;">🛣️</span> <strong>${this.esc(m.name)}</strong></span>
+                  <span style="font-size:0.75rem; color:var(--text-muted); padding-left:1.35rem;">${this.esc(m.subtitle || `Carrer a ${m.cityName || 'Mataró'}`)}</span>
+                </div>
+                <span style="font-size:0.72rem; color:#f59e0b; background:rgba(245,158,11,0.12); padding:2px 6px; border-radius:4px; font-weight:600;">Carrer</span>
+              </div>
+            `;
+          }
+          return `
+            <div class="planner-dropdown-item" data-id="${this.esc(m.id)}" data-name="${this.esc(m.name)}" data-direction="${this.esc(m.directionText || '')}" data-lat="${m.lat || ''}" data-lon="${m.lon || ''}">
+              <div style="display:flex; flex-direction:column; gap:2px;">
+                <span style="display:flex; align-items:center; gap:6px;"><span>${m.isPoi ? '📍' : '🚏'}</span> <strong>${this.esc(m.name)}</strong></span>
+                ${m.directionText ? `
+                  <span style="font-size:0.75rem; color:#38bdf8; font-weight:600; padding-left:1.35rem;">➔ ${this.esc(m.directionText)}</span>
+                ` : ''}
+              </div>
+              <span style="font-size:0.75rem; color:var(--text-muted); font-family:var(--font-mono);">#${this.esc(m.id)}</span>
             </div>
-            <span style="font-size:0.75rem; color:var(--text-muted); font-family:var(--font-mono);">#${this.esc(m.id)}</span>
-          </div>
-        `).join('');
+          `;
+        }).join('');
         dropdown.style.display = 'block';
       }, 120);
     });
@@ -4241,14 +4312,34 @@ class TransitApp {
     dropdown.addEventListener('click', (e) => {
       const item = e.target.closest('.planner-dropdown-item');
       if (!item) return;
+      const isStreet = item.getAttribute('data-type') === 'street';
       const id = item.getAttribute('data-id');
       const name = item.getAttribute('data-name');
       const direction = item.getAttribute('data-direction');
-      inputEl.value = direction ? `${name} (${direction})` : name;
-      inputEl.dataset.stopId = id;
-      inputEl.dataset.direction = direction || '';
+      const lat = item.getAttribute('data-lat');
+      const lon = item.getAttribute('data-lon');
+      const nearestId = item.getAttribute('data-nearest-id');
+
+      if (isStreet) {
+        inputEl.value = name;
+        inputEl.dataset.stopId = nearestId || '';
+        inputEl.dataset.lat = lat || '';
+        inputEl.dataset.lon = lon || '';
+        delete inputEl.dataset.direction;
+      } else {
+        inputEl.value = direction ? `${name} (${direction})` : name;
+        inputEl.dataset.stopId = id;
+        inputEl.dataset.direction = direction || '';
+        if (lat && lon) {
+          inputEl.dataset.lat = lat;
+          inputEl.dataset.lon = lon;
+        } else {
+          delete inputEl.dataset.lat;
+          delete inputEl.dataset.lon;
+        }
+      }
       closeDropdown();
-      if (onSelect) onSelect({ id, name, direction });
+      if (onSelect) onSelect({ id, name, direction, isStreet, lat, lon });
     });
 
     // Close on click outside

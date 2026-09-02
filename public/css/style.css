@@ -4381,8 +4381,11 @@ body {
   background: var(--bg-main);
   border: 1.5px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  padding: 0.35rem 0.65rem;
-  transition: border-color var(--transition-fast);
+  padding: 0 0.75rem;
+  height: 48px;
+  min-height: 48px;
+  box-sizing: border-box;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .planner-input-wrapper:focus-within {
@@ -4392,12 +4395,15 @@ body {
 
 .planner-input {
   flex: 1;
+  min-width: 0;
+  height: 100%;
   background: transparent;
   border: none;
   color: var(--text-primary);
   font-size: 0.95rem;
   outline: none;
   font-family: inherit;
+  box-sizing: border-box;
 }
 
 .btn-planner-geo,

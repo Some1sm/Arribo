@@ -12,6 +12,7 @@ const workerBridge = require('./src/core/WorkerBridge');
 const calendarEngine = require('./src/core/time/calendarEngine');
 const delayEngine = require('./src/core/schedule/delayEngine');
 const mataroFleet = require('./src/data/mataroFleet');
+const streetGeocoder = require('./src/core/geo/streetGeocoder');
 
 // ==========================================
 // 0. PROCESS-LEVEL RESILIENCE TRAPS
@@ -297,11 +298,16 @@ app.get('/api/lines', (req, res) => {
   }
 });
 
-// Universal Search across Mataró stops and lines
-app.get('/api/search/stops', (req, res) => {
+// Universal Search across Mataró stops, lines, and street names
+app.get('/api/search/stops', async (req, res) => {
   const q = req.query.q || '';
   if (!q.trim()) {
-    return res.json({ success: true, query: '', results: [], stops: [] });
+    return res.json({ success: true, query: '', results: [], stops: [], streets: [] });
+  }
+
+  // Ensure stops catalog is set for nearest stop computation
+  if (!streetGeocoder.stopsCatalog && mataroTracker && mataroTracker.allStopsMap) {
+    streetGeocoder.setStopsCatalog(mataroTracker.allStopsMap);
   }
 
   const results = trackerRegistry.searchStopsAndLines(q, 35);
@@ -319,11 +325,20 @@ app.get('/api/search/stops', (req, res) => {
       lon: r.lon
     }));
 
+  // Concurrently search for street names in Mataró when query length >= 3
+  let streets = [];
+  if (q.trim().length >= 3) {
+    try {
+      streets = await streetGeocoder.searchStreets(q.trim(), 4);
+    } catch (_) {}
+  }
+
   res.json({
     success: true,
     query: q,
     results,
-    stops
+    stops,
+    streets
   });
 });
 
@@ -558,6 +573,31 @@ app.get(['/api/mataro/plan', '/api/plan'], async (req, res) => {
   }
   if (req.query.toLat && req.query.toLon) {
     destination = { lat: parseFloat(req.query.toLat), lon: parseFloat(req.query.toLon) };
+  }
+
+  // Geocode origin / destination if they are street names not matching a known stop
+  if (typeof origin === 'string' && !/^\d+$/.test(origin)) {
+    const isStop = mataroTracker.allStopsMap && Array.from(mataroTracker.allStopsMap.values()).some(s => s.name.toLowerCase() === origin.toLowerCase());
+    if (!isStop) {
+      try {
+        const found = await streetGeocoder.searchStreets(origin, 1);
+        if (found.length > 0) {
+          origin = { lat: found[0].lat, lon: found[0].lon };
+        }
+      } catch (_) {}
+    }
+  }
+
+  if (typeof destination === 'string' && !/^\d+$/.test(destination)) {
+    const isStop = mataroTracker.allStopsMap && Array.from(mataroTracker.allStopsMap.values()).some(s => s.name.toLowerCase() === destination.toLowerCase());
+    if (!isStop) {
+      try {
+        const found = await streetGeocoder.searchStreets(destination, 1);
+        if (found.length > 0) {
+          destination = { lat: found[0].lat, lon: found[0].lon };
+        }
+      } catch (_) {}
+    }
   }
 
   try {
