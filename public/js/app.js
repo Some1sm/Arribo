@@ -4123,7 +4123,9 @@ class TransitApp {
         resultsContainer.innerHTML = '<div style="text-align:center; padding:2rem;"><span class="loading-spinner-inline"></span> Calculant la millor combinació de trajecte...</div>';
       }
 
-      let url = `/api/mataro/plan?from=${encodeURIComponent(origin)}&to=${encodeURIComponent(dest)}`;
+      const fromQuery = originInput?.dataset?.stopId || origin.replace(/\s*\([^)]*\)$/, '').trim();
+      const toQuery = destInput?.dataset?.stopId || dest.replace(/\s*\([^)]*\)$/, '').trim();
+      let url = `/api/mataro/plan?from=${encodeURIComponent(fromQuery)}&to=${encodeURIComponent(toQuery)}`;
       if (this._plannerOriginCoords && origin.includes('ubicació')) {
         url += `&fromLat=${this._plannerOriginCoords.lat}&fromLon=${this._plannerOriginCoords.lon}`;
       }
@@ -4162,11 +4164,17 @@ class TransitApp {
     if (!dropdown) return;
     let debounceTimer = null;
 
+    const closeDropdown = () => {
+      dropdown.style.display = 'none';
+    };
+
     inputEl.addEventListener('input', () => {
       clearTimeout(debounceTimer);
+      delete inputEl.dataset.stopId;
+      delete inputEl.dataset.direction;
       const q = inputEl.value.trim().toLowerCase();
       if (!q || q.length < 2) {
-        dropdown.style.display = 'none';
+        closeDropdown();
         dropdown.innerHTML = '';
         return;
       }
@@ -4176,17 +4184,17 @@ class TransitApp {
         const matches = [];
 
         const pois = [
-          { name: 'Estació Rodalies Mataró (Renfe)', id: '1016' },
-          { name: 'Plaça de les Tereses (Centre)', id: '1060' },
-          { name: 'Hospital de Mataró', id: '1001' },
-          { name: 'Mataró Parc (Centre Comercial)', id: '1002' },
-          { name: 'TecnoCampus Mataró', id: '1080' },
-          { name: 'Parc Central', id: '1015' }
+          { name: 'Estació Rodalies Mataró (Renfe)', id: '1016', directionText: 'Intercanviador Tren / Bus' },
+          { name: 'Plaça de les Tereses (Centre)', id: '1060', directionText: 'Centre Urbà' },
+          { name: 'Hospital de Mataró', id: '1001', directionText: 'Zona Hospitalària' },
+          { name: 'Mataró Parc (Centre Comercial)', id: '1002', directionText: 'Centre Comercial' },
+          { name: 'TecnoCampus Mataró', id: '1080', directionText: 'Campus Universitari' },
+          { name: 'Parc Central', id: '1015', directionText: 'Parc Central' }
         ];
 
         for (const poi of pois) {
           if (poi.name.toLowerCase().includes(q)) {
-            matches.push({ name: poi.name, id: poi.id, isPoi: true });
+            matches.push({ name: poi.name, id: poi.id, isPoi: true, directionText: poi.directionText });
             seen.add(poi.id);
           }
         }
@@ -4196,7 +4204,7 @@ class TransitApp {
           const stops = Array.isArray(res.stops) 
             ? res.stops 
             : (Array.isArray(res.results) 
-                ? res.results.filter(r => r.type === 'stop').map(r => ({ id: r.stopId || r.code, name: r.stopName, code: r.code || r.stopId })) 
+                ? res.results.filter(r => r.type === 'stop').map(r => ({ id: r.stopId || r.code, name: r.stopName, code: r.code || r.stopId, directionText: r.directionText })) 
                 : []);
 
           for (const s of stops) {
@@ -4204,20 +4212,25 @@ class TransitApp {
             const sName = String(s.name || s.stopName || '');
             if (!seen.has(sId)) {
               seen.add(sId);
-              matches.push({ name: sName, id: sId });
+              matches.push({ name: sName, id: sId, directionText: s.directionText || '' });
               if (matches.length >= 8) break;
             }
           }
         } catch (_) {}
 
         if (matches.length === 0) {
-          dropdown.style.display = 'none';
+          closeDropdown();
           return;
         }
 
         dropdown.innerHTML = matches.map(m => `
-          <div class="planner-dropdown-item" data-id="${this.esc(m.id)}" data-name="${this.esc(m.name)}">
-            <span>${m.isPoi ? '📍' : '🚏'} <strong>${this.esc(m.name)}</strong></span>
+          <div class="planner-dropdown-item" data-id="${this.esc(m.id)}" data-name="${this.esc(m.name)}" data-direction="${this.esc(m.directionText || '')}">
+            <div style="display:flex; flex-direction:column; gap:2px;">
+              <span>${m.isPoi ? '📍' : '🚏'} <strong>${this.esc(m.name)}</strong></span>
+              ${m.directionText ? `
+                <span style="font-size:0.75rem; color:#38bdf8; font-weight:600; padding-left:1.3rem;">➔ ${this.esc(m.directionText)}</span>
+              ` : ''}
+            </div>
             <span style="font-size:0.75rem; color:var(--text-muted); font-family:var(--font-mono);">#${this.esc(m.id)}</span>
           </div>
         `).join('');
@@ -4230,14 +4243,38 @@ class TransitApp {
       if (!item) return;
       const id = item.getAttribute('data-id');
       const name = item.getAttribute('data-name');
-      inputEl.value = name;
-      dropdown.style.display = 'none';
-      if (onSelect) onSelect({ id, name });
+      const direction = item.getAttribute('data-direction');
+      inputEl.value = direction ? `${name} (${direction})` : name;
+      inputEl.dataset.stopId = id;
+      inputEl.dataset.direction = direction || '';
+      closeDropdown();
+      if (onSelect) onSelect({ id, name, direction });
     });
 
+    // Close on click outside
     document.addEventListener('click', (e) => {
       if (!inputEl.contains(e.target) && !dropdown.contains(e.target)) {
-        dropdown.style.display = 'none';
+        closeDropdown();
+      }
+    });
+
+    // Close when window loses focus (e.g. clicking another app/window)
+    window.addEventListener('blur', closeDropdown);
+
+    // Close when switching browser tabs
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) closeDropdown();
+    });
+
+    // Close on blur (delayed so click events on dropdown items register first)
+    inputEl.addEventListener('blur', () => {
+      setTimeout(closeDropdown, 220);
+    });
+
+    // Close on Escape key
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeDropdown();
       }
     });
   }

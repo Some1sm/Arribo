@@ -329,16 +329,42 @@ class MataroTracker extends BaseTracker {
         this.routesData = JSON.parse(fs.readFileSync(routesPath, 'utf8'));
       }
 
+      // Pre-compute direction and terminus for each stop so users can disambiguate opposite-side stops
+      const stopDirections = new Map();
+      if (this.routesData) {
+        for (const [lineId, routes] of Object.entries(this.routesData)) {
+          if (!Array.isArray(routes)) continue;
+          routes.forEach((route) => {
+            if (!Array.isArray(route.stops)) return;
+            const term = route.stops[route.stops.length - 1]?.name?.replace(/ - \d+$/, '') || route.name || '';
+            route.stops.forEach((st) => {
+              const sId = String(st.id);
+              if (!stopDirections.has(sId)) stopDirections.set(sId, new Set());
+              if (term) {
+                stopDirections.get(sId).add(term);
+              }
+            });
+          });
+        }
+      }
+
       if (fs.existsSync(paradasPath)) {
         const raw = JSON.parse(fs.readFileSync(paradasPath, 'utf8'));
         const pList = raw.message || [];
         pList.forEach(p => {
-          this.allStopsMap.set(String(p.id), {
-            id: String(p.id),
+          const sId = String(p.id);
+          const rawDests = Array.from(stopDirections.get(sId) || []);
+          const cleanDests = Array.from(new Set(rawDests.map(d => d.replace(/ - \d+$/, '').trim()))).filter(Boolean);
+          const dirText = cleanDests.length > 0 ? `Sentit ${cleanDests.slice(0, 2).join(' / ')}` : '';
+
+          this.allStopsMap.set(sId, {
+            id: sId,
             name: p.name.replace(/ - \d+$/, ''),
             lat: p.latitude,
             lon: p.longitude,
-            lineas: p.lineas || []
+            lineas: p.lineas || [],
+            directionText: dirText,
+            destinations: cleanDests
           });
         });
       }

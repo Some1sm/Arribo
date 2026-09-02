@@ -312,6 +312,8 @@ app.get('/api/search/stops', (req, res) => {
       name: r.stopName,
       code: r.code || r.stopId,
       zone: r.zone || 'Mataró Urbà',
+      directionText: r.directionText || '',
+      destinations: r.destinations || [],
       lineCode: r.lineCode,
       lat: r.lat,
       lon: r.lon

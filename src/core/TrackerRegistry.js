@@ -238,6 +238,8 @@ class TrackerRegistry {
             stopName: s.name,
             code: String(s.id),
             zone: 'Mataró Urbà',
+            directionText: s.directionText || '',
+            destinations: s.destinations || [],
             isTrain: false,
             lat: s.lat,
             lon: s.lon,

@@ -117,11 +117,17 @@ class PlannerPageApp {
     if (!inputElem || !dropdownElem) return;
     let debounceTimer = null;
 
+    const closeDropdown = () => {
+      dropdownElem.style.display = 'none';
+    };
+
     inputElem.addEventListener('input', () => {
       clearTimeout(debounceTimer);
+      delete inputElem.dataset.stopId;
+      delete inputElem.dataset.direction;
       const query = inputElem.value.trim();
       if (query.length < 2) {
-        dropdownElem.style.display = 'none';
+        closeDropdown();
         return;
       }
 
@@ -130,21 +136,31 @@ class PlannerPageApp {
           const res = await fetch(`/api/search/stops?q=${encodeURIComponent(query)}`);
           if (!res.ok) return;
           const data = await res.json();
-          const stops = Array.isArray(data.stops) ? data.stops.slice(0, 7) : [];
+          const stops = Array.isArray(data.stops) ? data.stops.slice(0, 8) : [];
 
           if (stops.length === 0) {
             dropdownElem.innerHTML = '<div class="planner-dropdown-item" style="color:var(--text-muted); cursor:default;">No s\'han trobat parades</div>';
           } else {
             dropdownElem.innerHTML = stops.map(s => `
-              <div class="planner-dropdown-item" data-stop-name="${this.esc(s.name)}" data-stop-id="${this.esc(s.id)}">
-                <div style="font-weight:700; color:var(--text-primary); font-size:0.88rem;">${this.esc(s.name)}</div>
-                <div style="font-size:0.75rem; color:var(--text-secondary);">${this.esc(s.zone || 'Mataró')} ${s.code ? `• #${this.esc(s.code)}` : ''}</div>
+              <div class="planner-dropdown-item" data-stop-name="${this.esc(s.name)}" data-stop-id="${this.esc(s.id)}" data-direction="${this.esc(s.directionText || '')}">
+                <div style="display:flex; flex-direction:column; gap:2px;">
+                  <div style="font-weight:700; color:var(--text-primary); font-size:0.9rem;">${this.esc(s.name)}</div>
+                  ${s.directionText ? `
+                    <div style="font-size:0.75rem; color:#38bdf8; font-weight:600; display:flex; align-items:center; gap:4px;">
+                      <span>➔</span> <span>${this.esc(s.directionText)}</span>
+                    </div>
+                  ` : ''}
+                </div>
+                <div style="text-align:right; display:flex; flex-direction:column; align-items:flex-end; gap:2px;">
+                  <span style="font-size:0.72rem; color:var(--text-secondary); background:rgba(255,255,255,0.06); padding:2px 6px; border-radius:4px; font-family:var(--font-mono);">#${this.esc(s.code || s.id)}</span>
+                  <span style="font-size:0.7rem; color:var(--text-muted);">${this.esc(s.zone || 'Mataró')}</span>
+                </div>
               </div>
             `).join('');
           }
           dropdownElem.style.display = 'block';
         } catch (err) {
-          dropdownElem.style.display = 'none';
+          closeDropdown();
         }
       }, 180);
     });
@@ -152,14 +168,41 @@ class PlannerPageApp {
     dropdownElem.addEventListener('click', (e) => {
       const item = e.target.closest('.planner-dropdown-item');
       if (item && item.dataset.stopName) {
-        inputElem.value = item.dataset.stopName;
-        dropdownElem.style.display = 'none';
+        inputElem.value = item.dataset.direction 
+          ? `${item.dataset.stopName} (${item.dataset.direction})` 
+          : item.dataset.stopName;
+        inputElem.dataset.stopId = item.dataset.stopId || '';
+        if (item.dataset.direction) {
+          inputElem.dataset.direction = item.dataset.direction;
+        }
+        closeDropdown();
       }
     });
 
+    // Close when clicking outside
     document.addEventListener('click', (e) => {
       if (!inputElem.contains(e.target) && !dropdownElem.contains(e.target)) {
-        dropdownElem.style.display = 'none';
+        closeDropdown();
+      }
+    });
+
+    // Close when window loses focus (e.g. clicking another app/window)
+    window.addEventListener('blur', closeDropdown);
+
+    // Close when switching browser tabs
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) closeDropdown();
+    });
+
+    // Close on blur (delayed so click events on dropdown items register first)
+    inputElem.addEventListener('blur', () => {
+      setTimeout(closeDropdown, 220);
+    });
+
+    // Close on Escape key
+    inputElem.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeDropdown();
       }
     });
   }
@@ -201,12 +244,14 @@ class PlannerPageApp {
   }
 
   async runSearch(targetIndex = 0) {
-    const origin = document.getElementById('page-planner-origin')?.value.trim();
-    const dest = document.getElementById('page-planner-dest')?.value.trim();
+    const originEl = document.getElementById('page-planner-origin');
+    const destEl = document.getElementById('page-planner-dest');
+    const originVal = originEl?.value.trim();
+    const destVal = destEl?.value.trim();
     const resultsContainer = document.getElementById('page-planner-results');
     if (!resultsContainer) return;
 
-    if (!origin || !dest) {
+    if (!originVal || !destVal) {
       alert("Si us plau, especifica tant la parada d'origen com la de destinació.");
       return;
     }
@@ -219,7 +264,9 @@ class PlannerPageApp {
     `;
 
     try {
-      const res = await fetch(`/api/mataro/plan?from=${encodeURIComponent(origin)}&to=${encodeURIComponent(dest)}`);
+      const fromQuery = originEl?.dataset?.stopId || originVal.replace(/\s*\([^)]*\)$/, '').trim();
+      const toQuery = destEl?.dataset?.stopId || destVal.replace(/\s*\([^)]*\)$/, '').trim();
+      const res = await fetch(`/api/mataro/plan?from=${encodeURIComponent(fromQuery)}&to=${encodeURIComponent(toQuery)}`);
       const data = await res.json();
 
       if (!res.ok || !data.success) {
