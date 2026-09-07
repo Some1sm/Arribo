@@ -12,6 +12,7 @@ class PlannerPageApp {
     this.lastSearchUrl = null;
     this.lastOriginStop = null;
     this.lastDestStop = null;
+    this.currentSheetState = 'split';
     this.init();
   }
 
@@ -28,6 +29,16 @@ class PlannerPageApp {
       } else if (this.lastSearchUrl && this.currentItineraries.length > 0) {
         this.refreshLiveDepartures();
         this.startPolling();
+      }
+    });
+
+    // Handle responsive window resize
+    window.addEventListener('resize', () => {
+      if (window.innerWidth > 768) {
+        const form = document.getElementById('plan-search-form');
+        const summary = document.getElementById('plan-trip-summary');
+        if (form) form.style.display = 'block';
+        if (summary) summary.style.display = 'none';
       }
     });
   }
@@ -108,6 +119,126 @@ class PlannerPageApp {
         }
       });
     });
+
+    // Mobile Bottom Sheet Toggles
+    const btnSheetMap = document.getElementById('btn-sheet-map');
+    const btnSheetSplit = document.getElementById('btn-sheet-split');
+    const btnSheetRoutes = document.getElementById('btn-sheet-routes');
+    const sheetBar = document.getElementById('plan-sheet-bar');
+    const floatingRoutesBtn = document.getElementById('btn-floating-routes');
+
+    if (btnSheetMap) {
+      btnSheetMap.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.setSheetState('peek');
+      });
+    }
+
+    if (btnSheetSplit) {
+      btnSheetSplit.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.setSheetState('split');
+      });
+    }
+
+    if (btnSheetRoutes) {
+      btnSheetRoutes.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.setSheetState('expanded');
+      });
+    }
+
+    if (sheetBar) {
+      sheetBar.addEventListener('click', (e) => {
+        if (e.target.closest('.sheet-toggle-btn')) return;
+        if (this.currentSheetState === 'peek') {
+          this.setSheetState('split');
+        } else if (this.currentSheetState === 'split') {
+          this.setSheetState('expanded');
+        } else {
+          this.setSheetState('split');
+        }
+      });
+    }
+
+    if (floatingRoutesBtn) {
+      floatingRoutesBtn.addEventListener('click', () => {
+        this.setSheetState('expanded');
+      });
+    }
+
+    // Edit Trip Summary Button
+    const btnTripEdit = document.getElementById('btn-trip-edit');
+    const btnExpandSearch = document.getElementById('btn-expand-search');
+    if (btnTripEdit) {
+      btnTripEdit.addEventListener('click', () => this.toggleSearchForm(true));
+    }
+    if (btnExpandSearch) {
+      btnExpandSearch.addEventListener('click', () => this.toggleSearchForm(true));
+    }
+
+    // Fade out scroll hint when scrolled
+    const resultsArea = document.getElementById('page-planner-results');
+    if (resultsArea) {
+      resultsArea.addEventListener('scroll', () => {
+        const hint = document.getElementById('plan-scroll-hint');
+        if (hint && resultsArea.scrollTop > 30) {
+          hint.style.opacity = '0';
+        }
+      }, { passive: true });
+    }
+  }
+
+  setSheetState(state) {
+    this.currentSheetState = state;
+    const sidebar = document.getElementById('plan-sidebar');
+    const btnMap = document.getElementById('btn-sheet-map');
+    const btnSplit = document.getElementById('btn-sheet-split');
+    const btnRoutes = document.getElementById('btn-sheet-routes');
+    const floatBtn = document.getElementById('btn-floating-routes');
+
+    if (sidebar) {
+      sidebar.classList.remove('sheet-peek', 'sheet-split', 'sheet-expanded');
+      sidebar.classList.add(`sheet-${state}`);
+    }
+
+    if (btnMap) btnMap.classList.toggle('active', state === 'peek');
+    if (btnSplit) btnSplit.classList.toggle('active', state === 'split');
+    if (btnRoutes) btnRoutes.classList.toggle('active', state === 'expanded');
+
+    if (floatBtn) {
+      floatBtn.style.display = (state === 'peek' && this.currentItineraries.length > 0) ? 'flex' : 'none';
+    }
+
+    if (this.mapController && this.mapController.map) {
+      setTimeout(() => {
+        try {
+          this.mapController.map.invalidateSize();
+        } catch (_) {}
+      }, 320);
+    }
+  }
+
+  toggleSearchForm(expand) {
+    const summary = document.getElementById('plan-trip-summary');
+    const form = document.getElementById('plan-search-form');
+    if (!summary || !form) return;
+
+    if (expand) {
+      summary.style.display = 'none';
+      form.style.display = 'block';
+      if (window.innerWidth <= 768) {
+        this.setSheetState('expanded');
+      }
+    } else {
+      if (this.currentItineraries.length > 0 && window.innerWidth <= 768) {
+        summary.style.display = 'flex';
+        form.style.display = 'none';
+      } else {
+        summary.style.display = 'none';
+        form.style.display = 'block';
+      }
+    }
   }
 
   checkUrlParams() {
@@ -382,6 +513,35 @@ class PlannerPageApp {
       this.lastDestStop = data.destStop;
       this.startPolling();
 
+      // Update mobile trip summary text
+      const sumFrom = document.getElementById('trip-summary-from');
+      const sumTo = document.getElementById('trip-summary-to');
+      if (sumFrom) sumFrom.textContent = originVal;
+      if (sumTo) sumTo.textContent = destVal;
+
+      const routesCountLabel = document.getElementById('label-sheet-routes');
+      if (routesCountLabel) {
+        routesCountLabel.textContent = `📋 Rutes (${this.currentItineraries.length})`;
+      }
+      const floatBadge = document.getElementById('floating-routes-badge');
+      if (floatBadge) {
+        floatBadge.textContent = String(this.currentItineraries.length);
+      }
+
+      // Collapse search form on mobile so routes take up the entire sheet
+      this.toggleSearchForm(false);
+
+      // On mobile, automatically show the expanded routes view
+      if (window.innerWidth <= 768) {
+        this.setSheetState('expanded');
+      }
+
+      const scrollHint = document.getElementById('plan-scroll-hint');
+      if (scrollHint) {
+        scrollHint.style.display = this.currentItineraries.length > 1 ? 'flex' : 'none';
+        scrollHint.style.opacity = '1';
+      }
+
       // Render Itineraries
       this.renderItineraries(this.currentItineraries, data.originStop, data.destStop);
 
@@ -565,6 +725,10 @@ class PlannerPageApp {
       const it = this.currentItineraries[index];
       if (this.mapController && typeof this.mapController.renderItinerary === 'function') {
         this.mapController.renderItinerary(it);
+      }
+      // On mobile, if sheet was fully expanded, switch to split view so map route is clearly visible
+      if (window.innerWidth <= 768 && this.currentSheetState === 'expanded') {
+        this.setSheetState('split');
       }
     }
   }
