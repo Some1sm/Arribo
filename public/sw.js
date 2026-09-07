@@ -1,5 +1,5 @@
 // Service Worker for Arribo! Mataró Bus (PWA & Offline Shell Support)
-const CACHE_NAME = 'arribo-mataro-cache-v4';
+const CACHE_NAME = 'arribo-mataro-cache-v5';
 
 const STATIC_SHELL_ASSETS = [
   '/',

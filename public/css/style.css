@@ -5832,6 +5832,20 @@ body {
   flex-direction: column;
 }
 
+.schematic-dir-section {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 1.5rem;
+}
+
+.schematic-dir-section:last-child {
+  margin-bottom: 0.5rem;
+}
+
+.schematic-dir-section .stops-dir-header {
+  margin-bottom: 0.75rem;
+}
+
 .schematic-header-summary {
   display: flex;
   align-items: center;

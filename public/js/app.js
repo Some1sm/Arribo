@@ -85,7 +85,7 @@ class TransitApp {
       if ('caches' in window) {
         caches.keys().then((keys) => {
           keys.forEach((key) => {
-            if (key !== 'arribo-mataro-cache-v4') {
+            if (key !== 'arribo-mataro-cache-v5') {
               caches.delete(key);
             }
           });
@@ -2854,23 +2854,19 @@ class TransitApp {
     }
   }
 
-  renderSchematicThermometer(lineDataOrStops, lineKey) {
-    const container = document.getElementById('stops-schematic-scroll');
-    if (!container) return;
-
-    const isLineDataObject = lineDataOrStops && typeof lineDataOrStops === 'object' && !Array.isArray(lineDataOrStops);
-    const lineData = isLineDataObject ? lineDataOrStops : null;
-    const stops = Array.isArray(lineDataOrStops) ? lineDataOrStops : (lineData?.stops || this.allStops || []);
+  renderSingleSchematicTrack({ stops, dirName, dirId, lineColor, lineCode, activeVehicles, currentTargetId, isHubStop, isBoth, dirIndex }) {
     if (!stops || stops.length === 0) {
-      container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);">Sense parades disponibles</div>';
-      return;
+      return `
+        <div class="schematic-dir-section" id="schematic-group-${dirId}">
+          <div class="stops-dir-header" style="border-left-color:${this.esc(lineColor)};">
+            <strong class="stops-dir-name">${this.esc(dirName)}</strong>
+          </div>
+          <div style="text-align:center; padding:1.5rem; color:var(--text-muted); font-size:0.8rem;">Sense parades per a aquest sentit</div>
+        </div>
+      `;
     }
 
-    const currentTargetId = this.targetStopsByLine[lineKey] || this.targetStopsByLine[`${lineKey}_${this.activeDirection}`] || '';
-    const lineColor = (lineData?.lineColor || lineData?.color || '#009485');
-    const activeVehicles = Array.isArray(this.activeBuses) ? this.activeBuses : [];
-
-    // Map each vehicle to its nearest stop or segment along the line
+    // Map each vehicle to its nearest stop or segment along this direction
     const dockedBusesByStop = new Map();
     const transitBusesBySegment = new Map();
 
@@ -2912,29 +2908,27 @@ class TransitApp {
       }
     });
 
-    const isHubStop = (s) => {
-      const name = (s.name || '').toLowerCase();
-      const code = String(s.code || s.id || '');
-      if (name.includes('rodalies') || code === '1016' || code === '1015') return { type: 'train', icon: '🚆', label: 'Rodalies Renfe R1/RG1' };
-      if (name.includes('hospital') || code === '1001') return { type: 'hospital', icon: '🏥', label: 'Hospital de Mataró' };
-      if (name.includes('tereses') || code === '1060') return { type: 'hub', icon: '🏛️', label: 'Centre / Connexions Urbanes' };
-      if (name.includes('mataró parc') || name.includes('mataro parc')) return { type: 'mall', icon: '🛍️', label: 'Mataró Parc Comercial' };
-      if (name.includes('estació d\'autobusos') || name.includes('estacio d\'autobusos')) return { type: 'bus', icon: '🚌', label: 'Estació d\'Autobusos' };
-      return null;
-    };
+    const dirIcon = dirIndex === 0 ? '➔' : (dirIndex === 1 ? '⬅' : '⇄');
 
     let html = `
-      <div class="schematic-container" style="--schematic-line-color:${this.esc(lineColor)};">
-        <div class="schematic-header-summary">
-          <div style="display:flex; align-items:center; gap:8px;">
-            <span class="schematic-line-tag" style="background:${this.esc(lineColor)};">
-              ${this.esc(lineData?.code || lineKey || 'Línia')}
-            </span>
-            <span class="schematic-dir-title">${this.esc(lineData?.directionName || 'Recorregut de la línia')}</span>
+      <div class="schematic-dir-section" id="schematic-group-${dirId}">
+        <div class="stops-dir-header" style="border-left-color:${this.esc(lineColor)};">
+          <div class="stops-dir-header-info">
+            <div class="stops-dir-header-title-row">
+              <span class="stops-dir-icon">${dirIcon}</span>
+              <strong class="stops-dir-name">${this.esc(dirName)}</strong>
+              <span class="stops-dir-count-pill">${stops.length} parades</span>
+              <span class="schematic-bus-active-count">
+                🚌 ${activeVehicles.length} ${activeVehicles.length === 1 ? 'bus actiu' : 'busos actius'}
+              </span>
+            </div>
           </div>
-          <span class="schematic-bus-active-count">
-            🚌 ${activeVehicles.length} ${activeVehicles.length === 1 ? 'bus actiu' : 'busos actius'}
-          </span>
+          ${isBoth ? `
+            <button type="button" class="btn-select-dir-view" data-dir-id="${dirId}" title="Seleccionar i filtrar només aquest sentit">
+              <span>Filtrar aquest sentit</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+          ` : ''}
         </div>
 
         <div class="schematic-spine-wrapper">
@@ -2955,7 +2949,7 @@ class TransitApp {
 
       html += `
         <div class="schematic-stop-block">
-          <div class="schematic-station-item ${isTarget ? 'is-target' : ''} ${hub ? 'is-hub' : ''} ${isTerminus ? 'is-terminus' : ''}" data-stop-id="${this.esc(sId)}" data-stop-name="${this.esc(s.name)}">
+          <div class="schematic-station-item ${isTarget ? 'is-target' : ''} ${hub ? 'is-hub' : ''} ${isTerminus ? 'is-terminus' : ''}" data-stop-id="${this.esc(sId)}" data-stop-name="${this.esc(s.name)}" data-dir-id="${dirId}">
             <div class="schematic-node-col">
               <div class="schematic-node-circle ${hub ? 'hub-circle' : ''} ${isTarget ? 'target-circle' : ''} ${isCancelled ? 'cancelled-circle' : ''}" style="border-color:${this.esc(lineColor)};">
                 ${hub ? `<span class="schematic-node-hub-icon">${hub.icon}</span>` : `<span class="schematic-node-num">${idx + 1}</span>`}
@@ -3034,6 +3028,201 @@ class TransitApp {
       </div>
     `;
 
+    return html;
+  }
+
+  renderSchematicThermometer(lineDataOrStops, lineKey) {
+    const container = document.getElementById('stops-schematic-scroll');
+    if (!container) return;
+
+    const isLineDataObject = lineDataOrStops && typeof lineDataOrStops === 'object' && !Array.isArray(lineDataOrStops);
+    const lineData = isLineDataObject ? lineDataOrStops : (this.activeLineData || null);
+    const isBoth = this.activeDirection === 'both' || lineData?.direction === 'both';
+    const currentTargetId = this.targetStopsByLine[lineKey] || this.targetStopsByLine[`${lineKey}_${this.activeDirection}`] || '';
+    const lineColor = (lineData?.lineColor || lineData?.color || '#009485');
+    const secondaryColor = (lineData?.secondaryColor || '#38bdf8');
+    const allActiveVehicles = Array.isArray(this.activeBuses) ? this.activeBuses : (lineData?.activeBuses || []);
+
+    const isHubStop = (s) => {
+      const name = (s.name || '').toLowerCase();
+      const code = String(s.code || s.id || '');
+      if (name.includes('rodalies') || code === '1016' || code === '1015') return { type: 'train', icon: '🚆', label: 'Rodalies Renfe R1/RG1' };
+      if (name.includes('hospital') || code === '1001') return { type: 'hospital', icon: '🏥', label: 'Hospital de Mataró' };
+      if (name.includes('tereses') || code === '1060') return { type: 'hub', icon: '🏛️', label: 'Centre / Connexions Urbanes' };
+      if (name.includes('mataró parc') || name.includes('mataro parc')) return { type: 'mall', icon: '🛍️', label: 'Mataró Parc Comercial' };
+      if (name.includes('estació d\'autobusos') || name.includes('estacio d\'autobusos')) return { type: 'bus', icon: '🚌', label: 'Estació d\'Autobusos' };
+      return null;
+    };
+
+    // Check if both directions are present
+    const allDirs = (isBoth && lineData) ? (
+      (lineData.allDirections && lineData.allDirections.length > 1)
+        ? lineData.allDirections
+        : (lineData.secondaryStops && lineData.secondaryStops.length > 0
+            ? [
+                { dirId: '0', name: lineData.directionName || 'Sentit 1', stops: lineData.stops || [] },
+                { dirId: '1', name: 'Sentit 2', stops: lineData.secondaryStops || [] }
+              ]
+            : null)
+    ) : null;
+
+    if (isBoth && allDirs && allDirs.length > 1) {
+      // Split vehicles accurately across directions
+      const busesByDir = new Map();
+      allDirs.forEach(d => busesByDir.set(String(d.dirId !== undefined ? d.dirId : (d.id !== undefined ? d.id : '0')), []));
+
+      allActiveVehicles.forEach(b => {
+        const bLat = parseFloat(b.latitude ?? b.lat);
+        const bLon = parseFloat(b.longitude ?? b.lon);
+
+        // 1. Direct direction ID match
+        if (b.direction !== undefined && b.direction !== null && String(b.direction).trim() !== '') {
+          const strDir = String(b.direction).trim();
+          const matchDir = allDirs.find(d => String(d.dirId !== undefined ? d.dirId : d.id).trim() === strDir);
+          if (matchDir) {
+            const mId = String(matchDir.dirId !== undefined ? matchDir.dirId : matchDir.id);
+            busesByDir.get(mId)?.push(b);
+            return;
+          }
+        }
+
+        // 2. Destination matching
+        if (b.destination) {
+          const dest = b.destination.toLowerCase().trim();
+          const matchDir = allDirs.find(d => {
+            if (!d.name) return false;
+            const dName = d.name.toLowerCase().trim();
+            return dName.includes(dest) || dest.includes(dName.substring(0, 8));
+          });
+          if (matchDir) {
+            const mId = String(matchDir.dirId !== undefined ? matchDir.dirId : matchDir.id);
+            busesByDir.get(mId)?.push(b);
+            return;
+          }
+        }
+
+        // 3. Proximity fallback
+        if (Number.isFinite(bLat) && Number.isFinite(bLon)) {
+          let bestDirId = String(allDirs[0].dirId !== undefined ? allDirs[0].dirId : allDirs[0].id);
+          let bestDist = Infinity;
+          allDirs.forEach(d => {
+            const currentDirId = String(d.dirId !== undefined ? d.dirId : d.id);
+            (d.stops || []).forEach(s => {
+              const sLat = parseFloat(s.latitude ?? s.lat ?? (s.coords && s.coords.lat));
+              const sLon = parseFloat(s.longitude ?? s.lon ?? (s.coords && s.coords.lon));
+              if (!Number.isFinite(sLat) || !Number.isFinite(sLon)) return;
+              const dLat = (bLat - sLat) * 111320;
+              const dLon = (bLon - sLon) * 111320 * Math.cos(bLat * Math.PI / 180);
+              const dist = Math.sqrt(dLat * dLat + dLon * dLon);
+              if (dist < bestDist) {
+                bestDist = dist;
+                bestDirId = currentDirId;
+              }
+            });
+          });
+          busesByDir.get(bestDirId)?.push(b);
+        } else {
+          const firstDirId = String(allDirs[0].dirId !== undefined ? allDirs[0].dirId : allDirs[0].id);
+          busesByDir.get(firstDirId)?.push(b);
+        }
+      });
+
+      const totalStops = allDirs.reduce((acc, d) => acc + (d.stops?.length || 0), 0);
+
+      let html = `
+        <div class="schematic-container" style="--schematic-line-color:${this.esc(lineColor)};">
+          <div class="schematic-header-summary">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span class="schematic-line-tag" style="background:${this.esc(lineColor)};">
+                ${this.esc(lineData?.code || lineKey || 'Línia')}
+              </span>
+              <span class="schematic-dir-title">⇄ Ambdós sentits (${allDirs.length} recorreguts, ${totalStops} parades)</span>
+            </div>
+            <span class="schematic-bus-active-count">
+              🚌 ${allActiveVehicles.length} ${allActiveVehicles.length === 1 ? 'bus actiu' : 'busos actius'}
+            </span>
+          </div>
+
+          <!-- Direction Jump Navigator Bar for Schematic -->
+          <div class="stops-directions-nav" style="margin-bottom:0.85rem;">
+            <span class="stops-nav-label">Anar a:</span>
+            <div class="stops-nav-buttons">
+              ${allDirs.map((d, idx) => {
+                const dirId = String(d.dirId !== undefined ? d.dirId : (d.id !== undefined ? d.id : idx));
+                const dirIcon = idx === 0 ? '➔' : '⬅';
+                return `
+                  <button type="button" class="btn-dir-jump" data-dir-target="schematic-group-${dirId}" title="Desplaçar a les parades de ${this.esc(d.name)}">
+                    <span>${dirIcon} ${this.esc(d.name)}</span>
+                    <span class="btn-dir-jump-badge">${(d.stops || []).length} parades</span>
+                  </button>
+                `;
+              }).join('')}
+            </div>
+          </div>
+      `;
+
+      allDirs.forEach((d, dIdx) => {
+        const dirId = String(d.dirId !== undefined ? d.dirId : (d.id !== undefined ? d.id : dIdx));
+        const dirBuses = busesByDir.get(dirId) || [];
+        const dirColor = (dIdx === 0) ? lineColor : secondaryColor;
+        html += this.renderSingleSchematicTrack({
+          stops: d.stops || [],
+          dirName: d.name,
+          dirId,
+          lineColor: dirColor,
+          lineCode: lineData?.code || lineKey,
+          activeVehicles: dirBuses,
+          currentTargetId,
+          isHubStop,
+          isBoth: true,
+          dirIndex: dIdx
+        });
+      });
+
+      html += `</div>`;
+      container.innerHTML = html;
+      return;
+    }
+
+    // Single direction fallback
+    const stops = Array.isArray(lineDataOrStops) ? lineDataOrStops : (lineData?.stops || this.allStops || []);
+    if (!stops || stops.length === 0) {
+      container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);">Sense parades disponibles</div>';
+      return;
+    }
+
+    const dirName = lineData?.directionName || 'Recorregut de la línia';
+    const dirId = String(lineData?.direction !== undefined ? lineData.direction : (this.activeDirection || '1'));
+
+    let html = `
+      <div class="schematic-container" style="--schematic-line-color:${this.esc(lineColor)};">
+        <div class="schematic-header-summary">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="schematic-line-tag" style="background:${this.esc(lineColor)};">
+              ${this.esc(lineData?.code || lineKey || 'Línia')}
+            </span>
+            <span class="schematic-dir-title">${this.esc(dirName)}</span>
+          </div>
+          <span class="schematic-bus-active-count">
+            🚌 ${allActiveVehicles.length} ${allActiveVehicles.length === 1 ? 'bus actiu' : 'busos actius'}
+          </span>
+        </div>
+    `;
+
+    html += this.renderSingleSchematicTrack({
+      stops,
+      dirName,
+      dirId,
+      lineColor,
+      lineCode: lineData?.code || lineKey,
+      activeVehicles: allActiveVehicles,
+      currentTargetId,
+      isHubStop,
+      isBoth: false,
+      dirIndex: 0
+    });
+
+    html += `</div>`;
     container.innerHTML = html;
   }
 
