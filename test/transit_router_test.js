@@ -126,7 +126,30 @@ async function runTests() {
     assert.ok(Number.isFinite(transItin.transferWalk.walkingMinutes), 'Walk mins must be finite');
     assert.ok(transItin.totalDurationMinutes >= transItin.rideMinutes, 'Total duration must include wait/walk');
   }
-  console.log('✓ Transfer legs, walking paths, and duration schemas verified');
+  // 10. Prune Dominated & Duplicate Line Sequences
+  console.log('Test 10: Pruning dominated & duplicate line sequences (Pareto optimality)');
+  const dedupeTrip = await transitRouter.plan(
+    { lat: 41.54547, lon: 2.42518, name: 'Carrer de Sant Josep de Calassanç' },
+    'Estació Rodalies Mataró (mar)'
+  );
+  assert.strictEqual(dedupeTrip.success, true);
+  assert.ok(dedupeTrip.itineraries.length >= 1, 'Should find itineraries');
+
+  // Verify all returned itineraries have unique line sequences
+  const seenSigs = new Set();
+  for (const it of dedupeTrip.itineraries) {
+    const sig = it.legs.map(l => l.lineCode || l.lineId).join('->');
+    assert.ok(!seenSigs.has(sig), `Duplicate line sequence detected: ${sig}`);
+    seenSigs.add(sig);
+  }
+
+  // Specifically verify that L1->L5 does NOT include the dominated transfer via Blanes
+  const l1l5 = dedupeTrip.itineraries.find(it => it.legs.map(l => l.lineCode).join('->') === 'L1->L5');
+  if (l1l5) {
+    assert.strictEqual(l1l5.legs[0].toStop.name, 'Irlanda', 'Should transfer at Irlanda, not Blanes');
+    assert.strictEqual(l1l5.transferWalk?.distanceMeters, 99, 'Should use 99m transfer walk');
+  }
+  console.log('✓ Zero duplicate line sequences, dominated alternatives strictly pruned');
 
   console.log('\n✅ ALL transitRouter TESTS PASSED PERFECTLY!\n');
 }

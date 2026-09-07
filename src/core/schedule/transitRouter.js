@@ -587,34 +587,35 @@ class TransitRouter {
         const lineSig = itin.legs.map(l => l.lineId).join('->');
         const origWalk = itin.walkToFirstStop?.distanceMeters || 0;
         const destWalk = itin.walkFromLastStop?.distanceMeters || 0;
-        const totalWalk = origWalk + destWalk + (itin.transferWalk?.distanceMeters || 0);
+        const transferWalk = itin.transferWalk?.distanceMeters || 0;
+        const totalWalk = origWalk + destWalk + transferWalk;
 
         if (!seenLineSignatures.has(lineSig)) {
-          seenLineSignatures.set(lineSig, { itin, totalWalk, origWalk, destWalk });
+          seenLineSignatures.set(lineSig, { itin, totalWalk, origWalk, destWalk, transferWalk });
           selected.push(itin);
         } else {
           const existing = seenLineSignatures.get(lineSig);
-          const origWalkDiff = origWalk - existing.origWalk;
 
-          // If the user has to walk 40+ meters MORE at origin to catch the EXACT SAME line, discard it!
-          if (origWalkDiff > 40) {
-            continue;
+          // An itinerary with the exact same line combination already exists.
+          // Since routesList is sorted by duration asc and totalWalk asc, `existing` is already faster or equal.
+          // Never push duplicate line combinations; only replace `existing` if candidate is distinctly superior.
+          const walkSaved = existing.totalWalk - totalWalk;
+          const timeAdded = itin.totalDurationMinutes - existing.itin.totalDurationMinutes;
+
+          // Replace existing if candidate drops off significantly closer to destination without extra origin walking or delay:
+          if (destWalk < existing.destWalk - 25 && origWalk <= existing.origWalk + 15 && timeAdded <= 1) {
+            const idx = selected.indexOf(existing.itin);
+            if (idx !== -1) selected[idx] = itin;
+            seenLineSignatures.set(lineSig, { itin, totalWalk, origWalk, destWalk, transferWalk });
+          } else if (walkSaved >= 50 && timeAdded <= 2) {
+            // Or if it saves substantial walking (>= 50m) with virtually no time penalty (<= 2 min):
+            const idx = selected.indexOf(existing.itin);
+            if (idx !== -1) selected[idx] = itin;
+            seenLineSignatures.set(lineSig, { itin, totalWalk, origWalk, destWalk, transferWalk });
           }
 
-          // If durations are close (within 3 mins) and same lines:
-          if (Math.abs(itin.totalDurationMinutes - existing.itin.totalDurationMinutes) <= 3) {
-            // If this route drops off closer to destination (by at least 25m) without adding origin walking, prefer it!
-            if (destWalk < existing.destWalk - 25 && origWalk <= existing.origWalk + 20) {
-              const idx = selected.indexOf(existing.itin);
-              if (idx !== -1) selected[idx] = itin;
-              seenLineSignatures.set(lineSig, { itin, totalWalk, origWalk, destWalk });
-            }
-            continue;
-          }
-
-          if (selected.length < maxResults) {
-            selected.push(itin);
-          }
+          // Discard duplicate line sequence candidate — keep only the Pareto-optimal itinerary per line sequence
+          continue;
         }
 
         if (selected.length >= maxResults) break;
@@ -628,13 +629,17 @@ class TransitRouter {
       const bestDirect = filterDominatedRoutes(directRoutes, 3);
       itineraries.push(...bestDirect);
 
-      // Only add transfer options that offer a different line
-      const usedFirstLines = new Set(bestDirect.map(d => d.legs[0].lineId));
-      const transferCandidates = oneTransferRoutes.filter(t => !usedFirstLines.has(t.legs[0].lineId));
+      // Only add transfer options that offer genuinely different lines (neither first nor second leg matches a direct line)
+      const usedDirectLines = new Set(bestDirect.map(d => d.legs[0].lineId));
+      const transferCandidates = oneTransferRoutes.filter(t => !usedDirectLines.has(t.legs[0].lineId) && !usedDirectLines.has(t.legs[1].lineId));
       const bestTransfers = filterDominatedRoutes(transferCandidates, 2);
       itineraries.push(...bestTransfers);
     } else {
       itineraries = filterDominatedRoutes(oneTransferRoutes, 4);
+    }
+
+    if (itineraries.length > 4) {
+      itineraries = itineraries.slice(0, 4);
     }
 
     // Enrich ALL legs with real-time departure countdowns and scheduled timetable fallbacks
