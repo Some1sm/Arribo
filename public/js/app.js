@@ -3688,16 +3688,20 @@ class TransitApp {
       }
     });
 
-    // Back to Landing / Home Navigation Buttons
-    document.getElementById('btn-header-home')?.addEventListener('click', (e) => {
-      e.preventDefault();
-      this.navigateToLanding();
-    });
-
-    document.getElementById('header-logo-group')?.addEventListener('click', (e) => {
-      e.preventDefault();
-      this.navigateToLanding();
-    });
+    // Back to Landing / Home Navigation via Logo and Buttons
+    const logoGroup = document.getElementById('header-logo-group');
+    if (logoGroup) {
+      logoGroup.addEventListener('click', (e) => {
+        e.preventDefault();
+        this.navigateToLanding();
+      });
+      logoGroup.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          this.navigateToLanding();
+        }
+      });
+    }
 
     document.getElementById('btn-back-to-landing')?.addEventListener('click', (e) => {
       e.preventDefault();
