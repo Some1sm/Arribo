@@ -61,7 +61,7 @@ class TransitApp {
     this.alarmWatchId = null;
     this._plannerOriginCoords = null;
     this._plannerDestCoords = null;
-    this.stopsViewMode = 'list';
+    this.stopsViewMode = 'schematic';
 
     // Theme Management (Light / Dark Mode)
     this.currentTheme = this.getInitialTheme();
@@ -85,7 +85,7 @@ class TransitApp {
       if ('caches' in window) {
         caches.keys().then((keys) => {
           keys.forEach((key) => {
-            if (key !== 'arribo-mataro-cache-v5') {
+            if (key !== 'arribo-mataro-cache-v6') {
               caches.delete(key);
             }
           });
@@ -124,18 +124,18 @@ class TransitApp {
       pillsDiv.className = 'stops-view-mode-pills';
       pillsDiv.id = 'stops-view-mode-pills';
       pillsDiv.innerHTML = `
-        <button type="button" class="btn-stops-view-mode ${this.stopsViewMode === 'list' ? 'active' : ''}" id="btn-stops-mode-list" data-mode="list" title="Veure llista detallada de parades">
-          <span>📋 Llista</span>
-        </button>
         <button type="button" class="btn-stops-view-mode ${this.stopsViewMode === 'schematic' ? 'active' : ''}" id="btn-stops-mode-schematic" data-mode="schematic" title="Veure termòmetre esquemàtic estil metro amb posició de busos en viu">
           <span>🚇 Termòmetre</span>
+        </button>
+        <button type="button" class="btn-stops-view-mode ${this.stopsViewMode === 'list' ? 'active' : ''}" id="btn-stops-mode-list" data-mode="list" title="Veure llista detallada de parades">
+          <span>📋 Llista</span>
         </button>
       `;
       pillsDiv.addEventListener('click', (e) => {
         const btn = e.target.closest('.btn-stops-view-mode');
         if (!btn) return;
         e.preventDefault();
-        const mode = btn.getAttribute('data-mode') || 'list';
+        const mode = btn.getAttribute('data-mode') || 'schematic';
         this.setStopsViewMode(mode);
       });
       const dirPills = document.getElementById('stops-card-dir-pills');
@@ -4148,7 +4148,7 @@ class TransitApp {
         const btn = e.target.closest('.btn-stops-view-mode');
         if (!btn) return;
         e.preventDefault();
-        const mode = btn.getAttribute('data-mode') || 'list';
+        const mode = btn.getAttribute('data-mode') || 'schematic';
         this.setStopsViewMode(mode);
       });
     }
