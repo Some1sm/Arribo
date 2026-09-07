@@ -12,10 +12,34 @@ class MataroSiriClient {
     this.cacheTtlMs = 20000; // 20-second live cache with 10-minute (600s) stale fallback buffer
     this.staleFallbackTtlMs = 10 * 60 * 1000; // 10-minute fallback buffer for dead reckoning
     this.lastWarnTime = 0;
+    this.consecutiveFailures = 0;
+    this.circuitOpenUntil = 0;
+    this.circuitCooldownMs = 30000; // 30-second cooldown on upstream network calls when server hangs
     // Pluggable transport: server.js installs an WorkerBridge-backed backend
     // in the main process so SIRI SOAP traffic stays worker-owned.
     this._httpBackend = null;
     this._rpcBackend = null;
+  }
+
+  isCircuitOpen() {
+    return Date.now() < this.circuitOpenUntil;
+  }
+
+  recordSuccess() {
+    this.consecutiveFailures = 0;
+    this.circuitOpenUntil = 0;
+  }
+
+  recordFailure(errMsg = '') {
+    this.consecutiveFailures++;
+    const now = Date.now();
+    if (this.consecutiveFailures >= 2) {
+      this.circuitOpenUntil = now + this.circuitCooldownMs;
+      if (now - this.lastWarnTime > 60000) {
+        console.warn(`[SIRI] Circuit breaker tripped (${errMsg || 'upstream unavailable'}). Pausing SOAP calls for 30s to serve instant cache / dead-reckoning in 0ms.`);
+        this.lastWarnTime = now;
+      }
+    }
   }
 
   /**
@@ -59,7 +83,7 @@ class MataroSiriClient {
         port: this.port,
         path: this.path,
         method: 'POST',
-        timeout: 10000,
+        timeout: 2500,
         headers: {
           'Content-Type': 'text/xml; charset=utf-8',
           'SOAPAction': `http://tempuri.org/${action}`,
@@ -142,19 +166,63 @@ class MataroSiriClient {
   async getLiveVehicles(lineRef = '') {
     this.assertSafeRef(lineRef, 'lineRef');
 
+    const cacheKey = `veh_${lineRef}`;
+    const cached = this.cache.get(cacheKey);
+    const now = Date.now();
+
+    // 1. Fresh cache: instant 0ms return (<20s)
+    if (cached && (now - cached.ts < this.cacheTtlMs)) {
+      return cached.data;
+    }
+
+    // 2. Circuit breaker check: if upstream is blocked or hanging, return stale fallback immediately in 0ms!
+    if (this.isCircuitOpen()) {
+      if (cached && (now - cached.ts < this.staleFallbackTtlMs)) {
+        return cached.data.map(v => ({
+          ...v,
+          isEstimated: true,
+          isRealTime: false,
+          delayBadgeText: '⚡ En ruta (Estimat)',
+          statusText: '⚡ Estimació per pèrdua temporal de senyal'
+        }));
+      }
+      return [];
+    }
+
+    // 3. Pluggable RPC transport (Main process -> Ingestion worker)
     if (typeof this._rpcBackend === 'function') {
       try {
         const res = await this._rpcBackend('getMataroLiveVehicles', { lineRef });
-        return Array.isArray(res) ? res : [];
+        if (Array.isArray(res) && res.length > 0) {
+          this.recordSuccess();
+          this.cache.set(cacheKey, { ts: now, data: res });
+          return res;
+        } else if (Array.isArray(res) && res.length === 0) {
+          // If RPC returned empty, fall back to recent cached data if within 10-min window
+          if (cached && (now - cached.ts < this.staleFallbackTtlMs)) {
+            return cached.data.map(v => ({
+              ...v,
+              isEstimated: true,
+              isRealTime: false,
+              delayBadgeText: '⚡ En ruta (Estimat)',
+              statusText: '⚡ Estimació per pèrdua temporal de senyal'
+            }));
+          }
+          return [];
+        }
       } catch (err) {
+        this.recordFailure(err.message);
+        if (cached && (now - cached.ts < this.staleFallbackTtlMs)) {
+          return cached.data.map(v => ({
+            ...v,
+            isEstimated: true,
+            isRealTime: false,
+            delayBadgeText: '⚡ En ruta (Estimat)',
+            statusText: '⚡ Estimació per pèrdua temporal de senyal'
+          }));
+        }
         return [];
       }
-    }
-
-    const cacheKey = `veh_${lineRef}`;
-    const cached = this.cache.get(cacheKey);
-    if (cached && Date.now() - cached.ts < this.cacheTtlMs) {
-      return cached.data;
     }
 
     const ts = new Date().toISOString();
@@ -223,19 +291,30 @@ class MataroSiriClient {
         }
       }
 
+      this.recordSuccess();
       this.cache.set(cacheKey, { ts: Date.now(), data: vehicles });
       return vehicles;
     } catch (err) {
-      const now = Date.now();
+      this.recordFailure(err.message);
+      const nowErr = Date.now();
       if (err.message.includes('timeout') || err.message.includes('ECONNRESET') || err.message.includes('ECONNREFUSED')) {
-        if (now - this.lastWarnTime > 60000) {
+        if (nowErr - this.lastWarnTime > 60000) {
           console.warn(`[SIRI] Avanza SIRI server transient issue (${err.message}). Using live cache & dead-reckoning fallback.`);
-          this.lastWarnTime = now;
+          this.lastWarnTime = nowErr;
         }
       } else {
         console.error(`[SIRI Error] GetVehicleMonitoring(${lineRef}):`, err.message);
       }
-      return (cached && (Date.now() - cached.ts < this.staleFallbackTtlMs)) ? cached.data : [];
+      if (cached && (Date.now() - cached.ts < this.staleFallbackTtlMs)) {
+        return cached.data.map(v => ({
+          ...v,
+          isEstimated: true,
+          isRealTime: false,
+          delayBadgeText: '⚡ En ruta (Estimat)',
+          statusText: '⚡ Estimació per pèrdua temporal de senyal'
+        }));
+      }
+      return [];
     }
   }
 
@@ -255,19 +334,59 @@ class MataroSiriClient {
     this.assertSafeRef(normStopId, 'stopId');
     this.assertSafeRef(lineRef, 'lineRef');
 
+    const cacheKey = `stop_${normStopId}_${lineRef}`;
+    const cached = this.cache.get(cacheKey);
+    const now = Date.now();
+
+    // 1. Fresh cache: instant 0ms return (<20s)
+    if (cached && (now - cached.ts < this.cacheTtlMs)) {
+      return cached.data;
+    }
+
+    // 2. Circuit breaker check: if upstream is blocked or hanging, return stale fallback immediately in 0ms!
+    if (this.isCircuitOpen()) {
+      if (cached && (now - cached.ts < this.staleFallbackTtlMs)) {
+        return cached.data.map(a => ({
+          ...a,
+          isEstimated: true,
+          isRealTime: false,
+          delayBadgeText: '⚡ En ruta (Estimat)'
+        }));
+      }
+      return [];
+    }
+
+    // 3. Pluggable RPC transport (Main process -> Ingestion worker)
     if (typeof this._rpcBackend === 'function') {
       try {
         const res = await this._rpcBackend('getMataroStopArrivals', { stopId: normStopId, lineRef });
-        return Array.isArray(res) ? res : [];
+        if (Array.isArray(res) && res.length > 0) {
+          this.recordSuccess();
+          this.cache.set(cacheKey, { ts: now, data: res });
+          return res;
+        } else if (Array.isArray(res) && res.length === 0) {
+          if (cached && (now - cached.ts < this.staleFallbackTtlMs)) {
+            return cached.data.map(a => ({
+              ...a,
+              isEstimated: true,
+              isRealTime: false,
+              delayBadgeText: '⚡ En ruta (Estimat)'
+            }));
+          }
+          return [];
+        }
       } catch (err) {
+        this.recordFailure(err.message);
+        if (cached && (now - cached.ts < this.staleFallbackTtlMs)) {
+          return cached.data.map(a => ({
+            ...a,
+            isEstimated: true,
+            isRealTime: false,
+            delayBadgeText: '⚡ En ruta (Estimat)'
+          }));
+        }
         return [];
       }
-    }
-
-    const cacheKey = `stop_${normStopId}_${lineRef}`;
-    const cached = this.cache.get(cacheKey);
-    if (cached && Date.now() - cached.ts < this.cacheTtlMs) {
-      return cached.data;
     }
 
     const ts = new Date().toISOString();
@@ -367,19 +486,29 @@ class MataroSiriClient {
       }
 
       arrivals.sort((a, b) => a.minutesAway - b.minutesAway);
+      this.recordSuccess();
       this.cache.set(cacheKey, { ts: Date.now(), data: arrivals });
       return arrivals;
     } catch (err) {
-      const now = Date.now();
+      this.recordFailure(err.message);
+      const nowErr = Date.now();
       if (err.message.includes('timeout') || err.message.includes('ECONNRESET') || err.message.includes('ECONNREFUSED')) {
-        if (now - this.lastWarnTime > 60000) {
+        if (nowErr - this.lastWarnTime > 60000) {
           console.warn(`[SIRI] Avanza SIRI server transient issue (${err.message}). Using live cache & dead-reckoning fallback.`);
-          this.lastWarnTime = now;
+          this.lastWarnTime = nowErr;
         }
       } else {
         console.error(`[SIRI Error] GetStopMonitoring(${stopId}):`, err.message);
       }
-      return (cached && (Date.now() - cached.ts < this.staleFallbackTtlMs)) ? cached.data : [];
+      if (cached && (Date.now() - cached.ts < this.staleFallbackTtlMs)) {
+        return cached.data.map(a => ({
+          ...a,
+          isEstimated: true,
+          isRealTime: false,
+          delayBadgeText: '⚡ En ruta (Estimat)'
+        }));
+      }
+      return [];
     }
   }
 }

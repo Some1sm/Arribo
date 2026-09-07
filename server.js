@@ -57,12 +57,19 @@ workerBridge.start();
 flightRecorder.setAutoExtrapolation(false);
 flightRecorder.setHistoryGateway((op, args) => workerBridge.historyQuery(op, args, { timeoutMs: op === 'getLineDelayStats' ? 25000 : 10000 }));
 
-// Centralize Mataró SIRI traffic in the worker over IPC
+// Centralize Mataró SIRI traffic in the worker over IPC (fast-fail timeout of 3500ms)
 mataroSiriClient.setRpcBackend(async (op, args) => {
   try {
-    const res = await workerBridge.historyQuery(op, args, { timeoutMs: 8000 });
+    const res = await workerBridge.historyQuery(op, args, { timeoutMs: 3500 });
     return Array.isArray(res) ? res : [];
   } catch (_) { return []; }
+});
+
+// Sync live fleet telemetry directly into Mataró tracker vehicle history
+workerBridge.on('fleet_update', (payload) => {
+  if (payload && Array.isArray(payload.vehicles) && mataroTracker && typeof mataroTracker.syncFleetVehicles === 'function') {
+    mataroTracker.syncFleetVehicles(payload.vehicles);
+  }
 });
 
 // Request logger middleware

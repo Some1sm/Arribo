@@ -555,6 +555,46 @@ class MataroTracker extends BaseTracker {
     return s;
   }
 
+  // Record a vehicle's telemetry state to memory history for dead reckoning
+  recordVehicleState(v) {
+    if (!v || !v.vehicleId) return;
+    const now = Date.now();
+    const vId = String(v.vehicleId);
+    const lId = this.normalizeLineId(v.lineId || v.lineCode);
+    if (!lId) return;
+
+    this.vehicleHistory.set(vId, {
+      vehicleId: vId,
+      lineId: lId,
+      direction: String(v.direction || '0'),
+      lat: Number(v.lat || v.latitude),
+      lon: Number(v.lon || v.longitude),
+      bearing: Number(v.bearing || 0),
+      speedKmh: Number(v.speedKmh || 25),
+      delayMins: Number(v.delayMins || 0),
+      lastSeen: Number(v.lastSeen || v.timestamp || now),
+      directionName: v.directionName || '',
+      origin: v.origin || '',
+      destination: v.destination || '',
+      isEstimated: Boolean(v.isEstimated)
+    });
+  }
+
+  // Ingest batch fleet updates from worker IPC to keep vehicle history fresh across processes
+  syncFleetVehicles(vehicles) {
+    if (!Array.isArray(vehicles)) return;
+    const now = Date.now();
+    for (const v of vehicles) {
+      if (!v || !v.vehicleId) continue;
+      const isMataro = (v.agency || '').includes('Mataró') || (v.lineCode || '').startsWith('L');
+      if (!isMataro) continue;
+      this.recordVehicleState({
+        ...v,
+        lastSeen: v.lastSeen || now
+      });
+    }
+  }
+
   // 1. Get all Mataro urban lines (L1..L8)
   getLines() {
     return this.linesData.map(l => {
@@ -693,6 +733,34 @@ class MataroTracker extends BaseTracker {
       }
     }
 
+    // Fallback: If still empty, check this.vehicleHistory for active/recent buses (up to 10 mins)
+    if (!liveVehicles || liveVehicles.length === 0) {
+      const now = Date.now();
+      const histVehs = [];
+      for (const [vId, hist] of this.vehicleHistory.entries()) {
+        if (String(hist.lineId) === String(lId) && (now - hist.lastSeen) <= 600000) {
+          histVehs.push({
+            vehicleId: hist.vehicleId,
+            lineId: hist.lineId,
+            directionName: hist.directionName,
+            origin: hist.origin,
+            destination: hist.destination,
+            lat: hist.lat,
+            lon: hist.lon,
+            bearing: hist.bearing,
+            speedKmh: hist.speedKmh,
+            delayMins: hist.delayMins,
+            isEstimated: true,
+            isRealTime: false,
+            timestamp: hist.lastSeen
+          });
+        }
+      }
+      if (histVehs.length > 0) {
+        liveVehicles = histVehs;
+      }
+    }
+
     // Apply Deterministic Direction Matching & Road-Snapping with 10-minute dead reckoning
     let processedBuses = [];
     if (isBoth && routes.length > 1) {
@@ -826,12 +894,17 @@ class MataroTracker extends BaseTracker {
 
       // Sanity check for terminal layovers / ghost buses (e.g. parked with velocity 0 at terminus)
       const isTerminal = (b.speedKmh <= 3 || b.speedKmh === undefined) && (segInfo.totalProgress > 92 || segInfo.totalProgress < 8);
-      const isGhostDelay = isTerminal && b.delayMins > 10;
+      const isEst = Boolean(b.isEstimated);
+      const isGhostDelay = !isEst && isTerminal && b.delayMins > 10;
       const cleanDelayMins = isGhostDelay ? 0 : Math.min(25, Math.max(-10, b.delayMins || 0));
-      const cleanDelayFormatted = isGhostDelay 
-        ? 'Regulant a capçalera' 
-        : (cleanDelayMins > 0 ? `+${cleanDelayMins} min retard` : (cleanDelayMins < 0 ? `${cleanDelayMins} min avançat` : 'Puntual'));
-      const statusText = isGhostDelay ? '⏱️ Regulant a capçalera' : '🟢 Senyal GPS Actiu';
+      const cleanDelayFormatted = isEst
+        ? '⚡ Estimació en circuit'
+        : (isGhostDelay 
+            ? 'Regulant a capçalera' 
+            : (cleanDelayMins > 0 ? `+${cleanDelayMins} min retard` : (cleanDelayMins < 0 ? `${cleanDelayMins} min avançat` : 'Puntual')));
+      const statusText = isEst
+        ? '⚡ Estimació per pèrdua temporal de senyal'
+        : (isGhostDelay ? '⏱️ Regulant a capçalera' : '🟢 Senyal GPS Actiu');
 
       result.push({
         tripId: `mataro_${b.vehicleId}`,
@@ -849,8 +922,9 @@ class MataroTracker extends BaseTracker {
         speedKmh: b.speedKmh,
         delayMins: cleanDelayMins,
         delayFormatted: cleanDelayFormatted,
-        isEstimated: false,
-        isRealTime: true,
+        delayBadgeText: isEst ? '⚡ En ruta (Estimat)' : cleanDelayFormatted,
+        isEstimated: isEst,
+        isRealTime: !isEst,
         recordedAt: b.recordedAt || new Date().toISOString(),
         timestamp: b.timestamp || now,
         origin: b.origin || '',
@@ -1024,9 +1098,38 @@ class MataroTracker extends BaseTracker {
       try {
         liveVehicles = await siriClient.getLiveVehicles(lId);
       } catch (e) {
-        continue;
+        // Fallback below
       }
-      if (liveVehicles.length === 0) continue;
+
+      if (!liveVehicles || liveVehicles.length === 0) {
+        const frVehs = flightRecorder.getLineVehicles(`L${lId}`);
+        const mataroVehs = (frVehs || []).filter(v => (v.agency || '').includes('Mataró') || String(v.lineId) === lId);
+        if (mataroVehs.length > 0) {
+          liveVehicles = mataroVehs;
+        } else {
+          for (const [vId, hist] of this.vehicleHistory.entries()) {
+            if (String(hist.lineId) === String(lId) && (now - hist.lastSeen) <= 600000) {
+              liveVehicles.push({
+                vehicleId: hist.vehicleId,
+                lineId: hist.lineId,
+                direction: hist.direction,
+                directionName: hist.directionName,
+                origin: hist.origin,
+                destination: hist.destination,
+                lat: hist.lat,
+                lon: hist.lon,
+                bearing: hist.bearing,
+                speedKmh: hist.speedKmh,
+                delayMins: hist.delayMins,
+                isEstimated: true,
+                isRealTime: false,
+                timestamp: hist.lastSeen
+              });
+            }
+          }
+        }
+      }
+      if (!liveVehicles || liveVehicles.length === 0) continue;
 
       const lineInfo = this.linesData.find(l => String(l.id) === lId) || { name: `Línia ${lId}` };
 
@@ -1057,7 +1160,19 @@ class MataroTracker extends BaseTracker {
           // ONLY estimate ETA for physically approaching upstream vehicles on the same route direction
           if (!isSameDirection) return;
 
-          const snapped = geoEngine.snapPointToPolyline(veh.lat, veh.lon, routePolyCoords);
+          // Project forward along route polyline if telemetry was recorded earlier
+          let effectiveLat = veh.lat;
+          let effectiveLon = veh.lon;
+          const elapsedSec = Math.max(0, (now - (veh.timestamp || veh.lastSeen || now)) / 1000);
+          if (elapsedSec > 15 && elapsedSec <= 600) {
+            const extrapolated = geoEngine.extrapolatePolylinePosition(veh, elapsedSec, veh.speedKmh || 25, routePolyCoords);
+            if (extrapolated) {
+              effectiveLat = extrapolated.lat;
+              effectiveLon = extrapolated.lon;
+            }
+          }
+
+          const snapped = geoEngine.snapPointToPolyline(effectiveLat, effectiveLon, routePolyCoords);
           const vehNearestStop = this.findNearestSegment(snapped.lat, snapped.lon, routeStops, routePolyCoords);
           const vehStopIdx = Math.max(0, (vehNearestStop.fromSeq || 1) - 1);
           const isUpstreamDirect = (vehStopIdx <= targetStopIdx);
@@ -1068,7 +1183,7 @@ class MataroTracker extends BaseTracker {
           const targetLon = targetStopObj.longitude !== undefined ? parseFloat(targetStopObj.longitude) : targetStopObj.lon;
 
           const remainingStops = targetStopIdx - vehStopIdx;
-          const remainingMeters = geoEngine.calculatePolylineDistanceBetween(routePolyCoords, snapped.lat, snapped.lon, targetLat || veh.lat, targetLon || veh.lon);
+          const remainingMeters = geoEngine.calculatePolylineDistanceBetween(routePolyCoords, snapped.lat, snapped.lon, targetLat || effectiveLat, targetLon || effectiveLon);
           const speedMps = Math.max(4.5, (veh.speedKmh || 22) / 3.6);
           let transitTravelSec = Math.round(remainingMeters / speedMps) + (remainingStops * 25);
 
@@ -1090,6 +1205,9 @@ class MataroTracker extends BaseTracker {
           if (minutesAway <= 45) {
             const arrDate = new Date(now + minutesAway * 60000);
             const formattedTime = timeUtils.formatTimeToTimezone(arrDate, this.agencyTimezone);
+            const badge = veh.isEstimated
+              ? `⚡ En ruta (Estimat)`
+              : (veh.delayMins > 0 ? `+${veh.delayMins} min retard` : `⚡ En ruta (Bus #${veh.vehicleId})`);
 
             estimatedArrivals.push({
               lineId: lId,
@@ -1097,19 +1215,19 @@ class MataroTracker extends BaseTracker {
               directionName: route.name,
               destination: route.name,
               vehicleId: veh.vehicleId,
-              distanceFromStop: `${Math.round(transitTravelSec * 5.5)}m`,
+              distanceFromStop: `${Math.round(remainingMeters)}m`,
               departureTime: formattedTime,
               expectedIso: arrDate.toISOString(),
               aimedIso: arrDate.toISOString(),
               minutesAway,
               formattedStatus: minutesAway === 0 ? 'Imminent' : (minutesAway === 1 ? '1 min' : `${minutesAway} min`),
               delayMins: veh.delayMins || 0,
-              delayBadgeText: `⚡ En ruta (Bus #${veh.vehicleId})`,
+              delayBadgeText: badge,
               delayStatus: 'estimated',
               isRealTime: false,
               isEstimated: true,
               isUpstreamDirect: true,
-              busCoords: { lat: veh.lat, lon: veh.lon }
+              busCoords: { lat: effectiveLat, lon: effectiveLon }
             });
 
             existingVehicleIds.add(veh.vehicleId);
@@ -1182,10 +1300,12 @@ class MataroTracker extends BaseTracker {
     
     // 1. Query Official Real-Time SIRI Departures
     let liveArrivals = [];
-    try {
-      liveArrivals = await siriClient.getStopArrivals(sId, cleanLineId);
-    } catch (e) {
-      console.warn(`[getStopDepartures] SIRI query error for stop ${sId}:`, e.message);
+    if (!options.skipSiri) {
+      try {
+        liveArrivals = await siriClient.getStopArrivals(sId, cleanLineId);
+      } catch (e) {
+        console.warn(`[getStopDepartures] SIRI query error for stop ${sId}:`, e.message);
+      }
     }
 
     // 2. Query Circuit Position Estimations for Active Vehicles
@@ -1471,7 +1591,7 @@ class MataroTracker extends BaseTracker {
       });
 
       const promises = Array.from(stopIds).map(sId => 
-        this.getStopDepartures(sId, lId, '0', { skipCache: true }).catch(() => null)
+        this.getStopDepartures(sId, lId, '0', { skipCache: true, skipSiri: true }).catch(() => null)
       );
       await Promise.allSettled(promises);
     } catch (e) {

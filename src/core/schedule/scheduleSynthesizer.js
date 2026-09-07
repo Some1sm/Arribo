@@ -368,11 +368,13 @@ function compileStopDepartures(options = {}) {
   for (const raw of rawLive) {
     if (!raw) continue;
     const std = delayEngine.standardizeDeparture(raw, options);
-    std.isRealTime = true;
-    std.isRealtime = true;
+    const isEst = Boolean(raw.isEstimated || (!raw.isRealTime && raw.isRealtime === false));
+    std.isRealTime = !isEst;
+    std.isRealtime = !isEst;
+    std.isEstimated = isEst;
     std.isToday = true;
     std.time = std.departureTime;
-    std.badgeText = std.delayBadgeText;
+    std.badgeText = raw.delayBadgeText || (isEst ? '⚡ En ruta' : std.delayBadgeText);
 
     let depMin = null;
     let aimedMin = null;

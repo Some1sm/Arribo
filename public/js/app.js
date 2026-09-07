@@ -2404,9 +2404,15 @@ class TransitApp {
             etaPillEl.classList.add('early');
             const cleanEarly = (next.delayBadgeText || '-2 min').replace(/avançat/gi, '').trim();
             etaStatusText.textContent = `Avançat (${cleanEarly})`;
-          } else {
+          } else if (next.isEstimated) {
+            etaPillEl.classList.add('estimated');
+            etaStatusText.textContent = 'Estimació en Circuit';
+          } else if (next.isRealTime) {
             etaPillEl.classList.add('live');
-            etaStatusText.textContent = next.isRealTime ? 'Temps Real Actiu' : (next.isEstimated ? 'Estimació en Circuit' : 'Horari Teòric');
+            etaStatusText.textContent = 'Temps Real Actiu';
+          } else {
+            etaPillEl.classList.add('scheduled');
+            etaStatusText.textContent = 'Horari Teòric';
           }
         }
       }

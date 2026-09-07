@@ -123,7 +123,9 @@ class IngestionDaemon {
                 bearing: b.bearing || 0,
                 delayMins: b.delayMins || 0,
                 destination: b.destination || '',
-                isRealTime: !b.isEstimated
+                isRealTime: !b.isEstimated,
+                isEstimated: Boolean(b.isEstimated),
+                serviceableMs: 10 * 60 * 1000
               });
 
               // Sanity check: Do NOT record delay logs for ghost buses, parked vehicles, or terminal layovers
