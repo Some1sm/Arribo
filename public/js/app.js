@@ -62,6 +62,9 @@ class TransitApp {
     this._plannerOriginCoords = null;
     this._plannerDestCoords = null;
     this.stopsViewMode = 'schematic';
+    this.pendingFocusBusId = null;
+    this.pendingFocusStopId = null;
+    this.pendingSearchQuery = null;
 
     // Theme Management (Light / Dark Mode)
     this.currentTheme = this.getInitialTheme();
@@ -323,7 +326,30 @@ class TransitApp {
   }
 
   parseUrlHash() {
-    const hash = window.location.hash.toLowerCase().replace('#', '').trim();
+    let rawHash = window.location.hash.replace(/^#/, '').trim();
+    let queryPart = '';
+
+    // Extract query parameters if appended to the hash (e.g. #l1?bus=2675 or #l1&bus=2675)
+    if (rawHash.includes('?') || rawHash.includes('&')) {
+      const sep = rawHash.includes('?') ? '?' : '&';
+      const parts = rawHash.split(sep);
+      rawHash = parts[0];
+      queryPart = parts.slice(1).join('&');
+    }
+
+    const searchStr = queryPart || window.location.search.replace(/^\?/, '');
+    const params = new URLSearchParams(searchStr);
+    const busParam = params.get('bus') || params.get('vehicle') || params.get('vehicleId');
+    const stopParam = params.get('stop') || params.get('stopId');
+    const dirParam = params.get('dir') || params.get('direction');
+    const qParam = params.get('q') || params.get('cerca');
+
+    if (busParam) this.pendingFocusBusId = String(busParam).trim();
+    if (stopParam) this.pendingFocusStopId = String(stopParam).trim();
+    if (dirParam) this.pendingDirection = String(dirParam).trim();
+    if (qParam) this.pendingSearchQuery = String(qParam).trim();
+
+    const hash = rawHash.toLowerCase().trim();
     if (!hash || ['home', 'inici', 'lines', 'linies', 'totes', 'index'].includes(hash)) {
       this.activeLineId = null;
       return;
@@ -1260,6 +1286,7 @@ class TransitApp {
 
     // Highlight marker and zoom/pan to it
     this.mapController?.highlightBus(vehicleId, true, coords);
+    this.mapController?.openBusPopup(vehicleId);
 
     // Fetch and render historical GPS breadcrumb trail for this bus
     if (vehicleId) {
@@ -1414,6 +1441,9 @@ class TransitApp {
           lId
         );
       }
+
+      // 2.1 Process pending shared link focus (bus, stop, or search query)
+      this.processPendingSharedFocus(lData);
 
       // 3. Asynchronously handle Target Stop ETA without delaying map transition
       etaPromise.then(etaRes => {
@@ -2840,7 +2870,11 @@ class TransitApp {
       mapSchematicBtn?.classList.add('active');
       if (listScroll) listScroll.style.display = 'none';
       if (schematicScroll) schematicScroll.style.display = 'block';
-      if (searchInput) searchInput.style.display = 'none';
+      if (searchInput) {
+        searchInput.style.display = 'block';
+        searchInput.placeholder = "🔍 Cercar parada al termòmetre (ex: Tereses, 1016, Hospital)...";
+        if (searchInput.value) this.filterSchematicStops(searchInput.value.toLowerCase().trim());
+      }
       this.renderSchematicThermometer(this.activeLineData, this.activeLineId);
     } else {
       schematicBtn?.classList.remove('active');
@@ -2850,7 +2884,223 @@ class TransitApp {
       listBtn?.setAttribute('aria-selected', 'true');
       if (schematicScroll) schematicScroll.style.display = 'none';
       if (listScroll) listScroll.style.display = 'block';
-      if (searchInput) searchInput.style.display = 'block';
+      if (searchInput) {
+        searchInput.style.display = 'block';
+        searchInput.placeholder = "🔍 Filtrar llista de parades...";
+        if (searchInput.value) this.filterListStops(searchInput.value.toLowerCase().trim());
+      }
+    }
+  }
+
+  filterSchematicStops(q) {
+    const blocks = document.querySelectorAll('#stops-schematic-scroll .schematic-stop-block');
+    const clearBtn = document.getElementById('btn-clear-stop-search');
+    if (clearBtn) clearBtn.style.display = q ? 'flex' : 'none';
+
+    if (!q) {
+      blocks.forEach(b => {
+        b.classList.remove('schematic-match', 'schematic-dimmed');
+      });
+      return;
+    }
+
+    let firstMatch = null;
+    blocks.forEach(block => {
+      const name = (block.querySelector('.schematic-stop-name')?.textContent || '').toLowerCase();
+      const meta = (block.querySelector('.schematic-stop-meta')?.textContent || '').toLowerCase();
+      const stopId = String(block.querySelector('.schematic-station-item')?.getAttribute('data-stop-id') || '').toLowerCase();
+      
+      const isMatch = name.includes(q) || meta.includes(q) || stopId.includes(q);
+      if (isMatch) {
+        block.classList.add('schematic-match');
+        block.classList.remove('schematic-dimmed');
+        if (!firstMatch) firstMatch = block;
+      } else {
+        block.classList.remove('schematic-match');
+        block.classList.add('schematic-dimmed');
+      }
+    });
+
+    if (firstMatch) {
+      firstMatch.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }
+
+  filterListStops(q) {
+    const clearBtn = document.getElementById('btn-clear-stop-search');
+    if (clearBtn) clearBtn.style.display = q ? 'flex' : 'none';
+
+    const sections = document.querySelectorAll('#stops-list-scroll .stops-dir-section');
+    if (sections.length > 0) {
+      sections.forEach(sec => {
+        let visibleInSec = 0;
+        sec.querySelectorAll('.stop-row-item').forEach(row => {
+          const text = row.textContent.toLowerCase();
+          const matches = !q || text.includes(q);
+          row.style.display = matches ? 'flex' : 'none';
+          if (matches) visibleInSec++;
+        });
+        sec.style.display = (visibleInSec > 0 || !q) ? 'flex' : 'none';
+      });
+    } else {
+      document.querySelectorAll('#stops-list-scroll .stop-row-item').forEach(row => {
+        const text = row.textContent.toLowerCase();
+        row.style.display = (!q || text.includes(q)) ? 'flex' : 'none';
+      });
+    }
+  }
+
+  shareLiveBus(vehicleId) {
+    if (!vehicleId) return;
+    const line = this.activeLineData || {};
+    const lineCode = line.code || (this.activeLineId ? `L${this.activeLineId}` : '');
+    const lineHash = this.activeLineId === 'c10' ? 'c10' : `l${this.activeLineId}`;
+    
+    // Dynamically derive current origin and pathname (works on 87.106.33.66:3000, localhost, or domain)
+    const origin = window.location.origin || `${window.location.protocol}//${window.location.host}`;
+    const shareUrl = `${origin}${window.location.pathname}#${lineHash}?bus=${encodeURIComponent(vehicleId)}`;
+
+    const shareTitle = `Arribo! — Bus #${vehicleId} (${lineCode})`;
+    const shareText = `Segueix en directe el Bus #${vehicleId} de la línia ${lineCode} a Mataró:`;
+
+    if (navigator.share && /mobile|android|iphone|ipad/i.test(navigator.userAgent)) {
+      navigator.share({
+        title: shareTitle,
+        text: shareText,
+        url: shareUrl
+      }).then(() => {
+        this.showToast(`✅ Enllaç compartit`);
+      }).catch((err) => {
+        if (err.name !== 'AbortError') {
+          this.copyToClipboard(shareUrl, `📋 Enllaç copiat: Bus #${vehicleId}`);
+        }
+      });
+    } else {
+      this.copyToClipboard(shareUrl, `📋 Enllaç copiat al porta-retalls!`);
+    }
+  }
+
+  copyToClipboard(text, successMsg = '📋 Enllaç copiat al porta-retalls!') {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text)
+        .then(() => this.showToast(successMsg))
+        .catch(() => this.fallbackCopyText(text, successMsg));
+    } else {
+      this.fallbackCopyText(text, successMsg);
+    }
+  }
+
+  fallbackCopyText(text, successMsg) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      this.showToast(successMsg);
+    } catch (_) {
+      prompt('Copia aquest enllaç de seguiment en directe:', text);
+    }
+  }
+
+  showToast(message, duration = 3500) {
+    let toast = document.getElementById('app-toast-container');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'app-toast-container';
+      toast.className = 'app-toast-container';
+      document.body.appendChild(toast);
+    }
+    const item = document.createElement('div');
+    item.className = 'app-toast-item';
+    item.innerHTML = `
+      <span class="app-toast-msg">${this.esc(message)}</span>
+      <button type="button" class="app-toast-close" aria-label="Tancar">✕</button>
+    `;
+    item.querySelector('.app-toast-close')?.addEventListener('click', () => {
+      item.classList.add('hide');
+      setTimeout(() => item.remove(), 250);
+    });
+    toast.appendChild(item);
+    requestAnimationFrame(() => item.classList.add('show'));
+    setTimeout(() => {
+      if (item.parentNode) {
+        item.classList.remove('show');
+        item.classList.add('hide');
+        setTimeout(() => item.remove(), 300);
+      }
+    }, duration);
+  }
+
+  processPendingSharedFocus(lData) {
+    if (this.pendingDirection && this.pendingDirection !== this.activeDirection) {
+      const targetDir = this.pendingDirection;
+      this.pendingDirection = null;
+      this.switchLine(this.activeLineId, targetDir);
+      return;
+    }
+
+    if (this.pendingFocusBusId) {
+      const busId = this.pendingFocusBusId;
+      this.pendingFocusBusId = null;
+      setTimeout(() => {
+        const found = (this.activeBuses || []).find(b => 
+          String(b.vehicleId || b.tripId || '').trim() === String(busId).trim() ||
+          String(b.vehicleId || '').replace(/[^0-9]/g, '') === String(busId).replace(/[^0-9]/g, '')
+        );
+        if (found) {
+          const vId = found.vehicleId || found.tripId;
+          this.focusBusOnMap(vId, { lat: found.lat, lon: found.lon });
+          this.mapController?.openBusPopup(vId);
+          this.highlightSchematicBus(vId);
+          this.showToast(`🚌 Seguint en directe el Bus #${vId} (${lData?.code || 'Línia'})`);
+        } else {
+          this.showToast(`ℹ️ Bus #${busId} no localitzat en circulació en aquest moment`);
+        }
+      }, 400);
+    }
+
+    if (this.pendingFocusStopId) {
+      const sId = this.pendingFocusStopId;
+      this.pendingFocusStopId = null;
+      setTimeout(() => {
+        this.setTargetStop(sId);
+        const sBlock = document.querySelector(`.schematic-stop-block [data-stop-id="${sId}"]`);
+        if (sBlock) {
+          sBlock.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 400);
+    }
+
+    if (this.pendingSearchQuery) {
+      const q = this.pendingSearchQuery;
+      this.pendingSearchQuery = null;
+      const searchInput = document.getElementById('stop-search-input');
+      if (searchInput) {
+        searchInput.value = q;
+        if (this.stopsViewMode === 'schematic') {
+          this.filterSchematicStops(q);
+        } else {
+          this.filterListStops(q);
+        }
+      }
+    }
+  }
+
+  highlightSchematicBus(busId) {
+    if (!busId) return;
+    const chips = document.querySelectorAll(`.schematic-bus-chip[data-vehicle-id="${busId}"]`);
+    if (chips.length > 0) {
+      chips.forEach(chip => {
+        chip.classList.add('spotlight-active');
+        chip.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      });
+      setTimeout(() => {
+        chips.forEach(chip => chip.classList.remove('spotlight-active'));
+      }, 6000);
     }
   }
 
@@ -2990,6 +3240,7 @@ class TransitApp {
                         <strong class="schematic-bus-id">Bus ${this.esc(b.vehicleId)}</strong>
                         <span class="schematic-bus-badge">${this.esc(badgeText)}</span>
                         <span class="schematic-bus-eco ${ecoClass}">${this.esc(ecoBadge)}</span>
+                        <button type="button" class="btn-share-bus" data-share-bus="${this.esc(b.vehicleId)}" title="Compartir enllaç en directe del Bus #${this.esc(b.vehicleId)}">🔗</button>
                       </div>
                     `;
                   }).join('')}
@@ -3017,6 +3268,7 @@ class TransitApp {
                       <span class="schematic-bus-speed">${this.esc(speedText)}</span>
                       <span class="schematic-bus-badge">${this.esc(badgeText)}</span>
                       <span class="schematic-bus-eco ${ecoClass}">${this.esc(ecoBadge)}</span>
+                      <button type="button" class="btn-share-bus" data-share-bus="${this.esc(b.vehicleId)}" title="Compartir enllaç en directe del Bus #${this.esc(b.vehicleId)}">🔗</button>
                     </div>
                   `;
                 }).join('')}
@@ -3228,6 +3480,11 @@ class TransitApp {
 
     html += `</div>`;
     container.innerHTML = html;
+
+    const searchInput = document.getElementById('stop-search-input');
+    if (searchInput && searchInput.value) {
+      this.filterSchematicStops(searchInput.value.toLowerCase().trim());
+    }
   }
 
   renderStopsBrowser(lineDataOrStops, lineKey) {
@@ -4171,6 +4428,16 @@ class TransitApp {
     const schematicContainer = document.getElementById('stops-schematic-scroll');
     if (schematicContainer) {
       schematicContainer.addEventListener('click', (e) => {
+        // Share bus button clicked
+        const shareBtn = e.target.closest('[data-share-bus]');
+        if (shareBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          const busId = shareBtn.getAttribute('data-share-bus');
+          this.shareLiveBus(busId);
+          return;
+        }
+
         // Bus chip clicked -> focus bus on map
         const busChip = e.target.closest('.schematic-bus-chip');
         if (busChip) {
@@ -4232,29 +4499,45 @@ class TransitApp {
       }
     });
 
-    // Filter Stops Browser Input with smart multi-direction section support
-    document.getElementById('stop-search-input')?.addEventListener('input', (e) => {
-      const q = (e.target.value || '').toLowerCase().trim();
-      const sections = document.querySelectorAll('#stops-list-scroll .stops-dir-section');
-      
-      if (sections.length > 0) {
-        sections.forEach(sec => {
-          let visibleInSec = 0;
-          sec.querySelectorAll('.stop-row-item').forEach(row => {
-            const text = row.textContent.toLowerCase();
-            const matches = !q || text.includes(q);
-            row.style.display = matches ? 'flex' : 'none';
-            if (matches) visibleInSec++;
-          });
-          sec.style.display = (visibleInSec > 0 || !q) ? 'flex' : 'none';
-        });
-      } else {
-        document.querySelectorAll('#stops-list-scroll .stop-row-item').forEach(row => {
-          const text = row.textContent.toLowerCase();
-          row.style.display = (!q || text.includes(q)) ? 'flex' : 'none';
-        });
-      }
-    });
+    // Filter Stops Browser Input (supporting both Thermometer and List modes)
+    const searchInput = document.getElementById('stop-search-input');
+    const clearSearchBtn = document.getElementById('btn-clear-stop-search');
+
+    if (searchInput) {
+      searchInput.addEventListener('input', (e) => {
+        const q = (e.target.value || '').toLowerCase().trim();
+        if (this.stopsViewMode === 'schematic') {
+          this.filterSchematicStops(q);
+        } else {
+          this.filterListStops(q);
+        }
+      });
+
+      searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          searchInput.value = '';
+          if (this.stopsViewMode === 'schematic') {
+            this.filterSchematicStops('');
+          } else {
+            this.filterListStops('');
+          }
+        }
+      });
+    }
+
+    if (clearSearchBtn) {
+      clearSearchBtn.addEventListener('click', () => {
+        if (searchInput) {
+          searchInput.value = '';
+          searchInput.focus();
+          if (this.stopsViewMode === 'schematic') {
+            this.filterSchematicStops('');
+          } else {
+            this.filterListStops('');
+          }
+        }
+      });
+    }
 
     // Back to Landing / Home Navigation via Logo and Buttons
     const logoGroup = document.getElementById('header-logo-group');

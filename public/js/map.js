@@ -1211,6 +1211,17 @@ class C10Map {
     }
   }
 
+  openBusPopup(selectedVehicleId) {
+    if (!selectedVehicleId) return;
+    const s = String(selectedVehicleId).trim();
+    for (const [tId, obj] of this.busMarkersMap.entries()) {
+      if (this.isBusSelected(obj.busData, s)) {
+        obj.marker.openPopup();
+        break;
+      }
+    }
+  }
+
   // Update active bus markers and attach road subpaths
   updateBusMarkers(activeBuses, lineColor = '#009485', secondaryColor = '#38bdf8', selectedVehicleId = null, onBusClick = null, lineId = null) {
     if (!this.map || this.isItineraryMode) {
@@ -1388,6 +1399,10 @@ class C10Map {
             <span>📍 ${coordsText}</span>
             <span>${isEst ? 'Estimació' : 'Temps Real'}</span>
           </div>
+
+          <button type="button" class="map-popup-btn-share" onclick="window.transitApp?.shareLiveBus('${escHtml(bus.vehicleId)}')">
+            <span>🔗</span> Compartir seguiment d'aquest bus
+          </button>
         </div>
       `;
 
