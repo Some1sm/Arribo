@@ -151,6 +151,35 @@ async function runTests() {
   }
   console.log('✓ Zero duplicate line sequences, dominated alternatives strictly pruned');
 
+  // Test 11: Preferences Handling
+  console.log('Test 11: Route preferences (fastest, least_walking, direct_only)');
+  const directOnlyTrip = await transitRouter.plan('Hospital de Mataró', 'Estació Rodalies', { preference: 'direct_only' });
+  assert.strictEqual(directOnlyTrip.success, true);
+  assert.ok(directOnlyTrip.itineraries.every(it => it.type === 'direct'), 'All itineraries in direct_only mode must be direct');
+  console.log('✓ direct_only preference returns exclusively direct lines');
+
+  // Test 12: Future Departure Timetable Simulation
+  console.log('Test 12: Future departure planning using official schedules');
+  const futureTrip = await transitRouter.plan('Hospital de Mataró', 'Estació Rodalies', {
+    departureTime: '08:30',
+    departureDate: '2026-10-15'
+  });
+  assert.strictEqual(futureTrip.success, true);
+  assert.ok(futureTrip.itineraries.length > 0, 'Should find future itineraries');
+  const firstItin = futureTrip.itineraries[0];
+  assert.strictEqual(firstItin.isFutureSchedule, true);
+  assert.strictEqual(firstItin.isRealTime, false);
+  assert.ok(/^\d{1,2}:\d{2}$/.test(firstItin.departureTime), `Departure time should be HH:MM format: ${firstItin.departureTime}`);
+  console.log(`✓ Future departure scheduled correctly: ${firstItin.departureTime} (isRealTime: ${firstItin.isRealTime})`);
+
+  // Test 13: Sustainability & Approximate CO2 Savings Calculation
+  console.log('Test 13: Sustainability & approximate CO2 savings calculation');
+  assert.ok(typeof firstItin.transitDistanceKm === 'number' && firstItin.transitDistanceKm > 0, 'Should have positive transit km');
+  assert.ok(typeof firstItin.co2SavedGrams === 'number' && firstItin.co2SavedGrams > 0, 'Should calculate positive CO2 saved');
+  assert.ok(firstItin.co2Label.includes('(aprox.)'), `CO2 label must clearly state approximate: ${firstItin.co2Label}`);
+  assert.ok(firstItin.co2BadgeHtml.includes('aprox.'), `CO2 badge must clearly state approximate: ${firstItin.co2BadgeHtml}`);
+  console.log(`✓ CO2 calculation verified: ${firstItin.transitDistanceKm} km -> ${firstItin.co2Label}`);
+
   console.log('\n✅ ALL transitRouter TESTS PASSED PERFECTLY!\n');
 }
 

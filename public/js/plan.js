@@ -7,6 +7,10 @@ class PlannerPageApp {
     this.mapController = null;
     this.currentItineraries = [];
     this.activeItineraryIndex = 0;
+    this.selectedPreference = 'fastest';
+    this.timeMode = 'now';
+    this.guideSteps = [];
+    this.currentGuideStepIdx = 0;
     this.searchAbortController = null;
     this.pollTimer = null;
     this.lastSearchUrl = null;
@@ -134,10 +138,107 @@ class PlannerPageApp {
       });
     }
 
+    // Preferences pills delegation
+    const prefsGroup = document.getElementById('planner-prefs-group');
+    if (prefsGroup) {
+      prefsGroup.addEventListener('click', (e) => {
+        const pill = e.target.closest('.plan-pref-pill');
+        if (!pill) return;
+        document.querySelectorAll('.plan-pref-pill').forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        this.selectedPreference = pill.dataset.pref || 'fastest';
+        if (originInput && originInput.value.trim() && destInput && destInput.value.trim()) {
+          this.runSearch();
+        }
+      });
+    }
+
+    // Departure time mode tabs
+    const timeTabs = document.getElementById('planner-time-tabs');
+    const timeInputs = document.getElementById('planner-time-inputs');
+    const timeInputVal = document.getElementById('plan-time-val');
+    const dateInputVal = document.getElementById('plan-date-val');
+
+    // Default time & date inputs
+    const nowD = new Date();
+    if (timeInputVal && !timeInputVal.value) {
+      const hh = String(nowD.getHours()).padStart(2, '0');
+      const mm = String(nowD.getMinutes()).padStart(2, '0');
+      timeInputVal.value = `${hh}:${mm}`;
+    }
+    if (dateInputVal && !dateInputVal.value) {
+      const yyyy = nowD.getFullYear();
+      const mm = String(nowD.getMonth() + 1).padStart(2, '0');
+      const dd = String(nowD.getDate()).padStart(2, '0');
+      dateInputVal.value = `${yyyy}-${mm}-${dd}`;
+    }
+
+    if (timeTabs) {
+      timeTabs.addEventListener('click', (e) => {
+        const tab = e.target.closest('.plan-time-tab');
+        if (!tab) return;
+        document.querySelectorAll('.plan-time-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        this.timeMode = tab.dataset.timeMode || 'now';
+        if (timeInputs) {
+          timeInputs.style.display = this.timeMode === 'future' ? 'block' : 'none';
+        }
+        if (originInput && originInput.value.trim() && destInput && destInput.value.trim()) {
+          this.runSearch();
+        }
+      });
+    }
+
+    if (timeInputVal) {
+      timeInputVal.addEventListener('change', () => {
+        if (this.timeMode === 'future' && originInput && originInput.value.trim() && destInput && destInput.value.trim()) {
+          this.runSearch();
+        }
+      });
+    }
+    if (dateInputVal) {
+      dateInputVal.addEventListener('change', () => {
+        if (this.timeMode === 'future' && originInput && originInput.value.trim() && destInput && destInput.value.trim()) {
+          this.runSearch();
+        }
+      });
+    }
+
+    // Guided Navigation Sheet controls
+    const btnCloseGuide = document.getElementById('btn-close-nav-guide');
+    const btnNavPrev = document.getElementById('btn-nav-prev');
+    const btnNavNext = document.getElementById('btn-nav-next');
+    const guideModal = document.getElementById('nav-guide-modal');
+
+    if (btnCloseGuide) {
+      btnCloseGuide.addEventListener('click', () => this.closeGuidedNavigation());
+    }
+    if (btnNavPrev) {
+      btnNavPrev.addEventListener('click', () => this.prevGuideStep());
+    }
+    if (btnNavNext) {
+      btnNavNext.addEventListener('click', () => this.nextGuideStep());
+    }
+    if (guideModal) {
+      guideModal.addEventListener('click', (e) => {
+        if (e.target === guideModal) this.closeGuidedNavigation();
+      });
+    }
+
     // Itinerary cards container delegation (AGENTS.md §8 compliant)
-    const resultsContainer = document.getElementById('plan-results-area');
+    const resultsContainer = document.getElementById('page-planner-results');
     if (resultsContainer) {
       resultsContainer.addEventListener('click', (e) => {
+        const btnGuide = e.target.closest('.btn-start-guided-nav');
+        if (btnGuide) {
+          e.stopPropagation();
+          const idx = parseInt(btnGuide.getAttribute('data-itinerary-index'), 10);
+          if (!isNaN(idx)) {
+            this.startGuidedNavigation(idx);
+          }
+          return;
+        }
+
         const card = e.target.closest('.planner-itinerary-card');
         if (!card) return;
         const idx = parseInt(card.getAttribute('data-itinerary-index'), 10);
@@ -498,7 +599,13 @@ class PlannerPageApp {
     try {
       const fromQuery = originEl?.dataset?.stopId || originVal.replace(/\s*\([^)]*\)$/, '').trim();
       const toQuery = destEl?.dataset?.stopId || destVal.replace(/\s*\([^)]*\)$/, '').trim();
-      let url = `/api/mataro/plan?from=${encodeURIComponent(fromQuery)}&to=${encodeURIComponent(toQuery)}&fromName=${encodeURIComponent(originVal)}&toName=${encodeURIComponent(destVal)}`;
+      let url = `/api/mataro/plan?from=${encodeURIComponent(fromQuery)}&to=${encodeURIComponent(toQuery)}&fromName=${encodeURIComponent(originVal)}&toName=${encodeURIComponent(destVal)}&preference=${encodeURIComponent(this.selectedPreference || 'fastest')}`;
+      if (this.timeMode === 'future') {
+        const timeVal = document.getElementById('plan-time-val')?.value;
+        const dateVal = document.getElementById('plan-date-val')?.value;
+        if (timeVal) url += `&departureTime=${encodeURIComponent(timeVal)}`;
+        if (dateVal) url += `&departureDate=${encodeURIComponent(dateVal)}`;
+      }
       if (originEl?.dataset?.lat && originEl?.dataset?.lon) {
         url += `&fromLat=${originEl.dataset.lat}&fromLon=${originEl.dataset.lon}`;
       }
@@ -722,13 +829,20 @@ class PlannerPageApp {
               ` : ''}
             </div>
 
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.75rem; border-top:1px solid var(--border-subtle); padding-top:0.6rem;">
-              <span style="font-size:0.75rem; color:var(--text-muted); font-weight:600;">
-                ${idx === this.activeItineraryIndex ? '📍 Mostrant al mapa' : 'Fes clic per veure la ruta al mapa'}
-              </span>
-              <button type="button" class="btn-primary" style="padding:0.35rem 0.75rem; font-size:0.8rem; pointer-events:none;">
-                <span>🗺️ Veure ruta</span>
+            <!-- Eco-Impact CO2 Savings Badge (clearly indicated as approximate) -->
+            <div class="planner-eco-strip" style="display:flex; align-items:center; gap:6px; margin-top:0.75rem; font-size:0.75rem; color:#10b981; background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.2); padding:4px 8px; border-radius:5px;">
+              <span>🌱</span>
+              <span>Estalvi aprox. <strong>${this.esc(it.co2Formatted || (it.co2SavedGrams ? (it.co2SavedGrams >= 1000 ? '~' + it.co2SavedKg + ' kg' : '~' + it.co2SavedGrams + ' g') : '~350 g'))}</strong> CO₂ respecte al cotxe</span>
+              <span style="color:var(--text-muted); font-size:0.7rem; margin-left:auto;">(${it.transitDistanceKm || '3.5'} km bus)</span>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.75rem; border-top:1px solid var(--border-subtle); padding-top:0.6rem; gap:8px;">
+              <button type="button" class="btn-start-guided-nav" data-itinerary-index="${idx}" title="Iniciar guia interactiva pas a pas d'aquest viatge" style="display:inline-flex; align-items:center; gap:5px; background:linear-gradient(135deg, #0ea5e9, #0284c7); color:#fff; border:none; border-radius:6px; padding:6px 12px; font-size:0.82rem; font-weight:700; cursor:pointer; box-shadow:0 2px 6px rgba(14,165,233,0.3);">
+                <span>🚀 Iniciar viatge</span>
               </button>
+              <span style="font-size:0.73rem; color:var(--text-muted); font-weight:600; text-align:right;">
+                ${idx === this.activeItineraryIndex ? '📍 Mostrant al mapa' : 'Fes clic per veure la ruta'}
+              </span>
             </div>
           </div>
         `;
@@ -807,6 +921,151 @@ class PlannerPageApp {
       // Preserve active card without re-fitting map bounds
       this.selectItinerary(this.activeItineraryIndex, false);
     } catch (_) {}
+  }
+
+  startGuidedNavigation(index) {
+    const itin = this.currentItineraries[index];
+    if (!itin) return;
+
+    this.selectItinerary(index, true);
+    this.currentGuideItinerary = itin;
+    this.currentGuideStepIdx = 0;
+
+    const originVal = document.getElementById('page-planner-origin')?.value.trim() || 'l\'origen';
+    const destVal = document.getElementById('page-planner-dest')?.value.trim() || 'la destinació';
+
+    const steps = [];
+    if (itin.walkToFirstStop && itin.walkToFirstStop.distanceMeters > 15) {
+      steps.push({
+        type: 'walk',
+        title: 'Camina fins a la primera parada',
+        icon: '🚶',
+        desc: `Camina des de <strong>${this.esc(itin.walkToFirstStop.fromName || originVal)}</strong> fins a la parada <strong>${this.esc(itin.legs[0].fromStop.name)}</strong>.`,
+        details: `${itin.walkToFirstStop.distanceMeters} metres • aproximadament ${itin.walkToFirstStop.walkingMinutes} minuts`,
+        coord: itin.walkToFirstStop.to
+      });
+    }
+
+    itin.legs.forEach((leg, lIdx) => {
+      const isLastLeg = lIdx === itin.legs.length - 1;
+      const destName = leg.destination || (leg.toStop && leg.toStop.name) || '';
+
+      steps.push({
+        type: 'bus_board',
+        title: `Puja a l'autobús ${leg.lineCode}`,
+        icon: '🚌',
+        lineColor: leg.lineColor || '#009485',
+        lineCode: leg.lineCode,
+        desc: `Agafa la línia <span class="planner-leg-badge" style="background:${leg.lineColor || '#009485'}; display:inline-block; padding:1px 6px; border-radius:4px; font-weight:700; color:#fff;">${this.esc(leg.lineCode)}</span> a <strong>${this.esc(leg.fromStop.name)}</strong> cap a <strong>${this.esc(destName)}</strong>.`,
+        details: `Sortida: ${leg.departureTime || 'En breu'}${leg.isRealTime ? ' • En temps real 🟢' : ' • Horari oficial 📅'}`,
+        coord: [leg.fromStop.lat, leg.fromStop.lon]
+      });
+
+      steps.push({
+        type: 'bus_ride',
+        title: `Trajecte de ${leg.stopsCount || leg.stopCount} parades`,
+        icon: '🛣️',
+        desc: `Viatja a bord del bus durant ${leg.stopsCount || leg.stopCount} parades (~${leg.travelTimeMins || leg.durationMinutes} min).`,
+        details: `Prepara't per baixar a: <strong>${this.esc(leg.toStop.name)}</strong>`,
+        coord: [leg.toStop.lat, leg.toStop.lon]
+      });
+
+      if (!isLastLeg && itin.transferWalk && itin.transferWalk.distanceMeters > 10) {
+        steps.push({
+          type: 'transfer_walk',
+          title: 'Transbordament a peu',
+          icon: '🔄',
+          desc: `Camina ${itin.transferWalk.distanceMeters} m (~${itin.transferWalk.walkingMinutes} min) des de <strong>${this.esc(leg.toStop.name)}</strong> fins a <strong>${this.esc(itin.legs[lIdx + 1].fromStop.name)}</strong>.`,
+          details: `Enllaç amb la línia ${itin.legs[lIdx + 1].lineCode}`,
+          coord: itin.transferWalk.to
+        });
+      }
+    });
+
+    if (itin.walkFromLastStop && itin.walkFromLastStop.distanceMeters > 15) {
+      steps.push({
+        type: 'walk_dest',
+        title: 'Arribada a la destinació',
+        icon: '🏁',
+        desc: `Camina ${itin.walkFromLastStop.distanceMeters} m (~${itin.walkFromLastStop.walkingMinutes} min) des de <strong>${this.esc(itin.walkFromLastStop.fromName)}</strong> fins a <strong>${this.esc(itin.walkFromLastStop.toName || destVal)}</strong>.`,
+        details: 'Has completat el teu trajecte amb Arribo! 🎉',
+        coord: itin.walkFromLastStop.to
+      });
+    }
+
+    this.guideSteps = steps;
+    const modal = document.getElementById('nav-guide-modal');
+    if (modal) modal.style.display = 'flex';
+    this.renderCurrentGuideStep();
+  }
+
+  renderCurrentGuideStep() {
+    if (!this.guideSteps || this.guideSteps.length === 0) return;
+    const idx = this.currentGuideStepIdx;
+    const total = this.guideSteps.length;
+    const step = this.guideSteps[idx];
+
+    const counterEl = document.getElementById('nav-guide-step-counter');
+    const fillEl = document.getElementById('nav-guide-progress-fill');
+    const bodyEl = document.getElementById('nav-guide-body');
+    const prevBtn = document.getElementById('btn-nav-prev');
+    const nextBtn = document.getElementById('btn-nav-next');
+
+    if (counterEl) counterEl.textContent = `Pas ${idx + 1} de ${total}`;
+    if (fillEl) fillEl.style.width = `${Math.round(((idx + 1) / total) * 100)}%`;
+
+    if (bodyEl) {
+      bodyEl.innerHTML = `
+        <div class="nav-step-card">
+          <div class="nav-step-icon-bubble">${step.icon}</div>
+          <div class="nav-step-content">
+            <h4 class="nav-step-title">${this.esc(step.title)}</h4>
+            <div class="nav-step-desc">${step.desc}</div>
+            <div class="nav-step-details">${step.details}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    if (prevBtn) {
+      prevBtn.disabled = idx === 0;
+    }
+
+    if (nextBtn) {
+      if (idx === total - 1) {
+        nextBtn.innerHTML = '<span>Completar viatge 🎉</span>';
+      } else {
+        nextBtn.innerHTML = '<span>Següent pas ➔</span>';
+      }
+    }
+
+    // Pan map to step position if available
+    if (step.coord && this.mapController && this.mapController.map) {
+      try {
+        this.mapController.map.panTo([step.coord[0], step.coord[1]], { animate: true, duration: 0.6 });
+      } catch (_) {}
+    }
+  }
+
+  nextGuideStep() {
+    if (this.currentGuideStepIdx < this.guideSteps.length - 1) {
+      this.currentGuideStepIdx++;
+      this.renderCurrentGuideStep();
+    } else {
+      this.closeGuidedNavigation();
+    }
+  }
+
+  prevGuideStep() {
+    if (this.currentGuideStepIdx > 0) {
+      this.currentGuideStepIdx--;
+      this.renderCurrentGuideStep();
+    }
+  }
+
+  closeGuidedNavigation() {
+    const modal = document.getElementById('nav-guide-modal');
+    if (modal) modal.style.display = 'none';
   }
 
   esc(str) {

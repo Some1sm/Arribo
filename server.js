@@ -603,7 +603,10 @@ app.get(['/api/mataro/plan', '/api/plan'], async (req, res) => {
     const destLabel = (typeof destination === 'object' && destination.name) ? destination.name : (req.query.toName || to);
     const plan = await mataroTracker.planJourney(origin, destination, {
       originName: origLabel,
-      destName: destLabel
+      destName: destLabel,
+      preference: req.query.preference || 'fastest',
+      departureTime: req.query.departureTime || req.query.time || null,
+      departureDate: req.query.departureDate || req.query.date || null
     });
     res.json(plan);
   } catch (err) {
@@ -828,6 +831,11 @@ app.get('/api/diagnostics/test', async (req, res) => {
       error: err.message
     });
   }
+});
+
+// Dedicated Planner HTML Routes
+app.get(['/plan', '/com-anar-hi', '/rutes'], (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'plan.html'));
 });
 
 // 404 handler for unmatched API routes

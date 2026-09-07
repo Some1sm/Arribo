@@ -61,6 +61,7 @@ class TransitApp {
     this.alarmWatchId = null;
     this._plannerOriginCoords = null;
     this._plannerDestCoords = null;
+    this.stopsViewMode = 'list';
 
     // Theme Management (Light / Dark Mode)
     this.currentTheme = this.getInitialTheme();
@@ -2746,7 +2747,219 @@ class TransitApp {
     }).join('');
   }
 
+  setStopsViewMode(mode) {
+    this.stopsViewMode = mode;
+    const listBtn = document.getElementById('btn-stops-mode-list');
+    const schematicBtn = document.getElementById('btn-stops-mode-schematic');
+    const listScroll = document.getElementById('stops-list-scroll');
+    const schematicScroll = document.getElementById('stops-schematic-scroll');
+    const searchInput = document.getElementById('stop-search-input');
+
+    if (mode === 'schematic') {
+      listBtn?.classList.remove('active');
+      schematicBtn?.classList.add('active');
+      if (listScroll) listScroll.style.display = 'none';
+      if (schematicScroll) schematicScroll.style.display = 'block';
+      if (searchInput) searchInput.style.display = 'none';
+      this.renderSchematicThermometer(this.activeLineData, this.activeLineId);
+    } else {
+      schematicBtn?.classList.remove('active');
+      listBtn?.classList.add('active');
+      if (schematicScroll) schematicScroll.style.display = 'none';
+      if (listScroll) listScroll.style.display = 'block';
+      if (searchInput) searchInput.style.display = 'block';
+    }
+  }
+
+  renderSchematicThermometer(lineDataOrStops, lineKey) {
+    const container = document.getElementById('stops-schematic-scroll');
+    if (!container) return;
+
+    const isLineDataObject = lineDataOrStops && typeof lineDataOrStops === 'object' && !Array.isArray(lineDataOrStops);
+    const lineData = isLineDataObject ? lineDataOrStops : null;
+    const stops = Array.isArray(lineDataOrStops) ? lineDataOrStops : (lineData?.stops || this.allStops || []);
+    if (!stops || stops.length === 0) {
+      container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);">Sense parades disponibles</div>';
+      return;
+    }
+
+    const currentTargetId = this.targetStopsByLine[lineKey] || this.targetStopsByLine[`${lineKey}_${this.activeDirection}`] || '';
+    const lineColor = (lineData?.lineColor || lineData?.color || '#009485');
+    const activeVehicles = Array.isArray(this.activeBuses) ? this.activeBuses : [];
+
+    // Map each vehicle to its nearest stop or segment along the line
+    const dockedBusesByStop = new Map();
+    const transitBusesBySegment = new Map();
+
+    activeVehicles.forEach(b => {
+      const bLat = parseFloat(b.latitude ?? b.lat);
+      const bLon = parseFloat(b.longitude ?? b.lon);
+      if (!Number.isFinite(bLat) || !Number.isFinite(bLon)) return;
+
+      let closestIdx = -1;
+      let minDistance = Infinity;
+
+      for (let i = 0; i < stops.length; i++) {
+        const s = stops[i];
+        const sLat = parseFloat(s.latitude ?? s.lat ?? (s.coords && s.coords.lat));
+        const sLon = parseFloat(s.longitude ?? s.lon ?? (s.coords && s.coords.lon));
+        if (!Number.isFinite(sLat) || !Number.isFinite(sLon)) continue;
+
+        const dLat = (bLat - sLat) * 111320;
+        const dLon = (bLon - sLon) * 111320 * Math.cos(bLat * Math.PI / 180);
+        const dist = Math.sqrt(dLat * dLat + dLon * dLon);
+
+        if (dist < minDistance) {
+          minDistance = dist;
+          closestIdx = i;
+        }
+      }
+
+      if (closestIdx !== -1) {
+        if (minDistance <= 70) {
+          // Bus is docked at stop
+          if (!dockedBusesByStop.has(closestIdx)) dockedBusesByStop.set(closestIdx, []);
+          dockedBusesByStop.get(closestIdx).push({ ...b, dist: minDistance });
+        } else {
+          // Bus is progressing along segment between stops
+          const segIdx = (closestIdx < stops.length - 1) ? closestIdx : Math.max(0, closestIdx - 1);
+          if (!transitBusesBySegment.has(segIdx)) transitBusesBySegment.set(segIdx, []);
+          transitBusesBySegment.get(segIdx).push({ ...b, dist: minDistance });
+        }
+      }
+    });
+
+    const isHubStop = (s) => {
+      const name = (s.name || '').toLowerCase();
+      const code = String(s.code || s.id || '');
+      if (name.includes('rodalies') || code === '1016' || code === '1015') return { type: 'train', icon: '🚆', label: 'Rodalies Renfe R1/RG1' };
+      if (name.includes('hospital') || code === '1001') return { type: 'hospital', icon: '🏥', label: 'Hospital de Mataró' };
+      if (name.includes('tereses') || code === '1060') return { type: 'hub', icon: '🏛️', label: 'Centre / Connexions Urbanes' };
+      if (name.includes('mataró parc') || name.includes('mataro parc')) return { type: 'mall', icon: '🛍️', label: 'Mataró Parc Comercial' };
+      if (name.includes('estació d\'autobusos') || name.includes('estacio d\'autobusos')) return { type: 'bus', icon: '🚌', label: 'Estació d\'Autobusos' };
+      return null;
+    };
+
+    let html = `
+      <div class="schematic-container" style="--schematic-line-color:${this.esc(lineColor)};">
+        <div class="schematic-header-summary">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="schematic-line-tag" style="background:${this.esc(lineColor)};">
+              ${this.esc(lineData?.code || lineKey || 'Línia')}
+            </span>
+            <span class="schematic-dir-title">${this.esc(lineData?.directionName || 'Recorregut de la línia')}</span>
+          </div>
+          <span class="schematic-bus-active-count">
+            🚌 ${activeVehicles.length} ${activeVehicles.length === 1 ? 'bus actiu' : 'busos actius'}
+          </span>
+        </div>
+
+        <div class="schematic-spine-wrapper">
+          <div class="schematic-spine-line" style="background:${this.esc(lineColor)};"></div>
+    `;
+
+    stops.forEach((s, idx) => {
+      const sId = String(s.mouteStopId || s.id || s.code);
+      const isTarget = sId === String(currentTargetId);
+      const hub = isHubStop(s);
+      const isFirst = idx === 0;
+      const isLast = idx === stops.length - 1;
+      const isTerminus = isFirst || isLast;
+      const isCancelled = Boolean(s.isCancelled);
+
+      const dockedBuses = dockedBusesByStop.get(idx) || [];
+      const transitBuses = transitBusesBySegment.get(idx) || [];
+
+      html += `
+        <div class="schematic-stop-block">
+          <div class="schematic-station-item ${isTarget ? 'is-target' : ''} ${hub ? 'is-hub' : ''} ${isTerminus ? 'is-terminus' : ''}" data-stop-id="${this.esc(sId)}" data-stop-name="${this.esc(s.name)}">
+            <div class="schematic-node-col">
+              <div class="schematic-node-circle ${hub ? 'hub-circle' : ''} ${isTarget ? 'target-circle' : ''} ${isCancelled ? 'cancelled-circle' : ''}" style="border-color:${this.esc(lineColor)};">
+                ${hub ? `<span class="schematic-node-hub-icon">${hub.icon}</span>` : `<span class="schematic-node-num">${idx + 1}</span>`}
+              </div>
+            </div>
+
+            <div class="schematic-content-col">
+              <div class="schematic-stop-name-row">
+                <span class="schematic-stop-name ${isCancelled ? 'is-cancelled' : ''}">${this.esc(s.name)}</span>
+                ${isTarget ? '<span class="schematic-target-badge">⭐ Parada seleccionada</span>' : ''}
+                ${isCancelled ? '<span class="schematic-cancelled-badge">❌ Anul·lada</span>' : ''}
+              </div>
+
+              ${hub ? `
+                <div class="schematic-hub-badge">
+                  <span>${hub.icon}</span>
+                  <span>${this.esc(hub.label)}</span>
+                </div>
+              ` : ''}
+
+              <div class="schematic-stop-meta">
+                <span>#${this.esc(s.code || sId)}</span>
+                ${s.zone ? `<span>• ${this.esc(s.zone)}</span>` : ''}
+              </div>
+
+              ${dockedBuses.length > 0 ? `
+                <div class="schematic-docked-buses-container">
+                  ${dockedBuses.map(b => {
+                    const delayClass = (b.delayMins > 3) ? 'delay-late' : (b.delayMins > 0 ? 'delay-warning' : 'delay-on-time');
+                    const badgeText = b.delayBadgeText || (b.delayMins > 0 ? `+${b.delayMins} min` : 'A l\'hora');
+                    const ecoBadge = b.propulsionBadge || (b.isHybrid ? 'Híbrid Eco 🌱' : 'Dièsel 🚌');
+                    return `
+                      <div class="schematic-bus-chip docked ${delayClass}" data-vehicle-id="${this.esc(b.vehicleId)}" data-lat="${b.latitude || b.lat}" data-lon="${b.longitude || b.lon}" title="Fes clic per centrar aquest bus al mapa">
+                        <span class="schematic-bus-pulse-dot"></span>
+                        <span class="schematic-bus-icon">🚌</span>
+                        <strong class="schematic-bus-id">Bus ${this.esc(b.vehicleId)}</strong>
+                        <span class="schematic-bus-badge">${this.esc(badgeText)}</span>
+                        <span class="schematic-bus-eco">${this.esc(ecoBadge)}</span>
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+              ` : ''}
+            </div>
+          </div>
+
+          ${!isLast ? `
+            <div class="schematic-segment-row">
+              <div class="schematic-segment-line" style="background:${this.esc(lineColor)};"></div>
+              <div class="schematic-segment-buses">
+                ${transitBuses.map(b => {
+                  const delayClass = (b.delayMins > 3) ? 'delay-late' : (b.delayMins > 0 ? 'delay-warning' : 'delay-on-time');
+                  const badgeText = b.delayBadgeText || (b.delayMins > 0 ? `+${b.delayMins} min` : 'A l\'hora');
+                  const speedText = b.speedKmh ? `${Math.round(b.speedKmh)} km/h` : 'En trànsit';
+                  const ecoBadge = b.propulsionBadge || (b.isHybrid ? 'Híbrid Eco 🌱' : 'Dièsel 🚌');
+                  return `
+                    <div class="schematic-bus-chip in-transit ${delayClass}" data-vehicle-id="${this.esc(b.vehicleId)}" data-lat="${b.latitude || b.lat}" data-lon="${b.longitude || b.lon}" title="Fes clic per centrar aquest bus al mapa">
+                      <span class="schematic-transit-arrow">⬇️</span>
+                      <span class="schematic-bus-icon">🚌</span>
+                      <strong class="schematic-bus-id">Bus ${this.esc(b.vehicleId)}</strong>
+                      <span class="schematic-bus-speed">${this.esc(speedText)}</span>
+                      <span class="schematic-bus-badge">${this.esc(badgeText)}</span>
+                      <span class="schematic-bus-eco">${this.esc(ecoBadge)}</span>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+          ` : ''}
+        </div>
+      `;
+    });
+
+    html += `
+        </div>
+      </div>
+    `;
+
+    container.innerHTML = html;
+  }
+
   renderStopsBrowser(lineDataOrStops, lineKey) {
+    // If schematic view mode is active, refresh the thermometer
+    if (this.stopsViewMode === 'schematic') {
+      this.renderSchematicThermometer(lineDataOrStops, lineKey);
+    }
+
     const container = document.getElementById('stops-list-scroll');
     const totalEl = document.getElementById('stops-total-count');
     if (!container) return;
@@ -3647,6 +3860,48 @@ class TransitApp {
         const stopName = row.getAttribute('data-stop-name');
         if (stopId) {
           this.inspectStop(stopId, stopName);
+        }
+      });
+    }
+
+    // Stops View Mode Switcher (List vs Schematic Thermometer)
+    const modePills = document.getElementById('stops-view-mode-pills');
+    if (modePills) {
+      modePills.addEventListener('click', (e) => {
+        const btn = e.target.closest('.btn-stops-view-mode');
+        if (!btn) return;
+        e.preventDefault();
+        const mode = btn.getAttribute('data-mode') || 'list';
+        this.setStopsViewMode(mode);
+      });
+    }
+
+    // Schematic Thermometer container delegation (AGENTS.md §8 compliant)
+    const schematicContainer = document.getElementById('stops-schematic-scroll');
+    if (schematicContainer) {
+      schematicContainer.addEventListener('click', (e) => {
+        // Bus chip clicked -> focus bus on map
+        const busChip = e.target.closest('.schematic-bus-chip');
+        if (busChip) {
+          e.preventDefault();
+          const vId = busChip.getAttribute('data-vehicle-id');
+          const lat = parseFloat(busChip.getAttribute('data-lat'));
+          const lon = parseFloat(busChip.getAttribute('data-lon'));
+          if (lat && lon && !isNaN(lat) && !isNaN(lon)) {
+            this.focusBusOnMap(vId, { lat, lon });
+          }
+          return;
+        }
+
+        // Station node clicked -> inspect stop departures
+        const node = e.target.closest('.schematic-station-item');
+        if (node) {
+          e.preventDefault();
+          const stopId = node.getAttribute('data-stop-id');
+          const stopName = node.getAttribute('data-stop-name');
+          if (stopId) {
+            this.inspectStop(stopId, stopName);
+          }
         }
       });
     }
