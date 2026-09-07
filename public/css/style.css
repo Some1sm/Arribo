@@ -6116,11 +6116,25 @@ body {
 
 .schematic-bus-eco {
   font-size: 0.68rem;
-  color: #10b981;
-  background: rgba(16, 185, 129, 0.1);
-  padding: 1px 5px;
+  padding: 1px 6px;
   border-radius: 4px;
   font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  letter-spacing: 0.01em;
+}
+
+.schematic-bus-eco.is-hybrid {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.schematic-bus-eco.is-diesel {
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.1);
+  border: 1px solid rgba(148, 163, 184, 0.2);
 }
 
 /* In-Transit Segment Between Stops */

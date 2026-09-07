@@ -731,7 +731,7 @@ class MataroTracker extends BaseTracker {
         propulsion: fleetInfo.propulsion,
         isElectric: fleetInfo.isElectric,
         isHybrid: fleetInfo.isHybrid,
-        propulsionBadge: fleetInfo.badgeText,
+        propulsionBadge: fleetInfo.propulsionBadge || `${fleetInfo.badgeIcon} ${fleetInfo.badgeText}`,
         propulsionIcon: fleetInfo.badgeIcon,
         propulsionClass: fleetInfo.badgeClass,
         modelName: fleetInfo.modelName,

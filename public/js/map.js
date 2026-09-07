@@ -1367,6 +1367,11 @@ class C10Map {
               <span class="map-popup-item-label">Accessibilitat</span>
               <span class="map-popup-item-val" style="color:#38bdf8;">♿ Adaptat PMR</span>
             </div>` : ''}
+            ${(bus.propulsionBadge || bus.isHybrid || bus.propulsion) ? `
+            <div class="map-popup-item">
+              <span class="map-popup-item-label">Propulsió</span>
+              <span class="map-popup-item-val" style="${bus.isHybrid ? 'color:#10b981;font-weight:600;' : ''}">${escHtml(bus.propulsionBadge || (bus.isHybrid ? '🌱 Híbrid Eco' : '🚌 Dièsel'))}</span>
+            </div>` : ''}
             ${bus.modelName ? `
             <div class="map-popup-item">
               <span class="map-popup-item-label">Model Bus</span>

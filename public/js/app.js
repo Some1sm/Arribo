@@ -2980,14 +2980,16 @@ class TransitApp {
                   ${dockedBuses.map(b => {
                     const delayClass = (b.delayMins > 3) ? 'delay-late' : (b.delayMins > 0 ? 'delay-warning' : 'delay-on-time');
                     const badgeText = b.delayBadgeText || (b.delayMins > 0 ? `+${b.delayMins} min` : 'A l\'hora');
-                    const ecoBadge = b.propulsionBadge || (b.isHybrid ? 'Híbrid Eco 🌱' : 'Dièsel 🚌');
+                    const isHybrid = Boolean(b.isHybrid || b.propulsion === 'hybrid');
+                    const ecoClass = isHybrid ? 'is-hybrid' : 'is-diesel';
+                    const ecoBadge = b.propulsionBadge || (isHybrid ? '🌱 Híbrid Eco' : '🚌 Dièsel');
                     return `
                       <div class="schematic-bus-chip docked ${delayClass}" data-vehicle-id="${this.esc(b.vehicleId)}" data-lat="${b.latitude || b.lat}" data-lon="${b.longitude || b.lon}" title="Fes clic per centrar aquest bus al mapa">
                         <span class="schematic-bus-pulse-dot"></span>
                         <span class="schematic-bus-icon">🚌</span>
                         <strong class="schematic-bus-id">Bus ${this.esc(b.vehicleId)}</strong>
                         <span class="schematic-bus-badge">${this.esc(badgeText)}</span>
-                        <span class="schematic-bus-eco">${this.esc(ecoBadge)}</span>
+                        <span class="schematic-bus-eco ${ecoClass}">${this.esc(ecoBadge)}</span>
                       </div>
                     `;
                   }).join('')}
@@ -3004,7 +3006,9 @@ class TransitApp {
                   const delayClass = (b.delayMins > 3) ? 'delay-late' : (b.delayMins > 0 ? 'delay-warning' : 'delay-on-time');
                   const badgeText = b.delayBadgeText || (b.delayMins > 0 ? `+${b.delayMins} min` : 'A l\'hora');
                   const speedText = b.speedKmh ? `${Math.round(b.speedKmh)} km/h` : 'En trànsit';
-                  const ecoBadge = b.propulsionBadge || (b.isHybrid ? 'Híbrid Eco 🌱' : 'Dièsel 🚌');
+                  const isHybrid = Boolean(b.isHybrid || b.propulsion === 'hybrid');
+                  const ecoClass = isHybrid ? 'is-hybrid' : 'is-diesel';
+                  const ecoBadge = b.propulsionBadge || (isHybrid ? '🌱 Híbrid Eco' : '🚌 Dièsel');
                   return `
                     <div class="schematic-bus-chip in-transit ${delayClass}" data-vehicle-id="${this.esc(b.vehicleId)}" data-lat="${b.latitude || b.lat}" data-lon="${b.longitude || b.lon}" title="Fes clic per centrar aquest bus al mapa">
                       <span class="schematic-transit-arrow">⬇️</span>
@@ -3012,7 +3016,7 @@ class TransitApp {
                       <strong class="schematic-bus-id">Bus ${this.esc(b.vehicleId)}</strong>
                       <span class="schematic-bus-speed">${this.esc(speedText)}</span>
                       <span class="schematic-bus-badge">${this.esc(badgeText)}</span>
-                      <span class="schematic-bus-eco">${this.esc(ecoBadge)}</span>
+                      <span class="schematic-bus-eco ${ecoClass}">${this.esc(ecoBadge)}</span>
                     </div>
                   `;
                 }).join('')}
