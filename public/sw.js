@@ -1,5 +1,5 @@
 // Service Worker for Arribo! Mataró Bus (PWA & Offline Shell Support)
-const CACHE_NAME = 'arribo-mataro-cache-v2';
+const CACHE_NAME = 'arribo-mataro-cache-v4';
 
 const STATIC_SHELL_ASSETS = [
   '/',
@@ -50,6 +50,22 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // HTML pages & navigation: Network-first to guarantee latest app shell online, cache fallback offline
+  if (request.mode === 'navigate' || url.pathname === '/' || url.pathname.endsWith('.html') || url.pathname === '/plan') {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(request))
+    );
+    return;
+  }
+
   // API Route Caching Strategy: Network-First with Cache Fallback for lines & static datasets
   if (url.pathname.startsWith('/api/lines') || url.pathname.startsWith('/api/search/stops')) {
     event.respondWith(
@@ -61,14 +77,14 @@ self.addEventListener('fetch', (event) => {
           }
           return response;
         })
-        .catch(() => caches.match(request, { ignoreSearch: true }))
+        .catch(() => caches.match(request))
     );
     return;
   }
 
-  // Static Assets Strategy: Stale-While-Revalidate
+  // Static Assets Strategy: Stale-While-Revalidate with strict query-param version matching
   event.respondWith(
-    caches.match(request, { ignoreSearch: true }).then((cachedResponse) => {
+    caches.match(request).then((cachedResponse) => {
       const fetchPromise = fetch(request).then((networkResponse) => {
         if (networkResponse && networkResponse.status === 200) {
           const clone = networkResponse.clone();

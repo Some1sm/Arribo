@@ -44,8 +44,10 @@ app.use(express.static(path.join(__dirname, 'public'), {
   etag: true,
   maxAge: '5m',
   setHeaders: (res, filePath) => {
-    if (filePath.endsWith('.html')) {
-      res.setHeader('Cache-Control', 'no-cache');
+    if (filePath.endsWith('.html') || filePath.endsWith('sw.js')) {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
     }
   }
 }));
@@ -833,8 +835,19 @@ app.get('/api/diagnostics/test', async (req, res) => {
   }
 });
 
+// Service Worker explicit route (strictly no-cache to guarantee instant PWA updates)
+app.get('/sw.js', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.sendFile(path.join(__dirname, 'public', 'sw.js'));
+});
+
 // Dedicated Planner HTML Routes
 app.get(['/plan', '/com-anar-hi', '/rutes'], (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   res.sendFile(path.join(__dirname, 'public', 'plan.html'));
 });
 
@@ -845,6 +858,9 @@ app.all('/api/*', (req, res) => {
 
 // SPA fallback for HTML5 routing
 app.get('*', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 

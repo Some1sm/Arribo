@@ -75,10 +75,85 @@ class TransitApp {
   registerServiceWorker() {
     if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').catch((err) => {
+        navigator.serviceWorker.register('/sw.js').then((reg) => {
+          reg.update();
+        }).catch((err) => {
           console.warn('[SW] Registration notice:', err?.message || err);
         });
       });
+      // Self-heal stale caches from prior versions
+      if ('caches' in window) {
+        caches.keys().then((keys) => {
+          keys.forEach((key) => {
+            if (key !== 'arribo-mataro-cache-v4') {
+              caches.delete(key);
+            }
+          });
+        });
+      }
+    }
+  }
+
+  ensureViewModeControlsExist() {
+    // 1. Ensure Map Header Button exists
+    const mapControls = document.querySelector('.map-controls-group');
+    if (mapControls && !document.getElementById('btn-map-toggle-schematic')) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `btn-map-control ${this.stopsViewMode === 'schematic' ? 'active' : ''}`;
+      btn.id = 'btn-map-toggle-schematic';
+      btn.title = "Veure termòmetre esquemàtic d'estil metro";
+      btn.innerHTML = '<span>🚇 Termòmetre</span>';
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const nextMode = this.stopsViewMode === 'schematic' ? 'list' : 'schematic';
+        this.setStopsViewMode(nextMode);
+        const stopsCard = document.querySelector('.stops-browser-card');
+        if (stopsCard && window.innerWidth <= 900) {
+          stopsCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      });
+      const expandBtn = document.getElementById('btn-map-expand-height') || mapControls.firstChild;
+      mapControls.insertBefore(btn, expandBtn);
+    }
+
+    // 2. Ensure Stops Card Header Pills exist
+    const headerRow = document.querySelector('.stops-card-header-row');
+    if (headerRow && !document.getElementById('stops-view-mode-pills')) {
+      const pillsDiv = document.createElement('div');
+      pillsDiv.className = 'stops-view-mode-pills';
+      pillsDiv.id = 'stops-view-mode-pills';
+      pillsDiv.innerHTML = `
+        <button type="button" class="btn-stops-view-mode ${this.stopsViewMode === 'list' ? 'active' : ''}" id="btn-stops-mode-list" data-mode="list" title="Veure llista detallada de parades">
+          <span>📋 Llista</span>
+        </button>
+        <button type="button" class="btn-stops-view-mode ${this.stopsViewMode === 'schematic' ? 'active' : ''}" id="btn-stops-mode-schematic" data-mode="schematic" title="Veure termòmetre esquemàtic estil metro amb posició de busos en viu">
+          <span>🚇 Termòmetre</span>
+        </button>
+      `;
+      pillsDiv.addEventListener('click', (e) => {
+        const btn = e.target.closest('.btn-stops-view-mode');
+        if (!btn) return;
+        e.preventDefault();
+        const mode = btn.getAttribute('data-mode') || 'list';
+        this.setStopsViewMode(mode);
+      });
+      const dirPills = document.getElementById('stops-card-dir-pills');
+      if (dirPills) {
+        headerRow.insertBefore(pillsDiv, dirPills);
+      } else {
+        headerRow.appendChild(pillsDiv);
+      }
+    }
+
+    // 3. Ensure Stops Schematic Scroll container exists
+    const browserCard = document.querySelector('.stops-browser-card');
+    if (browserCard && !document.getElementById('stops-schematic-scroll')) {
+      const schematicDiv = document.createElement('div');
+      schematicDiv.className = 'stops-schematic-scroll';
+      schematicDiv.id = 'stops-schematic-scroll';
+      schematicDiv.style.display = this.stopsViewMode === 'schematic' ? 'block' : 'none';
+      browserCard.appendChild(schematicDiv);
     }
   }
 
@@ -356,6 +431,7 @@ class TransitApp {
   }
 
   showActiveLineView() {
+    this.ensureViewModeControlsExist();
     const landingView = document.getElementById('view-landing');
     const activeLineView = document.getElementById('view-active-line');
 
@@ -2962,6 +3038,7 @@ class TransitApp {
   }
 
   renderStopsBrowser(lineDataOrStops, lineKey) {
+    this.ensureViewModeControlsExist();
     // If schematic view mode is active, refresh the thermometer
     if (this.stopsViewMode === 'schematic') {
       this.renderSchematicThermometer(lineDataOrStops, lineKey);
