@@ -1893,11 +1893,11 @@ class TransitApp {
               <span>📍 Colls d'Ampolla: Parades amb Més Retard</span>
               <span style="font-size:0.75rem; font-weight:500; color:var(--text-muted);">(Mostrant ${displayedWorstStops.length} de ${totalWorst})</span>
             </h4>
-            <div style="display:flex; align-items:center; gap:0.35rem;">
-              <span style="font-size:0.72rem; color:var(--text-muted); margin-right:2px;">Filtre:</span>
-              <button type="button" class="btn-secondary" onclick="window.transitApp.setWorstStopsLimit(10)" style="padding:0.25rem 0.65rem; font-size:0.72rem; border-radius:6px; cursor:pointer; ${worstLimit === 10 ? 'background:var(--brand-primary); color:#fff; font-weight:700;' : ''}">Top 10</button>
-              <button type="button" class="btn-secondary" onclick="window.transitApp.setWorstStopsLimit(25)" style="padding:0.25rem 0.65rem; font-size:0.72rem; border-radius:6px; cursor:pointer; ${worstLimit === 25 ? 'background:var(--brand-primary); color:#fff; font-weight:700;' : ''}">Top 25</button>
-              <button type="button" class="btn-secondary" onclick="window.transitApp.setWorstStopsLimit(9999)" style="padding:0.25rem 0.65rem; font-size:0.72rem; border-radius:6px; cursor:pointer; ${worstLimit >= 9999 ? 'background:var(--brand-primary); color:#fff; font-weight:700;' : ''}">Totes (${totalWorst})</button>
+            <div class="observatori-filter-group">
+              <span style="font-size:0.7rem; color:var(--text-muted); padding:0 6px; font-weight:700;">FILTRE:</span>
+              <button type="button" class="observatori-pill-btn ${worstLimit === 10 ? 'active' : ''}" onclick="window.transitApp.setWorstStopsLimit(10)">Top 10</button>
+              <button type="button" class="observatori-pill-btn ${worstLimit === 25 ? 'active' : ''}" onclick="window.transitApp.setWorstStopsLimit(25)">Top 25</button>
+              <button type="button" class="observatori-pill-btn ${worstLimit >= 9999 ? 'active' : ''}" onclick="window.transitApp.setWorstStopsLimit(9999)">Totes (${totalWorst})</button>
             </div>
           </div>
           ${totalWorst === 0 ? '<div style="color:var(--text-muted); font-size:0.85rem; padding:0.8rem; background:var(--bg-elevated); border-radius:8px;">Sense punts negres registrats o cap parada coincideix amb el filtre.</div>' : `
@@ -1937,17 +1937,17 @@ class TransitApp {
                 </tbody>
               </table>
               ${hasMoreWorst ? `
-                <div style="display:flex; justify-content:center; align-items:center; gap:0.5rem; padding:0.65rem; background:var(--bg-elevated); border-top:1px solid var(--border-subtle);">
-                  <button type="button" class="btn-primary" onclick="window.transitApp.setWorstStopsLimit(${worstLimit + 15})" style="padding:0.35rem 0.85rem; font-size:0.78rem; cursor:pointer;">
+                <div style="display:flex; justify-content:center; align-items:center; gap:0.6rem; padding:0.75rem; background:var(--bg-elevated); border-top:1px solid var(--border-subtle);">
+                  <button type="button" class="btn-primary observatori-action-btn" onclick="window.transitApp.setWorstStopsLimit(${worstLimit + 15})">
                     ⬇️ Mostra'n 15 més (${displayedWorstStops.length} de ${totalWorst})
                   </button>
-                  <button type="button" class="btn-secondary" onclick="window.transitApp.setWorstStopsLimit(9999)" style="padding:0.35rem 0.85rem; font-size:0.78rem; cursor:pointer;">
+                  <button type="button" class="btn-secondary observatori-action-btn" onclick="window.transitApp.setWorstStopsLimit(9999)">
                     Veure totes (${totalWorst})
                   </button>
                 </div>
               ` : (worstLimit > 10 ? `
-                <div style="display:flex; justify-content:center; align-items:center; padding:0.55rem; background:var(--bg-elevated); border-top:1px solid var(--border-subtle);">
-                  <button type="button" class="btn-secondary" onclick="window.transitApp.setWorstStopsLimit(10)" style="padding:0.3rem 0.8rem; font-size:0.78rem; cursor:pointer;">
+                <div style="display:flex; justify-content:center; align-items:center; padding:0.65rem; background:var(--bg-elevated); border-top:1px solid var(--border-subtle);">
+                  <button type="button" class="btn-secondary observatori-action-btn" onclick="window.transitApp.setWorstStopsLimit(10)">
                     ⬆️ Reduir al Top 10
                   </button>
                 </div>
@@ -4842,10 +4842,10 @@ class TransitApp {
             Dades de les darreres ${t.timeframeHours || 24} hores
           </div>
           <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-            <button type="button" class="btn-primary" id="btn-termometre-share" style="padding:0.45rem 0.85rem; font-size:0.8rem; background:rgba(56,189,248,0.2); color:#38bdf8; border:1px solid rgba(56,189,248,0.4);">
+            <button type="button" class="btn-primary" id="btn-termometre-share">
               📋 Copiar Resum per Xarxes
             </button>
-            <button type="button" class="btn-primary" id="btn-termometre-download" style="padding:0.45rem 0.85rem; font-size:0.8rem; background:rgba(16,185,129,0.2); color:#10b981; border:1px solid rgba(16,185,129,0.4);">
+            <button type="button" class="btn-primary" id="btn-termometre-download">
               📸 Descarregar Fitxa
             </button>
           </div>
