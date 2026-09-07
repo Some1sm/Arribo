@@ -144,7 +144,7 @@ html {
   scroll-behavior: smooth;
   overflow-x: hidden;
   width: 100%;
-  max-width: 100vw;
+  max-width: 100%;
 }
 
 body {
@@ -159,7 +159,7 @@ body {
   flex-direction: column;
   overflow-x: hidden;
   width: 100%;
-  max-width: 100vw;
+  max-width: 100%;
   position: relative;
   transition: background-color var(--transition-normal), color var(--transition-normal);
 }
@@ -1854,6 +1854,10 @@ body {
   gap: 1.5rem;
   align-items: stretch;
   transition: all var(--transition-normal);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .explorer-grid.expanded-width {
@@ -1862,7 +1866,9 @@ body {
 
 @media (max-width: 900px) {
   .explorer-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1rem;
+    width: 100%;
   }
 }
 
@@ -1877,6 +1883,10 @@ body {
   gap: 0.75rem;
   position: relative;
   height: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .map-header {
@@ -1886,6 +1896,41 @@ body {
   flex-wrap: wrap;
   gap: 0.5rem;
   flex-shrink: 0;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.map-header > div:first-child {
+  min-width: 0;
+}
+
+.map-controls-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.map-bus-counter-tag,
+.btn-map-control {
+  height: 32px;
+  min-height: 32px;
+  max-height: 32px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.65rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 .map-bus-counter-tag {
@@ -1893,11 +1938,6 @@ body {
   border: 1px solid var(--border-subtle);
   color: #38bdf8;
   font-size: 0.72rem;
-  font-weight: 700;
-  padding: 0.3rem 0.6rem;
-  border-radius: var(--radius-sm);
-  display: inline-flex;
-  align-items: center;
   gap: 0.3rem;
 }
 
@@ -1905,16 +1945,30 @@ body {
   background: var(--bg-surface-elevated);
   border: 1px solid var(--border-subtle);
   color: var(--text-secondary);
-  font-size: 0.75rem;
-  font-weight: 700;
   font-family: inherit;
-  padding: 0.35rem 0.65rem;
-  border-radius: var(--radius-sm);
-  display: inline-flex;
-  align-items: center;
   gap: 0.35rem;
   cursor: pointer;
   transition: all var(--transition-fast);
+}
+
+.btn-map-control svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  display: block;
+  margin: 0;
+}
+
+.btn-map-control .traffic-dot {
+  width: 8px;
+  height: 8px;
+  min-width: 8px;
+  min-height: 8px;
+  border-radius: 50%;
+  background: #10b981;
+  display: inline-block;
+  flex-shrink: 0;
+  margin-right: 4px;
 }
 
 .btn-map-control:hover,
@@ -1926,6 +1980,8 @@ body {
 
 #map-container {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   flex: 1 1 0;
   min-height: 480px;
   height: 100%;
@@ -1934,6 +1990,7 @@ body {
   z-index: 10;
   box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.2);
   transition: min-height 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
 }
 
 .map-resize-bar {
@@ -1970,6 +2027,10 @@ body {
   box-shadow: var(--shadow-md);
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .stops-card-header-row {
@@ -1979,6 +2040,9 @@ body {
   gap: 0.5rem;
   margin-bottom: 0.65rem;
   flex-wrap: wrap;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .stops-card-dir-pills {
@@ -2021,6 +2085,7 @@ body {
 /* Direction Switcher Toolbar inside Stops Card */
 .stops-card-dir-toolbar {
   display: flex;
+  align-items: stretch;
   gap: 0.35rem;
   padding: 0.3rem;
   background: var(--bg-input);
@@ -2028,18 +2093,22 @@ body {
   border-radius: var(--radius-md);
   margin-bottom: 0.75rem;
   flex-wrap: wrap;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .btn-stops-dir-tab {
-  flex: 1;
-  min-width: 100px;
+  flex: 1 1 0;
+  min-width: 85px;
+  min-height: 36px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
-  font-size: 0.76rem;
+  font-size: 0.75rem;
   font-weight: 600;
-  padding: 0.45rem 0.65rem;
+  padding: 0.35rem 0.5rem;
   border-radius: var(--radius-sm);
   background: transparent;
   border: 1px solid transparent;
@@ -2048,6 +2117,8 @@ body {
   transition: all var(--transition-fast);
   text-align: center;
   user-select: none;
+  box-sizing: border-box;
+  line-height: 1.2;
 }
 
 .btn-stops-dir-tab:hover {
@@ -2064,15 +2135,26 @@ body {
   font-weight: 700;
 }
 
+.stops-search-wrapper {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: 8px 0 10px 0;
+}
+
 .stops-search-input {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   background: var(--bg-input);
   border: 1px solid var(--border-subtle);
   color: var(--text-primary);
-  padding: 0.5rem 0.85rem;
+  padding: 0.5rem 2.2rem 0.5rem 0.85rem;
   border-radius: var(--radius-sm);
   font-size: 0.82rem;
   font-family: inherit;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0;
   outline: none;
   transition: all var(--transition-fast);
 }
@@ -3017,11 +3099,30 @@ body {
   }
 
   .app-main {
-    padding: 0.85rem;
-    gap: 0.85rem;
+    padding: 0.75rem;
+    gap: 0.75rem;
     width: 100%;
-    max-width: 100vw;
+    max-width: 100%;
     box-sizing: border-box;
+    overflow-x: hidden;
+  }
+
+  .map-card,
+  .stops-browser-card {
+    padding: 0.85rem;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+
+  #btn-map-expand-width {
+    display: none !important;
+  }
+
+  #map-container {
+    min-height: 340px;
+    max-height: 55vh;
   }
 
   .hero-eta-grid {
@@ -3104,6 +3205,37 @@ body {
     flex: 1;
     justify-content: center;
   }
+
+  .map-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.55rem;
+  }
+
+  .map-header > div:first-child {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .map-controls-group {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .stops-card-dir-toolbar {
+    gap: 0.3rem;
+    padding: 0.25rem;
+  }
+
+  .btn-stops-dir-tab {
+    font-size: 0.72rem;
+    padding: 0.4rem 0.35rem;
+    min-height: 36px;
+    min-width: 80px;
+  }
 }
 
 @media (max-width: 480px) {
@@ -3122,6 +3254,29 @@ body {
   .global-search-input {
     padding: 0.45rem 0.75rem 0.45rem 2rem;
     font-size: 0.8rem;
+  }
+
+  .stops-card-header-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .stops-view-mode-pills {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+  }
+
+  .btn-stops-view-mode {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .map-bus-counter-tag,
+  .btn-map-control {
+    padding: 0 0.5rem;
+    font-size: 0.72rem;
   }
 }
 
@@ -5790,6 +5945,9 @@ body {
   border-radius: 20px;
   padding: 3px 4px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  box-sizing: border-box;
+  height: 34px;
+  max-width: 100%;
 }
 
 .btn-stops-view-mode {
@@ -5797,15 +5955,22 @@ body {
   border: none;
   border-radius: 16px;
   color: var(--text-secondary);
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   font-weight: 600;
-  padding: 4px 11px;
+  padding: 0 11px;
+  height: 26px;
+  min-height: 26px;
+  max-height: 26px;
+  box-sizing: border-box;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 5px;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   user-select: none;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .btn-stops-view-mode:hover {
@@ -6056,6 +6221,9 @@ body {
   cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
   width: fit-content;
+  max-width: 100%;
+  box-sizing: border-box;
+  flex-wrap: wrap;
 }
 
 .schematic-bus-chip:hover {
