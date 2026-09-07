@@ -18,7 +18,7 @@ const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 const { fetchRoadRoute } = require('./osrmClient');
-const { composeRouteWithStops } = require('./geoEngine');
+const { composeRouteWithStops, calculateDistanceMeters } = require('./geoEngine');
 
 const dbHandles = new Map();   // dbPath -> DatabaseSync
 const coordCache = new Map(); // shapeId -> [[lat,lon]] (only shapes actually selected)
@@ -39,9 +39,7 @@ function getDb(dbPath) {
 }
 
 function distM(a, b) {
-  const dLat = (a[0] - b[0]) * 111320;
-  const dLon = (a[1] - b[1]) * 111320 * Math.cos(((a[0] + b[0]) / 2) * Math.PI / 180);
-  return Math.sqrt(dLat * dLat + dLon * dLon);
+  return calculateDistanceMeters(a, b);
 }
 
 /** Nearest vertex of `coords` to point p → {idx, dist}. */

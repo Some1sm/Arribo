@@ -44,15 +44,26 @@ class PlannerPageApp {
   }
 
   initTheme() {
-    const savedTheme = localStorage.getItem('transit-theme') || 'dark';
-    document.documentElement.setAttribute('data-theme', savedTheme);
+    const savedTheme = (window.TransitUtils && typeof window.TransitUtils.getStoredTheme === 'function')
+      ? window.TransitUtils.getStoredTheme()
+      : (localStorage.getItem('arribo_theme') || localStorage.getItem('transit-theme') || 'dark');
+    if (window.TransitUtils && typeof window.TransitUtils.setStoredTheme === 'function') {
+      window.TransitUtils.setStoredTheme(savedTheme);
+    } else {
+      document.documentElement.setAttribute('data-theme', savedTheme);
+    }
     const btnTheme = document.getElementById('btn-page-theme-toggle');
     if (btnTheme) {
       btnTheme.addEventListener('click', () => {
         const cur = document.documentElement.getAttribute('data-theme') || 'dark';
         const next = cur === 'dark' ? 'light' : 'dark';
-        document.documentElement.setAttribute('data-theme', next);
-        localStorage.setItem('transit-theme', next);
+        if (window.TransitUtils && typeof window.TransitUtils.setStoredTheme === 'function') {
+          window.TransitUtils.setStoredTheme(next);
+        } else {
+          document.documentElement.setAttribute('data-theme', next);
+          localStorage.setItem('arribo_theme', next);
+          localStorage.setItem('transit-theme', next);
+        }
         if (this.mapController) {
           this.mapController.setTheme(next);
         }
@@ -105,9 +116,12 @@ class PlannerPageApp {
       gpsBtn.addEventListener('click', () => this.handleGpsLocation());
     }
 
-    // Presets
-    document.querySelectorAll('.plan-preset-chip').forEach(btn => {
-      btn.addEventListener('click', () => {
+    // Presets delegation
+    const presetsContainer = document.querySelector('.plan-presets');
+    if (presetsContainer) {
+      presetsContainer.addEventListener('click', (e) => {
+        const btn = e.target.closest('.plan-preset-chip');
+        if (!btn) return;
         const stopName = btn.getAttribute('data-stop');
         if (destInput) {
           destInput.value = stopName;
@@ -118,7 +132,20 @@ class PlannerPageApp {
           }
         }
       });
-    });
+    }
+
+    // Itinerary cards container delegation (AGENTS.md §8 compliant)
+    const resultsContainer = document.getElementById('plan-results-area');
+    if (resultsContainer) {
+      resultsContainer.addEventListener('click', (e) => {
+        const card = e.target.closest('.planner-itinerary-card');
+        if (!card) return;
+        const idx = parseInt(card.getAttribute('data-itinerary-index'), 10);
+        if (!isNaN(idx)) {
+          this.selectItinerary(idx);
+        }
+      });
+    }
 
     // Mobile Bottom Sheet Toggles
     const btnSheetMap = document.getElementById('btn-sheet-map');
@@ -372,20 +399,31 @@ class PlannerPageApp {
       closeDropdown();
     });
 
-    // Close when clicking outside
-    document.addEventListener('click', (e) => {
-      if (!inputElem.contains(e.target) && !dropdownElem.contains(e.target)) {
-        closeDropdown();
-      }
-    });
+    // Global listeners registered once for autocomplete dropdowns
+    if (!this._autocompleteGlobalBound) {
+      this._autocompleteGlobalBound = true;
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('.planner-input-wrapper, .planner-input-group, .planner-dropdown, .plan-search-box')) {
+          document.querySelectorAll('.planner-dropdown').forEach(dd => {
+            dd.style.display = 'none';
+          });
+        }
+      });
 
-    // Close when window loses focus (e.g. clicking another app/window)
-    window.addEventListener('blur', closeDropdown);
+      window.addEventListener('blur', () => {
+        document.querySelectorAll('.planner-dropdown').forEach(dd => {
+          dd.style.display = 'none';
+        });
+      });
 
-    // Close when switching browser tabs
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) closeDropdown();
-    });
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          document.querySelectorAll('.planner-dropdown').forEach(dd => {
+            dd.style.display = 'none';
+          });
+        }
+      });
+    }
 
     // Close on blur (delayed so click events on dropdown items register first)
     inputElem.addEventListener('blur', () => {
@@ -697,15 +735,18 @@ class PlannerPageApp {
       }).join('')}
     `;
 
-    // Click on cards
-    container.querySelectorAll('.planner-itinerary-card').forEach(card => {
-      card.addEventListener('click', () => {
+    // Delegated click on container (AGENTS.md §8 compliant)
+    if (container && !container._hasItineraryDelegation) {
+      container._hasItineraryDelegation = true;
+      container.addEventListener('click', (e) => {
+        const card = e.target.closest('.planner-itinerary-card');
+        if (!card) return;
         const idx = parseInt(card.getAttribute('data-itinerary-index'), 10);
         if (!isNaN(idx)) {
           this.selectItinerary(idx);
         }
       });
-    });
+    }
   }
 
   selectItinerary(index, repaintMap = true) {
@@ -769,13 +810,16 @@ class PlannerPageApp {
   }
 
   esc(str) {
+    if (typeof window !== 'undefined' && window.TransitUtils && typeof window.TransitUtils.esc === 'function') {
+      return window.TransitUtils.esc(str);
+    }
     if (str === null || str === undefined) return '';
     return String(str)
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
+      .replace(/'/g, '&#39;');
   }
 }
 

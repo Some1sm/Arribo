@@ -404,22 +404,7 @@ class SagalesTracker extends BaseTracker {
     }
 
     // Generate Checkpoints
-    const stepInterval = Math.max(1, Math.floor(stops.length / 8));
-    const checkpoints = stops.filter((s, i) => i === 0 || i === stops.length - 1 || i % stepInterval === 0).map(s => {
-      const activeBus = activeBuses[0] || null;
-      const isPassed = activeBus ? s.seq < activeBus.currentStopSeq : false;
-      const hasBus = activeBus ? (s.seq === activeBus.currentStopSeq) : false;
-
-      return {
-        id: s.id,
-        name: s.name,
-        seq: s.seq,
-        zone: s.city || 'Sagalés',
-        isPassed,
-        hasBus,
-        etaMinutes: activeBus ? Math.max(0, Math.round((s.seq - activeBus.currentStopSeq) * 2.5)) : 0
-      };
-    });
+    const checkpoints = this.buildCheckpoints(stops, activeBuses);
 
     return {
       id: lineConfig.id,
@@ -532,7 +517,7 @@ class SagalesTracker extends BaseTracker {
       for (const s of (stops || [])) {
         let best = null;
         for (const [gid, g] of gtfsStops) {
-          const d = Math.hypot((g.lat - s.lat) * 111320, (g.lon - s.lon) * 111320 * Math.cos(g.lat * Math.PI / 180));
+          const d = geoEngine.calculateDistanceMeters(g, s);
           if (d < 200 && (!best || d < best.d)) best = { gid, d };
         }
         if (best) mapping.set(String(s.id || s.code), best.gid);
@@ -715,7 +700,7 @@ class SagalesTracker extends BaseTracker {
       } else if (gtfsTrips.length > 0) {
         const netNow = timeUtils.getNetworkTime(this.agencyTimezone, new Date(now));
         const nowSec = netNow.hour * 3600 + netNow.minute * 60 + netNow.second;
-        const secToTimeStr = (sec) => `${String(Math.floor(sec / 3600) % 24).padStart(2, '0')}:${String(Math.floor(sec / 60) % 60).padStart(2, '0')}`;
+        const secToTimeStr = (sec) => timeEngine.secondsToTimeString(sec).substring(0, 5);
         for (const t of gtfsTrips) {
           // Night-rollover: an early-morning pass time already in the past
           // belongs to TONIGHT's upcoming service (next occurrence ~24h later).

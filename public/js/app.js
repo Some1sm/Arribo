@@ -145,7 +145,10 @@ class TransitApp {
   }
 
   getInitialTheme() {
-    const saved = localStorage.getItem('bad_amb_theme');
+    if (typeof window !== 'undefined' && window.TransitUtils && typeof window.TransitUtils.getStoredTheme === 'function') {
+      return window.TransitUtils.getStoredTheme();
+    }
+    const saved = localStorage.getItem('arribo_theme') || localStorage.getItem('bad_amb_theme');
     if (saved === 'light' || saved === 'dark') return saved;
     if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
       return 'light';
@@ -158,7 +161,8 @@ class TransitApp {
     this.updateThemeButton();
     if (window.matchMedia) {
       window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
-        if (!localStorage.getItem('bad_amb_theme')) {
+        const hasSaved = localStorage.getItem('arribo_theme') || localStorage.getItem('bad_amb_theme');
+        if (!hasSaved) {
           this.setTheme(e.matches ? 'dark' : 'light', false);
         }
       });
@@ -167,9 +171,14 @@ class TransitApp {
 
   setTheme(theme, save = true) {
     this.currentTheme = theme;
-    document.documentElement.setAttribute('data-theme', theme);
-    if (save) {
-      localStorage.setItem('bad_amb_theme', theme);
+    if (save && typeof window !== 'undefined' && window.TransitUtils && typeof window.TransitUtils.setStoredTheme === 'function') {
+      window.TransitUtils.setStoredTheme(theme);
+    } else {
+      document.documentElement.setAttribute('data-theme', theme);
+      if (save) {
+        localStorage.setItem('arribo_theme', theme);
+        localStorage.setItem('bad_amb_theme', theme);
+      }
     }
     this.updateThemeButton();
     if (this.mapController) {
@@ -1452,6 +1461,9 @@ class TransitApp {
    * its element context when interpolated into innerHTML templates.
    */
   esc(value) {
+    if (typeof window !== 'undefined' && window.TransitUtils && typeof window.TransitUtils.esc === 'function') {
+      return window.TransitUtils.esc(value);
+    }
     if (value === null || value === undefined) return '';
     return String(value)
       .replace(/&/g, '&amp;')
@@ -2453,6 +2465,8 @@ class TransitApp {
   // ==========================================
 
   renderTelemetryCockpit(lineData, targetData = null) {
+    this._lastCockpitLineData = lineData;
+    this._lastCockpitTargetData = targetData;
     const buses = lineData.activeBuses || [];
     const bar = document.getElementById('telemetry-vehicles-bar');
     const chipsContainer = document.getElementById('telemetry-vehicles-chips');
@@ -2477,14 +2491,19 @@ class TransitApp {
           `;
         }).join('');
 
-        chipsContainer.querySelectorAll('.telemetry-bus-chip').forEach(btn => {
-          btn.addEventListener('click', (e) => {
+        if (!chipsContainer._hasChipDelegation) {
+          chipsContainer._hasChipDelegation = true;
+          chipsContainer.addEventListener('click', (e) => {
+            const btn = e.target.closest('.telemetry-bus-chip');
+            if (!btn) return;
             e.preventDefault();
             this.selectedVehicleId = btn.getAttribute('data-bus-trip');
-            this.renderTelemetryCockpit(lineData, targetData);
+            if (this._lastCockpitLineData) {
+              this.renderTelemetryCockpit(this._lastCockpitLineData, this._lastCockpitTargetData);
+            }
             this.mapController?.highlightBus(this.selectedVehicleId, true);
           });
-        });
+        }
       }
 
       this.renderTelemetryFields(activeBus, lineData, targetData);
@@ -3504,13 +3523,17 @@ class TransitApp {
 
     dropdown.classList.add('active');
 
-    dropdown.querySelectorAll('.search-result-item').forEach(item => {
-      item.addEventListener('click', async (e) => {
+    if (!dropdown._hasItemDelegation) {
+      dropdown._hasItemDelegation = true;
+      dropdown.addEventListener('click', async (e) => {
+        const item = e.target.closest('.search-result-item');
+        if (!item) return;
         e.preventDefault();
         const type = item.getAttribute('data-type');
         const lineId = item.getAttribute('data-line-id');
         dropdown.classList.remove('active');
-        input.value = '';
+        const searchInput = document.getElementById('global-search-input');
+        if (searchInput) searchInput.value = '';
 
         if (type === 'line') {
           this.switchLine(lineId);
@@ -3531,7 +3554,7 @@ class TransitApp {
           this.inspectStop(stopId, stopName);
         }
       });
-    });
+    }
   }
 
   // ==========================================
@@ -3555,8 +3578,9 @@ class TransitApp {
       });
     }
 
-    // Corridor Steps Timeline delegation
+    // Global Event Delegation Dispatcher (AGENTS.md §8 compliant)
     document.addEventListener('click', (e) => {
+      // 1. Corridor Steps Timeline delegation
       const step = e.target.closest('.corridor-step');
       if (step) {
         e.preventDefault();
@@ -3564,33 +3588,48 @@ class TransitApp {
         if (targetId) {
           this.setTargetStop(targetId);
         }
+        return;
       }
-    });
 
-    // Direction selection action buttons delegation (from Stops Browser, Header Pills, Toolbar & Timeline)
-    document.addEventListener('click', (e) => {
-      const btn = e.target.closest('.btn-select-dir-view, .btn-timeline-select-dir, .btn-stops-card-pill, .btn-stops-dir-tab');
-      if (btn) {
+      // 2. Direction selection action buttons delegation (from Stops Browser, Header Pills, Toolbar & Timeline)
+      const dirBtn = e.target.closest('.btn-select-dir-view, .btn-timeline-select-dir, .btn-stops-card-pill, .btn-stops-dir-tab');
+      if (dirBtn) {
         e.preventDefault();
-        const dirId = btn.getAttribute('data-dir-id');
+        const dirId = dirBtn.getAttribute('data-dir-id');
         if (dirId && dirId !== this.activeDirection) {
           this.switchDirection(dirId);
         }
+        return;
       }
-    });
 
-    // Direction Jump Navigator Buttons delegation (smooth scroll inside stops browser)
-    document.addEventListener('click', (e) => {
-      const btn = e.target.closest('.btn-dir-jump');
-      if (btn) {
+      // 3. Direction Jump Navigator Buttons delegation (smooth scroll inside stops browser)
+      const jumpBtn = e.target.closest('.btn-dir-jump');
+      if (jumpBtn) {
         e.preventDefault();
-        const targetId = btn.getAttribute('data-dir-target');
+        const targetId = jumpBtn.getAttribute('data-dir-target');
         if (targetId) {
           const targetEl = document.getElementById(targetId);
           if (targetEl) {
             targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
           }
         }
+        return;
+      }
+
+      // 4. Click departure item to focus bus on map delegation
+      const depItem = e.target.closest('.departure-item.clickable-bus-dep');
+      if (depItem) {
+        e.preventDefault();
+        const vId = depItem.getAttribute('data-vehicle-id');
+        const lat = parseFloat(depItem.getAttribute('data-bus-lat'));
+        const lon = parseFloat(depItem.getAttribute('data-bus-lon'));
+        const stopSeq = parseInt(depItem.getAttribute('data-stop-seq'), 10) || null;
+        const stopId = depItem.getAttribute('data-stop-id') || null;
+        const depIdx = parseInt(depItem.getAttribute('data-dep-index'), 10) || 0;
+        const coords = (lat && lon && !isNaN(lat) && !isNaN(lon)) ? { lat, lon } : null;
+
+        this.focusBusOnMap(vId, coords, stopSeq, stopId, depIdx);
+        return;
       }
     });
 
@@ -3615,23 +3654,6 @@ class TransitApp {
     // Target Stop Dropdown
     document.getElementById('target-stop-select')?.addEventListener('change', (e) => {
       if (e.target.value) this.setTargetStop(e.target.value);
-    });
-
-    // Click departure item to focus bus on map delegation
-    document.addEventListener('click', (e) => {
-      const depItem = e.target.closest('.departure-item.clickable-bus-dep');
-      if (depItem) {
-        e.preventDefault();
-        const vId = depItem.getAttribute('data-vehicle-id');
-        const lat = parseFloat(depItem.getAttribute('data-bus-lat'));
-        const lon = parseFloat(depItem.getAttribute('data-bus-lon'));
-        const stopSeq = parseInt(depItem.getAttribute('data-stop-seq'), 10) || null;
-        const stopId = depItem.getAttribute('data-stop-id') || null;
-        const depIdx = parseInt(depItem.getAttribute('data-dep-index'), 10) || 0;
-        const coords = (lat && lon && !isNaN(lat) && !isNaN(lon)) ? { lat, lon } : null;
-
-        this.focusBusOnMap(vId, coords, stopSeq, stopId, depIdx);
-      }
     });
 
     // Refresh Button
@@ -4410,20 +4432,31 @@ class TransitApp {
       if (onSelect) onSelect({ id, name, direction, isStreet, lat, lon });
     });
 
-    // Close on click outside
-    document.addEventListener('click', (e) => {
-      if (!inputEl.contains(e.target) && !dropdown.contains(e.target)) {
-        closeDropdown();
-      }
-    });
+    // Global listeners registered once for all planner autocomplete instances
+    if (!this._plannerAutocompleteGlobalBound) {
+      this._plannerAutocompleteGlobalBound = true;
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('.planner-input-wrapper, .planner-input-group, .planner-dropdown')) {
+          document.querySelectorAll('.planner-dropdown').forEach(dd => {
+            dd.classList.remove('active');
+          });
+        }
+      });
 
-    // Close when window loses focus (e.g. clicking another app/window)
-    window.addEventListener('blur', closeDropdown);
+      window.addEventListener('blur', () => {
+        document.querySelectorAll('.planner-dropdown').forEach(dd => {
+          dd.classList.remove('active');
+        });
+      });
 
-    // Close when switching browser tabs
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) closeDropdown();
-    });
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          document.querySelectorAll('.planner-dropdown').forEach(dd => {
+            dd.classList.remove('active');
+          });
+        }
+      });
+    }
 
     // Close on blur (delayed so click events on dropdown items register first)
     inputEl.addEventListener('blur', () => {

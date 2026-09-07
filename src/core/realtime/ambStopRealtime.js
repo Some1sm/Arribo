@@ -19,6 +19,7 @@
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
+const geoEngine = require('../geo/geoEngine');
 
 const CATALOG_TTL_MS = 7 * 24 * 60 * 60 * 1000; // rebuild weekly
 const REALTIME_TTL_MS = 30000;
@@ -151,10 +152,7 @@ class AmbStopRealtimeService {
       const latRad = lat * Math.PI / 180;
       let best = null;
       for (const s of catalog) {
-        const dLat = (s.lat - lat) * 111320;
-        const dLon = (s.lon - lon) * 111320 * Math.cos(latRad);
-        if (Math.abs(dLat) > maxDistMeters || Math.abs(dLon) > maxDistMeters) continue;
-        const dist = Math.hypot(dLat, dLon);
+        const dist = geoEngine.calculateDistanceMeters(s, { lat, lon });
         if (dist <= maxDistMeters && (!best || dist < best.dist)) best = { codAMB: s.codAMB, dist };
       }
       result = best;
@@ -264,7 +262,7 @@ class AmbStopRealtimeService {
 
         let clockStr = null;
         try {
-          clockStr = new Intl.DateTimeFormat('ca-ES', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: process.env.TZ || 'Europe/Madrid' }).format(new Date(arrMs)).replace(/\u200e/g, '').trim();
+          clockStr = new Intl.DateTimeFormat('ca-ES', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Madrid' }).format(new Date(arrMs)).replace(/\u200e/g, '').trim();
         } catch (_) {}
         if (!clockStr || !/^\d{1,2}:\d{2}$/.test(clockStr)) continue;
 

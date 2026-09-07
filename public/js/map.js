@@ -6,6 +6,9 @@
  * they are interpolated into Leaflet tooltips/popup HTML.
  */
 function escHtml(value) {
+  if (typeof window !== 'undefined' && window.TransitUtils && typeof window.TransitUtils.esc === 'function') {
+    return window.TransitUtils.esc(value);
+  }
   if (value === null || value === undefined) return '';
   return String(value)
     .replace(/&/g, '&amp;')

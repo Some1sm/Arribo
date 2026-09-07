@@ -7,7 +7,6 @@ const timeEngine = require('./core/time/timeEngine');
 const calendarEngine = require('./core/time/calendarEngine');
 const scheduleSynthesizer = require('./core/schedule/scheduleSynthesizer');
 const delayEngine = require('./core/schedule/delayEngine');
-const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
 const gtfsScheduleStore = require('./core/schedule/gtfsScheduleStore');
 const BaseTracker = require('./core/BaseTracker');
@@ -768,16 +767,7 @@ class AmbTracker extends BaseTracker {
     const disruptions = await this.getDisruptions(route.code);
 
     // Checkpoints
-    const stepInterval = Math.max(1, Math.floor(stops.length / 8));
-    const checkpoints = stops.filter((s, i) => i === 0 || i === stops.length - 1 || i % stepInterval === 0).map(s => ({
-      id: s.id,
-      name: s.name,
-      seq: s.seq,
-      zone: s.zone,
-      isPassed: false,
-      hasBus: false,
-      etaMinutes: 0
-    }));
+    const checkpoints = this.buildCheckpoints(stops, activeBuses);
 
     return {
       id: route.id,
@@ -932,7 +922,7 @@ class AmbTracker extends BaseTracker {
         const nowDate = new Date();
         const netNow = timeUtils.getNetworkTime(this.agencyTimezone, nowDate);
         const nowSec = netNow.hour * 3600 + netNow.minute * 60 + netNow.second;
-        const secToTimeStr = (sec) => `${String(Math.floor(sec / 3600) % 24).padStart(2, '0')}:${String(Math.floor(sec / 60) % 60).padStart(2, '0')}`;
+        const secToTimeStr = (sec) => timeEngine.secondsToTimeString(sec).substring(0, 5);
         const liveCovered = new Set(departures.filter(d => d.isToday).map(d => d.departureTime));
 
         const tripsToday = this.gtfsTripsForStop(gtfsSched, dir, sIdStr, nowDate);

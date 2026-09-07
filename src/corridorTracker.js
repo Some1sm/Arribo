@@ -13,9 +13,7 @@ function osrmCoversStops(coords, stops, thresholdM = 250) {
   for (const s of stops) {
     let best = Infinity;
     for (const c of coords) {
-      const dLat = (s.lat - c[0]) * 111320;
-      const dLon = (s.lon - c[1]) * 111320 * Math.cos(s.lat * Math.PI / 180);
-      const d = Math.sqrt(dLat * dLat + dLon * dLon);
+      const d = geoEngine.calculateDistanceMeters(s, c);
       if (d < best) best = d;
     }
     if (best <= thresholdM) covered++;
@@ -26,7 +24,6 @@ const timeEngine = require('./core/time/timeEngine');
 const calendarEngine = require('./core/time/calendarEngine');
 const delayEngine = require('./core/schedule/delayEngine');
 const delayMemory = require('./core/realtime/delayMemory');
-const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
 const flightRecorder = require('./flightRecorder');
 const c10TelemetryExtractor = require('./c10TelemetryExtractor');
@@ -40,22 +37,6 @@ const {
   C10_TRIPS_DIR1,
   C10_TRIPS_DIR0
 } = require('./c10StaticData');
-
-function timeToSec(timeStr) {
-  return timeEngine.timeToSec(timeStr);
-}
-
-function secToTime(totalSec) {
-  return timeEngine.secToTime(totalSec);
-}
-
-function formatDateToYYYYMMDD(date, tz = 'Europe/Madrid') {
-  return timeEngine.getNetworkTime(tz, date).dateStr;
-}
-
-function timeToMin(timeStr) {
-  return timeEngine.timeToMin(timeStr);
-}
 
 class CorridorTracker extends BaseTracker {
   constructor() {
@@ -315,48 +296,7 @@ class CorridorTracker extends BaseTracker {
   }
 
   getServiceCalendarInfo(dateObj = new Date()) {
-    const { isAugust, isSaturday, isSunday, year, month, day } = this.getDateComponents(dateObj);
-    const dateFormatted = `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`;
-
-    if (isSunday) {
-      return {
-        serviceId: 'GEN_184749',
-        name: 'Diumenges i festius',
-        frequency: 'Cada 120 minuts (2 hores)',
-        frequencyMinutes: 120,
-        isAugustSeason: isAugust,
-        isWeekend: true,
-        calendarTag: 'Diumenges i festius (cada 2h)',
-        periodLabel: 'Festius',
-        dateFormatted
-      };
-    }
-
-    if (isSaturday || (this.getDateComponents(dateObj).isWeekday && isAugust)) {
-      return {
-        serviceId: 'GEN_185080',
-        name: isSaturday ? 'Dissabtes' : "Feiners d'Agost",
-        frequency: 'Cada 90 minuts (1h 30m)',
-        frequencyMinutes: 90,
-        isAugustSeason: isAugust,
-        isWeekend: isSaturday,
-        calendarTag: isAugust ? "Horari d'estiu (Agost: cada 90 min)" : 'Dissabtes (cada 90 min)',
-        periodLabel: isAugust ? 'Estiu (Agost)' : 'Dissabte',
-        dateFormatted
-      };
-    }
-
-    return {
-      serviceId: 'GEN_184910',
-      name: "Feiners de dilluns a divendres (resta de l'any)",
-      frequency: 'Cada 45 minuts',
-      frequencyMinutes: 45,
-      isAugustSeason: false,
-      isWeekend: false,
-      calendarTag: 'Feiners habituals (cada 45 min)',
-      periodLabel: 'Feiners',
-      dateFormatted
-    };
+    return calendarEngine.getServiceCalendarInfo(dateObj, this.agencyTimezone);
   }
 
   isServiceActiveOnDate(serviceId, dateObj = new Date()) {
@@ -863,7 +803,7 @@ class CorridorTracker extends BaseTracker {
         }
         let best = null;
         for (const s of this._ambCatalogStops) {
-          const d = Math.hypot((s.lat - stopObj.lat) * 111320, (s.lon - stopObj.lon) * 111320 * Math.cos(stopObj.lat * Math.PI / 180));
+          const d = geoEngine.calculateDistanceMeters(s, stopObj);
           if (d < 60 && (!best || d < best.d)) best = { code: s.code, d };
         }
         if (best) code = best.code;
@@ -1100,7 +1040,7 @@ class CorridorTracker extends BaseTracker {
       const now = Date.now();
       const netNow = timeUtils.getNetworkTime(this.agencyTimezone, new Date(now));
       const nowSec = netNow.hour * 3600 + netNow.minute * 60 + netNow.second;
-      const secToTimeStr = (sec) => `${String(Math.floor(sec / 3600) % 24).padStart(2, '0')}:${String(Math.floor(sec / 60) % 60).padStart(2, '0')}`;
+      const secToTimeStr = (sec) => timeEngine.secondsToTimeString(sec).substring(0, 5);
 
       let added = 0;
       for (let k = 1; k <= 6 && added < 3; k++) {
@@ -1395,8 +1335,8 @@ class CorridorTracker extends BaseTracker {
               name: stData.name || '',
               lat: stData.lat,
               lon: stData.lon,
-              depSec: timeToSec(st.dep),
-              arrSec: timeToSec(st.arr)
+              depSec: timeEngine.timeToSec(st.dep),
+              arrSec: timeEngine.timeToSec(st.arr)
             };
           }).filter(st => st.lat && st.lon);
 
@@ -1424,7 +1364,7 @@ class CorridorTracker extends BaseTracker {
           segStartSec: t1,
           segEndSec: t2,
           secondsToNextStop: Math.max(0, t2 - currentSec),
-          currentSegmentTime: `${secToTime(t1).substring(0, 5)} ➔ ${secToTime(t2).substring(0, 5)}`,
+          currentSegmentTime: `${timeEngine.secondsToTimeString(t1).substring(0, 5)} ➔ ${timeEngine.secondsToTimeString(t2).substring(0, 5)}`,
           // Official scheduled departure from the trip's first stop — the hour
           // this bus started its current direction.
           tripStartTime: (trip.stops[0].dep || trip.stops[0].arr || '').substring(0, 5),

@@ -101,17 +101,7 @@ function resolveTrackerOr404(res, lineId) {
 }
 
 function buildDefaultCalendarInfo(date = new Date()) {
-  const dc = calendarEngine.getDateComponents(date, 'Europe/Madrid');
-  const dayType = dc.isSunday ? 'Diumenge / Festiu' : (dc.isSaturday ? 'Dissabte' : 'Feiner');
-  return {
-    serviceId: dc.isWeekend ? 'weekend' : 'weekday',
-    name: dayType,
-    frequency: 'Cada 15-30 min',
-    frequencyMinutes: 20,
-    isWeekend: dc.isWeekend,
-    calendarTag: `${dayType} (${dc.dateStr})`,
-    dateFormatted: dc.dateStr
-  };
+  return calendarEngine.getServiceCalendarInfo(date, 'Europe/Madrid');
 }
 
 function getCalendarInfoFor(tracker, date = new Date()) {

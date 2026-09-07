@@ -4,8 +4,6 @@ const timeEngine = require('./core/time/timeEngine');
 const calendarEngine = require('./core/time/calendarEngine');
 const scheduleSynthesizer = require('./core/schedule/scheduleSynthesizer');
 const delayEngine = require('./core/schedule/delayEngine');
-const geoUtils = require('./geoUtils');
-const timeUtils = require('./timeUtils');
 const gtfsScheduleStore = require('./core/schedule/gtfsScheduleStore');
 const BaseTracker = require('./core/BaseTracker');
 
@@ -362,16 +360,7 @@ const RODALIES_FALLBACK_STOPS = {
     });
 
     // Checkpoints
-    const stepInterval = Math.max(1, Math.floor(stations.length / 8));
-    const checkpoints = stations.filter((s, i) => i === 0 || i === stations.length - 1 || i % stepInterval === 0).map(s => ({
-      id: s.id,
-      name: s.name,
-      seq: s.seq,
-      zone: 'Rodalies',
-      isPassed: false,
-      hasBus: false,
-      etaMinutes: 0
-    }));
+    const checkpoints = this.buildCheckpoints(stations, activeBuses);
 
     return {
       id: route.id,
@@ -608,7 +597,7 @@ const RODALIES_FALLBACK_STOPS = {
       const netNow = timeUtils.getNetworkTime(this.agencyTimezone, nowDate);
       const nowSec = netNow.hour * 3600 + netNow.minute * 60 + netNow.second;
       const tripsToday = this.gtfsTripsForStation(gtfsSched, stationGtfsStopId, nowDate);
-      const secToTimeStr = (sec) => `${String(Math.floor(sec / 3600) % 24).padStart(2, '0')}:${String(Math.floor(sec / 60) % 60).padStart(2, '0')}`;
+      const secToTimeStr = (sec) => timeEngine.secondsToTimeString(sec).substring(0, 5);
       for (const t of tripsToday) {
         const diffMin = Math.round((t.passSec - nowSec) / 60);
         if (diffMin < -1 || diffMin > 360) continue;

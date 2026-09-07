@@ -8,8 +8,6 @@ const timeEngine = require('./core/time/timeEngine');
 const calendarEngine = require('./core/time/calendarEngine');
 const scheduleSynthesizer = require('./core/schedule/scheduleSynthesizer');
 const delayEngine = require('./core/schedule/delayEngine');
-const geoUtils = require('./geoUtils');
-const timeUtils = require('./timeUtils');
 const indexer = require('./cataloniaIndexer');
 const BaseTracker = require('./core/BaseTracker');
 
@@ -322,16 +320,7 @@ class CataloniaTracker extends BaseTracker {
     }
 
     // Checkpoints
-    const stepInterval = Math.max(1, Math.floor(stops.length / 8));
-    const checkpoints = stops.filter((s, i) => i === 0 || i === stops.length - 1 || i % stepInterval === 0).map(s => ({
-      id: s.id,
-      name: s.name,
-      seq: s.seq,
-      zone: s.zone,
-      isPassed: false,
-      hasBus: false,
-      etaMinutes: 0
-    }));
+    const checkpoints = this.buildCheckpoints(stops, activeBuses);
 
     return {
       id: route.id,
@@ -448,10 +437,12 @@ class CataloniaTracker extends BaseTracker {
             etaFormatted: arrMins <= 1 ? 'Imminent' : `${arrMins} min`,
             formattedStatus: arrMins <= 1 ? 'Imminent' : `${arrMins} min`,
             isRealTime: !!item.esTempsReal,
+            isRealtime: !!item.esTempsReal,
             isEstimated: !item.esTempsReal,
-            delayMins: parseInt(item.retard || '0', 10),
-            delayStatus: item.retard ? 'delayed' : 'ontime',
-            delayBadgeText: item.retard ? `+${item.retard} min retard` : 'Puntual'
+            delayMins: delayEngine.computeDelayStatus(parseInt(item.retard || '0', 10), !!item.esTempsReal).delayMins,
+            delayMinutes: delayEngine.computeDelayStatus(parseInt(item.retard || '0', 10), !!item.esTempsReal).delayMinutes,
+            delayStatus: delayEngine.computeDelayStatus(parseInt(item.retard || '0', 10), !!item.esTempsReal).delayStatus,
+            delayBadgeText: delayEngine.computeDelayStatus(parseInt(item.retard || '0', 10), !!item.esTempsReal).delayBadgeText
           });
         }
       });
@@ -599,10 +590,13 @@ class CataloniaTracker extends BaseTracker {
             etaFormatted: arrMins <= 1 ? 'Imminent' : `${arrMins} min`,
             destination: item.destinacio || dirMeta.name,
             isRealTime: !!item.esTempsReal,
+            isRealtime: !!item.esTempsReal,
             isToday: true,
-            delayText: item.retard ? `+${item.retard} min retard` : 'Puntual',
-            delayMins: parseInt(item.retard || '0', 10),
-            delayBadgeClass: 'ontime'
+            delayText: delayEngine.computeDelayStatus(parseInt(item.retard || '0', 10), !!item.esTempsReal).delayBadgeText,
+            delayMins: delayEngine.computeDelayStatus(parseInt(item.retard || '0', 10), !!item.esTempsReal).delayMins,
+            delayMinutes: delayEngine.computeDelayStatus(parseInt(item.retard || '0', 10), !!item.esTempsReal).delayMinutes,
+            delayStatus: delayEngine.computeDelayStatus(parseInt(item.retard || '0', 10), !!item.esTempsReal).delayStatus,
+            delayBadgeClass: delayEngine.computeDelayStatus(parseInt(item.retard || '0', 10), !!item.esTempsReal).delayStatus === 'delayed' ? 'delayed' : 'ontime'
           });
         }
       });
@@ -695,8 +689,9 @@ class CataloniaTracker extends BaseTracker {
       isRealtime: primaryArrival.isRealTime,
       isToday: primaryArrival.isToday !== false,
       isFirstOfDay: !!primaryArrival.isFirstOfDay,
+      delayMins: primaryArrival.delayMins || 0,
       delayMinutes: primaryArrival.delayMins || 0,
-      delayStatus: primaryArrival.isRealTime ? (primaryArrival.delayMins > 0 ? 'delayed' : 'ontime') : 'scheduled',
+      delayStatus: primaryArrival.isRealTime ? (primaryArrival.delayMins > 0 ? 'delayed' : 'on_time') : 'scheduled',
       delayBadgeText: primaryArrival.isRealTime ? (primaryArrival.delayMins > 0 ? `+${primaryArrival.delayMins} min retard` : 'Temps real') : (primaryArrival.isToday === false ? '🌅 1r Servei del matí' : 'Horari teòric')
     } : {
       lineId: route.id,
@@ -708,6 +703,7 @@ class CataloniaTracker extends BaseTracker {
       formattedStatus: 'Sense servei programat',
       isRealtime: false,
       isToday: false,
+      delayMins: 0,
       delayMinutes: 0,
       delayStatus: 'scheduled',
       delayBadgeText: 'Sense servei'
@@ -725,8 +721,9 @@ class CataloniaTracker extends BaseTracker {
       isRealtime: arr.isRealTime,
       isToday: arr.isToday !== false,
       isFirstOfDay: !!arr.isFirstOfDay,
+      delayMins: arr.delayMins || 0,
       delayMinutes: arr.delayMins || 0,
-      delayStatus: arr.isRealTime ? (arr.delayMins > 0 ? 'delayed' : 'ontime') : 'scheduled',
+      delayStatus: arr.isRealTime ? (arr.delayMins > 0 ? 'delayed' : 'on_time') : 'scheduled',
       delayBadgeText: arr.isRealTime ? 'Temps real' : (arr.isToday === false ? 'Programat' : 'Horari teòric')
     }));
 

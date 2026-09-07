@@ -1,11 +1,15 @@
 // Service Worker for Arribo! Mataró Bus (PWA & Offline Shell Support)
-const CACHE_NAME = 'arribo-mataro-cache-v1';
+const CACHE_NAME = 'arribo-mataro-cache-v2';
 
 const STATIC_SHELL_ASSETS = [
   '/',
   '/index.html',
+  '/plan',
+  '/plan.html',
   '/css/style.css',
+  '/js/utils.js',
   '/js/app.js',
+  '/js/plan.js',
   '/js/map.js',
   '/manifest.webmanifest'
 ];
@@ -57,14 +61,14 @@ self.addEventListener('fetch', (event) => {
           }
           return response;
         })
-        .catch(() => caches.match(request))
+        .catch(() => caches.match(request, { ignoreSearch: true }))
     );
     return;
   }
 
   // Static Assets Strategy: Stale-While-Revalidate
   event.respondWith(
-    caches.match(request).then((cachedResponse) => {
+    caches.match(request, { ignoreSearch: true }).then((cachedResponse) => {
       const fetchPromise = fetch(request).then((networkResponse) => {
         if (networkResponse && networkResponse.status === 200) {
           const clone = networkResponse.clone();

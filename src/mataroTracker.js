@@ -791,11 +791,6 @@ class MataroTracker extends BaseTracker {
     };
   }
 
-  // Snap a lat/lon point strictly to the closest street segment on polyline
-  snapPointToPolyline(lat, lon, polyCoords) {
-    return geoEngine.snapPointToPolyline(lat, lon, polyCoords);
-  }
-
   // Dead-Zone Position Estimation (Dead-Reckoning along Polyline)
   processBusesWithDeadReckoning(liveBuses, route, stops, dirId = '0', allLineLiveVehicles = liveBuses) {
     const now = Date.now();
@@ -805,7 +800,7 @@ class MataroTracker extends BaseTracker {
     // 1. Process active live buses
     liveBuses.forEach(b => {
       // Snap raw GPS strictly to road polyline
-      const snapped = this.snapPointToPolyline(b.lat, b.lon, polyCoords);
+      const snapped = geoEngine.snapPointToPolyline(b.lat, b.lon, polyCoords);
       const roadLat = Math.round(snapped.lat * 1000000) / 1000000;
       const roadLon = Math.round(snapped.lon * 1000000) / 1000000;
       const roadBearing = snapped.bearing || b.bearing || 0;
@@ -886,7 +881,7 @@ class MataroTracker extends BaseTracker {
       // If vehicle is live on ANY direction of this line, do not dead-reckon it
       const isCurrentlyActive = (allLineLiveVehicles || liveBuses).some(b => String(b.vehicleId) === String(vId));
       if (!isCurrentlyActive && elapsedSec >= 15 && elapsedSec <= 600) {
-        const estPos = this.extrapolatePolylinePosition(hist, elapsedSec, polyCoords);
+        const estPos = geoEngine.extrapolatePolylinePosition(hist, elapsedSec, hist.speedKmh || 30, polyCoords);
         if (estPos) {
           const segInfo = this.findNearestSegment(estPos.lat, estPos.lon, stops, polyCoords);
           const elapsedMin = Math.floor(elapsedSec / 60);
@@ -980,21 +975,6 @@ class MataroTracker extends BaseTracker {
     };
   }
 
-  // Extrapolate position along polyline for dead reckoning
-  extrapolatePolylinePosition(hist, elapsedSec, polyCoords) {
-    return geoEngine.extrapolatePolylinePosition(hist, elapsedSec, hist.speedKmh || 30, polyCoords);
-  }
-
-  // Calculate distance in meters along polyline between two coordinates
-  calculatePolylineDistanceBetween(polyCoords, lat1, lon1, lat2, lon2) {
-    return geoEngine.calculatePolylineDistanceBetween(polyCoords, lat1, lon1, lat2, lon2);
-  }
-
-  // Calculate total distance of a route polyline
-  calculateRouteTotalDistance(polyCoords) {
-    return geoEngine.calculateRouteTotalDistance(polyCoords);
-  }
-
   // BaseTracker interface implementation
   async fetchLiveVehicles(lineId = '') {
     const lId = this.normalizeLineId(lineId);
@@ -1077,7 +1057,7 @@ class MataroTracker extends BaseTracker {
           // ONLY estimate ETA for physically approaching upstream vehicles on the same route direction
           if (!isSameDirection) return;
 
-          const snapped = this.snapPointToPolyline(veh.lat, veh.lon, routePolyCoords);
+          const snapped = geoEngine.snapPointToPolyline(veh.lat, veh.lon, routePolyCoords);
           const vehNearestStop = this.findNearestSegment(snapped.lat, snapped.lon, routeStops, routePolyCoords);
           const vehStopIdx = Math.max(0, (vehNearestStop.fromSeq || 1) - 1);
           const isUpstreamDirect = (vehStopIdx <= targetStopIdx);
@@ -1088,7 +1068,7 @@ class MataroTracker extends BaseTracker {
           const targetLon = targetStopObj.longitude !== undefined ? parseFloat(targetStopObj.longitude) : targetStopObj.lon;
 
           const remainingStops = targetStopIdx - vehStopIdx;
-          const remainingMeters = this.calculatePolylineDistanceBetween(routePolyCoords, snapped.lat, snapped.lon, targetLat || veh.lat, targetLon || veh.lon);
+          const remainingMeters = geoEngine.calculatePolylineDistanceBetween(routePolyCoords, snapped.lat, snapped.lon, targetLat || veh.lat, targetLon || veh.lon);
           const speedMps = Math.max(4.5, (veh.speedKmh || 22) / 3.6);
           let transitTravelSec = Math.round(remainingMeters / speedMps) + (remainingStops * 25);
 

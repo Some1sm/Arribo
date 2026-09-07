@@ -380,12 +380,8 @@ function composeRouteWithStops(coords, stops, opts = {}) {
     return { coords: Array.isArray(coords) ? coords : [], stitched: 0 };
   }
 
-  // Local equirectangular distance (metres) — fine at city/regional scales.
-  const distM = (a, b) => {
-    const dLat = (a[0] - b[0]) * 111320;
-    const dLon = (a[1] - b[1]) * 111320 * Math.cos(((a[0] + b[0]) / 2) * Math.PI / 180);
-    return Math.sqrt(dLat * dLat + dLon * dLon);
-  };
+  // Local canonical distance (metres).
+  const distM = (a, b) => calculateDistanceMeters(a, b);
 
   // Nearest shape index + distance for each stop.
   const proj = stops.map(s => {

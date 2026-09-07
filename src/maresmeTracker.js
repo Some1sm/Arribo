@@ -8,7 +8,6 @@ const calendarEngine = require('./core/time/calendarEngine');
 const scheduleSynthesizer = require('./core/schedule/scheduleSynthesizer');
 const { resolveRouteGeometry } = require('./core/geo/routeStitcher');
 const delayEngine = require('./core/schedule/delayEngine');
-const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
 const BaseTracker = require('./core/BaseTracker');
 const ambStopRealtime = require('./core/realtime/ambStopRealtime');
