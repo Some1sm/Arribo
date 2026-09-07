@@ -2751,20 +2751,27 @@ class TransitApp {
     this.stopsViewMode = mode;
     const listBtn = document.getElementById('btn-stops-mode-list');
     const schematicBtn = document.getElementById('btn-stops-mode-schematic');
+    const mapSchematicBtn = document.getElementById('btn-map-toggle-schematic');
     const listScroll = document.getElementById('stops-list-scroll');
     const schematicScroll = document.getElementById('stops-schematic-scroll');
     const searchInput = document.getElementById('stop-search-input');
 
     if (mode === 'schematic') {
       listBtn?.classList.remove('active');
+      listBtn?.setAttribute('aria-selected', 'false');
       schematicBtn?.classList.add('active');
+      schematicBtn?.setAttribute('aria-selected', 'true');
+      mapSchematicBtn?.classList.add('active');
       if (listScroll) listScroll.style.display = 'none';
       if (schematicScroll) schematicScroll.style.display = 'block';
       if (searchInput) searchInput.style.display = 'none';
       this.renderSchematicThermometer(this.activeLineData, this.activeLineId);
     } else {
       schematicBtn?.classList.remove('active');
+      schematicBtn?.setAttribute('aria-selected', 'false');
+      mapSchematicBtn?.classList.remove('active');
       listBtn?.classList.add('active');
+      listBtn?.setAttribute('aria-selected', 'true');
       if (schematicScroll) schematicScroll.style.display = 'none';
       if (listScroll) listScroll.style.display = 'block';
       if (searchInput) searchInput.style.display = 'block';
@@ -3873,6 +3880,20 @@ class TransitApp {
         e.preventDefault();
         const mode = btn.getAttribute('data-mode') || 'list';
         this.setStopsViewMode(mode);
+      });
+    }
+
+    // Map control button to toggle schematic thermometer directly from map toolbar
+    const mapSchematicBtn = document.getElementById('btn-map-toggle-schematic');
+    if (mapSchematicBtn) {
+      mapSchematicBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const nextMode = this.stopsViewMode === 'schematic' ? 'list' : 'schematic';
+        this.setStopsViewMode(nextMode);
+        const stopsCard = document.querySelector('.stops-browser-card');
+        if (stopsCard && window.innerWidth <= 900) {
+          stopsCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
       });
     }
 
