@@ -100,6 +100,8 @@ class MataroTracker extends BaseTracker {
 
             const isWarning = /tall|corte|anul|desvi|obres|obras|afectaci/i.test(title + ' ' + plainText);
             const hasExplicitLines = linesAffected.size > 0;
+            const validity = this.parseAvisoValidity(title, plainText, new Date());
+            const isExpired = Boolean(validity.isExpired);
 
             avisos.push({
               id: 'aviso_' + (idx + 1),
@@ -111,7 +113,8 @@ class MataroTracker extends BaseTracker {
               severity: isWarning ? 'warning' : 'info',
               isSpecific: hasExplicitLines,
               url: 'https://mataro.avanzagrupo.com/ca/avisos',
-              active: true
+              expiresAt: validity.expiry ? validity.expiry.toISOString() : null,
+              active: !isExpired
             });
           });
 
@@ -137,17 +140,23 @@ class MataroTracker extends BaseTracker {
       if (fs.existsSync(p)) {
         const raw = JSON.parse(fs.readFileSync(p, 'utf8'));
         if (Array.isArray(raw.message)) {
-          const fallback = raw.message.map(a => ({
-            id: String(a.id),
-            title: a.title_ca || a.title_es || 'Avís Mataró Bus',
-            description: a.text_ca || a.text_es || '',
-            agency: 'Mataró Bus (Avanza)',
-            linesAffected: ['1', '2', '3', '4', '5', '6', '7', '8'],
-            affectedLines: 'Totes les línies',
-            severity: 'info',
-            url: 'https://mataro.avanzagrupo.com/ca/avisos',
-            active: true
-          }));
+          const fallback = raw.message.map(a => {
+            const title = a.title_ca || a.title_es || 'Avís Mataró Bus';
+            const desc = a.text_ca || a.text_es || '';
+            const validity = this.parseAvisoValidity(title, desc, new Date());
+            return {
+              id: String(a.id),
+              title,
+              description: desc,
+              agency: 'Mataró Bus (Avanza)',
+              linesAffected: ['1', '2', '3', '4', '5', '6', '7', '8'],
+              affectedLines: 'Totes les línies',
+              severity: 'info',
+              url: 'https://mataro.avanzagrupo.com/ca/avisos',
+              expiresAt: validity.expiry ? validity.expiry.toISOString() : null,
+              active: !validity.isExpired
+            };
+          });
           this.avisosCache = fallback;
           this.avisosCacheTime = now;
           return fallback;
@@ -158,20 +167,162 @@ class MataroTracker extends BaseTracker {
     return this.avisosCache || [];
   }
 
+  parseAvisoValidity(title = '', description = '', refDate = new Date()) {
+    const text = (title + ' ' + description).toLowerCase();
+    const dc = calendarEngine.getDateComponents(refDate, 'Europe/Madrid');
+    const currentYear = dc.year;
+
+    // Ongoing notices without fixed end date
+    if (/fins(?:\s+a)?\s+nou\s+av[ií]s|fins\s+nova\s+ordre|hasta\s+nuevo\s+aviso/i.test(text)) {
+      return { isOngoing: true, expiry: null, isExpired: false };
+    }
+
+    const MONTHS = {
+      gener: 1, enero: 1,
+      febrer: 2, febrero: 2,
+      marc: 3, març: 3, marzo: 3,
+      abril: 4,
+      maig: 5, mayo: 5,
+      juny: 6, junio: 6,
+      juliol: 7, julio: 7,
+      agost: 8, agosto: 8,
+      setembre: 9, septiembre: 9,
+      octubre: 10,
+      novembre: 11, noviembre: 11,
+      desembre: 12, diciembre: 12
+    };
+
+    const datesFound = [];
+
+    // Pattern 1: Date ranges like 'del 01/09 al 02/09' or 'del 01/09/2026 al 02/09/2026'
+    const rangeNumeric = /(?:del|des de|des del)\s+(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?\s+(?:al|fins al|fins el|fins a|fins|a|fins les|hasta el)\s+(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?/gi;
+    let match;
+    while ((match = rangeNumeric.exec(text)) !== null) {
+      const endDay = parseInt(match[4], 10);
+      const endMonth = parseInt(match[5], 10);
+      let endYear = match[6] ? parseInt(match[6], 10) : currentYear;
+      if (endYear < 100) endYear += 2000;
+      if (endMonth >= 1 && endMonth <= 12 && endDay >= 1 && endDay <= 31) {
+        datesFound.push(new Date(endYear, endMonth - 1, endDay, 23, 59, 59));
+      }
+    }
+
+    // Pattern 2: 'fins al 02/09' or 'fins el 02/09/2026' or 'hasta el 02/09'
+    const untilNumeric = /(?:fins al|fins el|fins a|fins|fins les|hasta el|al)\s+(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?/gi;
+    while ((match = untilNumeric.exec(text)) !== null) {
+      const day = parseInt(match[1], 10);
+      const month = parseInt(match[2], 10);
+      let year = match[3] ? parseInt(match[3], 10) : currentYear;
+      if (year < 100) year += 2000;
+      if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+        datesFound.push(new Date(year, month - 1, day, 23, 59, 59));
+      }
+    }
+
+    // Pattern 3: Standalone full dates like '05/09/2026' or 'dissabte, 05/09/2026'
+    const standaloneNumeric = /\b(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})\b/g;
+    while ((match = standaloneNumeric.exec(text)) !== null) {
+      const day = parseInt(match[1], 10);
+      const month = parseInt(match[2], 10);
+      const year = parseInt(match[3], 10);
+      if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+        datesFound.push(new Date(year, month - 1, day, 23, 59, 59));
+      }
+    }
+
+    // Pattern 4: Named month ranges: 'del 1 al 2 de setembre' or 'del 1 de setembre al 2 de setembre'
+    const monthNamesStr = Object.keys(MONTHS).join('|');
+    const namedRange = new RegExp('(?:del|des de|des del)\\s+(\\d{1,2})(?:\\s+de\\s+(' + monthNamesStr + '))?\\s+(?:al|fins al|fins el|fins a|hasta el)\\s+(\\d{1,2})\\s+de\\s+(' + monthNamesStr + ')(?:\\s+de\\s+(\\d{4}))?', 'gi');
+    while ((match = namedRange.exec(text)) !== null) {
+      const endDay = parseInt(match[3], 10);
+      const endMonth = MONTHS[match[4].toLowerCase()];
+      const endYear = match[5] ? parseInt(match[5], 10) : currentYear;
+      if (endMonth && endDay >= 1 && endDay <= 31) {
+        datesFound.push(new Date(endYear, endMonth - 1, endDay, 23, 59, 59));
+      }
+    }
+
+    // Pattern 5: Single named dates: '5 de setembre (de 2026)?'
+    const singleNamed = new RegExp('\\b(\\d{1,2})\\s+de\\s+(' + monthNamesStr + ')(?:\\s+de\\s+(\\d{4}))?\\b', 'gi');
+    while ((match = singleNamed.exec(text)) !== null) {
+      const day = parseInt(match[1], 10);
+      const month = MONTHS[match[2].toLowerCase()];
+      const year = match[3] ? parseInt(match[3], 10) : currentYear;
+      if (month && day >= 1 && day <= 31) {
+        datesFound.push(new Date(year, month - 1, day, 23, 59, 59));
+      }
+    }
+
+    // Find all end times mentioned like 'a 22.30 hores' or 'de 22.00 a 22.30'
+    const timeRegex = /(?:a|fins a|fins les|fins a les)\s+(\d{1,2})[.:](\d{2})\s*(?:h|hores)?/gi;
+    let lastTimeMatch = null;
+    let tMatch;
+    while ((tMatch = timeRegex.exec(text)) !== null) {
+      lastTimeMatch = tMatch;
+    }
+
+    if (datesFound.length === 0) {
+      return { isOngoing: true, expiry: null, isExpired: false };
+    }
+
+    // Sort dates descending - latest is the end of the disruption
+    datesFound.sort((a, b) => b.getTime() - a.getTime());
+    const expiry = datesFound[0];
+
+    if (lastTimeMatch) {
+      const endH = parseInt(lastTimeMatch[1], 10);
+      const endM = parseInt(lastTimeMatch[2], 10);
+      if (endH >= 0 && endH <= 23 && endM >= 0 && endM <= 59) {
+        expiry.setHours(endH, endM, 0, 0);
+      }
+    }
+
+    const nowMs = refDate.getTime();
+    const isExpired = expiry.getTime() < nowMs;
+
+    return {
+      isOngoing: false,
+      expiry,
+      isExpired
+    };
+  }
+
   async getDisruptions(lineId = null) {
     const all = await this.fetchAvisos();
-    if (!lineId) return all;
+    const now = new Date();
+
+    // Filter out expired avisos so outdated notices from days/weeks ago do not pollute live disruptions!
+    const active = all.filter(a => {
+      if (a.active === false) return false;
+      if (a.expiresAt && new Date(a.expiresAt).getTime() < now.getTime()) {
+        a.active = false;
+        return false;
+      }
+      const validity = this.parseAvisoValidity(a.title, a.description, now);
+      if (validity.isExpired) {
+        a.active = false;
+        return false;
+      }
+      return true;
+    });
+
+    if (!lineId) return active;
     const cleanId = this.normalizeLineId(lineId);
     // For a specific line, ONLY return active warnings/disruptions that explicitly affect this line!
-    return all.filter(a => a.severity === 'warning' && Array.isArray(a.linesAffected) && a.linesAffected.includes(cleanId));
+    return active.filter(a => a.severity === 'warning' && Array.isArray(a.linesAffected) && a.linesAffected.includes(cleanId));
   }
 
   getCancelledStopsForLine(lineId, avisos = []) {
     const lId = String(lineId).replace(/^l/i, '');
     const cancelledMap = new Map();
+    const now = new Date();
 
     for (const aviso of avisos) {
-      if (aviso.severity !== 'warning') continue;
+      if (aviso.severity !== 'warning' || aviso.active === false) continue;
+      if (aviso.expiresAt && new Date(aviso.expiresAt).getTime() < now.getTime()) continue;
+      const validity = this.parseAvisoValidity(aviso.title, aviso.description, now);
+      if (validity.isExpired) continue;
+
       const desc = (aviso.description || aviso.descriptionHtml || '');
       const norm = desc.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[·\.]/g, '');
       const lineBlocks = norm.split(/(?:linia|linea)\s*([1-8])/gi);

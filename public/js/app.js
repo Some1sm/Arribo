@@ -1502,6 +1502,7 @@ class TransitApp {
 
     const lId = String(lData.lineId || lData.id || this.activeLineId || '');
     const disruptions = (lData.disruptions || []).filter(d => 
+      this.isDisruptionActive(d) &&
       d.severity === 'warning' && (
         (Array.isArray(d.linesAffected) && d.linesAffected.includes(lId)) ||
         (!d.linesAffected || d.linesAffected.length === 0)
@@ -1533,6 +1534,68 @@ class TransitApp {
     }
   }
 
+  isDisruptionActive(d) {
+    if (!d) return false;
+    if (d.active === false) return false;
+    const now = Date.now();
+    if (d.expiresAt) {
+      const expTime = new Date(d.expiresAt).getTime();
+      if (!isNaN(expTime) && expTime < now) return false;
+    }
+
+    const text = ((d.title || '') + ' ' + (d.description || '')).toLowerCase();
+    if (/fins(?:\s+a)?\s+nou\s+av[ií]s|hasta\s+nuevo\s+aviso/i.test(text)) {
+      return true;
+    }
+
+    const currentYear = new Date().getFullYear();
+    const dates = [];
+
+    // 'del 01/09 al 02/09'
+    const rangeRegex = /(?:del|des de|des del)\s+(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?\s+(?:al|fins al|fins el|fins a|fins|a|fins les|hasta el)\s+(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?/gi;
+    let m;
+    while ((m = rangeRegex.exec(text)) !== null) {
+      const day = parseInt(m[4], 10);
+      const month = parseInt(m[5], 10);
+      let year = m[6] ? parseInt(m[6], 10) : currentYear;
+      if (year < 100) year += 2000;
+      dates.push(new Date(year, month - 1, day, 23, 59, 59));
+    }
+
+    // '05/09/2026'
+    const standaloneRegex = /\b(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})\b/g;
+    while ((m = standaloneRegex.exec(text)) !== null) {
+      const day = parseInt(m[1], 10);
+      const month = parseInt(m[2], 10);
+      const year = parseInt(m[3], 10);
+      dates.push(new Date(year, month - 1, day, 23, 59, 59));
+    }
+
+    // Time check like 'a 22.30 hores'
+    const timeRegex = /(?:a|fins a|fins les|fins a les)\s+(\d{1,2})[.:](\d{2})\s*(?:h|hores)?/gi;
+    let lastTime = null;
+    while ((m = timeRegex.exec(text)) !== null) {
+      lastTime = m;
+    }
+
+    if (dates.length > 0) {
+      dates.sort((a, b) => b.getTime() - a.getTime());
+      const expiry = dates[0];
+      if (lastTime) {
+        const h = parseInt(lastTime[1], 10);
+        const min = parseInt(lastTime[2], 10);
+        if (h >= 0 && h <= 23 && min >= 0 && min <= 59) {
+          expiry.setHours(h, min, 0, 0);
+        }
+      }
+      if (expiry.getTime() < now) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   async openDisruptionsModal(filterQuery = '') {
     const backdrop = document.getElementById('disruptions-modal-backdrop');
     const container = document.getElementById('disruptions-list-container');
@@ -1547,7 +1610,7 @@ class TransitApp {
     try {
       container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);">Carregant avisos de servei en temps real...</div>';
       const res = await fetch('/api/disruptions').then(r => r.json());
-      const disruptions = res.disruptions || [];
+      const disruptions = (res.disruptions || []).filter(d => this.isDisruptionActive(d));
 
       this.renderDisruptionsList(disruptions, searchInput ? searchInput.value : '');
 
@@ -1567,6 +1630,7 @@ class TransitApp {
 
     const q = (query || '').toLowerCase().trim();
     const filtered = disruptions.filter(d => {
+      if (!this.isDisruptionActive(d)) return false;
       if (!q) return true;
       return (d.title || '').toLowerCase().includes(q) ||
              (d.affectedLines || '').toLowerCase().includes(q) ||
