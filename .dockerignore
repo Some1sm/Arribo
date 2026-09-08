@@ -3,7 +3,12 @@ npm-debug.log
 .git
 .gitignore
 .env
-data/transit_history.db
-data/transit_history.db-shm
-data/transit_history.db-wal
+.gemini
+data/transit_history.db*
+data/atm_gtfs
+data/cache
+data/reports
+data/snapshots
+data/test_scratch
+test
 *.log

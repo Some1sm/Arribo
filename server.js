@@ -72,10 +72,12 @@ workerBridge.on('fleet_update', (payload) => {
   }
 });
 
-// Request logger middleware
+// Request logger middleware (suppress periodic /api/health checks to prevent log bloat)
 app.use('/api', (req, res, next) => {
-  const time = new Date().toLocaleTimeString();
-  console.log(`[${time}] 🌐 ${req.method} ${req.originalUrl}`);
+  if (req.path !== '/health') {
+    const time = new Date().toLocaleTimeString();
+    console.log(`[${time}] 🌐 ${req.method} ${req.originalUrl}`);
+  }
   next();
 });
 

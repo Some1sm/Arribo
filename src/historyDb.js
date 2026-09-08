@@ -55,6 +55,7 @@ class HistoryDatabase {
           PRAGMA synchronous = NORMAL;
           PRAGMA cache_size = -2048;
           PRAGMA wal_autocheckpoint = 200;
+          PRAGMA journal_size_limit = 67108864;
           PRAGMA temp_store = MEMORY;
           PRAGMA auto_vacuum = INCREMENTAL;
 
@@ -664,6 +665,7 @@ class HistoryDatabase {
       // optimize() does not return pages to the filesystem. Since the database
       // uses incremental auto-vacuum, explicitly reclaim pages after pruning.
       this.db.exec(`PRAGMA optimize; PRAGMA incremental_vacuum;`);
+      this.checkpointTruncate();
       const snapshotChanges = deletedSnapshots?.changes || 0;
       const delayChanges = deletedDelays?.changes || 0;
       console.log(`[HistoryDB] Pruned old records (snapshots: ${this.snapshotRetentionHours}h, delays: ${daysRetention}d, deleted: ${snapshotChanges + delayChanges}, hourly stats preserved).`);
