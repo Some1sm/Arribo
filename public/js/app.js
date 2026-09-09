@@ -1346,6 +1346,10 @@ class TransitApp {
   // ==========================================
 
   async refreshAllData(shouldFitBounds = false) {
+    if (this._isRefreshingData) return;
+    this._isRefreshingData = true;
+    this.secondsRemaining = this.pollInterval;
+    this.updateCountdownLabel();
     try {
       const reqSeq = ++this.activeRequestSeq;
       const lId = this.activeLineId;
@@ -1487,6 +1491,8 @@ class TransitApp {
       this.updateCountdownLabel();
     } catch (err) {
       console.error('Data refresh error:', err);
+    } finally {
+      this._isRefreshingData = false;
     }
   }
 
@@ -2733,9 +2739,15 @@ class TransitApp {
             ]
           : null);
 
+    const routeKey = `${lineData.id || this.activeLineId}_${this.activeDirection}`;
+
     if (isBoth && allDirs && allDirs.length > 1) {
       container.classList.add('multi-dir-grid');
       const activeBuses = lineData.activeBuses || [];
+      const existingTracks = container.querySelectorAll('.corridor-timeline-track');
+      const savedScrolls = Array.from(existingTracks).map(t => t.scrollLeft);
+
+      container.dataset.routeKey = routeKey;
       container.innerHTML = allDirs.map((d, dIdx) => {
         const dirStops = d.stops || [];
         const dirBuses = activeBuses.filter(b => String(b.direction) === String(d.dirId) || (b.destination && b.destination.toLowerCase().includes(d.name.toLowerCase().substring(0, 8))));
@@ -2791,6 +2803,11 @@ class TransitApp {
           </div>
         `;
       }).join('');
+
+      const newTracks = container.querySelectorAll('.corridor-timeline-track');
+      newTracks.forEach((t, idx) => {
+        if (savedScrolls[idx]) t.scrollLeft = savedScrolls[idx];
+      });
     } else {
       container.classList.remove('multi-dir-grid');
       const stops = lineData.stops || [];
@@ -2799,6 +2816,49 @@ class TransitApp {
       const activeBuses = lineData.activeBuses || [];
       const primaryBus = activeBuses[0] || null;
 
+      const existingTrack = container.querySelector('.corridor-timeline-track');
+      const existingSteps = existingTrack ? existingTrack.querySelectorAll('.corridor-step') : [];
+
+      // In-place DOM update when tracking the same line & direction (zero DOM destruction, preserves scrollLeft completely)
+      if (existingTrack && existingSteps.length === stops.length && container.dataset.routeKey === routeKey) {
+        stops.forEach((s, idx) => {
+          const stepEl = existingSteps[idx];
+          if (!stepEl) return;
+          const sId = String(s.id || s.mouteStopId || s.code);
+          const isTarget = sId === String(activeTargetId);
+          const busOnStop = activeBuses.find(b => b.fromSeq === s.seq || b.toSeq === s.seq);
+          const isPassed = primaryBus && s.seq < (primaryBus.fromSeq || 0);
+
+          let nodeClass = 'step-node';
+          let iconContent = `${s.seq || idx + 1}`;
+
+          if (busOnStop) {
+            nodeClass += ' has-bus';
+            iconContent = '🚌';
+          } else if (isPassed) {
+            nodeClass += ' passed';
+            iconContent = '✓';
+          } else if (isTarget) {
+            nodeClass += ' target';
+            iconContent = '⭐';
+          }
+
+          const expectedClass = `corridor-step ${isPassed ? 'passed' : ''}`;
+          if (stepEl.className !== expectedClass) stepEl.className = expectedClass;
+
+          const nodeEl = stepEl.querySelector('.step-node');
+          if (nodeEl) {
+            if (nodeEl.className !== nodeClass) nodeEl.className = nodeClass;
+            const span = nodeEl.querySelector('span');
+            if (span && span.textContent !== iconContent) span.textContent = iconContent;
+          }
+        });
+        return;
+      }
+
+      // Initial or route-change render: preserve prior scroll position if any
+      const savedScroll = existingTrack ? existingTrack.scrollLeft : 0;
+      container.dataset.routeKey = routeKey;
       container.innerHTML = `
         <div class="corridor-timeline-track">
           ${stops.map((s, idx) => {
@@ -2835,6 +2895,11 @@ class TransitApp {
           }).join('')}
         </div>
       `;
+
+      const newTrack = container.querySelector('.corridor-timeline-track');
+      if (newTrack && savedScroll > 0) {
+        newTrack.scrollLeft = savedScroll;
+      }
     }
   }
 
@@ -4901,6 +4966,8 @@ class TransitApp {
       }
       this.secondsRemaining--;
       if (this.secondsRemaining <= 0) {
+        this.secondsRemaining = this.pollInterval;
+        this.updateCountdownLabel();
         this.refreshAllData(false);
       } else {
         this.updateCountdownLabel();
