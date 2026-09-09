@@ -38,6 +38,13 @@ try {
   }
 } catch (_) {}
 
+// Idle RAM compactor: periodically trim V8 working set if garbage collector is exposed
+if (typeof global.gc === 'function') {
+  setInterval(() => {
+    try { global.gc(); } catch (_) {}
+  }, 10 * 60 * 1000).unref();
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 

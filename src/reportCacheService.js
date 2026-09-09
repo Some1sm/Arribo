@@ -229,6 +229,11 @@ class ReportCacheService {
       // Keep max 2 reports per timeframe on storage
       this.pruneOldReports();
 
+      // Free transient JSON strings and query row arrays from memory
+      if (typeof global.gc === 'function') {
+        try { global.gc(); } catch (_) {}
+      }
+
       return fullReport;
     } catch (e) {
       const failKey = String(canonicalHours);

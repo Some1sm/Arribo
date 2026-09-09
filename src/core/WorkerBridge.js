@@ -72,6 +72,7 @@ class WorkerBridge extends EventEmitter {
     try {
       this.worker = fork(this.workerPath, [], {
         stdio: ['pipe', 'inherit', 'inherit', 'ipc'],
+        execArgv: ['--max-old-space-size=128', '--optimize-for-size', '--expose-gc'],
         env: {
           ...process.env,
           WORKER_MODE: 'true'

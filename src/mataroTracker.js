@@ -1565,11 +1565,11 @@ class MataroTracker extends BaseTracker {
       data: result
     });
 
-    // Bounded garbage collection for memory cache
-    if (this.stopDeparturesMemoryCache.size > 800) {
+    // Bounded garbage collection for memory cache (cap to active stops)
+    if (this.stopDeparturesMemoryCache.size > 200) {
       const now = Date.now();
       for (const [k, v] of this.stopDeparturesMemoryCache.entries()) {
-        if (now - v.timestamp > 120000) {
+        if (now - v.timestamp > 60000) {
           this.stopDeparturesMemoryCache.delete(k);
         }
       }

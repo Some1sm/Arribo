@@ -53,7 +53,8 @@ class HistoryDatabase {
           PRAGMA journal_mode = WAL;
           PRAGMA busy_timeout = 5000;
           PRAGMA synchronous = NORMAL;
-          PRAGMA cache_size = -2048;
+          PRAGMA cache_size = -1024;
+          PRAGMA mmap_size = 0;
           PRAGMA wal_autocheckpoint = 200;
           PRAGMA journal_size_limit = 67108864;
           PRAGMA temp_store = MEMORY;
@@ -664,8 +665,11 @@ class HistoryDatabase {
 
       // optimize() does not return pages to the filesystem. Since the database
       // uses incremental auto-vacuum, explicitly reclaim pages after pruning.
-      this.db.exec(`PRAGMA optimize; PRAGMA incremental_vacuum;`);
+      this.db.exec(`PRAGMA optimize; PRAGMA incremental_vacuum; PRAGMA shrink_memory;`);
       this.checkpointTruncate();
+      if (typeof global.gc === 'function') {
+        try { global.gc(); } catch (_) {}
+      }
       const snapshotChanges = deletedSnapshots?.changes || 0;
       const delayChanges = deletedDelays?.changes || 0;
       console.log(`[HistoryDB] Pruned old records (snapshots: ${this.snapshotRetentionHours}h, delays: ${daysRetention}d, deleted: ${snapshotChanges + delayChanges}, hourly stats preserved).`);
@@ -679,7 +683,7 @@ class HistoryDatabase {
     // a fresh database file during shutdown (surprising teardown side effect).
     if (!this.db) return false;
     try {
-      this.db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+      this.db.exec('PRAGMA wal_checkpoint(TRUNCATE); PRAGMA shrink_memory;');
       console.log('[HistoryDB] WAL checkpoint (TRUNCATE) executed successfully.');
       return true;
     } catch (e) {
