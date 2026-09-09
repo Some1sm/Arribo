@@ -24,6 +24,17 @@ try {
   // worker_threads not in use or error
 }
 
+// ==========================================
+// PROCESS-LEVEL RESILIENCE TRAPS (WORKER)
+// ==========================================
+process.on('unhandledRejection', (reason) => {
+  console.error('[Worker] Unhandled promise rejection:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[Worker] Uncaught exception:', err);
+});
+
 /**
  * Send typed message to parent master process/thread
  */

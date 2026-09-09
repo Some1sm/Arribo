@@ -83,8 +83,8 @@ class IngestionDaemon {
     // 4. Schedule DB pruning (every hour)
     this.pruneTimer = setInterval(() => historyDb.pruneOldRecords(), 3600 * 1000);
 
-    // 5. Schedule Periodic Journalism Report Generation (every 30 minutes)
-    this.startupTimeouts.push(setTimeout(() => this.generateJournalismReport(), 3000));
+    // 5. Schedule Periodic Journalism Report Generation (first at 45s to avoid boot spike, then every 30 minutes)
+    this.startupTimeouts.push(setTimeout(() => this.generateJournalismReport(), 45000));
     this.journalismReportTimer = setInterval(() => this.generateJournalismReport(), 30 * 60 * 1000);
 
     console.log('[IngestionDaemon] ✅ Mataró Bus Ingestion Engine Active.');

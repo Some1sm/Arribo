@@ -14,12 +14,16 @@ services:
       - SNAPSHOT_RETENTION_HOURS=2
       - VEHICLE_SNAPSHOT_INTERVAL_MS=60000
       - DELAY_RETENTION_DAYS=30
+    ulimits:
+      core:
+        soft: 0
+        hard: 0
     deploy:
       resources:
         limits:
-          memory: 350M
+          memory: 768M
         reservations:
-          memory: 80M
+          memory: 150M
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
       interval: 30s

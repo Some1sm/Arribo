@@ -25,6 +25,19 @@ process.on('uncaughtException', (err) => {
   console.error('[Process] Uncaught exception:', err);
 });
 
+// Self-healing disk guard: purge any lingering core dump files on container startup
+try {
+  const rootFiles = fs.readdirSync(__dirname);
+  for (const file of rootFiles) {
+    if (/^core(\.|\b)/.test(file)) {
+      try {
+        fs.unlinkSync(path.join(__dirname, file));
+        console.log(`[Startup] Cleaned residual core dump file: ${file}`);
+      } catch (_) {}
+    }
+  }
+} catch (_) {}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
