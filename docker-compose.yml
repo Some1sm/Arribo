@@ -9,7 +9,7 @@ services:
       - NODE_ENV=production
       - PORT=3000
       - TZ=Europe/Madrid
-      - NODE_OPTIONS=--max-old-space-size=160 --optimize-for-size --expose-gc
+      - NODE_OPTIONS=--max-old-space-size=160 --expose-gc
       # Storage controls for the persistent SQLite flight recorder
       - SNAPSHOT_RETENTION_HOURS=2
       - VEHICLE_SNAPSHOT_INTERVAL_MS=60000

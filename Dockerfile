@@ -7,7 +7,7 @@ WORKDIR /app
 # Set environment
 ENV NODE_ENV=production
 ENV PORT=3000
-ENV NODE_OPTIONS="--max-old-space-size=256"
+ENV NODE_OPTIONS="--max-old-space-size=160 --expose-gc"
 
 # Copy package manifests first for efficient caching
 COPY package*.json ./
@@ -31,5 +31,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=15s \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
 
-# Start server (heap setting carried by NODE_OPTIONS env)
-CMD ["node", "server.js"]
+# Start server (heap setting carried by NODE_OPTIONS env, size optimization via CLI argument)
+CMD ["node", "--optimize-for-size", "server.js"]
