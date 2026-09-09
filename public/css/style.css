@@ -2856,54 +2856,549 @@ body {
 }
 
 /* ===================================================================
-   10. LEAFLET MAP THEME & POPUP STYLING
+   10. LEAFLET MAP THEME & POPUP STYLING (MODERN GLASSMORPHISM)
    =================================================================== */
 
 .leaflet-popup-content-wrapper {
-  background: var(--bg-surface) !important;
+  background: var(--bg-surface-glass, rgba(17, 24, 39, 0.94)) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
   color: var(--text-primary) !important;
-  border-radius: var(--radius-md) !important;
-  box-shadow: var(--shadow-lg) !important;
-  border: 1px solid var(--border-strong) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.65), 0 0 0 1px var(--border-subtle) !important;
   padding: 0 !important;
+  border: none !important;
+  overflow: hidden !important;
+}
+
+.leaflet-popup-tip-container {
+  overflow: visible !important;
 }
 
 .leaflet-popup-tip {
   background: var(--bg-surface) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35) !important;
 }
 
+.leaflet-popup-content {
+  margin: 0 !important;
+  width: 320px !important;
+  max-width: calc(100vw - 32px) !important;
+  line-height: 1.4 !important;
+}
+
+/* Polished Circular Close Button */
+.arribo-bus-popup .leaflet-popup-close-button,
+.leaflet-popup-close-button {
+  top: 10px !important;
+  right: 10px !important;
+  width: 26px !important;
+  height: 26px !important;
+  border-radius: 50% !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: var(--text-secondary) !important;
+  border: 1px solid var(--border-subtle) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  text-decoration: none !important;
+  padding: 0 !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2) !important;
+  z-index: 20 !important;
+}
+
+.arribo-bus-popup .leaflet-popup-close-button:hover,
+.leaflet-popup-close-button:hover {
+  background: rgba(255, 255, 255, 0.2) !important;
+  color: var(--text-primary) !important;
+  transform: scale(1.08) !important;
+  border-color: var(--border-strong) !important;
+}
+
+/* Popup Main Card */
 .map-popup-card {
-  padding: 1rem;
+  padding: 13px 14px 14px 14px;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  min-width: 200px;
+  gap: 10px;
+  box-sizing: border-box;
+}
+
+/* Header Section */
+.map-popup-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding-right: 26px; /* leave clear space for close button */
+}
+
+.map-popup-title-group {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  flex: 1;
+}
+
+.map-popup-bus-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.18) 0%, rgba(14, 165, 233, 0.05) 100%);
+  border: 1px solid rgba(14, 165, 233, 0.3);
+  color: #38bdf8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.map-popup-bus-icon.layover {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.18) 0%, rgba(59, 130, 246, 0.05) 100%);
+  border-color: rgba(59, 130, 246, 0.3);
+  color: #60a5fa;
+  font-size: 16px;
+}
+
+.map-popup-title-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .map-popup-title {
-  font-size: 0.95rem;
+  font-size: 0.96rem;
   font-weight: 800;
   color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
 }
 
-.map-popup-route {
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: var(--c10-primary-light);
+.map-popup-line-pill {
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: #ffffff;
+  padding: 1px 7px;
+  border-radius: 6px;
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
-.map-popup-badge {
-  font-size: 0.7rem;
+.map-popup-subtitle {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 175px;
+  margin-top: 1px;
+}
+
+.map-popup-header-status {
+  flex-shrink: 0;
+}
+
+.map-popup-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.68rem;
   font-weight: 700;
-  padding: 2px 6px;
-  border-radius: 4px;
+  padding: 3px 8px;
+  border-radius: 20px;
+  flex-shrink: 0;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.map-popup-status-badge.live {
   background: rgba(16, 185, 129, 0.15);
   color: var(--accent-live);
+  border: 1px solid rgba(16, 185, 129, 0.3);
 }
 
-.map-popup-badge.estimated {
+.map-popup-status-badge.estimated {
   background: rgba(245, 158, 11, 0.15);
   color: var(--accent-warning);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.map-popup-status-badge.layover {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.status-pulse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor;
+  animation: pulse-dot 1.8s infinite ease-in-out;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.7); }
+}
+
+/* Route Ribbon (Origin ➔ Destination) */
+.map-popup-route-ribbon {
+  background: var(--bg-surface-elevated, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 7px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.map-popup-route-stop {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.map-popup-route-stop.to {
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.map-popup-stop-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.map-popup-stop-dot.dest {
+  background: var(--c10-primary-light, #2dd4bf);
+  box-shadow: 0 0 6px var(--c10-primary-light, #2dd4bf);
+}
+
+.map-popup-stop-name {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.map-popup-route-stop.to .map-popup-stop-name {
+  color: var(--c10-primary-light, #2dd4bf);
+}
+
+.map-popup-route-connector {
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+  opacity: 0.55;
+  flex-shrink: 0;
+}
+
+.map-popup-route-badge-layover {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #60a5fa;
+  background: rgba(59, 130, 246, 0.12);
+  padding: 2px 7px;
+  border-radius: 6px;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  white-space: nowrap;
+}
+
+/* 2x2 Telemetry Metrics Grid */
+.map-popup-metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.map-popup-metric-tile {
+  background: var(--bg-surface-elevated, rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--border-subtle);
+  border-radius: 9px;
+  padding: 7px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.map-popup-metric-header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.64rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.map-popup-metric-header svg {
+  opacity: 0.8;
+  flex-shrink: 0;
+}
+
+.map-popup-metric-val {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.map-popup-metric-val.on-time {
+  color: var(--accent-live, #10b981);
+}
+
+.map-popup-metric-val.delayed {
+  color: var(--accent-warning, #f59e0b);
+}
+
+.map-popup-metric-val.critical {
+  color: var(--accent-danger, #ef4444);
+}
+
+.map-popup-metric-val.early {
+  color: #38bdf8;
+}
+
+.map-popup-metric-val.layover {
+  color: #60a5fa;
+}
+
+.map-popup-compass-val {
+  gap: 5px;
+}
+
+.map-popup-compass-arrow {
+  flex-shrink: 0;
+  color: var(--accent-scheduled, #3b82f6);
+  transition: transform 0.3s ease;
+}
+
+/* Progress Bar inside metric tile */
+.map-popup-progress-track {
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 2px;
+}
+
+.map-popup-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--c10-primary, #009485) 0%, var(--c10-primary-light, #2dd4bf) 100%);
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+
+/* Fleet Specs Chips */
+.map-popup-fleet-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.map-popup-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--bg-surface-elevated, rgba(255, 255, 255, 0.04));
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.map-popup-chip .chip-icon {
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+.map-popup-chip.pmr {
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.1);
+  border-color: rgba(56, 189, 248, 0.25);
+}
+
+.map-popup-chip.electric {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.25);
+}
+
+.map-popup-chip.hybrid {
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.1);
+  border-color: rgba(52, 211, 153, 0.25);
+}
+
+.map-popup-chip.propulsion {
+  color: var(--text-secondary);
+}
+
+.map-popup-chip.model {
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+}
+
+.map-popup-chip.start-time {
+  color: var(--text-muted);
+}
+
+/* GPS Coordinates & Telemetry Source Footer */
+.map-popup-coords-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 5px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 0.66rem;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.map-popup-coords-footer .coords-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.map-popup-coords-footer .radar-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent-live);
+  box-shadow: 0 0 5px var(--accent-live);
+}
+
+.map-popup-coords-footer .radar-dot.estimated {
+  background: var(--accent-warning);
+  box-shadow: 0 0 5px var(--accent-warning);
+}
+
+.map-popup-coords-footer .source-tag {
+  font-size: 0.63rem;
+  color: var(--text-muted);
+  opacity: 0.8;
+}
+
+/* Share Live Bus Button */
+.map-popup-btn-share {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(14, 165, 233, 0.1);
+  border: 1px solid rgba(14, 165, 233, 0.25);
+  color: #38bdf8;
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 0.77rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  margin-top: 2px;
+  box-sizing: border-box;
+}
+
+.map-popup-btn-share:hover {
+  background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+  border-color: #0ea5e9;
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(14, 165, 233, 0.4);
+}
+
+.map-popup-btn-share:active {
+  transform: translateY(0);
+}
+
+.map-popup-btn-share svg {
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.map-popup-btn-share:hover svg {
+  transform: scale(1.1);
+}
+
+/* Light Theme Overrides for Bus Popup */
+[data-theme="light"] .leaflet-popup-content-wrapper {
+  background: rgba(255, 255, 255, 0.96) !important;
+  color: #0f172a !important;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.16), 0 0 0 1px rgba(15, 23, 42, 0.08) !important;
+}
+
+[data-theme="light"] .leaflet-popup-tip {
+  background: #ffffff !important;
+}
+
+[data-theme="light"] .arribo-bus-popup .leaflet-popup-close-button,
+[data-theme="light"] .leaflet-popup-close-button {
+  background: rgba(15, 23, 42, 0.06) !important;
+  border-color: rgba(15, 23, 42, 0.12) !important;
+  color: var(--text-secondary) !important;
+}
+
+[data-theme="light"] .arribo-bus-popup .leaflet-popup-close-button:hover,
+[data-theme="light"] .leaflet-popup-close-button:hover {
+  background: rgba(15, 23, 42, 0.12) !important;
+  color: var(--text-primary) !important;
+}
+
+[data-theme="light"] .map-popup-route-ribbon,
+[data-theme="light"] .map-popup-metric-tile,
+[data-theme="light"] .map-popup-chip {
+  background: #f8fafc;
+  border-color: rgba(15, 23, 42, 0.08);
+}
+
+[data-theme="light"] .map-popup-progress-track {
+  background: rgba(15, 23, 42, 0.08);
+}
+
+[data-theme="light"] .map-popup-btn-share {
+  background: rgba(14, 165, 233, 0.08);
+  border-color: rgba(14, 165, 233, 0.25);
+  color: #0284c7;
+}
+
+[data-theme="light"] .map-popup-btn-share:hover {
+  background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+  color: #ffffff;
 }
 
 /* Custom Live Bus Marker Pin */
