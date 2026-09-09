@@ -2747,6 +2747,54 @@ class TransitApp {
       const existingTracks = container.querySelectorAll('.corridor-timeline-track');
       const savedScrolls = Array.from(existingTracks).map(t => t.scrollLeft);
 
+      // In-place DOM update when tracking the same multi-direction route
+      if (existingTracks.length === allDirs.length && container.dataset.routeKey === routeKey) {
+        allDirs.forEach((d, dIdx) => {
+          const track = existingTracks[dIdx];
+          if (!track) return;
+          const dirStops = d.stops || [];
+          const dirBuses = activeBuses.filter(b => String(b.direction) === String(d.dirId) || (b.destination && b.destination.toLowerCase().includes(d.name.toLowerCase().substring(0, 8))));
+          const primaryBus = dirBuses[0] || null;
+          const stepEls = track.querySelectorAll('.corridor-step');
+          if (stepEls.length !== dirStops.length) return;
+
+          dirStops.forEach((s, idx) => {
+            const stepEl = stepEls[idx];
+            if (!stepEl) return;
+            const sId = String(s.id || s.mouteStopId || s.code);
+            const isTarget = sId === String(activeTargetId);
+            const busOnStop = dirBuses.find(b => b.fromSeq === s.seq || b.toSeq === s.seq);
+            const isPassed = primaryBus && s.seq < (primaryBus.fromSeq || 0);
+
+            let nodeClass = 'step-node';
+            let iconContent = `${s.seq || idx + 1}`;
+
+            if (busOnStop) {
+              nodeClass += ' has-bus';
+              iconContent = '🚌';
+            } else if (isPassed) {
+              nodeClass += ' passed';
+              iconContent = '✓';
+            } else if (isTarget) {
+              nodeClass += ' target';
+              iconContent = '⭐';
+            }
+
+            const expectedClass = `corridor-step ${isPassed ? 'passed' : ''}`;
+            if (stepEl.className !== expectedClass) stepEl.className = expectedClass;
+
+            const nodeEl = stepEl.querySelector('.step-node');
+            if (nodeEl) {
+              if (nodeEl.className !== nodeClass) nodeEl.className = nodeClass;
+              const span = nodeEl.querySelector('span');
+              if (span && span.textContent !== iconContent) span.textContent = iconContent;
+            }
+          });
+          this.updateTimelineScrollButtons(track);
+        });
+        return;
+      }
+
       container.dataset.routeKey = routeKey;
       container.innerHTML = allDirs.map((d, dIdx) => {
         const dirStops = d.stops || [];
@@ -2766,39 +2814,47 @@ class TransitApp {
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
               </button>
             </div>
-            <div class="corridor-timeline-track">
-              ${dirStops.map((s, idx) => {
-                const sId = String(s.id || s.mouteStopId || s.code);
-                const isTarget = sId === String(activeTargetId);
-                const busOnStop = dirBuses.find(b => b.fromSeq === s.seq || b.toSeq === s.seq);
-                const isPassed = primaryBus && s.seq < (primaryBus.fromSeq || 0);
+            <div class="corridor-timeline-wrapper">
+              <button type="button" class="btn-timeline-scroll btn-timeline-scroll-left" title="Desplaçar a l'esquerra" aria-label="Desplaçar a l'esquerra">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+              </button>
+              <div class="corridor-timeline-track">
+                ${dirStops.map((s, idx) => {
+                  const sId = String(s.id || s.mouteStopId || s.code);
+                  const isTarget = sId === String(activeTargetId);
+                  const busOnStop = dirBuses.find(b => b.fromSeq === s.seq || b.toSeq === s.seq);
+                  const isPassed = primaryBus && s.seq < (primaryBus.fromSeq || 0);
 
-                let nodeClass = 'step-node';
-                let iconContent = `${s.seq || idx + 1}`;
+                  let nodeClass = 'step-node';
+                  let iconContent = `${s.seq || idx + 1}`;
 
-                if (busOnStop) {
-                  nodeClass += ' has-bus';
-                  iconContent = '🚌';
-                } else if (isPassed) {
-                  nodeClass += ' passed';
-                  iconContent = '✓';
-                } else if (isTarget) {
-                  nodeClass += ' target';
-                  iconContent = '⭐';
-                }
+                  if (busOnStop) {
+                    nodeClass += ' has-bus';
+                    iconContent = '🚌';
+                  } else if (isPassed) {
+                    nodeClass += ' passed';
+                    iconContent = '✓';
+                  } else if (isTarget) {
+                    nodeClass += ' target';
+                    iconContent = '⭐';
+                  }
 
-                return `
-                  <div class="corridor-step ${isPassed ? 'passed' : ''}" data-target-id="${sId}" style="cursor:pointer;" title="Fixar ${this.esc(s.name)} com a parada principal">
-                    <div class="${nodeClass}">
-                      <span>${iconContent}</span>
+                  return `
+                    <div class="corridor-step ${isPassed ? 'passed' : ''}" data-target-id="${sId}" style="cursor:pointer;" title="Fixar ${this.esc(s.name)} com a parada principal">
+                      <div class="${nodeClass}">
+                        <span>${iconContent}</span>
+                      </div>
+                      <div class="step-info">
+                        <span class="step-name">${this.esc(s.name)}</span>
+                        <span class="step-zone">#${s.seq || idx + 1} • ${s.zone || 'Parada'}</span>
+                      </div>
                     </div>
-                    <div class="step-info">
-                      <span class="step-name">${this.esc(s.name)}</span>
-                      <span class="step-zone">#${s.seq || idx + 1} • ${s.zone || 'Parada'}</span>
-                    </div>
-                  </div>
-                `;
-              }).join('')}
+                  `;
+                }).join('')}
+              </div>
+              <button type="button" class="btn-timeline-scroll btn-timeline-scroll-right" title="Desplaçar a la dreta" aria-label="Desplaçar a la dreta">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
             </div>
           </div>
         `;
@@ -2807,6 +2863,7 @@ class TransitApp {
       const newTracks = container.querySelectorAll('.corridor-timeline-track');
       newTracks.forEach((t, idx) => {
         if (savedScrolls[idx]) t.scrollLeft = savedScrolls[idx];
+        this.updateTimelineScrollButtons(t);
       });
     } else {
       container.classList.remove('multi-dir-grid');
@@ -2853,6 +2910,7 @@ class TransitApp {
             if (span && span.textContent !== iconContent) span.textContent = iconContent;
           }
         });
+        this.updateTimelineScrollButtons(existingTrack);
         return;
       }
 
@@ -2860,46 +2918,72 @@ class TransitApp {
       const savedScroll = existingTrack ? existingTrack.scrollLeft : 0;
       container.dataset.routeKey = routeKey;
       container.innerHTML = `
-        <div class="corridor-timeline-track">
-          ${stops.map((s, idx) => {
-            const sId = String(s.id || s.mouteStopId || s.code);
-            const isTarget = sId === String(activeTargetId);
-            const busOnStop = activeBuses.find(b => b.fromSeq === s.seq || b.toSeq === s.seq);
-            const isPassed = primaryBus && s.seq < (primaryBus.fromSeq || 0);
+        <div class="corridor-timeline-wrapper">
+          <button type="button" class="btn-timeline-scroll btn-timeline-scroll-left" title="Desplaçar a l'esquerra" aria-label="Desplaçar a l'esquerra">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <div class="corridor-timeline-track">
+            ${stops.map((s, idx) => {
+              const sId = String(s.id || s.mouteStopId || s.code);
+              const isTarget = sId === String(activeTargetId);
+              const busOnStop = activeBuses.find(b => b.fromSeq === s.seq || b.toSeq === s.seq);
+              const isPassed = primaryBus && s.seq < (primaryBus.fromSeq || 0);
 
-            let nodeClass = 'step-node';
-            let iconContent = `${s.seq || idx + 1}`;
+              let nodeClass = 'step-node';
+              let iconContent = `${s.seq || idx + 1}`;
 
-            if (busOnStop) {
-              nodeClass += ' has-bus';
-              iconContent = '🚌';
-            } else if (isPassed) {
-              nodeClass += ' passed';
-              iconContent = '✓';
-            } else if (isTarget) {
-              nodeClass += ' target';
-              iconContent = '⭐';
-            }
+              if (busOnStop) {
+                nodeClass += ' has-bus';
+                iconContent = '🚌';
+              } else if (isPassed) {
+                nodeClass += ' passed';
+                iconContent = '✓';
+              } else if (isTarget) {
+                nodeClass += ' target';
+                iconContent = '⭐';
+              }
 
-            return `
-              <div class="corridor-step ${isPassed ? 'passed' : ''}" data-target-id="${sId}" style="cursor:pointer;" title="Fixar ${this.esc(s.name)} com a parada principal">
-                <div class="${nodeClass}">
-                  <span>${iconContent}</span>
+              return `
+                <div class="corridor-step ${isPassed ? 'passed' : ''}" data-target-id="${sId}" style="cursor:pointer;" title="Fixar ${this.esc(s.name)} com a parada principal">
+                  <div class="${nodeClass}">
+                    <span>${iconContent}</span>
+                  </div>
+                  <div class="step-info">
+                    <span class="step-name">${this.esc(s.name)}</span>
+                    <span class="step-zone">#${s.seq || idx + 1} • ${s.zone || 'Parada'}</span>
+                  </div>
                 </div>
-                <div class="step-info">
-                  <span class="step-name">${this.esc(s.name)}</span>
-                  <span class="step-zone">#${s.seq || idx + 1} • ${s.zone || 'Parada'}</span>
-                </div>
-              </div>
-            `;
-          }).join('')}
+              `;
+            }).join('')}
+          </div>
+          <button type="button" class="btn-timeline-scroll btn-timeline-scroll-right" title="Desplaçar a la dreta" aria-label="Desplaçar a la dreta">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
         </div>
       `;
 
       const newTrack = container.querySelector('.corridor-timeline-track');
-      if (newTrack && savedScroll > 0) {
-        newTrack.scrollLeft = savedScroll;
+      if (newTrack) {
+        if (savedScroll > 0) newTrack.scrollLeft = savedScroll;
+        this.updateTimelineScrollButtons(newTrack);
       }
+    }
+  }
+
+  updateTimelineScrollButtons(track) {
+    if (!track) return;
+    const wrapper = track.closest('.corridor-timeline-wrapper');
+    if (!wrapper) return;
+    const leftBtn = wrapper.querySelector('.btn-timeline-scroll-left');
+    const rightBtn = wrapper.querySelector('.btn-timeline-scroll-right');
+    const canScroll = track.scrollWidth > track.clientWidth + 2;
+    if (leftBtn) {
+      const atStart = track.scrollLeft <= 5 || !canScroll;
+      leftBtn.classList.toggle('is-disabled', atStart);
+    }
+    if (rightBtn) {
+      const atEnd = Math.ceil(track.scrollLeft + track.clientWidth) >= (track.scrollWidth - 5) || !canScroll;
+      rightBtn.classList.toggle('is-disabled', atEnd);
     }
   }
 
@@ -4425,6 +4509,62 @@ class TransitApp {
   setupEventListeners() {
     this.setupPageVisibility();
 
+    // Timeline Horizontal Interaction (Mouse Wheel, Drag-to-Scroll, Arrow Navigation)
+    const timelineContainer = document.getElementById('corridor-timeline-container');
+    if (timelineContainer) {
+      // 1. Mouse wheel horizontal scrolling (translates deltaY to scrollLeft)
+      timelineContainer.addEventListener('wheel', (e) => {
+        const track = e.target.closest('.corridor-timeline-track');
+        if (!track) return;
+        if (e.deltaY !== 0 && Math.abs(e.deltaY) >= Math.abs(e.deltaX)) {
+          e.preventDefault();
+          track.scrollLeft += e.deltaY * 1.2;
+        }
+      }, { passive: false });
+
+      // 2. Mouse Drag-to-Scroll (Fluid pan)
+      let isDragging = false;
+      let startX = 0;
+      let startScroll = 0;
+      let activeTrack = null;
+
+      timelineContainer.addEventListener('mousedown', (e) => {
+        const track = e.target.closest('.corridor-timeline-track');
+        if (!track || e.target.closest('button')) return;
+        isDragging = true;
+        activeTrack = track;
+        startX = e.pageX;
+        startScroll = track.scrollLeft;
+        this._timelineDragged = false;
+        track.classList.add('is-dragging');
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        if (!isDragging || !activeTrack) return;
+        const dx = e.pageX - startX;
+        if (Math.abs(dx) > 4) {
+          this._timelineDragged = true;
+          e.preventDefault();
+        }
+        activeTrack.scrollLeft = startScroll - dx;
+      });
+
+      window.addEventListener('mouseup', () => {
+        if (isDragging && activeTrack) {
+          activeTrack.classList.remove('is-dragging');
+        }
+        isDragging = false;
+        activeTrack = null;
+        setTimeout(() => { this._timelineDragged = false; }, 60);
+      });
+
+      // 3. Update arrow button states on scroll
+      timelineContainer.addEventListener('scroll', (e) => {
+        const track = e.target.closest('.corridor-timeline-track');
+        if (track) this.updateTimelineScrollButtons(track);
+      }, { capture: true, passive: true });
+    }
+
     // Dynamic Direction buttons delegation
     const dirGroup = document.getElementById('direction-toggle-group');
     if (dirGroup) {
@@ -4441,9 +4581,25 @@ class TransitApp {
 
     // Global Event Delegation Dispatcher (AGENTS.md §8 compliant)
     document.addEventListener('click', (e) => {
+      // 0. Timeline scroll navigation buttons (< and >)
+      const timelineScrollBtn = e.target.closest('.btn-timeline-scroll');
+      if (timelineScrollBtn) {
+        e.preventDefault();
+        const wrapper = timelineScrollBtn.closest('.corridor-timeline-wrapper');
+        const track = wrapper?.querySelector('.corridor-timeline-track');
+        if (track) {
+          const isLeft = timelineScrollBtn.classList.contains('btn-timeline-scroll-left');
+          track.scrollBy({ left: isLeft ? -260 : 260, behavior: 'smooth' });
+        }
+        return;
+      }
+
       // 1. Corridor Steps Timeline delegation
       const step = e.target.closest('.corridor-step');
       if (step) {
+        if (this._timelineDragged) {
+          return;
+        }
         e.preventDefault();
         const targetId = step.getAttribute('data-target-id');
         if (targetId) {

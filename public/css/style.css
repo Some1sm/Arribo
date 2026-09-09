@@ -1696,6 +1696,54 @@ body {
   border-color: var(--c10-primary);
 }
 
+.corridor-timeline-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.btn-timeline-scroll {
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-full);
+  background: var(--bg-surface-elevated, #1a2337);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  z-index: 5;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  padding: 0;
+  user-select: none;
+}
+
+.btn-timeline-scroll:hover {
+  background: var(--c10-primary);
+  border-color: var(--c10-primary);
+  color: #ffffff;
+  transform: scale(1.08);
+}
+
+.btn-timeline-scroll.is-disabled {
+  opacity: 0.2;
+  pointer-events: none;
+}
+
+@media (max-width: 640px) {
+  .btn-timeline-scroll {
+    display: none;
+  }
+}
+
 .corridor-timeline-track {
   display: flex;
   align-items: flex-start;
@@ -1705,30 +1753,46 @@ body {
   width: 100%;
   max-width: 100%;
   min-width: 0;
+  flex: 1;
   box-sizing: border-box;
-  padding: 0.6rem 0.2rem 0.7rem;
-  scrollbar-width: thin;
-  scrollbar-color: var(--c10-primary) rgba(0, 0, 0, 0.2);
+  padding: 0.6rem 0.2rem 0.75rem;
   position: relative;
   -webkit-overflow-scrolling: touch;
+  cursor: grab;
+  user-select: none;
 }
 
+.corridor-timeline-track.is-dragging {
+  cursor: grabbing;
+}
+
+/* Standout Custom Scrollbar - ALWAYS visible and easily grabbable */
 .corridor-timeline-track::-webkit-scrollbar {
-  height: 6px;
+  height: 8px;
+  display: block;
 }
 
 .corridor-timeline-track::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 6px;
+  background: var(--bg-surface-soft, rgba(125, 125, 125, 0.15));
+  border-radius: 8px;
+  margin: 0 4px;
 }
 
 .corridor-timeline-track::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: 6px;
+  background: var(--c10-primary);
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
 }
 
 .corridor-timeline-track::-webkit-scrollbar-thumb:hover {
-  background: var(--c10-primary);
+  background: var(--c10-primary-light, #2dd4bf);
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  .corridor-timeline-track {
+    scrollbar-color: var(--c10-primary) rgba(125, 125, 125, 0.15);
+    scrollbar-width: auto;
+  }
 }
 
 .corridor-step {
