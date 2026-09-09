@@ -1536,13 +1536,15 @@ class MataroTracker extends BaseTracker {
     }
 
     let intermodal = null;
-    try {
-      intermodal = await intermodalHub.getConnectionsForStop(sId, {
-        stopName: stopInfo.name,
-        lat: stopInfo.lat,
-        lon: stopInfo.lon
-      });
-    } catch (_) {}
+    if (!options.skipIntermodal) {
+      try {
+        intermodal = await intermodalHub.getConnectionsForStop(sId, {
+          stopName: stopInfo.name,
+          lat: stopInfo.lat,
+          lon: stopInfo.lon
+        });
+      } catch (_) {}
+    }
 
     const result = {
       stop: {
@@ -1624,7 +1626,7 @@ class MataroTracker extends BaseTracker {
     }
 
     const sId = String(chosenStop.id);
-    const stopDepartures = await this.getStopDepartures(sId, lId, String(dirIdx));
+    const stopDepartures = await this.getStopDepartures(sId, lId, String(dirIdx), { skipIntermodal: true });
     const deps = stopDepartures.departures || [];
     const nextBus = deps.length > 0 ? deps[0] : null;
 

@@ -77,10 +77,10 @@ workerBridge.start();
 flightRecorder.setAutoExtrapolation(false);
 flightRecorder.setHistoryGateway((op, args) => workerBridge.historyQuery(op, args, { timeoutMs: op === 'getLineDelayStats' ? 25000 : 10000 }));
 
-// Centralize Mataró SIRI traffic in the worker over IPC (fast-fail timeout of 3500ms)
+// Centralize Mataró SIRI traffic in the worker over IPC (fast-fail timeout of 1200ms)
 mataroSiriClient.setRpcBackend(async (op, args) => {
   try {
-    const res = await workerBridge.historyQuery(op, args, { timeoutMs: 3500 });
+    const res = await workerBridge.historyQuery(op, args, { timeoutMs: 1200 });
     return Array.isArray(res) ? res : [];
   } catch (_) { return []; }
 });

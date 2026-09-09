@@ -1347,7 +1347,13 @@ class MaresmeTracker extends BaseTracker {
     const dir = String(direction || '0');
     const sIdStr = String(stopId);
     const stopObj = this.stopsMap.get(sIdStr) || { id: sIdStr, name: 'Parada Maresme' };
-    const lDetails = lineDetails || (lineConfig ? await this.getLineDetails(lineConfig.id, dir) : null);
+    let lDetails = lineDetails || null;
+    const getDetails = async () => {
+      if (!lDetails && lineConfig) {
+        lDetails = await this.getLineDetails(lineConfig.id, dir);
+      }
+      return lDetails;
+    };
 
     const dirObj = lineConfig?.directions?.find(d => String(d.dirId) === String(dir)) || lineConfig?.directions?.[0];
     const defaultDest = dirObj ? dirObj.name : (lineConfig ? lineConfig.name : 'Destí');
@@ -1681,9 +1687,9 @@ class MaresmeTracker extends BaseTracker {
       }
     }
 
-    // Strictly match active circulating vehicles with their corresponding GTFS trip
-    if (lineConfig) {
-      const activeBuses = this.calculateActiveBuses(lineConfig, dir, lDetails?.stops || [], lDetails?.coords || []);
+    if (lineConfig && departures.some(dep => dep.tripId)) {
+      const details = await getDetails();
+      const activeBuses = this.calculateActiveBuses(lineConfig, dir, details?.stops || [], details?.coords || []);
 
       departures.forEach((dep) => {
         const matchedBus = activeBuses.find(b => b.tripId && dep.tripId && b.tripId === dep.tripId);

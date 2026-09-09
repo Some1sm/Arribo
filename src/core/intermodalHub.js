@@ -49,14 +49,18 @@ class IntermodalHub {
 
   async _ensureTrackers() {
     if (this.isInitialized) return;
-    try {
-      await Promise.allSettled([
-        rodaliesTracker.init ? rodaliesTracker.init() : Promise.resolve(),
-        maresmeTracker.init ? maresmeTracker.init() : Promise.resolve(),
-        corridorTracker.init ? corridorTracker.init() : Promise.resolve()
-      ]);
-      this.isInitialized = true;
-    } catch (_) {}
+    if (this._initPromise) return this._initPromise;
+    this._initPromise = (async () => {
+      try {
+        await Promise.allSettled([
+          rodaliesTracker.init ? rodaliesTracker.init() : Promise.resolve(),
+          maresmeTracker.init ? maresmeTracker.init() : Promise.resolve(),
+          corridorTracker.init ? corridorTracker.init() : Promise.resolve()
+        ]);
+        this.isInitialized = true;
+      } catch (_) {}
+    })();
+    return this._initPromise;
   }
 
   /**
@@ -136,7 +140,20 @@ class IntermodalHub {
       return { isHub: false, connections: [] };
     }
 
-    await this._ensureTrackers();
+    if (!this.isInitialized) {
+      this._ensureTrackers().catch(() => {});
+      await Promise.race([
+        this._ensureTrackers(),
+        new Promise(r => setTimeout(r, 350))
+      ]);
+      if (!this.isInitialized) {
+        return {
+          isHub: true,
+          hub: { id: hub.id, name: hub.name, icon: hub.icon },
+          connections: []
+        };
+      }
+    }
 
     const now = Date.now();
     const cached = this.cache.get(hub.id);
@@ -289,4 +306,8 @@ class IntermodalHub {
   }
 }
 
-module.exports = new IntermodalHub();
+const hubInstance = new IntermodalHub();
+if (typeof setImmediate === 'function') {
+  setImmediate(() => { hubInstance._ensureTrackers().catch(() => {}); });
+}
+module.exports = hubInstance;

@@ -28,6 +28,8 @@ class TransitApp {
 
     this.lineCache = new Map(); // LRU bounded to max 8 active routes
     this.stopDeparturesCache = new Map(); // Client-side SWR stop departures cache
+    this.targetEtaCache = new Map(); // Client-side SWR target stop ETA cache
+    this.TARGET_ETA_TTL_MS = 60000; // 60s target ETA cache TTL
     this.activeRequestSeq = 0; // Monotonic request sequence ID to prevent race conditions
     this.allStops = [];
     this.activeBuses = [];
@@ -221,6 +223,16 @@ class TransitApp {
       this.lineCache.delete(oldestKey);
     }
     this.lineCache.set(key, data);
+  }
+
+  setTargetEtaCache(key, data) {
+    if (this.targetEtaCache.has(key)) {
+      this.targetEtaCache.delete(key);
+    } else if (this.targetEtaCache.size >= 32) {
+      const oldestKey = this.targetEtaCache.keys().next().value;
+      this.targetEtaCache.delete(oldestKey);
+    }
+    this.targetEtaCache.set(key, { ts: Date.now(), data });
   }
 
   getInitialTheme() {
@@ -576,22 +588,35 @@ class TransitApp {
       this.updateHeaderBrand(lineObj);
       this.renderLineBanner(lineObj);
       this.renderDirectionButtons(lineObj.directions || [], this.activeDirection);
-      this.renderTargetCardLoading(lineObj, 'Carregant parada...');
     }
 
     const routeKey = `${this.activeLineId}_${this.activeDirection}`;
     const cached = this.lineCache.get(routeKey);
+    let activeTargetId = null;
     if (cached) {
       this.activeLineData = cached;
       this.allStops = cached.stops || [];
       const savedStopId = this.targetStopsByLine[routeKey] || null;
-      const activeTargetId = savedStopId || this.allStops[0]?.id || null;
+      activeTargetId = savedStopId || this.allStops[0]?.id || null;
       this.populateSelect('target-stop-select', this.allStops, activeTargetId);
       this.renderRouteTimeline(cached, activeTargetId);
       this.renderStopsBrowser(cached, this.activeLineId);
     } else {
       this.mapController?.clearAll();
       this.activeLineData = null;
+    }
+
+    // Instant SWR Target Card render from client cache if available (<0ms)
+    const etaCacheKey = activeTargetId ? `${routeKey}_${activeTargetId}` : null;
+    const cachedEta = etaCacheKey ? this.targetEtaCache.get(etaCacheKey) : null;
+    if (cachedEta && (Date.now() - cachedEta.ts < this.TARGET_ETA_TTL_MS)) {
+      this.renderTargetCard(cachedEta.data, cached || lineObj);
+    } else {
+      const activeStop = this.allStops.find(s => String(s.id || s.mouteStopId || s.code) === String(activeTargetId)) || this.allStops[0];
+      const stopName = activeStop?.name || 'Parada seleccionada';
+      const stopCode = activeStop?.code || activeStop?.id || '...';
+      const destName = lineObj?.directions?.[0]?.name || lineObj?.name || 'Destí';
+      this.renderTargetCardLoading(cached || lineObj, stopName, stopCode, destName);
     }
 
     this.secondsRemaining = this.pollInterval;
@@ -1448,6 +1473,10 @@ class TransitApp {
       // 3. Asynchronously handle Target Stop ETA without delaying map transition
       etaPromise.then(etaRes => {
         if (etaRes.success && etaRes.data && this.activeLineId === lId && this.activeDirection === dir) {
+          const targetStopId = activeTargetId || etaRes.data.targetStop?.id || savedStopId;
+          if (targetStopId) {
+            this.setTargetEtaCache(`${routeKey}_${targetStopId}`, etaRes.data);
+          }
           this.renderTargetCard(etaRes.data, this.activeLineData);
           this.renderTelemetryCockpit(this.activeLineData, etaRes.data);
           this.checkArrivalAlerts(this.activeLineData, activeTargetId);
@@ -2249,7 +2278,7 @@ class TransitApp {
     }
   }
 
-  renderTargetCardLoading(lData, stopName = 'Parada seleccionada') {
+  renderTargetCardLoading(lData, stopName = 'Parada seleccionada', stopCode = '...', destName = null) {
     const titleEl = document.getElementById('target-stop-title');
     const codeEl = document.getElementById('target-stop-code');
     const dirSubEl = document.getElementById('target-direction-sub');
@@ -2264,13 +2293,13 @@ class TransitApp {
     const depBadge = document.getElementById('dep-count-badge');
 
     if (titleEl) titleEl.textContent = stopName;
-    if (codeEl) codeEl.textContent = '...';
-    if (dirSubEl) dirSubEl.textContent = 'Sincronitzant horaris...';
+    if (codeEl) codeEl.textContent = stopCode;
+    if (dirSubEl) dirSubEl.textContent = lData?.directions?.[0]?.name || 'Sincronitzant horaris...';
     if (lineTagEl && lData) {
       lineTagEl.textContent = lData.code || lData.id || 'C-10';
       if (lData.color) lineTagEl.style.color = lData.color;
     }
-    if (destEl) destEl.textContent = 'Sincronitzant...';
+    if (destEl) destEl.textContent = destName || lData?.directions?.[0]?.name || 'Sincronitzant...';
     if (opEl && lData) opEl.textContent = lData.agency || 'Operador de Transport';
 
     if (etaBigEl) {
@@ -3628,6 +3657,20 @@ class TransitApp {
     this.targetStopsByLine[routeKey] = String(stopId);
     this.targetStopsByLine[this.activeLineId] = String(stopId);
     localStorage.setItem('bad_amb_target_stops', JSON.stringify(this.targetStopsByLine));
+
+    // Instant SWR Target Card render from client cache if available (<0ms)
+    const etaCacheKey = `${routeKey}_${stopId}`;
+    const cachedEta = this.targetEtaCache.get(etaCacheKey);
+    if (cachedEta && (Date.now() - cachedEta.ts < this.TARGET_ETA_TTL_MS)) {
+      this.renderTargetCard(cachedEta.data, this.activeLineData);
+    } else {
+      const stopObj = this.allStops.find(s => String(s.id || s.mouteStopId || s.code) === String(stopId));
+      if (stopObj) {
+        const destName = this.activeLineData?.directions?.[0]?.name || this.activeLineData?.name || 'Destí';
+        this.renderTargetCardLoading(this.activeLineData, stopObj.name, stopObj.code || stopObj.id, destName);
+      }
+    }
+
     this.refreshAllData(false);
   }
 
