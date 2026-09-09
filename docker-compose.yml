@@ -1,7 +1,7 @@
 services:
   bus-tracker:
     build: .
-    container_name: bad-amb-bus-tracker
+    container_name: arribo
     restart: unless-stopped
     ports:
       - "3000:3000"

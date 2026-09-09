@@ -490,14 +490,14 @@ Environment variables controlling retention:
 docker compose up -d --build
 
 # View logs
-docker logs -f bad-amb-bus-tracker
+docker logs -f arribo
 
 # Health check
 curl http://localhost:3000/api/health
 ```
 
 **Resource limits** (docker-compose.yml):
-- Memory: 350MB limit, 80MB reservation
+- Memory: 400MB limit, 80MB reservation
 - `NODE_OPTIONS=--max-old-space-size=256`
 - `TZ=Europe/Madrid`
 - Volume mount: `./data:/app/data` (persists SQLite, caches, reports)
