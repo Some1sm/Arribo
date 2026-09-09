@@ -1382,8 +1382,9 @@ class TransitApp {
       }
 
       let activeTargetId = null;
+      let lData = null;
       if (lineRes.success && lineRes.data) {
-        const lData = lineRes.data;
+        lData = lineRes.data;
         this.activeLineData = lData;
         const isBoth = this.activeDirection === 'both' || lData.direction === 'both';
 
@@ -1469,22 +1470,36 @@ class TransitApp {
           },
           lId
         );
-      }
 
-      // 2.1 Process pending shared link focus (bus, stop, or search query)
-      this.processPendingSharedFocus(lData);
+        // 2.1 Process pending shared link focus (bus, stop, or search query)
+        this.processPendingSharedFocus(lData);
+      }
 
       // 3. Asynchronously handle Target Stop ETA without delaying map transition
       etaPromise.then(etaRes => {
-        if (etaRes.success && etaRes.data && this.activeLineId === lId && this.activeDirection === dir) {
+        if (this.activeLineId !== lId || this.activeDirection !== dir) return;
+        const lineContext = this.activeLineData || lData;
+        if (etaRes && etaRes.success && etaRes.data) {
           const targetStopId = activeTargetId || etaRes.data.targetStop?.id || savedStopId;
           if (targetStopId) {
             this.setTargetEtaCache(`${routeKey}_${targetStopId}`, etaRes.data);
           }
-          this.renderTargetCard(etaRes.data, this.activeLineData);
-          this.renderTelemetryCockpit(this.activeLineData, etaRes.data);
-          this.checkArrivalAlerts(this.activeLineData, activeTargetId);
+          this.renderTargetCard(etaRes.data, lineContext);
+          this.renderTelemetryCockpit(lineContext, etaRes.data);
+          this.checkArrivalAlerts(lineContext, activeTargetId);
+        } else {
+          // Fallback if target-eta returned unready or error
+          const fallbackStop = this.allStops.find(s => String(s.id || s.mouteStopId || s.code) === String(activeTargetId)) || this.allStops[0];
+          if (fallbackStop) {
+            this.renderTargetCard({
+              targetStop: fallbackStop,
+              nextBus: null,
+              upcomingDepartures: []
+            }, lineContext);
+          }
         }
+      }).catch(err => {
+        console.error('Target ETA async handler error:', err);
       });
 
       this.secondsRemaining = this.pollInterval;
@@ -2347,7 +2362,7 @@ class TransitApp {
     const mapsLinkEl = document.getElementById('target-maps-link');
 
     const stop = data.targetStop || {};
-    const next = data.nextBus || null;
+    const next = data.nextBus || (data.upcomingDepartures && data.upcomingDepartures[0]) || null;
 
     if (titleEl) titleEl.textContent = stop.name || 'Parada';
     if (codeEl) codeEl.textContent = stop.code || stop.id || '--';
@@ -2359,13 +2374,26 @@ class TransitApp {
       }
     }
 
-    if (lineTagEl) {
+    if (lineTagEl && lData) {
       lineTagEl.textContent = lData.code || lData.id || 'C-10';
       if (lData.color) lineTagEl.style.color = lData.color;
     }
 
     if (destEl) destEl.textContent = next?.destination || data.directionName || 'Destí';
-    if (opEl) opEl.textContent = lData.agency || 'Operador de Transport';
+    if (opEl && lData) opEl.textContent = lData.agency || 'Operador de Transport';
+
+    // Synchronize target-stop-select dropdown to match the target stop code/id
+    const targetSelect = document.getElementById('target-stop-select');
+    if (targetSelect && (stop.id || stop.code)) {
+      const matchOpt = Array.from(targetSelect.options).find(opt => 
+        String(opt.value) === String(stop.id) || 
+        String(opt.value) === String(stop.code) ||
+        String(opt.value) === String(stop.mouteStopId)
+      );
+      if (matchOpt && targetSelect.value !== matchOpt.value) {
+        targetSelect.value = matchOpt.value;
+      }
+    }
 
     if (mapsLinkEl && stop.lat && stop.lon) {
       mapsLinkEl.href = `https://www.google.com/maps/search/?api=1&query=${stop.lat},${stop.lon}`;
