@@ -131,12 +131,12 @@ class IntermodalHub {
    * @returns {Promise<{ isHub: boolean, hub?: object, connections: Array }>}
    */
   async getConnectionsForStop(stopId, options = {}) {
-    await this._ensureTrackers();
-
     const hub = this.matchHub(stopId, options.stopName, options.lat, options.lon);
     if (!hub) {
       return { isHub: false, connections: [] };
     }
+
+    await this._ensureTrackers();
 
     const now = Date.now();
     const cached = this.cache.get(hub.id);

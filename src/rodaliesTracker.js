@@ -1,4 +1,6 @@
 const https = require('https');
+const fs = require('fs');
+const path = require('path');
 const geoEngine = require('./core/geo/geoEngine');
 const timeEngine = require('./core/time/timeEngine');
 const calendarEngine = require('./core/time/calendarEngine');
@@ -9,6 +11,7 @@ const BaseTracker = require('./core/BaseTracker');
 
 const AMB_API_KEY = '28EbLJtP0A6CtrWeXp6zE1zy3kp4RzmnaA2sy8JM';
 const AMB_BASE_HOST = 'api.ambmobilitat.cat';
+const AMB_CACHE_FILE = path.join(__dirname, '..', 'data', 'cache', 'amb_catalog_cache.json');
 
 // Rodalies Lines Visual Tokens and metadata
 const RODALIES_LINE_TOKENS = {
@@ -99,12 +102,29 @@ class RodaliesTracker extends BaseTracker {
     if (this.isInitialized) return;
     try {
       console.log('[RodaliesTracker] Initializing Rodalies de Catalunya catalog...');
-      const res = await this.fetchAmbApi('/gtfs/routes-and-stops');
-      if (res.status !== 200 || !res.data || !res.data.renfe) {
-        throw new Error(`Failed to load Rodalies catalog (HTTP ${res.status})`);
+      let renfe = null;
+
+      // 1. Check local AMB catalog cache first (fast, zero memory spike)
+      if (fs.existsSync(AMB_CACHE_FILE)) {
+        try {
+          const cached = JSON.parse(fs.readFileSync(AMB_CACHE_FILE, 'utf8'));
+          if (cached && cached.renfe) {
+            renfe = cached.renfe;
+          }
+        } catch (_) {}
       }
 
-      const renfe = res.data.renfe;
+      // 2. Fetch from API if no local cache exists
+      if (!renfe) {
+        const res = await this.fetchAmbApi('/gtfs/routes-and-stops');
+        if (res.status === 200 && res.data && res.data.renfe) {
+          renfe = res.data.renfe;
+        }
+      }
+
+      if (!renfe) {
+        throw new Error('Failed to load Rodalies catalog (no data)');
+      }
       const rawStops = renfe.stops || {};
       const rawRoutes = renfe.routes || [];
 

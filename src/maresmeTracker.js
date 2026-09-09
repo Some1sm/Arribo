@@ -319,12 +319,29 @@ class MaresmeTracker extends BaseTracker {
 
     const datesFile = path.join(atmDir, 'calendar_dates.txt');
     if (fs.existsSync(datesFile)) {
-      const lines = fs.readFileSync(datesFile, 'utf8').split('\n');
-      for (let i = 1; i < lines.length; i++) {
-        const line = lines[i].trim();
+      // Build a set of nearby date strings (yesterday, today, next 7 days)
+      const now = new Date();
+      const targetDates = new Set();
+      for (let offset = -1; offset <= 7; offset++) {
+        const d = new Date(now.getTime() + offset * 86400000);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        targetDates.add(`${y}${m}${day}`);
+      }
+
+      // Read file and parse line-by-line without allocating 1M-element string array
+      const content = fs.readFileSync(datesFile, 'utf8');
+      let start = 0;
+      let nextNl;
+      let isFirst = true;
+      while ((nextNl = content.indexOf('\n', start)) !== -1) {
+        const line = content.slice(start, nextNl).trim();
+        start = nextNl + 1;
+        if (isFirst) { isFirst = false; continue; }
         if (!line) continue;
         const [sId, dateStr, excType] = line.split(',');
-        if (!sId || !dateStr) continue;
+        if (!sId || !dateStr || !targetDates.has(dateStr)) continue;
         if (!this._gtfsCalendarExceptions.has(dateStr)) {
           this._gtfsCalendarExceptions.set(dateStr, { active: new Set(), inactive: new Set() });
         }
@@ -379,14 +396,23 @@ class MaresmeTracker extends BaseTracker {
       if (fs.existsSync(cachePath)) {
         const cached = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
         Object.entries(cached.tripsMap || {}).forEach(([k, v]) => this.tripsMap.set(k, v));
-        Object.entries(cached.shapesMap || {}).forEach(([k, v]) => {
-          this.shapesMap.set(k, v.map((pt, i) => ({ lat: pt[0], lon: pt[1], seq: i })));
-        });
+        // Shapes are queried on demand from shapes.db to avoid holding 70MB of polylines in JS heap
         Object.entries(cached.stopTimesByTrip || {}).forEach(([k, v]) => this.stopTimesByTrip.set(k, v));
+        delete cached.shapesMap;
+        delete cached.tripsMap;
+        delete cached.stopTimesByTrip;
 
         if (fs.existsSync(stopsCachePath)) {
+          // Filter to only the stops relevant to Maresme lines (avoids loading all 7,500 Catalonia stops)
+          const neededStops = new Set();
+          for (const stopList of this.stopTimesByTrip.values()) {
+            if (Array.isArray(stopList)) {
+              stopList.forEach(st => { if (st.stopId) neededStops.add(st.stopId); });
+            }
+          }
           const stopsList = JSON.parse(fs.readFileSync(stopsCachePath, 'utf8'));
           stopsList.forEach(s => {
+            if (neededStops.size > 0 && !neededStops.has(s.id) && !neededStops.has(s.code)) return;
             const mouteId = String(s.code || s.id).replace('GEN_PF', '').replace(/^0+/, '');
             const stopObj = {
               id: s.id,
@@ -400,6 +426,9 @@ class MaresmeTracker extends BaseTracker {
             this.stopsMap.set(s.id, stopObj);
             this.stopsMap.set(mouteId, stopObj);
           });
+        }
+        if (typeof global.gc === 'function') {
+          try { global.gc(); } catch (_) {}
         }
       } else if (fs.existsSync(atmDir)) {
         const targetRouteIds = new Set(this.lines.map(l => l.routeId));

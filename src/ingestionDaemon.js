@@ -146,8 +146,6 @@ class IngestionDaemon {
             });
           }
 
-          // Asynchronously warm stop departures cache in background
-          mataroTracker.warmLineStopsCache(lId).catch(() => {});
         } catch (err) {
           // Skip individual line
         }
