@@ -397,11 +397,28 @@ async function runMataroTimetableAccuracyTests() {
   assert.strictEqual(standardizedSched.delayMinutes, 0);
   assert.strictEqual(standardizedSched.delayStatus, 'scheduled');
   assert.strictEqual(standardizedSched.delayBadgeText, 'Horari teòric');
+  // 3.4 Terminal Layover Invariant: Departure time can NEVER be earlier than arrival time
+  // Case A: Early bus arrives 15:10 for 15:12 departure -> Valid layover interval
+  const earlyLayover = delayEngine.standardizeDeparture({
+    departureTime: '15:12',
+    arrivalTime: '15:10',
+    isRegulating: true
+  });
+  assert.strictEqual(earlyLayover.comparisonText, 'Arribada: 15:10 • Sortida: 15:12');
+
+  // Case B: Inverted arrival > departure (14:49 vs 14:48) -> comparisonText must NEVER state departure earlier than arrival
+  const invertedLayover = delayEngine.standardizeDeparture({
+    departureTime: '14:48',
+    arrivalTime: '14:49',
+    isRegulating: true
+  });
+  assert.notStrictEqual(invertedLayover.comparisonText, 'Arribada: 14:49 • Sortida: 14:48', 'Must never display departure before arrival');
   totalAssertions += 6;
 
   console.log('  ✓ 3.1 Live SIRI telemetry properly merges with exact scheduled departures.');
   console.log('  ✓ 3.2 +-3 minute circular window deduplication eliminates phantom scheduled entries.');
   console.log('  ✓ 3.3 Canonical delay badges and dual-compatibility schemas enforced.');
+  console.log('  ✓ 3.4 Terminal layover ordering invariant strictly enforced (departure >= arrival).');
 
 
   // =========================================================================

@@ -6,6 +6,8 @@
  * and maintains dual-compatibility fields (delayMinutes and delayMins).
  */
 
+const timeEngine = require('../time/timeEngine');
+
 /**
  * Computes canonical delay evaluation for any transit arrival or departure.
  * 
@@ -276,7 +278,7 @@ function standardizeDeparture(dep = {}, defaults = {}) {
     delayStatus: delayEval.delayStatus,
     delayBadgeText: d.delayBadgeText || delayEval.delayBadgeText,
     delayFormatted: delayEval.delayFormatted,
-    comparisonText: (d.arrivalTime && d.departureTime && d.arrivalTime !== d.departureTime) 
+    comparisonText: (d.arrivalTime && d.departureTime && timeEngine.timeStringToSeconds(d.arrivalTime) < timeEngine.timeStringToSeconds(d.departureTime)) 
       ? `Arribada: ${d.arrivalTime} • Sortida: ${d.departureTime}` 
       : (d.comparisonText || delayEval.comparisonText),
     arrivalTime: d.arrivalTime || null,

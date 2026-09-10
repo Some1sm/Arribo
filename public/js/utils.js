@@ -48,6 +48,16 @@
                 Math.sin(dLon / 2) * Math.sin(dLon / 2);
       return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     },
+    /**
+     * Parses 'HH:MM' string to seconds since midnight.
+     * @param {string} timeStr
+     * @returns {number}
+     */
+    timeStringToSeconds(timeStr) {
+      if (!timeStr || typeof timeStr !== 'string' || !timeStr.includes(':')) return 0;
+      const [h, m] = timeStr.split(':').map(Number);
+      return (isNaN(h) || isNaN(m)) ? 0 : (h * 3600 + m * 60);
+    },
 
     /**
      * Creates a debounced function that delays invoking fn until after

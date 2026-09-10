@@ -292,6 +292,9 @@ async function runChallengerTestSuite() {
   // =========================================================================
   console.log('\n📌 [SUITE 3] Testing BaseTracker (Parallel Both-Directions & Bus Deduplication)...');
 
+  // Allow any pending background init (e.g. OSRM geometry loading) to settle
+  await new Promise(resolve => setTimeout(resolve, 400));
+
   // 3.1 Parallel 'both' resolution with asymmetric network latencies
   class LatencyTracker extends BaseTracker {
     constructor(delays = { dir0: 0, dir1: 0 }, errors = { dir0: null, dir1: null }) {

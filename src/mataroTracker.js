@@ -1365,13 +1365,29 @@ class MataroTracker extends BaseTracker {
           const dirKey = String(outboundRoute.id || '0');
           const dirSched = mataroSchedules.getDirectionSchedule(String(dep.lineId), dirKey, dayTypeToday);
 
-          // Find next outbound scheduled departure time
+          // Find outbound scheduled departure time associated with this vehicle turnaround
           let nextDepTime = arrTime;
+          let scheduledDepTime = null;
+          let delayMins = 0;
+
           if (dirSched && Array.isArray(dirSched.departures)) {
             const arrSec = timeEngine.timeStringToSeconds(arrTime);
-            const foundTrip = dirSched.departures.find(t => timeEngine.timeStringToSeconds(t) >= arrSec - 60);
+            // Search for outbound scheduled trip associated with this turnaround (check up to 5 min before arrival or anywhere after)
+            const foundTrip = dirSched.departures.find(t => timeEngine.timeStringToSeconds(t) >= arrSec - 300);
             if (foundTrip) {
-              nextDepTime = foundTrip;
+              scheduledDepTime = foundTrip;
+              const schedSec = timeEngine.timeStringToSeconds(scheduledDepTime);
+              if (arrSec > schedSec) {
+                // Bus is delayed and arrives AFTER scheduled departure time!
+                // DOMAIN INVARIANT: A bus can NEVER depart before it arrives!
+                // Add minimum 1-min turnaround buffer for passenger alighting/boarding.
+                const minDepSec = arrSec + 60;
+                nextDepTime = timeEngine.secondsToTimeString(minDepSec);
+                delayMins = Math.round((minDepSec - schedSec) / 60);
+              } else {
+                nextDepTime = scheduledDepTime;
+                delayMins = 0;
+              }
             }
           }
 
@@ -1379,11 +1395,24 @@ class MataroTracker extends BaseTracker {
           dep.directionId = String(outboundRoute.id || '0');
           dep.arrivalTime = arrTime;
           dep.departureTime = nextDepTime;
+          dep.scheduledTime = scheduledDepTime || nextDepTime;
+          dep.scheduledDepartureTime = scheduledDepTime || nextDepTime;
+          dep.delayMins = delayMins;
+          dep.delayMinutes = delayMins;
           dep.isRegulating = true;
-          dep.delayStatus = 'regulating';
-          dep.delayBadgeText = '⏱️ Regulació';
+          dep.delayStatus = delayMins >= 2 ? 'delayed' : 'regulating';
+          dep.delayBadgeText = delayMins >= 2 ? `+${delayMins} min retard` : '⏱️ Regulació';
+
+          // Ensure minutesAway accounts for outbound departure time
+          const arrSecVal = timeEngine.timeStringToSeconds(arrTime);
+          const depSecVal = timeEngine.timeStringToSeconds(nextDepTime);
+          const depMinDelta = Math.max(0, Math.round((depSecVal - arrSecVal) / 60));
+          dep.minutesAway = Math.max(0, (dep.minutesAway || 0) + depMinDelta);
           dep.formattedStatus = (dep.minutesAway <= 0) ? 'En regulació' : `${dep.minutesAway} min`;
-          dep.statusText = `🅿️ Regulant (Arribada: ${arrTime} • Sortida: ${nextDepTime})`;
+
+          dep.statusText = (timeEngine.timeStringToSeconds(arrTime) < timeEngine.timeStringToSeconds(nextDepTime))
+            ? `🅿️ Regulant (Arribada: ${arrTime} • Sortida: ${nextDepTime})`
+            : `🅿️ Regulant a capçalera (Sortida: ${nextDepTime})`;
         }
       }
 

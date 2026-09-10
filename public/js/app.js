@@ -1630,6 +1630,15 @@ class TransitApp {
       .replace(/'/g, '&#39;');
   }
 
+  timeStringToSeconds(value) {
+    if (typeof window !== 'undefined' && window.TransitUtils && typeof window.TransitUtils.timeStringToSeconds === 'function') {
+      return window.TransitUtils.timeStringToSeconds(value);
+    }
+    if (!value || typeof value !== 'string' || !value.includes(':')) return 0;
+    const [h, m] = value.split(':').map(Number);
+    return (isNaN(h) || isNaN(m)) ? 0 : (h * 3600 + m * 60);
+  }
+
   /**
    * Sanitizes a URL for safe use inside href/src attributes.
    * Only absolute http(s) URLs and same-origin relative paths are allowed;
@@ -2454,9 +2463,17 @@ class TransitApp {
           if (next.delayStatus === 'regulating' || next.isRegulating || next.isTerminalLayover) {
             etaPillEl.classList.add('regulating');
             etaStatusText.textContent = 'Regulant a capçalera';
-            if (next.arrivalTime && next.departureTime && next.arrivalTime !== next.departureTime) {
-              if (etaClockEl) {
-                etaClockEl.innerHTML = `Sortida prevista: <strong>${next.departureTime}</strong> <span style="color:#c084fc; font-weight:700; margin-left:6px;">(Arribada: <strong>${next.arrivalTime}</strong>)</span>`;
+            if (next.arrivalTime && next.departureTime) {
+              const aSec = this.timeStringToSeconds(next.arrivalTime);
+              const dSec = this.timeStringToSeconds(next.departureTime);
+              if (aSec < dSec) {
+                if (etaClockEl) {
+                  etaClockEl.innerHTML = `Sortida prevista: <strong>${next.departureTime}</strong> <span style="color:#c084fc; font-weight:700; margin-left:6px;">(Arribada: <strong>${next.arrivalTime}</strong>)</span>`;
+                }
+              } else {
+                if (etaClockEl) {
+                  etaClockEl.innerHTML = `Sortida prevista: <strong>${next.departureTime}</strong>`;
+                }
               }
             }
           } else if (next.delayStatus === 'delayed') {
@@ -2555,7 +2572,19 @@ class TransitApp {
 
       const isRegulating = Boolean(dep.delayStatus === 'regulating' || dep.isRegulating || dep.isTerminalLayover || dep.arrivalTime);
       const arrTime = dep.arrivalTime ? String(dep.arrivalTime).trim() : null;
-      const depTime = (dep.departureTime && dep.departureTime !== '--:--') ? String(dep.departureTime).trim() : clockTime;
+      let depTime = (dep.departureTime && dep.departureTime !== '--:--') ? String(dep.departureTime).trim() : clockTime;
+
+      // Invariant: Departure time can NEVER be earlier than arrival time
+      let hasValidLayoverInterval = false;
+      if (arrTime && depTime && depTime !== '--:--' && arrTime !== '--:--') {
+        const aSec = this.timeStringToSeconds(arrTime);
+        const dSec = this.timeStringToSeconds(depTime);
+        if (dSec < aSec) {
+          depTime = arrTime;
+        } else if (dSec > aSec) {
+          hasValidLayoverInterval = true;
+        }
+      }
 
       const tagLabel = isRegulating
         ? '⏱️ En Regulació'
@@ -2586,7 +2615,7 @@ class TransitApp {
             <div class="dep-time-row">
               <span class="dep-clock">${depTime}</span>
               ${isRegulating
-                ? `<span class="dep-regulating-pill" style="font-size:0.75rem; color:#c084fc; font-weight:700; background:rgba(168,85,247,0.18); padding:2px 8px; border-radius:12px; margin-left:6px; border:1px solid rgba(168,85,247,0.35);">${arrTime && arrTime !== depTime ? `🚏 Arriba: <strong>${arrTime}</strong> ➔ Surt: <strong>${depTime}</strong>` : '🚏 En Regulació'}</span>`
+                ? `<span class="dep-regulating-pill" style="font-size:0.75rem; color:#c084fc; font-weight:700; background:rgba(168,85,247,0.18); padding:2px 8px; border-radius:12px; margin-left:6px; border:1px solid rgba(168,85,247,0.35);">${hasValidLayoverInterval ? `🚏 Arriba: <strong>${arrTime}</strong> ➔ Surt: <strong>${depTime}</strong>` : '🚏 En Regulació'}</span>`
                 : (isDiff ? `<span class="dep-sched-pill" title="Horari oficial teòric">Oficial: ${schedTime}</span>` : '')}
               <span class="dep-tag-sub ${(isFirstMorning || isFirstToday) ? 'first-service' : ''}">${tagLabel}</span>
             </div>
@@ -2595,7 +2624,7 @@ class TransitApp {
             </div>
             <div class="dep-time-sub">
               ${isRegulating
-                ? `<span>⏱️ <strong>Regulació a capçalera:</strong> ${arrTime ? `Arriba a les <strong>${arrTime}</strong> • ` : ''}Surt cap a <strong>${this.esc((dep.destination || 'destí').replace(/^Cap a\s+/i, ''))}</strong> a les <strong>${depTime}</strong></span>`
+                ? `<span>⏱️ <strong>Regulació a capçalera:</strong> ${hasValidLayoverInterval ? `Arriba a les <strong>${arrTime}</strong> • ` : ''}Surt cap a <strong>${this.esc((dep.destination || 'destí').replace(/^Cap a\s+/i, ''))}</strong> a les <strong>${depTime}</strong></span>`
                 : (isFirstMorning
                     ? `<span>📅 Primer autobús del matí (Demà a les ${clockTime})</span>`
                     : (isFirstToday
@@ -4120,7 +4149,19 @@ class TransitApp {
 
       const isRegulating = Boolean(d.delayStatus === 'regulating' || d.isRegulating || d.isTerminalLayover || d.arrivalTime);
       const arrTime = d.arrivalTime ? String(d.arrivalTime).trim() : null;
-      const depTime = (d.departureTime && d.departureTime !== '--:--') ? String(d.departureTime).trim() : estTime;
+      let depTime = (d.departureTime && d.departureTime !== '--:--') ? String(d.departureTime).trim() : estTime;
+
+      // Invariant: Departure time can NEVER be earlier than arrival time
+      let hasValidLayoverInterval = false;
+      if (arrTime && depTime && depTime !== '--:--' && arrTime !== '--:--') {
+        const aSec = this.timeStringToSeconds(arrTime);
+        const dSec = this.timeStringToSeconds(depTime);
+        if (dSec < aSec) {
+          depTime = arrTime;
+        } else if (dSec > aSec) {
+          hasValidLayoverInterval = true;
+        }
+      }
 
       const tagLabel = isRegulating
         ? '⏱️ En Regulació'
@@ -4151,7 +4192,7 @@ class TransitApp {
             <div class="dep-time-row">
               <span class="dep-clock">${depTime}</span>
               ${isRegulating
-                ? `<span class="dep-regulating-pill" style="font-size:0.75rem; color:#c084fc; font-weight:700; background:rgba(168,85,247,0.18); padding:2px 8px; border-radius:12px; margin-left:6px; border:1px solid rgba(168,85,247,0.35);">${arrTime && arrTime !== depTime ? `🚏 Arriba: <strong>${arrTime}</strong> ➔ Surt: <strong>${depTime}</strong>` : '🚏 En Regulació'}</span>`
+                ? `<span class="dep-regulating-pill" style="font-size:0.75rem; color:#c084fc; font-weight:700; background:rgba(168,85,247,0.18); padding:2px 8px; border-radius:12px; margin-left:6px; border:1px solid rgba(168,85,247,0.35);">${hasValidLayoverInterval ? `🚏 Arriba: <strong>${arrTime}</strong> ➔ Surt: <strong>${depTime}</strong>` : '🚏 En Regulació'}</span>`
                 : (isDiff ? `<span class="dep-sched-pill" title="Horari oficial teòric">Oficial: ${schedTime}</span>` : '')}
               <span class="dep-tag-sub ${(isFirstMorning || isFirstToday) ? 'first-service' : ''}">${tagLabel}</span>
             </div>
@@ -4163,7 +4204,7 @@ class TransitApp {
 
             <div class="dep-time-sub">
               ${isRegulating ? `
-                <span>⏱️ <strong>Regulació a capçalera:</strong> ${arrTime ? `Arriba a les <strong>${arrTime}</strong> • ` : ''}Surt cap a <strong>${this.esc((d.destination || 'destí').replace(/^Cap a\s+/i, ''))}</strong> a les <strong>${depTime}</strong></span>
+                <span>⏱️ <strong>Regulació a capçalera:</strong> ${hasValidLayoverInterval ? `Arriba a les <strong>${arrTime}</strong> • ` : ''}Surt cap a <strong>${this.esc((d.destination || 'destí').replace(/^Cap a\s+/i, ''))}</strong> a les <strong>${depTime}</strong></span>
               ` : (isFirstMorning ? `
                 <span>📅 Primer autobús del matí (Demà a les ${estTime})</span>
               ` : (isFirstToday ? `
