@@ -3229,6 +3229,10 @@ body {
   color: #60a5fa;
 }
 
+.map-popup-metric-val.ghost {
+  color: #fbbf24;
+}
+
 .map-popup-compass-val {
   gap: 5px;
 }
@@ -3567,6 +3571,16 @@ body {
   font-size: 1rem;
   line-height: 1;
   flex-shrink: 0;
+}
+
+.map-popup-chip.ghost {
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px dashed rgba(245, 158, 11, 0.5);
+  color: #fbbf24;
+}
+
+.map-popup-bus-icon.ghost {
+  background: rgba(245, 158, 11, 0.12);
 }
 
 .telemetry-bus-chip.ghost-chip {

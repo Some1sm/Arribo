@@ -2828,7 +2828,7 @@ class TransitApp {
       if (chipsContainer) {
         chipsContainer.innerHTML = buses.map((b, idx) => {
           const isSelected = String(b.tripId || b.vehicleId) === String(this.selectedVehicleId);
-          const isGhost = Boolean(b.isGhostVehicle);
+          const isGhost = Boolean(b.isGhostVehicle || (b.vehicleId && String(b.vehicleId).startsWith('EST_')) || b.isTheoretical);
           const label = isGhost ? `Estimat (${b.departureTime || 'Horari'})` : (b.vehicleId ? `Bus #${b.vehicleId}` : `Bus ${idx + 1}`);
           const isParked = b.isTerminalLayover;
           const chipClass = `telemetry-bus-chip ${isSelected ? 'active' : ''} ${isGhost ? 'ghost-chip' : ''}`;
@@ -2876,8 +2876,10 @@ class TransitApp {
     const radarDot = document.getElementById('telemetry-radar-dot');
     const ghostNoticeEl = document.getElementById('telemetry-ghost-notice');
 
+    const isGhostBus = Boolean(b && (b.isGhostVehicle || (b.vehicleId && String(b.vehicleId).startsWith('EST_')) || b.isTheoretical));
+
     if (ghostNoticeEl) {
-      ghostNoticeEl.style.display = (b && b.isGhostVehicle) ? 'flex' : 'none';
+      ghostNoticeEl.style.display = isGhostBus ? 'flex' : 'none';
     }
 
     if (!b) {
@@ -2899,7 +2901,7 @@ class TransitApp {
       return;
     }
 
-    const isGhost = Boolean(b.isGhostVehicle);
+    const isGhost = isGhostBus;
     const isEst = Boolean(b.isEstimated);
 
     if (coordsEl) coordsEl.textContent = isGhost
@@ -5383,16 +5385,29 @@ class TransitApp {
   updateActiveBusesCount(count, lData = null) {
     const headerEl = document.getElementById('header-active-buses-text');
     const mapEl = document.getElementById('map-bus-counter-tag');
+
+    // Count physical live GPS vs estimated/theoretical buses directly from the active bus list
+    const buses = (lData && Array.isArray(lData.activeBuses)) ? lData.activeBuses : (this.activeBuses || []);
+    let liveFromBuses = 0;
+    let estFromBuses = 0;
+    for (const b of buses) {
+      if (b.isGhostVehicle || b.isEstimated || (b.vehicleId && String(b.vehicleId).startsWith('EST_'))) {
+        estFromBuses++;
+      } else {
+        liveFromBuses++;
+      }
+    }
+
     const fs = lData?.fleetStatus;
+    const scheduled = fs?.scheduledVehicles !== undefined ? fs.scheduledVehicles : (liveFromBuses + estFromBuses);
+    const live = fs?.liveGpsVehicles !== undefined ? Math.max(liveFromBuses, fs.liveGpsVehicles) : liveFromBuses;
+    const est = fs?.estimatedVehicles !== undefined ? Math.max(estFromBuses, fs.estimatedVehicles) : estFromBuses;
+    const total = Math.max(live + est, scheduled);
 
-    if (fs && fs.scheduledVehicles > 0) {
-      const live = fs.liveGpsVehicles;
-      const est = fs.estimatedVehicles;
-      const total = fs.scheduledVehicles;
-
+    if (total > 0) {
       if (live > 0 && est > 0) {
         if (headerEl) headerEl.innerHTML = `🟢 <strong>${live}</strong> GPS + ⚡ <strong>${est}</strong> est. (de ${total})`;
-        if (mapEl) mapEl.innerHTML = `🟢 ${live} GPS + ⚡ ${est} est. (de ${total} en servei)`;
+        if (mapEl) mapEl.innerHTML = `🟢 ${live} amb GPS + ⚡ ${est} estimat${est === 1 ? '' : 's'} (${total} en servei)`;
         return;
       } else if (live > 0 && est === 0) {
         if (headerEl) headerEl.innerHTML = `🟢 <strong>${live}</strong> en directe (100% flota amb GPS)`;
@@ -5405,31 +5420,11 @@ class TransitApp {
       }
     }
 
-    if (fs && fs.scheduledVehicles === 0 && count === 0) {
-      if (headerEl) headerEl.innerHTML = `🌙 <strong>0</strong> busos en servei ara`;
-      if (mapEl) mapEl.innerHTML = `🌙 Sense busos en servei ara mateix`;
-      return;
-    }
-
     if (headerEl) {
-      if (count > 0) {
-        const isEst = lData?.isEstimated || (this.activeBuses.length > 0 && this.activeBuses.every(b => b.isEstimated));
-        headerEl.innerHTML = isEst 
-          ? `⚡ <strong>${count}</strong> estimat${count === 1 ? '' : 's'}` 
-          : `🟢 <strong>${count}</strong> en directe`;
-      } else {
-        headerEl.innerHTML = `🕒 <strong>0</strong> busos (horari teòric)`;
-      }
+      headerEl.innerHTML = `🌙 <strong>0</strong> busos en servei ara`;
     }
     if (mapEl) {
-      if (count > 0) {
-        const isEst = lData?.isEstimated || (this.activeBuses.length > 0 && this.activeBuses.every(b => b.isEstimated));
-        mapEl.innerHTML = isEst
-          ? `⚡ ${count} bus${count === 1 ? '' : 'os'} (estimat)`
-          : `🟢 ${count} bus${count === 1 ? '' : 'os'} en directe`;
-      } else {
-        mapEl.innerHTML = `🕒 Horari programat (sense GPS)`;
-      }
+      mapEl.innerHTML = `🌙 Sense busos en servei ara mateix`;
     }
   }
 

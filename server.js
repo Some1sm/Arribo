@@ -166,6 +166,16 @@ function standardizeVehicle(raw = {}) {
   v.speedKmh = speed;
   v.speed = speed;
 
+  if (v.isGhostVehicle || (v.vehicleId && String(v.vehicleId).startsWith('EST_'))) {
+    v.isGhostVehicle = true;
+    v.isEstimated = true;
+    v.isRealTime = false;
+    v.isRealtime = false;
+    if (!v.delayBadgeText) v.delayBadgeText = '⚡ Estimat (sense GPS)';
+    if (!v.delayFormatted) v.delayFormatted = 'Horari teòric';
+    if (!v.statusText) v.statusText = '⚡ Vehicle estimat segons horari oficial (sense GPS)';
+  }
+
   if (v.lat === undefined && Number.isFinite(Number(v.latitude))) v.lat = Number(v.latitude);
   if (v.lon === undefined && Number.isFinite(Number(v.longitude))) v.lon = Number(v.longitude);
   if (Number.isFinite(Number(v.lat))) v.latitude = Number(v.lat);

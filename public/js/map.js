@@ -1247,7 +1247,8 @@ class C10Map {
     for (const [tId, obj] of this.busMarkersMap.entries()) {
       if (!currentTripIds.has(tId)) {
         const elapsedSec = (now - (obj.lastUpdated || now)) / 1000;
-        if (elapsedSec > 600 || obj.busData?.isGhostVehicle) {
+        const isGhost = Boolean(obj.busData?.isGhostVehicle || (obj.busData?.vehicleId && String(obj.busData.vehicleId).startsWith('EST_')));
+        if (elapsedSec > 600 || isGhost) {
           this.map.removeLayer(obj.marker);
           this.busMarkersMap.delete(tId);
         } else {
@@ -1303,7 +1304,7 @@ class C10Map {
         subpath = this.extractSubpath(targetPolyline, bus.fromCoords.lat, bus.fromCoords.lon, bus.toCoords.lat, bus.toCoords.lon);
       }
 
-      const isGhost = Boolean(bus.isGhostVehicle);
+      const isGhost = Boolean(bus.isGhostVehicle || (bus.vehicleId && String(bus.vehicleId).startsWith('EST_')) || bus.isTheoretical);
       const isEst = Boolean(bus.isEstimated);
       const bearingAngle = Math.round(snapped.bearing || bus.bearing || 0);
       const compassLabel = bus.compass?.label || 'N/A';
@@ -1326,7 +1327,7 @@ class C10Map {
 
       if (isGhost) {
         delayClass = 'ghost';
-        delayBadgeText = 'Horari Teòric';
+        delayBadgeText = '⚡ Sense GPS (Horari)';
       } else if (bus.isTerminalLayover || bus.delayStatus === 'regulating') {
         delayClass = 'layover';
         delayBadgeText = 'Regulant';
@@ -1411,7 +1412,7 @@ class C10Map {
         <div class="map-popup-card">
           <div class="map-popup-header">
             <div class="map-popup-title-group">
-              <div class="map-popup-bus-icon" style="border-color:${busColor ? busColor + '66' : 'rgba(14, 165, 233, 0.3)'}; color:${busColor || '#38bdf8'};">
+              <div class="map-popup-bus-icon ${isGhost ? 'ghost' : ''}" style="border-color:${isGhost ? 'rgba(245, 158, 11, 0.5)' : (busColor ? busColor + '66' : 'rgba(14, 165, 233, 0.3)')}; color:${isGhost ? '#fbbf24' : (busColor || '#38bdf8')};">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M19 17h2l.64-2.54c.24-.959.24-1.962 0-2.92l-1.07-4.27A3 3 0 0 0 17.66 5H4a2 2 0 0 0-2 2v10h2"/>
                   <circle cx="7" cy="17" r="2"/>
@@ -1425,7 +1426,7 @@ class C10Map {
                   ${lineBadge ? `<span class="map-popup-line-pill" style="background:${busColor || 'var(--c10-primary)'};">${escHtml(lineBadge)}</span>` : ''}
                 </div>
                 <div class="map-popup-subtitle" title="${bus.destination ? escHtml(bus.destination) : ''}">
-                  ${isSecDir ? 'Sentit contrari' : (bus.destination ? `Dest: ${escHtml(bus.destination)}` : 'En servei')}
+                  ${isGhost ? 'Horari Oficial (Sense GPS)' : (isSecDir ? 'Sentit contrari' : (bus.destination ? `Dest: ${escHtml(bus.destination)}` : 'En servei'))}
                 </div>
               </div>
             </div>
@@ -1433,7 +1434,7 @@ class C10Map {
             <div class="map-popup-header-status">
               <span class="map-popup-status-badge ${isGhost ? 'ghost' : (isEst ? 'estimated' : 'live')}">
                 <span class="status-pulse-dot"></span>
-                <span>${isGhost ? '⚡ Horari Teòric' : (isEst ? 'Estimació' : 'En directe')}</span>
+                <span>${isGhost ? '⚡ Sense GPS' : (isEst ? 'Estimació' : 'En directe')}</span>
               </span>
             </div>
           </div>
@@ -1441,7 +1442,7 @@ class C10Map {
           ${isGhost ? `
           <div class="map-popup-ghost-notice">
             <span class="ghost-icon">⚡</span>
-            <span><strong>Vehicle estimat segons horari oficial:</strong> Aquest autobús està programat en servei actiu (sortida <strong>${escHtml(bus.departureTime || '--')}</strong>) però no transmet dades GPS a la xarxa SAE.</span>
+            <span><strong>Vehicle estimat segons horari oficial (sense GPS):</strong> Aquest autobús està programat en servei actiu${bus.departureTime ? ` (sortida <strong>${escHtml(bus.departureTime)}</strong>)` : ''}, però no transmet dades GPS en directe a la xarxa SAE. La seva posició al mapa es calcula teòricament segons la sortida oficial.</span>
           </div>` : ''}
 
           ${(fromStop && toStop) ? `
@@ -1507,8 +1508,9 @@ class C10Map {
             </div>
           </div>
 
-          ${hasChips ? `
+          ${(hasChips || isGhost) ? `
           <div class="map-popup-fleet-chips">
+            ${isGhost ? '<span class="map-popup-chip ghost" title="Vehicle sense telemetria GPS"><span class="chip-icon">⚡</span> Sense senyal GPS</span>' : ''}
             ${bus.isAccessible ? '<span class="map-popup-chip pmr" title="Vehicle Adaptat PMR"><span class="chip-icon">♿</span> Adaptat PMR</span>' : ''}
             ${bus.isElectric 
               ? '<span class="map-popup-chip electric"><span class="chip-icon">⚡</span> 100% Elèctric</span>' 
@@ -1516,7 +1518,7 @@ class C10Map {
                 ? '<span class="map-popup-chip hybrid"><span class="chip-icon">🌱</span> Híbrid Eco</span>' 
                 : (bus.propulsion ? `<span class="map-popup-chip propulsion"><span class="chip-icon">🚌</span> ${escHtml(bus.propulsion)}</span>` : ''))}
             ${bus.modelName ? `<span class="map-popup-chip model" title="${escHtml(bus.modelName)}"><span class="chip-icon">🚍</span> ${escHtml(bus.modelName)}</span>` : ''}
-            ${bus.tripStartTime ? `<span class="map-popup-chip start-time"><span class="chip-icon">🕐</span> Sortida ${escHtml(bus.tripStartTime)}</span>` : ''}
+            ${bus.tripStartTime || bus.departureTime ? `<span class="map-popup-chip start-time"><span class="chip-icon">🕐</span> Sortida ${escHtml(bus.tripStartTime || bus.departureTime)}</span>` : ''}
           </div>` : ''}
 
           <div class="map-popup-coords-footer">
@@ -1524,7 +1526,7 @@ class C10Map {
               <span class="radar-dot ${isGhost ? 'ghost' : (isEst ? 'estimated' : '')}"></span>
               <span>${coordsText}</span>
             </div>
-            <span class="source-tag">${isGhost ? 'Horari Oficial (Sense GPS)' : (isEst ? 'Estimació Dead-Reckoning' : 'GPS Directe (SIRI)')}</span>
+            <span class="source-tag">${isGhost ? '⚡ Horari Oficial (Sense GPS)' : (isEst ? 'Estimació Dead-Reckoning' : 'GPS Directe (SIRI)')}</span>
           </div>
 
           <button type="button" class="map-popup-btn-share" onclick="window.transitApp?.shareLiveBus('${escHtml(bus.vehicleId)}')">
@@ -1580,6 +1582,10 @@ class C10Map {
           const dotEl = obj.dotEl || (obj.dotEl = el.querySelector('.bus-status-dot'));
           if (dotEl) {
             dotEl.className = `bus-status-dot ${isGhost ? 'ghost' : (isEst ? 'estimated' : 'live')}`;
+          }
+          const iconInner = el.querySelector('.bus-icon-inner');
+          if (iconInner && !bus.isTerminalLayover) {
+            iconInner.textContent = isGhost ? '⚡' : '🚌';
           }
           obj.marker.setZIndexOffset(isSelected ? 5000 : (isGhost ? 1500 : 2000));
         }
