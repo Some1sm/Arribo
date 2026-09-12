@@ -1916,6 +1916,118 @@ class MataroTracker extends BaseTracker {
             ? `🅿️ Regulant (Arribada: ${cleanArrTime} • Sortida: ${cleanDepTime})`
             : `🅿️ Regulant a capçalera (Sortida: ${cleanDepTime})`;
         }
+      } else {
+        // Downstream Stop Handling:
+        // Check if the assigned vehicle for this departure is currently in regulation/layover
+        // at the origin terminal of this route variant.
+        const matchingRoute = routesForStop.find(r =>
+          String(r.id_linea) === String(dep.lineId) &&
+          (String(r.id) === String(dep.directionId) || (r.name || '').toLowerCase() === destName)
+        ) || routesForStop.find(r => String(r.id_linea) === String(dep.lineId));
+
+        if (matchingRoute && Array.isArray(matchingRoute.stops) && matchingRoute.stops.length > 1) {
+          const stopIdx = matchingRoute.stops.findIndex(s => String(s.id) === sId);
+          if (stopIdx > 0) {
+            const originStop = matchingRoute.stops[0];
+            const originStopName = (originStop.name || 'Capçalera').split(/[\-\(\,]/)[0].trim();
+            const lIdStr = String(dep.lineId);
+            const dirKey = String(matchingRoute.id || '0');
+
+            let stopTravelSec = mataroSchedules.getStopTravelTime(lIdStr, dirKey, sId);
+            if (stopTravelSec <= 0) {
+              const travelTimes = scheduleSynthesizer.estimateStopTravelTimes(matchingRoute.stops, {
+                speedMps: 4.8,
+                dwellSecPerStop: 25,
+                defaultSegmentMeters: 300
+              });
+              stopTravelSec = scheduleSynthesizer.getTravelTimeToStop(travelTimes, sId);
+            }
+
+            const rawAimed = dep.scheduledTime || (dep.aimedIso ? dep.aimedIso.substring(11, 16) : null) || dep.departureTime;
+            const aimedClean = rawAimed ? String(rawAimed).replace(/^(\d{1,2}:\d{2}):\d{2}$/, '$1') : null;
+
+            const dirSched = mataroSchedules.getDirectionSchedule(lIdStr, dirKey, dayTypeToday);
+            let originDepTime = null;
+            let originDepSec = null;
+
+            if (aimedClean && dirSched && Array.isArray(dirSched.departures) && dirSched.departures.length > 0) {
+              const aimedSec = timeEngine.timeStringToSeconds(aimedClean);
+              const estOriginDepSec = aimedSec - stopTravelSec;
+              let bestTrip = null;
+              let minDiff = Infinity;
+              for (const trip of dirSched.departures) {
+                const tSec = timeEngine.timeStringToSeconds(trip);
+                const diff = Math.abs(tSec - estOriginDepSec);
+                if (diff < minDiff) {
+                  minDiff = diff;
+                  bestTrip = trip;
+                }
+              }
+              if (bestTrip && minDiff <= 600) {
+                originDepTime = bestTrip;
+                originDepSec = timeEngine.timeStringToSeconds(bestTrip);
+              }
+            }
+
+            const netNowToday = timeEngine.getNetworkTime(this.agencyTimezone, targetDate);
+            const currentSecNow = netNowToday.hour * 3600 + netNowToday.minute * 60 + netNowToday.second;
+
+            // Check if vehicle is physically at origin terminal or has not departed yet
+            let isPhysicallyAtOrigin = false;
+            if (vId) {
+              const vehHist = this.vehicleHistory.get(vId);
+              if (vehHist && originStop.latitude && originStop.longitude) {
+                const distToOrigin = geoEngine.calculateDistanceMeters(
+                  vehHist.lat || vehHist.latitude,
+                  vehHist.lon || vehHist.longitude,
+                  originStop.latitude,
+                  originStop.longitude
+                );
+                if (distToOrigin <= 500 && (vehHist.speedKmh || 0) <= 8) {
+                  isPhysicallyAtOrigin = true;
+                }
+              }
+            }
+
+            const isBeforeOriginDeparture = originDepSec !== null && currentSecNow < originDepSec;
+
+            if (isBeforeOriginDeparture || isPhysicallyAtOrigin) {
+              dep.isRegulating = true;
+              dep.isOriginRegulating = true;
+              dep.originTerminalName = originStopName;
+              if (originDepTime) {
+                dep.originDepartureTime = originDepTime;
+              }
+
+              // DOMAIN INVARIANT: A bus regulating at origin terminal before scheduled departure
+              // can NEVER arrive early ("avançat") at downstream stops!
+              const rawDelay = dep.delayMinutes !== undefined ? dep.delayMinutes : (dep.delayMins !== undefined ? dep.delayMins : 0);
+              if (rawDelay < 0 || dep.delayStatus === 'early') {
+                dep.delayMins = 0;
+                dep.delayMinutes = 0;
+                if (aimedClean) {
+                  dep.departureTime = aimedClean;
+                  const aimedSec = timeEngine.timeStringToSeconds(aimedClean);
+                  dep.minutesAway = Math.max(0, Math.round((aimedSec - currentSecNow) / 60));
+                  dep.formattedStatus = `${dep.minutesAway} min`;
+                }
+              }
+
+              dep.delayStatus = (dep.delayMins && dep.delayMins >= 2) ? 'delayed' : 'regulating';
+              dep.delayBadgeText = (dep.delayMins && dep.delayMins >= 2)
+                ? `+${dep.delayMins} min retard`
+                : `⏱️ Regulant a ${originStopName}`;
+              dep.comparisonText = aimedClean
+                ? (originDepTime
+                    ? `Horari teòric: ${aimedClean} • Regulant a ${originStopName} (sortida: ${originDepTime})`
+                    : `Horari teòric: ${aimedClean} • Regulant a ${originStopName}`)
+                : `Regulant a ${originStopName}`;
+              dep.statusText = originDepTime
+                ? `⏱️ Regulant a ${originStopName} (sortida: ${originDepTime})`
+                : `⏱️ Regulant a ${originStopName}`;
+            }
+          }
+        }
       }
 
       // 1. Same vehicleId deduplication within 7 minutes (e.g. terminal arrival + departure turnaround)
@@ -2184,7 +2296,7 @@ class MataroTracker extends BaseTracker {
   }
 
   // 4. Get Target Stop ETA
-  async getTargetStopETA(lineId, stopId = null, direction = '0') {
+  async getTargetStopETA(lineId, stopId = null, direction = '0', options = {}) {
     const lId = this.normalizeLineId(lineId) || '1';
     const lineInfo = this.linesData.find(l => String(l.id) === lId) || { id: lId, name: `Línia ${lId}`, color: '#009485' };
     const routes = this.routesData[lId] || [];
@@ -2208,11 +2320,11 @@ class MataroTracker extends BaseTracker {
     }
 
     const sId = String(chosenStop.id);
-    const stopDepartures = await this.getStopDepartures(sId, lId, String(dirIdx), { skipIntermodal: true });
+    const stopDepartures = await this.getStopDepartures(sId, lId, String(dirIdx), { ...options, skipIntermodal: true });
     const deps = stopDepartures.departures || [];
     const nextBus = deps.length > 0 ? deps[0] : null;
 
-    const now = new Date();
+    const now = options.dateObj ? new Date(options.dateObj) : (options.targetDate ? new Date(options.targetDate) : new Date());
     const tomorrow = new Date(now.getTime() + 24 * 3600 * 1000);
     const dateCompTomorrow = calendarEngine.getDateComponents(tomorrow, this.agencyTimezone);
     const dayTypeTomorrow = dateCompTomorrow.isSunday ? 'sunday' : (dateCompTomorrow.isSaturday ? 'saturday' : 'weekday');

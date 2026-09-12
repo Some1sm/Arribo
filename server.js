@@ -218,7 +218,11 @@ function harmonizeDeparture(dep = {}) {
       isFirstOfDay: Boolean(d.isFirstOfDay),
       isNextService: Boolean(d.isNextService),
       isPassed: Boolean(d.isPassed),
-      isEstimated: Boolean(d.isEstimated)
+      isEstimated: Boolean(d.isEstimated),
+      isRegulating: Boolean(d.isRegulating),
+      isOriginRegulating: Boolean(d.isOriginRegulating),
+      originTerminalName: d.originTerminalName,
+      originDepartureTime: d.originDepartureTime
     });
     d.delayStatus = evalStatus.delayStatus;
     if (!d.delayBadgeText) d.delayBadgeText = evalStatus.delayBadgeText;

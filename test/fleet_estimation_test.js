@@ -369,6 +369,53 @@ async function runFleetEstimationTests() {
   console.log('  -> Dir 1 fleet:', dir1Buses.map(b => `${b.vehicleId} (dir ${b.direction})`).join(', '));
   console.log('  ✓ Test 10 Passed: Directional fleet consistency verified with 0 phantom jumping.\n');
 
+  // Test 11: Downstream Origin Regulation Clamping (Transit Invariant: No 'Avançat' before origin departure)
+  console.log('📌 Test 11: Downstream Origin Regulation Clamping (Transit Invariant: No "Avançat" before origin departure)...');
+  const saturday1338 = new Date('2026-09-12T13:38:00+02:00');
+  const siriClient = require('../src/mataroSiriClient');
+  const origSiri = siriClient.getStopArrivals;
+
+  siriClient.getStopArrivals = async (stopId, lineRef) => {
+    return [{
+      lineId: '1',
+      vehicleId: '2672',
+      destination: 'Hospital de Mataró',
+      directionId: '11',
+      departureTime: '13:51',
+      scheduledTime: '13:52',
+      expectedIso: '2026-09-12T13:51:28+02:00',
+      aimedIso: '2026-09-12T13:52:00+02:00',
+      minutesAway: 13,
+      isRealTime: true,
+      delayMins: -1,
+      delayStatus: 'early',
+      delayBadgeText: '1 min avançat'
+    }];
+  };
+
+  try {
+    const downstreamRes = await mataroTracker.getStopDepartures('1021', '1', '1', { targetDate: saturday1338 });
+    const dep2672 = (downstreamRes.departures || []).find(d => String(d.vehicleId) === '2672');
+
+    assert.ok(dep2672, 'Vehicle 2672 must be present in downstream departures');
+    assert.strictEqual(dep2672.delayMins, 0, 'Negative delay must be clamped to 0 while bus is regulating at origin');
+    assert.strictEqual(dep2672.delayMinutes, 0, 'delayMinutes must be clamped to 0');
+    assert.strictEqual(dep2672.delayStatus, 'regulating', 'delayStatus must be regulating (NOT early)');
+    assert.strictEqual(dep2672.isOriginRegulating, true, 'isOriginRegulating must be true');
+    assert.strictEqual(dep2672.originTerminalName, 'Rodalies', 'originTerminalName must be Rodalies');
+    assert.strictEqual(dep2672.originDepartureTime, '13:44', 'originDepartureTime must be 13:44');
+    assert.strictEqual(dep2672.departureTime, '13:52', 'departureTime must be clamped to scheduled passing time 13:52');
+    assert.strictEqual(dep2672.delayBadgeText, '⏱️ Regulant a Rodalies', 'delayBadgeText must indicate regulation at origin');
+    assert.ok(dep2672.comparisonText.includes('Regulant a Rodalies (sortida: 13:44)'), 'comparisonText must include origin departure');
+
+    console.log('  -> Downstream Stop 1021 departure clamped:');
+    console.log(`     Clock: ${dep2672.departureTime}, Delay: ${dep2672.delayMins}, Status: ${dep2672.delayStatus}, Badge: ${dep2672.delayBadgeText}`);
+    console.log(`     Origin: ${dep2672.originTerminalName} (dep: ${dep2672.originDepartureTime})`);
+    console.log('  ✓ Test 11 Passed: Downstream stop origin regulation correctly clamped and enriched.\n');
+  } finally {
+    siriClient.getStopArrivals = origSiri;
+  }
+
   console.log('=========================================================================');
   console.log('🎉 ALL SCHEDULED FLEET ESTIMATION TESTS PASSED SUCCESSFULLY! 🎉');
   console.log('=========================================================================');

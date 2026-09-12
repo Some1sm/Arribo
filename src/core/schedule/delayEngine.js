@@ -36,13 +36,19 @@ function computeDelayStatus(delayMinutes, isRealTime = false, options = {}) {
 
   // 0. Bus is regulating / laying over at terminal
   if (options.isRegulating || options.isTerminalLayover || options.delayStatus === 'regulating') {
+    const termName = options.originTerminalName || 'capçalera';
+    const depTime = options.originDepartureTime || scheduledTime;
     return {
       delayMinutes: delay,
       delayMins: delay,
       delayStatus: 'regulating',
-      delayBadgeText: options.delayBadgeText || '⏱️ Regulació',
-      delayFormatted: 'Regulant a capçalera',
-      comparisonText: scheduledTime ? `Regulant a capçalera (Sortida: ${scheduledTime})` : 'Regulant a capçalera'
+      delayBadgeText: options.delayBadgeText || (options.originTerminalName ? `⏱️ Regulant a ${options.originTerminalName}` : '⏱️ Regulació'),
+      delayFormatted: `Regulant a ${termName}`,
+      comparisonText: scheduledTime
+        ? (depTime && depTime !== scheduledTime
+            ? `Horari teòric: ${scheduledTime} • Regulant a ${termName} (sortida: ${depTime})`
+            : `Regulant a ${termName} (Sortida: ${scheduledTime})`)
+        : `Regulant a ${termName}`
     };
   }
 
@@ -238,6 +244,10 @@ function standardizeDeparture(dep = {}, defaults = {}) {
   const rawDelay = d.delayMinutes !== undefined ? d.delayMinutes : (d.delayMins !== undefined ? d.delayMins : 0);
   
   const isRegulating = Boolean(d.isRegulating || d.isTerminalLayover || d.delayStatus === 'regulating');
+  const isOriginRegulating = Boolean(d.isOriginRegulating);
+  const originTerminalName = d.originTerminalName || null;
+  const originDepartureTime = d.originDepartureTime || null;
+
   const delayEval = computeDelayStatus(rawDelay, isRealTime, {
     scheduledTime: d.scheduledTime || d.departureTime,
     realtimeTime: d.departureTime,
@@ -246,13 +256,16 @@ function standardizeDeparture(dep = {}, defaults = {}) {
     isPassed: Boolean(d.isPassed),
     isEstimated: Boolean(d.isEstimated),
     isRegulating,
+    isOriginRegulating,
+    originTerminalName,
+    originDepartureTime,
     isTrain: Boolean(d.isTrain),
     delayBadgeText: d.delayBadgeText,
     punctualStyle: 'short'
   });
 
   const minutesAway = d.minutesAway !== undefined ? Number(d.minutesAway) : 0;
-  const formattedStatus = d.formattedStatus || (isRegulating ? 'En regulació' : formatCountdownStatus(minutesAway));
+  const formattedStatus = d.formattedStatus || ((isRegulating && !isOriginRegulating) ? 'En regulació' : formatCountdownStatus(minutesAway));
 
   const stripSeconds = (timeStr) => {
     if (!timeStr || typeof timeStr !== 'string') return timeStr;
@@ -261,6 +274,7 @@ function standardizeDeparture(dep = {}, defaults = {}) {
 
   const cleanDepartureTime = stripSeconds(d.departureTime) || '--:--';
   const cleanArrivalTime = d.arrivalTime ? stripSeconds(d.arrivalTime) : null;
+  const cleanScheduledTime = d.scheduledTime ? stripSeconds(d.scheduledTime) : (d.aimedIso && typeof d.aimedIso === 'string' && d.aimedIso.length >= 16 ? stripSeconds(d.aimedIso.substring(11, 16)) : null);
 
   return {
     lineId: String(d.lineId || def.lineId || 'line'),
@@ -290,8 +304,13 @@ function standardizeDeparture(dep = {}, defaults = {}) {
       ? `Arribada: ${cleanArrivalTime} • Sortida: ${cleanDepartureTime}` 
       : (d.comparisonText || delayEval.comparisonText),
     arrivalTime: cleanArrivalTime,
+    scheduledTime: cleanScheduledTime,
     isRegulating,
     isTerminalLayover: Boolean(d.isTerminalLayover || isRegulating),
+    isOriginRegulating,
+    originTerminalName,
+    originDepartureTime,
+    statusText: d.statusText || null,
     arrivalMinutesAway: d.arrivalMinutesAway !== undefined && d.arrivalMinutesAway !== null ? Number(d.arrivalMinutesAway) : null,
     departureMinutesAway: d.departureMinutesAway !== undefined && d.departureMinutesAway !== null ? Number(d.departureMinutesAway) : minutesAway,
     vehicleId: d.vehicleId || null,

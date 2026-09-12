@@ -2603,8 +2603,12 @@ class TransitApp {
           etaPillEl.className = 'eta-status-pill';
           if (next.delayStatus === 'regulating' || next.isRegulating || next.isTerminalLayover) {
             etaPillEl.classList.add('regulating');
-            etaStatusText.textContent = 'Regulant a capçalera';
-            if (next.arrivalTime && next.departureTime) {
+            etaStatusText.textContent = next.originTerminalName ? `Regulant a ${next.originTerminalName}` : 'Regulant a capçalera';
+            if (next.originTerminalName && next.originDepartureTime) {
+              if (etaClockEl) {
+                etaClockEl.innerHTML = `Arribada aquí: <strong>${this.formatTimeHHMM(next.departureTime)}</strong> <span style="color:#c084fc; font-weight:700; margin-left:6px;">(Surt de ${this.esc(next.originTerminalName)}: <strong>${this.formatTimeHHMM(next.originDepartureTime)}</strong>)</span>`;
+              }
+            } else if (next.arrivalTime && next.departureTime) {
               const cleanArr = this.formatTimeHHMM(next.arrivalTime);
               const cleanDep = this.formatTimeHHMM(next.departureTime);
               const aSec = this.timeStringToSeconds(cleanArr);
@@ -2780,7 +2784,9 @@ class TransitApp {
                       ? (isApproachingTerminal
                           ? `🚏 Arriba: <strong>${arrTime}</strong> (${arrMinsAway === 1 ? '1 min' : `${arrMinsAway} min`}) ➔ Surt: <strong>${depTime}</strong>`
                           : `🚏 A la parada ➔ Surt: <strong>${depTime}</strong>`)
-                      : '🚏 En Regulació'
+                      : (dep.originTerminalName
+                          ? `⏱️ Regulant a ${this.esc(dep.originTerminalName)}${dep.originDepartureTime ? ` (Surt: ${this.esc(dep.originDepartureTime)})` : ''}`
+                          : '🚏 En Regulació')
                   }</span>`
                 : (isDiff ? `<span class="dep-sched-pill" title="Horari oficial teòric">Oficial: ${schedTime}</span>` : '')}
               <span class="dep-tag-sub ${(isFirstMorning || isFirstToday) ? 'first-service' : ''}">${tagLabel}</span>
@@ -2795,7 +2801,9 @@ class TransitApp {
                       ? (isApproachingTerminal
                           ? `Arriba a les <strong>${arrTime}</strong> (en <strong>${arrMinsAway === 1 ? '1 min' : `${arrMinsAway} min`}</strong>) • Surt cap a <strong>${this.esc((dep.destination || 'destí').replace(/^Cap a\s+/i, ''))}</strong> a les <strong>${depTime}</strong>${depMinsAway !== null ? ` (en <strong>${depMinsAway} min</strong>)` : ''}`
                           : `A la parada des de les <strong>${arrTime}</strong> • Surt cap a <strong>${this.esc((dep.destination || 'destí').replace(/^Cap a\s+/i, ''))}</strong> a les <strong>${depTime}</strong>${depMinsAway !== null ? ` (en <strong>${depMinsAway} min</strong>)` : ''}`)
-                      : `Sortida programada a les <strong>${depTime}</strong>`
+                      : (dep.originTerminalName
+                          ? `Autobús regulant a <strong>${this.esc(dep.originTerminalName)}</strong>${dep.originDepartureTime ? ` (sortida a les <strong>${this.esc(dep.originDepartureTime)}</strong>)` : ''} • Arribada prevista aquí a les <strong>${depTime}</strong>${depMinsAway !== null ? ` (en <strong>${depMinsAway} min</strong>)` : ''}`
+                          : `Sortida programada a les <strong>${depTime}</strong>`)
                   }</span>`
                 : (isFirstMorning
                     ? `<span>📅 Primer autobús del matí (Demà a les ${clockTime})</span>`
@@ -4423,7 +4431,9 @@ class TransitApp {
                       ? (isApproachingTerminal
                           ? `🚏 Arriba: <strong>${arrTime}</strong> (${arrMinsAway === 1 ? '1 min' : `${arrMinsAway} min`}) ➔ Surt: <strong>${depTime}</strong>`
                           : `🚏 A la parada ➔ Surt: <strong>${depTime}</strong>`)
-                      : '🚏 En Regulació'
+                      : (d.originTerminalName
+                          ? `⏱️ Regulant a ${this.esc(d.originTerminalName)}${d.originDepartureTime ? ` (Surt: ${this.esc(d.originDepartureTime)})` : ''}`
+                          : '🚏 En Regulació')
                   }</span>`
                 : (isDiff ? `<span class="dep-sched-pill" title="Horari oficial teòric">Oficial: ${schedTime}</span>` : '')}
               <span class="dep-tag-sub ${(isFirstMorning || isFirstToday) ? 'first-service' : ''}">${tagLabel}</span>
@@ -4441,7 +4451,9 @@ class TransitApp {
                     ? (isApproachingTerminal
                         ? `Arriba a les <strong>${arrTime}</strong> (en <strong>${arrMinsAway === 1 ? '1 min' : `${arrMinsAway} min`}</strong>) • Surt cap a <strong>${this.esc((d.destination || 'destí').replace(/^Cap a\s+/i, ''))}</strong> a les <strong>${depTime}</strong>${depMinsAway !== null ? ` (en <strong>${depMinsAway} min</strong>)` : ''}`
                         : `A la parada des de les <strong>${arrTime}</strong> • Surt cap a <strong>${this.esc((d.destination || 'destí').replace(/^Cap a\s+/i, ''))}</strong> a les <strong>${depTime}</strong>${depMinsAway !== null ? ` (en <strong>${depMinsAway} min</strong>)` : ''}`)
-                    : `Sortida programada a les <strong>${depTime}</strong>`
+                    : (d.originTerminalName
+                        ? `Autobús regulant a <strong>${this.esc(d.originTerminalName)}</strong>${d.originDepartureTime ? ` (sortida a les <strong>${this.esc(d.originDepartureTime)}</strong>)` : ''} • Arribada prevista aquí a les <strong>${depTime}</strong>${depMinsAway !== null ? ` (en <strong>${depMinsAway} min</strong>)` : ''}`
+                        : `Sortida programada a les <strong>${depTime}</strong>`)
                 }</span>
               ` : (isFirstMorning ? `
                 <span>📅 Primer autobús del matí (Demà a les ${estTime})</span>
