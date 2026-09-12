@@ -60,6 +60,16 @@
     },
 
     /**
+     * Strips seconds from a time string (e.g. '11:53:00' -> '11:53').
+     * @param {string} timeStr
+     * @returns {string}
+     */
+    formatTimeHHMM(timeStr) {
+      if (!timeStr || typeof timeStr !== 'string') return timeStr || '--:--';
+      return timeStr.replace(/^(\d{1,2}:\d{2}):\d{2}$/, '$1');
+    },
+
+    /**
      * Creates a debounced function that delays invoking fn until after
      * delayMs milliseconds have elapsed since the last time it was invoked.
      * @param {Function} fn

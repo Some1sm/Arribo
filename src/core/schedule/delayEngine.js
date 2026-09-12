@@ -254,13 +254,21 @@ function standardizeDeparture(dep = {}, defaults = {}) {
   const minutesAway = d.minutesAway !== undefined ? Number(d.minutesAway) : 0;
   const formattedStatus = d.formattedStatus || (isRegulating ? 'En regulació' : formatCountdownStatus(minutesAway));
 
+  const stripSeconds = (timeStr) => {
+    if (!timeStr || typeof timeStr !== 'string') return timeStr;
+    return timeStr.replace(/^(\d{1,2}:\d{2}):\d{2}$/, '$1');
+  };
+
+  const cleanDepartureTime = stripSeconds(d.departureTime) || '--:--';
+  const cleanArrivalTime = d.arrivalTime ? stripSeconds(d.arrivalTime) : null;
+
   return {
     lineId: String(d.lineId || def.lineId || 'line'),
     lineCode: String(d.lineCode || d.lineName || def.lineCode || 'BUS'),
     lineName: String(d.lineName || d.lineCode || def.lineName || 'Bus'),
     destination: String(d.destination || def.destination || 'Destinació'),
     directionId: String(d.directionId !== undefined ? d.directionId : (def.directionId || '0')),
-    departureTime: String(d.departureTime || '--:--'),
+    departureTime: String(cleanDepartureTime),
     departureDate: d.departureDate || d.expectedIso || new Date().toISOString(),
     expectedIso: d.expectedIso || d.departureDate || new Date().toISOString(),
     aimedIso: d.aimedIso || d.expectedIso || d.departureDate || new Date().toISOString(),
@@ -278,10 +286,10 @@ function standardizeDeparture(dep = {}, defaults = {}) {
     delayStatus: delayEval.delayStatus,
     delayBadgeText: d.delayBadgeText || delayEval.delayBadgeText,
     delayFormatted: delayEval.delayFormatted,
-    comparisonText: (d.arrivalTime && d.departureTime && timeEngine.timeStringToSeconds(d.arrivalTime) < timeEngine.timeStringToSeconds(d.departureTime)) 
-      ? `Arribada: ${d.arrivalTime} • Sortida: ${d.departureTime}` 
+    comparisonText: (cleanArrivalTime && cleanDepartureTime && timeEngine.timeStringToSeconds(cleanArrivalTime) < timeEngine.timeStringToSeconds(cleanDepartureTime)) 
+      ? `Arribada: ${cleanArrivalTime} • Sortida: ${cleanDepartureTime}` 
       : (d.comparisonText || delayEval.comparisonText),
-    arrivalTime: d.arrivalTime || null,
+    arrivalTime: cleanArrivalTime,
     isRegulating,
     vehicleId: d.vehicleId || null,
     busCoords: d.busCoords || null

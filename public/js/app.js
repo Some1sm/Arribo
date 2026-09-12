@@ -1640,6 +1640,19 @@ class TransitApp {
   }
 
   /**
+   * Strips seconds from a time string (e.g. '11:53:00' -> '11:53').
+   * @param {string} value
+   * @returns {string}
+   */
+  formatTimeHHMM(value) {
+    if (typeof window !== 'undefined' && window.TransitUtils && typeof window.TransitUtils.formatTimeHHMM === 'function') {
+      return window.TransitUtils.formatTimeHHMM(value);
+    }
+    if (!value || typeof value !== 'string') return value || '--:--';
+    return value.replace(/^(\d{1,2}:\d{2}):\d{2}$/, '$1');
+  }
+
+  /**
    * Sanitizes a URL for safe use inside href/src attributes.
    * Only absolute http(s) URLs and same-origin relative paths are allowed;
    * everything else (e.g. javascript:, data:) returns '#'.
@@ -2414,9 +2427,10 @@ class TransitApp {
 
   renderEtaDisplay(next, etaBigEl, etaClockEl, etaPillEl, etaStatusText) {
     if (next) {
-      const clockTime = (next.expectedIso && !next.expectedIso.startsWith('0001-') && !next.expectedIso.startsWith('1970-'))
+      const rawClock = (next.expectedIso && !next.expectedIso.startsWith('0001-') && !next.expectedIso.startsWith('1970-'))
         ? new Date(next.expectedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
         : (next.departureTime || '--:--');
+      const clockTime = this.formatTimeHHMM(rawClock);
 
       // A departure is ONLY the first service of tomorrow / morning resumption if explicitly tomorrow & not live/estimated
       const isTomorrow = next.isToday === false && !next.isRealTime && !next.isEstimated;
@@ -2443,9 +2457,10 @@ class TransitApp {
           ? (mins <= 0 ? 'Imminent' : (mins === 1 ? '1 min' : `${mins} min`))
           : (next.formattedStatus || clockTime);
 
-        const schedTime = next.aimedIso
+        const rawSched = next.aimedIso
           ? new Date(next.aimedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
           : (next.departureTime || null);
+        const schedTime = rawSched ? this.formatTimeHHMM(rawSched) : null;
         const isDiff = schedTime && schedTime !== clockTime && (next.isRealTime || next.isEstimated);
 
         if (etaBigEl) etaBigEl.textContent = minsDisplay;
@@ -2464,15 +2479,17 @@ class TransitApp {
             etaPillEl.classList.add('regulating');
             etaStatusText.textContent = 'Regulant a capçalera';
             if (next.arrivalTime && next.departureTime) {
-              const aSec = this.timeStringToSeconds(next.arrivalTime);
-              const dSec = this.timeStringToSeconds(next.departureTime);
+              const cleanArr = this.formatTimeHHMM(next.arrivalTime);
+              const cleanDep = this.formatTimeHHMM(next.departureTime);
+              const aSec = this.timeStringToSeconds(cleanArr);
+              const dSec = this.timeStringToSeconds(cleanDep);
               if (aSec < dSec) {
                 if (etaClockEl) {
-                  etaClockEl.innerHTML = `Sortida prevista: <strong>${next.departureTime}</strong> <span style="color:#c084fc; font-weight:700; margin-left:6px;">(Arribada: <strong>${next.arrivalTime}</strong>)</span>`;
+                  etaClockEl.innerHTML = `Sortida prevista: <strong>${cleanDep}</strong> <span style="color:#c084fc; font-weight:700; margin-left:6px;">(Arribada: <strong>${cleanArr}</strong>)</span>`;
                 }
               } else {
                 if (etaClockEl) {
-                  etaClockEl.innerHTML = `Sortida prevista: <strong>${next.departureTime}</strong>`;
+                  etaClockEl.innerHTML = `Sortida prevista: <strong>${cleanDep}</strong>`;
                 }
               }
             }
@@ -2536,13 +2553,13 @@ class TransitApp {
       const rawTime = (dep.expectedIso && !dep.expectedIso.startsWith('0001-') && !dep.expectedIso.startsWith('1970-'))
         ? new Date(dep.expectedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
         : (dep.departureTime || '--:--');
-      const clockTime = String(rawTime).replace(/^[A-Za-zÀ-ÿ\.]+\s*(a\s*les\s*)?/i, '').trim();
+      const clockTime = this.formatTimeHHMM(String(rawTime).replace(/^[A-Za-zÀ-ÿ\.]+\s*(a\s*les\s*)?/i, '').trim());
 
       const rawSched = dep.scheduledTime ||
         ((dep.aimedIso && !dep.isEstimated && !dep.aimedIso.startsWith('0001-') && !dep.aimedIso.startsWith('1970-'))
           ? new Date(dep.aimedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
           : (dep.isRealTime && dep.scheduledTime ? dep.scheduledTime : null));
-      const schedTime = rawSched ? String(rawSched).replace(/^[A-Za-zÀ-ÿ\.]+\s*(a\s*les\s*)?/i, '').trim() : null;
+      const schedTime = rawSched ? this.formatTimeHHMM(String(rawSched).replace(/^[A-Za-zÀ-ÿ\.]+\s*(a\s*les\s*)?/i, '').trim()) : null;
 
       const isTomorrow = dep.isToday === false && !dep.isRealTime && !dep.isEstimated;
       const isFirstMorning = isTomorrow && (dep.isFirstOfDay === true || idx === 0) && !dep.isRealTime && !dep.isEstimated;
@@ -2571,8 +2588,8 @@ class TransitApp {
                     : `${clockTime}`)));
 
       const isRegulating = Boolean(dep.delayStatus === 'regulating' || dep.isRegulating || dep.isTerminalLayover || dep.arrivalTime);
-      const arrTime = dep.arrivalTime ? String(dep.arrivalTime).trim() : null;
-      let depTime = (dep.departureTime && dep.departureTime !== '--:--') ? String(dep.departureTime).trim() : clockTime;
+      const arrTime = dep.arrivalTime ? this.formatTimeHHMM(String(dep.arrivalTime).trim()) : null;
+      let depTime = (dep.departureTime && dep.departureTime !== '--:--') ? this.formatTimeHHMM(String(dep.departureTime).trim()) : clockTime;
 
       // Invariant: Departure time can NEVER be earlier than arrival time
       let hasValidLayoverInterval = false;
@@ -4025,25 +4042,40 @@ class TransitApp {
     }
 
     const favBtn = document.getElementById('modal-toggle-fav-btn');
+    const footerFavBtn = document.getElementById('modal-footer-fav-btn');
     const updateFavBtnState = () => {
-      if (!favBtn) return;
       const isFav = this.isFavoriteStop(stopId);
-      favBtn.classList.toggle('is-favorite', isFav);
-      const starIcon = favBtn.querySelector('#modal-star-icon') || favBtn.querySelector('.star-icon');
-      const starLabel = favBtn.querySelector('#modal-star-label') || favBtn.querySelector('.star-label');
-      if (starIcon) starIcon.textContent = isFav ? '⭐' : '☆';
-      if (starLabel) starLabel.textContent = isFav ? 'Desada' : 'Desar';
-      favBtn.setAttribute('title', isFav ? 'Treure de parades preferides' : 'Afegir a parades preferides');
+      if (favBtn) {
+        favBtn.classList.toggle('is-favorite', isFav);
+        const starIcon = favBtn.querySelector('#modal-star-icon') || favBtn.querySelector('.star-icon');
+        const starLabel = favBtn.querySelector('#modal-star-label') || favBtn.querySelector('.star-label');
+        if (starIcon) starIcon.textContent = isFav ? '⭐' : '☆';
+        if (starLabel) starLabel.textContent = isFav ? 'Preferida' : 'Preferida';
+        favBtn.setAttribute('title', isFav ? 'Treure de parades preferides' : 'Afegir a parades preferides');
+      }
+      if (footerFavBtn) {
+        footerFavBtn.classList.toggle('is-favorite', isFav);
+        const footerIcon = footerFavBtn.querySelector('#modal-footer-fav-icon') || footerFavBtn.querySelector('.fav-action-icon');
+        const footerText = footerFavBtn.querySelector('#modal-footer-fav-text');
+        if (footerIcon) footerIcon.textContent = isFav ? '⭐' : '☆';
+        if (footerText) footerText.textContent = isFav ? 'Preferida' : 'Afegir a Preferides';
+        footerFavBtn.setAttribute('title', isFav ? 'Treure de parades preferides' : 'Afegir a parades preferides');
+      }
     };
 
     updateFavBtnState();
 
+    const handleFavToggle = (e) => {
+      e.preventDefault();
+      this.toggleFavoriteStop(stopId, displayName);
+      updateFavBtnState();
+    };
+
     if (favBtn) {
-      favBtn.onclick = (e) => {
-        e.preventDefault();
-        this.toggleFavoriteStop(stopId, displayName);
-        updateFavBtnState();
-      };
+      favBtn.onclick = handleFavToggle;
+    }
+    if (footerFavBtn) {
+      footerFavBtn.onclick = handleFavToggle;
     }
 
     // Silent background fetch / SWR revalidation
@@ -4112,13 +4144,13 @@ class TransitApp {
       const rawTime = (d.expectedIso && !d.expectedIso.startsWith('0001-') && !d.expectedIso.startsWith('1970-'))
         ? new Date(d.expectedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
         : (d.departureTime || '--:--');
-      const estTime = String(rawTime).replace(/^[A-Za-zÀ-ÿ\.]+\s*(a\s*les\s*)?/i, '').trim();
+      const estTime = this.formatTimeHHMM(String(rawTime).replace(/^[A-Za-zÀ-ÿ\.]+\s*(a\s*les\s*)?/i, '').trim());
 
       const rawSched = d.scheduledTime ||
         ((d.aimedIso && !d.isEstimated && !d.aimedIso.startsWith('0001-') && !d.aimedIso.startsWith('1970-'))
           ? new Date(d.aimedIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
           : (d.isRealTime && d.scheduledTime ? d.scheduledTime : null));
-      const schedTime = rawSched ? String(rawSched).replace(/^[A-Za-zÀ-ÿ\.]+\s*(a\s*les\s*)?/i, '').trim() : null;
+      const schedTime = rawSched ? this.formatTimeHHMM(String(rawSched).replace(/^[A-Za-zÀ-ÿ\.]+\s*(a\s*les\s*)?/i, '').trim()) : null;
 
       const isTomorrow = d.isToday === false && !d.isRealTime && !d.isEstimated;
       const isFirstMorning = isTomorrow && (d.isFirstOfDay === true || idx === 0) && !d.isRealTime && !d.isEstimated;
@@ -4148,8 +4180,8 @@ class TransitApp {
                     : `${estTime}`)));
 
       const isRegulating = Boolean(d.delayStatus === 'regulating' || d.isRegulating || d.isTerminalLayover || d.arrivalTime);
-      const arrTime = d.arrivalTime ? String(d.arrivalTime).trim() : null;
-      let depTime = (d.departureTime && d.departureTime !== '--:--') ? String(d.departureTime).trim() : estTime;
+      const arrTime = d.arrivalTime ? this.formatTimeHHMM(String(d.arrivalTime).trim()) : null;
+      let depTime = (d.departureTime && d.departureTime !== '--:--') ? this.formatTimeHHMM(String(d.departureTime).trim()) : estTime;
 
       // Invariant: Departure time can NEVER be earlier than arrival time
       let hasValidLayoverInterval = false;

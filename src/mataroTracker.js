@@ -1382,7 +1382,7 @@ class MataroTracker extends BaseTracker {
                 // DOMAIN INVARIANT: A bus can NEVER depart before it arrives!
                 // Add minimum 1-min turnaround buffer for passenger alighting/boarding.
                 const minDepSec = arrSec + 60;
-                nextDepTime = timeEngine.secondsToTimeString(minDepSec);
+                nextDepTime = timeEngine.minutesToTimeString(Math.round(minDepSec / 60));
                 delayMins = Math.round((minDepSec - schedSec) / 60);
               } else {
                 nextDepTime = scheduledDepTime;
@@ -1391,12 +1391,17 @@ class MataroTracker extends BaseTracker {
             }
           }
 
+          // Ensure strict HH:MM formatting without seconds
+          const cleanArrTime = String(arrTime).replace(/^(\d{1,2}:\d{2}):\d{2}$/, '$1');
+          const cleanDepTime = String(nextDepTime).replace(/^(\d{1,2}:\d{2}):\d{2}$/, '$1');
+          const cleanSchedDepTime = scheduledDepTime ? String(scheduledDepTime).replace(/^(\d{1,2}:\d{2}):\d{2}$/, '$1') : cleanDepTime;
+
           dep.destination = outboundRoute.name;
           dep.directionId = String(outboundRoute.id || '0');
-          dep.arrivalTime = arrTime;
-          dep.departureTime = nextDepTime;
-          dep.scheduledTime = scheduledDepTime || nextDepTime;
-          dep.scheduledDepartureTime = scheduledDepTime || nextDepTime;
+          dep.arrivalTime = cleanArrTime;
+          dep.departureTime = cleanDepTime;
+          dep.scheduledTime = cleanSchedDepTime;
+          dep.scheduledDepartureTime = cleanSchedDepTime;
           dep.delayMins = delayMins;
           dep.delayMinutes = delayMins;
           dep.isRegulating = true;
@@ -1404,15 +1409,15 @@ class MataroTracker extends BaseTracker {
           dep.delayBadgeText = delayMins >= 2 ? `+${delayMins} min retard` : '⏱️ Regulació';
 
           // Ensure minutesAway accounts for outbound departure time
-          const arrSecVal = timeEngine.timeStringToSeconds(arrTime);
-          const depSecVal = timeEngine.timeStringToSeconds(nextDepTime);
+          const arrSecVal = timeEngine.timeStringToSeconds(cleanArrTime);
+          const depSecVal = timeEngine.timeStringToSeconds(cleanDepTime);
           const depMinDelta = Math.max(0, Math.round((depSecVal - arrSecVal) / 60));
           dep.minutesAway = Math.max(0, (dep.minutesAway || 0) + depMinDelta);
           dep.formattedStatus = (dep.minutesAway <= 0) ? 'En regulació' : `${dep.minutesAway} min`;
 
-          dep.statusText = (timeEngine.timeStringToSeconds(arrTime) < timeEngine.timeStringToSeconds(nextDepTime))
-            ? `🅿️ Regulant (Arribada: ${arrTime} • Sortida: ${nextDepTime})`
-            : `🅿️ Regulant a capçalera (Sortida: ${nextDepTime})`;
+          dep.statusText = (timeEngine.timeStringToSeconds(cleanArrTime) < timeEngine.timeStringToSeconds(cleanDepTime))
+            ? `🅿️ Regulant (Arribada: ${cleanArrTime} • Sortida: ${cleanDepTime})`
+            : `🅿️ Regulant a capçalera (Sortida: ${cleanDepTime})`;
         }
       }
 

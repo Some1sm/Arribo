@@ -585,7 +585,7 @@
         </div>
         <button type="button" class="btn-star-fav" id="modal-toggle-fav-btn" title="Afegir / treure de parades preferides" aria-label="Afegir a parades preferides">
           <span class="star-icon" id="modal-star-icon">☆</span>
-          <span class="star-label" id="modal-star-label">Desar</span>
+          <span class="star-label" id="modal-star-label">Preferida</span>
         </button>
       </div>
 
@@ -612,8 +612,12 @@
 
       <div class="modal-actions-footer" style="display:flex; align-items:center; justify-content:space-between; gap:0.5rem; margin-top:1rem; padding-top:0.85rem; border-top:1px solid var(--border-subtle); flex-wrap:wrap;">
         <div style="display:flex; gap:0.4rem; flex-wrap:wrap; align-items:center;">
-          <button type="button" class="btn-set-favorite-target" id="modal-set-target-btn">
-            ⭐ Fixar Principal
+          <button type="button" class="btn-set-favorite-target" id="modal-set-target-btn" title="Fixar com a parada principal per al seguiment d'aquesta línia">
+            📌 Fixar Principal
+          </button>
+          <button type="button" class="btn-toggle-favorite-action" id="modal-footer-fav-btn" title="Afegir o treure aquesta parada de les teves parades preferides">
+            <span class="fav-action-icon" id="modal-footer-fav-icon">☆</span>
+            <span id="modal-footer-fav-text">Preferida</span>
           </button>
           <button type="button" class="btn-proximity-alarm" id="modal-proximity-alarm-btn" title="Avisa'm amb so i vibració quan el bus s'apropi a aquesta parada">
             <span class="alarm-icon">⏰</span>
@@ -791,8 +795,8 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   
   <!-- App Scripts -->
-  <script src="/js/utils.js?v=6.0.26"></script>
-  <script src="/js/map.js?v=6.0.26"></script>
-  <script src="/js/app.js?v=6.0.26"></script>
+  <script src="/js/utils.js?v=6.0.27"></script>
+  <script src="/js/map.js?v=6.0.27"></script>
+  <script src="/js/app.js?v=6.0.27"></script>
 </body>
 </html>

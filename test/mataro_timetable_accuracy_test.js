@@ -413,12 +413,22 @@ async function runMataroTimetableAccuracyTests() {
     isRegulating: true
   });
   assert.notStrictEqual(invertedLayover.comparisonText, 'Arribada: 14:49 • Sortida: 14:48', 'Must never display departure before arrival');
-  totalAssertions += 6;
+  // 3.5 Seconds Stripping Invariant: Departure and arrival times must NEVER contain :SS seconds
+  const secDeparture = delayEngine.standardizeDeparture({
+    departureTime: '11:53:00',
+    arrivalTime: '11:52:00',
+    isRegulating: true
+  });
+  assert.strictEqual(secDeparture.departureTime, '11:53', 'departureTime must strip :00 seconds');
+  assert.strictEqual(secDeparture.arrivalTime, '11:52', 'arrivalTime must strip :00 seconds');
+  assert.strictEqual(secDeparture.comparisonText, 'Arribada: 11:52 • Sortida: 11:53');
+  totalAssertions += 3;
 
   console.log('  ✓ 3.1 Live SIRI telemetry properly merges with exact scheduled departures.');
   console.log('  ✓ 3.2 +-3 minute circular window deduplication eliminates phantom scheduled entries.');
   console.log('  ✓ 3.3 Canonical delay badges and dual-compatibility schemas enforced.');
   console.log('  ✓ 3.4 Terminal layover ordering invariant strictly enforced (departure >= arrival).');
+  console.log('  ✓ 3.5 Seconds stripping invariant strictly verified (no unpredictable :00 in UI).');
 
 
   // =========================================================================
