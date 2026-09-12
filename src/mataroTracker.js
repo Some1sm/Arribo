@@ -1184,18 +1184,8 @@ class MataroTracker extends BaseTracker {
       totalScheduledForWholeLine += trips.length;
     });
 
-    // Authoritative physical fleet allocations for Mataró Bus Urbà
-    const MATARO_MAX_FLEET = {
-      '1': { weekday: 5, saturday: 3, sunday: 3 },
-      '2': { weekday: 5, saturday: 3, sunday: 3 },
-      '3': { weekday: 4, saturday: 3, sunday: 3 },
-      '4': { weekday: 2, saturday: 2, sunday: 2 },
-      '5': { weekday: 3, saturday: 3, sunday: 3 },
-      '6': { weekday: 3, saturday: 2, sunday: 2 },
-      '7': { weekday: 2, saturday: 2, sunday: 2 },
-      '8': { weekday: 3, saturday: 2, sunday: 2 }
-    };
-    const lineMaxFleet = MATARO_MAX_FLEET[String(lId)]?.[dayType] || 4;
+    // Dynamically compute scheduled active fleet capacity directly from the timetable schedule (zero hardcoded tables)
+    const lineMaxFleet = mataroSchedules.getScheduledFleetRequirement(lId, dayType, nowSec);
     totalScheduledForWholeLine = Math.min(totalScheduledForWholeLine, lineMaxFleet);
 
     const totalLiveOnWholeLine = allKnownBuses.filter(b => !b.isEstimated).length;

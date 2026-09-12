@@ -307,6 +307,26 @@ async function runFleetEstimationTests() {
   }
   console.log('  ✓ Test 8 Passed: Physical fleet ceiling (3 buses) strictly enforced across all progress states.\n');
 
+  // Test 9: Dynamic Timetable-Derived Fleet Requirement Computation (Zero Hardcoded Fleet)
+  console.log('📌 Test 9: Dynamic Schedule Fleet Computation (Zero Hardcoding)...');
+  
+  // Line 1: 5 on weekday peak, 3 on Saturday, 0 off-hours (03:00)
+  const l1Weekday = mataroSchedules.getScheduledFleetRequirement('1', 'weekday', 59400); // 16:30
+  const l1SatNoon = mataroSchedules.getScheduledFleetRequirement('1', 'saturday', 47164); // 13:06
+  const l1Night = mataroSchedules.getScheduledFleetRequirement('1', 'weekday', 10800); // 03:00
+  
+  assert.strictEqual(l1Weekday, 5, 'Line 1 weekday peak dynamically calculated as 5 vehicles');
+  assert.strictEqual(l1SatNoon, 3, 'Line 1 Saturday dynamically calculated as 3 vehicles');
+  assert.strictEqual(l1Night, 0, 'Line 1 off-hours dynamically calculated as 0 vehicles');
+
+  // Line 8: 0 on Sunday morning (no service), 2 on Sunday afternoon (operating)
+  const l8SunMorning = mataroSchedules.getScheduledFleetRequirement('8', 'sunday', 36000); // 10:00
+  const l8SunAfternoon = mataroSchedules.getScheduledFleetRequirement('8', 'sunday', 61200); // 17:00
+  assert.strictEqual(l8SunMorning, 0, 'Line 8 Sunday morning dynamically calculated as 0 vehicles');
+  assert.strictEqual(l8SunAfternoon, 2, 'Line 8 Sunday afternoon dynamically calculated as 2 vehicles');
+
+  console.log('  ✓ Test 9 Passed: Dynamic fleet requirement accurately computed from timetable cycle/headway (0 hardcoding).\n');
+
   console.log('=========================================================================');
   console.log('🎉 ALL SCHEDULED FLEET ESTIMATION TESTS PASSED SUCCESSFULLY! 🎉');
   console.log('=========================================================================');

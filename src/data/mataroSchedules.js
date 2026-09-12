@@ -205,6 +205,111 @@ function getAllLines() {
   }));
 }
 
+/**
+ * Helper to convert HH:MM(:SS) string to seconds of day.
+ * 
+ * @param {string} timeStr 
+ * @returns {number}
+ */
+function timeStringToSec(timeStr) {
+  if (!timeStr || typeof timeStr !== 'string') return 0;
+  const parts = timeStr.split(':');
+  const h = parseInt(parts[0], 10) || 0;
+  const m = parseInt(parts[1], 10) || 0;
+  const s = parseInt(parts[2], 10) || 0;
+  return h * 3600 + m * 60 + s;
+}
+
+/**
+ * Dynamically computes the scheduled active vehicle requirement (fleet size)
+ * for a line and day type directly from the official timetable schedule.
+ * Uses the fundamental transit scheduling theorem: Fleet = ceil(CycleTime / Headway).
+ * 
+ * @param {string|number} lineId 
+ * @param {string} dayType 
+ * @param {number|null} [nowSec=null] Optional seconds of day to evaluate local service period
+ * @returns {number}
+ */
+function getScheduledFleetRequirement(lineId, dayType, nowSec = null) {
+  const normLine = normalizeLineId(lineId);
+  const normDay = normalizeDayType(dayType);
+  const s0 = getDirectionSchedule(normLine, '0', normDay);
+  const s1 = getDirectionSchedule(normLine, '1', normDay);
+
+  if (!s0 || !s1 || !Array.isArray(s0.departures) || !Array.isArray(s1.departures)) return 1;
+  if (s0.departures.length === 0 && s1.departures.length === 0) return 0;
+
+  const t0 = s0.totalTravelSec || (s0.totalTravelMinutes * 60) || 1800;
+  const t1 = s1.totalTravelSec || (s1.totalTravelMinutes * 60) || 1800;
+
+  // If nowSec is provided, check if service is currently operating
+  if (nowSec !== null) {
+    const allDepSecs = [
+      ...s0.departures.map(d => timeStringToSec(d)),
+      ...s1.departures.map(d => timeStringToSec(d))
+    ].sort((a, b) => a - b);
+
+    if (allDepSecs.length === 0) return 0;
+    const firstServiceSec = Math.max(0, allDepSecs[0] - 1200); // 20m buffer before first departure
+    const lastServiceSec = allDepSecs[allDepSecs.length - 1] + Math.max(t0, t1);
+
+    if (nowSec < firstServiceSec || nowSec > lastServiceSec) {
+      return 0; // Off-hours inactive service
+    }
+  }
+
+  const roundTripSec = t0 + t1;
+
+  // Derive headways from departure intervals
+  const localHeadways = [];
+  const globalHeadways = [];
+
+  [s0.departures, s1.departures].forEach(deps => {
+    for (let i = 1; i < deps.length; i++) {
+      const pSec = timeStringToSec(deps[i - 1]);
+      const cSec = timeStringToSec(deps[i]);
+      const diff = cSec - pSec;
+      if (diff >= 300 && diff <= 5400) {
+        globalHeadways.push(diff);
+        if (nowSec !== null && cSec >= nowSec - 7200 && pSec <= nowSec + 7200) {
+          localHeadways.push(diff);
+        }
+      }
+    }
+  });
+
+  const headways = localHeadways.length > 0 ? localHeadways : globalHeadways;
+  if (headways.length === 0) return 1;
+
+  headways.sort((a, b) => a - b);
+  const medianHeadwaySec = headways[Math.floor(headways.length / 2)];
+
+  // Measure actual scheduled turnaround buffers between arrival and next departure
+  let bufferSum = 0;
+  let bufferCount = 0;
+  [ { from: s0, to: s1, travel: t0 }, { from: s1, to: s0, travel: t1 } ].forEach(pair => {
+    pair.from.departures.forEach(dep => {
+      const arr = timeStringToSec(dep) + pair.travel;
+      const nextDep = pair.to.departures
+        .map(d => timeStringToSec(d))
+        .find(d => d >= arr && d <= arr + 2400);
+      if (nextDep !== undefined) {
+        if (nowSec === null || (arr >= nowSec - 7200 && arr <= nowSec + 7200)) {
+          bufferSum += (nextDep - arr);
+          bufferCount++;
+        }
+      }
+    });
+  });
+
+  const avgBuffer = bufferCount > 0 ? (bufferSum / bufferCount) : Math.max(180, roundTripSec * 0.08);
+  const cycleSec = roundTripSec + (avgBuffer * 2);
+
+  // Fundamental transit scheduling theorem: Fleet = ceil(CycleTime / Headway)
+  const calculatedFleet = Math.ceil(cycleSec / medianHeadwaySec);
+  return Math.max(1, calculatedFleet);
+}
+
 module.exports = {
   rawSchedules,
   normalizeLineId,
@@ -214,5 +319,6 @@ module.exports = {
   getDirectionSchedule,
   getStopTravelTime,
   getDeparturesForStop,
-  getAllLines
+  getAllLines,
+  getScheduledFleetRequirement
 };
