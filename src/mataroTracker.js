@@ -1129,6 +1129,8 @@ class MataroTracker extends BaseTracker {
       const travelSec = s.totalTravelSec || (s.totalTravelMinutes * 60) || 1800;
       const oppDKey = dKey === '0' ? '1' : '0';
       const oppS = mataroSchedules.getDirectionSchedule(lId, oppDKey, dayType);
+      const oppLiveBuses = allKnownBuses.filter(b => String(b.direction) === oppDKey && !b.isEstimated);
+      const liveBusesForThisDir = allKnownBuses.filter(b => String(b.direction) === dKey && !b.isEstimated);
       const trips = [];
       let foundLayover = false;
 
@@ -1136,8 +1138,14 @@ class MataroTracker extends BaseTracker {
         const depSec = timeEngine.timeStringToSeconds(depTime);
         const arrSec = depSec + travelSec;
 
-        // A. Trip is currently in transit along the route
-        if (nowSec >= depSec && nowSec < arrSec) {
+        // A. Trip is currently in transit along the route:
+        // Normally within scheduled window (nowSec < arrSec).
+        // If nowSec >= arrSec, only retain trip if a live GPS bus is still circulating on this direction to claim it.
+        const hasDelayedLiveBus = liveBusesForThisDir.length > 0 && liveBusesForThisDir.some(b => {
+          return b.totalProgress === undefined || b.totalProgress >= 60;
+        });
+
+        if (nowSec >= depSec && (nowSec < arrSec || (nowSec < arrSec + 480 && hasDelayedLiveBus))) {
           const elapsedSec = nowSec - depSec;
           const progress = Math.max(0.01, Math.min(0.99, elapsedSec / travelSec));
           trips.push({ depTime, depSec, arrSec, elapsedSec, progress, isTerminalLayover: false, paired: false });
@@ -1145,15 +1153,27 @@ class MataroTracker extends BaseTracker {
         // B. Trip is the upcoming departure in terminal layover/regulation at origin
         else if (nowSec < depSec && !foundLayover) {
           let layoverStartSec = depSec - 600;
+          let oppStillInTransit = false;
           if (oppS && Array.isArray(oppS.departures)) {
             const oppTravelSec = oppS.totalTravelSec || (oppS.totalTravelMinutes * 60) || 1800;
             const prevArrSec = oppS.departures
               .map(d => timeEngine.timeStringToSeconds(d) + oppTravelSec)
               .filter(a => a <= depSec && a >= depSec - 1200)
               .pop();
-            if (prevArrSec) layoverStartSec = Math.max(depSec - 900, prevArrSec);
+            if (prevArrSec) {
+              layoverStartSec = Math.max(depSec - 900, prevArrSec);
+              const prevDepSec = prevArrSec - oppTravelSec;
+              const theoreticalOppProgress = (nowSec - prevDepSec) / oppTravelSec;
+              oppStillInTransit = oppLiveBuses.some(b => {
+                const bProg = (b.totalProgress !== undefined ? b.totalProgress : 50) / 100;
+                const diff = Math.abs(theoreticalOppProgress - bProg);
+                const notYetAtTerminal = (b.totalProgress !== undefined ? b.totalProgress : 50) < 85;
+                return diff <= 0.40 && notYetAtTerminal;
+              });
+            }
           }
-          if (nowSec >= layoverStartSec) {
+
+          if (nowSec >= layoverStartSec && !oppStillInTransit) {
             foundLayover = true;
             trips.push({ depTime, depSec, arrSec, elapsedSec: 0, progress: 0, isTerminalLayover: true, paired: false });
           }
@@ -1232,7 +1252,8 @@ class MataroTracker extends BaseTracker {
         for (let i = 0; i < activeTripsForDir.length; i++) {
           if (activeTripsForDir[i].paired || activeTripsForDir[i].isTerminalLayover) continue;
           const diff = Math.abs(activeTripsForDir[i].progress - busProgress);
-          if (diff < minDiff) {
+          // Enforce maximum progress diff tolerance of 0.40 to prevent delayed buses from stealing future trips
+          if (diff < minDiff && diff <= 0.40) {
             minDiff = diff;
             bestTripIdx = i;
           }
@@ -1272,6 +1293,7 @@ class MataroTracker extends BaseTracker {
 
       for (const trip of activeTripsForDir) {
         if (trip.paired) continue;
+        if (!trip.isTerminalLayover && nowSec >= trip.arrSec) continue;
         if (syntheticBuses.length >= maxSyntheticForLine) break;
         if (syntheticBuses.filter(b => b.direction === String(dirKey)).length >= maxSyntheticForDir) break;
 
