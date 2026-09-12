@@ -705,12 +705,20 @@ class MataroTracker extends BaseTracker {
   }
 
   // 2. Get full details for a line & direction (stops, route polyline, and live/estimated buses)
-  async getLineDetails(lineId, direction = '0') {
+  async getLineDetails(lineId, direction = '0', options = {}) {
+    if (typeof direction === 'object' && direction !== null) {
+      options = direction;
+      direction = '0';
+    }
     const lId = this.normalizeLineId(lineId) || '1';
     const isBoth = direction === 'both';
     const dirIdx = isBoth ? 0 : (parseInt(direction, 10) || 0);
     const cacheKey = `${lId}_${direction}`;
     const staticTemplate = this.staticLineCache.get(cacheKey) || this.staticLineCache.get(`${lId}_0`);
+
+    const targetDate = options.dateObj ? new Date(options.dateObj) :
+      (options.targetDate ? new Date(options.targetDate) :
+      (options.referenceDate ? new Date(options.referenceDate) : new Date()));
 
     const lineInfo = this.linesData.find(l => String(l.id) === lId) || { id: lId, name: `Línia ${lId}`, color: '#009485' };
     const routes = this.routesData[lId] || [];
@@ -721,9 +729,11 @@ class MataroTracker extends BaseTracker {
 
     // Fetch Live Buses via SIRI
     let liveVehicles = [];
-    try {
-      liveVehicles = await siriClient.getLiveVehicles(lId);
-    } catch (_) {}
+    if (!options.skipSiri) {
+      try {
+        liveVehicles = await siriClient.getLiveVehicles(lId);
+      } catch (_) {}
+    }
 
     // Strict validation: Filter out out-of-area vehicles and erroneous test/depot artifacts
     if (Array.isArray(liveVehicles)) {
@@ -752,13 +762,14 @@ class MataroTracker extends BaseTracker {
 
     // Fallback: If still empty, check this.vehicleHistory for active/recent buses (up to 10 mins)
     if (!liveVehicles || liveVehicles.length === 0) {
-      const now = Date.now();
+      const now = targetDate.getTime();
       const histVehs = [];
       for (const [vId, hist] of this.vehicleHistory.entries()) {
         if (String(hist.lineId) === String(lId) && (now - hist.lastSeen) <= 600000) {
           histVehs.push({
             vehicleId: hist.vehicleId,
             lineId: hist.lineId,
+            direction: hist.direction,
             directionName: hist.directionName,
             origin: hist.origin,
             destination: hist.destination,
@@ -831,7 +842,7 @@ class MataroTracker extends BaseTracker {
       routes,
       allDirections,
       processedBuses,
-      new Date(),
+      targetDate,
       liveVehicles
     );
 
@@ -1464,7 +1475,7 @@ class MataroTracker extends BaseTracker {
   }
 
   // Estimate arrival ETA to stopId from active live vehicles along the route
-  async estimateArrivalsForStop(stopId, lineId = '', existingArrivals = []) {
+  async estimateArrivalsForStop(stopId, lineId = '', existingArrivals = [], options = {}) {
     const sId = this.normalizeStopId(stopId);
     const cleanLineId = lineId ? this.normalizeLineId(lineId) : '';
     const existingVehicleIds = new Set(existingArrivals.map(a => a.vehicleId).filter(Boolean));
@@ -1485,10 +1496,13 @@ class MataroTracker extends BaseTracker {
       targetLineIds = this.linesData.map(l => String(l.id));
     }
 
-    const now = Date.now();
-    const netNow = timeEngine.getNetworkTime(this.agencyTimezone, new Date(now));
+    const targetDate = options.dateObj ? new Date(options.dateObj) :
+      (options.targetDate ? new Date(options.targetDate) :
+      (options.referenceDate ? new Date(options.referenceDate) : new Date()));
+    const now = targetDate.getTime();
+    const netNow = timeEngine.getNetworkTime(this.agencyTimezone, targetDate);
     const currentSec = netNow.hour * 3600 + netNow.minute * 60 + netNow.second;
-    const dateComp = calendarEngine.getDateComponents(new Date(now), this.agencyTimezone);
+    const dateComp = calendarEngine.getDateComponents(targetDate, this.agencyTimezone);
     const dayType = dateComp.isSunday ? 'sunday' : (dateComp.isSaturday ? 'saturday' : 'weekday');
 
     for (const lId of targetLineIds) {
@@ -1497,35 +1511,44 @@ class MataroTracker extends BaseTracker {
 
       let liveVehicles = [];
       try {
-        liveVehicles = await siriClient.getLiveVehicles(lId);
-      } catch (e) {
-        // Fallback below
-      }
+        const lineDetails = await this.getLineDetails(lId, 'both', options);
+        if (lineDetails && Array.isArray(lineDetails.activeBuses)) {
+          liveVehicles = lineDetails.activeBuses;
+        }
+      } catch (_) {}
 
       if (!liveVehicles || liveVehicles.length === 0) {
-        const frVehs = flightRecorder.getLineVehicles(`L${lId}`);
-        const mataroVehs = (frVehs || []).filter(v => (v.agency || '').includes('Mataró') || String(v.lineId) === lId);
-        if (mataroVehs.length > 0) {
-          liveVehicles = mataroVehs;
-        } else {
-          for (const [vId, hist] of this.vehicleHistory.entries()) {
-            if (String(hist.lineId) === String(lId) && (now - hist.lastSeen) <= 600000) {
-              liveVehicles.push({
-                vehicleId: hist.vehicleId,
-                lineId: hist.lineId,
-                direction: hist.direction,
-                directionName: hist.directionName,
-                origin: hist.origin,
-                destination: hist.destination,
-                lat: hist.lat,
-                lon: hist.lon,
-                bearing: hist.bearing,
-                speedKmh: hist.speedKmh,
-                delayMins: hist.delayMins,
-                isEstimated: true,
-                isRealTime: false,
-                timestamp: hist.lastSeen
-              });
+        if (!options.skipSiri) {
+          try {
+            liveVehicles = await siriClient.getLiveVehicles(lId);
+          } catch (_) {}
+        }
+
+        if (!liveVehicles || liveVehicles.length === 0) {
+          const frVehs = flightRecorder.getLineVehicles(`L${lId}`);
+          const mataroVehs = (frVehs || []).filter(v => (v.agency || '').includes('Mataró') || String(v.lineId) === lId);
+          if (mataroVehs.length > 0) {
+            liveVehicles = mataroVehs;
+          } else {
+            for (const [vId, hist] of this.vehicleHistory.entries()) {
+              if (String(hist.lineId) === String(lId) && (now - hist.lastSeen) <= 600000) {
+                liveVehicles.push({
+                  vehicleId: hist.vehicleId,
+                  lineId: hist.lineId,
+                  direction: hist.direction,
+                  directionName: hist.directionName,
+                  origin: hist.origin,
+                  destination: hist.destination,
+                  lat: hist.lat,
+                  lon: hist.lon,
+                  bearing: hist.bearing,
+                  speedKmh: hist.speedKmh,
+                  delayMins: hist.delayMins,
+                  isEstimated: true,
+                  isRealTime: false,
+                  timestamp: hist.lastSeen
+                });
+              }
             }
           }
         }
@@ -1556,14 +1579,14 @@ class MataroTracker extends BaseTracker {
           if (existingVehicleIds.has(veh.vehicleId)) return; // Already reported by SIRI
 
           const vehRouteIdx = this.matchVehicleToRouteIndex(veh, routes);
-          const isSameDirection = (vehRouteIdx === routeIdx);
+          const isSameDirection = (veh.direction !== undefined && veh.direction !== null && String(veh.direction) === String(route.id || routeIdx)) || (vehRouteIdx === routeIdx);
 
           // ONLY estimate ETA for physically approaching upstream vehicles on the same route direction
           if (!isSameDirection) return;
 
           // Project forward along route polyline if telemetry was recorded earlier
-          let effectiveLat = veh.lat;
-          let effectiveLon = veh.lon;
+          let effectiveLat = veh.lat || veh.latitude;
+          let effectiveLon = veh.lon || veh.longitude;
           const elapsedSec = Math.max(0, (now - (veh.timestamp || veh.lastSeen || now)) / 1000);
           if (elapsedSec > 15 && elapsedSec <= 600) {
             const extrapolated = geoEngine.extrapolatePolylinePosition(veh, elapsedSec, veh.speedKmh || 25, routePolyCoords);
@@ -1589,7 +1612,7 @@ class MataroTracker extends BaseTracker {
           let transitTravelSec = Math.round(remainingMeters / speedMps) + (remainingStops * 25);
 
           // If vehicle is parked/regulating at origin terminal:
-          if (vehStopIdx === 0 && (veh.speedKmh === 0 || veh.speedKmh <= 5)) {
+          if (vehStopIdx === 0 && (veh.speedKmh === 0 || veh.speedKmh <= 5 || veh.isTerminalLayover)) {
             if (dirSched && Array.isArray(dirSched.departures)) {
               const nextTrip = dirSched.departures.find(t => timeEngine.timeStringToSeconds(t) >= currentSec - 60);
               if (nextTrip) {
@@ -1607,14 +1630,18 @@ class MataroTracker extends BaseTracker {
             const arrDate = new Date(now + minutesAway * 60000);
             const formattedTime = timeUtils.formatTimeToTimezone(arrDate, this.agencyTimezone);
             const badge = veh.isEstimated
-              ? `⚡ En ruta (Estimat)`
+              ? (veh.delayBadgeText || `⚡ En ruta (Estimat)`)
               : (veh.delayMins > 0 ? `+${veh.delayMins} min retard` : `⚡ En ruta (Bus #${veh.vehicleId})`);
+
+            const termStopObj = routeStops[routeStops.length - 1];
+            const resolvedDest = termStopObj?.name || route.name;
 
             estimatedArrivals.push({
               lineId: lId,
               lineName: lineInfo.name,
+              directionId: String(route.id || routeIdx),
               directionName: route.name,
-              destination: route.name,
+              destination: resolvedDest,
               vehicleId: veh.vehicleId,
               distanceFromStop: `${Math.round(remainingMeters)}m`,
               departureTime: formattedTime,
@@ -1712,7 +1739,7 @@ class MataroTracker extends BaseTracker {
     // 2. Query Circuit Position Estimations for Active Vehicles
     let estimatedArrivals = [];
     try {
-      estimatedArrivals = await this.estimateArrivalsForStop(sId, cleanLineId, liveArrivals);
+      estimatedArrivals = await this.estimateArrivalsForStop(sId, cleanLineId, liveArrivals, options);
     } catch (e) {
       console.warn(`[getStopDepartures] Circuit estimation error for stop ${sId}:`, e.message);
     }
@@ -1751,7 +1778,18 @@ class MataroTracker extends BaseTracker {
     for (const dep of sorted) {
       const vId = dep.vehicleId ? String(dep.vehicleId).trim() : null;
       const destName = (dep.destination || '').toLowerCase().trim();
-      const isTerminatingHere = destName && (destName === cleanStopName || cleanStopName.startsWith(destName) || cleanStopName.includes(destName));
+      const isLastStopOfRoute = routesForStop.some(r =>
+        String(r.id_linea) === String(dep.lineId) &&
+        (r.stops || []).length > 1 &&
+        String(r.stops[r.stops.length - 1].id) === sId &&
+        (String(r.id) === String(dep.directionId) || (r.name || '').toLowerCase() === destName || destName.includes((r.stops[r.stops.length - 1].name || '').toLowerCase()))
+      );
+      const isTerminatingHere = isLastStopOfRoute || (destName && (
+        destName === cleanStopName ||
+        cleanStopName.startsWith(destName) ||
+        cleanStopName.includes(destName) ||
+        destName.includes(cleanStopName)
+      ));
 
       // Terminal Turnaround & Regulating Transition:
       // If an incoming vehicle is arriving at this terminal stop, transfer its live telemetry
@@ -1813,8 +1851,10 @@ class MataroTracker extends BaseTracker {
           const arrSecVal = timeEngine.timeStringToSeconds(cleanArrTime);
           const depSecVal = timeEngine.timeStringToSeconds(cleanDepTime);
           const depMinDelta = Math.max(0, Math.round((depSecVal - arrSecVal) / 60));
+          dep.arrivalMinutesAway = Math.max(0, dep.minutesAway || 0);
           dep.minutesAway = Math.max(0, (dep.minutesAway || 0) + depMinDelta);
-          dep.formattedStatus = (dep.minutesAway <= 0) ? 'En regulació' : `${dep.minutesAway} min`;
+          dep.departureMinutesAway = dep.minutesAway;
+          dep.formattedStatus = (dep.arrivalMinutesAway <= 0) ? 'En regulació' : `${dep.minutesAway} min`;
 
           dep.statusText = (timeEngine.timeStringToSeconds(cleanArrTime) < timeEngine.timeStringToSeconds(cleanDepTime))
             ? `🅿️ Regulant (Arribada: ${cleanArrTime} • Sortida: ${cleanDepTime})`
@@ -1937,6 +1977,57 @@ class MataroTracker extends BaseTracker {
         directionId: dirKey,
         isTrain: false
       });
+
+      // Terminal Turnaround & Regulating Enrichment for Scheduled Departures:
+      // If this stop is the origin terminal of this route, find the incoming route of the same line that terminates here.
+      // For any departure without an arrivalTime, calculate its incoming scheduled trip arrival and layover interval.
+      if (isOrigin) {
+        const incomingTerminatingRoute = routesForStop.find(otherR =>
+          String(otherR.id_linea) === lIdStr &&
+          String(otherR.id) !== dirKey &&
+          (otherR.stops || []).length > 1 &&
+          String(otherR.stops[otherR.stops.length - 1].id) === sId
+        );
+
+        if (incomingTerminatingRoute) {
+          const inSched = mataroSchedules.getDirectionSchedule(lIdStr, String(incomingTerminatingRoute.id), dayTypeToday);
+          const inTravelSec = inSched?.totalTravelSec || 0;
+          const netNowToday = timeEngine.getNetworkTime(this.agencyTimezone, targetDate);
+          const currentSecNow = netNowToday.hour * 3600 + netNowToday.minute * 60 + netNowToday.second;
+
+          if (inSched && Array.isArray(inSched.departures) && inTravelSec > 0) {
+            compiledForRoute.forEach(cd => {
+              if (!cd.arrivalTime && cd.departureTime && cd.departureTime !== '--:--') {
+                const depSecVal = timeEngine.timeStringToSeconds(cd.departureTime);
+                if (depSecVal > 0) {
+                  const candidateTrips = inSched.departures
+                    .map(t => {
+                      const aSec = timeEngine.timeStringToSeconds(t) + inTravelSec;
+                      return { t, arrSec: aSec, arrTime: timeEngine.minutesToTimeString(Math.round(aSec / 60)) };
+                    })
+                    .filter(x => x.arrSec <= depSecVal + 60 && x.arrSec >= depSecVal - 1800);
+
+                  const bestInbound = candidateTrips[candidateTrips.length - 1];
+                  if (bestInbound) {
+                    const cleanInArr = String(bestInbound.arrTime).replace(/^(\d{1,2}:\d{2}):\d{2}$/, '$1');
+                    cd.arrivalTime = cleanInArr;
+                    cd.isRegulating = true;
+                    cd.isTerminalLayover = true;
+                    if (cd.delayStatus === 'scheduled') {
+                      cd.delayStatus = 'regulating';
+                      cd.delayBadgeText = '⏱️ Regulació';
+                    }
+                    const inArrSec = timeEngine.timeStringToSeconds(cleanInArr);
+                    cd.arrivalMinutesAway = Math.round((inArrSec - currentSecNow) / 60);
+                    cd.departureMinutesAway = cd.minutesAway;
+                    cd.statusText = `🅿️ Regulant (Arribada: ${cleanInArr} • Sortida: ${cd.departureTime})`;
+                  }
+                }
+              }
+            });
+          }
+        }
+      }
 
       allSynthesizedDepartures.push(...compiledForRoute);
     });

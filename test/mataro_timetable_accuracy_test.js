@@ -453,6 +453,15 @@ async function runMataroTimetableAccuracyTests() {
   });
   totalAssertions += 5;
 
+  // Verify terminal origin departures (e.g. Line 1 originating at Stop 1001) have arrivalTime and isRegulating
+  const l1Deps = hospitalDeps.departures.filter(d => String(d.lineId) === '1');
+  if (l1Deps.length > 0) {
+    const termDep = l1Deps[0];
+    assert.strictEqual(termDep.isRegulating, true, 'Line 1 departure originating at Hospital terminal must have isRegulating: true');
+    assert.ok(termDep.arrivalTime, 'Line 1 departure at Hospital terminal must have arrivalTime populated');
+    totalAssertions += 2;
+  }
+
   // 4.2 Hub 2: Estació Rodalies (Stop 1016) - Multimodal Train & Bus Interchange
   console.log('  Testing Stop 1016 (Estació Rodalies) multi-line interchange...');
   const rodaliesDeps = await mataroTracker.getStopDepartures('1016');

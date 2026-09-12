@@ -291,6 +291,9 @@ function standardizeDeparture(dep = {}, defaults = {}) {
       : (d.comparisonText || delayEval.comparisonText),
     arrivalTime: cleanArrivalTime,
     isRegulating,
+    isTerminalLayover: Boolean(d.isTerminalLayover || isRegulating),
+    arrivalMinutesAway: d.arrivalMinutesAway !== undefined && d.arrivalMinutesAway !== null ? Number(d.arrivalMinutesAway) : null,
+    departureMinutesAway: d.departureMinutesAway !== undefined && d.departureMinutesAway !== null ? Number(d.departureMinutesAway) : minutesAway,
     vehicleId: d.vehicleId || null,
     busCoords: d.busCoords || null
   };
