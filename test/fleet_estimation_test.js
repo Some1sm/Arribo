@@ -164,7 +164,131 @@ async function runFleetEstimationTests() {
   );
   assert.strictEqual(synthResult6.fleetStatus.liveGpsVehicles, 1, 'Should record 1 live GPS vehicle');
   assert.strictEqual(synthResult6.fleetStatus.estimatedVehicles, 0, 'Estimated vehicles must be 0');
-  console.log('  ✓ Test 6 Passed: Direction and whole-line caps strictly prevent duplicate ghost buses and headway bunching.\n');
+  // Test 7: Saturday Line 1 Terminal Layover & Missing GPS Regulation Vehicle Synthesis
+  console.log('📌 Test 7: Saturday Line 1 Terminal Layover & Missing GPS Regulation Vehicle Synthesis...');
+  const saturday1243 = new Date('2026-09-12T10:43:00Z'); // 12:43 CEST (Saturday)
+  const routes1_7 = mataroTracker.routesData['1'] || [];
+  const allDirs1_7 = [
+    { dirId: '0', stops: routes1_7[0]?.stops || [] },
+    { dirId: '1', stops: routes1_7[1]?.stops || [] }
+  ];
+
+  const mockLiveBusesL1 = [
+    {
+      tripId: 'LIVE_2667',
+      vehicleId: '2667',
+      lineId: '1',
+      direction: '0',
+      lat: 41.5553,
+      lon: 2.42927,
+      speedKmh: 18,
+      totalProgress: 7,
+      isEstimated: false,
+      isRealTime: true
+    },
+    {
+      tripId: 'LIVE_2672',
+      vehicleId: '2672',
+      lineId: '1',
+      direction: '1',
+      lat: 41.5393,
+      lon: 2.42299,
+      speedKmh: 24,
+      totalProgress: 41,
+      isEstimated: false,
+      isRealTime: true
+    }
+  ];
+
+  // Test with 'both' directions
+  const synthResult7Both = mataroTracker.synthesizeMissingScheduledBuses(
+    '1',
+    'both',
+    routes1_7,
+    allDirs1_7,
+    mockLiveBusesL1,
+    saturday1243,
+    mockLiveBusesL1
+  );
+
+  assert.strictEqual(synthResult7Both.fleetStatus.scheduledVehicles, 3, 'Line 1 Saturday at 12:43 must have 3 scheduled vehicles (2 in transit + 1 in layover)');
+  assert.strictEqual(synthResult7Both.fleetStatus.liveGpsVehicles, 2, 'Must count 2 live GPS vehicles');
+  assert.strictEqual(synthResult7Both.fleetStatus.estimatedVehicles, 1, 'Must synthesize 1 missing estimated vehicle');
+  assert.strictEqual(synthResult7Both.syntheticBuses.length, 1, 'Must produce exactly 1 synthetic bus');
+
+  const layoverBus = synthResult7Both.syntheticBuses[0];
+  assert.strictEqual(layoverBus.vehicleId, 'EST_1_1252', 'Synthesized bus must be EST_1_1252 for the 12:52 departure');
+  assert.strictEqual(layoverBus.direction, '1', 'Layover bus must be on Direction 1 (Rodalies -> Hospital)');
+  assert.strictEqual(layoverBus.isTerminalLayover, true, 'Must have isTerminalLayover = true');
+  assert.strictEqual(layoverBus.speedKmh, 0, 'Layover vehicle speed must be 0 km/h');
+  assert.strictEqual(layoverBus.isGhostVehicle, true, 'Must be marked as isGhostVehicle');
+  assert.strictEqual(layoverBus.isEstimated, true, 'Must be marked as isEstimated');
+  assert.strictEqual(layoverBus.isRealTime, false, 'Must not be marked as real-time');
+  assert.ok(layoverBus.lat >= 41.530 && layoverBus.lat <= 41.536, `Layover bus must be positioned at Estació Rodalies (lat: ${layoverBus.lat})`);
+  assert.ok(layoverBus.lon >= 2.440 && layoverBus.lon <= 2.450, `Layover bus must be positioned at Estació Rodalies (lon: ${layoverBus.lon})`);
+  assert.strictEqual(layoverBus.departureTime, '12:52', 'Departure time must be 12:52');
+
+  // Test with '1' direction specifically (as viewed when user inspects Sentit 2)
+  const synthResult7Dir1 = mataroTracker.synthesizeMissingScheduledBuses(
+    '1',
+    '1',
+    routes1_7,
+    allDirs1_7,
+    [mockLiveBusesL1[1]], // only live bus on dir 1
+    saturday1243,
+    mockLiveBusesL1
+  );
+
+  assert.strictEqual(synthResult7Dir1.syntheticBuses.length, 1, 'Direction 1 must synthesize the 12:52 layover bus');
+  assert.strictEqual(synthResult7Dir1.syntheticBuses[0].vehicleId, 'EST_1_1252', 'Direction 1 must synthesize EST_1_1252');
+
+  // Test transition post-departure at 12:54 (2 min in transit along Direction 1)
+  const saturday1254 = new Date('2026-09-12T10:54:00Z');
+  const liveVehsAt1254 = [
+    {
+      tripId: 'LIVE_2667',
+      vehicleId: '2667',
+      lineId: '1',
+      direction: '0',
+      lat: 41.539,
+      lon: 2.442,
+      speedKmh: 20,
+      totalProgress: 57,
+      isEstimated: false,
+      isRealTime: true
+    },
+    {
+      tripId: 'LIVE_2672',
+      vehicleId: '2672',
+      lineId: '1',
+      direction: '1',
+      lat: 41.5546,
+      lon: 2.4313,
+      speedKmh: 22,
+      totalProgress: 96,
+      isEstimated: false,
+      isRealTime: true
+    }
+  ];
+
+  const synthResult7Transit = mataroTracker.synthesizeMissingScheduledBuses(
+    '1',
+    'both',
+    routes1_7,
+    allDirs1_7,
+    liveVehsAt1254,
+    saturday1254,
+    liveVehsAt1254
+  );
+
+  assert.strictEqual(synthResult7Transit.syntheticBuses.length, 1, 'In-transit bus must still be synthesized at 12:54');
+  const transitBus = synthResult7Transit.syntheticBuses[0];
+  assert.strictEqual(transitBus.isTerminalLayover, false, 'At 12:54 vehicle is now in transit');
+  assert.strictEqual(transitBus.speedKmh, 20, 'In-transit vehicle speed is 20 km/h');
+  assert.ok(transitBus.totalProgress > 0, 'In-transit vehicle progress must be > 0');
+  assert.ok(transitBus.toStop.includes('1019') || transitBus.toStop.includes('President Macià'), 'Next stop must be President Macià (Stop 1019)');
+
+  console.log('  ✓ Test 7 Passed: Terminal layover regulation and post-departure transition fully verified.\n');
 
   console.log('=========================================================================');
   console.log('🎉 ALL SCHEDULED FLEET ESTIMATION TESTS PASSED SUCCESSFULLY! 🎉');

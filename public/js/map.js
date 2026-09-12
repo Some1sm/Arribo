@@ -1348,31 +1348,37 @@ class C10Map {
         <div class="map-popup-card">
           <div class="map-popup-header">
             <div class="map-popup-title-group">
-              <div class="map-popup-bus-icon layover">
-                <span>🅿️</span>
+              <div class="map-popup-bus-icon ${isGhost ? 'ghost' : 'layover'}">
+                <span>${isGhost ? '⚡' : '🅿️'}</span>
               </div>
               <div class="map-popup-title-text">
                 <div class="map-popup-title">
                   <span>Bus ${bus.vehicleId ? `#${escHtml(bus.vehicleId)}` : ''}</span>
                   ${lineBadge ? `<span class="map-popup-line-pill" style="background:${busColor || '#3b82f6'};">${escHtml(lineBadge)}</span>` : ''}
                 </div>
-                <div class="map-popup-subtitle">Capçalera / Regulació</div>
+                <div class="map-popup-subtitle">${isGhost ? 'Capçalera / Regulació (Sense GPS)' : 'Capçalera / Regulació'}</div>
               </div>
             </div>
             <div class="map-popup-header-status">
-              <span class="map-popup-status-badge layover">
+              <span class="map-popup-status-badge ${isGhost ? 'ghost' : 'layover'}">
                 <span class="status-pulse-dot"></span>
-                <span>Aturat</span>
+                <span>${isGhost ? '⚡ Sense GPS' : 'Aturat'}</span>
               </span>
             </div>
           </div>
+
+          ${isGhost ? `
+          <div class="map-popup-ghost-notice">
+            <span class="ghost-icon">⚡</span>
+            <span><strong>Vehicle estimat a capçalera (sense GPS):</strong> Aquest autobús està programat en regulació a la capçalera${bus.departureTime ? ` (propera sortida <strong>${escHtml(bus.departureTime)}</strong>)` : ''}, però no transmet senyal GPS. La seva posició al mapa s'estima segons l'horari oficial.</span>
+          </div>` : ''}
 
           <div class="map-popup-route-ribbon">
             <div class="map-popup-route-stop from">
               <span class="map-popup-stop-dot"></span>
               <span class="map-popup-stop-name">${fromStop || 'Capçalera de Línia'}</span>
             </div>
-            <div class="map-popup-route-badge-layover">Pausa de servei</div>
+            <div class="map-popup-route-badge-layover">${bus.departureTime ? `Sortida: ${escHtml(bus.departureTime)}` : 'Pausa de servei'}</div>
           </div>
 
           <div class="map-popup-metrics-grid">
@@ -1584,18 +1590,19 @@ class C10Map {
             dotEl.className = `bus-status-dot ${isGhost ? 'ghost' : (isEst ? 'estimated' : 'live')}`;
           }
           const iconInner = el.querySelector('.bus-icon-inner');
-          if (iconInner && !bus.isTerminalLayover) {
-            iconInner.textContent = isGhost ? '⚡' : '🚌';
+          if (iconInner) {
+            iconInner.textContent = isGhost ? '⚡' : (bus.isTerminalLayover ? '🅿️' : '🚌');
           }
           obj.marker.setZIndexOffset(isSelected ? 5000 : (isGhost ? 1500 : 2000));
         }
       } else {
         const isHeadingWest = bearingAngle > 180 && bearingAngle < 360;
         const busHtml = bus.isTerminalLayover ? `
-          <div class="live-bus-marker-wrap ${isSelected ? 'selected' : ''}">
+          <div class="live-bus-marker-wrap ${isSelected ? 'selected' : ''} ${isGhost ? 'ghost-bus' : ''}">
             <div class="bus-selection-ring" style="${isSelected ? '' : 'display:none;'}"></div>
-            <div class="live-bus-pin" style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);">
-              <span class="bus-icon-inner">🅿️</span>
+            <div class="live-bus-pin" style="background: ${isGhost ? 'rgba(15, 23, 42, 0.88)' : 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)'};">
+              <span class="bus-icon-inner">${isGhost ? '⚡' : '🅿️'}</span>
+              ${isGhost ? `<span class="bus-status-dot ghost"></span>` : ''}
             </div>
           </div>
         ` : `
