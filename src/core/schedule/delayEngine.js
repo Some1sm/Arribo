@@ -276,6 +276,24 @@ function standardizeDeparture(dep = {}, defaults = {}) {
   const cleanArrivalTime = d.arrivalTime ? stripSeconds(d.arrivalTime) : null;
   const cleanScheduledTime = d.scheduledTime ? stripSeconds(d.scheduledTime) : (d.aimedIso && typeof d.aimedIso === 'string' && d.aimedIso.length >= 16 ? stripSeconds(d.aimedIso.substring(11, 16)) : null);
 
+  const tz = def.timezone || 'Europe/Madrid';
+  const refDate = def.dateObj ? new Date(def.dateObj) :
+    (def.targetDate ? new Date(def.targetDate) :
+    (def.referenceDate ? new Date(def.referenceDate) : new Date()));
+
+  let fallbackIso = null;
+  if (cleanDepartureTime && cleanDepartureTime.includes(':')) {
+    const [ch, cm] = cleanDepartureTime.split(':').map(Number);
+    if (!isNaN(ch) && !isNaN(cm)) {
+      const net = timeEngine.getNetworkTime(tz, refDate);
+      const utcDate = timeEngine.localTimeToUtcDate(net.year, net.month, net.day, ch % 24, cm % 60, 0, tz);
+      fallbackIso = utcDate.toISOString();
+    }
+  }
+  if (!fallbackIso) {
+    fallbackIso = refDate.toISOString();
+  }
+
   return {
     lineId: String(d.lineId || def.lineId || 'line'),
     lineCode: String(d.lineCode || d.lineName || def.lineCode || 'BUS'),
@@ -283,9 +301,9 @@ function standardizeDeparture(dep = {}, defaults = {}) {
     destination: String(d.destination || def.destination || 'Destinació'),
     directionId: String(d.directionId !== undefined ? d.directionId : (def.directionId || '0')),
     departureTime: String(cleanDepartureTime),
-    departureDate: d.departureDate || d.expectedIso || new Date().toISOString(),
-    expectedIso: d.expectedIso || d.departureDate || new Date().toISOString(),
-    aimedIso: d.aimedIso || d.expectedIso || d.departureDate || new Date().toISOString(),
+    departureDate: d.departureDate || d.expectedIso || fallbackIso,
+    expectedIso: d.expectedIso || d.departureDate || fallbackIso,
+    aimedIso: d.aimedIso || (d.scheduledTime ? fallbackIso : (d.expectedIso || d.departureDate || fallbackIso)),
     minutesAway,
     formattedStatus,
     isRealTime,

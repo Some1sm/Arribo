@@ -2923,9 +2923,29 @@ body {
 
 .leaflet-popup-content {
   margin: 0 !important;
-  width: 320px !important;
-  max-width: calc(100vw - 32px) !important;
+  width: 330px !important;
+  max-width: calc(100vw - 28px) !important;
   line-height: 1.4 !important;
+  max-height: min(80vh, 520px) !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+
+.leaflet-popup-content::-webkit-scrollbar {
+  width: 5px;
+}
+.leaflet-popup-content::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+}
+.leaflet-popup-content::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 8px;
+}
+.leaflet-popup-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.38);
 }
 
 /* Polished Circular Close Button */
@@ -3017,31 +3037,44 @@ body {
   color: var(--text-primary);
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   letter-spacing: -0.01em;
-  line-height: 1.2;
+  line-height: 1.25;
+}
+
+.map-popup-bus-id {
+  white-space: nowrap;
 }
 
 .map-popup-line-pill {
-  font-size: 0.68rem;
-  font-weight: 800;
-  color: #ffffff;
-  padding: 1px 7px;
-  border-radius: 6px;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 0.74rem !important;
+  font-weight: 800 !important;
+  color: #ffffff !important;
+  min-width: 24px;
+  height: 20px;
+  padding: 0 6px !important;
+  border-radius: 6px !important;
+  line-height: 1 !important;
   letter-spacing: 0.02em;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
+  flex-shrink: 0 !important;
+  box-sizing: border-box !important;
+  text-align: center !important;
 }
 
 .map-popup-subtitle {
   font-size: 0.72rem;
   font-weight: 500;
   color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 175px;
-  margin-top: 1px;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.25;
+  margin-top: 2px;
 }
 
 .map-popup-header-status {
@@ -3174,11 +3207,18 @@ body {
   background: var(--bg-surface-elevated, rgba(255, 255, 255, 0.03));
   border: 1px solid var(--border-subtle);
   border-radius: 9px;
-  padding: 7px 9px;
+  padding: 8px 10px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
   min-width: 0;
+  overflow: hidden;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.map-popup-metric-tile:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.15);
 }
 
 .map-popup-metric-header {
@@ -3198,15 +3238,30 @@ body {
 }
 
 .map-popup-metric-val {
-  font-size: 0.86rem;
+  font-size: 0.82rem;
   font-weight: 700;
   color: var(--text-primary);
   display: flex;
   align-items: center;
-  gap: 4px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  gap: 5px;
+  line-height: 1.3;
+  min-width: 0;
+  word-break: break-word;
+  white-space: normal;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+  -webkit-overflow-scrolling: touch;
+}
+
+.map-popup-metric-val::-webkit-scrollbar {
+  height: 3px;
+}
+
+.map-popup-metric-val::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 4px;
 }
 
 .map-popup-metric-val.on-time {
@@ -3234,7 +3289,21 @@ body {
 }
 
 .map-popup-compass-val {
+  display: flex;
+  align-items: center;
   gap: 5px;
+  min-width: 0;
+}
+
+.map-popup-compass-text {
+  word-break: break-word;
+  white-space: normal;
+  line-height: 1.25;
+}
+
+.map-popup-bearing-deg {
+  font-weight: 600;
+  opacity: 0.85;
 }
 
 .map-popup-compass-arrow {

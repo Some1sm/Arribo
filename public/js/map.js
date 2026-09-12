@@ -1353,10 +1353,10 @@ class C10Map {
               </div>
               <div class="map-popup-title-text">
                 <div class="map-popup-title">
-                  <span>Bus ${bus.vehicleId ? `#${escHtml(bus.vehicleId)}` : ''}</span>
                   ${lineBadge ? `<span class="map-popup-line-pill" style="background:${busColor || '#3b82f6'};">${escHtml(lineBadge)}</span>` : ''}
+                  <span class="map-popup-bus-id">Bus ${bus.vehicleId ? `#${escHtml(bus.vehicleId)}` : ''}</span>
                 </div>
-                <div class="map-popup-subtitle">${isGhost ? 'Capçalera / Regulació (Sense GPS)' : 'Capçalera / Regulació'}</div>
+                <div class="map-popup-subtitle" title="${isGhost ? 'Capçalera / Regulació (Sense GPS)' : 'Capçalera / Regulació'}">${isGhost ? 'Capçalera / Regulació (Sense GPS)' : 'Capçalera / Regulació'}</div>
               </div>
             </div>
             <div class="map-popup-header-status">
@@ -1382,19 +1382,19 @@ class C10Map {
           </div>
 
           <div class="map-popup-metrics-grid">
-            <div class="map-popup-metric-tile">
+            <div class="map-popup-metric-tile" title="Velocitat: 0 km/h">
               <div class="map-popup-metric-header">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
                 <span>Velocitat</span>
               </div>
-              <div class="map-popup-metric-val">0 km/h</div>
+              <div class="map-popup-metric-val"><span>0 km/h</span></div>
             </div>
-            <div class="map-popup-metric-tile">
+            <div class="map-popup-metric-tile" title="Estat: Regulant horari">
               <div class="map-popup-metric-header">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                 <span>Estat</span>
               </div>
-              <div class="map-popup-metric-val layover">Regulant horari</div>
+              <div class="map-popup-metric-val layover"><span>Regulant horari</span></div>
             </div>
           </div>
 
@@ -1428,8 +1428,8 @@ class C10Map {
               </div>
               <div class="map-popup-title-text">
                 <div class="map-popup-title">
-                  <span>Bus ${bus.vehicleId ? `#${escHtml(bus.vehicleId)}` : ''}</span>
                   ${lineBadge ? `<span class="map-popup-line-pill" style="background:${busColor || 'var(--c10-primary)'};">${escHtml(lineBadge)}</span>` : ''}
+                  <span class="map-popup-bus-id">Bus ${bus.vehicleId ? `#${escHtml(bus.vehicleId)}` : ''}</span>
                 </div>
                 <div class="map-popup-subtitle" title="${bus.destination ? escHtml(bus.destination) : ''}">
                   ${isGhost ? 'Horari Oficial (Sense GPS)' : (isSecDir ? 'Sentit contrari' : (bus.destination ? `Dest: ${escHtml(bus.destination)}` : 'En servei'))}
@@ -1473,23 +1473,23 @@ class C10Map {
           </div>` : '')}
 
           <div class="map-popup-metrics-grid">
-            <div class="map-popup-metric-tile">
+            <div class="map-popup-metric-tile" title="Velocitat: ${speedValue}">
               <div class="map-popup-metric-header">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
                 <span>Velocitat</span>
               </div>
-              <div class="map-popup-metric-val">${speedValue}</div>
+              <div class="map-popup-metric-val"><span>${speedValue}</span></div>
             </div>
 
-            <div class="map-popup-metric-tile">
+            <div class="map-popup-metric-tile" title="Estat: ${escHtml(delayBadgeText)}">
               <div class="map-popup-metric-header">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                 <span>Estat</span>
               </div>
-              <div class="map-popup-metric-val ${delayClass}">${escHtml(delayBadgeText)}</div>
+              <div class="map-popup-metric-val ${delayClass}"><span>${escHtml(delayBadgeText)}</span></div>
             </div>
 
-            <div class="map-popup-metric-tile">
+            <div class="map-popup-metric-tile" title="Rumb: ${escHtml(compassLabel)} (${bearingAngle}°)">
               <div class="map-popup-metric-header">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 19 21 12 17 5 21 12 2"/></svg>
                 <span>Rumb</span>
@@ -1498,16 +1498,16 @@ class C10Map {
                 <svg class="map-popup-compass-arrow" style="transform: rotate(${bearingAngle}deg);" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                   <polygon points="12 2 19 21 12 17 5 21 12 2"/>
                 </svg>
-                <span>${escHtml(compassLabel)} (${bearingAngle}°)</span>
+                <span class="map-popup-compass-text">${escHtml(compassLabel)} <span class="map-popup-bearing-deg">(${bearingAngle}°)</span></span>
               </div>
             </div>
 
-            <div class="map-popup-metric-tile">
+            <div class="map-popup-metric-tile" title="Progrés del recorregut: ${progressNum}%">
               <div class="map-popup-metric-header">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
                 <span>Progrés</span>
               </div>
-              <div class="map-popup-metric-val">${progressNum}%</div>
+              <div class="map-popup-metric-val"><span>${progressNum}%</span></div>
               <div class="map-popup-progress-track">
                 <div class="map-popup-progress-fill" style="width: ${progressNum}%;"></div>
               </div>
@@ -1633,7 +1633,8 @@ class C10Map {
         marker.bindPopup(popupHtml, {
           className: 'arribo-bus-popup',
           minWidth: 290,
-          maxWidth: 340,
+          maxWidth: 350,
+          maxHeight: 520,
           autoPan: true,
           autoPanPadding: [20, 20],
           closeButton: true

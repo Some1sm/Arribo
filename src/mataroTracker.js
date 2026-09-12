@@ -721,9 +721,11 @@ class MataroTracker extends BaseTracker {
     const cacheKey = `${lId}_${direction}`;
     const staticTemplate = this.staticLineCache.get(cacheKey) || this.staticLineCache.get(`${lId}_0`);
 
-    const targetDate = options.dateObj ? new Date(options.dateObj) :
-      (options.targetDate ? new Date(options.targetDate) :
-      (options.referenceDate ? new Date(options.referenceDate) : new Date()));
+    const targetDate = (options instanceof Date || typeof options === 'string' || typeof options === 'number')
+      ? new Date(options)
+      : (options.dateObj ? new Date(options.dateObj) :
+        (options.targetDate ? new Date(options.targetDate) :
+        (options.referenceDate ? new Date(options.referenceDate) : new Date())));
 
     const lineInfo = this.linesData.find(l => String(l.id) === lId) || { id: lId, name: `Línia ${lId}`, color: '#009485' };
     const routes = this.routesData[lId] || [];
@@ -1188,7 +1190,7 @@ class MataroTracker extends BaseTracker {
                 const bProg = (b.totalProgress !== undefined ? b.totalProgress : 50) / 100;
                 const diff = Math.abs(theoreticalOppProgress - bProg);
                 const notYetAtTerminal = (b.totalProgress !== undefined ? b.totalProgress : 50) < 85;
-                return diff <= 0.70 && notYetAtTerminal;
+                return theoreticalOppProgress <= 1.20 && diff <= 0.35 && notYetAtTerminal;
               });
             }
           }

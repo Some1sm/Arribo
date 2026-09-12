@@ -330,44 +330,83 @@ async function runFleetEstimationTests() {
   // Test 10: Directional Fleet Consistency (Single Direction vs Both Directions)
   console.log('📌 Test 10: Directional Fleet Consistency (No Phantom Jumping Between Directions)...');
   const saturday1330 = new Date('2026-09-12T11:30:00Z'); // 13:30 CEST (Saturday)
+  const siriClient10 = require('../src/mataroSiriClient');
+  const origLive10 = siriClient10.getLiveVehicles;
 
-  const bothDetails = await mataroTracker.getLineDetails('1', 'both', saturday1330);
-  const dir0Details = await mataroTracker.getLineDetails('1', '0', saturday1330);
-  const dir1Details = await mataroTracker.getLineDetails('1', '1', saturday1330);
+  siriClient10.getLiveVehicles = async (lId) => [
+    {
+      vehicleId: '2672',
+      lineId: '1',
+      direction: '1',
+      origin: 'Rodalies',
+      destination: 'Hospital de Mataró',
+      lat: 41.538639,
+      lon: 2.42417,
+      bearing: 0,
+      speedKmh: 25,
+      delayMins: 0,
+      isEstimated: false,
+      isRealTime: true,
+      timestamp: saturday1330.getTime()
+    },
+    {
+      vehicleId: '2667',
+      lineId: '1',
+      direction: '1',
+      origin: 'Rodalies',
+      destination: 'Hospital de Mataró',
+      lat: 41.545,
+      lon: 2.432,
+      bearing: 45,
+      speedKmh: 20,
+      delayMins: 0,
+      isEstimated: false,
+      isRealTime: true,
+      timestamp: saturday1330.getTime()
+    }
+  ];
 
-  const bothBuses = bothDetails.activeBuses || [];
-  const dir0Buses = dir0Details.activeBuses || [];
-  const dir1Buses = dir1Details.activeBuses || [];
+  try {
+    const bothDetails = await mataroTracker.getLineDetails('1', 'both', saturday1330);
+    const dir0Details = await mataroTracker.getLineDetails('1', '0', saturday1330);
+    const dir1Details = await mataroTracker.getLineDetails('1', '1', saturday1330);
 
-  // 1. Directional partitioning: sum of directional buses must exactly match total line fleet in 'both'
-  assert.strictEqual(
-    dir0Buses.length + dir1Buses.length,
-    bothBuses.length,
-    `Sum of buses on Dir 0 (${dir0Buses.length}) and Dir 1 (${dir1Buses.length}) must equal total line fleet (${bothBuses.length})`
-  );
+    const bothBuses = bothDetails.activeBuses || [];
+    const dir0Buses = dir0Details.activeBuses || [];
+    const dir1Buses = dir1Details.activeBuses || [];
 
-  // 2. Strict direction adherence
-  dir0Buses.forEach(b => {
-    assert.strictEqual(String(b.direction), '0', `Bus ${b.vehicleId} on Dir 0 must have direction='0'`);
-  });
-  dir1Buses.forEach(b => {
-    assert.strictEqual(String(b.direction), '1', `Bus ${b.vehicleId} on Dir 1 must have direction='1'`);
-  });
+    // 1. Directional partitioning: sum of directional buses must exactly match total line fleet in 'both'
+    assert.strictEqual(
+      dir0Buses.length + dir1Buses.length,
+      bothBuses.length,
+      `Sum of buses on Dir 0 (${dir0Buses.length}) and Dir 1 (${dir1Buses.length}) must equal total line fleet (${bothBuses.length})`
+    );
 
-  // 3. Ground truth consistency: estimated bus is on Dir 0 (Hospital 13:34) and NEVER jumps to Dir 1
-  const dir0Estimated = dir0Buses.filter(b => b.isEstimated);
-  const dir1Estimated = dir1Buses.filter(b => b.isEstimated);
-  const bothEstimated = bothBuses.filter(b => b.isEstimated);
+    // 2. Strict direction adherence
+    dir0Buses.forEach(b => {
+      assert.strictEqual(String(b.direction), '0', `Bus ${b.vehicleId} on Dir 0 must have direction='0'`);
+    });
+    dir1Buses.forEach(b => {
+      assert.strictEqual(String(b.direction), '1', `Bus ${b.vehicleId} on Dir 1 must have direction='1'`);
+    });
 
-  assert.strictEqual(bothEstimated.length, 1, 'Exactly 1 estimated bus exists on the line at 13:30');
-  assert.strictEqual(dir0Estimated.length, 1, 'Estimated bus must be on Direction 0');
-  assert.strictEqual(dir1Estimated.length, 0, 'Direction 1 must NOT synthesize phantom estimated bus');
-  assert.strictEqual(dir0Estimated[0].vehicleId, 'EST_1_1334', 'Estimated bus on Dir 0 must be EST_1_1334');
+    // 3. Ground truth consistency: estimated bus is on Dir 0 (Hospital 13:34) and NEVER jumps to Dir 1
+    const dir0Estimated = dir0Buses.filter(b => b.isEstimated);
+    const dir1Estimated = dir1Buses.filter(b => b.isEstimated);
+    const bothEstimated = bothBuses.filter(b => b.isEstimated);
 
-  console.log('  -> Both directions fleet:', bothBuses.map(b => `${b.vehicleId} (dir ${b.direction}, est: ${b.isEstimated})`).join(', '));
-  console.log('  -> Dir 0 fleet:', dir0Buses.map(b => `${b.vehicleId} (dir ${b.direction})`).join(', '));
-  console.log('  -> Dir 1 fleet:', dir1Buses.map(b => `${b.vehicleId} (dir ${b.direction})`).join(', '));
-  console.log('  ✓ Test 10 Passed: Directional fleet consistency verified with 0 phantom jumping.\n');
+    assert.strictEqual(bothEstimated.length, 1, 'Exactly 1 estimated bus exists on the line at 13:30');
+    assert.strictEqual(dir0Estimated.length, 1, 'Estimated bus must be on Direction 0');
+    assert.strictEqual(dir1Estimated.length, 0, 'Direction 1 must NOT synthesize phantom estimated bus');
+    assert.strictEqual(dir0Estimated[0].vehicleId, 'EST_1_1334', 'Estimated bus on Dir 0 must be EST_1_1334');
+
+    console.log('  -> Both directions fleet:', bothBuses.map(b => `${b.vehicleId} (dir ${b.direction}, est: ${b.isEstimated})`).join(', '));
+    console.log('  -> Dir 0 fleet:', dir0Buses.map(b => `${b.vehicleId} (dir ${b.direction})`).join(', '));
+    console.log('  -> Dir 1 fleet:', dir1Buses.map(b => `${b.vehicleId} (dir ${b.direction})`).join(', '));
+    console.log('  ✓ Test 10 Passed: Directional fleet consistency verified with 0 phantom jumping.\n');
+  } finally {
+    siriClient10.getLiveVehicles = origLive10;
+  }
 
   // Test 11: Downstream Origin Regulation Clamping (Transit Invariant: No 'Avançat' before origin departure)
   console.log('📌 Test 11: Downstream Origin Regulation Clamping (Transit Invariant: No "Avançat" before origin departure)...');

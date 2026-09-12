@@ -364,6 +364,7 @@ function compileStopDepartures(options = {}) {
   const liveDepartures = [];
   const liveMinutesOfDay = [];
   const liveAimedMinutesOfDay = [];
+  const liveHasExplicitAimed = [];
 
   for (const raw of rawLive) {
     if (!raw) continue;
@@ -388,14 +389,21 @@ function compileStopDepartures(options = {}) {
       depMin = (nowMinOfDay + Math.round(Number(std.minutesAway))) % 1440;
     }
 
-    if (std.aimedIso && !std.aimedIso.startsWith('0001-') && !std.aimedIso.startsWith('1970-')) {
-      const d = new Date(std.aimedIso);
+    const rawAimedIso = raw.aimedIso;
+    const rawScheduledTime = raw.scheduledTime;
+    const hasExplicitAimed = Boolean(
+      (rawAimedIso && !rawAimedIso.startsWith('0001-') && !rawAimedIso.startsWith('1970-')) ||
+      (rawScheduledTime && typeof rawScheduledTime === 'string' && rawScheduledTime.includes(':'))
+    );
+
+    if (rawAimedIso && !rawAimedIso.startsWith('0001-') && !rawAimedIso.startsWith('1970-')) {
+      const d = new Date(rawAimedIso);
       if (!isNaN(d.getTime())) {
         const aimedNet = timeEngine.getNetworkTime(timezone, d);
         aimedMin = (aimedNet.hour * 60 + aimedNet.minute) % 1440;
       }
-    } else if (std.scheduledTime && std.scheduledTime.includes(':')) {
-      const [sh, sm] = std.scheduledTime.split(':').map(Number);
+    } else if (rawScheduledTime && typeof rawScheduledTime === 'string' && rawScheduledTime.includes(':')) {
+      const [sh, sm] = rawScheduledTime.split(':').map(Number);
       if (!isNaN(sh) && !isNaN(sm)) {
         aimedMin = (sh % 24) * 60 + (sm % 60);
       }
@@ -407,6 +415,7 @@ function compileStopDepartures(options = {}) {
     if (depMin !== null) {
       liveMinutesOfDay.push(depMin);
       liveAimedMinutesOfDay.push(aimedMin !== null ? aimedMin : depMin);
+      liveHasExplicitAimed.push(hasExplicitAimed);
     }
     liveDepartures.push(std);
   }
@@ -417,9 +426,10 @@ function compileStopDepartures(options = {}) {
       const liveMin = liveMinutesOfDay[i];
       const liveAimedMin = liveAimedMinutesOfDay[i];
       const liveDep = liveDepartures[i];
+      const hasExplicitAimed = liveHasExplicitAimed[i];
 
       // 1. If live departure has an explicit aimed/scheduled time or aimedIso
-      if (liveDep && (liveDep.aimedIso || liveDep.scheduledTime)) {
+      if (hasExplicitAimed && liveAimedMin !== null) {
         let diffAimed = Math.abs(liveAimedMin - scheduledMinOfDay);
         if (diffAimed > 720) diffAimed = 1440 - diffAimed;
         if (diffAimed <= 3) {
@@ -434,11 +444,10 @@ function compileStopDepartures(options = {}) {
         return true;
       }
 
-      // 3. Delayed in-flight trip match if liveDep has delayMins
+      // 3. Delayed in-flight trip match if liveDep has delayMins and explicit aimed time
       const delay = liveDep?.delayMins || 0;
-      if (delay !== 0 && liveDep && (liveDep.aimedIso || liveDep.scheduledTime)) {
-        const expectedSchedMin = (liveMin - delay + 1440) % 1440;
-        let diffDelayed = Math.abs(expectedSchedMin - scheduledMinOfDay);
+      if (delay !== 0 && hasExplicitAimed && liveAimedMin !== null) {
+        let diffDelayed = Math.abs(liveAimedMin - scheduledMinOfDay);
         if (diffDelayed > 720) diffDelayed = 1440 - diffDelayed;
         if (diffDelayed <= 3) {
           return true;
