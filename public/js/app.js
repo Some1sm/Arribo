@@ -2702,11 +2702,13 @@ class TransitApp {
       if (chipsContainer) {
         chipsContainer.innerHTML = buses.map((b, idx) => {
           const isSelected = String(b.tripId || b.vehicleId) === String(this.selectedVehicleId);
-          const label = b.vehicleId ? `Bus #${b.vehicleId}` : `Bus ${idx + 1}`;
+          const isGhost = Boolean(b.isGhostVehicle);
+          const label = isGhost ? `Estimat (${b.departureTime || 'Horari'})` : (b.vehicleId ? `Bus #${b.vehicleId}` : `Bus ${idx + 1}`);
           const isParked = b.isTerminalLayover;
+          const chipClass = `telemetry-bus-chip ${isSelected ? 'active' : ''} ${isGhost ? 'ghost-chip' : ''}`;
           return `
-            <button type="button" class="telemetry-bus-chip ${isSelected ? 'active' : ''}" data-bus-trip="${b.tripId || b.vehicleId}">
-              <span>${isParked ? '🅿️' : '🚌'}</span>
+            <button type="button" class="${chipClass}" data-bus-trip="${b.tripId || b.vehicleId}">
+              <span>${isGhost ? '⚡' : (isParked ? '🅿️' : '🚌')}</span>
               <span>${label}</span>
               <span style="font-size:0.68rem; opacity:0.8;">(${b.toStop || b.destination || 'En línia'})</span>
             </button>
@@ -2746,6 +2748,11 @@ class TransitApp {
     const progressText = document.getElementById('telemetry-progress-text');
     const statusBadge = document.getElementById('telemetry-status-badge');
     const radarDot = document.getElementById('telemetry-radar-dot');
+    const ghostNoticeEl = document.getElementById('telemetry-ghost-notice');
+
+    if (ghostNoticeEl) {
+      ghostNoticeEl.style.display = (b && b.isGhostVehicle) ? 'flex' : 'none';
+    }
 
     if (!b) {
       const nextTime = targetData?.nextBus?.departureTime || lineData?.serviceStatus?.firstServiceTomorrow || '06:45';
@@ -2766,26 +2773,34 @@ class TransitApp {
       return;
     }
 
+    const isGhost = Boolean(b.isGhostVehicle);
     const isEst = Boolean(b.isEstimated);
 
-    if (coordsEl) coordsEl.textContent = b.coordinatesFormatted || `${b.lat.toFixed(5)}° N, ${b.lon.toFixed(5)}° E`;
+    if (coordsEl) coordsEl.textContent = isGhost
+      ? `⚡ Posició teòrica (${b.lat.toFixed(5)}°, ${b.lon.toFixed(5)}°)`
+      : (b.coordinatesFormatted || `${b.lat.toFixed(5)}° N, ${b.lon.toFixed(5)}° E`);
     if (bearingEl) bearingEl.textContent = `${b.compass?.label || 'N/A'} (${b.bearing || 0}°)`;
-    if (speedEl) speedEl.textContent = `${b.speedKmh || 32} km/h`;
+    if (speedEl) speedEl.textContent = isGhost ? `~20 km/h (Estimat)` : `${b.speedKmh || 32} km/h`;
     if (segmentEl) segmentEl.textContent = `${b.fromStop || 'Origen'} ➔ ${b.toStop || 'Destí'}`;
     if (etaNextEl) etaNextEl.textContent = b.secondsToNextStop ? `~${Math.round(b.secondsToNextStop / 60)} min (${b.toStop})` : `${b.toStop || 'En trajecte'}`;
-    if (tripStartEl) tripStartEl.textContent = b.tripStartTime || '--';
+    if (tripStartEl) tripStartEl.textContent = b.departureTime || b.tripStartTime || '--';
     
     const prog = Math.min(100, Math.max(0, b.totalProgress || 0));
     if (progressFill) progressFill.style.width = `${prog}%`;
     if (progressText) progressText.textContent = `${prog}%`;
 
     if (statusBadge) {
-      statusBadge.textContent = b.statusText || (b.isTerminalLayover ? '🅿️ En Regulació' : isEst ? '⚡ Estimació Zona Cobertura' : '🟢 Senyal GPS Actiu');
-      statusBadge.className = `telemetry-status-badge ${isEst ? 'estimated' : ''}`;
+      if (isGhost) {
+        statusBadge.textContent = '⚡ Horari Oficial Teòric (Sense GPS)';
+        statusBadge.className = 'telemetry-status-badge ghost';
+      } else {
+        statusBadge.textContent = b.statusText || (b.isTerminalLayover ? '🅿️ En Regulació' : isEst ? '⚡ Estimació Zona Cobertura' : '🟢 Senyal GPS Actiu');
+        statusBadge.className = `telemetry-status-badge ${isEst ? 'estimated' : ''}`;
+      }
     }
 
     if (radarDot) {
-      radarDot.className = `telemetry-live-radar ${isEst ? 'dead-zone' : ''}`;
+      radarDot.className = `telemetry-live-radar ${isGhost ? 'ghost' : (isEst ? 'dead-zone' : '')}`;
     }
   }
 
@@ -5242,6 +5257,34 @@ class TransitApp {
   updateActiveBusesCount(count, lData = null) {
     const headerEl = document.getElementById('header-active-buses-text');
     const mapEl = document.getElementById('map-bus-counter-tag');
+    const fs = lData?.fleetStatus;
+
+    if (fs && fs.scheduledVehicles > 0) {
+      const live = fs.liveGpsVehicles;
+      const est = fs.estimatedVehicles;
+      const total = fs.scheduledVehicles;
+
+      if (live > 0 && est > 0) {
+        if (headerEl) headerEl.innerHTML = `🟢 <strong>${live}</strong> GPS + ⚡ <strong>${est}</strong> est. (de ${total})`;
+        if (mapEl) mapEl.innerHTML = `🟢 ${live} GPS + ⚡ ${est} est. (de ${total} en servei)`;
+        return;
+      } else if (live > 0 && est === 0) {
+        if (headerEl) headerEl.innerHTML = `🟢 <strong>${live}</strong> en directe (100% flota amb GPS)`;
+        if (mapEl) mapEl.innerHTML = `🟢 ${live} bus${live === 1 ? '' : 'os'} en directe (100% GPS)`;
+        return;
+      } else if (live === 0 && est > 0) {
+        if (headerEl) headerEl.innerHTML = `⚡ <strong>${est}</strong> estimat${est === 1 ? '' : 's'} (sense GPS)`;
+        if (mapEl) mapEl.innerHTML = `⚡ ${est} bus${est === 1 ? '' : 'os'} estimats segons horari (sense GPS)`;
+        return;
+      }
+    }
+
+    if (fs && fs.scheduledVehicles === 0 && count === 0) {
+      if (headerEl) headerEl.innerHTML = `🌙 <strong>0</strong> busos en servei ara`;
+      if (mapEl) mapEl.innerHTML = `🌙 Sense busos en servei ara mateix`;
+      return;
+    }
+
     if (headerEl) {
       if (count > 0) {
         const isEst = lData?.isEstimated || (this.activeBuses.length > 0 && this.activeBuses.every(b => b.isEstimated));

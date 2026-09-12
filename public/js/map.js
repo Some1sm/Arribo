@@ -1247,7 +1247,7 @@ class C10Map {
     for (const [tId, obj] of this.busMarkersMap.entries()) {
       if (!currentTripIds.has(tId)) {
         const elapsedSec = (now - (obj.lastUpdated || now)) / 1000;
-        if (elapsedSec > 600) {
+        if (elapsedSec > 600 || obj.busData?.isGhostVehicle) {
           this.map.removeLayer(obj.marker);
           this.busMarkersMap.delete(tId);
         } else {
@@ -1303,25 +1303,31 @@ class C10Map {
         subpath = this.extractSubpath(targetPolyline, bus.fromCoords.lat, bus.fromCoords.lon, bus.toCoords.lat, bus.toCoords.lon);
       }
 
+      const isGhost = Boolean(bus.isGhostVehicle);
+      const isEst = Boolean(bus.isEstimated);
       const bearingAngle = Math.round(snapped.bearing || bus.bearing || 0);
       const compassLabel = bus.compass?.label || 'N/A';
-      const speedText = bus.speedKmh ? `${bus.speedKmh} km/h` : (bus.isTerminalLayover ? '0 km/h (Aturat)' : '30-40 km/h');
+      const speedText = bus.speedKmh ? `${bus.speedKmh} km/h` : (bus.isTerminalLayover ? '0 km/h (Aturat)' : (isGhost ? '~20 km/h (Estimat)' : '30-40 km/h'));
       const coordsText = `${snapped.lat.toFixed(5)}°, ${snapped.lon.toFixed(5)}°`;
-      const isEst = Boolean(bus.isEstimated);
 
       const lineBadge = bus.lineCode || bus.lineId || this.currentLineId || '';
       const fromStop = bus.fromStop ? escHtml(bus.fromStop) : '';
       const toStop = bus.toStop ? escHtml(bus.toStop) : (bus.destination ? escHtml(bus.destination) : '');
       const progressNum = Math.max(0, Math.min(100, Math.round(Number(bus.totalProgress) || 0)));
-      const speedValue = (bus.speedKmh !== undefined && bus.speedKmh !== null && !isNaN(bus.speedKmh)) 
-        ? `${Math.round(bus.speedKmh)} km/h`
-        : (bus.isTerminalLayover ? '0 km/h' : (speedText || '30-40 km/h'));
+      const speedValue = isGhost
+        ? '~20 km/h (Estimat)'
+        : ((bus.speedKmh !== undefined && bus.speedKmh !== null && !isNaN(bus.speedKmh)) 
+            ? `${Math.round(bus.speedKmh)} km/h`
+            : (bus.isTerminalLayover ? '0 km/h' : (speedText || '30-40 km/h')));
 
       let delayClass = 'on-time';
       let delayBadgeText = bus.delayFormatted || 'Puntual';
       const dMins = Number(bus.delayMins !== undefined ? bus.delayMins : (bus.delayMinutes !== undefined ? bus.delayMinutes : 0));
 
-      if (bus.isTerminalLayover || bus.delayStatus === 'regulating') {
+      if (isGhost) {
+        delayClass = 'ghost';
+        delayBadgeText = 'Horari Teòric';
+      } else if (bus.isTerminalLayover || bus.delayStatus === 'regulating') {
         delayClass = 'layover';
         delayBadgeText = 'Regulant';
       } else if (bus.delayStatus === 'delayed' || dMins >= 2) {
@@ -1425,12 +1431,18 @@ class C10Map {
             </div>
 
             <div class="map-popup-header-status">
-              <span class="map-popup-status-badge ${isEst ? 'estimated' : 'live'}">
+              <span class="map-popup-status-badge ${isGhost ? 'ghost' : (isEst ? 'estimated' : 'live')}">
                 <span class="status-pulse-dot"></span>
-                <span>${isEst ? 'Estimació' : 'En directe'}</span>
+                <span>${isGhost ? '⚡ Horari Teòric' : (isEst ? 'Estimació' : 'En directe')}</span>
               </span>
             </div>
           </div>
+
+          ${isGhost ? `
+          <div class="map-popup-ghost-notice">
+            <span class="ghost-icon">⚡</span>
+            <span><strong>Vehicle estimat segons horari oficial:</strong> Aquest autobús està programat en servei actiu (sortida <strong>${escHtml(bus.departureTime || '--')}</strong>) però no transmet dades GPS a la xarxa SAE.</span>
+          </div>` : ''}
 
           ${(fromStop && toStop) ? `
           <div class="map-popup-route-ribbon">
@@ -1509,10 +1521,10 @@ class C10Map {
 
           <div class="map-popup-coords-footer">
             <div class="coords-item">
-              <span class="radar-dot ${isEst ? 'estimated' : ''}"></span>
+              <span class="radar-dot ${isGhost ? 'ghost' : (isEst ? 'estimated' : '')}"></span>
               <span>${coordsText}</span>
             </div>
-            <span class="source-tag">${isEst ? 'Estimació Dead-Reckoning' : 'GPS Directe (SIRI)'}</span>
+            <span class="source-tag">${isGhost ? 'Horari Oficial (Sense GPS)' : (isEst ? 'Estimació Dead-Reckoning' : 'GPS Directe (SIRI)')}</span>
           </div>
 
           <button type="button" class="map-popup-btn-share" onclick="window.transitApp?.shareLiveBus('${escHtml(bus.vehicleId)}')">
@@ -1525,11 +1537,13 @@ class C10Map {
         </div>
       `;
 
-      const pinBg = isEst
-        ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
-        : (bus.isTerminalLayover 
-            ? 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)'
-            : (busColor || 'linear-gradient(135deg, #10b981 0%, #059669 100%)'));
+      const pinBg = isGhost
+        ? 'rgba(15, 23, 42, 0.88)'
+        : (isEst
+            ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
+            : (bus.isTerminalLayover 
+                ? 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)'
+                : (busColor || 'linear-gradient(135deg, #10b981 0%, #059669 100%)')));
 
       const markerKey = String(bus.tripId || bus.vehicleId || `${bus.lat}_${bus.lon}`);
 
@@ -1555,6 +1569,7 @@ class C10Map {
           const wrapEl = obj.wrapEl || (obj.wrapEl = el.querySelector('.live-bus-marker-wrap'));
           if (wrapEl) {
             wrapEl.classList.toggle('selected', isSelected);
+            wrapEl.classList.toggle('ghost-bus', isGhost);
             const ringEl = obj.ringEl || (obj.ringEl = el.querySelector('.bus-selection-ring'));
             if (ringEl) ringEl.style.display = isSelected ? 'block' : 'none';
           }
@@ -1564,9 +1579,9 @@ class C10Map {
           }
           const dotEl = obj.dotEl || (obj.dotEl = el.querySelector('.bus-status-dot'));
           if (dotEl) {
-            dotEl.className = `bus-status-dot ${isEst ? 'estimated' : 'live'}`;
+            dotEl.className = `bus-status-dot ${isGhost ? 'ghost' : (isEst ? 'estimated' : 'live')}`;
           }
-          obj.marker.setZIndexOffset(isSelected ? 5000 : 2000);
+          obj.marker.setZIndexOffset(isSelected ? 5000 : (isGhost ? 1500 : 2000));
         }
       } else {
         const isHeadingWest = bearingAngle > 180 && bearingAngle < 360;
@@ -1578,14 +1593,14 @@ class C10Map {
             </div>
           </div>
         ` : `
-          <div class="live-bus-marker-wrap ${isSelected ? 'selected' : ''}">
+          <div class="live-bus-marker-wrap ${isSelected ? 'selected' : ''} ${isGhost ? 'ghost-bus' : ''}">
             <div class="bus-selection-ring" style="${isSelected ? '' : 'display:none;'}"></div>
             <div class="bus-heading-cone" style="transform: rotate(${bearingAngle}deg);">
               <div class="bus-heading-arrow"></div>
             </div>
             <div class="live-bus-pin" style="background: ${pinBg};">
-              <span class="bus-icon-inner" style="transform: scaleX(${isHeadingWest ? -1 : 1});">🚌</span>
-              <span class="bus-status-dot ${isEst ? 'estimated' : 'live'}"></span>
+              <span class="bus-icon-inner" style="transform: scaleX(${isHeadingWest ? -1 : 1});">${isGhost ? '⚡' : '🚌'}</span>
+              <span class="bus-status-dot ${isGhost ? 'ghost' : (isEst ? 'estimated' : 'live')}"></span>
             </div>
           </div>
         `;
@@ -1599,7 +1614,7 @@ class C10Map {
 
         const marker = L.marker([snapped.lat, snapped.lon], {
           icon: busIcon,
-          zIndexOffset: isSelected ? 5000 : 2000
+          zIndexOffset: isSelected ? 5000 : (isGhost ? 1500 : 2000)
         }).addTo(this.map);
 
         marker.bindPopup(popupHtml, {

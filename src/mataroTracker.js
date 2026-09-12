@@ -807,6 +807,20 @@ class MataroTracker extends BaseTracker {
       };
     });
 
+    // Synthesize missing scheduled vehicles for trips operating without GPS telemetry
+    const { syntheticBuses, fleetStatus } = this.synthesizeMissingScheduledBuses(
+      lId,
+      direction,
+      routes,
+      allDirections,
+      processedBuses,
+      new Date()
+    );
+
+    if (syntheticBuses.length > 0) {
+      processedBuses = [...processedBuses, ...syntheticBuses];
+    }
+
     const hasLiveGps = processedBuses.some(b => !b.isEstimated);
     const isOnlyEstimated = processedBuses.length > 0 && processedBuses.every(b => b.isEstimated);
     const disruptions = await this.getDisruptions(lId);
@@ -851,6 +865,7 @@ class MataroTracker extends BaseTracker {
       activeBuses: processedBuses,
       totalActiveBuses: processedBuses.length,
       totalVehiclesInCircuit: processedBuses.length,
+      fleetStatus,
       isRealTime: hasLiveGps,
       isEstimated: isOnlyEstimated,
       isScheduleBaseline: processedBuses.length === 0,
@@ -1047,6 +1062,177 @@ class MataroTracker extends BaseTracker {
       fromCoords: { lat: s1Lat, lon: s1Lon },
       toCoords: { lat: s2Lat, lon: s2Lon }
     };
+  }
+
+  /**
+   * Calculates currently active scheduled trips for a line and synthesizes
+   * theoretical "ghost" vehicles for trips that lack live GPS tracking.
+   * 
+   * @param {string} lId Line identifier (e.g. '1'..'8')
+   * @param {string} direction '0', '1', or 'both'
+   * @param {Array} routes Array of route objects with coords
+   * @param {Array} allDirections Array of direction metadata with stops/polyline
+   * @param {Array} existingBuses Currently processed buses (live GPS + dead-reckoned)
+   * @param {Date} [dateObj=new Date()] Reference date
+   * @returns {{ syntheticBuses: Array, fleetStatus: object }}
+   */
+  synthesizeMissingScheduledBuses(lId, direction, routes, allDirections, existingBuses = [], dateObj = new Date()) {
+    const isBoth = direction === 'both';
+    const dateComp = calendarEngine.getDateComponents(dateObj, this.agencyTimezone);
+    const dayType = dateComp.isSunday ? 'sunday' : (dateComp.isSaturday ? 'saturday' : 'weekday');
+    const nowSec = (dateComp.hour || 0) * 3600 + (dateComp.minute || 0) * 60 + (dateComp.second || 0);
+    const nowMs = dateObj.getTime();
+
+    const dirIndices = isBoth ? ['0', '1'] : [String(direction === '1' ? '1' : '0')];
+    const syntheticBuses = [];
+    let totalScheduledTrips = 0;
+    let liveGpsCount = 0;
+
+    dirIndices.forEach(dirKey => {
+      const dirIdx = parseInt(dirKey, 10) || 0;
+      const sched = mataroSchedules.getDirectionSchedule(lId, dirKey, dayType);
+      if (!sched || !Array.isArray(sched.departures) || sched.departures.length === 0) return;
+
+      const routeObj = routes[dirIdx] || routes[0];
+      if (!routeObj) return;
+
+      const rawCoords = (routeObj.coords || []).map(c => ({
+        lat: parseFloat(c.Latitude !== undefined ? c.Latitude : (c.lat || 0)),
+        lon: parseFloat(c.Longitude !== undefined ? c.Longitude : (c.lon || 0))
+      })).filter(c => !isNaN(c.lat) && !isNaN(c.lon) && (c.lat !== 0 || c.lon !== 0));
+
+      if (rawCoords.length < 2) return;
+
+      const distTable = geoEngine.buildPolylineDistanceTable(rawCoords);
+      if (distTable.total <= 0) return;
+
+      const totalTravelSec = sched.totalTravelSec || (sched.totalTravelMinutes * 60) || 1800;
+
+      // 1. Find all scheduled trips that should be currently running on this direction
+      const activeTripsForDir = [];
+      sched.departures.forEach(depTime => {
+        const depSec = timeEngine.timeStringToSeconds(depTime);
+        const arrSec = depSec + totalTravelSec;
+        if (nowSec >= depSec && nowSec < arrSec) {
+          const elapsedSec = nowSec - depSec;
+          const progress = Math.max(0.01, Math.min(0.99, elapsedSec / totalTravelSec));
+          activeTripsForDir.push({
+            depTime,
+            depSec,
+            arrSec,
+            elapsedSec,
+            progress,
+            paired: false
+          });
+        }
+      });
+
+      totalScheduledTrips += activeTripsForDir.length;
+
+      // 2. Identify live/existing buses on this direction
+      const busesOnDir = existingBuses.filter(b => String(b.direction) === dirKey);
+      busesOnDir.forEach(b => {
+        if (!b.isEstimated) liveGpsCount++;
+      });
+
+      // 3. Dynamic trip pairing: Match existing buses to closest scheduled active trip
+      busesOnDir.forEach(bus => {
+        const busLat = bus.lat || bus.latitude;
+        const busLon = bus.lon || bus.longitude;
+        if (!busLat || !busLon) return;
+
+        const snap = geoEngine.snapPointToPolyline(busLat, busLon, rawCoords);
+        const segDist = distTable.cum[snap.index] + geoEngine.calculateDistanceMeters(rawCoords[snap.index].lat, rawCoords[snap.index].lon, snap.lat, snap.lon);
+        const busProgress = distTable.total > 0 ? Math.max(0, Math.min(1, segDist / distTable.total)) : 0;
+
+        // Find unpaired active trip closest in progress to this bus
+        let bestTripIdx = -1;
+        let minDiff = Infinity;
+        for (let i = 0; i < activeTripsForDir.length; i++) {
+          if (activeTripsForDir[i].paired) continue;
+          const diff = Math.abs(activeTripsForDir[i].progress - busProgress);
+          if (diff < minDiff) {
+            minDiff = diff;
+            bestTripIdx = i;
+          }
+        }
+
+        if (bestTripIdx !== -1 && minDiff <= 0.35) {
+          // Paired within +-35% route tolerance
+          activeTripsForDir[bestTripIdx].paired = true;
+        }
+      });
+
+      // 4. Synthesize ghost buses for unpaired active scheduled trips
+      activeTripsForDir.forEach(trip => {
+        if (trip.paired) return;
+
+        const targetDist = trip.progress * distTable.total;
+        const pt = geoEngine.pointAtDistance(rawCoords, distTable, targetDist);
+        if (!pt) return;
+
+        const lat = Math.round(pt.lat * 1000000) / 1000000;
+        const lon = Math.round(pt.lon * 1000000) / 1000000;
+        const bearing = pt.bearing || 0;
+        const depTimeClean = trip.depTime.replace(':', '');
+        const vId = `EST_${lId}_${depTimeClean}`;
+
+        const stopsForDir = (allDirections && allDirections[dirIdx]?.stops) || sched.stops || [];
+        const segInfo = this.findNearestSegment(lat, lon, stopsForDir, rawCoords);
+
+        syntheticBuses.push({
+          tripId: `mataro_ghost_${lId}_${dirKey}_${depTimeClean}`,
+          vehicleId: vId,
+          lineId: String(lId),
+          lineName: sched.lineName || `Línia ${lId}`,
+          direction: String(dirKey),
+          directionName: sched.directionName,
+          origin: sched.originStop?.name || '',
+          destination: sched.terminalStop?.name || sched.directionName,
+          lat,
+          lon,
+          latitude: lat,
+          longitude: lon,
+          bearing,
+          compass: geoUtils.bearingToCompassName(bearing),
+          speedKmh: 20,
+          delayMins: 0,
+          delayFormatted: 'Horari teòric',
+          delayBadgeText: '⚡ Estimat (sense GPS)',
+          departureTime: trip.depTime,
+          isEstimated: true,
+          isRealTime: false,
+          isGhostVehicle: true,
+          statusText: `⚡ Posició estimada segons horari (Sortida: ${trip.depTime})`,
+          formattedStatus: `Teòric (${trip.depTime})`,
+          recordedAt: new Date(nowMs).toISOString(),
+          timestamp: nowMs,
+          fromStop: segInfo.fromStop,
+          toStop: segInfo.toStop,
+          fromSeq: segInfo.fromSeq,
+          toSeq: segInfo.toSeq,
+          totalProgress: Math.round(trip.progress * 100),
+          propulsion: 'diesel',
+          isElectric: false,
+          isHybrid: false,
+          propulsionBadge: '🕒 Horari Teòric',
+          propulsionIcon: '⚡',
+          propulsionClass: 'estimated',
+          modelName: 'Flota Mataró Bus (Sense GPS)'
+        });
+      });
+    });
+
+    const fleetStatus = {
+      scheduledVehicles: totalScheduledTrips,
+      liveGpsVehicles: liveGpsCount,
+      estimatedVehicles: syntheticBuses.length,
+      fleetCoveragePct: totalScheduledTrips > 0
+        ? Math.min(100, Math.round((liveGpsCount / totalScheduledTrips) * 100))
+        : 100
+    };
+
+    return { syntheticBuses, fleetStatus };
   }
 
   // BaseTracker interface implementation

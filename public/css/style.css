@@ -3514,6 +3514,93 @@ body {
   background: #f59e0b;
 }
 
+/* Ghost / Estimated Active Fleet Markers */
+.live-bus-marker-wrap.ghost-bus .live-bus-pin {
+  border: 2px dashed #fbbf24 !important;
+  background: rgba(15, 23, 42, 0.88) !important;
+  box-shadow: 0 0 10px rgba(251, 191, 36, 0.45), 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.live-bus-marker-wrap.ghost-bus.selected .live-bus-pin {
+  transform: scale(1.35);
+  border: 2.5px dashed #fbbf24 !important;
+  box-shadow: 0 0 0 4px rgba(251, 191, 36, 0.9), 0 0 25px rgba(251, 191, 36, 0.9), 0 8px 20px rgba(0, 0, 0, 0.5);
+}
+
+.live-bus-marker-wrap.ghost-bus .bus-status-dot.ghost {
+  background: #fbbf24;
+  border-color: #1e293b;
+  box-shadow: 0 0 6px #fbbf24;
+  animation: ghost-dot-pulse 2s infinite ease-in-out;
+}
+
+@keyframes ghost-dot-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.35); opacity: 0.4; }
+}
+
+.radar-dot.ghost {
+  background: #fbbf24;
+  box-shadow: 0 0 8px #fbbf24;
+}
+
+.map-popup-status-badge.ghost {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px dashed rgba(245, 158, 11, 0.5);
+}
+
+.map-popup-ghost-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px dashed rgba(245, 158, 11, 0.35);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: #fbbf24;
+}
+
+.map-popup-ghost-notice .ghost-icon {
+  font-size: 1rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.telemetry-bus-chip.ghost-chip {
+  border-style: dashed;
+  border-color: rgba(245, 158, 11, 0.6);
+  color: #fbbf24;
+}
+
+.telemetry-bus-chip.ghost-chip.active {
+  background: rgba(245, 158, 11, 0.25);
+  border-color: #f59e0b;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.4);
+}
+
+.telemetry-status-badge.ghost {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px dashed rgba(245, 158, 11, 0.5);
+}
+
+.telemetry-ghost-notice {
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px dashed rgba(245, 158, 11, 0.4);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.85rem;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: #fbbf24;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+
 .bus-icon-inner {
   font-size: 13px;
   line-height: 1;
