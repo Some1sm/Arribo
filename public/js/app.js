@@ -2028,6 +2028,122 @@ class TransitApp {
         </div>
       </div>
 
+      <!-- Hourly Delay Distribution & School Congestion Profile -->
+      ${(() => {
+        const hourly = report.hourlyDelays || [];
+        const peakHours = report.peakHours || [];
+        if (hourly.length === 0 && peakHours.length === 0) return '';
+
+        const serviceHours = hourly.filter(h => {
+          const n = parseInt(h.hour, 10);
+          return n >= 6 && n <= 23;
+        });
+        const maxHDelay = Math.max(2, ...serviceHours.map(h => Number(h.avgDelay) || 0));
+
+        return `
+        <div class="hourly-delays-section">
+          <div class="hourly-chart-header">
+            <h4 class="hourly-chart-title">
+              <span>⏰ Distribució Horària i Afectació Escolar (Hores amb Més Retards)</span>
+            </h4>
+            <div class="hourly-chart-legend">
+              <div class="hourly-legend-item">
+                <span class="hourly-legend-dot" style="background:#10b981;"></span>
+                <span>Puntual (&lt;1.5m)</span>
+              </div>
+              <div class="hourly-legend-item">
+                <span class="hourly-legend-dot" style="background:#f59e0b;"></span>
+                <span>Moderat (1.5–3.5m)</span>
+              </div>
+              <div class="hourly-legend-item">
+                <span class="hourly-legend-dot" style="background:#ef4444;"></span>
+                <span>Crític (&gt;3.5m)</span>
+              </div>
+              <div class="hourly-legend-item">
+                <span>🎒 Franja Escolar</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 24-Hour / Service Hours Congestion Bar Chart -->
+          <div class="hourly-chart-container" title="Retard mitjà per franja horària">
+            ${serviceHours.map(h => {
+              const dVal = Number(h.avgDelay) || 0;
+              const pctHeight = Math.max(6, Math.min(100, Math.round((dVal / maxHDelay) * 100)));
+              const barBg = dVal >= 3.5 
+                ? 'linear-gradient(180deg, #ef4444 0%, #b91c1c 100%)' 
+                : (dVal >= 1.5 
+                    ? 'linear-gradient(180deg, #f59e0b 0%, #b45309 100%)' 
+                    : (dVal > 0 
+                        ? 'linear-gradient(180deg, #10b981 0%, #047857 100%)' 
+                        : 'rgba(255, 255, 255, 0.08)'));
+              const delayLabel = dVal > 0 ? `+${dVal}m` : (h.sampleCount > 0 ? '0m' : '-');
+              const tooltip = `${h.timeWindow} • Retard mitjà: +${dVal} min • ${h.latePercentage}% viatges tardans (${h.sampleCount} expedicions) • ${h.trafficTag}`;
+              return `
+                <div class="hourly-bar-col" title="${this.esc(tooltip)}">
+                  <span class="hourly-bar-val">${delayLabel}</span>
+                  <div class="hourly-bar-fill" style="height:${pctHeight}%; background:${barBg};"></div>
+                  <span class="hourly-bar-label">${h.hour}h</span>
+                  <span class="hourly-bar-icon">${h.isSchoolHour ? h.icon : ''}</span>
+                </div>
+              `;
+            }).join('')}
+          </div>
+
+          <!-- Peak Hours Ranking & Critical Bottlenecks -->
+          ${peakHours.length > 0 ? `
+            <div style="font-size:0.8rem; font-weight:700; color:var(--text-secondary); margin-top:0.25rem;">
+              🚨 Franges Crítiques de Congestió i Colls d'Ampolla Associats:
+            </div>
+            <div class="peak-hours-grid">
+              ${peakHours.slice(0, 3).map((ph, idx) => `
+                <div class="peak-hour-card">
+                  <div class="peak-hour-header">
+                    <div class="peak-hour-time">
+                      <span style="font-size:1.15rem;">${ph.icon || '⏱️'}</span>
+                      <span>${this.esc(ph.timeWindow)}</span>
+                      <span style="font-size:0.7rem; color:var(--brand-primary); font-weight:700;">#${idx + 1}</span>
+                    </div>
+                    <span class="peak-hour-tag ${ph.isSchoolHour ? 'school' : ''}">${this.esc(ph.trafficTag)}</span>
+                  </div>
+
+                  <div class="peak-hour-metrics">
+                    <div class="peak-hour-stat">
+                      <span class="stat-label">Retard Mitjà</span>
+                      <strong class="stat-val ${ph.avgDelay >= 3 ? 'severe' : 'warning'}">+${ph.avgDelay} min</strong>
+                    </div>
+                    <div class="peak-hour-stat">
+                      <span class="stat-label">% Afectats</span>
+                      <strong class="stat-val">${ph.latePercentage}%</strong>
+                    </div>
+                    <div class="peak-hour-stat">
+                      <span class="stat-label">Expedicions</span>
+                      <strong class="stat-val">${(ph.sampleCount || 0).toLocaleString()}</strong>
+                    </div>
+                  </div>
+
+                  ${ph.worstStopsDuringHour && ph.worstStopsDuringHour.length > 0 ? `
+                    <div class="peak-hour-bottlenecks">
+                      <span class="bottlenecks-title">📍 Colls d'ampolla en aquesta hora:</span>
+                      <div class="bottlenecks-list">
+                        ${ph.worstStopsDuringHour.map(bs => `
+                          <div class="bottleneck-item">
+                            <span class="bottleneck-stop" title="${this.esc(bs.stopName)}">📍 ${this.esc(bs.stopName)}</span>
+                            <span class="bottleneck-line" style="background:var(--brand-primary);">${this.esc(bs.lineCode)}</span>
+                            <span class="bottleneck-delay">+${bs.avgDelay}m</span>
+                          </div>
+                        `).join('')}
+                      </div>
+                    </div>
+                  ` : ''}
+                </div>
+              `).join('')}
+            </div>
+          ` : ''}
+        </div>
+        `;
+      })()}
+
       <!-- Ranking: Most Delayed Lines -->
       <div style="margin-bottom:1.5rem;">
         <h4 style="font-size:0.95rem; font-weight:700; margin-bottom:0.6rem; display:flex; align-items:center; justify-content:space-between;">
@@ -2100,6 +2216,7 @@ class TransitApp {
                     <th onclick="window.transitApp.handleJournalismSort('worstStops', 'lineCode')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">Línia ${getSortIndicator('worstStops', 'lineCode')}</th>
                     <th onclick="window.transitApp.handleJournalismSort('worstStops', 'agency')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">Operador ${getSortIndicator('worstStops', 'agency')}</th>
                     <th onclick="window.transitApp.handleJournalismSort('worstStops', 'avgDelay')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">Retard Mitjà ${getSortIndicator('worstStops', 'avgDelay')}</th>
+                    <th onclick="window.transitApp.handleJournalismSort('worstStops', 'criticalHourAvgDelay')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">Hora Crítica (Punta) ${getSortIndicator('worstStops', 'criticalHourAvgDelay')}</th>
                     <th onclick="window.transitApp.handleJournalismSort('worstStops', 'maxDelay')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">Retard Màx. ${getSortIndicator('worstStops', 'maxDelay')}</th>
                     <th onclick="window.transitApp.handleJournalismSort('worstStops', 'severeLatePct')" style="padding:0.6rem 0.8rem; cursor:pointer; user-select:none;">% Retards Greus ${getSortIndicator('worstStops', 'severeLatePct')}</th>
                   </tr>
@@ -2119,6 +2236,15 @@ class TransitApp {
                       <td style="padding:0.6rem 0.8rem; font-weight:700; color:var(--brand-primary);">${this.esc(st.lineCode)}</td>
                       <td style="padding:0.6rem 0.8rem; color:var(--text-muted);">${this.esc(st.agency)}</td>
                       <td style="padding:0.6rem 0.8rem; font-weight:700; color:${Number(st.avgDelay) > 0 ? '#ef4444' : '#10b981'};">${sAvgStr}</td>
+                      <td style="padding:0.6rem 0.8rem;">
+                        ${st.criticalHour && st.criticalHour !== '--' ? `
+                          <div class="bottleneck-hour-badge ${st.isSchoolHour ? 'school-rush' : ''}" title="${this.esc(st.criticalHourTag)} • Retard mitjà en aquesta franja: +${st.criticalHourAvgDelay} min">
+                            <span class="badge-icon">${st.criticalHourIcon || (st.isSchoolHour ? '🎒' : '⏱️')}</span>
+                            <span class="badge-time">${this.esc(st.criticalHour)}</span>
+                            <span class="badge-delay">(+${st.criticalHourAvgDelay}m)</span>
+                          </div>
+                        ` : '<span style="color:var(--text-muted); font-size:0.75rem;">Uniforme</span>'}
+                      </td>
                       <td style="padding:0.6rem 0.8rem; color:var(--text-muted);">${sMaxStr}</td>
                       <td style="padding:0.6rem 0.8rem;">
                         <span style="background:${st.severeLatePct >= 30 ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.15)'}; color:${st.severeLatePct >= 30 ? '#f87171' : '#fbbf24'}; padding:0.15rem 0.45rem; border-radius:6px; font-weight:600;">${st.severeLatePct}%</span>

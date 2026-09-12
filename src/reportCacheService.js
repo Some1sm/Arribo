@@ -245,7 +245,7 @@ class ReportCacheService {
       if (fails <= 2 || fails % 10 === 0) {
         console.error(`[ReportCacheService] ❌ ${canonicalHours}h report generation FAILED (${fails} consecutive):`, e.stack || e.message);
       }
-      return this.cachedReports.get(failKey) || { summary: {}, rankingMostDelayed: [], rankingBestPunctuality: [], rankingWorstStops: [], agencyStats: [] };
+      return this.cachedReports.get(failKey) || { summary: {}, hourlyDelays: [], peakHours: [], rankingMostDelayed: [], rankingBestPunctuality: [], rankingWorstStops: [], agencyStats: [] };
     }
   }
 

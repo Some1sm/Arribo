@@ -470,6 +470,82 @@ class HistoryDatabase {
         ORDER BY avgDelay DESC, maxDelay DESC
         LIMIT 100
       `);
+
+      // Timezone offset for Europe/Madrid (strictly prevents UTC container discrepancy)
+      const madridOffsetMs = (function() {
+        try {
+          const d = new Date();
+          const utcDate = new Date(d.toLocaleString('en-US', { timeZone: 'UTC' }));
+          const tzDate = new Date(d.toLocaleString('en-US', { timeZone: 'Europe/Madrid' }));
+          return tzDate.getTime() - utcDate.getTime();
+        } catch (_) {
+          return 2 * 3600 * 1000;
+        }
+      })();
+
+      const getHourlyTrafficContext = (hourNum) => {
+        if (hourNum === 8) {
+          return { tag: '🚨 Entrada escolar & feina', isSchoolHour: true, isPeak: true, icon: '🎒' };
+        }
+        if (hourNum === 9) {
+          return { tag: '🏫 Post-entrada escoles', isSchoolHour: true, isPeak: false, icon: '📚' };
+        }
+        if (hourNum === 13 || hourNum === 14) {
+          return { tag: '🥪 Migdia & torn tarda escoles', isSchoolHour: true, isPeak: true, icon: '🥪' };
+        }
+        if (hourNum === 17) {
+          return { tag: '🚨 Sortida escolar & extraescolars', isSchoolHour: true, isPeak: true, icon: '🎒' };
+        }
+        if (hourNum === 18 || hourNum === 19) {
+          return { tag: '🚗 Hora punta tornada feina', isSchoolHour: false, isPeak: true, icon: '🚗' };
+        }
+        if (hourNum === 7) {
+          return { tag: '🌅 Primer torn de feina', isSchoolHour: false, isPeak: false, icon: '🌅' };
+        }
+        if (hourNum >= 10 && hourNum <= 12) {
+          return { tag: '🟢 Vall matinal regular', isSchoolHour: false, isPeak: false, icon: '🟢' };
+        }
+        if (hourNum >= 15 && hourNum <= 16) {
+          return { tag: '🟡 Vall tarda regular', isSchoolHour: false, isPeak: false, icon: '🟡' };
+        }
+        if (hourNum >= 20 && hourNum <= 22) {
+          return { tag: '🌙 Servei vespre', isSchoolHour: false, isPeak: false, icon: '🌙' };
+        }
+        return { tag: '🌙 Servei nocturn / vall', isSchoolHour: false, isPeak: false, icon: '🌙' };
+      };
+
+      // Query Hourly Breakdown for Worst Stops (Bottlenecks)
+      const stopHourlyStmt = this.db.prepare(`
+        SELECT 
+          strftime('%H', (timestamp + ?) / 1000, 'unixepoch') as hourOfDay,
+          stop_name as stopName,
+          line_code as lineCode,
+          agency,
+          COUNT(*) as arrivalCount,
+          ROUND(AVG(delay_mins), 1) as avgDelay,
+          MAX(delay_mins) as maxDelay,
+          ROUND((SUM(CASE WHEN delay_mins >= 5 THEN 1.0 ELSE 0.0 END) / COUNT(*)) * 100, 1) as severeLatePct
+        FROM delay_logs
+        WHERE timestamp >= ? AND delay_mins <= 25 AND delay_mins >= -15
+        GROUP BY hourOfDay, stop_name, line_code
+        HAVING arrivalCount >= 1 AND avgDelay >= 1.0
+        ORDER BY hourOfDay ASC, avgDelay DESC, arrivalCount DESC
+      `);
+
+      const stopHourlyRows = stopHourlyStmt.all(madridOffsetMs, cutoff);
+      const stopHoursMap = new Map();
+      const hourlyStopsMap = new Map();
+
+      stopHourlyRows.forEach(r => {
+        const sKey = normKey(r.stopName);
+        if (!stopHoursMap.has(sKey)) stopHoursMap.set(sKey, []);
+        stopHoursMap.get(sKey).push(r);
+
+        const hKey = String(r.hourOfDay).padStart(2, '0');
+        if (!hourlyStopsMap.has(hKey)) hourlyStopsMap.set(hKey, []);
+        hourlyStopsMap.get(hKey).push(r);
+      });
+
       const rankingWorstStops = worstStopsStmt.all(cutoff)
         .map(r => ({
           ...r,
@@ -485,11 +561,43 @@ class HistoryDatabase {
           const cleanKey = normKey(r.lineCode);
           const rawKey = String(r.lineCode || '').toUpperCase();
           const catalogLine = validCatalogMap.get(cleanKey) || validCatalogMap.get(rawKey);
+          
+          // Attach critical peak hour for this bottleneck stop
+          const sKey = normKey(r.stopName);
+          const hoursForStop = stopHoursMap.get(sKey) || [];
+          hoursForStop.sort((a, b) => (b.avgDelay - a.avgDelay) || (b.arrivalCount - a.arrivalCount));
+          const critical = hoursForStop[0] || null;
+
+          let criticalHour = '--';
+          let criticalHourAvgDelay = r.avgDelay;
+          let criticalHourArrivals = 0;
+          let criticalHourTag = 'Regular';
+          let criticalHourIcon = '📍';
+          let isSchoolHour = false;
+
+          if (critical) {
+            const hNum = parseInt(critical.hourOfDay, 10);
+            const nextH = String((hNum + 1) % 24).padStart(2, '0');
+            const ctx = getHourlyTrafficContext(hNum);
+            criticalHour = `${critical.hourOfDay}:00 - ${nextH}:00`;
+            criticalHourAvgDelay = critical.avgDelay;
+            criticalHourArrivals = critical.arrivalCount;
+            criticalHourTag = ctx.tag;
+            criticalHourIcon = ctx.icon;
+            isSchoolHour = ctx.isSchoolHour;
+          }
+
           return {
             ...r,
             lineId: catalogLine ? catalogLine.id : r.lineCode,
             lineCode: catalogLine ? catalogLine.code : r.lineCode,
-            agency: catalogLine ? (catalogLine.agency || r.agency) : r.agency
+            agency: catalogLine ? (catalogLine.agency || r.agency) : r.agency,
+            criticalHour,
+            criticalHourAvgDelay,
+            criticalHourArrivals,
+            criticalHourTag,
+            criticalHourIcon,
+            isSchoolHour
           };
         });
 
@@ -497,30 +605,77 @@ class HistoryDatabase {
         ? allLinesCatalog.length
         : Math.max(sum.monitoredLinesCount || 0, rankingMostDelayed.length);
 
-      // 6. Hourly Congestion Spike Analysis (Peak hour of the day)
-      let peakHour = { hour: '08', avgDelay: 2.1 };
-      try {
-        const peakStmt = this.db.prepare(`
-          SELECT 
-            strftime('%H', timestamp / 1000, 'unixepoch', 'localtime') as hourOfDay,
-            COUNT(*) as sampleCount,
-            ROUND(AVG(delay_mins), 1) as avgDelay
-          FROM delay_logs
-          WHERE timestamp >= ?
-          GROUP BY hourOfDay
-          ORDER BY avgDelay DESC
-          LIMIT 1
-        `);
-        const peakRow = peakStmt.get(cutoff);
-        if (peakRow && peakRow.hourOfDay) {
-          peakHour = {
-            hour: peakRow.hourOfDay,
-            timeWindow: `${peakRow.hourOfDay}:00 - ${String(Number(peakRow.hourOfDay) + 1).padStart(2, '0')}:00`,
-            avgDelay: peakRow.avgDelay,
-            sampleCount: peakRow.sampleCount
+      // 6. Hourly Congestion Spike Analysis (24-Hour Distribution & School Rush)
+      const hourlyStmt = this.db.prepare(`
+        SELECT 
+          strftime('%H', (timestamp + ?) / 1000, 'unixepoch') as hourOfDay,
+          COUNT(*) as sampleCount,
+          ROUND(AVG(delay_mins), 1) as avgDelay,
+          MAX(delay_mins) as maxDelay,
+          SUM(CASE WHEN delay_mins > 3 THEN 1 ELSE 0 END) as lateCount,
+          ROUND((SUM(CASE WHEN delay_mins > 3 THEN 1.0 ELSE 0.0 END) / COUNT(*)) * 100, 1) as latePercentage,
+          ROUND((SUM(CASE WHEN delay_mins >= 5 THEN 1.0 ELSE 0.0 END) / COUNT(*)) * 100, 1) as severeLatePercentage
+        FROM delay_logs
+        WHERE timestamp >= ? AND delay_mins <= 25 AND delay_mins >= -15
+        GROUP BY hourOfDay
+        ORDER BY hourOfDay ASC
+      `);
+
+      const dbHourly = hourlyStmt.all(madridOffsetMs, cutoff);
+      const hourlyMap = new Map();
+      dbHourly.forEach(row => hourlyMap.set(String(row.hourOfDay).padStart(2, '0'), row));
+
+      const hourlyDelays = [];
+      for (let h = 0; h < 24; h++) {
+        const hStr = String(h).padStart(2, '0');
+        const nextHStr = String((h + 1) % 24).padStart(2, '0');
+        const context = getHourlyTrafficContext(h);
+        const row = hourlyMap.get(hStr);
+
+        hourlyDelays.push({
+          hour: hStr,
+          timeWindow: `${hStr}:00 - ${nextHStr}:00`,
+          sampleCount: row ? (row.sampleCount || 0) : 0,
+          avgDelay: row ? (row.avgDelay || 0) : 0,
+          maxDelay: row ? (row.maxDelay || 0) : 0,
+          lateCount: row ? (row.lateCount || 0) : 0,
+          latePercentage: row ? (row.latePercentage || 0) : 0,
+          severeLatePercentage: row ? (row.severeLatePercentage || 0) : 0,
+          trafficTag: context.tag,
+          isSchoolHour: context.isSchoolHour,
+          isPeak: context.isPeak,
+          icon: context.icon
+        });
+      }
+
+      // Identify top peak congestion hours with worst bottleneck stops attached
+      const activeHours = hourlyDelays.filter(h => h.sampleCount > 0);
+      const peakHours = [...activeHours]
+        .sort((a, b) => (b.avgDelay - a.avgDelay) || (b.latePercentage - a.latePercentage))
+        .slice(0, 5)
+        .map(ph => {
+          const worstStopsInHour = (hourlyStopsMap.get(ph.hour) || []).slice(0, 3).map(st => ({
+            stopName: st.stopName,
+            lineCode: st.lineCode,
+            agency: st.agency,
+            avgDelay: st.avgDelay,
+            arrivalCount: st.arrivalCount
+          }));
+          return {
+            ...ph,
+            worstStopsDuringHour: worstStopsInHour
           };
-        }
-      } catch (_) {}
+        });
+
+      let peakHour = peakHours[0] || {
+        hour: '08',
+        timeWindow: '08:00 - 09:00',
+        avgDelay: 2.1,
+        sampleCount: 0,
+        trafficTag: '🚨 Entrada escolar & feina',
+        icon: '🎒',
+        worstStopsDuringHour: []
+      };
 
       const punctualityPct = totalArrivals > 0 ? Math.round((sum.totalOnTime / totalArrivals) * 100) : 100;
       let grade = 'A';
@@ -549,10 +704,14 @@ class HistoryDatabase {
           stopName: bottleneck.stopName,
           lineCode: bottleneck.lineCode,
           avgDelay: bottleneck.avgDelay,
-          severeLatePct: bottleneck.severeLatePct
-        } : { stopName: 'Pl. de les Tereses', lineCode: 'L2', avgDelay: 3.5, severeLatePct: 15 },
+          severeLatePct: bottleneck.severeLatePct,
+          criticalHour: bottleneck.criticalHour,
+          criticalHourTag: bottleneck.criticalHourTag
+        } : { stopName: 'Pl. de les Tereses', lineCode: 'L2', avgDelay: 3.5, severeLatePct: 15, criticalHour: '08:00 - 09:00', criticalHourTag: '🚨 Entrada escolar & feina' },
         peakHour: peakHour.timeWindow || `${peakHour.hour}:00 - 09:00`,
         peakHourDelay: peakHour.avgDelay || 2.5,
+        peakHourTag: peakHour.trafficTag || 'Hora Punta',
+        peakHourIcon: peakHour.icon || '⏱️',
         totalTripsAnalyzed: totalArrivals
       };
 
@@ -566,6 +725,8 @@ class HistoryDatabase {
           hoursAnalyzed: hoursBack
         },
         termometre,
+        hourlyDelays,
+        peakHours,
         rankingMostDelayed,
         rankingBestPunctuality,
         rankingWorstStops,
