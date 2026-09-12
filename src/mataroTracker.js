@@ -174,7 +174,15 @@ class MataroTracker extends BaseTracker {
 
     // Ongoing notices without fixed end date
     if (/fins(?:\s+a)?\s+nou\s+av[ií]s|fins\s+nova\s+ordre|hasta\s+nuevo\s+aviso/i.test(text)) {
-      return { isOngoing: true, expiry: null, isExpired: false };
+      return {
+        isOngoing: true,
+        startsAt: null,
+        expiry: null,
+        isExpired: false,
+        isFuture: false,
+        isEffectiveNow: true,
+        effectiveWindows: []
+      };
     }
 
     const MONTHS = {
@@ -191,69 +199,149 @@ class MataroTracker extends BaseTracker {
       novembre: 11, noviembre: 11,
       desembre: 12, diciembre: 12
     };
-
-    const datesFound = [];
-
-    // Pattern 1: Date ranges like 'del 01/09 al 02/09' or 'del 01/09/2026 al 02/09/2026'
-    const rangeNumeric = /(?:del|des de|des del)\s+(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?\s+(?:al|fins al|fins el|fins a|fins|a|fins les|hasta el)\s+(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?/gi;
-    let match;
-    while ((match = rangeNumeric.exec(text)) !== null) {
-      const endDay = parseInt(match[4], 10);
-      const endMonth = parseInt(match[5], 10);
-      let endYear = match[6] ? parseInt(match[6], 10) : currentYear;
-      if (endYear < 100) endYear += 2000;
-      if (endMonth >= 1 && endMonth <= 12 && endDay >= 1 && endDay <= 31) {
-        datesFound.push(new Date(endYear, endMonth - 1, endDay, 23, 59, 59));
-      }
-    }
-
-    // Pattern 2: 'fins al 02/09' or 'fins el 02/09/2026' or 'hasta el 02/09'
-    const untilNumeric = /(?:fins al|fins el|fins a|fins|fins les|hasta el|al)\s+(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?/gi;
-    while ((match = untilNumeric.exec(text)) !== null) {
-      const day = parseInt(match[1], 10);
-      const month = parseInt(match[2], 10);
-      let year = match[3] ? parseInt(match[3], 10) : currentYear;
-      if (year < 100) year += 2000;
-      if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
-        datesFound.push(new Date(year, month - 1, day, 23, 59, 59));
-      }
-    }
-
-    // Pattern 3: Standalone full dates like '05/09/2026' or 'dissabte, 05/09/2026'
-    const standaloneNumeric = /\b(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})\b/g;
-    while ((match = standaloneNumeric.exec(text)) !== null) {
-      const day = parseInt(match[1], 10);
-      const month = parseInt(match[2], 10);
-      const year = parseInt(match[3], 10);
-      if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
-        datesFound.push(new Date(year, month - 1, day, 23, 59, 59));
-      }
-    }
-
-    // Pattern 4: Named month ranges: 'del 1 al 2 de setembre' or 'del 1 de setembre al 2 de setembre'
     const monthNamesStr = Object.keys(MONTHS).join('|');
+
+    const windows = [];
+
+    // Helper to check if a specific date already has a specific-hour window
+    const hasSpecificHourOnDate = (y, m, d) => windows.some(w => {
+      return w.start.getFullYear() === y && w.start.getMonth() === (m - 1) && w.start.getDate() === d &&
+        !(w.start.getHours() === 0 && w.end.getHours() === 23 && w.end.getMinutes() === 59);
+    });
+
+    // 1. Two dates connected by 'i' or 'y' sharing hours: e.g. '14 i 15/09/2026 de 14.00 a 18.00'
+    const multiDaySharedHoursRegex = /(\d{1,2})\s*(?:i|y|,)\s*(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?[^0-9\n\r]*?de\s+(\d{1,2})[.:](\d{2})\s+a\s+(\d{1,2})[.:](\d{2})/gi;
+    let mm;
+    while ((mm = multiDaySharedHoursRegex.exec(text)) !== null) {
+      const d1 = parseInt(mm[1], 10);
+      const d2 = parseInt(mm[2], 10);
+      const m = parseInt(mm[3], 10);
+      let y = mm[4] ? parseInt(mm[4], 10) : currentYear;
+      if (y < 100) y += 2000;
+      const hStart = parseInt(mm[5], 10), minStart = parseInt(mm[6], 10);
+      const hEnd = parseInt(mm[7], 10), minEnd = parseInt(mm[8], 10);
+
+      for (const d of [d1, d2]) {
+        if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+          windows.push({
+            start: new Date(y, m - 1, d, hStart, minStart, 0),
+            end: new Date(y, m - 1, d, hEnd, minEnd, 0)
+          });
+        }
+      }
+    }
+
+    // 2. Specific date with time interval(s):
+    // e.g. '14/09/2026, de 14.00 a 18.00' or '05/09/2026 de 19.00 a 19.30 hores i de 22.00 a 22.30 hores'
+    const dateTimeRegex = /(?:(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?|(\d{1,2})\s+de\s+([a-zç]+)(?:\s+de\s+(\d{4}))?)[^0-9\n\r]*?de\s+(\d{1,2})[.:](\d{2})\s+a\s+(\d{1,2})[.:](\d{2})(?:[^\n\r]*?i\s+de\s+(\d{1,2})[.:](\d{2})\s+a\s+(\d{1,2})[.:](\d{2}))?/gi;
+    while ((mm = dateTimeRegex.exec(text)) !== null) {
+      let day, month, year;
+      if (mm[1]) {
+        day = parseInt(mm[1], 10);
+        month = parseInt(mm[2], 10);
+        year = mm[3] ? parseInt(mm[3], 10) : currentYear;
+        if (year < 100) year += 2000;
+      } else {
+        day = parseInt(mm[4], 10);
+        month = MONTHS[mm[5].toLowerCase()];
+        year = mm[6] ? parseInt(mm[6], 10) : currentYear;
+      }
+      if (!month || day < 1 || day > 31) continue;
+
+      const startH1 = parseInt(mm[7], 10), startM1 = parseInt(mm[8], 10);
+      const endH1 = parseInt(mm[9], 10), endM1 = parseInt(mm[10], 10);
+      windows.push({
+        start: new Date(year, month - 1, day, startH1, startM1, 0),
+        end: new Date(year, month - 1, day, endH1, endM1, 0)
+      });
+
+      if (mm[11] && mm[12] && mm[13] && mm[14]) {
+        const startH2 = parseInt(mm[11], 10), startM2 = parseInt(mm[12], 10);
+        const endH2 = parseInt(mm[13], 10), endM2 = parseInt(mm[14], 10);
+        windows.push({
+          start: new Date(year, month - 1, day, startH2, startM2, 0),
+          end: new Date(year, month - 1, day, endH2, endM2, 0)
+        });
+      }
+    }
+
+    // 3. Date ranges without specific hours: e.g. 'del 01/09 al 02/09'
+    const rangeNumeric = /(?:del|des de|des del)\s+(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?\s+(?:al|fins al|fins el|fins a|fins|a|fins les|hasta el)\s+(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?/gi;
+    while ((mm = rangeNumeric.exec(text)) !== null) {
+      const sDay = parseInt(mm[1], 10), sMonth = parseInt(mm[2], 10);
+      let sYear = mm[3] ? parseInt(mm[3], 10) : currentYear;
+      if (sYear < 100) sYear += 2000;
+
+      const eDay = parseInt(mm[4], 10), eMonth = parseInt(mm[5], 10);
+      let eYear = mm[6] ? parseInt(mm[6], 10) : currentYear;
+      if (eYear < 100) eYear += 2000;
+
+      if (sMonth >= 1 && sMonth <= 12 && sDay >= 1 && sDay <= 31 && eMonth >= 1 && eMonth <= 12 && eDay >= 1 && eDay <= 31) {
+        windows.push({
+          start: new Date(sYear, sMonth - 1, sDay, 0, 0, 0),
+          end: new Date(eYear, eMonth - 1, eDay, 23, 59, 59)
+        });
+      }
+    }
+
+    // 4. Named month ranges: 'del 1 al 2 de setembre'
     const namedRange = new RegExp('(?:del|des de|des del)\\s+(\\d{1,2})(?:\\s+de\\s+(' + monthNamesStr + '))?\\s+(?:al|fins al|fins el|fins a|hasta el)\\s+(\\d{1,2})\\s+de\\s+(' + monthNamesStr + ')(?:\\s+de\\s+(\\d{4}))?', 'gi');
-    while ((match = namedRange.exec(text)) !== null) {
-      const endDay = parseInt(match[3], 10);
-      const endMonth = MONTHS[match[4].toLowerCase()];
-      const endYear = match[5] ? parseInt(match[5], 10) : currentYear;
-      if (endMonth && endDay >= 1 && endDay <= 31) {
-        datesFound.push(new Date(endYear, endMonth - 1, endDay, 23, 59, 59));
+    while ((mm = namedRange.exec(text)) !== null) {
+      const sDay = parseInt(mm[1], 10);
+      const eDay = parseInt(mm[3], 10);
+      const eMonth = MONTHS[mm[4].toLowerCase()];
+      const sMonth = mm[2] ? MONTHS[mm[2].toLowerCase()] : eMonth;
+      const eYear = mm[5] ? parseInt(mm[5], 10) : currentYear;
+      const sYear = eYear;
+      if (sMonth && eMonth && sDay >= 1 && sDay <= 31 && eDay >= 1 && eDay <= 31) {
+        windows.push({
+          start: new Date(sYear, sMonth - 1, sDay, 0, 0, 0),
+          end: new Date(eYear, eMonth - 1, eDay, 23, 59, 59)
+        });
       }
     }
 
-    // Pattern 5: Single named dates: '5 de setembre (de 2026)?'
-    const singleNamed = new RegExp('\\b(\\d{1,2})\\s+de\\s+(' + monthNamesStr + ')(?:\\s+de\\s+(\\d{4}))?\\b', 'gi');
-    while ((match = singleNamed.exec(text)) !== null) {
-      const day = parseInt(match[1], 10);
-      const month = MONTHS[match[2].toLowerCase()];
-      const year = match[3] ? parseInt(match[3], 10) : currentYear;
-      if (month && day >= 1 && day <= 31) {
-        datesFound.push(new Date(year, month - 1, day, 23, 59, 59));
+    // 5. 'fins al 02/09' or 'fins al 2 de setembre' (until date)
+    const untilNumeric = /(?:fins al|fins el|fins a|fins|fins les|hasta el)\s+(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?/gi;
+    while ((mm = untilNumeric.exec(text)) !== null) {
+      const day = parseInt(mm[1], 10), month = parseInt(mm[2], 10);
+      let year = mm[3] ? parseInt(mm[3], 10) : currentYear;
+      if (year < 100) year += 2000;
+      if (month >= 1 && month <= 12 && day >= 1 && day <= 31 && !hasSpecificHourOnDate(year, month, day)) {
+        windows.push({
+          start: new Date(year, month - 1, day, 0, 0, 0),
+          end: new Date(year, month - 1, day, 23, 59, 59)
+        });
       }
     }
 
-    // Find all end times mentioned like 'a 22.30 hores' or 'de 22.00 a 22.30'
+    // 6. Named month until date: 'fins al 2 de setembre de 2026'
+    const untilNamed = new RegExp('(?:fins al|fins el|fins a|fins|hasta el)\\s+(\\d{1,2})\\s+de\\s+(' + monthNamesStr + ')(?:\\s+de\\s+(\\d{4}))?', 'gi');
+    while ((mm = untilNamed.exec(text)) !== null) {
+      const day = parseInt(mm[1], 10);
+      const month = MONTHS[mm[2].toLowerCase()];
+      const year = mm[3] ? parseInt(mm[3], 10) : currentYear;
+      if (month && day >= 1 && day <= 31 && !hasSpecificHourOnDate(year, month, day)) {
+        windows.push({
+          start: new Date(year, month - 1, day, 0, 0, 0),
+          end: new Date(year, month - 1, day, 23, 59, 59)
+        });
+      }
+    }
+
+    // 7. Standalone full dates: '05/09/2026'
+    const standaloneNumeric = /\b(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})\b/g;
+    while ((mm = standaloneNumeric.exec(text)) !== null) {
+      const day = parseInt(mm[1], 10), month = parseInt(mm[2], 10), year = parseInt(mm[3], 10);
+      if (month >= 1 && month <= 12 && day >= 1 && day <= 31 && !hasSpecificHourOnDate(year, month, day)) {
+        windows.push({
+          start: new Date(year, month - 1, day, 0, 0, 0),
+          end: new Date(year, month - 1, day, 23, 59, 59)
+        });
+      }
+    }
+
+    // Check for any standalone time mention like 'a 22.30 hores' or 'de 22.00 a 22.30'
     const timeRegex = /(?:a|fins a|fins les|fins a les)\s+(\d{1,2})[.:](\d{2})\s*(?:h|hores)?/gi;
     let lastTimeMatch = null;
     let tMatch;
@@ -261,15 +349,26 @@ class MataroTracker extends BaseTracker {
       lastTimeMatch = tMatch;
     }
 
-    if (datesFound.length === 0) {
-      return { isOngoing: true, expiry: null, isExpired: false };
+    if (windows.length === 0) {
+      return {
+        isOngoing: true,
+        startsAt: null,
+        expiry: null,
+        isExpired: false,
+        isFuture: false,
+        isEffectiveNow: true,
+        effectiveWindows: []
+      };
     }
 
-    // Sort dates descending - latest is the end of the disruption
-    datesFound.sort((a, b) => b.getTime() - a.getTime());
-    const expiry = datesFound[0];
+    // Sort windows chronologically by start time
+    windows.sort((a, b) => a.start.getTime() - b.start.getTime());
 
-    if (lastTimeMatch) {
+    // Find latest end
+    const latestWindow = [...windows].sort((a, b) => b.end.getTime() - a.end.getTime())[0];
+    const expiry = new Date(latestWindow.end.getTime());
+
+    if (lastTimeMatch && windows.every(w => w.start.getHours() === 0 && w.end.getHours() === 23)) {
       const endH = parseInt(lastTimeMatch[1], 10);
       const endM = parseInt(lastTimeMatch[2], 10);
       if (endH >= 0 && endH <= 23 && endM >= 0 && endM <= 59) {
@@ -277,13 +376,24 @@ class MataroTracker extends BaseTracker {
       }
     }
 
+    const startsAt = windows[0].start;
     const nowMs = refDate.getTime();
     const isExpired = expiry.getTime() < nowMs;
+    const isFuture = startsAt !== null && startsAt.getTime() > nowMs;
+
+    let isEffectiveNow = false;
+    if (!isExpired && !isFuture) {
+      isEffectiveNow = windows.some(w => nowMs >= w.start.getTime() && nowMs <= w.end.getTime());
+    }
 
     return {
       isOngoing: false,
+      startsAt,
       expiry,
-      isExpired
+      isExpired,
+      isFuture,
+      isEffectiveNow,
+      effectiveWindows: windows
     };
   }
 
@@ -312,16 +422,20 @@ class MataroTracker extends BaseTracker {
     return active.filter(a => a.severity === 'warning' && Array.isArray(a.linesAffected) && a.linesAffected.includes(cleanId));
   }
 
-  getCancelledStopsForLine(lineId, avisos = []) {
+  getCancelledStopsForLine(lineId, avisos = [], targetDate = new Date()) {
     const lId = String(lineId).replace(/^l/i, '');
     const cancelledMap = new Map();
-    const now = new Date();
+    const now = (targetDate instanceof Date && !isNaN(targetDate.getTime()))
+      ? targetDate
+      : (typeof targetDate === 'string' || typeof targetDate === 'number' ? new Date(targetDate) : new Date());
 
     for (const aviso of avisos) {
       if (aviso.severity !== 'warning' || aviso.active === false) continue;
       if (aviso.expiresAt && new Date(aviso.expiresAt).getTime() < now.getTime()) continue;
       const validity = this.parseAvisoValidity(aviso.title, aviso.description, now);
       if (validity.isExpired) continue;
+      // Do NOT cancel stops if the disruption has not started yet or is not effective at this date/time
+      if (validity.isFuture || !validity.isEffectiveNow) continue;
 
       const desc = (aviso.description || aviso.descriptionHtml || '');
       const norm = desc.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[·\.]/g, '');
@@ -332,20 +446,25 @@ class MataroTracker extends BaseTracker {
         if (blockLineId !== lId) continue;
         const block = lineBlocks[i + 1] || '';
 
-        const match = block.match(/parades?\s*anul+ades?\s*:\s*([^\n\r]+)/i);
+        const match = block.match(/parad[ae]s?\s*anul+[a-z]*\s*:\s*([^\n\r]+)/i);
         if (match && match[1]) {
           const names = match[1].split(/(?:,\s*|\s+i\s+|\s+y\s+|\s+e\s+|;\s*)/i).map(s => s.trim().toLowerCase()).filter(Boolean);
           names.forEach(name => {
-            let id = null;
-            if (name.includes('tereses')) id = '1060';
-            else if (name.includes('lepant')) id = '1059';
-            else if (name.includes('isidor')) id = '1061';
-            else if (name.includes('isern')) id = '1117';
-            else if (name.includes('biada')) id = '1107';
-            else if (name.includes('queralbs')) id = '1044';
-            if (id) {
+            const matchedIds = [];
+            if (name.includes('tereses')) matchedIds.push('1060');
+            if (name.includes('lepant')) matchedIds.push('1059');
+            if (name.includes('isidor')) matchedIds.push('1061');
+            if (name.includes('isern')) matchedIds.push('1117');
+            if (name.includes('biada')) matchedIds.push('1107');
+            if (name.includes('queralbs')) matchedIds.push('1044');
+            if (name.includes('hospital')) matchedIds.push('1001', '1073');
+            if (name.includes('caminet')) matchedIds.push('1012');
+            if (name.includes('muralla')) matchedIds.push('1013');
+            if (name.includes('santa anna')) matchedIds.push('1014');
+
+            matchedIds.forEach(id => {
               cancelledMap.set(id, aviso.title);
-            }
+            });
           });
         }
       }
@@ -860,7 +979,7 @@ class MataroTracker extends BaseTracker {
     const hasLiveGps = processedBuses.some(b => !b.isEstimated);
     const isOnlyEstimated = processedBuses.length > 0 && processedBuses.every(b => b.isEstimated);
     const disruptions = await this.getDisruptions(lId);
-    const cancelledStopsMap = this.getCancelledStopsForLine(lId, disruptions);
+    const cancelledStopsMap = this.getCancelledStopsForLine(lId, disruptions, targetDate);
 
     const stopsWithStatus = (stops || []).map(s => {
       const sId = String(s.id);
@@ -871,6 +990,19 @@ class MataroTracker extends BaseTracker {
         cancelledReason: isCancelled ? cancelledStopsMap.get(sId) : null
       };
     });
+
+    const allDirsWithStatus = (allDirections || []).map(dir => ({
+      ...dir,
+      stops: (dir.stops || []).map(s => {
+        const sId = String(s.id);
+        const isCancelled = cancelledStopsMap.has(sId);
+        return {
+          ...s,
+          isCancelled,
+          cancelledReason: isCancelled ? cancelledStopsMap.get(sId) : null
+        };
+      })
+    }));
 
     return {
       ...(staticTemplate || {}),
@@ -894,10 +1026,10 @@ class MataroTracker extends BaseTracker {
       polyline,
       geometrySource: 'gtfs',
       geometryEstimated: false,
-      secondaryCoords: (isBoth && allDirections.length > 1) ? allDirections[1].polyline : null,
-      secondaryStops: (isBoth && allDirections.length > 1) ? allDirections[1].stops : null,
+      secondaryCoords: (isBoth && allDirsWithStatus.length > 1) ? allDirsWithStatus[1].polyline : null,
+      secondaryStops: (isBoth && allDirsWithStatus.length > 1) ? allDirsWithStatus[1].stops : null,
       secondaryColor: '#38bdf8',
-      allDirections,
+      allDirections: allDirsWithStatus,
       activeBuses: processedBuses,
       totalActiveBuses: processedBuses.length,
       totalVehiclesInCircuit: processedBuses.length,
