@@ -725,6 +725,23 @@ class MataroTracker extends BaseTracker {
       liveVehicles = await siriClient.getLiveVehicles(lId);
     } catch (_) {}
 
+    // Strict validation: Filter out out-of-area vehicles and erroneous test/depot artifacts
+    if (Array.isArray(liveVehicles)) {
+      liveVehicles = liveVehicles.filter(v => {
+        const lat = v.lat || v.latitude;
+        const lon = v.lon || v.longitude;
+        if (!lat || !lon) return false;
+        // Mataró urban bounding box: 41.48 to 41.62 N, 2.36 to 2.52 E
+        if (lat < 41.48 || lat > 41.62 || lon < 2.36 || lon > 2.52) return false;
+        // Exclude dummy vehicleId 'Bus' if far from Mataró route (> 1.5km from any route stop)
+        if (String(v.vehicleId).toLowerCase() === 'bus') {
+          const isNear = routes.some(r => (r.coords || []).some(c => geoUtils.calculateDistanceMeters(lat, lon, parseFloat(c.Latitude), parseFloat(c.Longitude)) < 1500));
+          if (!isNear) return false;
+        }
+        return true;
+      });
+    }
+
     if (!liveVehicles || liveVehicles.length === 0) {
       const frVehs = flightRecorder.getLineVehicles(`L${lId}`);
       const mataroVehs = (frVehs || []).filter(v => (v.agency || '').includes('Mataró') || String(v.lineId) === lId);
@@ -814,7 +831,8 @@ class MataroTracker extends BaseTracker {
       routes,
       allDirections,
       processedBuses,
-      new Date()
+      new Date(),
+      liveVehicles
     );
 
     if (syntheticBuses.length > 0) {
@@ -1066,7 +1084,10 @@ class MataroTracker extends BaseTracker {
 
   /**
    * Calculates currently active scheduled trips for a line and synthesizes
-   * theoretical "ghost" vehicles for trips that lack live GPS tracking.
+   * theoretical "ghost" vehicles ONLY for genuinely missing trips that lack
+   * live GPS tracking. Strictly enforces anti-bunching spatial distance separation
+   * (>= 1,500m on same lane, >= 800m cross-lane), direction fleet caps, whole-line
+   * fleet caps, and terminal turnaround recognition.
    * 
    * @param {string} lId Line identifier (e.g. '1'..'8')
    * @param {string} direction '0', '1', or 'both'
@@ -1074,19 +1095,55 @@ class MataroTracker extends BaseTracker {
    * @param {Array} allDirections Array of direction metadata with stops/polyline
    * @param {Array} existingBuses Currently processed buses (live GPS + dead-reckoned)
    * @param {Date} [dateObj=new Date()] Reference date
+   * @param {Array} [allLineLiveVehicles=[]] All raw live vehicles for this line across both directions
    * @returns {{ syntheticBuses: Array, fleetStatus: object }}
    */
-  synthesizeMissingScheduledBuses(lId, direction, routes, allDirections, existingBuses = [], dateObj = new Date()) {
+  synthesizeMissingScheduledBuses(lId, direction, routes, allDirections, existingBuses = [], dateObj = new Date(), allLineLiveVehicles = []) {
     const isBoth = direction === 'both';
     const dateComp = calendarEngine.getDateComponents(dateObj, this.agencyTimezone);
     const dayType = dateComp.isSunday ? 'sunday' : (dateComp.isSaturday ? 'saturday' : 'weekday');
     const nowSec = (dateComp.hour || 0) * 3600 + (dateComp.minute || 0) * 60 + (dateComp.second || 0);
     const nowMs = dateObj.getTime();
 
+    // 1. Gather all known line buses (both directions) for cross-direction and anti-bunching checks
+    const allKnownBuses = [...existingBuses];
+    (allLineLiveVehicles || []).forEach(lv => {
+      const vId = String(lv.vehicleId || lv.tripId);
+      if (!allKnownBuses.some(b => String(b.vehicleId || b.tripId) === vId)) {
+        allKnownBuses.push(lv);
+      }
+    });
+
     const dirIndices = isBoth ? ['0', '1'] : [String(direction === '1' ? '1' : '0')];
     const syntheticBuses = [];
     let totalScheduledTrips = 0;
     let liveGpsCount = 0;
+
+    // 2. Pre-calculate active scheduled trips across the entire line to enforce whole-line fleet cap
+    let totalScheduledForWholeLine = 0;
+    const allLineActiveTripsByDir = {};
+
+    ['0', '1'].forEach(dKey => {
+      const s = mataroSchedules.getDirectionSchedule(lId, dKey, dayType);
+      if (!s || !Array.isArray(s.departures)) return;
+      const travelSec = s.totalTravelSec || (s.totalTravelMinutes * 60) || 1800;
+      const trips = [];
+      s.departures.forEach(depTime => {
+        const depSec = timeEngine.timeStringToSeconds(depTime);
+        const arrSec = depSec + travelSec;
+        if (nowSec >= depSec && nowSec < arrSec) {
+          const elapsedSec = nowSec - depSec;
+          const progress = Math.max(0.01, Math.min(0.99, elapsedSec / travelSec));
+          trips.push({ depTime, depSec, arrSec, elapsedSec, progress, paired: false });
+        }
+      });
+      allLineActiveTripsByDir[dKey] = trips;
+      totalScheduledForWholeLine += trips.length;
+    });
+
+    const totalLiveOnWholeLine = allKnownBuses.filter(b => !b.isEstimated).length;
+    // Whole-line cap: if real buses already match or exceed total scheduled trips, no synthesis allowed!
+    const maxSyntheticForLine = Math.max(0, totalScheduledForWholeLine - totalLiveOnWholeLine);
 
     dirIndices.forEach(dirKey => {
       const dirIdx = parseInt(dirKey, 10) || 0;
@@ -1106,36 +1163,27 @@ class MataroTracker extends BaseTracker {
       const distTable = geoEngine.buildPolylineDistanceTable(rawCoords);
       if (distTable.total <= 0) return;
 
-      const totalTravelSec = sched.totalTravelSec || (sched.totalTravelMinutes * 60) || 1800;
-
-      // 1. Find all scheduled trips that should be currently running on this direction
-      const activeTripsForDir = [];
-      sched.departures.forEach(depTime => {
-        const depSec = timeEngine.timeStringToSeconds(depTime);
-        const arrSec = depSec + totalTravelSec;
-        if (nowSec >= depSec && nowSec < arrSec) {
-          const elapsedSec = nowSec - depSec;
-          const progress = Math.max(0.01, Math.min(0.99, elapsedSec / totalTravelSec));
-          activeTripsForDir.push({
-            depTime,
-            depSec,
-            arrSec,
-            elapsedSec,
-            progress,
-            paired: false
-          });
-        }
-      });
-
+      const activeTripsForDir = allLineActiveTripsByDir[dirKey] || [];
       totalScheduledTrips += activeTripsForDir.length;
 
-      // 2. Identify live/existing buses on this direction
+      // Identify live/existing buses on this direction
       const busesOnDir = existingBuses.filter(b => String(b.direction) === dirKey);
       busesOnDir.forEach(b => {
         if (!b.isEstimated) liveGpsCount++;
       });
 
-      // 3. Dynamic trip pairing: Match existing buses to closest scheduled active trip
+      // Direction cap: if this direction already has at least as many live buses as scheduled trips,
+      // all scheduled trips for this direction are already being run by physical buses!
+      if (busesOnDir.length >= activeTripsForDir.length) {
+        return;
+      }
+
+      // If whole-line fleet cap reached, do not synthesize further
+      if (syntheticBuses.length >= maxSyntheticForLine) {
+        return;
+      }
+
+      // Dynamic trip pairing: Match existing buses on this direction to their closest scheduled trip
       busesOnDir.forEach(bus => {
         const busLat = bus.lat || bus.latitude;
         const busLon = bus.lon || bus.longitude;
@@ -1145,7 +1193,6 @@ class MataroTracker extends BaseTracker {
         const segDist = distTable.cum[snap.index] + geoEngine.calculateDistanceMeters(rawCoords[snap.index].lat, rawCoords[snap.index].lon, snap.lat, snap.lon);
         const busProgress = distTable.total > 0 ? Math.max(0, Math.min(1, segDist / distTable.total)) : 0;
 
-        // Find unpaired active trip closest in progress to this bus
         let bestTripIdx = -1;
         let minDiff = Infinity;
         for (let i = 0; i < activeTripsForDir.length; i++) {
@@ -1157,19 +1204,88 @@ class MataroTracker extends BaseTracker {
           }
         }
 
-        if (bestTripIdx !== -1 && minDiff <= 0.35) {
-          // Paired within +-35% route tolerance
+        // Always pair with closest trip on the direction to prevent duplicate ghost generation
+        if (bestTripIdx !== -1) {
           activeTripsForDir[bestTripIdx].paired = true;
         }
       });
 
-      // 4. Synthesize ghost buses for unpaired active scheduled trips
+      // Terminal Layover & Cross-Direction Pairing:
+      // If an unpaired trip recently started (progress < 0.25), check if there is an incoming bus
+      // on the opposite direction arriving at the terminal (e.g. at Hospital or Rodalies)
+      const oppDirKey = dirKey === '0' ? '1' : '0';
+      const oppBuses = allKnownBuses.filter(b => String(b.direction) === oppDirKey);
+
       activeTripsForDir.forEach(trip => {
         if (trip.paired) return;
+        if (trip.progress <= 0.25) {
+          const startPt = rawCoords[0];
+          const incomingBus = oppBuses.find(b => {
+            const bLat = b.lat || b.latitude;
+            const bLon = b.lon || b.longitude;
+            if (!bLat || !bLon) return false;
+            const d = geoEngine.calculateDistanceMeters(startPt.lat, startPt.lon, bLat, bLon);
+            return d < 800 || (b.totalProgress && b.totalProgress > 80);
+          });
+          if (incomingBus) {
+            // The incoming bus is at or approaching the terminal to start this trip!
+            trip.paired = true;
+          }
+        }
+      });
+
+      // Synthesize ghost buses ONLY for genuinely missing trips that respect headway and spatial separation
+      const maxSyntheticForDir = Math.max(0, activeTripsForDir.length - busesOnDir.length);
+
+      for (const trip of activeTripsForDir) {
+        if (trip.paired) continue;
+        if (syntheticBuses.length >= maxSyntheticForLine) break;
+        if (syntheticBuses.filter(b => b.direction === String(dirKey)).length >= maxSyntheticForDir) break;
 
         const targetDist = trip.progress * distTable.total;
         const pt = geoEngine.pointAtDistance(rawCoords, distTable, targetDist);
-        if (!pt) return;
+        if (!pt) continue;
+
+        // Anti-bunching and spatial headway guard:
+        // Same-direction buses must have at least 15% route progress separation and >= 500m distance.
+        // Opposite-direction buses must not be placed right on top of each other (< 250m).
+        const allCurrentBuses = [...allKnownBuses, ...syntheticBuses];
+        let bunched = false;
+
+        for (const existing of allCurrentBuses) {
+          const exLat = existing.lat || existing.latitude;
+          const exLon = existing.lon || existing.longitude;
+          if (!exLat || !exLon) continue;
+
+          const dist = geoEngine.calculateDistanceMeters(pt.lat, pt.lon, exLat, exLon);
+          const isSameDirection = String(existing.direction) === String(dirKey);
+
+          if (isSameDirection) {
+            // Same direction headway checks
+            if (existing.totalProgress !== undefined) {
+              const progDiff = Math.abs(trip.progress - (existing.totalProgress / 100));
+              if (progDiff < 0.15) {
+                bunched = true;
+                break;
+              }
+            }
+            if (dist < 500) {
+              bunched = true;
+              break;
+            }
+          } else {
+            // Opposite direction / terminal collision check
+            if (dist < 250) {
+              bunched = true;
+              break;
+            }
+          }
+        }
+
+        if (bunched) {
+          // Skip synthesizing this bus — it would bunch with an existing circulating bus!
+          continue;
+        }
 
         const lat = Math.round(pt.lat * 1000000) / 1000000;
         const lon = Math.round(pt.lon * 1000000) / 1000000;
@@ -1220,7 +1336,7 @@ class MataroTracker extends BaseTracker {
           propulsionClass: 'estimated',
           modelName: 'Flota Mataró Bus (Sense GPS)'
         });
-      });
+      }
     });
 
     const fleetStatus = {

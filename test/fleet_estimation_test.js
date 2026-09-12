@@ -1,4 +1,4 @@
-﻿/**
+/**
  * test/fleet_estimation_test.js
  * 
  * Verifies the Scheduled Active Fleet Estimation engine and Theoretical Ghost Bus Synthesis
@@ -127,6 +127,44 @@ async function runFleetEstimationTests() {
   console.log(`  -> Line 2 activeBuses total: ${lineDetails2.activeBuses.length}`);
   console.log(`  -> Fleet status:`, lineDetails2.fleetStatus);
   console.log('  ✓ Test 5 Passed: getLineDetails returns full fleet telemetry and status.\n');
+
+  // Test 6: Saturday Anti-Bunching & Fleet Cap Invariant
+  console.log('📌 Test 6: Saturday Anti-Bunching & Headway Fleet Cap Invariant...');
+  const saturdayNoon = new Date('2026-09-12T10:15:00Z'); // 12:15 CEST (Saturday)
+  const routes6 = mataroTracker.routesData['6'] || [];
+  
+  // Simulate 1 live bus already operating on Dir 1 of Line 6
+  const mockLiveBusL6 = {
+    tripId: 'LIVE_BUS_L6',
+    vehicleId: '2683',
+    lineId: '6',
+    direction: '1',
+    lat: 41.542,
+    lon: 2.437,
+    totalProgress: 27,
+    isEstimated: false,
+    isRealTime: true
+  };
+
+  const synthResult6 = mataroTracker.synthesizeMissingScheduledBuses(
+    '6',
+    '1',
+    routes6,
+    [],
+    [mockLiveBusL6],
+    saturdayNoon,
+    [mockLiveBusL6]
+  );
+
+  // Line 6 Dir 1 has 1 scheduled trip and 1 live bus on Saturday noon -> Direction cap must prevent ghost bus!
+  assert.strictEqual(
+    synthResult6.syntheticBuses.length,
+    0,
+    'Must NOT synthesize duplicate ghost bus when live bus already operates on the direction'
+  );
+  assert.strictEqual(synthResult6.fleetStatus.liveGpsVehicles, 1, 'Should record 1 live GPS vehicle');
+  assert.strictEqual(synthResult6.fleetStatus.estimatedVehicles, 0, 'Estimated vehicles must be 0');
+  console.log('  ✓ Test 6 Passed: Direction and whole-line caps strictly prevent duplicate ghost buses and headway bunching.\n');
 
   console.log('=========================================================================');
   console.log('🎉 ALL SCHEDULED FLEET ESTIMATION TESTS PASSED SUCCESSFULLY! 🎉');
