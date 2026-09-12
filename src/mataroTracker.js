@@ -676,6 +676,11 @@ class MataroTracker extends BaseTracker {
   // Deterministically match a SIRI live vehicle to route index (0 = Anada, 1 = Tornada)
   matchVehicleToRouteIndex(vehicle, routes) {
     if (!routes || routes.length <= 1) return 0;
+
+    if (vehicle.direction !== undefined && vehicle.direction !== null && vehicle.direction !== '') {
+      const parsedDir = parseInt(vehicle.direction, 10);
+      if (!isNaN(parsedDir) && parsedDir >= 0 && parsedDir < routes.length) return parsedDir;
+    }
     
     const cleanDir = (vehicle.directionName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     const cleanDest = (vehicle.destination || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -790,26 +795,22 @@ class MataroTracker extends BaseTracker {
     }
 
     // Apply Deterministic Direction Matching & Road-Snapping with 10-minute dead reckoning
-    let processedBuses = [];
-    if (isBoth && routes.length > 1) {
-      const vehs0 = liveVehicles.filter(v => this.matchVehicleToRouteIndex(v, routes) === 0);
-      const vehs1 = liveVehicles.filter(v => this.matchVehicleToRouteIndex(v, routes) === 1);
+    // Always process live vehicles for all directions to establish full line fleet ground truth
+    const isMultiDir = routes.length > 1;
+    const vehs0 = isMultiDir ? liveVehicles.filter(v => this.matchVehicleToRouteIndex(v, routes) === 0) : liveVehicles;
+    const vehs1 = isMultiDir ? liveVehicles.filter(v => this.matchVehicleToRouteIndex(v, routes) === 1) : [];
 
-      const buses0 = this.processBusesWithDeadReckoning(vehs0, routes[0], allDirections[0]?.stops || stops, '0', liveVehicles);
-      const buses1 = this.processBusesWithDeadReckoning(vehs1, routes[1], allDirections[1]?.stops || stops, '1', liveVehicles);
+    const stops0 = (allDirections && allDirections[0]?.stops) || routes[0]?.stops || stops;
+    const stops1 = (allDirections && allDirections[1]?.stops) || routes[1]?.stops || stops;
 
-      processedBuses = [...buses0, ...buses1];
-    } else {
-      const vehsForDir = routes.length > 1
-        ? liveVehicles.filter(v => this.matchVehicleToRouteIndex(v, routes) === dirIdx)
-        : liveVehicles;
+    const buses0 = this.processBusesWithDeadReckoning(vehs0, routes[0] || selectedRoute, stops0, '0', liveVehicles);
+    const buses1 = isMultiDir ? this.processBusesWithDeadReckoning(vehs1, routes[1], stops1, '1', liveVehicles) : [];
 
-      processedBuses = this.processBusesWithDeadReckoning(vehsForDir, selectedRoute, stops, String(dirIdx), liveVehicles);
-    }
+    let allLineProcessedBuses = [...buses0, ...buses1];
 
     // Strict deduplication by vehicleId (Live GPS strictly takes precedence over estimated dead-reckoning)
     const uniqueBusesMap = new Map();
-    processedBuses.forEach(b => {
+    allLineProcessedBuses.forEach(b => {
       const vId = String(b.vehicleId || b.tripId);
       if (!uniqueBusesMap.has(vId)) {
         uniqueBusesMap.set(vId, b);
@@ -820,7 +821,7 @@ class MataroTracker extends BaseTracker {
         }
       }
     });
-    processedBuses = Array.from(uniqueBusesMap.values()).map(b => {
+    allLineProcessedBuses = Array.from(uniqueBusesMap.values()).map(b => {
       const fleetInfo = mataroFleet.getVehicleFleetInfo(b.vehicleId || b.tripId);
       return {
         ...b,
@@ -835,16 +836,20 @@ class MataroTracker extends BaseTracker {
       };
     });
 
-    // Synthesize missing scheduled vehicles for trips operating without GPS telemetry
+    // Synthesize missing scheduled vehicles for trips operating without GPS telemetry across the whole line
     const { syntheticBuses, fleetStatus } = this.synthesizeMissingScheduledBuses(
       lId,
       direction,
       routes,
       allDirections,
-      processedBuses,
+      allLineProcessedBuses,
       targetDate,
       liveVehicles
     );
+
+    let processedBuses = isBoth
+      ? allLineProcessedBuses
+      : allLineProcessedBuses.filter(b => String(b.direction) === String(dirIdx));
 
     if (syntheticBuses.length > 0) {
       processedBuses = [...processedBuses, ...syntheticBuses];
@@ -1125,16 +1130,20 @@ class MataroTracker extends BaseTracker {
       }
     });
 
-    const dirIndices = isBoth ? ['0', '1'] : [String(direction === '1' ? '1' : '0')];
-    const syntheticBuses = [];
-    let totalScheduledTrips = 0;
-    let liveGpsCount = 0;
+    allKnownBuses.forEach(b => {
+      if ((b.direction === undefined || b.direction === null || b.direction === '') && routes && routes.length > 1) {
+        b.direction = String(this.matchVehicleToRouteIndex(b, routes));
+      }
+    });
+
+    const dirIdx = isBoth ? 0 : (parseInt(direction, 10) || 0);
+    const allDirKeys = (routes && routes.length > 1) ? ['0', '1'] : ['0'];
 
     // 2. Pre-calculate active scheduled trips (both in transit AND terminal layovers) across the whole line
     let totalScheduledForWholeLine = 0;
     const allLineActiveTripsByDir = { '0': [], '1': [] };
 
-    ['0', '1'].forEach(dKey => {
+    allDirKeys.forEach(dKey => {
       const s = mataroSchedules.getDirectionSchedule(lId, dKey, dayType);
       if (!s || !Array.isArray(s.departures)) return;
       const travelSec = s.totalTravelSec || (s.totalTravelMinutes * 60) || 1800;
@@ -1203,47 +1212,25 @@ class MataroTracker extends BaseTracker {
     // Whole-line cap: strictly capped by physical line fleet minus live GPS buses
     const maxSyntheticForLine = Math.max(0, totalScheduledForWholeLine - totalLiveOnWholeLine);
 
-    dirIndices.forEach(dirKey => {
-      const dirIdx = parseInt(dirKey, 10) || 0;
-      const sched = mataroSchedules.getDirectionSchedule(lId, dirKey, dayType);
-      if (!sched || !Array.isArray(sched.departures) || sched.departures.length === 0) return;
-
-      const routeObj = routes[dirIdx] || routes[0];
+    // 3. Pair live buses on each direction to active trips
+    allDirKeys.forEach(dirKey => {
+      const dirIndex = parseInt(dirKey, 10) || 0;
+      const routeObj = routes[dirIndex] || routes[0];
       if (!routeObj) return;
 
       const rawCoords = (routeObj.coords || []).map(c => ({
         lat: parseFloat(c.Latitude !== undefined ? c.Latitude : (c.lat || 0)),
         lon: parseFloat(c.Longitude !== undefined ? c.Longitude : (c.lon || 0))
       })).filter(c => !isNaN(c.lat) && !isNaN(c.lon) && (c.lat !== 0 || c.lon !== 0));
-
       if (rawCoords.length < 2) return;
 
       const distTable = geoEngine.buildPolylineDistanceTable(rawCoords);
       if (distTable.total <= 0) return;
 
       const activeTripsForDir = allLineActiveTripsByDir[dirKey] || [];
-      totalScheduledTrips += activeTripsForDir.length;
       const originPt = rawCoords[0];
+      const liveBusesOnDir = allKnownBuses.filter(b => String(b.direction) === dirKey && !b.isEstimated);
 
-      // Identify live/existing buses on this direction
-      const busesOnDir = existingBuses.filter(b => String(b.direction) === dirKey);
-      busesOnDir.forEach(b => {
-        if (!b.isEstimated) liveGpsCount++;
-      });
-      const liveBusesOnDir = busesOnDir.filter(b => !b.isEstimated);
-
-      // Direction cap: if this direction already has at least as many live GPS buses as active trips,
-      // all trips for this direction are already covered by physical live GPS buses!
-      if (liveBusesOnDir.length >= activeTripsForDir.length) {
-        return;
-      }
-
-      // If whole-line fleet cap reached, do not synthesize further
-      if (syntheticBuses.length >= maxSyntheticForLine) {
-        return;
-      }
-
-      // 1. Pair live buses on this direction to active trips:
       // (a) First pair stationary buses at the origin terminal (< 350m) to terminal layover trip
       // (b) Then pair in-transit buses to their closest in-transit trip by route progress
       liveBusesOnDir.forEach(bus => {
@@ -1279,7 +1266,7 @@ class MataroTracker extends BaseTracker {
         }
       });
 
-      // 2. Cross-Direction Pairing:
+      // Cross-Direction Pairing:
       // If an incoming bus on the opposite direction is completing its trip at this terminal
       // (progress >= 85% and within 400m of the terminal), it will take the layover/turnaround trip!
       const oppDirKey = dirKey === '0' ? '1' : '0';
@@ -1302,161 +1289,230 @@ class MataroTracker extends BaseTracker {
           }
         }
       });
+    });
 
-      // Synthesize ghost buses ONLY for genuinely missing trips that respect headway and spatial separation
+    // 4. Collect and prioritize all unserved candidate trips across the entire line
+    const candidateTrips = [];
+    allDirKeys.forEach(dirKey => {
+      const dirIndex = parseInt(dirKey, 10) || 0;
+      const sched = mataroSchedules.getDirectionSchedule(lId, dirKey, dayType);
+      if (!sched || !Array.isArray(sched.departures) || sched.departures.length === 0) return;
+
+      const routeObj = routes[dirIndex] || routes[0];
+      if (!routeObj) return;
+
+      const rawCoords = (routeObj.coords || []).map(c => ({
+        lat: parseFloat(c.Latitude !== undefined ? c.Latitude : (c.lat || 0)),
+        lon: parseFloat(c.Longitude !== undefined ? c.Longitude : (c.lon || 0))
+      })).filter(c => !isNaN(c.lat) && !isNaN(c.lon) && (c.lat !== 0 || c.lon !== 0));
+      if (rawCoords.length < 2) return;
+
+      const distTable = geoEngine.buildPolylineDistanceTable(rawCoords);
+      if (distTable.total <= 0) return;
+
+      const activeTripsForDir = allLineActiveTripsByDir[dirKey] || [];
+      const liveBusesOnDir = allKnownBuses.filter(b => String(b.direction) === dirKey && !b.isEstimated);
       const maxSyntheticForDir = Math.max(0, activeTripsForDir.length - liveBusesOnDir.length);
 
-      for (const trip of activeTripsForDir) {
-        if (trip.paired) continue;
-        if (!trip.isTerminalLayover && nowSec >= trip.arrSec) continue;
-        if (syntheticBuses.length >= maxSyntheticForLine) break;
-        if (syntheticBuses.filter(b => b.direction === String(dirKey)).length >= maxSyntheticForDir) break;
+      activeTripsForDir.forEach(trip => {
+        if (trip.paired) return;
+        if (!trip.isTerminalLayover && nowSec >= trip.arrSec) return;
 
-        let lat, lon, bearing, totalProgress, speedKmh, statusText, formattedStatus, delayBadgeText, fromStop, toStop, fromSeq, toSeq;
+        candidateTrips.push({
+          trip,
+          dirKey,
+          dirIndex,
+          sched,
+          routeObj,
+          rawCoords,
+          distTable,
+          maxSyntheticForDir,
+          originPt: rawCoords[0]
+        });
+      });
+    });
 
-        if (trip.isTerminalLayover) {
-          // Terminal layover vehicle: stationary at capçalera waiting to depart
-          lat = Math.round(originPt.lat * 1000000) / 1000000;
-          lon = Math.round(originPt.lon * 1000000) / 1000000;
-          bearing = rawCoords.length > 1
-            ? (geoEngine.calculateBearing(rawCoords[0].lat, rawCoords[0].lon, rawCoords[1].lat, rawCoords[1].lon) || 0)
-            : 0;
-          totalProgress = 0;
-          speedKmh = 0;
-          statusText = `🅿️ Capçalera / Regulació (Sortida: ${trip.depTime})`;
-          formattedStatus = `Sortida ${trip.depTime}`;
-          delayBadgeText = '⚡ Estimat (Regulant)';
-          fromStop = sched.originStop?.name || 'Capçalera';
-          toStop = `Sortida a les ${trip.depTime}`;
-          fromSeq = 1;
-          toSeq = 2;
+    // Priority sort across the line: in-transit trips first (already active on route), then terminal layovers
+    candidateTrips.sort((a, b) => {
+      const prioA = a.trip.isTerminalLayover ? 1 : 0;
+      const prioB = b.trip.isTerminalLayover ? 1 : 0;
+      if (prioA !== prioB) return prioA - prioB;
+      return a.trip.depSec - b.trip.depSec;
+    });
 
-          // Anti-stacking at terminal: do not place two buses at the exact same terminal (< 150m)
-          const allCurrentBuses = [...allKnownBuses, ...syntheticBuses];
-          const hasClashAtTerminal = allCurrentBuses.some(b => {
-            const bLat = b.lat || b.latitude;
-            const bLon = b.lon || b.longitude;
-            if (!bLat || !bLon) return false;
-            return geoEngine.calculateDistanceMeters(lat, lon, bLat, bLon) < 150;
-          });
-          if (hasClashAtTerminal) continue;
-        } else {
-          // In-transit vehicle along polyline
-          const targetDist = trip.progress * distTable.total;
-          const pt = geoEngine.pointAtDistance(rawCoords, distTable, targetDist);
-          if (!pt) continue;
+    // 5. Synthesize ghost buses up to the line fleet cap
+    const allSyntheticBuses = [];
+    for (const cand of candidateTrips) {
+      if (allSyntheticBuses.length >= maxSyntheticForLine) break;
 
-          lat = Math.round(pt.lat * 1000000) / 1000000;
-          lon = Math.round(pt.lon * 1000000) / 1000000;
-          bearing = pt.bearing || 0;
-          totalProgress = Math.round(trip.progress * 100);
-          speedKmh = 20;
-          statusText = `⚡ Posició estimada segons horari (Sortida: ${trip.depTime})`;
-          formattedStatus = `Teòric (${trip.depTime})`;
-          delayBadgeText = '⚡ Estimat (sense GPS)';
+      const synthOnThisDir = allSyntheticBuses.filter(b => b.direction === String(cand.dirKey)).length;
+      if (synthOnThisDir >= cand.maxSyntheticForDir) continue;
 
-          const stopsForDir = (allDirections && allDirections[dirIdx]?.stops) || sched.stops || [];
-          const segInfo = this.findNearestSegment(lat, lon, stopsForDir, rawCoords);
-          fromStop = segInfo.fromStop;
-          toStop = segInfo.toStop;
-          fromSeq = segInfo.fromSeq;
-          toSeq = segInfo.toSeq;
+      const { trip, dirKey, dirIndex, sched, rawCoords, distTable, originPt } = cand;
+      let lat, lon, bearing, totalProgress, speedKmh, statusText, formattedStatus, delayBadgeText, fromStop, toStop, fromSeq, toSeq;
 
-          // Anti-bunching and spatial headway guard:
-          // Same-direction buses must have at least 15% route progress separation and >= 500m distance.
-          // Opposite-direction buses must not be placed right on top of each other (< 250m).
-          const allCurrentBuses = [...allKnownBuses, ...syntheticBuses];
-          let bunched = false;
+      if (trip.isTerminalLayover) {
+        // Terminal layover vehicle: stationary at capçalera waiting to depart
+        lat = Math.round(originPt.lat * 1000000) / 1000000;
+        lon = Math.round(originPt.lon * 1000000) / 1000000;
+        bearing = rawCoords.length > 1
+          ? (geoEngine.calculateBearing(rawCoords[0].lat, rawCoords[0].lon, rawCoords[1].lat, rawCoords[1].lon) || 0)
+          : 0;
+        totalProgress = 0;
+        speedKmh = 0;
+        statusText = `🅿️ Capçalera / Regulació (Sortida: ${trip.depTime})`;
+        formattedStatus = `Sortida ${trip.depTime}`;
+        delayBadgeText = '⚡ Estimat (Regulant)';
+        fromStop = sched.originStop?.name || 'Capçalera';
+        toStop = `Sortida a les ${trip.depTime}`;
+        fromSeq = 1;
+        toSeq = 2;
 
-          for (const existing of allCurrentBuses) {
-            const exLat = existing.lat || existing.latitude;
-            const exLon = existing.lon || existing.longitude;
-            if (!exLat || !exLon) continue;
+        // Anti-stacking at terminal: do not place two buses at the exact same terminal (< 150m)
+        const allCurrentBuses = [...allKnownBuses, ...allSyntheticBuses];
+        const hasClashAtTerminal = allCurrentBuses.some(b => {
+          const bLat = b.lat || b.latitude;
+          const bLon = b.lon || b.longitude;
+          if (!bLat || !bLon) return false;
+          return geoEngine.calculateDistanceMeters(lat, lon, bLat, bLon) < 150;
+        });
+        if (hasClashAtTerminal) continue;
+      } else {
+        // In-transit vehicle along polyline
+        const targetDist = trip.progress * distTable.total;
+        const pt = geoEngine.pointAtDistance(rawCoords, distTable, targetDist);
+        if (!pt) continue;
 
-            const dist = geoEngine.calculateDistanceMeters(lat, lon, exLat, exLon);
-            const isSameDirection = String(existing.direction) === String(dirKey);
+        lat = Math.round(pt.lat * 1000000) / 1000000;
+        lon = Math.round(pt.lon * 1000000) / 1000000;
+        bearing = pt.bearing || 0;
+        totalProgress = Math.round(trip.progress * 100);
+        speedKmh = 20;
+        statusText = `⚡ Posició estimada segons horari (Sortida: ${trip.depTime})`;
+        formattedStatus = `Teòric (${trip.depTime})`;
+        delayBadgeText = '⚡ Estimat (sense GPS)';
 
-            if (isSameDirection) {
-              if (existing.totalProgress !== undefined) {
-                const progDiff = Math.abs(trip.progress - (existing.totalProgress / 100));
-                if (progDiff < 0.15) {
-                  bunched = true;
-                  break;
-                }
-              }
-              if (dist < 500) {
-                bunched = true;
-                break;
-              }
-            } else {
-              if (dist < 250) {
+        const stopsForDir = (allDirections && allDirections[dirIndex]?.stops) || sched.stops || [];
+        const segInfo = this.findNearestSegment(lat, lon, stopsForDir, rawCoords);
+        fromStop = segInfo.fromStop;
+        toStop = segInfo.toStop;
+        fromSeq = segInfo.fromSeq;
+        toSeq = segInfo.toSeq;
+
+        // Anti-bunching and spatial headway guard:
+        // Same-direction buses must have at least 15% route progress separation and >= 500m distance.
+        // Opposite-direction buses must not be placed right on top of each other (< 250m).
+        const allCurrentBuses = [...allKnownBuses, ...allSyntheticBuses];
+        let bunched = false;
+
+        for (const existing of allCurrentBuses) {
+          const exLat = existing.lat || existing.latitude;
+          const exLon = existing.lon || existing.longitude;
+          if (!exLat || !exLon) continue;
+
+          const dist = geoEngine.calculateDistanceMeters(lat, lon, exLat, exLon);
+          const isSameDirection = String(existing.direction) === String(dirKey);
+
+          if (isSameDirection) {
+            if (existing.totalProgress !== undefined) {
+              const progDiff = Math.abs(trip.progress - (existing.totalProgress / 100));
+              if (progDiff < 0.15) {
                 bunched = true;
                 break;
               }
             }
-          }
-
-          if (bunched) {
-            continue;
+            if (dist < 500) {
+              bunched = true;
+              break;
+            }
+          } else {
+            if (dist < 250) {
+              bunched = true;
+              break;
+            }
           }
         }
 
-        const depTimeClean = trip.depTime.replace(':', '');
-        const vId = `EST_${lId}_${depTimeClean}`;
-
-        syntheticBuses.push({
-          tripId: `mataro_ghost_${lId}_${dirKey}_${depTimeClean}`,
-          vehicleId: vId,
-          lineId: String(lId),
-          lineName: sched.lineName || `Línia ${lId}`,
-          direction: String(dirKey),
-          directionName: sched.directionName,
-          origin: sched.originStop?.name || '',
-          destination: sched.terminalStop?.name || sched.directionName,
-          lat,
-          lon,
-          latitude: lat,
-          longitude: lon,
-          bearing,
-          compass: geoUtils.bearingToCompassName(bearing),
-          speedKmh,
-          delayMins: 0,
-          delayFormatted: trip.isTerminalLayover ? 'A l\'hora' : 'Horari teòric',
-          delayBadgeText,
-          departureTime: trip.depTime,
-          isEstimated: true,
-          isRealTime: false,
-          isGhostVehicle: true,
-          isTerminalLayover: Boolean(trip.isTerminalLayover),
-          statusText,
-          formattedStatus,
-          recordedAt: new Date(nowMs).toISOString(),
-          timestamp: nowMs,
-          fromStop,
-          toStop,
-          fromSeq,
-          toSeq,
-          totalProgress,
-          propulsion: 'diesel',
-          isElectric: false,
-          isHybrid: false,
-          propulsionBadge: '🕒 Horari Teòric',
-          propulsionIcon: '⚡',
-          propulsionClass: 'estimated',
-          modelName: 'Flota Mataró Bus (Sense GPS)'
-        });
+        if (bunched) {
+          continue;
+        }
       }
-    });
 
-    const effScheduled = Math.min(lineMaxFleet, isBoth ? totalScheduledForWholeLine : totalScheduledTrips);
-    const fleetStatus = {
-      scheduledVehicles: effScheduled,
-      liveGpsVehicles: liveGpsCount,
-      estimatedVehicles: syntheticBuses.length,
-      fleetCoveragePct: effScheduled > 0
-        ? Math.min(100, Math.round((liveGpsCount / effScheduled) * 100))
-        : 100
-    };
+      const depTimeClean = trip.depTime.replace(':', '');
+      const vId = `EST_${lId}_${depTimeClean}`;
+
+      allSyntheticBuses.push({
+        tripId: `mataro_ghost_${lId}_${dirKey}_${depTimeClean}`,
+        vehicleId: vId,
+        lineId: String(lId),
+        lineName: sched.lineName || `Línia ${lId}`,
+        direction: String(dirKey),
+        directionName: sched.directionName,
+        origin: sched.originStop?.name || '',
+        destination: sched.terminalStop?.name || sched.directionName,
+        lat,
+        lon,
+        latitude: lat,
+        longitude: lon,
+        bearing,
+        compass: geoUtils.bearingToCompassName(bearing),
+        speedKmh,
+        delayMins: 0,
+        delayFormatted: trip.isTerminalLayover ? 'A l\'hora' : 'Horari teòric',
+        delayBadgeText,
+        departureTime: trip.depTime,
+        isEstimated: true,
+        isRealTime: false,
+        isGhostVehicle: true,
+        isTerminalLayover: Boolean(trip.isTerminalLayover),
+        statusText,
+        formattedStatus,
+        recordedAt: new Date(nowMs).toISOString(),
+        timestamp: nowMs,
+        fromStop,
+        toStop,
+        fromSeq,
+        toSeq,
+        totalProgress,
+        propulsion: 'diesel',
+        isElectric: false,
+        isHybrid: false,
+        propulsionBadge: '🕒 Horari Teòric',
+        propulsionIcon: '⚡',
+        propulsionClass: 'estimated',
+        modelName: 'Flota Mataró Bus (Sense GPS)'
+      });
+    }
+
+    const syntheticBuses = isBoth
+      ? allSyntheticBuses
+      : allSyntheticBuses.filter(b => String(b.direction) === String(dirIdx));
+
+    let fleetStatus;
+    if (isBoth) {
+      const effScheduled = Math.min(lineMaxFleet, totalScheduledForWholeLine);
+      fleetStatus = {
+        scheduledVehicles: effScheduled,
+        liveGpsVehicles: totalLiveOnWholeLine,
+        estimatedVehicles: allSyntheticBuses.length,
+        fleetCoveragePct: effScheduled > 0
+          ? Math.min(100, Math.round((totalLiveOnWholeLine / effScheduled) * 100))
+          : 100
+      };
+    } else {
+      const dirKey = String(dirIdx);
+      const activeTripsForDir = allLineActiveTripsByDir[dirKey] || [];
+      const liveBusesOnDir = allKnownBuses.filter(b => String(b.direction) === dirKey && !b.isEstimated);
+      const effScheduled = activeTripsForDir.length;
+      fleetStatus = {
+        scheduledVehicles: effScheduled,
+        liveGpsVehicles: liveBusesOnDir.length,
+        estimatedVehicles: syntheticBuses.length,
+        fleetCoveragePct: effScheduled > 0
+          ? Math.min(100, Math.round((liveBusesOnDir.length / effScheduled) * 100))
+          : 100
+      };
+    }
 
     return { syntheticBuses, fleetStatus };
   }
