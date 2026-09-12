@@ -1168,7 +1168,7 @@ class MataroTracker extends BaseTracker {
                 const bProg = (b.totalProgress !== undefined ? b.totalProgress : 50) / 100;
                 const diff = Math.abs(theoreticalOppProgress - bProg);
                 const notYetAtTerminal = (b.totalProgress !== undefined ? b.totalProgress : 50) < 85;
-                return diff <= 0.40 && notYetAtTerminal;
+                return diff <= 0.70 && notYetAtTerminal;
               });
             }
           }
@@ -1184,8 +1184,22 @@ class MataroTracker extends BaseTracker {
       totalScheduledForWholeLine += trips.length;
     });
 
+    // Authoritative physical fleet allocations for Mataró Bus Urbà
+    const MATARO_MAX_FLEET = {
+      '1': { weekday: 5, saturday: 3, sunday: 3 },
+      '2': { weekday: 5, saturday: 3, sunday: 3 },
+      '3': { weekday: 4, saturday: 3, sunday: 3 },
+      '4': { weekday: 2, saturday: 2, sunday: 2 },
+      '5': { weekday: 3, saturday: 3, sunday: 3 },
+      '6': { weekday: 3, saturday: 2, sunday: 2 },
+      '7': { weekday: 2, saturday: 2, sunday: 2 },
+      '8': { weekday: 3, saturday: 2, sunday: 2 }
+    };
+    const lineMaxFleet = MATARO_MAX_FLEET[String(lId)]?.[dayType] || 4;
+    totalScheduledForWholeLine = Math.min(totalScheduledForWholeLine, lineMaxFleet);
+
     const totalLiveOnWholeLine = allKnownBuses.filter(b => !b.isEstimated).length;
-    // Whole-line cap: if real GPS buses already match or exceed total scheduled trips, no synthesis allowed!
+    // Whole-line cap: strictly capped by physical line fleet minus live GPS buses
     const maxSyntheticForLine = Math.max(0, totalScheduledForWholeLine - totalLiveOnWholeLine);
 
     dirIndices.forEach(dirKey => {
@@ -1433,7 +1447,7 @@ class MataroTracker extends BaseTracker {
       }
     });
 
-    const effScheduled = isBoth ? totalScheduledForWholeLine : totalScheduledTrips;
+    const effScheduled = Math.min(lineMaxFleet, isBoth ? totalScheduledForWholeLine : totalScheduledTrips);
     const fleetStatus = {
       scheduledVehicles: effScheduled,
       liveGpsVehicles: liveGpsCount,

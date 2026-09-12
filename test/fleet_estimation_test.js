@@ -290,6 +290,23 @@ async function runFleetEstimationTests() {
 
   console.log('  ✓ Test 7 Passed: Terminal layover regulation and post-departure transition fully verified.\n');
 
+  // Test 8: Strict Fleet Size Ceiling Invariant (Saturday Line 1 Never Exceeds 3 Buses)
+  console.log('📌 Test 8: Saturday Line 1 Strict 3-Bus Fleet Ceiling Invariant...');
+  const saturday1306 = new Date('2026-09-12T11:06:04Z'); // 13:06:04 CEST
+  for (let p0 of [10, 30, 60, 71, 80]) {
+    for (let p1 of [10, 30, 50, 70, 100]) {
+      const live = [
+        { vehicleId: '2667', direction: '0', lat: 41.544, lon: 2.441, totalProgress: p0, isRealTime: true, isEstimated: false },
+        { vehicleId: '2672', direction: '1', lat: 41.556, lon: 2.430, totalProgress: p1, isRealTime: true, isEstimated: false }
+      ];
+      const synth = mataroTracker.synthesizeMissingScheduledBuses('1', 'both', routes1_7, allDirs1_7, live, saturday1306, live);
+      const totalBuses = synth.fleetStatus.liveGpsVehicles + synth.syntheticBuses.length;
+      assert.ok(totalBuses <= 3, `Total active buses on Saturday Line 1 (${totalBuses}) must never exceed 3 (p0=${p0}, p1=${p1})`);
+      assert.ok(synth.fleetStatus.scheduledVehicles <= 3, `Scheduled vehicles on Saturday Line 1 (${synth.fleetStatus.scheduledVehicles}) must never exceed 3`);
+    }
+  }
+  console.log('  ✓ Test 8 Passed: Physical fleet ceiling (3 buses) strictly enforced across all progress states.\n');
+
   console.log('=========================================================================');
   console.log('🎉 ALL SCHEDULED FLEET ESTIMATION TESTS PASSED SUCCESSFULLY! 🎉');
   console.log('=========================================================================');
