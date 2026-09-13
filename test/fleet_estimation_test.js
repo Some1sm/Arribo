@@ -455,6 +455,50 @@ async function runFleetEstimationTests() {
     siriClient.getStopArrivals = origSiri;
   }
 
+  // Test 12: Dead-Reckoned Physical Vehicle Pairing & Strict Fleet Ceiling (Line 5 Sunday 2-Bus Invariant)
+  console.log('📌 Test 12: Dead-Reckoned Physical Vehicle Pairing & Strict Fleet Ceiling (Line 5 Sunday 2-Bus Invariant)...');
+  const sunday1514 = new Date('2026-09-13T13:14:00Z'); // 15:14 CEST (Sunday)
+  const siriClient12 = require('../src/mataroSiriClient');
+  const origLive12 = siriClient12.getLiveVehicles;
+
+  mataroTracker.vehicleHistory.set('2665', {
+    vehicleId: '2665',
+    lineId: '5',
+    direction: '0',
+    lat: 41.53,
+    lon: 2.43,
+    speedKmh: 20,
+    delayMins: 0,
+    lastSeen: sunday1514.getTime() - 60000
+  });
+
+  siriClient12.getLiveVehicles = async () => []; // 0 live vehicles, 1 dead-reckoned
+
+  try {
+    const both5 = await mataroTracker.getLineDetails('5', 'both', sunday1514);
+    const dir0_5 = await mataroTracker.getLineDetails('5', '0', sunday1514);
+    const dir1_5 = await mataroTracker.getLineDetails('5', '1', sunday1514);
+
+    const bothBuses = both5.activeBuses || [];
+    const dir0Buses = dir0_5.activeBuses || [];
+    const dir1Buses = dir1_5.activeBuses || [];
+
+    console.log('  -> Both directions buses:', bothBuses.map(b => `${b.vehicleId} (dir ${b.direction}, est: ${b.isEstimated}, ghost: ${Boolean(b.isGhostVehicle)})`).join(', '));
+    console.log('  -> Dir 0 buses:', dir0Buses.map(b => `${b.vehicleId} (dir ${b.direction})`).join(', '));
+    console.log('  -> Dir 1 buses:', dir1Buses.map(b => `${b.vehicleId} (dir ${b.direction})`).join(', '));
+
+    assert.strictEqual(bothBuses.length, 2, 'Line 5 on Sunday MUST have exactly 2 buses in both directions (NEVER 3)');
+    assert.strictEqual(dir0Buses.length, 1, 'Line 5 Dir 0 MUST have exactly 1 bus (the dead-reckoned bus, 0 duplicate ghosts)');
+    assert.strictEqual(dir1Buses.length, 1, 'Line 5 Dir 1 MUST have exactly 1 bus (the synthetic ghost for unserved dir 1)');
+    assert.strictEqual(dir0Buses[0].vehicleId, '2665', 'Dir 0 bus must be the real vehicle 2665');
+    assert.ok(dir1Buses[0].isGhostVehicle, 'Dir 1 bus must be the synthesized ghost');
+
+    console.log('  ✓ Test 12 Passed: Dead-reckoned physical bus paired to trip; strict 2-bus fleet ceiling respected with 0 phantom duplicates.\n');
+  } finally {
+    siriClient12.getLiveVehicles = origLive12;
+    mataroTracker.vehicleHistory.delete('2665');
+  }
+
   console.log('=========================================================================');
   console.log('🎉 ALL SCHEDULED FLEET ESTIMATION TESTS PASSED SUCCESSFULLY! 🎉');
   console.log('=========================================================================');

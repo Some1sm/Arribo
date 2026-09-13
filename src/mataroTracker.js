@@ -657,6 +657,16 @@ class MataroTracker extends BaseTracker {
       .replace(/^l(?=[1-8]$)/, '');
   }
 
+  // Returns true if the vehicle corresponds to an actual physical bus (live GPS or dead-reckoned)
+  // rather than a purely synthetic timetable ghost bus (EST_*)
+  isPhysicalVehicle(b) {
+    if (!b) return false;
+    if (b.isGhostVehicle) return false;
+    const vId = String(b.vehicleId || b.tripId || '');
+    if (vId.startsWith('EST_') || vId.includes('ghost')) return false;
+    return true;
+  }
+
   // Normalize stop identifier (e.g. '11' -> '1011', 11 -> '1011', '1011' -> '1011')
   normalizeStopId(stopId) {
     if (stopId === null || stopId === undefined) return '';
@@ -976,6 +986,20 @@ class MataroTracker extends BaseTracker {
       processedBuses = [...processedBuses, ...syntheticBuses];
     }
 
+    // Fleet Ceiling Guard: Physical buses (live GPS & dead-reckoned) strictly take priority over synthetic ghost buses.
+    // The combined fleet can never exceed the line's scheduled capacity at this hour.
+    const targetDateComp = calendarEngine.getDateComponents(targetDate, this.agencyTimezone);
+    const targetDayType = targetDateComp.isSunday ? 'sunday' : (targetDateComp.isSaturday ? 'saturday' : 'weekday');
+    const targetDateSec = (targetDateComp.hour || 0) * 3600 + (targetDateComp.minute || 0) * 60 + (targetDateComp.second || 0);
+    const lineMaxFleet = mataroSchedules.getScheduledFleetRequirement(lId, targetDayType, targetDateSec);
+
+    if (isBoth && processedBuses.length > lineMaxFleet) {
+      const physicalBuses = processedBuses.filter(b => this.isPhysicalVehicle(b));
+      const syntheticVehicles = processedBuses.filter(b => !this.isPhysicalVehicle(b));
+      const remainingSlots = Math.max(0, lineMaxFleet - physicalBuses.length);
+      processedBuses = [...physicalBuses, ...syntheticVehicles.slice(0, remainingSlots)];
+    }
+
     const hasLiveGps = processedBuses.some(b => !b.isEstimated);
     const isOnlyEstimated = processedBuses.length > 0 && processedBuses.every(b => b.isEstimated);
     const disruptions = await this.getDisruptions(lId);
@@ -1283,8 +1307,8 @@ class MataroTracker extends BaseTracker {
       const travelSec = s.totalTravelSec || (s.totalTravelMinutes * 60) || 1800;
       const oppDKey = dKey === '0' ? '1' : '0';
       const oppS = mataroSchedules.getDirectionSchedule(lId, oppDKey, dayType);
-      const oppLiveBuses = allKnownBuses.filter(b => String(b.direction) === oppDKey && !b.isEstimated);
-      const liveBusesForThisDir = allKnownBuses.filter(b => String(b.direction) === dKey && !b.isEstimated);
+      const oppPhysicalBuses = allKnownBuses.filter(b => String(b.direction) === oppDKey && this.isPhysicalVehicle(b));
+      const physicalBusesForThisDir = allKnownBuses.filter(b => String(b.direction) === dKey && this.isPhysicalVehicle(b));
       const trips = [];
       let foundLayover = false;
 
@@ -1294,8 +1318,8 @@ class MataroTracker extends BaseTracker {
 
         // A. Trip is currently in transit along the route:
         // Normally within scheduled window (nowSec < arrSec).
-        // If nowSec >= arrSec, only retain trip if a live GPS bus is still circulating on this direction to claim it.
-        const hasDelayedLiveBus = liveBusesForThisDir.length > 0 && liveBusesForThisDir.some(b => {
+        // If nowSec >= arrSec, only retain trip if a physical bus is still circulating on this direction to claim it.
+        const hasDelayedLiveBus = physicalBusesForThisDir.length > 0 && physicalBusesForThisDir.some(b => {
           return b.totalProgress === undefined || b.totalProgress >= 60;
         });
 
@@ -1318,7 +1342,7 @@ class MataroTracker extends BaseTracker {
               layoverStartSec = Math.max(depSec - 900, prevArrSec);
               const prevDepSec = prevArrSec - oppTravelSec;
               const theoreticalOppProgress = (nowSec - prevDepSec) / oppTravelSec;
-              oppStillInTransit = oppLiveBuses.some(b => {
+              oppStillInTransit = oppPhysicalBuses.some(b => {
                 const bProg = (b.totalProgress !== undefined ? b.totalProgress : 50) / 100;
                 const diff = Math.abs(theoreticalOppProgress - bProg);
                 const notYetAtTerminal = (b.totalProgress !== undefined ? b.totalProgress : 50) < 85;
@@ -1342,9 +1366,10 @@ class MataroTracker extends BaseTracker {
     const lineMaxFleet = mataroSchedules.getScheduledFleetRequirement(lId, dayType, nowSec);
     totalScheduledForWholeLine = Math.min(totalScheduledForWholeLine, lineMaxFleet);
 
-    const totalLiveOnWholeLine = allKnownBuses.filter(b => !b.isEstimated).length;
-    // Whole-line cap: strictly capped by physical line fleet minus live GPS buses
-    const maxSyntheticForLine = Math.max(0, totalScheduledForWholeLine - totalLiveOnWholeLine);
+    const totalLiveOnWholeLine = allKnownBuses.filter(b => !b.isEstimated && this.isPhysicalVehicle(b)).length;
+    const totalPhysicalOnWholeLine = allKnownBuses.filter(b => this.isPhysicalVehicle(b)).length;
+    // Whole-line cap: strictly capped by physical line fleet minus all active physical vehicles (live GPS or dead-reckoned)
+    const maxSyntheticForLine = Math.max(0, totalScheduledForWholeLine - totalPhysicalOnWholeLine);
 
     // 3. Pair live buses on each direction to active trips
     allDirKeys.forEach(dirKey => {
@@ -1363,11 +1388,11 @@ class MataroTracker extends BaseTracker {
 
       const activeTripsForDir = allLineActiveTripsByDir[dirKey] || [];
       const originPt = rawCoords[0];
-      const liveBusesOnDir = allKnownBuses.filter(b => String(b.direction) === dirKey && !b.isEstimated);
+      const physicalBusesOnDir = allKnownBuses.filter(b => String(b.direction) === dirKey && this.isPhysicalVehicle(b));
 
       // (a) First pair stationary buses at the origin terminal (< 350m) to terminal layover trip
       // (b) Then pair in-transit buses to their closest in-transit trip by route progress
-      liveBusesOnDir.forEach(bus => {
+      physicalBusesOnDir.forEach(bus => {
         const busLat = bus.lat || bus.latitude;
         const busLon = bus.lon || bus.longitude;
         if (!busLat || !busLon) return;
@@ -1404,12 +1429,12 @@ class MataroTracker extends BaseTracker {
       // If an incoming bus on the opposite direction is completing its trip at this terminal
       // (progress >= 85% and within 400m of the terminal), it will take the layover/turnaround trip!
       const oppDirKey = dirKey === '0' ? '1' : '0';
-      const oppBuses = allKnownBuses.filter(b => String(b.direction) === oppDirKey && !b.isEstimated);
+      const oppPhysicalBuses = allKnownBuses.filter(b => String(b.direction) === oppDirKey && this.isPhysicalVehicle(b));
 
       activeTripsForDir.forEach(trip => {
         if (trip.paired) return;
         if (trip.isTerminalLayover || trip.progress <= 0.20) {
-          const incomingBus = oppBuses.find(b => {
+          const incomingBus = oppPhysicalBuses.find(b => {
             const bLat = b.lat || b.latitude;
             const bLon = b.lon || b.longitude;
             if (!bLat || !bLon) return false;
@@ -1445,8 +1470,8 @@ class MataroTracker extends BaseTracker {
       if (distTable.total <= 0) return;
 
       const activeTripsForDir = allLineActiveTripsByDir[dirKey] || [];
-      const liveBusesOnDir = allKnownBuses.filter(b => String(b.direction) === dirKey && !b.isEstimated);
-      const maxSyntheticForDir = Math.max(0, activeTripsForDir.length - liveBusesOnDir.length);
+      const physicalBusesOnDir = allKnownBuses.filter(b => String(b.direction) === dirKey && this.isPhysicalVehicle(b));
+      const maxSyntheticForDir = Math.max(0, activeTripsForDir.length - physicalBusesOnDir.length);
 
       activeTripsForDir.forEach(trip => {
         if (trip.paired) return;
@@ -1636,7 +1661,7 @@ class MataroTracker extends BaseTracker {
     } else {
       const dirKey = String(dirIdx);
       const activeTripsForDir = allLineActiveTripsByDir[dirKey] || [];
-      const liveBusesOnDir = allKnownBuses.filter(b => String(b.direction) === dirKey && !b.isEstimated);
+      const liveBusesOnDir = allKnownBuses.filter(b => String(b.direction) === dirKey && !b.isEstimated && this.isPhysicalVehicle(b));
       const effScheduled = activeTripsForDir.length;
       fleetStatus = {
         scheduledVehicles: effScheduled,
