@@ -6159,19 +6159,7 @@ body {
 
 .table-scroll-fade-left {
   left: 0;
-  background: linear-gradient(to right, var(--bg-surface, #111827) 0%, transparent 100%);
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-}
-
-.table-scroll-fade-left::after {
-  content: '‹';
-  color: var(--brand-primary);
-  font-size: 1.3rem;
-  font-weight: 800;
-  margin-left: 4px;
-  text-shadow: 0 0 6px rgba(0, 0, 0, 0.8);
+  display: none; /* Sticky column with box-shadow already serves as the left scroll divider */
 }
 
 .table-scroll-fade-right {
@@ -6236,14 +6224,21 @@ body {
   color: var(--text-primary);
 }
 
+/* Responsive visibility toggles for Observatori tables & tabs */
+.tab-text-compact,
+.observatori-mobile-only {
+  display: none;
+}
+.tab-text-full {
+  display: inline;
+}
+
 /* Mobile specific styling for Observatori modal */
 @media (max-width: 640px) {
+  /* Prevent modal canvas leakage on mobile */
   #journalism-modal-backdrop .modal-card {
-    padding: 1rem 0.75rem;
-    max-height: 92vh;
-    border-radius: 16px;
-    overflow-x: hidden;
-    width: 96vw;
+    padding: 1rem 0.85rem;
+    max-height: 90vh;
   }
 
   #journalism-content-container {
@@ -6251,22 +6246,33 @@ body {
     padding-right: 0;
   }
 
-  /* Timeframe tabs row */
+  /* Timeframe tabs row - fit smoothly across mobile width */
   #journalism-modal-backdrop .line-picker-filter-tabs {
-    max-width: 100%;
-    overflow-x: auto;
-    white-space: nowrap;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    flex-wrap: nowrap;
+    display: flex;
+    width: 100%;
+    justify-content: space-between;
+    align-items: center;
+    gap: 3px;
+    padding: 3px;
+    box-sizing: border-box;
+    overflow-x: visible;
   }
   #journalism-modal-backdrop .line-picker-filter-tabs::-webkit-scrollbar {
     display: none;
   }
   #journalism-modal-backdrop .line-filter-tab {
-    flex-shrink: 0;
-    padding: 0.35rem 0.7rem;
-    font-size: 0.74rem;
+    flex: 1 1 auto;
+    text-align: center;
+    padding: 0.35rem 0.25rem;
+    font-size: 0.72rem;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .tab-text-full {
+    display: none;
+  }
+  .tab-text-compact {
+    display: inline;
   }
 
   .btn-csv-export {
@@ -6275,17 +6281,42 @@ body {
     margin-top: 0.4rem;
   }
 
+  /* Responsive column handling for Observatori tables */
+  .observatori-col-desktop {
+    display: none !important;
+  }
+  .observatori-mobile-only {
+    display: block !important;
+  }
+  .observatori-agency-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.15rem;
+  }
+  .observatori-agency-sub {
+    font-size: 0.66rem;
+    color: var(--text-muted);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .observatori-line-agency {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
   /* Compact sticky column cell content on mobile */
   .observatori-table th.sticky-col,
   .observatori-table td.sticky-col {
     max-width: 140px;
-    min-width: 110px;
-    padding: 0.55rem 0.65rem;
+    min-width: 105px;
+    padding: 0.55rem 0.6rem;
   }
 
   .observatori-table th,
   .observatori-table td {
-    padding: 0.55rem 0.65rem;
+    padding: 0.55rem 0.6rem;
     font-size: 0.78rem;
   }
 
@@ -6322,6 +6353,24 @@ body {
     white-space: nowrap;
     display: block;
     font-size: 0.8rem;
+  }
+
+  /* Mobile peak hour card adjustments */
+  .peak-hours-grid {
+    grid-template-columns: 1fr;
+    gap: 0.65rem;
+  }
+  .peak-hour-card {
+    padding: 0.75rem 0.85rem;
+    overflow: hidden;
+  }
+  .peak-hour-time {
+    font-size: 0.86rem;
+  }
+  .peak-hour-tag {
+    font-size: 0.64rem;
+    padding: 0.15rem 0.35rem;
+    max-width: 50%;
   }
 }
 
@@ -6480,6 +6529,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .peak-hour-header {
@@ -6487,13 +6538,15 @@ body {
   justify-content: space-between;
   align-items: center;
   flex-wrap: nowrap;
-  gap: 0.5rem;
+  gap: 0.4rem;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .peak-hour-time {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.35rem;
   font-size: 0.92rem;
   font-weight: 800;
   color: var(--text-primary);
@@ -6504,15 +6557,18 @@ body {
 .peak-hour-tag {
   font-size: 0.68rem;
   font-weight: 700;
-  padding: 0.2rem 0.5rem;
+  padding: 0.2rem 0.45rem;
   border-radius: 6px;
   background: rgba(245, 158, 11, 0.15);
   color: #fbbf24;
   border: 1px solid rgba(245, 158, 11, 0.3);
   white-space: nowrap;
-  flex-shrink: 0;
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 55%;
   overflow: hidden;
   text-overflow: ellipsis;
+  box-sizing: border-box;
 }
 
 .peak-hour-tag.school {

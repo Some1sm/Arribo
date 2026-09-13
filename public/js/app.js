@@ -2173,9 +2173,9 @@ class TransitApp {
               <thead>
                 <tr>
                   <th class="sticky-col" onclick="window.transitApp.handleJournalismSort('mostDelayed', 'lineCode')">Línia ${getSortIndicator('mostDelayed', 'lineCode')}</th>
-                  <th onclick="window.transitApp.handleJournalismSort('mostDelayed', 'agency')">Operador ${getSortIndicator('mostDelayed', 'agency')}</th>
+                  <th class="observatori-col-desktop" onclick="window.transitApp.handleJournalismSort('mostDelayed', 'agency')">Operador ${getSortIndicator('mostDelayed', 'agency')}</th>
                   <th onclick="window.transitApp.handleJournalismSort('mostDelayed', 'avgDelay')">Retard Mitjà ${getSortIndicator('mostDelayed', 'avgDelay')}</th>
-                  <th onclick="window.transitApp.handleJournalismSort('mostDelayed', 'maxDelay')">Retard Màx. ${getSortIndicator('mostDelayed', 'maxDelay')}</th>
+                  <th class="observatori-col-desktop" onclick="window.transitApp.handleJournalismSort('mostDelayed', 'maxDelay')">Retard Màx. ${getSortIndicator('mostDelayed', 'maxDelay')}</th>
                   <th onclick="window.transitApp.handleJournalismSort('mostDelayed', 'latePercentage')">% Expedicions Tardanes ${getSortIndicator('mostDelayed', 'latePercentage')}</th>
                 </tr>
               </thead>
@@ -2191,11 +2191,12 @@ class TransitApp {
                           <span style="background:${this.esc(l.color || 'var(--brand-primary)')}; color:#fff; padding:0.15rem 0.45rem; border-radius:6px; font-size:0.75rem; display:inline-block; font-weight:800;">${this.esc(l.lineCode)}</span>
                         </div>
                         ${l.name && l.name !== l.lineCode ? `<span class="observatori-line-name" title="${this.esc(l.name)}">${this.esc(l.name)}</span>` : ''}
+                        <span class="observatori-line-agency observatori-mobile-only">${this.esc(l.agency)}</span>
                       </div>
                     </td>
-                    <td style="color:var(--text-muted); white-space:nowrap;">${this.esc(l.agency)}</td>
+                    <td class="observatori-col-desktop" style="color:var(--text-muted); white-space:nowrap;">${this.esc(l.agency)}</td>
                     <td style="font-weight:700; color:${Number(l.avgDelay) > 0 ? '#ef4444' : '#10b981'}; white-space:nowrap;">${avgStr}</td>
-                    <td style="color:var(--text-muted); white-space:nowrap;">${maxStr}</td>
+                    <td class="observatori-col-desktop" style="color:var(--text-muted); white-space:nowrap;">${maxStr}</td>
                     <td style="white-space:nowrap; text-align:center;">
                       <span style="background:rgba(239,68,68,0.15); color:#f87171; padding:0.15rem 0.45rem; border-radius:6px; font-weight:600;">${l.latePercentage}%</span>
                     </td>
@@ -2242,11 +2243,11 @@ class TransitApp {
                   <tr>
                     <th class="sticky-col" onclick="window.transitApp.handleJournalismSort('worstStops', 'stopName')">Parada (Punt Negre) ${getSortIndicator('worstStops', 'stopName')}</th>
                     <th onclick="window.transitApp.handleJournalismSort('worstStops', 'lineCode')">Línia ${getSortIndicator('worstStops', 'lineCode')}</th>
-                    <th onclick="window.transitApp.handleJournalismSort('worstStops', 'agency')">Operador ${getSortIndicator('worstStops', 'agency')}</th>
+                    <th class="observatori-col-desktop" onclick="window.transitApp.handleJournalismSort('worstStops', 'agency')">Operador ${getSortIndicator('worstStops', 'agency')}</th>
                     <th onclick="window.transitApp.handleJournalismSort('worstStops', 'avgDelay')">Retard Mitjà ${getSortIndicator('worstStops', 'avgDelay')}</th>
-                    <th onclick="window.transitApp.handleJournalismSort('worstStops', 'criticalHourAvgDelay')">Hora Crítica (Punta) ${getSortIndicator('worstStops', 'criticalHourAvgDelay')}</th>
-                    <th onclick="window.transitApp.handleJournalismSort('worstStops', 'maxDelay')">Retard Màx. ${getSortIndicator('worstStops', 'maxDelay')}</th>
                     <th onclick="window.transitApp.handleJournalismSort('worstStops', 'severeLatePct')">% Retards Greus ${getSortIndicator('worstStops', 'severeLatePct')}</th>
+                    <th onclick="window.transitApp.handleJournalismSort('worstStops', 'criticalHourAvgDelay')">Hora Crítica (Punta) ${getSortIndicator('worstStops', 'criticalHourAvgDelay')}</th>
+                    <th class="observatori-col-desktop" onclick="window.transitApp.handleJournalismSort('worstStops', 'maxDelay')">Retard Màx. ${getSortIndicator('worstStops', 'maxDelay')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2262,8 +2263,11 @@ class TransitApp {
                         </div>
                       </td>
                       <td style="font-weight:700; color:var(--brand-primary); white-space:nowrap; text-align:center;">${this.esc(st.lineCode)}</td>
-                      <td style="color:var(--text-muted); white-space:nowrap;">${this.esc(st.agency)}</td>
+                      <td class="observatori-col-desktop" style="color:var(--text-muted); white-space:nowrap;">${this.esc(st.agency)}</td>
                       <td style="font-weight:700; color:${Number(st.avgDelay) > 0 ? '#ef4444' : '#10b981'}; white-space:nowrap;">${sAvgStr}</td>
+                      <td style="white-space:nowrap; text-align:center;">
+                        <span style="background:${st.severeLatePct >= 30 ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.15)'}; color:${st.severeLatePct >= 30 ? '#f87171' : '#fbbf24'}; padding:0.15rem 0.45rem; border-radius:6px; font-weight:600;">${st.severeLatePct}%</span>
+                      </td>
                       <td style="white-space:nowrap;">
                         ${st.criticalHour && st.criticalHour !== '--' ? `
                           <div class="bottleneck-hour-badge ${st.isSchoolHour ? 'school-rush' : ''}" title="${this.esc(st.criticalHourTag)} • Retard mitjà en aquesta franja: +${st.criticalHourAvgDelay} min">
@@ -2273,10 +2277,7 @@ class TransitApp {
                           </div>
                         ` : '<span style="color:var(--text-muted); font-size:0.75rem;">Uniforme</span>'}
                       </td>
-                      <td style="color:var(--text-muted); white-space:nowrap;">${sMaxStr}</td>
-                      <td style="white-space:nowrap; text-align:center;">
-                        <span style="background:${st.severeLatePct >= 30 ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.15)'}; color:${st.severeLatePct >= 30 ? '#f87171' : '#fbbf24'}; padding:0.15rem 0.45rem; border-radius:6px; font-weight:600;">${st.severeLatePct}%</span>
-                      </td>
+                      <td class="observatori-col-desktop" style="color:var(--text-muted); white-space:nowrap;">${sMaxStr}</td>
                     </tr>
                   `;}).join('')}
                 </tbody>
@@ -2288,16 +2289,10 @@ class TransitApp {
                   ⬇️ Mostra'n 15 més (${displayedWorstStops.length} de ${totalWorst})
                 </button>
                 <button type="button" class="btn-secondary observatori-action-btn" onclick="window.transitApp.setWorstStopsLimit(9999)">
-                  Veure totes (${totalWorst})
+                  Totes (${totalWorst})
                 </button>
               </div>
-            ` : (worstLimit > 10 ? `
-              <div style="display:flex; justify-content:center; align-items:center; padding:0.65rem; background:var(--bg-elevated); border-top:1px solid var(--border-subtle); border-radius:0 0 10px 10px;">
-                <button type="button" class="btn-secondary observatori-action-btn" onclick="window.transitApp.setWorstStopsLimit(10)">
-                  ⬆️ Reduir al Top 10
-                </button>
-              </div>
-            ` : '')}
+            ` : ''}
           `}
         </div>
         `;
@@ -2324,8 +2319,8 @@ class TransitApp {
               <thead>
                 <tr>
                   <th class="sticky-col" onclick="window.transitApp.handleJournalismSort('agencies', 'agency')">Empresa ${getSortIndicator('agencies', 'agency')}</th>
-                  <th onclick="window.transitApp.handleJournalismSort('agencies', 'linesCount')">Línies ${getSortIndicator('agencies', 'linesCount')}</th>
-                  <th onclick="window.transitApp.handleJournalismSort('agencies', 'totalSamples')">Mostres ${getSortIndicator('agencies', 'totalSamples')}</th>
+                  <th class="observatori-col-desktop" onclick="window.transitApp.handleJournalismSort('agencies', 'linesCount')">Línies ${getSortIndicator('agencies', 'linesCount')}</th>
+                  <th class="observatori-col-desktop" onclick="window.transitApp.handleJournalismSort('agencies', 'totalSamples')">Mostres ${getSortIndicator('agencies', 'totalSamples')}</th>
                   <th onclick="window.transitApp.handleJournalismSort('agencies', 'avgDelay')">Retard Mitjà ${getSortIndicator('agencies', 'avgDelay')}</th>
                   <th onclick="window.transitApp.handleJournalismSort('agencies', 'onTimePct')">Índex de Puntualitat ${getSortIndicator('agencies', 'onTimePct')}</th>
                 </tr>
@@ -2334,10 +2329,13 @@ class TransitApp {
                 ${agencies.map((a, i) => `
                   <tr>
                     <td class="sticky-col" style="font-weight:600;">
-                      <span class="observatori-agency-name" title="${this.esc(a.agency)}">${this.esc(a.agency)}</span>
+                      <div class="observatori-agency-cell">
+                        <span class="observatori-agency-name" title="${this.esc(a.agency)}">${this.esc(a.agency)}</span>
+                        <span class="observatori-agency-sub observatori-mobile-only">${a.linesCount} línies • ${Number(a.totalSamples || 0).toLocaleString()} mostres</span>
+                      </div>
                     </td>
-                    <td style="color:var(--text-muted); white-space:nowrap; text-align:center;">${a.linesCount}</td>
-                    <td style="color:var(--text-muted); white-space:nowrap;">${Number(a.totalSamples || 0).toLocaleString()}</td>
+                    <td class="observatori-col-desktop" style="color:var(--text-muted); white-space:nowrap; text-align:center;">${a.linesCount}</td>
+                    <td class="observatori-col-desktop" style="color:var(--text-muted); white-space:nowrap;">${Number(a.totalSamples || 0).toLocaleString()}</td>
                     <td style="font-weight:700; color:${a.avgDelay > 3 ? '#ef4444' : '#10b981'}; white-space:nowrap;">+${a.avgDelay} min</td>
                     <td style="white-space:nowrap; text-align:center;">
                       <span style="background:${a.onTimePct >= 85 ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)'}; color:${a.onTimePct >= 85 ? '#34d399' : '#fbbf24'}; padding:0.15rem 0.45rem; border-radius:6px; font-weight:600;">${a.onTimePct}%</span>
