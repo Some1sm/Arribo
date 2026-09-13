@@ -687,15 +687,18 @@ class MataroTracker extends BaseTracker {
   // Record a vehicle's telemetry state to memory history for dead reckoning
   recordVehicleState(v) {
     if (!v || !v.vehicleId) return;
-    const now = Date.now();
     const vId = String(v.vehicleId);
+    // Never record synthetic timetable ghost buses into physical vehicle history
+    if (vId.startsWith('EST_') || v.isGhostVehicle || v.isTheoretical) return;
+
+    const now = Date.now();
     const lId = this.normalizeLineId(v.lineId || v.lineCode);
     if (!lId) return;
 
     this.vehicleHistory.set(vId, {
       vehicleId: vId,
       lineId: lId,
-      direction: String(v.direction || '0'),
+      direction: String(v.direction !== undefined ? v.direction : '0'),
       lat: Number(v.lat || v.latitude),
       lon: Number(v.lon || v.longitude),
       bearing: Number(v.bearing || 0),
@@ -715,6 +718,8 @@ class MataroTracker extends BaseTracker {
     const now = Date.now();
     for (const v of vehicles) {
       if (!v || !v.vehicleId) continue;
+      const vId = String(v.vehicleId);
+      if (vId.startsWith('EST_') || v.isGhostVehicle || v.isTheoretical) continue;
       const isMataro = (v.agency || '').includes('Mataró') || (v.lineCode || '').startsWith('L');
       if (!isMataro) continue;
       this.recordVehicleState({
@@ -987,16 +992,17 @@ class MataroTracker extends BaseTracker {
     }
 
     // Fleet Ceiling Guard: Physical buses (live GPS & dead-reckoned) strictly take priority over synthetic ghost buses.
-    // The combined fleet can never exceed the line's scheduled capacity at this hour.
+    // The combined fleet can never exceed the line's scheduled capacity at this hour (both whole-line and per-direction).
     const targetDateComp = calendarEngine.getDateComponents(targetDate, this.agencyTimezone);
     const targetDayType = targetDateComp.isSunday ? 'sunday' : (targetDateComp.isSaturday ? 'saturday' : 'weekday');
     const targetDateSec = (targetDateComp.hour || 0) * 3600 + (targetDateComp.minute || 0) * 60 + (targetDateComp.second || 0);
     const lineMaxFleet = mataroSchedules.getScheduledFleetRequirement(lId, targetDayType, targetDateSec);
 
-    if (isBoth && processedBuses.length > lineMaxFleet) {
+    const maxFleetLimit = isBoth ? lineMaxFleet : Math.max(1, Math.ceil(lineMaxFleet / Math.max(1, routes.length)));
+    if (processedBuses.length > maxFleetLimit) {
       const physicalBuses = processedBuses.filter(b => this.isPhysicalVehicle(b));
       const syntheticVehicles = processedBuses.filter(b => !this.isPhysicalVehicle(b));
-      const remainingSlots = Math.max(0, lineMaxFleet - physicalBuses.length);
+      const remainingSlots = Math.max(0, maxFleetLimit - physicalBuses.length);
       processedBuses = [...physicalBuses, ...syntheticVehicles.slice(0, remainingSlots)];
     }
 
@@ -1155,22 +1161,31 @@ class MataroTracker extends BaseTracker {
 
     // 2. Dead-Reckoning: Check if any recently tracked vehicles lost signal in dead zones (strict 90s window, §7.6)
     for (const [vId, hist] of this.vehicleHistory.entries()) {
+      if (String(vId).startsWith('EST_') || hist.isGhostVehicle || hist.isTheoretical) {
+        this.vehicleHistory.delete(vId);
+        continue;
+      }
       if (String(hist.lineId) !== String(route.id_linea)) continue;
       if (String(hist.direction) !== String(dirId)) continue; // Only dead-reckon on the matching direction
       const elapsedSec = (now - hist.lastSeen) / 1000;
 
+      if (elapsedSec > 900) {
+        this.vehicleHistory.delete(vId);
+        continue;
+      }
+
       // If vehicle is live on ANY direction of this line, do not dead-reckon it
       const isCurrentlyActive = (allLineLiveVehicles || liveBuses).some(b => String(b.vehicleId) === String(vId));
-      if (!isCurrentlyActive && elapsedSec >= 15 && elapsedSec <= 90) {
+      if (!isCurrentlyActive && elapsedSec >= 1 && elapsedSec <= 90) {
         const estPos = geoEngine.extrapolatePolylinePosition(hist, elapsedSec, hist.speedKmh || 30, polyCoords);
         if (estPos) {
-          // Anti-bunching & duplicate guard: Never dead-reckon if an active physical bus on this direction is within 500m
+          // Anti-bunching & duplicate guard: Never dead-reckon if an active physical bus on this direction is within 600m
           const isBunchedWithPhysical = (allLineLiveVehicles || liveBuses).some(b => {
             if (String(b.direction) !== String(dirId)) return false;
             const bLat = b.lat || b.latitude;
             const bLon = b.lon || b.longitude;
             if (!bLat || !bLon) return false;
-            return geoEngine.calculateDistanceMeters(estPos.lat, estPos.lon, bLat, bLon) < 500;
+            return geoEngine.calculateDistanceMeters(estPos.lat, estPos.lon, bLat, bLon) < 600;
           });
           if (isBunchedWithPhysical) continue;
 
@@ -1297,6 +1312,35 @@ class MataroTracker extends BaseTracker {
         allKnownBuses.push(lv);
       }
     });
+
+    // Also include recently active physical vehicles from vehicleHistory (seen within 90s)
+    // so momentary network drops cannot falsely deplete the known physical fleet.
+    // Only check vehicleHistory when evaluating real-time live conditions (within 2 min of wall clock).
+    const isLiveEvaluation = Math.abs(Date.now() - nowMs) <= 120000;
+    if (isLiveEvaluation) {
+      for (const [vId, hist] of this.vehicleHistory.entries()) {
+        if (String(hist.lineId) !== String(lId)) continue;
+        if (String(vId).startsWith('EST_') || hist.isGhostVehicle || hist.isTheoretical) continue;
+        const elapsed = (nowMs - (hist.lastSeen || nowMs)) / 1000;
+        if (elapsed >= 0 && elapsed <= 90) {
+          if (!allKnownBuses.some(b => String(b.vehicleId || b.tripId) === String(vId))) {
+            allKnownBuses.push({
+              vehicleId: hist.vehicleId,
+              tripId: `mataro_${hist.vehicleId}`,
+              lineId: hist.lineId,
+              direction: hist.direction,
+              lat: hist.lat,
+              lon: hist.lon,
+              latitude: hist.lat,
+              longitude: hist.lon,
+              isEstimated: true,
+              isRealTime: false,
+              timestamp: hist.lastSeen
+            });
+          }
+        }
+      }
+    }
 
     allKnownBuses.forEach(b => {
       if ((b.direction === undefined || b.direction === null || b.direction === '') && routes && routes.length > 1) {
@@ -1481,7 +1525,8 @@ class MataroTracker extends BaseTracker {
 
       const activeTripsForDir = allLineActiveTripsByDir[dirKey] || [];
       const physicalBusesOnDir = allKnownBuses.filter(b => String(b.direction) === dirKey && this.isPhysicalVehicle(b));
-      const maxSyntheticForDir = Math.max(0, activeTripsForDir.length - physicalBusesOnDir.length);
+      const maxFleetForDir = Math.max(1, Math.ceil(lineMaxFleet / Math.max(1, allDirKeys.length)));
+      const maxSyntheticForDir = Math.max(0, Math.min(activeTripsForDir.length, maxFleetForDir) - physicalBusesOnDir.length);
 
       activeTripsForDir.forEach(trip => {
         if (trip.paired) return;
@@ -1569,7 +1614,7 @@ class MataroTracker extends BaseTracker {
         toSeq = segInfo.toSeq;
 
         // Anti-bunching and spatial headway guard:
-        // Same-direction buses must have at least 15% route progress separation and >= 500m distance.
+        // Same-direction buses must have at least 18% route progress separation and >= 700m distance.
         // Opposite-direction buses must not be placed right on top of each other (< 250m).
         const allCurrentBuses = [...allKnownBuses, ...allSyntheticBuses];
         let bunched = false;
@@ -1585,12 +1630,12 @@ class MataroTracker extends BaseTracker {
           if (isSameDirection) {
             if (existing.totalProgress !== undefined) {
               const progDiff = Math.abs(trip.progress - (existing.totalProgress / 100));
-              if (progDiff < 0.15) {
+              if (progDiff < 0.18) {
                 bunched = true;
                 break;
               }
             }
-            if (dist < 500) {
+            if (dist < 700) {
               bunched = true;
               break;
             }

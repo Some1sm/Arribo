@@ -1243,6 +1243,7 @@ class C10Map {
     const now = Date.now();
     const currentTripIds = new Set(activeBuses.map(b => String(b.tripId || b.vehicleId || `${b.lat}_${b.lon}`)));
     const activePhysicalVehIds = new Set(activeBuses.map(b => String(b.vehicleId || '').trim()).filter(Boolean));
+    const activeDirsWithLiveGps = new Set(activeBuses.filter(b => !b.isEstimated).map(b => String(b.direction)));
 
     // Handle missing buses with strict 90s dead-reckoning hold buffer (§7.6)
     // Physical vehicle deduplication: a vehicleId can only have 1 marker on the map.
@@ -1256,8 +1257,8 @@ class C10Map {
         // purge this stale entry immediately if its key differs, so we NEVER display duplicate markers for the same bus!
         const isVehHandledByActiveKey = Boolean(objVehId && activePhysicalVehIds.has(objVehId));
 
-        // Invariant 2: Stale marker proximity guard. If marker is within 300m of ANY active live bus on the same line,
-        // it is a phantom duplicate resulting from position jitter or trip turnover -> purge immediately.
+        // Invariant 2: Stale marker proximity guard. If marker is within 800m of ANY active live bus on the same line,
+        // it is a phantom duplicate resulting from position jitter or reconnection -> purge immediately.
         let isNearLiveBus = false;
         if (obj.marker && obj.marker.getLatLng) {
           const mPos = obj.marker.getLatLng();
@@ -1265,11 +1266,14 @@ class C10Map {
             const bLat = b.lat !== undefined ? b.lat : b.latitude;
             const bLon = b.lon !== undefined ? b.lon : b.longitude;
             if (bLat === undefined || bLon === undefined) return false;
-            return this.calculateDistanceMeters(mPos.lat, mPos.lng, Number(bLat), Number(bLon)) < 300;
+            return this.calculateDistanceMeters(mPos.lat, mPos.lng, Number(bLat), Number(bLon)) < 800;
           });
         }
 
-        if (elapsedSec > 90 || isGhost || isVehHandledByActiveKey || isNearLiveBus) {
+        // Invariant 3: If a live GPS bus is active on this direction and this was an estimated marker, purge it!
+        const isDirectionCovered = Boolean(obj.busData?.isEstimated && obj.busData?.direction !== undefined && activeDirsWithLiveGps.has(String(obj.busData.direction)));
+
+        if (elapsedSec > 90 || isGhost || isVehHandledByActiveKey || isNearLiveBus || isDirectionCovered) {
           this.map.removeLayer(obj.marker);
           this.busMarkersMap.delete(tId);
         } else {
@@ -1583,6 +1587,18 @@ class C10Map {
           if (existingKey !== markerKey && String(existingObj.busData?.vehicleId || '').trim() === vIdStr) {
             this.map.removeLayer(existingObj.marker);
             this.busMarkersMap.delete(existingKey);
+            continue;
+          }
+          // Immediate ghost purge on live GPS recovery:
+          // If this incoming bus has live GPS, immediately remove any ghost marker on the same direction
+          // or within 1,200m to eliminate reconnection duplication!
+          if (!bus.isEstimated && existingKey !== markerKey) {
+            const exData = existingObj.busData;
+            const isExGhost = Boolean(exData?.isGhostVehicle || String(exData?.vehicleId || '').startsWith('EST_'));
+            if (isExGhost && (String(exData?.direction) === String(bus.direction) || this.calculateDistanceMeters(snapped.lat, snapped.lon, Number(exData?.lat || 0), Number(exData?.lon || 0)) < 1200)) {
+              this.map.removeLayer(existingObj.marker);
+              this.busMarkersMap.delete(existingKey);
+            }
           }
         }
       }

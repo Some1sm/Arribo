@@ -77,6 +77,9 @@ class FlightRecorder {
     if (!snap || !snap.vehicleId) return;
 
     const vId = String(snap.vehicleId);
+    // Never ingest theoretical ghost vehicles into flightRecorder (only real physical telemetry)
+    if (vId.startsWith('EST_') || snap.isGhostVehicle || snap.isTheoretical) return;
+
     const lineCode = String(snap.lineCode || '').toUpperCase();
     const now = Date.now();
 

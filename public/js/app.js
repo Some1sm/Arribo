@@ -5486,11 +5486,9 @@ class TransitApp {
       }
     }
 
-    const fs = lData?.fleetStatus;
-    const scheduled = fs?.scheduledVehicles !== undefined ? fs.scheduledVehicles : (liveFromBuses + estFromBuses);
-    const live = fs?.liveGpsVehicles !== undefined ? Math.max(liveFromBuses, fs.liveGpsVehicles) : liveFromBuses;
-    const est = fs?.estimatedVehicles !== undefined ? Math.max(estFromBuses, fs.estimatedVehicles) : estFromBuses;
-    const total = Math.max(live + est, scheduled);
+    const live = liveFromBuses;
+    const est = estFromBuses;
+    const total = live + est;
 
     if (total > 0) {
       if (live > 0 && est > 0) {

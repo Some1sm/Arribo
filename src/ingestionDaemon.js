@@ -109,11 +109,16 @@ class IngestionDaemon {
           const details = await mataroTracker.getLineDetails(lId, 'both');
           if (details && Array.isArray(details.activeBuses)) {
             details.activeBuses.forEach(b => {
+              // Never ingest synthetic timetable ghost buses into flightRecorder!
+              if (b.isGhostVehicle || (b.vehicleId && String(b.vehicleId).startsWith('EST_'))) {
+                return;
+              }
               flightRecorder.ingestVehicle({
                 vehicleId: b.vehicleId || `mataro_${lId}_${b.plateNumber || 'bus'}`,
                 lineId: lId,
                 lineCode: `L${lId}`,
                 agency: 'Mataró Bus (Avanza)',
+                direction: b.direction !== undefined ? String(b.direction) : undefined,
                 plateNumber: b.plateNumber || '',
                 lat: b.lat,
                 lon: b.lon,
@@ -125,7 +130,7 @@ class IngestionDaemon {
                 destination: b.destination || '',
                 isRealTime: !b.isEstimated,
                 isEstimated: Boolean(b.isEstimated),
-                serviceableMs: 10 * 60 * 1000
+                serviceableMs: 90 * 1000
               });
 
               // Sanity check: Do NOT record delay logs for ghost buses, parked vehicles, or terminal layovers
