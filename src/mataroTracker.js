@@ -2077,7 +2077,14 @@ class MataroTracker extends BaseTracker {
               stopTravelSec = scheduleSynthesizer.getTravelTimeToStop(travelTimes, sId);
             }
 
-            const rawAimed = dep.scheduledTime || (dep.aimedIso ? dep.aimedIso.substring(11, 16) : null) || dep.departureTime;
+            let rawAimed = dep.scheduledTime || null;
+            if (!rawAimed && dep.aimedIso && typeof dep.aimedIso === 'string') {
+              if (dep.aimedIso.includes('T') && !dep.aimedIso.startsWith('0001-') && !dep.aimedIso.startsWith('1970-')) {
+                const formatted = timeEngine.formatTimeToTimezone(dep.aimedIso, this.agencyTimezone);
+                if (formatted && formatted !== '--:--') rawAimed = formatted;
+              }
+            }
+            if (!rawAimed) rawAimed = dep.departureTime;
             const aimedClean = rawAimed ? String(rawAimed).replace(/^(\d{1,2}:\d{2}):\d{2}$/, '$1') : null;
 
             const dirSched = mataroSchedules.getDirectionSchedule(lIdStr, dirKey, dayTypeToday);
@@ -2201,6 +2208,120 @@ class MataroTracker extends BaseTracker {
       }
 
       filteredDepartures.push(dep);
+    }
+
+    // 3.5 Downstream Stop Propagation of Origin Terminal Regulating & Turnaround Departures:
+    // If this stop is a downstream stop on any serving route variant (stopIdx > 0),
+    // check if the route's origin terminal has an active regulating or turnaround departure.
+    // SIRI often doesn't broadcast downstream predictions for buses still at the terminal,
+    // so we project the origin terminal departure downstream with route travel time.
+    if (!options.isDownstreamCheck) {
+      for (const r of routesForStop) {
+        const stopIdx = (r.stops || []).findIndex(s => String(s.id) === sId);
+        if (stopIdx <= 0) continue; // Skip origin stop (cannot propagate to itself)
+
+        const originStop = r.stops[0];
+        if (!originStop) continue;
+        const originStopId = String(originStop.id);
+        const lIdStr = String(r.id_linea || lineId || '1');
+        const dirKey = String(r.id || '0');
+
+        try {
+          const originBoard = await this.getStopDepartures(originStopId, lIdStr, dirKey, {
+            ...options,
+            isDownstreamCheck: true,
+            skipIntermodal: true
+          });
+
+          if (originBoard && Array.isArray(originBoard.departures)) {
+            let stopTravelSec = mataroSchedules.getStopTravelTime(lIdStr, dirKey, sId);
+            if (stopTravelSec <= 0 && r.stops && r.stops.length > 0) {
+              const travelTimes = scheduleSynthesizer.estimateStopTravelTimes(r.stops, {
+                speedMps: 4.8,
+                dwellSecPerStop: 25,
+                defaultSegmentMeters: 300
+              });
+              stopTravelSec = scheduleSynthesizer.getTravelTimeToStop(travelTimes, sId);
+            }
+
+            const netNowToday = timeEngine.getNetworkTime(this.agencyTimezone, targetDate);
+            const currentSecNow = netNowToday.hour * 3600 + netNowToday.minute * 60 + netNowToday.second;
+            const originStopName = (originStop.name || 'Capçalera').split(/[\-\(\,]/)[0].trim();
+
+            for (const origDep of originBoard.departures) {
+              if (String(origDep.lineId) !== lIdStr) continue;
+
+              const isMatchDir = String(origDep.directionId) === dirKey ||
+                (origDep.destination && r.name && origDep.destination.toLowerCase().includes(r.name.toLowerCase()));
+              if (!isMatchDir) continue;
+
+              // Only propagate live regulating, real-time, or estimated departures
+              if (!origDep.isRegulating && !origDep.isRealTime && !origDep.isEstimated) continue;
+
+              const vId = origDep.vehicleId ? String(origDep.vehicleId).trim() : null;
+              const alreadyHas = filteredDepartures.some(d => {
+                if (vId && d.vehicleId && String(d.vehicleId).trim() === vId) return true;
+                return false;
+              });
+              if (alreadyHas) continue;
+
+              const origDepSec = timeEngine.timeStringToSeconds(origDep.departureTime);
+              const estPassingSec = origDepSec + stopTravelSec;
+              const minsAway = Math.max(0, Math.round((estPassingSec - currentSecNow) / 60));
+
+              // If vehicle already passed this stop (> 90 seconds ago), do not show
+              if (currentSecNow > estPassingSec + 90) continue;
+              if (minsAway > 90) continue;
+
+              const schedDepSec = origDep.scheduledTime ? timeEngine.timeStringToSeconds(origDep.scheduledTime) : origDepSec;
+              const schedPassingSec = schedDepSec + stopTravelSec;
+              const formattedDepTime = timeEngine.minutesToTimeString(Math.round(estPassingSec / 60));
+              const formattedSchedTime = timeEngine.minutesToTimeString(Math.round(schedPassingSec / 60));
+
+              const delayMins = origDep.delayMins !== undefined
+                ? origDep.delayMins
+                : Math.max(0, Math.round((estPassingSec - schedPassingSec) / 60));
+
+              const delayStatus = delayMins >= 2 ? 'delayed' : 'regulating';
+              const delayBadgeText = delayMins >= 2 ? `+${delayMins} min retard` : `⏱️ Regulant a ${originStopName}`;
+              const depDate = new Date(targetDate.getTime() + minsAway * 60000);
+              const depIso = depDate.toISOString();
+
+              const termStopObj = (r.stops || [])[r.stops.length - 1];
+              const resolvedDest = termStopObj?.name
+                ? termStopObj.name.replace(/\s*-\s*\d+$/, '').trim()
+                : (r.name || origDep.destination);
+
+              filteredDepartures.push({
+                ...origDep,
+                destination: resolvedDest,
+                directionId: dirKey,
+                departureTime: formattedDepTime,
+                time: formattedDepTime,
+                scheduledTime: formattedSchedTime,
+                scheduledDepartureTime: formattedSchedTime,
+                departureDate: depIso,
+                expectedIso: depIso,
+                aimedIso: depIso,
+                minutesAway: minsAway,
+                departureMinutesAway: minsAway,
+                arrivalMinutesAway: null,
+                formattedStatus: minsAway === 0 ? 'Imminent' : (minsAway === 1 ? '1 min' : `${minsAway} min`),
+                delayMins,
+                delayMinutes: delayMins,
+                delayStatus,
+                delayBadgeText,
+                isRegulating: true,
+                isOriginRegulating: true,
+                originTerminalName: originStopName,
+                originDepartureTime: origDep.departureTime,
+                statusText: `⏱️ Regulant a ${originStopName} (sortida: ${origDep.departureTime})`,
+                comparisonText: `Horari teòric: ${formattedSchedTime} • Regulant a ${originStopName} (sortida: ${origDep.departureTime})`
+              });
+            }
+          }
+        } catch (_) {}
+      }
     }
 
     // 4. Merge full daily scheduled timetable departures for this stop using scheduleSynthesizer

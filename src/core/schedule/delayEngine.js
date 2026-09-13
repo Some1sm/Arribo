@@ -272,11 +272,24 @@ function standardizeDeparture(dep = {}, defaults = {}) {
     return timeStr.replace(/^(\d{1,2}:\d{2}):\d{2}$/, '$1');
   };
 
+  const tz = def.timezone || 'Europe/Madrid';
   const cleanDepartureTime = stripSeconds(d.departureTime) || '--:--';
   const cleanArrivalTime = d.arrivalTime ? stripSeconds(d.arrivalTime) : null;
-  const cleanScheduledTime = d.scheduledTime ? stripSeconds(d.scheduledTime) : (d.aimedIso && typeof d.aimedIso === 'string' && d.aimedIso.length >= 16 ? stripSeconds(d.aimedIso.substring(11, 16)) : null);
+  let cleanScheduledTime = d.scheduledTime ? stripSeconds(d.scheduledTime) : null;
+  if (!cleanScheduledTime && d.aimedIso && typeof d.aimedIso === 'string') {
+    if (d.aimedIso.includes('T') && !d.aimedIso.startsWith('0001-') && !d.aimedIso.startsWith('1970-')) {
+      const formatted = timeEngine.formatTimeToTimezone(d.aimedIso, tz);
+      if (formatted && formatted !== '--:--') {
+        cleanScheduledTime = stripSeconds(formatted);
+      }
+    } else if (d.aimedIso.length >= 16) {
+      cleanScheduledTime = stripSeconds(d.aimedIso.substring(11, 16));
+    }
+  }
+  if (!cleanScheduledTime && !isRealTime && !d.isEstimated && cleanDepartureTime && cleanDepartureTime !== '--:--') {
+    cleanScheduledTime = cleanDepartureTime;
+  }
 
-  const tz = def.timezone || 'Europe/Madrid';
   const refDate = def.dateObj ? new Date(def.dateObj) :
     (def.targetDate ? new Date(def.targetDate) :
     (def.referenceDate ? new Date(def.referenceDate) : new Date()));
