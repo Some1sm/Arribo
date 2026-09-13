@@ -2081,8 +2081,10 @@ class TransitApp {
               const tooltip = `${h.timeWindow} • Retard mitjà: +${dVal} min • ${h.latePercentage}% viatges tardans (${h.sampleCount} expedicions) • ${h.trafficTag}`;
               return `
                 <div class="hourly-bar-col" title="${this.esc(tooltip)}">
-                  <span class="hourly-bar-val">${delayLabel}</span>
-                  <div class="hourly-bar-fill" style="height:${pctHeight}%; background:${barBg};"></div>
+                  <div class="hourly-bar-track">
+                    <span class="hourly-bar-val">${delayLabel}</span>
+                    <div class="hourly-bar-fill" style="height:${pctHeight}%; background:${barBg};"></div>
+                  </div>
                   <span class="hourly-bar-label">${h.hour}h</span>
                   <span class="hourly-bar-icon">${h.isSchoolHour ? h.icon : ''}</span>
                 </div>
@@ -2096,7 +2098,12 @@ class TransitApp {
               🚨 Franges Crítiques de Congestió i Colls d'Ampolla Associats:
             </div>
             <div class="peak-hours-grid">
-              ${peakHours.slice(0, 3).map((ph, idx) => `
+              ${peakHours.slice(0, 3).map((ph, idx) => {
+                const cleanTag = (ph.trafficTag || '')
+                  .replace('Hora punta tornada feina', 'Punta tornada feina')
+                  .replace('Sortida escolar & extraescolars', 'Sortida escolar')
+                  .replace('Migdia & torn tarda escoles', 'Migdia escolar & feina');
+                return `
                 <div class="peak-hour-card">
                   <div class="peak-hour-header">
                     <div class="peak-hour-time">
@@ -2104,7 +2111,7 @@ class TransitApp {
                       <span>${this.esc(ph.timeWindow)}</span>
                       <span style="font-size:0.7rem; color:var(--brand-primary); font-weight:700;">#${idx + 1}</span>
                     </div>
-                    <span class="peak-hour-tag ${ph.isSchoolHour ? 'school' : ''}">${this.esc(ph.trafficTag)}</span>
+                    <span class="peak-hour-tag ${ph.isSchoolHour ? 'school' : ''}">${this.esc(cleanTag)}</span>
                   </div>
 
                   <div class="peak-hour-metrics">
@@ -2137,7 +2144,8 @@ class TransitApp {
                     </div>
                   ` : ''}
                 </div>
-              `).join('')}
+              `;
+              }).join('')}
             </div>
           ` : ''}
         </div>

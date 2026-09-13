@@ -491,13 +491,13 @@ class HistoryDatabase {
           return { tag: '🏫 Post-entrada escoles', isSchoolHour: true, isPeak: false, icon: '📚' };
         }
         if (hourNum === 13 || hourNum === 14) {
-          return { tag: '🥪 Migdia & torn tarda escoles', isSchoolHour: true, isPeak: true, icon: '🥪' };
+          return { tag: '🥪 Migdia escolar & feina', isSchoolHour: true, isPeak: true, icon: '🥪' };
         }
         if (hourNum === 17) {
-          return { tag: '🚨 Sortida escolar & extraescolars', isSchoolHour: true, isPeak: true, icon: '🎒' };
+          return { tag: '🚨 Sortida escolar', isSchoolHour: true, isPeak: true, icon: '🎒' };
         }
         if (hourNum === 18 || hourNum === 19) {
-          return { tag: '🚗 Hora punta tornada feina', isSchoolHour: false, isPeak: true, icon: '🚗' };
+          return { tag: '🚗 Punta tornada feina', isSchoolHour: false, isPeak: true, icon: '🚗' };
         }
         if (hourNum === 7) {
           return { tag: '🌅 Primer torn de feina', isSchoolHour: false, isPeak: false, icon: '🌅' };
