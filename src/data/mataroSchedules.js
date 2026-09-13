@@ -258,60 +258,31 @@ function getScheduledFleetRequirement(lineId, dayType, nowSec = null) {
     }
   }
 
-  const roundTripSec = t0 + t1;
-
-  // Derive headways from departure intervals
-  const localHeadways = [];
-  const globalHeadways = [];
-
-  [s0.departures, s1.departures].forEach(deps => {
-    for (let i = 1; i < deps.length; i++) {
-      const pSec = timeStringToSec(deps[i - 1]);
-      const cSec = timeStringToSec(deps[i]);
-      const diff = cSec - pSec;
-      if (diff >= 300 && diff <= 5400) {
-        globalHeadways.push(diff);
-        if (nowSec !== null && cSec >= nowSec - 7200 && pSec <= nowSec + 7200) {
-          localHeadways.push(diff);
-        }
-      }
-    }
+  // Build all scheduled trip intervals [start, end]
+  // Add 60s minimum turnaround clearance to reflect terminal turnaround requirements
+  const trips = [];
+  (s0.departures || []).forEach(d => {
+    const s = timeStringToSec(d);
+    trips.push({ start: s, end: s + t0 + 60 });
+  });
+  (s1.departures || []).forEach(d => {
+    const s = timeStringToSec(d);
+    trips.push({ start: s, end: s + t1 + 60 });
   });
 
-  const headways = localHeadways.length > 0 ? localHeadways : globalHeadways;
-  if (headways.length === 0) return 1;
+  if (trips.length === 0) return 0;
 
-  headways.sort((a, b) => a - b);
-  const medianHeadwaySec = headways[Math.floor(headways.length / 2)];
+  // Evaluate the maximum concurrent active trips in the operational window (+/- 75 mins around nowSec)
+  const winStart = nowSec !== null ? Math.max(0, nowSec - 4500) : 0;
+  const winEnd = nowSec !== null ? Math.min(86400, nowSec + 4500) : 86400;
 
-  // Measure actual scheduled turnaround buffers between arrival and next departure
-  let bufferSum = 0;
-  let bufferCount = 0;
-  [ { from: s0, to: s1, travel: t0 }, { from: s1, to: s0, travel: t1 } ].forEach(pair => {
-    pair.from.departures.forEach(dep => {
-      const arr = timeStringToSec(dep) + pair.travel;
-      const nextDep = pair.to.departures
-        .map(d => timeStringToSec(d))
-        .find(d => d >= arr && d <= arr + 2400);
-      if (nextDep !== undefined) {
-        if (nowSec === null || (arr >= nowSec - 7200 && arr <= nowSec + 7200)) {
-          bufferSum += (nextDep - arr);
-          bufferCount++;
-        }
-      }
-    });
-  });
+  let maxConcurrent = 0;
+  for (let s = winStart; s <= winEnd; s += 30) {
+    const count = trips.filter(t => s >= t.start && s < t.end).length;
+    if (count > maxConcurrent) maxConcurrent = count;
+  }
 
-  const avgBuffer = bufferCount > 0 ? (bufferSum / bufferCount) : Math.max(180, roundTripSec * 0.08);
-  const cycleSec = roundTripSec + (avgBuffer * 2);
-
-  // Fundamental transit scheduling theorem: Fleet = ceil(CycleTime / Headway).
-  // Schedulers construct timetables so CycleTime = N * Headway + bufferSlack.
-  // Floating-point averaging over terminal buffers often introduces a small fractional surplus (e.g. 2.025).
-  // A 10% headway tolerance prevents fractional buffer noise from overestimating the physical fleet.
-  const rawRatio = cycleSec / medianHeadwaySec;
-  const calculatedFleet = (rawRatio % 1 <= 0.10 && rawRatio > 1) ? Math.floor(rawRatio) : Math.ceil(rawRatio);
-  return Math.max(1, calculatedFleet);
+  return Math.max(1, maxConcurrent);
 }
 
 module.exports = {

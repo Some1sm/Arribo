@@ -560,6 +560,52 @@ async function runFleetEstimationTests() {
   }
   console.log('  ✓ Test 14 Passed: Line 1 Sunday schedule requirement accurately evaluated as exactly 2 buses at all operational hours.\n');
 
+  // Test 15: Line 7 Weekend Exact 1-Bus Schedule Invariant & Zero Phantom Synthesis
+  console.log('📌 Test 15: Line 7 Weekend Exact 1-Bus Schedule Invariant & Zero Phantom Synthesis...');
+  const l7WeekendTimes = ['09:00', '11:00', '13:00', '15:00', '17:00', '18:17', '19:00', '20:00'];
+  for (const tStr of l7WeekendTimes) {
+    const parts = tStr.split(':');
+    const sec = parseInt(parts[0], 10) * 3600 + parseInt(parts[1], 10) * 60;
+    const reqSun = mataroSchedules.getScheduledFleetRequirement('7', 'sunday', sec);
+    assert.strictEqual(reqSun, 1, `Line 7 on Sunday at ${tStr} MUST require exactly 1 bus (was ${reqSun})`);
+    const reqSat = mataroSchedules.getScheduledFleetRequirement('7', 'saturday', sec);
+    assert.strictEqual(reqSat, 1, `Line 7 on Saturday at ${tStr} MUST require exactly 1 bus (was ${reqSat})`);
+  }
+  // Weekday peak check (requires 2 buses)
+  const l7WeekdayPeak = mataroSchedules.getScheduledFleetRequirement('7', 'weekday', 18 * 3600 + 17 * 60);
+  assert.strictEqual(l7WeekdayPeak, 2, `Line 7 on Weekday peak (18:17) must require 2 buses (was ${l7WeekdayPeak})`);
+
+  // E2E Synthesis test: Sunday at 18:17 with 1 live GPS bus must synthesize 0 ghost buses!
+  const sunday1817 = new Date('2026-09-13T16:17:47Z'); // 18:17 CEST
+  const routes7 = mataroTracker.routesData['7'] || [];
+  const mockLiveBusL7 = {
+    tripId: 'LIVE_BUS_2670',
+    vehicleId: '2670',
+    lineId: '7',
+    direction: '0',
+    lat: 41.539,
+    lon: 2.428,
+    speedKmh: 20,
+    totalProgress: 40,
+    isEstimated: false,
+    isRealTime: true
+  };
+  const synthL7 = mataroTracker.synthesizeMissingScheduledBuses(
+    '7',
+    'both',
+    routes7,
+    [ { dirId: '0', stops: routes7[0]?.stops || [] }, { dirId: '1', stops: routes7[1]?.stops || [] } ],
+    [mockLiveBusL7],
+    sunday1817,
+    [mockLiveBusL7]
+  );
+  assert.strictEqual(synthL7.fleetStatus.scheduledVehicles, 1, 'Line 7 Sunday 18:17 must have scheduledVehicles = 1');
+  assert.strictEqual(synthL7.fleetStatus.liveGpsVehicles, 1, 'Live GPS vehicles must be 1');
+  assert.strictEqual(synthL7.fleetStatus.estimatedVehicles, 0, 'Estimated ghost vehicles must be 0 (no duplicate on weekend)');
+  assert.strictEqual(synthL7.syntheticBuses.length, 0, 'Must synthesize 0 synthetic buses for Line 7 Sunday');
+  assert.strictEqual(synthL7.fleetStatus.fleetCoveragePct, 100, 'Fleet coverage must be 100%');
+  console.log('  ✓ Test 15 Passed: Line 7 weekend schedule requirement evaluated as exactly 1 bus with 0 phantom synthesis.\n');
+
   console.log('=========================================================================');
   console.log('🎉 ALL SCHEDULED FLEET ESTIMATION TESTS PASSED SUCCESSFULLY! 🎉');
   console.log('=========================================================================');
