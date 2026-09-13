@@ -5954,6 +5954,377 @@ body {
   color: var(--text-primary) !important;
 }
 
+/* ======================================================== */
+/* OBSERVATORI RESPONSIVE TABLES & SCROLL AFFORDANCES       */
+/* ======================================================== */
+
+.observatori-table-container {
+  margin-bottom: 1.5rem;
+  position: relative;
+  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.observatori-table-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+
+.observatori-table-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.observatori-table-subtitle {
+  font-size: 0.74rem;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+/* Scroll hint pill shown on mobile and narrow viewports */
+.observatori-table-scroll-hint {
+  display: none;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--brand-primary);
+  background: rgba(0, 148, 133, 0.1);
+  border: 1px solid rgba(0, 148, 133, 0.25);
+  padding: 0.25rem 0.6rem;
+  border-radius: 12px;
+  margin-bottom: 0.45rem;
+  user-select: none;
+  width: fit-content;
+  animation: pulseHint 3s infinite ease-in-out;
+}
+
+@keyframes pulseHint {
+  0%, 100% { opacity: 0.85; transform: translateX(0); }
+  50% { opacity: 1; transform: translateX(2px); }
+}
+
+.observatori-table-scroll-hint .scroll-hint-icon {
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.observatori-table-scroll-hint .scroll-hint-chevron {
+  font-weight: 800;
+  font-size: 0.85rem;
+  animation: bounceChevron 1.5s infinite ease-in-out;
+}
+
+@keyframes bounceChevron {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(3px); }
+}
+
+@media (max-width: 768px) {
+  .observatori-table-scroll-hint {
+    display: inline-flex;
+  }
+}
+
+/* Outer wrapper with horizontal scroll and position relative for shadows */
+.observatori-table-wrapper {
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+  position: relative;
+  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-surface);
+}
+
+/* Custom sleek scrollbar for tables */
+.observatori-table-wrapper::-webkit-scrollbar {
+  height: 6px;
+}
+.observatori-table-wrapper::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.5);
+  border-radius: 4px;
+}
+.observatori-table-wrapper::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 4px;
+}
+.observatori-table-wrapper::-webkit-scrollbar-thumb:hover {
+  background: var(--brand-primary);
+}
+
+/* Table element */
+.observatori-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.83rem;
+  text-align: left;
+}
+
+/* Headers */
+.observatori-table thead tr {
+  background: var(--bg-surface-elevated, #1a2337);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.observatori-table th {
+  padding: 0.65rem 0.85rem;
+  white-space: nowrap;
+  user-select: none;
+  cursor: pointer;
+  background: inherit;
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.observatori-table th:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: var(--text-primary) !important;
+}
+
+/* Body cells */
+.observatori-table td {
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.observatori-table tbody tr {
+  transition: background 0.15s ease;
+}
+
+.observatori-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* Sticky first column */
+.observatori-table th.sticky-col,
+.observatori-table td.sticky-col {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  transition: box-shadow 0.2s ease;
+}
+
+.observatori-table th.sticky-col {
+  z-index: 4;
+  background: var(--bg-surface-elevated, #1a2337);
+}
+
+.observatori-table tbody tr:nth-child(odd) td.sticky-col {
+  background: var(--bg-surface, #111827);
+}
+
+.observatori-table tbody tr:nth-child(even) td.sticky-col {
+  background: var(--bg-surface-elevated, #172133);
+}
+
+.observatori-table tbody tr:hover td.sticky-col {
+  background: #1e293b;
+}
+
+/* Distinct separator shadow on the sticky column when scrolled */
+.observatori-table-wrapper.is-scrolled th.sticky-col,
+.observatori-table-wrapper.is-scrolled td.sticky-col {
+  box-shadow: 4px 0 10px -2px rgba(0, 0, 0, 0.55);
+}
+
+/* Gradient fade indicators on table edges */
+.table-scroll-fade-left,
+.table-scroll-fade-right {
+  position: absolute;
+  top: 0;
+  bottom: 6px;
+  width: 32px;
+  pointer-events: none;
+  z-index: 6;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.table-scroll-fade-left {
+  left: 0;
+  background: linear-gradient(to right, var(--bg-surface, #111827) 0%, transparent 100%);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.table-scroll-fade-left::after {
+  content: '‹';
+  color: var(--brand-primary);
+  font-size: 1.3rem;
+  font-weight: 800;
+  margin-left: 4px;
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.8);
+}
+
+.table-scroll-fade-right {
+  right: 0;
+  background: linear-gradient(to left, var(--bg-surface, #111827) 0%, transparent 100%);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.table-scroll-fade-right::after {
+  content: '›';
+  color: var(--brand-primary);
+  font-size: 1.3rem;
+  font-weight: 800;
+  margin-right: 4px;
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.8);
+  animation: bounceRight 1.5s infinite ease-in-out;
+}
+
+@keyframes bounceRight {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(3px); }
+}
+
+.observatori-table-wrapper.has-scroll-left .table-scroll-fade-left {
+  opacity: 1;
+}
+
+.observatori-table-wrapper.has-scroll-right .table-scroll-fade-right {
+  opacity: 1;
+}
+
+/* Cell content formatters */
+.observatori-line-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.observatori-line-name {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.observatori-stop-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.observatori-stop-name {
+  font-size: 0.83rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.observatori-agency-name {
+  font-size: 0.83rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Mobile specific styling for Observatori modal */
+@media (max-width: 640px) {
+  #journalism-modal-backdrop .modal-card {
+    padding: 1rem 0.75rem;
+    max-height: 92vh;
+    border-radius: 16px;
+    overflow-x: hidden;
+    width: 96vw;
+  }
+
+  #journalism-content-container {
+    overflow-x: hidden;
+    padding-right: 0;
+  }
+
+  /* Timeframe tabs row */
+  #journalism-modal-backdrop .line-picker-filter-tabs {
+    max-width: 100%;
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex-wrap: nowrap;
+  }
+  #journalism-modal-backdrop .line-picker-filter-tabs::-webkit-scrollbar {
+    display: none;
+  }
+  #journalism-modal-backdrop .line-filter-tab {
+    flex-shrink: 0;
+    padding: 0.35rem 0.7rem;
+    font-size: 0.74rem;
+  }
+
+  .btn-csv-export {
+    width: 100%;
+    justify-content: center;
+    margin-top: 0.4rem;
+  }
+
+  /* Compact sticky column cell content on mobile */
+  .observatori-table th.sticky-col,
+  .observatori-table td.sticky-col {
+    max-width: 140px;
+    min-width: 110px;
+    padding: 0.55rem 0.65rem;
+  }
+
+  .observatori-table th,
+  .observatori-table td {
+    padding: 0.55rem 0.65rem;
+    font-size: 0.78rem;
+  }
+
+  .observatori-line-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.15rem;
+  }
+
+  .observatori-line-name {
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: block;
+  }
+
+  .observatori-stop-name {
+    max-width: 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: block;
+    font-size: 0.8rem;
+  }
+
+  .observatori-agency-name {
+    max-width: 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: block;
+    font-size: 0.8rem;
+  }
+}
+
 /* Observatori pagination / expand buttons */
 .observatori-action-btn {
   padding: 0.42rem 0.95rem;
