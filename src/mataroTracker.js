@@ -2115,24 +2115,56 @@ class MataroTracker extends BaseTracker {
 
             // Check if vehicle is physically at origin terminal or has not departed yet
             let isPhysicallyAtOrigin = false;
-            if (vId) {
+            let distToOrigin = Infinity;
+            const vehCoordLat = dep.busCoords?.lat || dep.latitude || dep.lat;
+            const vehCoordLon = dep.busCoords?.lon || dep.longitude || dep.lon;
+            const origStopLat = originStop.latitude || originStop.lat;
+            const origStopLon = originStop.longitude || originStop.lon;
+
+            if (vehCoordLat && vehCoordLon && origStopLat && origStopLon) {
+              distToOrigin = geoEngine.calculateDistanceMeters(
+                vehCoordLat,
+                vehCoordLon,
+                origStopLat,
+                origStopLon
+              );
+            } else if (vId) {
               const vehHist = this.vehicleHistory.get(vId);
-              if (vehHist && originStop.latitude && originStop.longitude) {
-                const distToOrigin = geoEngine.calculateDistanceMeters(
+              const histAgeMs = (vehHist && vehHist.timestamp) ? (targetDate.getTime() - vehHist.timestamp) : Infinity;
+              // Only consider GPS history if it is fresh (within 3 minutes)
+              if (vehHist && histAgeMs <= 180000 && origStopLat && origStopLon) {
+                distToOrigin = geoEngine.calculateDistanceMeters(
                   vehHist.lat || vehHist.latitude,
                   vehHist.lon || vehHist.longitude,
-                  originStop.latitude,
-                  originStop.longitude
+                  origStopLat,
+                  origStopLon
                 );
-                if (distToOrigin <= 500 && (vehHist.speedKmh || 0) <= 8) {
-                  isPhysicallyAtOrigin = true;
-                }
               }
             }
 
-            const isBeforeOriginDeparture = originDepSec !== null && currentSecNow < originDepSec;
+            const vehSpeed = dep.speedKmh !== undefined ? dep.speedKmh : (vId && this.vehicleHistory.get(vId)?.speedKmh);
+            if (distToOrigin <= 500 && (vehSpeed <= 10 || vehSpeed === undefined || dep.isTerminalLayover)) {
+              isPhysicallyAtOrigin = true;
+            }
 
-            if (isBeforeOriginDeparture || isPhysicallyAtOrigin) {
+            // A vehicle is only regulating at the origin terminal if:
+            // 1. Departure from origin is upcoming within turnaround window (<= 10 min) or delayed (up to 5 min).
+            //    If more than 10 min out (> 600s), it is still completing its prior trip and NOT regulating at origin.
+            // 2. If fresh GPS coordinates are available, vehicle must not be far away (> 1200m).
+            const secUntilOriginDep = originDepSec !== null ? (originDepSec - currentSecNow) : Infinity;
+            let isRegulatingAtOrigin = false;
+
+            if (secUntilOriginDep <= 600 && secUntilOriginDep >= -300) {
+              if (distToOrigin !== Infinity) {
+                // If coordinates are known, must be near terminal (<= 500m, or approaching within 1200m)
+                isRegulatingAtOrigin = isPhysicallyAtOrigin || (secUntilOriginDep <= 480 && distToOrigin <= 1200);
+              } else {
+                // Coordinates unknown: within turnaround window (<= 10 min before departure)
+                isRegulatingAtOrigin = true;
+              }
+            }
+
+            if (isRegulatingAtOrigin) {
               dep.isRegulating = true;
               dep.isOriginRegulating = true;
               dep.originTerminalName = originStopName;
@@ -2266,6 +2298,10 @@ class MataroTracker extends BaseTracker {
               if (alreadyHas) continue;
 
               const origDepSec = timeEngine.timeStringToSeconds(origDep.departureTime);
+              const secUntilOrigDep = origDepSec - currentSecNow;
+              // Downstream terminal propagation applies strictly to imminent or currently regulating departures (within 10m or delayed up to 5m)
+              if (secUntilOrigDep > 600 || secUntilOrigDep < -300) continue;
+
               const estPassingSec = origDepSec + stopTravelSec;
               const minsAway = Math.max(0, Math.round((estPassingSec - currentSecNow) / 60));
 
@@ -2433,17 +2469,24 @@ class MataroTracker extends BaseTracker {
                   const bestInbound = candidateTrips[candidateTrips.length - 1];
                   if (bestInbound) {
                     const cleanInArr = String(bestInbound.arrTime).replace(/^(\d{1,2}:\d{2}):\d{2}$/, '$1');
-                    cd.arrivalTime = cleanInArr;
-                    cd.isRegulating = true;
-                    cd.isTerminalLayover = true;
-                    if (cd.delayStatus === 'scheduled') {
-                      cd.delayStatus = 'regulating';
-                      cd.delayBadgeText = '⏱️ Regulació';
-                    }
                     const inArrSec = timeEngine.timeStringToSeconds(cleanInArr);
-                    cd.arrivalMinutesAway = Math.round((inArrSec - currentSecNow) / 60);
-                    cd.departureMinutesAway = cd.minutesAway;
-                    cd.statusText = `🅿️ Regulant (Arribada: ${cleanInArr} • Sortida: ${cd.departureTime})`;
+                    // Only flag as actively regulating if current time is within the active layover window
+                    // (from 5 minutes before scheduled arrival up to 3 minutes after departure)
+                    const isCurrentLayover = currentSecNow >= (inArrSec - 300) && currentSecNow <= (depSecVal + 180);
+                    if (isCurrentLayover) {
+                      cd.arrivalTime = cleanInArr;
+                      cd.isRegulating = true;
+                      cd.isTerminalLayover = true;
+                      if (cd.delayStatus === 'scheduled') {
+                        cd.delayStatus = 'regulating';
+                        cd.delayBadgeText = '⏱️ Regulació';
+                      }
+                      cd.arrivalMinutesAway = Math.round((inArrSec - currentSecNow) / 60);
+                      cd.departureMinutesAway = cd.minutesAway;
+                      cd.statusText = currentSecNow >= inArrSec
+                        ? `🅿️ A la parada (Sortida: ${cd.departureTime})`
+                        : `🅿️ Regulant (Arribada: ${cleanInArr} • Sortida: ${cd.departureTime})`;
+                    }
                   }
                 }
               }
