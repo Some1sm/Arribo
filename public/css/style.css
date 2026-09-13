@@ -6144,53 +6144,10 @@ body {
   box-shadow: 4px 0 10px -2px rgba(0, 0, 0, 0.55);
 }
 
-/* Gradient fade indicators on table edges */
+/* Table scroll indicators */
 .table-scroll-fade-left,
 .table-scroll-fade-right {
-  position: absolute;
-  top: 0;
-  bottom: 6px;
-  width: 32px;
-  pointer-events: none;
-  z-index: 6;
-  opacity: 0;
-  transition: opacity 0.25s ease;
-}
-
-.table-scroll-fade-left {
-  left: 0;
-  display: none; /* Sticky column with box-shadow already serves as the left scroll divider */
-}
-
-.table-scroll-fade-right {
-  right: 0;
-  background: linear-gradient(to left, var(--bg-surface, #111827) 0%, transparent 100%);
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-}
-
-.table-scroll-fade-right::after {
-  content: '›';
-  color: var(--brand-primary);
-  font-size: 1.3rem;
-  font-weight: 800;
-  margin-right: 4px;
-  text-shadow: 0 0 6px rgba(0, 0, 0, 0.8);
-  animation: bounceRight 1.5s infinite ease-in-out;
-}
-
-@keyframes bounceRight {
-  0%, 100% { transform: translateX(0); }
-  50% { transform: translateX(3px); }
-}
-
-.observatori-table-wrapper.has-scroll-left .table-scroll-fade-left {
-  opacity: 1;
-}
-
-.observatori-table-wrapper.has-scroll-right .table-scroll-fade-right {
-  opacity: 1;
+  display: none !important;
 }
 
 /* Cell content formatters */
@@ -6306,18 +6263,21 @@ body {
     font-weight: 500;
   }
 
-  /* Compact sticky column cell content on mobile */
+  /* On mobile, disable sticky columns so all table columns scroll as a natural, cohesive row without overlapping */
   .observatori-table th.sticky-col,
   .observatori-table td.sticky-col {
-    max-width: 140px;
-    min-width: 105px;
-    padding: 0.55rem 0.6rem;
+    position: static !important;
+    box-shadow: none !important;
+    max-width: none !important;
+    min-width: auto !important;
+    background: inherit !important;
   }
 
   .observatori-table th,
   .observatori-table td {
-    padding: 0.55rem 0.6rem;
+    padding: 0.55rem 0.65rem;
     font-size: 0.78rem;
+    white-space: nowrap;
   }
 
   .observatori-line-cell {
@@ -6330,29 +6290,37 @@ body {
   .observatori-line-name {
     font-size: 0.72rem;
     color: var(--text-secondary);
-    max-width: 100px;
+    max-width: 130px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     display: block;
+  }
+
+  .observatori-stop-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    white-space: nowrap;
   }
 
   .observatori-stop-name {
-    max-width: 110px;
+    max-width: 140px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    display: block;
-    font-size: 0.8rem;
+    display: inline-block;
+    vertical-align: middle;
+    font-size: 0.82rem;
   }
 
   .observatori-agency-name {
-    max-width: 110px;
+    max-width: 140px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     display: block;
-    font-size: 0.8rem;
+    font-size: 0.82rem;
   }
 
   /* Mobile peak hour card adjustments */
