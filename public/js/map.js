@@ -1242,13 +1242,34 @@ class C10Map {
 
     const now = Date.now();
     const currentTripIds = new Set(activeBuses.map(b => String(b.tripId || b.vehicleId || `${b.lat}_${b.lon}`)));
+    const activePhysicalVehIds = new Set(activeBuses.map(b => String(b.vehicleId || '').trim()).filter(Boolean));
 
-    // Handle missing buses with 10-minute (600s) client-side dead-reckoning hold buffer
+    // Handle missing buses with strict 90s dead-reckoning hold buffer (§7.6)
+    // Physical vehicle deduplication: a vehicleId can only have 1 marker on the map.
     for (const [tId, obj] of this.busMarkersMap.entries()) {
       if (!currentTripIds.has(tId)) {
         const elapsedSec = (now - (obj.lastUpdated || now)) / 1000;
-        const isGhost = Boolean(obj.busData?.isGhostVehicle || (obj.busData?.vehicleId && String(obj.busData.vehicleId).startsWith('EST_')));
-        if (elapsedSec > 600 || isGhost) {
+        const objVehId = String(obj.busData?.vehicleId || '').trim();
+        const isGhost = Boolean(obj.busData?.isGhostVehicle || (objVehId && objVehId.startsWith('EST_')));
+
+        // Invariant 1: If a physical vehicleId is already present in current incoming activeBuses under any key,
+        // purge this stale entry immediately if its key differs, so we NEVER display duplicate markers for the same bus!
+        const isVehHandledByActiveKey = Boolean(objVehId && activePhysicalVehIds.has(objVehId));
+
+        // Invariant 2: Stale marker proximity guard. If marker is within 300m of ANY active live bus on the same line,
+        // it is a phantom duplicate resulting from position jitter or trip turnover -> purge immediately.
+        let isNearLiveBus = false;
+        if (obj.marker && obj.marker.getLatLng) {
+          const mPos = obj.marker.getLatLng();
+          isNearLiveBus = activeBuses.some(b => {
+            const bLat = b.lat !== undefined ? b.lat : b.latitude;
+            const bLon = b.lon !== undefined ? b.lon : b.longitude;
+            if (bLat === undefined || bLon === undefined) return false;
+            return this.calculateDistanceMeters(mPos.lat, mPos.lng, Number(bLat), Number(bLon)) < 300;
+          });
+        }
+
+        if (elapsedSec > 90 || isGhost || isVehHandledByActiveKey || isNearLiveBus) {
           this.map.removeLayer(obj.marker);
           this.busMarkersMap.delete(tId);
         } else {
@@ -1554,6 +1575,17 @@ class C10Map {
                 : (busColor || 'linear-gradient(135deg, #10b981 0%, #059669 100%)')));
 
       const markerKey = String(bus.tripId || bus.vehicleId || `${bus.lat}_${bus.lon}`);
+
+      // Invariant: Enforce physical vehicle uniqueness across markers
+      if (bus.vehicleId && !String(bus.vehicleId).startsWith('EST_')) {
+        const vIdStr = String(bus.vehicleId).trim();
+        for (const [existingKey, existingObj] of this.busMarkersMap.entries()) {
+          if (existingKey !== markerKey && String(existingObj.busData?.vehicleId || '').trim() === vIdStr) {
+            this.map.removeLayer(existingObj.marker);
+            this.busMarkersMap.delete(existingKey);
+          }
+        }
+      }
 
       if (this.busMarkersMap.has(markerKey)) {
         const obj = this.busMarkersMap.get(markerKey);

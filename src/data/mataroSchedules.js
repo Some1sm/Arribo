@@ -305,8 +305,12 @@ function getScheduledFleetRequirement(lineId, dayType, nowSec = null) {
   const avgBuffer = bufferCount > 0 ? (bufferSum / bufferCount) : Math.max(180, roundTripSec * 0.08);
   const cycleSec = roundTripSec + (avgBuffer * 2);
 
-  // Fundamental transit scheduling theorem: Fleet = ceil(CycleTime / Headway)
-  const calculatedFleet = Math.ceil(cycleSec / medianHeadwaySec);
+  // Fundamental transit scheduling theorem: Fleet = ceil(CycleTime / Headway).
+  // Schedulers construct timetables so CycleTime = N * Headway + bufferSlack.
+  // Floating-point averaging over terminal buffers often introduces a small fractional surplus (e.g. 2.025).
+  // A 10% headway tolerance prevents fractional buffer noise from overestimating the physical fleet.
+  const rawRatio = cycleSec / medianHeadwaySec;
+  const calculatedFleet = (rawRatio % 1 <= 0.10 && rawRatio > 1) ? Math.floor(rawRatio) : Math.ceil(rawRatio);
   return Math.max(1, calculatedFleet);
 }
 

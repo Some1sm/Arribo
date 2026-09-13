@@ -1153,7 +1153,7 @@ class MataroTracker extends BaseTracker {
       });
     });
 
-    // 2. Dead-Reckoning: Check if any recently tracked vehicles lost signal in dead zones (10-minute / 600s window)
+    // 2. Dead-Reckoning: Check if any recently tracked vehicles lost signal in dead zones (strict 90s window, §7.6)
     for (const [vId, hist] of this.vehicleHistory.entries()) {
       if (String(hist.lineId) !== String(route.id_linea)) continue;
       if (String(hist.direction) !== String(dirId)) continue; // Only dead-reckon on the matching direction
@@ -1161,9 +1161,19 @@ class MataroTracker extends BaseTracker {
 
       // If vehicle is live on ANY direction of this line, do not dead-reckon it
       const isCurrentlyActive = (allLineLiveVehicles || liveBuses).some(b => String(b.vehicleId) === String(vId));
-      if (!isCurrentlyActive && elapsedSec >= 15 && elapsedSec <= 600) {
+      if (!isCurrentlyActive && elapsedSec >= 15 && elapsedSec <= 90) {
         const estPos = geoEngine.extrapolatePolylinePosition(hist, elapsedSec, hist.speedKmh || 30, polyCoords);
         if (estPos) {
+          // Anti-bunching & duplicate guard: Never dead-reckon if an active physical bus on this direction is within 500m
+          const isBunchedWithPhysical = (allLineLiveVehicles || liveBuses).some(b => {
+            if (String(b.direction) !== String(dirId)) return false;
+            const bLat = b.lat || b.latitude;
+            const bLon = b.lon || b.longitude;
+            if (!bLat || !bLon) return false;
+            return geoEngine.calculateDistanceMeters(estPos.lat, estPos.lon, bLat, bLon) < 500;
+          });
+          if (isBunchedWithPhysical) continue;
+
           const segInfo = this.findNearestSegment(estPos.lat, estPos.lon, stops, polyCoords);
           const elapsedMin = Math.floor(elapsedSec / 60);
           const elapsedText = elapsedMin > 0 ? `${elapsedMin} min` : `${Math.round(elapsedSec)}s`;
@@ -2079,10 +2089,14 @@ class MataroTracker extends BaseTracker {
         // Downstream Stop Handling:
         // Check if the assigned vehicle for this departure is currently in regulation/layover
         // at the origin terminal of this route variant.
-        const matchingRoute = routesForStop.find(r =>
-          String(r.id_linea) === String(dep.lineId) &&
-          (String(r.id) === String(dep.directionId) || (r.name || '').toLowerCase() === destName)
-        ) || routesForStop.find(r => String(r.id_linea) === String(dep.lineId));
+        const cleanDest = (destName || '').replace(/^sentit\s+/, '').replace(/\s*-\s*\d+$/, '').trim();
+        const matchingRoute = routesForStop.find(r => {
+          if (String(r.id_linea) !== String(dep.lineId)) return false;
+          if (dep.directionId !== undefined && dep.directionId !== null && String(r.id) === String(dep.directionId)) return true;
+          const rName = (r.name || '').toLowerCase();
+          const termName = (r.stops?.[r.stops.length - 1]?.name || '').toLowerCase().replace(/\s*-\s*\d+$/, '').trim();
+          return termName.includes(cleanDest) || cleanDest.includes(termName) || rName.endsWith(cleanDest) || rName.includes(`- ${cleanDest}`) || rName === cleanDest;
+        }) || routesForStop.find(r => String(r.id_linea) === String(dep.lineId));
 
         if (matchingRoute && Array.isArray(matchingRoute.stops) && matchingRoute.stops.length > 1) {
           const stopIdx = matchingRoute.stops.findIndex(s => String(s.id) === sId);
@@ -2156,8 +2170,8 @@ class MataroTracker extends BaseTracker {
             } else if (vId) {
               const vehHist = this.vehicleHistory.get(vId);
               const histAgeMs = (vehHist && vehHist.timestamp) ? (targetDate.getTime() - vehHist.timestamp) : Infinity;
-              // Only consider GPS history if it is fresh (within 3 minutes)
-              if (vehHist && histAgeMs <= 180000 && origStopLat && origStopLon) {
+              // Only consider GPS history if it is fresh (within 90s)
+              if (vehHist && histAgeMs <= 90000 && origStopLat && origStopLon) {
                 distToOrigin = geoEngine.calculateDistanceMeters(
                   vehHist.lat || vehHist.latitude,
                   vehHist.lon || vehHist.longitude,
@@ -2168,25 +2182,30 @@ class MataroTracker extends BaseTracker {
             }
 
             const vehSpeed = dep.speedKmh !== undefined ? dep.speedKmh : (vId && this.vehicleHistory.get(vId)?.speedKmh);
-            if (distToOrigin <= 500 && (vehSpeed <= 10 || vehSpeed === undefined || dep.isTerminalLayover)) {
+            if (distToOrigin <= 350 && (vehSpeed <= 10 || vehSpeed === undefined || dep.isTerminalLayover)) {
               isPhysicallyAtOrigin = true;
             }
 
-            // A vehicle is only regulating at the origin terminal if:
-            // 1. Departure from origin is upcoming within turnaround window (<= 10 min) or delayed (up to 5 min).
-            //    If more than 10 min out (> 600s), it is still completing its prior trip and NOT regulating at origin.
-            // 2. If fresh GPS coordinates are available, vehicle must not be far away (> 1200m).
+            // A vehicle is regulating at the origin terminal if:
+            // Case 1 (Upcoming departure: secUntilOriginDep >= 0):
+            //   The departure from origin has NOT occurred yet.
+            //   Within turnaround window (<= 600s), the vehicle is regulating at origin waiting to depart,
+            //   UNLESS GPS coordinates explicitly show the vehicle is far away (> 400m) still completing a prior trip.
+            // Case 2 (Past scheduled departure: secUntilOriginDep < 0 and >= -300s):
+            //   The scheduled departure time from origin has already passed. The vehicle can ONLY be regulating
+            //   if GPS explicitly confirms it is still physically stalled at the origin terminal (isPhysicallyAtOrigin).
+            //   If it has departed or coordinates are unknown, it is circulating in transit!
             const secUntilOriginDep = originDepSec !== null ? (originDepSec - currentSecNow) : Infinity;
             let isRegulatingAtOrigin = false;
 
-            if (secUntilOriginDep <= 600 && secUntilOriginDep >= -300) {
+            if (secUntilOriginDep <= 600 && secUntilOriginDep >= 0) {
               if (distToOrigin !== Infinity) {
-                // If coordinates are known, must be near terminal (<= 500m, or approaching within 1200m)
-                isRegulatingAtOrigin = isPhysicallyAtOrigin || (secUntilOriginDep <= 480 && distToOrigin <= 1200);
+                isRegulatingAtOrigin = isPhysicallyAtOrigin || distToOrigin <= 400;
               } else {
-                // Coordinates unknown: within turnaround window (<= 10 min before departure)
                 isRegulatingAtOrigin = true;
               }
+            } else if (secUntilOriginDep < 0 && secUntilOriginDep >= -300) {
+              isRegulatingAtOrigin = isPhysicallyAtOrigin;
             }
 
             if (isRegulatingAtOrigin) {

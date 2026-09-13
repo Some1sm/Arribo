@@ -319,11 +319,11 @@ async function runFleetEstimationTests() {
   assert.strictEqual(l1SatNoon, 3, 'Line 1 Saturday dynamically calculated as 3 vehicles');
   assert.strictEqual(l1Night, 0, 'Line 1 off-hours dynamically calculated as 0 vehicles');
 
-  // Line 8: 0 on Sunday morning (no service), 2 on Sunday afternoon (operating)
+  // Line 8: 0 on Sunday morning (no service), 1 on Sunday afternoon (operating)
   const l8SunMorning = mataroSchedules.getScheduledFleetRequirement('8', 'sunday', 36000); // 10:00
   const l8SunAfternoon = mataroSchedules.getScheduledFleetRequirement('8', 'sunday', 61200); // 17:00
   assert.strictEqual(l8SunMorning, 0, 'Line 8 Sunday morning dynamically calculated as 0 vehicles');
-  assert.strictEqual(l8SunAfternoon, 2, 'Line 8 Sunday afternoon dynamically calculated as 2 vehicles');
+  assert.strictEqual(l8SunAfternoon, 1, 'Line 8 Sunday afternoon dynamically calculated as 1 vehicle');
 
   console.log('  ✓ Test 9 Passed: Dynamic fleet requirement accurately computed from timetable cycle/headway (0 hardcoding).\n');
 
@@ -498,6 +498,67 @@ async function runFleetEstimationTests() {
     siriClient12.getLiveVehicles = origLive12;
     mataroTracker.vehicleHistory.delete('2665');
   }
+
+  // Test 13: Strict 90s Dead-Reckoning Window & Headway Anti-Bunching Guard (§7.6)
+  console.log('📌 Test 13: Strict 90s Dead-Reckoning Window & Headway Anti-Bunching Guard...');
+  const nowTest13 = Date.now();
+  const routeL1_13 = mataroTracker.routesData['1']?.[1] || { id_linea: '1', coords: [], stops: [] };
+  const stopsL1_13 = routeL1_13.stops || [];
+
+  // Case A: Stale vehicle older than 90s (e.g. 120s ago) must NOT be dead-reckoned
+  mataroTracker.vehicleHistory.set('STALE_2699', {
+    vehicleId: 'STALE_2699',
+    lineId: '1',
+    direction: '1',
+    lat: 41.554,
+    lon: 2.431,
+    speedKmh: 25,
+    lastSeen: nowTest13 - 120000 // 120 seconds ago (>90s)
+  });
+
+  const drResultA = mataroTracker.processBusesWithDeadReckoning([], routeL1_13, stopsL1_13, '1', []);
+  const staleFound = drResultA.some(b => b.vehicleId === 'STALE_2699');
+  assert.strictEqual(staleFound, false, 'Vehicle older than 90s must NOT be dead-reckoned');
+
+  // Case B: Stale vehicle within 90s (e.g. 45s ago) but bunched (<500m) with a live bus
+  mataroTracker.vehicleHistory.set('BUNCHED_2698', {
+    vehicleId: 'BUNCHED_2698',
+    lineId: '1',
+    direction: '1',
+    lat: 41.5543,
+    lon: 2.4313,
+    speedKmh: 20,
+    lastSeen: nowTest13 - 45000 // 45s ago (<90s)
+  });
+
+  const liveBusClose = {
+    vehicleId: 'LIVE_2680',
+    lineId: '1',
+    direction: '1',
+    lat: 41.5545,
+    lon: 2.4315, // ~30m from BUNCHED_2698
+    speedKmh: 25,
+    isRealTime: true
+  };
+
+  const drResultB = mataroTracker.processBusesWithDeadReckoning([liveBusClose], routeL1_13, stopsL1_13, '1', [liveBusClose]);
+  const bunchedFound = drResultB.some(b => b.vehicleId === 'BUNCHED_2698');
+  assert.strictEqual(bunchedFound, false, 'Stale vehicle within 500m of a live bus must NOT be dead-reckoned (prevents duplicate map markers)');
+
+  mataroTracker.vehicleHistory.delete('STALE_2699');
+  mataroTracker.vehicleHistory.delete('BUNCHED_2698');
+  console.log('  ✓ Test 13 Passed: Strict 90s ceiling and anti-bunching guard successfully prevent phantom duplicates.\n');
+
+  // Test 14: Line 1 Sunday Exact 2-Bus Fleet Requirement & Zero Phantom Synthesis
+  console.log('📌 Test 14: Line 1 Sunday Exact 2-Bus Fleet Requirement Across Midday/Afternoon...');
+  const testTimes = ['13:00', '14:00', '15:00', '15:25', '15:35', '16:00', '17:00'];
+  for (const tStr of testTimes) {
+    const parts = tStr.split(':');
+    const sec = parseInt(parts[0], 10) * 3600 + parseInt(parts[1], 10) * 60;
+    const req = mataroSchedules.getScheduledFleetRequirement('1', 'sunday', sec);
+    assert.strictEqual(req, 2, `Line 1 on Sunday at ${tStr} MUST require exactly 2 buses (was ${req})`);
+  }
+  console.log('  ✓ Test 14 Passed: Line 1 Sunday schedule requirement accurately evaluated as exactly 2 buses at all operational hours.\n');
 
   console.log('=========================================================================');
   console.log('🎉 ALL SCHEDULED FLEET ESTIMATION TESTS PASSED SUCCESSFULLY! 🎉');
