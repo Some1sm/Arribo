@@ -1,117 +1,129 @@
-# 🚆 Bad AMB Bus Tracker — Metropolitan Barcelona & Catalonia Transit Platform
+# Arribo! Mataró
 
-> Live tracking, real-time GPS telemetry, dead-zone location estimation, universal stop search, and accurate schedules for **288+ bus and train lines** and **7,500+ stops and stations** across all major operators in Catalonia (**Rodalies de Catalunya Trains, Moventis, TUSGSAL, Avanza, Monbus, Sagalés, Soler i Sauret, Baixbus, and Mataró Bus**).
+Real-time bus tracking, arrival information, journey planning, and punctuality analysis for **Mataró Bus Urbà lines L1–L8**.
 
-🌐 **Live Web App**: [https://bad-amb-bus-tracker.vercel.app/](https://bad-amb-bus-tracker.vercel.app/)
+Arribo! combines Avanza SIRI vehicle and arrival data with local route geometry and timetables. The Catalan-language interface helps passengers find nearby stops, follow a bus, plan a journey, and inspect historical service performance.
 
-[![Live Deployment](https://img.shields.io/badge/Live-bad--amb--bus--tracker.vercel.app-blueviolet?style=for-the-badge&logo=vercel)](https://bad-amb-bus-tracker.vercel.app/)
-[![Node.js](https://img.shields.io/badge/Node.js-v18+-green.svg)](https://nodejs.org/)
-[![Express](https://img.shields.io/badge/Express-4.19+-blue.svg)](https://expressjs.com/)
-[![Leaflet](https://img.shields.io/badge/Leaflet-1.9+-brightgreen.svg)](https://leafletjs.com/)
-[![Architecture Guide](https://img.shields.io/badge/Docs-ARCHITECTURE.md-blue.svg)](ARCHITECTURE.md)
-[![Tests](https://img.shields.io/badge/Tests-Passing_100%25-success.svg)]()
+## Current scope
 
----
+The default line catalog, search, and background ingestion focus on Mataró's eight urban bus lines. The repository retains trackers from an earlier Catalonia-wide platform, but those operators are **not registered in the current default catalog**. Regional connections are available through the intermodal feature; that is not the same as full regional live-tracking coverage.
 
-## 📖 System Architecture & Technical Documentation
+The package name `bad-amb-bus-tracker`, older C-10 API paths, and some architecture documents and tests reflect that earlier scope. Use the current source code and [AGENTS.md](AGENTS.md) when working on the active app.
 
-For developers, contributors, and AI coding assistants:
-👉 **[Read the complete ARCHITECTURE.md](ARCHITECTURE.md)** for detailed data flow diagrams, API reverse-engineering schemas, domain algorithms, timezone handling, and provider mappings.
+## Features
 
----
+- **Live map and line details:** Leaflet maps with stops, route geometry, vehicle markers, direction selection, and telemetry inspection.
+- **Arrivals and departure boards:** target-stop countdowns, timetables, and real-time or estimated departure information.
+- **Stop discovery:** search for lines, stops, and streets; find nearby stops using location; browse neighborhood shortcuts and save favorite stops locally.
+- **Journey planner:** the `/plan` page supports direct and one-transfer Mataró bus journeys, walking connections, and departure date/time selection.
+- **Service notices:** official Mataró Bus disruptions and line-specific notices.
+- **Intermodal connections:** regional rail and interurban bus connections at supported Mataró hubs, subject to upstream availability.
+- **Observatori:** historical delay reports, line rankings, hourly delay analysis, the “Termòmetre del Bus” scorecard, and CSV export.
+- **Mobile web app:** responsive layout, light/dark themes, arrival sounds, and a PWA manifest/service worker with offline app-shell support. Live arrivals still require connectivity.
 
-## 🧭 The Problem & Our Solution
+### Live versus estimated data
 
-1. **The AMB Mobilitat Dead Zone**: The official *AMB Mobilitat* app only covers stops inside the 36 metropolitan municipalities (stopping abruptly at Montgat). When interurban lines like **C-10**, **N80**, or **e11.1** travel into the Maresme coastal region (*El Masnou, Premià de Mar, Vilassar de Mar, Cabrera de Mar, Mataró*), vehicles disappear.
-2. **Cellular Shadow Drops**: Buses in urban and rural corridors regularly cross cellular dead zones where mobile apps stop rendering them or drop live GPS telemetry.
-3. **Multi-Operator Fragmentation**: Catalonia's transit network is scattered across separate portals.
-4. **The Solution**: 
-   - Unified polymorphic backend integrating **AMB Mobilitat API v2**, **Renfe / Rodalies GTFS-RT**, **Generalitat Mou-te REST API**, **Sagalés Real-time Feeds**, and **Avanza SIRI SOAP service**.
-   - Built-in **Dead-Zone Location Estimator (Dead-Reckoning)** with 90-second client-side retention and road-snapped polyline projection.
-   - Smart **Night Service (23:00 to 05:00) Timetable Engine** supporting seamless overnight and morning departures.
+The tracker distinguishes fresh GPS observations, extrapolated positions based on previously observed vehicles, and theoretical timetable-based vehicles used when trips lack GPS coverage. An estimated position is not proof that a bus is physically there.
 
----
+Synthetic vehicles (`EST_` IDs or `isGhostVehicle`/`isTheoretical` flags) are excluded from the flight recorder. Telemetry freshness and fallback windows differ between the SIRI client, tracker, and recorder; there is no single universal 90-second cutoff.
 
-## 🚆 Supported Networks & Operators (288+ Lines)
+## Architecture
 
-| Network / Operator | Coverage | Key Lines |
-| :--- | :--- | :--- |
-| **🚆 Rodalies de Catalunya** | Rodalia de Barcelona & Regionals | `R1`, `R2`, `R2N`, `R2S`, `R3`, `R4`, `R7`, `R8`, `RG1`, `R11`..`R17`, `RL3`, `RL4`, `RT1`, `RT2` |
-| **🟡 DIREXIS TUSGSAL** | Barcelonès Nord (Badalona, Santa Coloma, Sant Adrià) & NitBus | `B1`..`B84`, `M1`, `M6`, `M19`, `M26`, `M27`, `M28`, `M30`, NitBus `N0`..`N11`, `N23`..`N28` |
-| **🔵 Avanza (Baix Llobregat)** | Baix Llobregat, Castelldefels, Gavà, Viladecans, Exprés & NitBus | `L80`, `L82`, `L85`, `L86`, `L88`, `L94`..`L99`, `X80`..`X97`, `CF1`/`CF2`, `GA1`/`GA2`, `VB1`..`VB4`, `N12`..`N21` |
-| **🟠 Monbus & Aerobús** | Aerobús Barcelona & Baix Llobregat | `A1`, `A2`, `L46`, `L52`, `L70`..`L78`, `M5`, `M75`, `X43`..`X79`, `SB1`..`SB3`, `87` |
-| **🌊 Moventis / Casas** | Maresme, L'Hospitalet, El Prat & Cerdanyola | `C-10`, `N80`, `N81`, `e11.1`, `e11.2`, `C-20`, `C-30`, `C-3`, `C-12`..`C-15`, `L16`..`L22`, `LH1`/`LH2`, `PR1`..`PR5`, `M12`/`M14`, `X30` |
-| **🦉 Sagalés** | NitBus Maresme & Vallès Interurbans | `N82`, `N83`, `603` (Aeroport-Blanes), `N70`, `N71`, `N73` |
-| **🟢 Soler i Sauret** | Baix Llobregat & Sant Feliu | `EP1`, `EP2`, `JM`, `JT`, `SF1`..`SF3`, `MB1`..`MB3`, `SV1`..`SV4`, `ESC`, `PF1`, `PF2` |
-| **📍 Mataró Bus** | Urbà de Mataró (Avanza) | `L1`, `L2`, `L3`, `L4`, `L5`, `L6`, `L7`, `L8` |
-| **🟣 Baixbus / TGO** | Baix Llobregat | `CS1`, `CS2`, `CS3`, `CS4` |
-
----
-
-## ✨ Key Platform Features
-
-- 🔍 **Universal Stop & Station Searcher**: Search across 7,500+ bus stops and train stations with instant camera jump and target stop selection.
-- 🔗 **Direct URL Hash Navigation**: Direct links to any line (e.g. `/#r1`, `/#n80`, `/#b25`, `/#l80`, `/#a1`, `/#c10`).
-- 🛰️ **Dead-Zone GPS Location Estimator**:
-  - Extrapolates vehicle coordinates along high-definition road polylines during cellular shadow zones.
-  - Visual status pill indicators: `🟢 Temps Real Actiu` vs `⚡ Estimació`.
-- 🧭 **Cockpit GPS Telemetry Inspector**:
-  - High-precision latitude/longitude coordinates.
-  - Great-circle compass bearing angle ($0^\circ - 360^\circ$) and compass label (e.g. `NW ↖️`).
-  - Vehicle speed ($\text{km/h}$), delay duration, active checkpoint segment, and route progression.
-- 🗺️ **Interactive Leaflet Canvas Map**:
-  - Continuous 60fps hardware-accelerated gliding animation without teleportation or rubber-banding.
-  - Directional road arrows and route polylines rendered in official operator colors.
-  - Bus pin rotation matching the vehicle's actual forward direction.
-- ⭐ **Persistent Target Stop & Departure Countdowns**:
-  - Real-time countdowns (`Imminent`, `3 min`, etc.) with punctual / early / delayed status badges.
-- 🔊 **Audio Chimes & Push Notifications**:
-  - Synthesized Web Audio API arrival chimes when your bus or train is approaching.
-
----
-
-## 📡 REST API Documentation
-
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `GET` | `/api/lines` | Returns all 288+ transit lines grouped by network. |
-| `GET` | `/api/search/stops?q={query}` | Universal search across all stops & train stations in Catalonia. |
-| `GET` | `/api/line/:lineId?direction={0\|1}` | Returns stops, polyline geometry, active vehicles, and checkpoints for any line. |
-| `GET` | `/api/line/:lineId/target-eta?direction={0\|1}&stopId={id}` | Returns real-time arrival countdown, hero clock, and upcoming departures for a stop. |
-| `GET` | `/api/line/:lineId/stop/:stopId/departures?direction={0\|1}` | Returns live departures list for any specific stop. |
-| `GET` | `/api/health` | Health check endpoint. |
-
----
-
-## 🚀 Running Locally & Testing
-
-```bash
-# 1. Clone repository
-git clone https://github.com/Some1sm/BadAMBBusTracker.git
-cd BadAMBBusTracker
-
-# 2. Install dependencies
-npm install
-
-# 3. Run automated multi-line E2E tests
-npm test
-
-# 4. Start local development server
-npm start
-# Server will run on http://localhost:3000
+```text
+Browser (vanilla JavaScript + Leaflet)
+                 |
+          Express HTTP server
+          /api/* + public assets
+                 |
+           WorkerBridge IPC
+                 |
+      Background ingestion worker
+      - Mataró SIRI polling
+      - Fleet updates and service notices
+      - SQLite history and delay recording
+      - Cached analytics report generation
 ```
 
-### Storage controls
+The main process serves the frontend and API, maintains in-memory fleet/report caches, and uses worker RPC for SIRI and historical database operations. The worker owns SQLite persistence and scheduled ingestion. Other features, such as geocoding and regional connections, have their own client paths.
 
-The flight recorder keeps live polling at its normal frequency but stores only
-one vehicle snapshot per minute. Raw GPS snapshots are retained for two hours,
-which is longer than the historical trail endpoint needs. These values can be
-changed with `VEHICLE_SNAPSHOT_INTERVAL_MS`, `SNAPSHOT_RETENTION_HOURS`, and
-`DELAY_RETENTION_DAYS`.
+- **Runtime:** Node.js **22.5 or newer**, required for built-in `node:sqlite`.
+- **Production dependencies:** `express`, `cors`, and `compression`.
+- **Frontend:** plain HTML/CSS/JavaScript; no build step is required.
+- **Storage:** SQLite history plus local route and timetable data.
 
----
+## Run locally
 
-## 🌐 Free Cloud Deployment
+From the repository root:
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FSome1sm%2FBadAMBBusTracker)
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Some1sm/BadAMBBusTracker)
+```bash
+npm ci
+npm start
+```
+
+Open **http://localhost:3000**. `npm run dev` starts the same Node server; it does not provide automatic reload. Upstream live data requires network access.
+
+## Docker deployment
+
+```bash
+docker compose up -d --build
+docker compose logs -f arribo
+```
+
+The Compose service exposes port 3000 and mounts `./data:/app/data` for persistent storage. It uses Node 22 Alpine, `Europe/Madrid`, a 400 MB container memory limit, and a 160 MB V8 heap setting. See [docker-compose.yml](docker-compose.yml) and [Dockerfile](Dockerfile) for exact settings.
+
+The repository still contains `vercel.json`, but the current background-worker and persistent-SQLite design targets a long-running Node/Docker deployment. The legacy Vercel configuration is not evidence of equivalent support for those features.
+
+### Storage settings
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `PORT` | `3000` | HTTP port |
+| `DATA_DIR` | Repository `data/` | History database directory; not a global override for every data/cache path |
+| `DB_PATH` | `transit_history.db` under `DATA_DIR` | Explicit history database path |
+| `VEHICLE_SNAPSHOT_INTERVAL_MS` | `60000` | Minimum interval between stored snapshots per vehicle |
+| `SNAPSHOT_RETENTION_HOURS` | `2` | Raw vehicle snapshot retention |
+| `DELAY_RETENTION_DAYS` | `30` | Delay-log retention |
+
+Storage sampling does not reduce live polling frequency. The ingestion daemon polls Mataró vehicles every 20 seconds, refreshes notices every five minutes, and schedules analytics reports every 30 minutes.
+
+## Main API endpoints
+
+API routes use GET; the server also permits HEAD. Other methods are rejected by the read-only guard, subject to CORS preflight handling.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `/api/health` | HTTP process health and uptime; not proof of fresh upstream data |
+| `/api/lines` | Current Mataró L1–L8 catalog |
+| `/api/search/stops?q=Hospital` | Search Mataró stops, lines, and street names |
+| `/api/line/:lineId?direction=0` | Stops, geometry, and active buses |
+| `/api/line/:lineId/vehicles` | Vehicle information for a line |
+| `/api/line/:lineId/target-eta?direction=0&stopId=:id` | Target-stop arrival information |
+| `/api/line/:lineId/stop/:stopId/departures?direction=0` | Stop departure board |
+| `/api/stops/nearby?lat=:lat&lon=:lon` | Nearby stops and optional departures |
+| `/api/plan?from=:origin&to=:destination` | Mataró journey planning |
+| `/api/mataro/stop/:stopId/connections` | Regional connections at supported hubs |
+| `/api/mataro/line/:lineId/traffic` | Estimated line congestion information |
+| `/api/disruptions` | Service notices; optional `line` filter |
+| `/api/vehicles` and `/api/fleet/live` | Recorder-backed vehicle state |
+| `/api/vehicle/:vehicleId/trail` | Recorded vehicle trail |
+| `/api/line/:lineId/stats` | Historical line delay statistics |
+| `/api/analytics/journalism?hours=24` | Delay report; common windows are 24, 48, and 168 hours |
+| `/api/analytics/ranking` | Delay ranking |
+| `/api/analytics/termometre?hours=24` | Bus-service scorecard |
+| `/api/analytics/export/csv?hours=48` | Delay-log CSV export |
+
+Mataró-specific aliases and older compatibility routes also exist; `server.js` is the definitive route reference.
+
+## Testing
+
+```bash
+npm run test:syntax   # JavaScript syntax checks
+npm run test:unit     # Shared core module tests
+npm run test:mataro   # Mataró timetable accuracy suite
+npm test             # Configured default suite
+npm run test:full    # Also includes performance and infrastructure suites
+```
+
+Additional focused regressions under `test/` cover routing, fleet estimation, reconnection deduplication, SIRI resilience, notices, nearby stops/favorites, and Observatori reports. Not every test file is included in the npm scripts.
+
+**Legacy test caveat:** some suites still assume the broader platform. For example, `test/e2e_multiline_test.js` expects at least nine catalog entries including C-10, whereas the default app exposes eight Mataró lines. Do not interpret this documentation as a claim that the full suite passes. Integration tests may start workers, contact upstream services, and write runtime data; inspect their setup before running against a deployment's data directory.
