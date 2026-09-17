@@ -332,6 +332,7 @@ class TransitApp {
       // 5. Start Polling & Animation Glider Loop
       this.startAutoRefresh();
       this.startAnimationLoop();
+      this.setupFleetStream();
     } catch (err) {
       console.error('Fatal initialization error:', err);
     }
@@ -2671,6 +2672,12 @@ class TransitApp {
 
         if (etaPillEl && etaStatusText) {
           etaPillEl.className = 'eta-status-pill';
+          // Freshness provenance: when the upstream prediction is stale
+          // (fallback data or old observation), say so in plain text instead
+          // of presenting it as a live countdown.
+          const fresh = window.TransitUtils?.freshness?.(next);
+          const isStaleLive = Boolean(fresh?.stale && next.isRealTime);
+          if (fresh) etaPillEl.title = fresh.label;
           if (next.delayStatus === 'regulating' || next.isRegulating || next.isTerminalLayover) {
             etaPillEl.classList.add('regulating');
             etaStatusText.textContent = next.originTerminalName ? `Regulant a ${next.originTerminalName}` : 'Regulant a capçalera';
@@ -2705,8 +2712,8 @@ class TransitApp {
             etaPillEl.classList.add('estimated');
             etaStatusText.textContent = 'Estimació en Circuit';
           } else if (next.isRealTime) {
-            etaPillEl.classList.add('live');
-            etaStatusText.textContent = 'Temps Real Actiu';
+            etaPillEl.classList.add(isStaleLive ? 'estimated' : 'live');
+            etaStatusText.textContent = isStaleLive ? (fresh.label || 'Última previsió coneguda') : 'Temps Real Actiu';
           } else {
             etaPillEl.classList.add('scheduled');
             etaStatusText.textContent = 'Horari Teòric';
@@ -5476,6 +5483,7 @@ class TransitApp {
       if (this.isTabVisible && !wasVisible) {
         // User returned to tab: resume animation loop and perform fresh fetch immediately
         this.startAnimationLoop();
+        this.setupFleetStream();
         if (this.activeLineId) {
           this.refreshAllData(false);
         }
@@ -5485,6 +5493,9 @@ class TransitApp {
           cancelAnimationFrame(this.animFrameId);
           this.animFrameId = null;
         }
+        // Suspend the SSE stream while hidden: the browser reopens it on
+        // return with a full fresh snapshot.
+        this.closeFleetStream();
       }
     });
   }
@@ -5513,6 +5524,90 @@ class TransitApp {
     }
   }
 
+  // ==========================================
+  // 9b. LIVE FLEET STREAM (SSE) WITH POLLING FALLBACK
+  // ==========================================
+
+  setupFleetStream() {
+    if (typeof EventSource === 'undefined') return; // older browsers: keep polling
+    if (this.fleetSource) return;
+
+    try {
+      this.fleetSource = new EventSource('/api/fleet/events');
+    } catch (_) {
+      this.fleetSource = null;
+      return;
+    }
+
+    this.fleetSource.addEventListener('fleet', (ev) => {
+      let snapshot;
+      try {
+        snapshot = JSON.parse(ev.data);
+      } catch (_) {
+        return;
+      }
+      if (!snapshot || !Array.isArray(snapshot.vehicles)) return;
+      this.fleetStreamOk = true;
+      this.stopFleetPolling();
+      this.applyFleetSnapshot(snapshot);
+    });
+
+    this.fleetSource.addEventListener('waiting', () => {
+      // Stream is up but the worker has not produced a fleet snapshot yet.
+      this.fleetStreamOk = true;
+    });
+
+    this.fleetSource.onerror = () => {
+      // EventSource auto-reconnects; degrade to polling while disconnected.
+      this.fleetStreamOk = false;
+      this.startFleetPolling();
+    };
+  }
+
+  closeFleetStream() {
+    if (this.fleetSource) {
+      try { this.fleetSource.close(); } catch (_) {}
+      this.fleetSource = null;
+    }
+    this.fleetStreamOk = false;
+  }
+
+  applyFleetSnapshot(snapshot) {
+    const lId = this.activeLineId;
+    if (!lId || !this.isTabVisible) return;
+
+    const dir = this.activeDirection;
+    const buses = snapshot.vehicles.filter(v =>
+      String(v.lineId) === String(lId) &&
+      (dir === 'both' || v.direction === undefined || String(v.direction) === String(dir))
+    );
+
+    const lineData = this.activeLineData;
+    if (lineData && Array.isArray(lineData.activeBuses)) {
+      lineData.activeBuses = buses;
+    }
+    this.activeBuses = buses;
+
+    const lineColor = lineData?.color || '#009485';
+    this.mapController?.updateBusMarkers(buses, lineColor, '#38bdf8', this.selectedVehicleId, null, lId);
+    this.updateActiveBusesCount(buses.length, lineData);
+  }
+
+  startFleetPolling() {
+    if (this.fleetPollTimer || !this.activeLineId) return;
+    this.fleetPollTimer = setInterval(() => {
+      if (!this.isTabVisible) return;
+      this.refreshAllData(false);
+    }, this.pollInterval * 1000);
+  }
+
+  stopFleetPolling() {
+    if (this.fleetPollTimer) {
+      clearInterval(this.fleetPollTimer);
+      this.fleetPollTimer = null;
+    }
+  }
+
   startAutoRefresh() {
     if (this.pollTimer) clearInterval(this.pollTimer);
     this.pollTimer = setInterval(() => {
@@ -5520,9 +5615,12 @@ class TransitApp {
       if (!this.isTabVisible) {
         return;
       }
+      // While the SSE fleet stream is delivering snapshots, stretch the REST
+      // refresh to a slow static-data cadence; the stream keeps vehicles live.
+      const effectiveInterval = this.fleetStreamOk ? 60 : this.pollInterval;
       this.secondsRemaining--;
       if (this.secondsRemaining <= 0) {
-        this.secondsRemaining = this.pollInterval;
+        this.secondsRemaining = effectiveInterval;
         this.updateCountdownLabel();
         this.refreshAllData(false);
       } else {

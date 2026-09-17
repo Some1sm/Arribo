@@ -11,6 +11,20 @@
   const TransitUtils = {
     THEME_STORAGE_KEY,
 
+    freshness(item, now = Date.now(), offline = global.navigator?.onLine === false) {
+      const f = item?.freshness;
+      const source = f?.source || (item?.isRealTime ? 'live' : item?.isEstimated ? 'position' : 'timetable');
+      const fetched = f?.fetchedAt;
+      const observed = f?.observedAt;
+      const valid = t => Number.isFinite(t) && t > 0 && t <= now + 60000;
+      const timestamp = valid(fetched) ? (valid(observed) ? Math.min(fetched, observed) : fetched) : null;
+      const age = timestamp === null ? null : Math.max(0, now - timestamp);
+      const stale = source !== 'timetable' && (offline || age === null || age > 60000 || f?.fallback === true);
+      const ageText = age === null ? 'actualització desconeguda' : age < 60000 ? `fa ${Math.floor(age / 1000)} s` : `fa ${Math.floor(age / 60000)} min`;
+      const label = source === 'timetable' ? 'Horari programat' : stale ? 'Última previsió coneguda' : source === 'position' ? 'Estimació de posició' : 'En directe';
+      return { source, stale, age, label: `${offline ? 'Sense connexió · ' : ''}${label}${source === 'timetable' ? '' : ` · ${ageText}`}` };
+    },
+
     /**
      * HTML-escapes an upstream/user-derived string so it can never break out of
      * its element context when interpolated into innerHTML templates.

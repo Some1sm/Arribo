@@ -1,5 +1,5 @@
 // Service Worker for Arribo! Mataró Bus (PWA & Offline Shell Support)
-const CACHE_NAME = 'arribo-mataro-cache-v6';
+const CACHE_NAME = 'arribo-mataro-cache-v7';
 
 const STATIC_SHELL_ASSETS = [
   '/',
@@ -45,8 +45,32 @@ self.addEventListener('fetch', (event) => {
   // Only handle GET requests
   if (request.method !== 'GET') return;
 
-  // Never cache real-time live telemetry or dynamic vehicle streams
-  if (url.pathname.includes('/vehicles') || url.pathname.includes('/target-eta') || url.pathname.includes('/nearby')) {
+  // Never intercept real-time live telemetry, dynamic vehicle streams or the
+  // SSE fleet channel (streams must bypass the SW entirely).
+  if (url.pathname.includes('/vehicles') || url.pathname.includes('/target-eta') || url.pathname.includes('/nearby') || url.pathname === '/api/fleet/events') {
+    return;
+  }
+
+  // Cacheable static datasets: Network-First with Cache Fallback. Must be
+  // matched BEFORE the generic API passthrough below.
+  if (url.pathname.startsWith('/api/lines') || url.pathname.startsWith('/api/search/stops')) {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(request))
+    );
+    return;
+  }
+
+  // All other API responses are dynamic and must never be cached as static
+  // assets: pass through to the network without opening a cache entry.
+  if (url.pathname.startsWith('/api/')) {
     return;
   }
 
@@ -67,20 +91,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   // API Route Caching Strategy: Network-First with Cache Fallback for lines & static datasets
-  if (url.pathname.startsWith('/api/lines') || url.pathname.startsWith('/api/search/stops')) {
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          if (response && response.status === 200) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-          }
-          return response;
-        })
-        .catch(() => caches.match(request))
-    );
-    return;
-  }
+  // (handled above, before the generic API passthrough)
 
   // Static Assets Strategy: Stale-While-Revalidate with strict query-param version matching
   event.respondWith(

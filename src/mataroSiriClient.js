@@ -22,6 +22,16 @@ class MataroSiriClient {
     this._rpcBackend = null;
   }
 
+  observationTimestamp(value) {
+    const timestamp = Date.parse(value);
+    // Reject timestamps in the future and observations too old to represent a
+    // current vehicle state (older than the stale-fallback window).
+    return Number.isFinite(timestamp) && timestamp > 0
+      && timestamp <= Date.now() + 60000
+      && timestamp >= Date.now() - this.staleFallbackTtlMs
+      ? timestamp : null;
+  }
+
   isCircuitOpen() {
     return Date.now() < this.circuitOpenUntil;
   }
@@ -202,7 +212,7 @@ class MataroSiriClient {
       return this._coalesce(cacheKey, async () => {
         try {
           const res = await this._rpcBackend('getMataroLiveVehicles', { lineRef });
-          if (Array.isArray(res) && res.length > 0) {
+          if (Array.isArray(res)) {
             this.recordSuccess();
             this.cache.set(cacheKey, { ts: Date.now(), data: res });
             return res;
@@ -268,7 +278,9 @@ class MataroSiriClient {
           const velocity = parseFloat(this.extractTag(itemXml, 'Velocity') || '0');
           const delayStr = this.extractTag(itemXml, 'Delay') || 'PT0M';
           const delayMins = this.parseDurationMinutes(delayStr);
-          const recordedAt = this.extractTag(itemXml, 'RecordedAtTime') || ts;
+          const recordedAtRaw = this.extractTag(itemXml, 'RecordedAtTime');
+          const recordedAt = recordedAtRaw || ts;
+          const observedAt = this.observationTimestamp(recordedAtRaw);
 
           if (lat && lon) {
             vehicles.push({
@@ -286,6 +298,11 @@ class MataroSiriClient {
               delayFormatted: delayMins > 0 ? `+${delayMins} min retard` : (delayMins < 0 ? `${delayMins} min avançat` : 'Puntual'),
               recordedAt,
               isEstimated: false,
+              freshness: {
+                source: 'live',
+                fetchedAt: Date.now(),
+                observedAt
+              },
               timestamp: Date.now()
             });
           }
@@ -364,6 +381,7 @@ class MataroSiriClient {
       if (cached && (now - cached.ts < this.staleFallbackTtlMs)) {
         return cached.data.map(a => ({
           ...a,
+          freshness: { ...a.freshness, fallback: true },
           isEstimated: true,
           isRealTime: false,
           delayBadgeText: '⚡ En ruta (Estimat)'
@@ -379,7 +397,7 @@ class MataroSiriClient {
       return this._coalesce(cacheKey, async () => {
         try {
           const r = await this._rpcBackend('getMataroStopArrivals', { stopId: normStopId, lineRef });
-          if (Array.isArray(r) && r.length > 0) {
+          if (Array.isArray(r)) {
             this.recordSuccess();
             this.cache.set(cacheKey, { ts: Date.now(), data: r });
             return r;
@@ -390,6 +408,7 @@ class MataroSiriClient {
         if (cached && (now - cached.ts < this.staleFallbackTtlMs)) {
           return cached.data.map(a => ({
             ...a,
+          freshness: { ...a.freshness, fallback: true },
             isEstimated: true,
             isRealTime: false,
             delayBadgeText: '⚡ En ruta (Estimat)'
@@ -484,6 +503,11 @@ class MataroSiriClient {
             vehicleId: vehicleRef,
             distanceFromStop: dist,
             departureTime: formattedTime,
+            freshness: {
+              source: this.extractTag(itemXml, 'ExpectedArrivalTime') ? 'live' : 'timetable',
+              fetchedAt: Date.now(),
+              observedAt: this.observationTimestamp(this.extractTag(itemXml, 'RecordedAtTime'))
+            },
             expectedIso: expectedArr,
             aimedIso: aimedArr,
             minutesAway,
@@ -515,6 +539,7 @@ class MataroSiriClient {
       if (cached && (Date.now() - cached.ts < this.staleFallbackTtlMs)) {
         return cached.data.map(a => ({
           ...a,
+          freshness: { ...a.freshness, fallback: true },
           isEstimated: true,
           isRealTime: false,
           delayBadgeText: '⚡ En ruta (Estimat)'

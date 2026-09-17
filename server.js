@@ -49,7 +49,9 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
-app.use(compression());
+// SSE endpoint is registered before compression middleware: compression
+// buffers responses until a flush threshold, which would delay event frames.
+// The route itself is defined further below alongside the broadcaster.
 
 // Strict Read-Only Security Guard: Reject any write requests from clients
 app.use((req, res, next) => {
@@ -78,12 +80,8 @@ flightRecorder.setAutoExtrapolation(false);
 flightRecorder.setHistoryGateway((op, args) => workerBridge.historyQuery(op, args, { timeoutMs: op === 'getLineDelayStats' ? 25000 : 10000 }));
 
 // Centralize Mataró SIRI traffic in the worker over IPC (fast-fail timeout of 1200ms)
-mataroSiriClient.setRpcBackend(async (op, args) => {
-  try {
-    const res = await workerBridge.historyQuery(op, args, { timeoutMs: 1200 });
-    return Array.isArray(res) ? res : [];
-  } catch (_) { return []; }
-});
+mataroSiriClient.setRpcBackend((op, args) =>
+  workerBridge.historyQuery(op, args, { timeoutMs: 1200 }));
 
 mataroTracker.setAvisosRpcBackend(() => workerBridge.historyQuery('getMataroAvisos', {}, { timeoutMs: 7000 }));
 
@@ -303,8 +301,105 @@ function harmonizeTargetEta(data, tracker, lineId, direction) {
 }
 
 // ==========================================
-// 1. PUBLIC REST API ENDPOINTS
+// 1a. SSE Fleet Broadcaster
+// Replays the latest worker FLEET_UPDATE snapshot to browsers over
+// /api/fleet/events. Fed exclusively by the WorkerBridge 'fleet_update'
+// event: no upstream polling and no SQLite access in this path. Declared
+// and registered BEFORE compression middleware so event frames are never
+// buffered.
 // ==========================================
+const fleetBroadcaster = (() => {
+  const MAX_CLIENTS = 200;
+  const clients = new Set();
+  let latestSnapshot = null;
+  let heartbeatTimer = null;
+
+  function writeSnapshot(client) {
+    try {
+      if (latestSnapshot) {
+        client.res.write(`event: fleet\ndata: ${JSON.stringify(latestSnapshot)}\n\n`);
+      } else {
+        client.res.write(`event: waiting\ndata: {}\n\n`);
+      }
+    } catch (err) {
+      removeClient(client);
+    }
+  }
+
+  function removeClient(client) {
+    if (!clients.has(client)) return;
+    clients.delete(client);
+    try { client.res.end(); } catch (_) {}
+  }
+
+  function broadcast(snapshot) {
+    latestSnapshot = snapshot;
+    for (const client of Array.from(clients)) {
+      try {
+        client.res.write(`event: fleet\ndata: ${JSON.stringify(snapshot)}\n\n`);
+      } catch (err) {
+        removeClient(client);
+      }
+    }
+  }
+
+  function handleRequest(req, res) {
+    if (req.method === 'HEAD') {
+      res.status(405).json({ success: false, error: 'SSE stream requires GET.' });
+      return;
+    }
+    if (clients.size >= MAX_CLIENTS) {
+      res.status(503).json({ success: false, error: 'Too many fleet stream clients.' });
+      return;
+    }
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-store, no-transform',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no'
+    });
+    res.flushHeaders?.();
+    const client = { res };
+    clients.add(client);
+    req.on('close', () => removeClient(client));
+    writeSnapshot(client);
+  }
+
+  function start() {
+    if (heartbeatTimer) return;
+    // Transport liveness only: proves the stream is open, not that upstream
+    // telemetry is fresh.
+    heartbeatTimer = setInterval(() => {
+      for (const client of Array.from(clients)) {
+        try { client.res.write(': ping\n\n'); } catch (err) { removeClient(client); }
+      }
+    }, 25000);
+    if (heartbeatTimer && typeof heartbeatTimer.unref === 'function') heartbeatTimer.unref();
+  }
+
+  function shutdown() {
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+    }
+    for (const client of Array.from(clients)) removeClient(client);
+  }
+
+  workerBridge.on('fleet_update', (payload) => {
+    if (payload && Array.isArray(payload.vehicles)) {
+      broadcast({ timestamp: payload.timestamp || Date.now(), vehicles: payload.vehicles });
+    }
+  });
+  start();
+
+  return { handleRequest, getClientCount: () => clients.size, shutdown, resetForTests: () => { shutdown(); latestSnapshot = null; } };
+})();
+
+app.get('/api/fleet/events', fleetBroadcaster.handleRequest);
+
+// Response compression for all other routes (registered after the SSE route
+// so event frames are never buffered by the compression stream).
+app.use(compression());
 
 // Dedicated Journey Planner Full Page
 app.get(['/plan', '/com-anar-hi', '/itinerari'], (req, res) => {

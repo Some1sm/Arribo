@@ -1212,6 +1212,7 @@ class MataroTracker extends BaseTracker {
         delayBadgeText: isEst ? '⚡ En ruta (Estimat)' : cleanDelayFormatted,
         isEstimated: isEst,
         isRealTime: !isEst,
+        freshness: b.freshness || (isEst ? { source: 'position', fetchedAt: now, observedAt: null } : undefined),
         recordedAt: b.recordedAt || new Date().toISOString(),
         timestamp: b.timestamp || now,
         origin: b.origin || '',
@@ -1998,6 +1999,7 @@ class MataroTracker extends BaseTracker {
               delayStatus: 'estimated',
               isRealTime: false,
               isEstimated: true,
+              freshness: { source: 'position', fetchedAt: now, observedAt: veh.freshness?.observedAt || null },
               isUpstreamDirect: true,
               busCoords: { lat: effectiveLat, lon: effectiveLon }
             });
