@@ -1,6 +1,8 @@
-# 🚆 Bad AMB Bus Tracker — System Architecture & Developer Guide
+# Historical architecture — retired Catalonia-wide platform
 
-> **Notice for AI Models & Developers**: This document contains the complete technical overview, architecture design, API reverse-engineering details, data schemas, and domain algorithms powering **Bad AMB Bus Tracker**. Read this file first to understand the entire system without needing to re-explore the codebase from scratch.
+> Archived reference, not current deployment guidance. Providers, scale and routes
+> below describe earlier iterations. The active app serves Mataró L1–L8. Start with
+> [README.md](README.md), [AGENTS.md](AGENTS.md) and [OPERATIONS.md](OPERATIONS.md).
 
 ---
 
@@ -45,7 +47,7 @@ graph TD
 
     subgraph External & Upstream Providers
         MouteAPI["Generalitat Mou-te REST API<br>(HMAC-MD5 Token Authentication)"]
-        AMBv2["AMB Mobilitat API v2<br>(x-api-key: 28EbLJtP...)"]
+        AMBv2["AMB Mobilitat API v2<br>(x-api-key: ${AMB_API_KEY})"]
         RenfeRT["Renfe Rodalies GTFS-RT 2.0<br>(Live Train Telemetry)"]
         SagalesRT["Sagalés Real-Time Web Service<br>(Live Vehicle JSON Feeds)"]
         AvanzaSIRI["Avanza Mataró SIRI SOAP API<br>(Live Urban Bus Monitoring)"]
@@ -101,7 +103,7 @@ graph TD
 
 ### 1. AMB Mobilitat API v2 (Direct Integration)
 - **Base Host**: `https://api.ambmobilitat.cat/v2`
-- **Authentication Header**: `x-api-key: 28EbLJtP0A6CtrWeXp6zE1zy3kp4RzmnaA2sy8JM`
+- **Authentication Header**: `x-api-key: ${AMB_API_KEY}`
 - **Catalog Endpoint**: `GET /gtfs/routes-and-stops` (Fetches all 243 AMB bus routes, stops, directions, and agencies).
 - **Bus Real-Time Arrivals**: `GET /bus/stops/:stopCode/realtimes` (Returns minutes away, expected timestamp, aimed timestamp, and vehicle ID).
 - **Rodalies Train Real-Time**: `GET /gtfs/renfe/realtime/:stationId` (Returns upcoming trains, delays, platform, destination).

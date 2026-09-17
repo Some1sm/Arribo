@@ -7882,3 +7882,12 @@ body {
   color: #fff;
 }
 
+
+/* Device-local journey controls and connectivity notices. */
+.connection-banner, .update-banner { position: fixed; bottom: 1rem; left: 1rem; right: 1rem; z-index: 10000; padding: .8rem; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--bg-surface-elevated); color: var(--text-primary); }
+.update-banner { bottom: 5rem; cursor: pointer; }
+.journey-row { display: flex; gap: .4rem; margin: .4rem 0; }
+.journey-row button:first-child { flex: 1; text-align: left; }
+#journey-library { margin: 1rem 0; font-size: .85rem; }
+#journey-library button { padding: .4rem; cursor: pointer; }
+.is-offline .fav-countdown-badge { visibility: hidden; }

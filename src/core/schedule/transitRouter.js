@@ -12,6 +12,7 @@ class TransitRouter {
     this.tracker = mataroTracker;
     this.routesGraph = []; // Array of { lineId, lineCode, color, direction, stops }
     this.isBuilt = false;
+    this.candidateCache = new Map();
   }
 
   setTracker(tracker) {
@@ -20,6 +21,7 @@ class TransitRouter {
   }
 
   buildGraph() {
+    this.candidateCache.clear();
     if (!this.tracker || !this.tracker.routesData) return;
     this.routesGraph = [];
 
@@ -322,6 +324,9 @@ class TransitRouter {
       };
     }
 
+    const cacheKey = JSON.stringify([origin, destination]);
+    let candidates = this.candidateCache.get(cacheKey);
+    if (!candidates) {
     const directRoutes = [];
     const oneTransferRoutes = [];
     const seenDirectKeys = new Set();
@@ -339,7 +344,7 @@ class TransitRouter {
           const destIdx = route.stops.findIndex(s => s.id === d.id || s.shorthandId === d.id);
           if (destIdx === -1 || destIdx <= origIdx) continue;
 
-          const directKey = `${route.lineId}_${o.id}_${d.id}`;
+          const directKey = `${route.lineId}_${route.direction}_${o.id}_${d.id}`;
           if (seenDirectKeys.has(directKey)) continue;
           seenDirectKeys.add(directKey);
 
@@ -437,7 +442,7 @@ class TransitRouter {
                 if (s2.id === transferStop.id || s2.shorthandId === transferStop.id) {
                   possibleT2.push({ idx: i, stop: s2, dist: 0 });
                 } else if (s2.name.toLowerCase() === transferStop.name.toLowerCase()) {
-                  possibleT2.push({ idx: i, stop: s2, dist: 25 });
+                  possibleT2.push({ idx: i, stop: s2, dist: geoEngine.calculateDistanceMeters(transferStop.lat, transferStop.lon, s2.lat, s2.lon) });
                 } else {
                   const dist = geoEngine.calculateDistanceMeters(transferStop.lat, transferStop.lon, s2.lat, s2.lon);
                   if (dist <= 160) {
@@ -567,225 +572,19 @@ class TransitRouter {
       }
     }
 
-    const preference = options.preference || 'fastest';
-
-    // Deduplication & Dominance Filtering:
-    // Prunes strictly dominated routes (e.g. walking further to catch the exact same bus)
-    // and prioritizes diverse transit choices according to user preference.
-    const filterDominatedRoutes = (routesList, maxResults = 4) => {
-      routesList.sort((a, b) => {
-        const aWalk = (a.walkToFirstStop?.distanceMeters || 0) + (a.walkFromLastStop?.distanceMeters || 0) + (a.transferWalk?.distanceMeters || 0);
-        const bWalk = (b.walkToFirstStop?.distanceMeters || 0) + (b.walkFromLastStop?.distanceMeters || 0) + (b.transferWalk?.distanceMeters || 0);
-
-        if (preference === 'least_walking') {
-          if (Math.abs(aWalk - bWalk) > 40) {
-            return aWalk - bWalk;
-          }
-        }
-
-        if (a.totalDurationMinutes !== b.totalDurationMinutes) {
-          return a.totalDurationMinutes - b.totalDurationMinutes;
-        }
-        return aWalk - bWalk;
-      });
-
-      const selected = [];
-      const seenLineSignatures = new Map();
-
-      for (const itin of routesList) {
-        const lineSig = itin.legs.map(l => l.lineId).join('->');
-        const origWalk = itin.walkToFirstStop?.distanceMeters || 0;
-        const destWalk = itin.walkFromLastStop?.distanceMeters || 0;
-        const transferWalk = itin.transferWalk?.distanceMeters || 0;
-        const totalWalk = origWalk + destWalk + transferWalk;
-
-        if (!seenLineSignatures.has(lineSig)) {
-          seenLineSignatures.set(lineSig, { itin, totalWalk, origWalk, destWalk, transferWalk });
-          selected.push(itin);
-        } else {
-          const existing = seenLineSignatures.get(lineSig);
-
-          // An itinerary with the exact same line combination already exists.
-          // In least_walking mode, prioritize the one with lower walking
-          if (preference === 'least_walking' && totalWalk < existing.totalWalk - 30) {
-            const idx = selected.indexOf(existing.itin);
-            if (idx !== -1) selected[idx] = itin;
-            seenLineSignatures.set(lineSig, { itin, totalWalk, origWalk, destWalk, transferWalk });
-            continue;
-          }
-
-          const walkSaved = existing.totalWalk - totalWalk;
-          const timeAdded = itin.totalDurationMinutes - existing.itin.totalDurationMinutes;
-
-          // Replace existing if candidate drops off significantly closer to destination without extra origin walking or delay:
-          if (destWalk < existing.destWalk - 25 && origWalk <= existing.origWalk + 15 && timeAdded <= 1) {
-            const idx = selected.indexOf(existing.itin);
-            if (idx !== -1) selected[idx] = itin;
-            seenLineSignatures.set(lineSig, { itin, totalWalk, origWalk, destWalk, transferWalk });
-          } else if (walkSaved >= 50 && timeAdded <= 2) {
-            const idx = selected.indexOf(existing.itin);
-            if (idx !== -1) selected[idx] = itin;
-            seenLineSignatures.set(lineSig, { itin, totalWalk, origWalk, destWalk, transferWalk });
-          }
-
-          continue;
-        }
-
-        if (selected.length >= maxResults) break;
-      }
-
-      return selected;
-    };
-
-    let itineraries = [];
-    if (preference === 'direct_only') {
-      if (directRoutes.length > 0) {
-        itineraries = filterDominatedRoutes(directRoutes, 4);
-      } else {
-        itineraries = [];
-      }
-    } else if (directRoutes.length > 0) {
-      const bestDirect = filterDominatedRoutes(directRoutes, preference === 'least_walking' ? 4 : 3);
-      itineraries.push(...bestDirect);
-
-      // Only add transfer options that offer genuinely different lines
-      const usedDirectLines = new Set(bestDirect.map(d => d.legs[0].lineId));
-      const transferCandidates = oneTransferRoutes.filter(t => !usedDirectLines.has(t.legs[0].lineId) && !usedDirectLines.has(t.legs[1].lineId));
-      const bestTransfers = filterDominatedRoutes(transferCandidates, 2);
-      itineraries.push(...bestTransfers);
-
-      if (preference === 'least_walking') {
-        itineraries.sort((a, b) => {
-          const aWalk = (a.walkToFirstStop?.distanceMeters || 0) + (a.walkFromLastStop?.distanceMeters || 0) + (a.transferWalk?.distanceMeters || 0);
-          const bWalk = (b.walkToFirstStop?.distanceMeters || 0) + (b.walkFromLastStop?.distanceMeters || 0) + (b.transferWalk?.distanceMeters || 0);
-          if (Math.abs(aWalk - bWalk) > 40) return aWalk - bWalk;
-          return a.totalDurationMinutes - b.totalDurationMinutes;
-        });
-      }
-    } else {
-      itineraries = filterDominatedRoutes(oneTransferRoutes, 4);
+    candidates = [...new Map([...directRoutes, ...oneTransferRoutes].map(itin => [itin.legs.map(leg => `${leg.lineId}:${leg.direction}:${leg.fromStop.id}:${leg.toStop.id}`).join('|'), itin])).values()];
+    this.candidateCache.set(cacheKey, candidates);
+    if (this.candidateCache.size > 32) this.candidateCache.delete(this.candidateCache.keys().next().value);
     }
-
-    if (itineraries.length > 4) {
-      itineraries = itineraries.slice(0, 4);
-    }
-
-    // Reference time in Europe/Madrid (real-time or future simulation)
-    const nowInMadrid = new Date();
-    const nowComp = calendarEngine.getDateComponents(nowInMadrid, 'Europe/Madrid');
-    const nowSec = nowComp.hour * 3600 + nowComp.minute * 60 + (nowComp.second || 0);
-
-    let isFutureQuery = false;
-    let dateComp = nowComp;
-    let currentSec = nowSec;
-
-    if (options.departureDate && typeof options.departureDate === 'string' && options.departureDate !== nowComp.dateStr) {
-      isFutureQuery = true;
-      const parsedDate = new Date(`${options.departureDate}T12:00:00Z`);
-      if (!isNaN(parsedDate.getTime())) {
-        dateComp = calendarEngine.getDateComponents(parsedDate, 'Europe/Madrid');
-      }
-    }
-
-    if (options.departureTime && typeof options.departureTime === 'string' && /^\d{1,2}:\d{2}$/.test(options.departureTime.trim())) {
-      const reqSec = timeEngine.timeStringToSeconds(options.departureTime.trim());
-      if (Number.isFinite(reqSec)) {
-        currentSec = reqSec;
-        if ((options.departureDate && options.departureDate !== nowComp.dateStr) || Math.abs(reqSec - nowSec) > 1200) {
-          isFutureQuery = true;
-        }
-      }
-    }
-
-    const dayType = dateComp.isSunday ? 'sunday' : (dateComp.isSaturday ? 'saturday' : 'weekday');
-    let mataroSchedules = null;
-    try {
-      mataroSchedules = require('../../data/mataroSchedules');
-    } catch (_) {}
-
+    const timeline = require('./journeyTimeline');
+    const unique = candidates.filter(itin => options.preference !== 'direct_only' || itin.type === 'direct').map(itin => ({
+      ...itin, legs: itin.legs.map(leg => ({ ...leg })),
+      walkToFirstStop: itin.walkToFirstStop ? { ...itin.walkToFirstStop } : null,
+      transferWalk: itin.transferWalk ? { ...itin.transferWalk } : null,
+      walkFromLastStop: itin.walkFromLastStop ? { ...itin.walkFromLastStop } : null
+    }));
+    const itineraries = await timeline.evaluate(unique, this.tracker, options);
     for (const itin of itineraries) {
-      let cumulativeMins = itin.walkToFirstStop?.walkingMinutes || 0;
-
-      for (let lIdx = 0; lIdx < itin.legs.length; lIdx++) {
-        const leg = itin.legs[lIdx];
-        let waitMinutes = 8;
-        let depTime = 'En breu';
-        let isRealTime = false;
-
-        // Earliest arrival at this boarding stop (in seconds from midnight)
-        const earliestArrivalSec = currentSec + (cumulativeMins * 60);
-
-        // Real-time queries only when not simulating future departures
-        if (!isFutureQuery && this.tracker && typeof this.tracker.getStopDepartures === 'function') {
-          try {
-            const boardStopId = leg.fromStop?.id || (lIdx === 0 ? origCandidates[0].id : null);
-            if (boardStopId) {
-              const depData = await this.tracker.getStopDepartures(boardStopId, leg.lineId, leg.direction);
-              if (depData && Array.isArray(depData.departures) && depData.departures.length > 0) {
-                const valid = depData.departures.filter(d => {
-                  if (d.departureTime && /^\d{1,2}:\d{2}$/.test(d.departureTime.trim())) {
-                    const depSec = timeEngine.timeStringToSeconds(d.departureTime.trim());
-                    return depSec >= earliestArrivalSec - 60;
-                  }
-                  return Number.isFinite(d.minutesAway) && d.minutesAway >= cumulativeMins - 1;
-                });
-
-                const targetDep = valid.length > 0 ? valid[0] : depData.departures[0];
-                if (targetDep) {
-                  depTime = targetDep.departureTime || (Number.isFinite(targetDep.minutesAway) ? `${targetDep.minutesAway} min` : 'En breu');
-                  isRealTime = Boolean(targetDep.isRealTime);
-                  if (targetDep.departureTime && /^\d{1,2}:\d{2}$/.test(targetDep.departureTime.trim())) {
-                    const depSec = timeEngine.timeStringToSeconds(targetDep.departureTime.trim());
-                    waitMinutes = Math.max(0, Math.round((depSec - currentSec) / 60));
-                  } else if (Number.isFinite(targetDep.minutesAway)) {
-                    waitMinutes = targetDep.minutesAway;
-                  }
-                }
-              }
-            }
-          } catch (_) {}
-        }
-
-        // Timetable schedule query (for future simulations or fallback when SIRI has no active trips)
-        if ((isFutureQuery || depTime === 'En breu') && mataroSchedules) {
-          try {
-            const sched = mataroSchedules.getDirectionSchedule(leg.lineId, leg.direction, dayType);
-            if (sched && Array.isArray(sched.departures) && sched.departures.length > 0) {
-              const nextTrip = sched.departures.find(t => timeEngine.timeStringToSeconds(t) >= earliestArrivalSec - 60);
-              if (nextTrip) {
-                const tripSec = timeEngine.timeStringToSeconds(nextTrip);
-                waitMinutes = Math.max(0, Math.round((tripSec - currentSec) / 60));
-                depTime = nextTrip;
-                isRealTime = false;
-              } else {
-                // Next day morning restart
-                const firstTrip = sched.departures[0];
-                const firstSec = timeEngine.timeStringToSeconds(firstTrip);
-                waitMinutes = Math.max(0, Math.round((firstSec + 86400 - currentSec) / 60));
-                depTime = firstTrip;
-                isRealTime = false;
-              }
-            }
-          } catch (_) {}
-        }
-
-        leg.departureTime = depTime;
-        leg.isRealTime = isRealTime;
-        leg.nextDepartureMinutes = waitMinutes;
-        leg.nextDepartureMins = waitMinutes;
-
-        // If this is first leg, attach to itinerary root level
-        if (lIdx === 0) {
-          itin.departureTime = depTime;
-          itin.isRealTime = isRealTime;
-          itin.nextDepartureMinutes = waitMinutes;
-          itin.nextDepartureMins = waitMinutes;
-        }
-
-        // Cumulative minutes for the next transfer leg
-        cumulativeMins = Math.max(cumulativeMins, waitMinutes) + (leg.durationMinutes || 10) + (itin.transferWalk?.walkingMinutes || 0);
-      }
-
       // Eco-Impact Calculation (CO2 emissions saved vs private car)
       // Car: ~120 g CO2/km vs Bus passenger: ~30 g CO2/km -> ~90 g CO2/km saved
       let totalTransitMeters = 0;
@@ -818,7 +617,6 @@ class TransitRouter {
       itin.co2Formatted = co2Formatted;
       itin.co2Label = `🌱 ${co2Formatted} CO₂ estalviats (aprox.)`;
       itin.co2BadgeHtml = `🌱 Estalvi aprox. ${co2Formatted} CO₂ respecte al cotxe`;
-      itin.isFutureSchedule = isFutureQuery;
       itin.plannedDepartureTime = options.departureTime || null;
       itin.plannedDepartureDate = options.departureDate || null;
     }

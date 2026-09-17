@@ -3,12 +3,15 @@ services:
     build: .
     container_name: arribo
     restart: unless-stopped
+    stop_grace_period: 15s
     ports:
       - "3000:3000"
     environment:
       - NODE_ENV=production
       - PORT=3000
       - TZ=Europe/Madrid
+      - ORS_BASE_URL=${ORS_BASE_URL:-}
+      - ORS_API_KEY=${ORS_API_KEY:-}
       - NODE_OPTIONS=--max-old-space-size=160 --expose-gc
       # Storage controls for the persistent SQLite flight recorder
       - SNAPSHOT_RETENTION_HOURS=2

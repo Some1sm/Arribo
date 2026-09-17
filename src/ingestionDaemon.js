@@ -8,6 +8,7 @@ const historyDb = require('./historyDb');
 class IngestionDaemon {
   constructor() {
     this.isRunning = false;
+    this.stopping = false;
     this.mataroPollTimer = null;
     this.disruptionsTimer = null;
     this.pruneTimer = null;
@@ -92,6 +93,7 @@ class IngestionDaemon {
   }
 
   stop() {
+    this.stopping = true;
     this.isRunning = false;
     this.startupTimeouts.forEach(t => clearTimeout(t));
     this.startupTimeouts = [];
@@ -108,6 +110,7 @@ class IngestionDaemon {
       await Promise.allSettled(activeLines.map(async (lId) => {
         try {
           const details = await mataroTracker.getLineDetails(lId, 'both');
+          if (this.stopping) return;
           if (details && Array.isArray(details.activeBuses)) {
             details.activeBuses.forEach(b => {
               // Never ingest synthetic timetable ghost buses into flightRecorder!
@@ -156,7 +159,7 @@ class IngestionDaemon {
           // Skip individual line
         }
       }));
-      this.emitFleetUpdate();
+      if (!this.stopping) this.emitFleetUpdate();
     } catch (e) {
       this.warnThrottled('pollMataroVehicles', `Mataró SIRI poll failed: ${e.message}`);
     }
@@ -165,6 +168,8 @@ class IngestionDaemon {
   async pollDisruptions() {
     try {
       const disruptions = await mataroTracker.getDisruptions();
+      if (this.stopping) return;
+      this.noticesUpdatedAt = Date.now();
       this.emitIpc('DISRUPTIONS_UPDATE', {
         timestamp: Date.now(),
         disruptions: Array.isArray(disruptions) ? disruptions : []

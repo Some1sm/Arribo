@@ -24,6 +24,8 @@ class PlannerPageApp {
     this.initTheme();
     this.initMap();
     this.bindEvents();
+    this.journeyControls = new window.JourneyControls(this);
+    window.TransitPwa?.init();
     this.checkUrlParams();
 
     // Suspend polling when tab is hidden, resume when visible
@@ -416,6 +418,7 @@ class PlannerPageApp {
           const res = await fetch(`/api/search/stops?q=${encodeURIComponent(query)}`);
           if (!res.ok) return;
           const data = await res.json();
+          if (inputElem.value.trim() !== query) return;
           const stops = Array.isArray(data.stops) ? data.stops.slice(0, 6) : [];
           const streets = Array.isArray(data.streets) ? data.streets.slice(0, 4) : [];
 
@@ -581,6 +584,11 @@ class PlannerPageApp {
   }
 
   async runSearch(targetIndex = 0) {
+    this.stopPolling();
+    this.searchAbortController?.abort();
+    this.searchAbortController = new AbortController();
+    const requestId = this.searchGeneration = (this.searchGeneration || 0) + 1;
+
     const originEl = document.getElementById('page-planner-origin');
     const destEl = document.getElementById('page-planner-dest');
     const originVal = originEl?.value.trim();
@@ -616,7 +624,8 @@ class PlannerPageApp {
       if (destEl?.dataset?.lat && destEl?.dataset?.lon) {
         url += `&toLat=${destEl.dataset.lat}&toLon=${destEl.dataset.lon}`;
       }
-      const res = await fetch(url);
+      url += `&walkingSpeed=${encodeURIComponent(document.getElementById('plan-walking-speed')?.value || 80)}&maxWalkingDistance=${encodeURIComponent(document.getElementById('plan-max-walk')?.value || 2000)}`;
+      const res = await fetch(url, { signal: this.searchAbortController.signal });
       if (!res.ok) {
         let serverErrorMsg = `El servidor d'Arribo! ha retornat un codi d'error HTTP ${res.status}.`;
         try {
@@ -627,6 +636,7 @@ class PlannerPageApp {
       }
 
       const data = await res.json();
+      if (requestId !== this.searchGeneration) return;
 
       if (!data.success) {
         const errorReason = data.error || data.message || "No s'ha pogut trobar la parada o adreça especificada.";
@@ -642,6 +652,7 @@ class PlannerPageApp {
       }
 
       this.currentItineraries = data.itineraries || [];
+      this.journeyControls?.record();
       if (this.currentItineraries.length === 0) {
         resultsContainer.innerHTML = `
           <div style="text-align:center; padding:2.5rem 1rem; color:var(--text-secondary);">
@@ -703,6 +714,7 @@ class PlannerPageApp {
       window.history.replaceState({}, '', newUrl);
 
     } catch (err) {
+      if (err.name === 'AbortError' || requestId !== this.searchGeneration) return;
       console.error('Plan search error:', err);
       let errorTitle = "No s'ha pogut connectar amb el servei";
       let errorDesc = "No s'ha pogut obtenir la planificació del servidor d'Arribo!.";
@@ -731,6 +743,8 @@ class PlannerPageApp {
   }
 
   renderItineraries(itineraries, originStop, destStop) {
+    const originVal = originStop?.name || document.getElementById('page-planner-origin')?.value || '';
+    const destVal = destStop?.name || document.getElementById('page-planner-dest')?.value || '';
     const container = document.getElementById('page-planner-results');
     if (!container) return;
 
@@ -740,7 +754,7 @@ class PlannerPageApp {
           ${itineraries.length} ${itineraries.length === 1 ? 'OPCIÓ TROBADA' : 'OPCIONS TROBADES'}:
         </span>
         <span style="font-size:0.72rem; color:var(--text-muted); display:inline-flex; align-items:center; gap:4px;">
-          <span style="width:6px; height:6px; background:#10b981; border-radius:50%; display:inline-block;"></span> Actualitzant en viu
+          <span style="width:6px; height:6px; background:#10b981; border-radius:50%; display:inline-block;"></span> ${navigator.onLine === false ? 'Sense connexió' : this.timeMode === 'future' ? 'Horari programat' : 'Actualitzant previsions'}
         </span>
       </div>
       ${itineraries.map((it, idx) => {
@@ -774,6 +788,8 @@ class PlannerPageApp {
               </span>
             </div>
 
+            <p class="journey-timeline">Arribada: ${it.arrivalAt ? new Date(it.arrivalAt).toLocaleTimeString('ca', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit' }) : '--:--'} · A peu ${it.walkingMinutes || 0} min · Espera ${it.waitMinutes || 0} min · Bus ${Math.ceil(it.rideMinutes || 0)} min</p>
+            <p>${['walkToFirstStop', 'transferWalk', 'walkFromLastStop'].some(key => it[key]?.approximate) ? 'Caminada aproximada · ' : ''}${it.timingSource === 'heuristic' ? 'Durada estimada' : 'Temps segons horari i dades disponibles'}</p>
             <div class="planner-legs-flow">
               ${it.walkToFirstStop && it.walkToFirstStop.distanceMeters > 15 ? `
                 <div style="display:flex; align-items:center; gap:8px; padding:4px 0 6px 0; color:var(--text-secondary); font-size:0.83rem; border-bottom:1px dashed var(--border-subtle); margin-bottom:6px;">
@@ -894,6 +910,7 @@ class PlannerPageApp {
 
   startPolling() {
     this.stopPolling();
+    if (this.timeMode === 'future' || navigator.onLine === false) return;
     this.pollTimer = setInterval(() => {
       if (document.hidden) return;
       this.refreshLiveDepartures();
@@ -908,13 +925,19 @@ class PlannerPageApp {
   }
 
   async refreshLiveDepartures() {
-    if (!this.lastSearchUrl || this.currentItineraries.length === 0) return;
+    if (!this.lastSearchUrl || this.currentItineraries.length === 0 || this.timeMode === 'future' || navigator.onLine === false) return;
+    const generation = this.searchGeneration;
+    const selectedId = this.currentItineraries[this.activeItineraryIndex]?.id;
     try {
       const res = await fetch(this.lastSearchUrl);
       if (!res.ok) return;
       const data = await res.json();
       if (!data.success || !Array.isArray(data.itineraries) || data.itineraries.length === 0) return;
 
+      if (generation !== this.searchGeneration) return;
+      const selected = data.itineraries.findIndex(it => it.id === selectedId);
+      if (selectedId && selected < 0) { this.closeGuidedNavigation(); alert('La connexió seleccionada ja no està disponible. Tria una alternativa.'); }
+      this.activeItineraryIndex = Math.max(0, selected);
       this.currentItineraries = data.itineraries;
       this.lastOriginStop = data.originStop || this.lastOriginStop;
       this.lastDestStop = data.destStop || this.lastDestStop;

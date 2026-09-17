@@ -5,6 +5,10 @@ const mataroTracker = require('../src/mataroTracker');
 async function runTests() {
   console.log('🧪 Running transitRouter Journey Planner Unit Tests...\n');
 
+  // Fixed weekday morning: transfer preferences must not depend on overnight service.
+  Date.now = () => Date.parse('2026-09-18T06:00:00Z');
+  mataroTracker.getStopDepartures = async () => ({ departures: [] });
+
   // Initialize router with mataroTracker
   transitRouter.setTracker(mataroTracker);
 

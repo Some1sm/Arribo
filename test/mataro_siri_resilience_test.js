@@ -1,3 +1,10 @@
+// The vehicle fixture models active daytime service, independent of execution time.
+const NativeDate = Date;
+const fixtureNow = NativeDate.parse('2026-09-18T10:00:00Z');
+global.Date = class extends NativeDate {
+  constructor(...args) { super(...(args.length ? args : [fixtureNow])); }
+  static now() { return fixtureNow; }
+};
 const assert = require('assert');
 const mataroTracker = require('../src/mataroTracker');
 const siriClient = require('../src/mataroSiriClient');
@@ -139,7 +146,7 @@ async function runResilienceTests() {
   console.log('\n🎉 ALL MATARÓ SIRI RESILIENCE & DEAD-RECKONING TESTS PASSED PERFECTLY! 🎉\n');
 }
 
-runResilienceTests().catch(err => {
+runResilienceTests().finally(() => { global.Date = NativeDate; }).catch(err => {
   console.error('Test failed with error:', err);
   process.exit(1);
 });

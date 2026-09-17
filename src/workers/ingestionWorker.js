@@ -147,7 +147,9 @@ function handleMasterMessage(message) {
         memory: process.memoryUsage(),
         uptime: process.uptime(),
         activeVehicles: flightRecorder.getAllVehicles().length,
-        upstream: mataroSiriClient.getUpstreamStatus()
+        upstream: mataroSiriClient.getUpstreamStatus(),
+        noticesUpdatedAt: ingestionDaemon.noticesUpdatedAt || null,
+        lastObservationAt: Math.max(0, ...flightRecorder.getAllVehicles().map(vehicle => Number(vehicle.timestamp) || Date.parse(vehicle.recordedAt) || 0)) || null
       });
       break;
 

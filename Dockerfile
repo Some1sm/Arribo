@@ -1,5 +1,5 @@
 # Use Node 22 Alpine for minimal footprint and native node:sqlite support
-FROM node:22-alpine
+FROM node:22.19.0-alpine@sha256:d2166de198f26e17e5a442f537754dd616ab069c47cc57b889310a717e0abbf9
 
 # Set working directory
 WORKDIR /app
@@ -13,7 +13,7 @@ ENV NODE_OPTIONS="--max-old-space-size=160 --expose-gc"
 COPY package*.json ./
 
 # Install production dependencies
-RUN npm ci --omit=dev || npm install --omit=dev
+RUN npm ci --omit=dev
 
 # Copy application source code
 COPY . .

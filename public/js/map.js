@@ -806,7 +806,7 @@ class C10Map {
           Number.isFinite(walkFrom[0]) && Number.isFinite(walkFrom[1]) &&
           Number.isFinite(walkTo[0]) && Number.isFinite(walkTo[1])) {
         allPoints.push(walkFrom, walkTo);
-        const walkLine = L.polyline([walkFrom, walkTo], {
+        const walkLine = L.polyline(itinerary.walkToFirstStop.polyline || [walkFrom, walkTo], {
           color: '#38bdf8',
           weight: 4,
           opacity: 0.9,
@@ -848,7 +848,7 @@ class C10Map {
           Number.isFinite(walkFrom[0]) && Number.isFinite(walkFrom[1]) &&
           Number.isFinite(walkTo[0]) && Number.isFinite(walkTo[1])) {
         allPoints.push(walkFrom, walkTo);
-        const walkLine = L.polyline([walkFrom, walkTo], {
+        const walkLine = L.polyline(itinerary.transferWalk.polyline || [walkFrom, walkTo], {
           color: '#f59e0b',
           weight: 4,
           opacity: 0.9,
@@ -871,7 +871,7 @@ class C10Map {
           Number.isFinite(walkFrom[0]) && Number.isFinite(walkFrom[1]) &&
           Number.isFinite(walkTo[0]) && Number.isFinite(walkTo[1])) {
         allPoints.push(walkFrom, walkTo);
-        const walkLine = L.polyline([walkFrom, walkTo], {
+        const walkLine = L.polyline(itinerary.walkFromLastStop.polyline || [walkFrom, walkTo], {
           color: '#f59e0b',
           weight: 4,
           opacity: 0.9,

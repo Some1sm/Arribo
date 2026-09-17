@@ -46,6 +46,9 @@ if (typeof global.gc === 'function') {
 }
 
 const app = express();
+let shuttingDown = false;
+let httpServer = null;
+let shutdownPromise = null;
 const PORT = process.env.PORT || 3000;
 
 const { securityHeaders, createApiLimiter, trustedProxies } = require('./src/core/httpProtection');
@@ -98,17 +101,20 @@ workerBridge.on('fleet_update', (payload) => {
   }
 });
 
-// Request logger middleware (suppress periodic /api/health checks to prevent log bloat)
+// Never log passenger queries, coordinates, endpoint names or credentials.
 app.use('/api', (req, res, next) => {
-  if (req.path !== '/health') {
-    const time = new Date().toLocaleTimeString();
-    console.log(`[${time}] 🌐 ${req.method} ${req.originalUrl}`);
-  }
+  req.requestId = require('node:crypto').randomUUID();
+  res.setHeader('X-Request-ID', req.requestId);
+  const start = performance.now();
+  res.once('finish', () => {
+    if (['/api/health', '/api/ready', '/api/fleet/events'].includes(req.route?.path)) return;
+    console.log(JSON.stringify({ event: 'http_request', requestId: req.requestId, route: req.route?.path || 'unmatched', status: res.statusCode, durationMs: Math.round(performance.now() - start) }));
+  });
   next();
 });
 
 function sendInternalError(req, res, err, extra = {}) {
-  console.error(`[API] 500 on ${req.method} ${req.originalUrl}:`, err);
+  console.error(JSON.stringify({ event: 'http_error', requestId: req.requestId, route: req.route?.path || 'unmatched', errorType: err?.name || 'Error' }));
   res.status(500).json({ success: false, error: 'Internal server error', ...extra });
 }
 
@@ -413,6 +419,12 @@ app.get(['/plan', '/com-anar-hi', '/itinerari'], (req, res) => {
 });
 
 // Health Check
+app.get('/api/ready', (req, res) => {
+  const status = require('./src/core/serviceStatus')(workerBridge.getStatus(), reportCacheService.getFreshnessStatus(), trackerRegistry.getAllLines().length > 0, shuttingDown);
+  res.setHeader('Cache-Control', 'no-store');
+  res.status(status.ready ? 200 : 503).json(status);
+});
+
 app.get('/api/health', (req, res) => {
   const now = Date.now();
   const worker = workerBridge.getStatus();
@@ -710,6 +722,18 @@ app.get(['/api/mataro/stops/nearby', '/api/mataro/nearby', '/api/stops/nearby'],
 
 // Journey Planner ("Com anar-hi" - A to B routing in Mataró)
 app.get(['/api/mataro/plan', '/api/plan'], async (req, res) => {
+  const numeric = (name, min, max) => req.query[name] === undefined || (typeof req.query[name] === 'string' && req.query[name].trim() !== '' && Number.isFinite(Number(req.query[name])) && Number(req.query[name]) >= min && Number(req.query[name]) <= max);
+  const preference = req.query.preference || 'fastest';
+  if (!['fastest', 'least_walking', 'direct_only'].includes(preference) ||
+      !numeric('walkingSpeed', 30, 120) || !numeric('maxWalkingDistance', 50, 5000) ||
+      !numeric('fromLat', -90, 90) || !numeric('toLat', -90, 90) || !numeric('fromLon', -180, 180) || !numeric('toLon', -180, 180) ||
+      (req.query.fromLat === undefined) !== (req.query.fromLon === undefined) || (req.query.toLat === undefined) !== (req.query.toLon === undefined)) {
+    return res.status(400).json({ success: false, error: 'Paràmetres del trajecte no vàlids.' });
+  }
+  try {
+    require('./src/core/schedule/journeyTimeline').requestedInstant({ departureDate: req.query.departureDate || req.query.date, departureTime: req.query.departureTime || req.query.time });
+  } catch (error) { return res.status(400).json({ success: false, error: error.message }); }
+
   const from = req.query.from;
   const to = req.query.to;
   if (!from || !to) {
@@ -765,6 +789,8 @@ app.get(['/api/mataro/plan', '/api/plan'], async (req, res) => {
       originName: origLabel,
       destName: destLabel,
       preference: req.query.preference || 'fastest',
+      walkingSpeed: req.query.walkingSpeed,
+      maxWalkingDistance: req.query.maxWalkingDistance,
       departureTime: req.query.departureTime || req.query.time || null,
       departureDate: req.query.departureDate || req.query.date || null
     });
@@ -1043,7 +1069,7 @@ app.get('*', (req, res) => {
 
 // Start Server
 if (require.main === module) {
-  app.listen(PORT, () => {
+  httpServer = app.listen(PORT, () => {
     console.log(`\n======================================================`);
     console.log(`🚌 Arribo! Mataró Bus Tracker HTTP Server`);
     console.log(`📡 URL: http://localhost:${PORT}`);
@@ -1053,4 +1079,27 @@ if (require.main === module) {
   });
 }
 
+async function shutdown() {
+  if (shutdownPromise) return shutdownPromise;
+  shuttingDown = true;
+  shutdownPromise = (async () => {
+    fleetBroadcaster.shutdown();
+    if (httpServer) {
+      await new Promise(resolve => {
+        const deadline = setTimeout(() => { httpServer.closeAllConnections(); resolve(); }, 5000);
+        httpServer.close(() => { clearTimeout(deadline); resolve(); });
+      });
+    }
+    await workerBridge.shutdown(5000);
+    console.log(JSON.stringify({ event: 'shutdown_complete' }));
+  })();
+  return shutdownPromise;
+}
+if (require.main === module) {
+  for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => {
+    const deadline = setTimeout(() => process.exit(1), 12000);
+    shutdown().then(() => { clearTimeout(deadline); process.exit(0); }).catch(() => process.exit(1));
+  });
+}
+app.shutdown = shutdown;
 module.exports = app;

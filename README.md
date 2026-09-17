@@ -10,6 +10,9 @@ The default line catalog, search, and background ingestion focus on Mataró's ei
 
 Older C-10 API paths and some architecture documents reflect that earlier scope. Use the current source code and [AGENTS.md](AGENTS.md) when working on the active app.
 
+See [OPERATIONS.md](OPERATIONS.md) for planner parameters, ORS configuration, local-data
+privacy, PWA updates, readiness and backup/restore.
+
 ## Features
 
 - **Live map and line details:** Leaflet maps with stops, route geometry, vehicle markers, direction selection, and telemetry inspection.
@@ -68,7 +71,7 @@ docker compose up -d --build
 docker compose logs -f arribo
 ```
 
-The Compose service exposes port 3000 and mounts `./data:/app/data` for persistent storage. It uses Node 22 Alpine, `Europe/Madrid`, a 400 MB container memory limit, and a 160 MB V8 heap setting. See [docker-compose.yml](docker-compose.yml) and [Dockerfile](Dockerfile) for exact settings.
+The Compose service exposes port 3000 and mounts `./data:/app/data` for persistent storage. It uses a digest-pinned Node 22.19.0 Alpine image, `Europe/Madrid`, a 400 MB container memory limit, and a 160 MB V8 heap setting. See [docker-compose.yml](docker-compose.yml) and [Dockerfile](Dockerfile) for exact settings.
 
 The repository targets a long-running Node/Docker deployment; retired serverless configuration has been removed.
 
@@ -78,6 +81,8 @@ The repository targets a long-running Node/Docker deployment; retired serverless
 | --- | --- | --- |
 | `PORT` | `3000` | HTTP port |
 | `DATA_DIR` | Repository `data/` | History database directory; not a global override for every data/cache path |
+| `REPORTS_DIR` | Repository `data/reports/` | Independent generated-report directory |
+| `ORS_BASE_URL` / `ORS_API_KEY` | Unset | Optional existing foot-walking endpoint; approximate fallback without it |
 | `DB_PATH` | `transit_history.db` under `DATA_DIR` | Explicit history database path |
 | `VEHICLE_SNAPSHOT_INTERVAL_MS` | `60000` | Minimum interval between stored snapshots per vehicle |
 | `SNAPSHOT_RETENTION_HOURS` | `2` | Raw vehicle snapshot retention |
@@ -91,6 +96,8 @@ API routes use GET; the server also permits HEAD. Other methods are rejected by 
 
 | Endpoint | Purpose |
 | --- | --- |
+| `/api/ready` | Readiness and subsystem freshness; usable upstream outages are degraded |
+| `/api/fleet/events` | Fleet SSE stream |
 | `/api/health` | HTTP process health and uptime; not proof of fresh upstream data |
 | `/api/diagnostics/upstream` | Passive upstream circuit-breaker state from the worker heartbeat; no upstream calls |
 | `/api/lines` | Current Mataró L1–L8 catalog |
@@ -119,6 +126,7 @@ Mataró-specific aliases and older compatibility routes also exist; `server.js` 
 npm test             # Auto-discovers every test/ suite (except listed exclusions)
 npm run test:list    # Show which suites would run and which are skipped
 npm run test:full    # Also includes the performance benchmark suites
+node scripts/docs_check.js # Local guide links and npm script references
 ```
 
 Every `test/*.js` file runs in its own Node process with isolated temporary storage. A handful of retired-provider diagnostics and manual load tests are skipped with printed reasons (see `test/run.js`).
