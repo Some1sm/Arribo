@@ -90,7 +90,7 @@ class TransitApp {
       if ('caches' in window) {
         caches.keys().then((keys) => {
           keys.forEach((key) => {
-            if (key !== 'arribo-mataro-cache-v6') {
+            if (key !== 'arribo-mataro-cache-v9') {
               caches.delete(key);
             }
           });
@@ -1538,7 +1538,7 @@ class TransitApp {
     if (city) {
       const text = calTag ? `${lData.agency || 'Xarxa de Transport'} • 📅 ${calTag}` : (lData.agency || 'Xarxa de Transport');
       if (lData.operatorWebsite) {
-        city.innerHTML = `${this.esc(text)} • <a href="${this.safeUrl(lData.operatorWebsite)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" style="color:var(--brand-primary, #38bdf8); text-decoration:underline; font-weight:600; cursor:pointer;" title="Consultar horaris PDF oficials">📄 Web PDF oficial ↗</a>`;
+        city.innerHTML = `${this.esc(text)} • <a href="${this.safeUrl(lData.operatorWebsite)}" target="_blank" rel="noopener noreferrer" class="line-website-link" style="color:var(--brand-primary, #38bdf8); text-decoration:underline; font-weight:600; cursor:pointer;" title="Consultar horaris PDF oficials">📄 Web PDF oficial ↗</a>`;
       } else {
         city.textContent = text;
       }
@@ -2171,11 +2171,11 @@ class TransitApp {
               <table class="observatori-table">
                 <thead>
                   <tr>
-                    <th class="sticky-col" onclick="window.transitApp.handleJournalismSort('mostDelayed', 'lineCode')">Línia ${getSortIndicator('mostDelayed', 'lineCode')}</th>
-                    <th class="observatori-col-desktop" onclick="window.transitApp.handleJournalismSort('mostDelayed', 'agency')">Operador ${getSortIndicator('mostDelayed', 'agency')}</th>
-                    <th onclick="window.transitApp.handleJournalismSort('mostDelayed', 'avgDelay')">Retard Mitjà ${getSortIndicator('mostDelayed', 'avgDelay')}</th>
-                    <th class="observatori-col-desktop" onclick="window.transitApp.handleJournalismSort('mostDelayed', 'maxDelay')">Retard Màx. ${getSortIndicator('mostDelayed', 'maxDelay')}</th>
-                    <th onclick="window.transitApp.handleJournalismSort('mostDelayed', 'latePercentage')">% Expedicions Tardanes ${getSortIndicator('mostDelayed', 'latePercentage')}</th>
+                    <th class="sticky-col" data-sort-table="mostDelayed" data-sort-key="lineCode" role="button" tabindex="0">Línia ${getSortIndicator('mostDelayed', 'lineCode')}</th>
+                    <th class="observatori-col-desktop" data-sort-table="mostDelayed" data-sort-key="agency" role="button" tabindex="0">Operador ${getSortIndicator('mostDelayed', 'agency')}</th>
+                    <th data-sort-table="mostDelayed" data-sort-key="avgDelay" role="button" tabindex="0">Retard Mitjà ${getSortIndicator('mostDelayed', 'avgDelay')}</th>
+                    <th class="observatori-col-desktop" data-sort-table="mostDelayed" data-sort-key="maxDelay" role="button" tabindex="0">Retard Màx. ${getSortIndicator('mostDelayed', 'maxDelay')}</th>
+                    <th data-sort-table="mostDelayed" data-sort-key="latePercentage" role="button" tabindex="0">% Expedicions Tardanes ${getSortIndicator('mostDelayed', 'latePercentage')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2183,7 +2183,7 @@ class TransitApp {
                     const avgStr = Number(l.avgDelay) > 0 ? `+${l.avgDelay} min` : (Number(l.avgDelay) < 0 ? `${l.avgDelay} min` : '0.0 min');
                     const maxStr = Number(l.maxDelay) > 0 ? `+${l.maxDelay} min` : `${l.maxDelay || 0} min`;
                     return `
-                    <tr onclick="window.transitApp.closeJournalismModal(); window.transitApp.switchLine('${this.jsSafe(l.lineId || l.lineCode)}');" style="cursor:pointer;" title="Clica per veure la línia ${this.esc(l.lineCode)} al mapa">
+                    <tr data-open-line="${this.esc(l.lineId || l.lineCode)}" style="cursor:pointer;" title="Clica per veure la línia ${this.esc(l.lineCode)} al mapa">
                       <td class="sticky-col" style="font-weight:700; color:var(--brand-primary);">
                         <div class="observatori-line-cell">
                           <div>
@@ -2223,9 +2223,9 @@ class TransitApp {
               </h4>
               <div class="observatori-filter-group">
                 <span style="font-size:0.7rem; color:var(--text-muted); padding:0 6px; font-weight:700;">FILTRE:</span>
-                <button type="button" class="observatori-pill-btn ${worstLimit === 10 ? 'active' : ''}" onclick="window.transitApp.setWorstStopsLimit(10)">Top 10</button>
-                <button type="button" class="observatori-pill-btn ${worstLimit === 25 ? 'active' : ''}" onclick="window.transitApp.setWorstStopsLimit(25)">Top 25</button>
-                <button type="button" class="observatori-pill-btn ${worstLimit >= 9999 ? 'active' : ''}" onclick="window.transitApp.setWorstStopsLimit(9999)">Totes (${totalWorst})</button>
+                <button type="button" class="observatori-pill-btn ${worstLimit === 10 ? 'active' : ''}" data-worst-limit="10">Top 10</button>
+                <button type="button" class="observatori-pill-btn ${worstLimit === 25 ? 'active' : ''}" data-worst-limit="25">Top 25</button>
+                <button type="button" class="observatori-pill-btn ${worstLimit >= 9999 ? 'active' : ''}" data-worst-limit="9999">Totes (${totalWorst})</button>
               </div>
             </div>
             ${totalWorst === 0 ? '<div style="color:var(--text-muted); font-size:0.85rem; padding:0.8rem; background:var(--bg-elevated); border-radius:8px;">Sense punts negres registrats o cap parada coincideix amb el filtre.</div>' : `
@@ -2238,13 +2238,13 @@ class TransitApp {
                 <table class="observatori-table">
                   <thead>
                     <tr>
-                      <th class="sticky-col" onclick="window.transitApp.handleJournalismSort('worstStops', 'stopName')">Parada (Punt Negre) ${getSortIndicator('worstStops', 'stopName')}</th>
-                      <th class="observatori-col-desktop" onclick="window.transitApp.handleJournalismSort('worstStops', 'lineCode')">Línia ${getSortIndicator('worstStops', 'lineCode')}</th>
-                      <th class="observatori-col-desktop" onclick="window.transitApp.handleJournalismSort('worstStops', 'agency')">Operador ${getSortIndicator('worstStops', 'agency')}</th>
-                      <th onclick="window.transitApp.handleJournalismSort('worstStops', 'avgDelay')">Retard Mitjà ${getSortIndicator('worstStops', 'avgDelay')}</th>
-                      <th onclick="window.transitApp.handleJournalismSort('worstStops', 'severeLatePct')">% Retards Greus ${getSortIndicator('worstStops', 'severeLatePct')}</th>
-                      <th onclick="window.transitApp.handleJournalismSort('worstStops', 'criticalHourAvgDelay')">Hora Crítica (Punta) ${getSortIndicator('worstStops', 'criticalHourAvgDelay')}</th>
-                      <th class="observatori-col-desktop" onclick="window.transitApp.handleJournalismSort('worstStops', 'maxDelay')">Retard Màx. ${getSortIndicator('worstStops', 'maxDelay')}</th>
+                      <th class="sticky-col" data-sort-table="worstStops" data-sort-key="stopName" role="button" tabindex="0">Parada (Punt Negre) ${getSortIndicator('worstStops', 'stopName')}</th>
+                      <th class="observatori-col-desktop" data-sort-table="worstStops" data-sort-key="lineCode" role="button" tabindex="0">Línia ${getSortIndicator('worstStops', 'lineCode')}</th>
+                      <th class="observatori-col-desktop" data-sort-table="worstStops" data-sort-key="agency" role="button" tabindex="0">Operador ${getSortIndicator('worstStops', 'agency')}</th>
+                      <th data-sort-table="worstStops" data-sort-key="avgDelay" role="button" tabindex="0">Retard Mitjà ${getSortIndicator('worstStops', 'avgDelay')}</th>
+                      <th data-sort-table="worstStops" data-sort-key="severeLatePct" role="button" tabindex="0">% Retards Greus ${getSortIndicator('worstStops', 'severeLatePct')}</th>
+                      <th data-sort-table="worstStops" data-sort-key="criticalHourAvgDelay" role="button" tabindex="0">Hora Crítica (Punta) ${getSortIndicator('worstStops', 'criticalHourAvgDelay')}</th>
+                      <th class="observatori-col-desktop" data-sort-table="worstStops" data-sort-key="maxDelay" role="button" tabindex="0">Retard Màx. ${getSortIndicator('worstStops', 'maxDelay')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2283,15 +2283,16 @@ class TransitApp {
               </div>
               ${hasMoreWorst ? `
                 <div style="display:flex; justify-content:center; align-items:center; gap:0.6rem; padding:0.75rem; background:var(--bg-elevated); border-top:1px solid var(--border-subtle); border-radius:0 0 10px 10px;">
-                  <button type="button" class="btn-primary observatori-action-btn" onclick="window.transitApp.setWorstStopsLimit(${worstLimit + 15})">
+                  <button type="button" class="btn-primary observatori-action-btn" data-worst-limit="${worstLimit + 15}">
                     ⬇️ Mostra'n 15 més (${displayedWorstStops.length} de ${totalWorst})
                   </button>
-                  <button type="button" class="btn-secondary observatori-action-btn" onclick="window.transitApp.setWorstStopsLimit(9999)">
+                  <button type="button" class="btn-secondary observatori-action-btn" data-worst-limit="9999">
                     Totes (${totalWorst})
                   </button>
                 </div>
               ` : ''}
             `}
+            ${this.renderStopHeatmap(displayedWorstStops)}
           </div>
           `;
         })()}
@@ -2314,11 +2315,11 @@ class TransitApp {
               <table class="observatori-table">
               <thead>
                 <tr>
-                  <th class="sticky-col" onclick="window.transitApp.handleJournalismSort('agencies', 'agency')">Empresa ${getSortIndicator('agencies', 'agency')}</th>
-                  <th class="observatori-col-desktop" onclick="window.transitApp.handleJournalismSort('agencies', 'linesCount')">Línies ${getSortIndicator('agencies', 'linesCount')}</th>
-                  <th class="observatori-col-desktop" onclick="window.transitApp.handleJournalismSort('agencies', 'totalSamples')">Mostres ${getSortIndicator('agencies', 'totalSamples')}</th>
-                  <th onclick="window.transitApp.handleJournalismSort('agencies', 'avgDelay')">Retard Mitjà ${getSortIndicator('agencies', 'avgDelay')}</th>
-                  <th onclick="window.transitApp.handleJournalismSort('agencies', 'onTimePct')">Índex de Puntualitat ${getSortIndicator('agencies', 'onTimePct')}</th>
+                  <th class="sticky-col" data-sort-table="agencies" data-sort-key="agency" role="button" tabindex="0">Empresa ${getSortIndicator('agencies', 'agency')}</th>
+                  <th class="observatori-col-desktop" data-sort-table="agencies" data-sort-key="linesCount" role="button" tabindex="0">Línies ${getSortIndicator('agencies', 'linesCount')}</th>
+                  <th class="observatori-col-desktop" data-sort-table="agencies" data-sort-key="totalSamples" role="button" tabindex="0">Mostres ${getSortIndicator('agencies', 'totalSamples')}</th>
+                  <th data-sort-table="agencies" data-sort-key="avgDelay" role="button" tabindex="0">Retard Mitjà ${getSortIndicator('agencies', 'avgDelay')}</th>
+                  <th data-sort-table="agencies" data-sort-key="onTimePct" role="button" tabindex="0">Índex de Puntualitat ${getSortIndicator('agencies', 'onTimePct')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -2388,6 +2389,23 @@ class TransitApp {
 
     container.innerHTML = html;
     this.initObservatoriTableScrolls();
+  }
+
+  renderStopHeatmap(stops) {
+    if (!stops.length) return '';
+    if (!stops.every(stop => Array.isArray(stop.hourly))) return '<p>Detall horari pendent de la propera actualització.</p>';
+    const cell = bucket => {
+      const label = bucket.sampleCount ? `${bucket.avgDelay} min; ${bucket.sampleCount} mostres; màxim ${bucket.maxDelay} min; ${bucket.severeLatePct}% amb retard ≥5 min` : 'Sense dades';
+      const level = !bucket.sampleCount ? 'empty' : bucket.avgDelay >= 5 ? 'late' : bucket.avgDelay >= 3 ? 'moderate' : 'regular';
+      return `<td class="stop-heat-cell heat-${level}" title="${this.esc(label)}"><span aria-label="${this.esc(label)}">${bucket.sampleCount ? bucket.avgDelay : '—'}</span>${bucket.sampleCount > 0 && bucket.sampleCount < 5 ? '<small> *</small>' : ''}</td>`;
+    };
+    return `<section class="stop-hourly-section"><h4>Retard per parada i hora</h4>
+      <p>Observacions registrades, no viatges únics ni causes de congestió. Hora local: Europe/Madrid. Valors en minuts. * Menys de 5 mostres.</p>
+      <p class="stop-heat-legend"><span class="heat-regular">Menys de 3 min</span> <span class="heat-moderate">3–5 min</span> <span class="heat-late">5 min o més</span> <span>— Sense dades</span></p>
+      <div class="observatori-table-wrapper"><table class="observatori-table stop-heatmap"><caption>Retard mitjà per hora</caption><thead><tr><th scope="col">Parada / línia</th>${Array.from({ length: 24 }, (_, h) => `<th scope="col">${String(h).padStart(2, '0')}</th>`).join('')}</tr></thead>
+      <tbody>${stops.map(stop => `<tr><th scope="row">${this.esc(stop.stopName)} / ${this.esc(stop.lineCode)}</th>${stop.hourly.map(cell).join('')}</tr>`).join('')}</tbody></table></div>
+      ${stops.map(stop => `<details class="stop-hourly-detail"><summary>${this.esc(stop.stopName)} · ${this.esc(stop.lineCode)} — Detall horari (${stop.arrivalCount} mostres)</summary><div class="observatori-table-wrapper"><table class="observatori-table"><thead><tr><th>Hora</th><th>Mostres</th><th>Mitjana (min)</th><th>Màxim (min)</th><th>Retard ≥5 min</th></tr></thead><tbody>${stop.hourly.map(b => `<tr><th scope="row">${b.hour}:00</th><td>${b.sampleCount}${b.sampleCount > 0 && b.sampleCount < 5 ? ' *' : ''}</td><td>${b.avgDelay ?? '—'}</td><td>${b.maxDelay ?? '—'}</td><td>${b.severeLatePct === null ? '—' : `${b.severeLatePct}%`}</td></tr>`).join('')}</tbody></table></div></details>`).join('')}
+    </section>`;
   }
 
   initObservatoriTableScrolls() {
@@ -4873,6 +4891,38 @@ class TransitApp {
 
   setupEventListeners() {
     this.setupPageVisibility();
+
+    // Delegated handler replacing inline onclick attributes (CSP compliance)
+    document.addEventListener('click', (e) => {
+      const websiteLink = e.target.closest('.line-website-link');
+      if (websiteLink) {
+        e.stopPropagation();
+        return;
+      }
+      const sortHeader = e.target.closest('[data-sort-table]');
+      if (sortHeader) {
+        this.handleJournalismSort(sortHeader.dataset.sortTable, sortHeader.dataset.sortKey);
+        return;
+      }
+      const limitButton = e.target.closest('[data-worst-limit]');
+      if (limitButton) {
+        this.setWorstStopsLimit(Number(limitButton.dataset.worstLimit));
+        return;
+      }
+      const lineRow = e.target.closest('[data-open-line]');
+      if (lineRow) {
+        this.closeJournalismModal();
+        this.switchLine(lineRow.dataset.openLine);
+      }
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const sortHeader = e.target.closest?.('[data-sort-table]');
+      if (sortHeader) {
+        e.preventDefault();
+        this.handleJournalismSort(sortHeader.dataset.sortTable, sortHeader.dataset.sortKey);
+      }
+    });
 
     // Timeline Horizontal Interaction (Mouse Wheel, Drag-to-Scroll, Arrow Navigation)
     const timelineContainer = document.getElementById('corridor-timeline-container');

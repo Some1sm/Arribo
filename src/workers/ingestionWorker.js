@@ -146,7 +146,8 @@ function handleMasterMessage(message) {
         pid: process.pid,
         memory: process.memoryUsage(),
         uptime: process.uptime(),
-        activeVehicles: flightRecorder.getAllVehicles().length
+        activeVehicles: flightRecorder.getAllVehicles().length,
+        upstream: mataroSiriClient.getUpstreamStatus()
       });
       break;
 

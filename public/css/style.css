@@ -4,6 +4,21 @@
 
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
+.stop-hourly-section { padding: 1rem; }
+.stop-hourly-section p { color: var(--text-secondary); font-size: .85rem; margin: .7rem 0; }
+.stop-heatmap th:first-child { position: sticky; left: 0; background: var(--bg-surface); min-width: 160px; z-index: 1; }
+.stop-heatmap .stop-heat-cell { text-align: center; min-width: 44px; }
+.heat-regular { background: rgba(16,185,129,.16); }
+.heat-moderate { background: rgba(245,158,11,.23); }
+.heat-late { background: rgba(239,68,68,.27); }
+.heat-empty { color: var(--text-muted); }
+.stop-heat-legend { display: flex; flex-wrap: wrap; gap: .6rem; }
+.stop-heat-legend span { padding: .3rem .5rem; border-radius: 4px; }
+.stop-hourly-detail { margin-top: .7rem; border: 1px solid var(--border-subtle); border-radius: 6px; }
+.stop-hourly-detail summary { cursor: pointer; padding: .7rem; }
+.stop-hourly-detail summary:focus-visible { outline: 2px solid var(--brand-primary); }
+
+
 /* ===================================================================
    1. THEME TOKENS (LIGHT & DARK MODES)
    =================================================================== */

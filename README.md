@@ -92,6 +92,7 @@ API routes use GET; the server also permits HEAD. Other methods are rejected by 
 | Endpoint | Purpose |
 | --- | --- |
 | `/api/health` | HTTP process health and uptime; not proof of fresh upstream data |
+| `/api/diagnostics/upstream` | Passive upstream circuit-breaker state from the worker heartbeat; no upstream calls |
 | `/api/lines` | Current Mataró L1–L8 catalog |
 | `/api/search/stops?q=Hospital` | Search Mataró stops, lines, and street names |
 | `/api/line/:lineId?direction=0` | Stops, geometry, and active buses |

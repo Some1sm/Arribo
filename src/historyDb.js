@@ -49,6 +49,8 @@ class HistoryDatabase {
     if (DatabaseSync) {
       try {
         this.db = new DatabaseSync(this.dbPath);
+        const madridHour = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', hour: '2-digit', hourCycle: 'h23' });
+        this.db.function('madrid_hour', { deterministic: true }, timestamp => madridHour.format(new Date(timestamp)));
         this.db.exec(`
           PRAGMA auto_vacuum = INCREMENTAL;
           PRAGMA journal_mode = WAL;
@@ -464,8 +466,10 @@ class HistoryDatabase {
       // 5. Ranking of Worst Stops (Bottlenecks)
       const worstStopsStmt = this.db.prepare(`
         SELECT 
-          stop_name as stopName,
-          line_code as lineCode,
+          stop_id as stopId,
+          line_id as recordedLineId,
+          MAX(stop_name) as stopName,
+          MAX(line_code) as lineCode,
           agency,
           COUNT(*) as arrivalCount,
           AVG(delay_mins) as avgDelay,
@@ -473,23 +477,13 @@ class HistoryDatabase {
           ROUND((SUM(CASE WHEN delay_mins >= 5 THEN 1.0 ELSE 0.0 END) / COUNT(*)) * 100, 1) as severeLatePct
         FROM delay_logs
         WHERE timestamp >= ? AND delay_mins <= 25 AND delay_mins >= -15
-        GROUP BY stop_name, line_code, agency
+        GROUP BY agency, line_id, stop_id
         HAVING arrivalCount >= 1 AND (avgDelay >= 1.5 OR severeLatePct >= 20.0)
         ORDER BY avgDelay DESC, maxDelay DESC
         LIMIT 100
       `);
 
-      // Timezone offset for Europe/Madrid (strictly prevents UTC container discrepancy)
-      const madridOffsetMs = (function() {
-        try {
-          const d = new Date();
-          const utcDate = new Date(d.toLocaleString('en-US', { timeZone: 'UTC' }));
-          const tzDate = new Date(d.toLocaleString('en-US', { timeZone: 'Europe/Madrid' }));
-          return tzDate.getTime() - utcDate.getTime();
-        } catch (_) {
-          return 2 * 3600 * 1000;
-        }
-      })();
+      const stopKey = row => JSON.stringify([row.agency, row.recordedLineId, row.stopId]);
 
       const getHourlyTrafficContext = (hourNum) => {
         if (hourNum === 8) {
@@ -525,9 +519,11 @@ class HistoryDatabase {
       // Query Hourly Breakdown for Worst Stops (Bottlenecks)
       const stopHourlyStmt = this.db.prepare(`
         SELECT 
-          strftime('%H', (timestamp + ?) / 1000, 'unixepoch') as hourOfDay,
-          stop_name as stopName,
-          line_code as lineCode,
+          madrid_hour(timestamp) as hourOfDay,
+          stop_id as stopId,
+          line_id as recordedLineId,
+          MAX(stop_name) as stopName,
+          MAX(line_code) as lineCode,
           agency,
           COUNT(*) as arrivalCount,
           ROUND(AVG(delay_mins), 1) as avgDelay,
@@ -535,17 +531,16 @@ class HistoryDatabase {
           ROUND((SUM(CASE WHEN delay_mins >= 5 THEN 1.0 ELSE 0.0 END) / COUNT(*)) * 100, 1) as severeLatePct
         FROM delay_logs
         WHERE timestamp >= ? AND delay_mins <= 25 AND delay_mins >= -15
-        GROUP BY hourOfDay, stop_name, line_code
-        HAVING arrivalCount >= 1 AND avgDelay >= 1.0
+        GROUP BY hourOfDay, agency, line_id, stop_id
         ORDER BY hourOfDay ASC, avgDelay DESC, arrivalCount DESC
       `);
 
-      const stopHourlyRows = stopHourlyStmt.all(madridOffsetMs, cutoff);
+      const stopHourlyRows = stopHourlyStmt.all(cutoff);
       const stopHoursMap = new Map();
       const hourlyStopsMap = new Map();
 
       stopHourlyRows.forEach(r => {
-        const sKey = normKey(r.stopName);
+        const sKey = stopKey(r);
         if (!stopHoursMap.has(sKey)) stopHoursMap.set(sKey, []);
         stopHoursMap.get(sKey).push(r);
 
@@ -571,7 +566,7 @@ class HistoryDatabase {
           const catalogLine = validCatalogMap.get(cleanKey) || validCatalogMap.get(rawKey);
           
           // Attach critical peak hour for this bottleneck stop
-          const sKey = normKey(r.stopName);
+          const sKey = stopKey(r);
           const hoursForStop = stopHoursMap.get(sKey) || [];
           hoursForStop.sort((a, b) => (b.avgDelay - a.avgDelay) || (b.arrivalCount - a.arrivalCount));
           const critical = hoursForStop[0] || null;
@@ -597,7 +592,18 @@ class HistoryDatabase {
 
           return {
             ...r,
-            lineId: catalogLine ? catalogLine.id : r.lineCode,
+            hourly: Array.from({ length: 24 }, (_, hour) => {
+              const hourKey = String(hour).padStart(2, '0');
+              const bucket = hoursForStop.find(row => row.hourOfDay === hourKey);
+              return {
+                hour: hourKey,
+                sampleCount: bucket?.arrivalCount || 0,
+                avgDelay: bucket?.avgDelay ?? null,
+                maxDelay: bucket?.maxDelay ?? null,
+                severeLatePct: bucket?.severeLatePct ?? null
+              };
+            }),
+            lineId: catalogLine ? catalogLine.id : r.recordedLineId,
             lineCode: catalogLine ? catalogLine.code : r.lineCode,
             agency: catalogLine ? (catalogLine.agency || r.agency) : r.agency,
             criticalHour,
@@ -616,7 +622,7 @@ class HistoryDatabase {
       // 6. Hourly Congestion Spike Analysis (24-Hour Distribution & School Rush)
       const hourlyStmt = this.db.prepare(`
         SELECT 
-          strftime('%H', (timestamp + ?) / 1000, 'unixepoch') as hourOfDay,
+          madrid_hour(timestamp) as hourOfDay,
           COUNT(*) as sampleCount,
           ROUND(AVG(delay_mins), 1) as avgDelay,
           MAX(delay_mins) as maxDelay,
@@ -629,7 +635,7 @@ class HistoryDatabase {
         ORDER BY hourOfDay ASC
       `);
 
-      const dbHourly = hourlyStmt.all(madridOffsetMs, cutoff);
+      const dbHourly = hourlyStmt.all(cutoff);
       const hourlyMap = new Map();
       dbHourly.forEach(row => hourlyMap.set(String(row.hourOfDay).padStart(2, '0'), row));
 

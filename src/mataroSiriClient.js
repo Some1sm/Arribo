@@ -16,6 +16,9 @@ class MataroSiriClient {
     this.consecutiveFailures = 0;
     this.circuitOpenUntil = 0;
     this.circuitCooldownMs = 30000; // 30-second cooldown on upstream network calls when server hangs
+    this.lastVehicleSuccessAt = null;
+    this.lastArrivalsSuccessAt = null;
+    this.lastFailureAt = null;
     // Pluggable transport: server.js installs an WorkerBridge-backed backend
     // in the main process so SIRI SOAP traffic stays worker-owned.
     this._httpBackend = null;
@@ -36,13 +39,30 @@ class MataroSiriClient {
     return Date.now() < this.circuitOpenUntil;
   }
 
-  recordSuccess() {
+  recordSuccess(kind = 'vehicles') {
     this.consecutiveFailures = 0;
     this.circuitOpenUntil = 0;
+    if (kind === 'arrivals') this.lastArrivalsSuccessAt = Date.now();
+    else this.lastVehicleSuccessAt = Date.now();
+  }
+
+  getUpstreamStatus() {
+    const now = Date.now();
+    return {
+      timestamp: now,
+      circuitOpen: this.isCircuitOpen(),
+      circuitOpenUntil: this.isCircuitOpen() ? this.circuitOpenUntil : null,
+      consecutiveFailures: this.consecutiveFailures,
+      cooldownMs: this.circuitCooldownMs,
+      lastVehicleSuccessAt: this.lastVehicleSuccessAt,
+      lastArrivalsSuccessAt: this.lastArrivalsSuccessAt,
+      lastFailureAt: this.lastFailureAt
+    };
   }
 
   recordFailure(errMsg = '') {
     this.consecutiveFailures++;
+    this.lastFailureAt = Date.now();
     const now = Date.now();
     if (this.consecutiveFailures >= 2) {
       this.circuitOpenUntil = now + this.circuitCooldownMs;
@@ -522,7 +542,7 @@ class MataroSiriClient {
       }
 
       arrivals.sort((a, b) => a.minutesAway - b.minutesAway);
-      this.recordSuccess();
+      this.recordSuccess('arrivals');
       this.cache.set(cacheKey, { ts: Date.now(), data: arrivals });
       return arrivals;
     } catch (err) {

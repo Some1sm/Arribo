@@ -229,6 +229,10 @@ class PlannerPageApp {
     const resultsContainer = document.getElementById('page-planner-results');
     if (resultsContainer) {
       resultsContainer.addEventListener('click', (e) => {
+        if (e.target.closest('.plan-retry-btn')) {
+          this.runSearch();
+          return;
+        }
         const btnGuide = e.target.closest('.btn-start-guided-nav');
         if (btnGuide) {
           e.stopPropagation();
@@ -718,7 +722,7 @@ class PlannerPageApp {
           <div style="font-size:2.2rem; margin-bottom:0.5rem;">⚠️</div>
           <div style="font-weight:700; color:#ef4444; font-size:1.05rem; margin-bottom:0.4rem;">${this.esc(errorTitle)}</div>
           <div style="font-size:0.85rem; color:var(--text-secondary); max-width:340px; margin:0 auto 1.25rem auto; line-height:1.4;">${this.esc(errorDesc)}</div>
-          <button type="button" class="btn-primary" onclick="window.planApp ? window.planApp.runSearch() : null" style="display:inline-flex; align-items:center; gap:6px; font-size:0.85rem; padding:0.45rem 1.1rem; cursor:pointer;">
+          <button type="button" class="btn-primary plan-retry-btn" style="display:inline-flex; align-items:center; gap:6px; font-size:0.85rem; padding:0.45rem 1.1rem; cursor:pointer;">
             <span>🔄 Reintentar connexió</span>
           </button>
         </div>

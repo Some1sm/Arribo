@@ -48,7 +48,13 @@ if (typeof global.gc === 'function') {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+const { securityHeaders, createApiLimiter, trustedProxies } = require('./src/core/httpProtection');
+app.disable('x-powered-by');
+const proxyAddresses = trustedProxies(process.env.TRUSTED_PROXIES);
+if (proxyAddresses.length) app.set('trust proxy', proxyAddresses);
+app.use(securityHeaders);
 app.use(cors());
+app.use('/api', createApiLimiter());
 // SSE endpoint is registered before compression middleware: compression
 // buffers responses until a flush threshold, which would delay event frames.
 // The route itself is defined further below alongside the broadcaster.
@@ -938,6 +944,37 @@ app.get(['/api/analytics/termometre', '/api/retards/termometre'], async (req, re
   } catch (err) {
     sendInternalError(req, res, err);
   }
+});
+
+// Passive upstream diagnostics, served entirely from cached worker status
+app.get('/api/diagnostics/upstream', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const now = Date.now();
+  const status = workerBridge.getStatus();
+  const circuit = status.metrics?.upstream || null;
+  const snapshotAt = circuit?.timestamp || null;
+  const snapshotAgeMs = Number.isFinite(snapshotAt) ? Math.max(0, now - snapshotAt) : null;
+  res.json({
+    success: true,
+    timestamp: now,
+    worker: {
+      running: status.isRunning,
+      healthy: status.isHealthy,
+      lastHeartbeatAgeMs: Number.isFinite(status.lastHeartbeat) ? Math.max(0, now - status.lastHeartbeat) : null
+    },
+    upstream: circuit ? {
+      circuitOpen: !!circuit.circuitOpen,
+      circuitOpenUntil: circuit.circuitOpenUntil || null,
+      consecutiveFailures: circuit.consecutiveFailures ?? null,
+      cooldownMs: circuit.cooldownMs ?? null,
+      lastSuccess: {
+        vehicles: circuit.lastVehicleSuccessAt || null,
+        arrivals: circuit.lastArrivalsSuccessAt || null
+      },
+      lastFailureAt: circuit.lastFailureAt || null,
+      snapshotAgeMs
+    } : { available: false, snapshotAgeMs }
+  });
 });
 
 // Diagnostic upstream test
