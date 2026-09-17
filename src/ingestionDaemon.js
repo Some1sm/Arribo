@@ -23,19 +23,20 @@ class IngestionDaemon {
   }
 
   emitIpc(type, payload) {
+    if (this.ipcCallback) {
+      try {
+        this.ipcCallback(type, payload);
+        return;
+      } catch (e) {
+        // Callback error
+      }
+    }
     try {
       if (typeof process.send === 'function') {
         process.send({ type, payload });
       }
     } catch (e) {
       // IPC channel disconnected
-    }
-    if (this.ipcCallback) {
-      try {
-        this.ipcCallback(type, payload);
-      } catch (e) {
-        // Callback error
-      }
     }
   }
 

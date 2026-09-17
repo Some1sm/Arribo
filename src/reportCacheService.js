@@ -3,7 +3,7 @@ const path = require('path');
 
 class ReportCacheService {
   constructor() {
-    this.reportsDir = path.join(__dirname, '..', 'data', 'reports');
+    this.reportsDir = process.env.REPORTS_DIR || path.join(__dirname, '..', 'data', 'reports');
     this.maxRetentionPerTimeframe = 2; // Keep at most 2 report files per timeframe (24h, 48h, 7d)
     this.supportedHours = [24, 48, 168];
     this.cachedReports = new Map();
@@ -27,19 +27,20 @@ class ReportCacheService {
   }
 
   emitIpc(type, payload) {
+    if (this.ipcCallback) {
+      try {
+        this.ipcCallback(type, payload);
+        return;
+      } catch (e) {
+        // Callback error
+      }
+    }
     try {
       if (typeof process.send === 'function') {
         process.send({ type, payload });
       }
     } catch (e) {
       // IPC channel disconnected
-    }
-    if (this.ipcCallback) {
-      try {
-        this.ipcCallback(type, payload);
-      } catch (e) {
-        // Callback error
-      }
     }
   }
 

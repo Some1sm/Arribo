@@ -50,6 +50,7 @@ class HistoryDatabase {
       try {
         this.db = new DatabaseSync(this.dbPath);
         this.db.exec(`
+          PRAGMA auto_vacuum = INCREMENTAL;
           PRAGMA journal_mode = WAL;
           PRAGMA busy_timeout = 5000;
           PRAGMA synchronous = NORMAL;
@@ -58,7 +59,6 @@ class HistoryDatabase {
           PRAGMA wal_autocheckpoint = 200;
           PRAGMA journal_size_limit = 67108864;
           PRAGMA temp_store = MEMORY;
-          PRAGMA auto_vacuum = INCREMENTAL;
 
           CREATE TABLE IF NOT EXISTS vehicle_snapshots (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -100,7 +100,13 @@ class HistoryDatabase {
           -- removed as redundant.
           CREATE INDEX IF NOT EXISTS idx_delay_stop ON delay_logs(stop_id, timestamp);
           CREATE INDEX IF NOT EXISTS idx_delay_time_line ON delay_logs(timestamp, line_code);
-          CREATE INDEX IF NOT EXISTS idx_delay_stop_timestamp ON delay_logs(stop_id, timestamp);
+
+          -- Incremental rollup progress. last_id = highest delay_logs.id folded
+          -- into hourly_line_stats so successive runs only touch new rows.
+          CREATE TABLE IF NOT EXISTS hourly_rollup_progress (
+            singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+            last_id INTEGER NOT NULL
+          );
 
           -- Option B: Hourly Aggregated Rollup Table (Kept indefinitely with <1 MB/day footprint)
           CREATE TABLE IF NOT EXISTS hourly_line_stats (
@@ -117,7 +123,6 @@ class HistoryDatabase {
             UNIQUE(line_code, date_hour)
           );
 
-          CREATE INDEX IF NOT EXISTS idx_hourly_stats ON hourly_line_stats(line_code, date_hour);
 
           -- Realtime bus observations (delay memory): AMB-tracked arrivals
           -- persisted so downstream stops without realtime coverage can still
@@ -139,13 +144,16 @@ class HistoryDatabase {
           );
           CREATE INDEX IF NOT EXISTS idx_ambobs_line ON amb_bus_observations(line_id, direction, scheduled_ms);
         `);
-        // Idempotent migration: drop legacy duplicate indexes present in
-        // pre-existing database files (superseded by idx_delay_time_line /
-        // idx_delay_stop / idx_delay_stop_timestamp).
+        if (!this.db.prepare('PRAGMA table_info(hourly_line_stats)').all().some(column => column.name === 'delay_sum')) {
+          this.db.exec('ALTER TABLE hourly_line_stats ADD COLUMN delay_sum REAL;');
+        }
+        // Preserve legacy rollups whose raw observations have already been pruned.
         this.db.exec(`
           DROP INDEX IF EXISTS idx_delay_line;
           DROP INDEX IF EXISTS idx_delay_timestamp;
           DROP INDEX IF EXISTS idx_delay_line_timestamp;
+          DROP INDEX IF EXISTS idx_delay_stop_timestamp;
+          DROP INDEX IF EXISTS idx_hourly_stats;
         `);
         console.log('[HistoryDB] SQLite Database Initialized successfully at', this.dbPath);
       } catch (err) {
@@ -771,37 +779,56 @@ class HistoryDatabase {
     }
   }
 
-  // Option B: Aggregate raw delay logs into persistent hourly rollups
-  aggregateHourlyStats(hoursBack = 48) {
-    if (!this._ensureOpen()) return;
+  aggregateHourlyStats() {
+    if (!this._ensureOpen()) throw new Error('Hourly rollup database unavailable');
+    this.db.exec('BEGIN IMMEDIATE');
     try {
-      const cutoff = Date.now() - hoursBack * 3600 * 1000;
-      const stmt = this.db.prepare(`
-        INSERT INTO hourly_line_stats (line_code, agency, date_hour, sample_count, avg_delay_mins, max_delay_mins, on_time_count, late_count, timestamp)
-        SELECT 
-          line_code,
-          agency,
-          strftime('%Y-%m-%d %H:00', datetime(timestamp / 1000, 'unixepoch', 'localtime')) as date_hour,
-          COUNT(*) as sample_count,
-          ROUND(AVG(delay_mins), 2) as avg_delay_mins,
-          MAX(delay_mins) as max_delay_mins,
-          SUM(CASE WHEN delay_mins <= 3 THEN 1 ELSE 0 END) as on_time_count,
-          SUM(CASE WHEN delay_mins > 3 THEN 1 ELSE 0 END) as late_count,
-          MIN(timestamp) as timestamp
-        FROM delay_logs
-        WHERE timestamp >= ?
-        GROUP BY line_code, agency, date_hour
+      const progress = this.db.prepare('SELECT last_id FROM hourly_rollup_progress WHERE singleton = 1').get();
+      const lastId = progress?.last_id || 0;
+      const maxId = Math.max(lastId, this.db.prepare('SELECT COALESCE(MAX(id), 0) AS id FROM delay_logs').get().id);
+      const batches = this.db.prepare(`
+        SELECT line_code, MIN(agency) AS agency,
+          strftime('%Y-%m-%d %H:00', timestamp / 1000, 'unixepoch', 'localtime') AS date_hour,
+          COUNT(*) AS samples, SUM(delay_mins) AS delay_sum, MAX(delay_mins) AS max_delay,
+          SUM(CASE WHEN delay_mins <= 3 THEN 1 ELSE 0 END) AS on_time,
+          SUM(CASE WHEN delay_mins > 3 THEN 1 ELSE 0 END) AS late,
+          MIN(timestamp) AS timestamp
+        FROM delay_logs WHERE id > ? AND id <= ?
+        GROUP BY line_code, date_hour
+      `).all(lastId, maxId);
+      const existing = this.db.prepare('SELECT * FROM hourly_line_stats WHERE line_code = ? AND date_hour = ?');
+      const save = this.db.prepare(`
+        INSERT INTO hourly_line_stats
+          (line_code, agency, date_hour, sample_count, delay_sum, avg_delay_mins, max_delay_mins, on_time_count, late_count, timestamp)
+        VALUES (?, ?, ?, ?, ?, ROUND(? * 1.0 / ?, 2), ?, ?, ?, ?)
         ON CONFLICT(line_code, date_hour) DO UPDATE SET
-          sample_count = excluded.sample_count,
-          avg_delay_mins = excluded.avg_delay_mins,
-          max_delay_mins = excluded.max_delay_mins,
-          on_time_count = excluded.on_time_count,
-          late_count = excluded.late_count,
-          timestamp = excluded.timestamp
+          agency = excluded.agency, sample_count = excluded.sample_count,
+          delay_sum = excluded.delay_sum, avg_delay_mins = excluded.avg_delay_mins,
+          max_delay_mins = excluded.max_delay_mins, on_time_count = excluded.on_time_count,
+          late_count = excluded.late_count, timestamp = excluded.timestamp
       `);
-      stmt.run(cutoff);
-    } catch (e) {
-      console.error('[HistoryDB] aggregateHourlyStats error:', e.message);
+      for (const batch of batches) {
+        const previous = existing.get(batch.line_code, batch.date_hour);
+        // On first migration, partial retained raw buckets must not replace fuller legacy rollups.
+        if (!progress && previous && previous.sample_count > batch.samples) continue;
+        const base = progress ? previous : null;
+        const samples = (base?.sample_count || 0) + batch.samples;
+        // Pruned legacy rows only retain a rounded average; preserve that precision rather than discard them.
+        const sum = (base ? (base.delay_sum ?? base.avg_delay_mins * base.sample_count) : 0) + batch.delay_sum;
+        save.run(batch.line_code, base?.agency ?? batch.agency, batch.date_hour, samples,
+          sum, sum, samples, base ? Math.max(base.max_delay_mins, batch.max_delay) : batch.max_delay,
+          (base?.on_time_count || 0) + batch.on_time, (base?.late_count || 0) + batch.late,
+          base ? Math.min(base.timestamp, batch.timestamp) : batch.timestamp);
+      }
+      this.db.prepare(`
+        INSERT INTO hourly_rollup_progress (singleton, last_id) VALUES (1, ?)
+        ON CONFLICT(singleton) DO UPDATE SET last_id = excluded.last_id
+      `).run(maxId);
+      this.db.exec('COMMIT');
+      return { bucketsUpdated: batches.length, lastId: maxId };
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
     }
   }
 
@@ -809,8 +836,9 @@ class HistoryDatabase {
   pruneOldRecords(daysRetention = this.delayRetentionDays) {
     if (!this._ensureOpen()) return;
     try {
-      // 1. Ensure all historical data is aggregated into hourly rollups first
-      this.aggregateHourlyStats(daysRetention * 24);
+      // 1. Fold new raw delay rows into hourly rollups (incremental). Aggregation
+      // must succeed before any pruning or the watermark could skip unfolded rows.
+      this.aggregateHourlyStats();
 
       // 2. Delete raw vehicle snapshots outside the recent trail window.
       const snapshotCutoff = Date.now() - this.snapshotRetentionHours * 3600 * 1000;

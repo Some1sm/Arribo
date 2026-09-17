@@ -29,6 +29,9 @@ class MataroTracker extends BaseTracker {
     this.avisosCache = null;
     this.avisosCacheTime = 0;
     this.avisosCacheTtlMs = 5 * 60 * 1000; // 5-minute cache for official Avanza notices
+    this._lineDetailsCache = new Map();
+    this._lineDetailsInflight = new Map();
+    this._lineCacheGen = 0;
     this.loadDatasets();
     this.precompileStaticRoutes();
     transitRouter.setTracker(this);
@@ -727,6 +730,7 @@ class MataroTracker extends BaseTracker {
         lastSeen: v.lastSeen || now
       });
     }
+    this.invalidateLineDetailsCache();
   }
 
   // 1. Get all Mataro urban lines (L1..L8)
@@ -843,8 +847,50 @@ class MataroTracker extends BaseTracker {
     return 0;
   }
 
-  // 2. Get full details for a line & direction (stops, route polyline, and live/estimated buses)
   async getLineDetails(lineId, direction = '0', options = {}) {
+    if (typeof direction === 'object' && direction !== null) {
+      options = direction;
+      direction = '0';
+    }
+    const lId = this.normalizeLineId(lineId) || '1';
+    if (!/^[1-8]$/.test(lId) || !options || Object.getPrototypeOf(options) !== Object.prototype || Object.keys(options).length) {
+      return this._computeLineDetails(lineId, direction, options);
+    }
+    const dirKey = direction === 'both' ? 'both' : String(parseInt(direction, 10) || 0);
+    const now = Date.now();
+    const bucket = Math.floor(now / 1000);
+    const generation = this._lineCacheGen;
+    const source = siriClient.cache.get(`veh_${lId}`);
+    const sourceFresh = source && now - source.ts < siriClient.cacheTtlMs;
+    const key = `${lId}_${dirKey}`;
+    const cached = this._lineDetailsCache.get(key);
+    if (sourceFresh && cached && cached.bucket === bucket && cached.source === source && cached.generation === generation) {
+      return structuredClone(cached.result);
+    }
+    const inflightKey = `${key}_${bucket}_${generation}`;
+    let pending = this._lineDetailsInflight.get(inflightKey);
+    if (!pending || pending.source !== source) {
+      const promise = Promise.resolve().then(() => this._computeLineDetails(lId, dirKey)).then(result => {
+        if (generation === this._lineCacheGen && bucket === Math.floor(Date.now() / 1000) && source === siriClient.cache.get(`veh_${lId}`)) {
+          this._lineDetailsCache.set(key, { result, source: siriClient.cache.get(`veh_${lId}`), bucket, generation });
+          if (this._lineDetailsCache.size > 24) this._lineDetailsCache.delete(this._lineDetailsCache.keys().next().value);
+        }
+        return result;
+      }).finally(() => {
+        if (this._lineDetailsInflight.get(inflightKey)?.promise === promise) this._lineDetailsInflight.delete(inflightKey);
+      });
+      pending = { promise, source };
+      this._lineDetailsInflight.set(inflightKey, pending);
+    }
+    return structuredClone(await pending.promise);
+  }
+
+  invalidateLineDetailsCache() {
+    this._lineCacheGen++;
+    this._lineDetailsCache.clear();
+  }
+
+  async _computeLineDetails(lineId, direction = '0', options = {}) {
     if (typeof direction === 'object' && direction !== null) {
       options = direction;
       direction = '0';

@@ -9,6 +9,7 @@ class MataroSiriClient {
     this.accountId = 'Mataro';
     this.accountKey = 'Mataro*WS';
     this.cache = new Map();
+    this._inflight = new Map(); // key -> upstream fetch/parse promise (coalesces concurrent identical requests)
     this.cacheTtlMs = 20000; // 20-second live cache with 10-minute (600s) stale fallback buffer
     this.staleFallbackTtlMs = 10 * 60 * 1000; // 10-minute fallback buffer for dead reckoning
     this.lastWarnTime = 0;
@@ -175,6 +176,11 @@ class MataroSiriClient {
       return cached.data;
     }
 
+    // 1b. Concurrent identical miss: join the in-flight upstream request
+    if (this._inflight.has(cacheKey)) {
+      return this._inflight.get(cacheKey);
+    }
+
     // 2. Circuit breaker check: if upstream is blocked or hanging, return stale fallback immediately in 0ms!
     if (this.isCircuitOpen()) {
       if (cached && (now - cached.ts < this.staleFallbackTtlMs)) {
@@ -191,27 +197,19 @@ class MataroSiriClient {
 
     // 3. Pluggable RPC transport (Main process -> Ingestion worker)
     if (typeof this._rpcBackend === 'function') {
-      try {
-        const res = await this._rpcBackend('getMataroLiveVehicles', { lineRef });
-        if (Array.isArray(res) && res.length > 0) {
-          this.recordSuccess();
-          this.cache.set(cacheKey, { ts: now, data: res });
-          return res;
-        } else if (Array.isArray(res) && res.length === 0) {
-          // If RPC returned empty, fall back to recent cached data if within 10-min window
-          if (cached && (now - cached.ts < this.staleFallbackTtlMs)) {
-            return cached.data.map(v => ({
-              ...v,
-              isEstimated: true,
-              isRealTime: false,
-              delayBadgeText: '⚡ En ruta (Estimat)',
-              statusText: '⚡ Estimació per pèrdua temporal de senyal'
-            }));
+      // The coalesced promise must resolve to the FINAL caller-facing value:
+      // concurrent joiners (step 1b) receive it directly, with no post-processing.
+      return this._coalesce(cacheKey, async () => {
+        try {
+          const res = await this._rpcBackend('getMataroLiveVehicles', { lineRef });
+          if (Array.isArray(res) && res.length > 0) {
+            this.recordSuccess();
+            this.cache.set(cacheKey, { ts: Date.now(), data: res });
+            return res;
           }
-          return [];
+        } catch (err) {
+          this.recordFailure(err.message);
         }
-      } catch (err) {
-        this.recordFailure(err.message);
         if (cached && (now - cached.ts < this.staleFallbackTtlMs)) {
           return cached.data.map(v => ({
             ...v,
@@ -222,11 +220,13 @@ class MataroSiriClient {
           }));
         }
         return [];
-      }
+      });
     }
 
-    const ts = new Date().toISOString();
-    const soapXml = `<?xml version="1.0" encoding="utf-8"?>
+    // Direct SOAP fetch (worker / standalone): coalesced for concurrent callers
+    return this._coalesce(cacheKey, async () => {
+      const ts = new Date().toISOString();
+      const soapXml = `<?xml version="1.0" encoding="utf-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/" xmlns:siri="http://www.siri.org.uk/siri">
   <soapenv:Header/>
   <soapenv:Body>
@@ -247,75 +247,91 @@ class MataroSiriClient {
   </soapenv:Body>
 </soapenv:Envelope>`;
 
-    try {
-      const xml = await this.callSoap('GetVehicleMonitoring', soapXml);
-      const vehicles = [];
+      try {
+        const xml = await this.callSoap('GetVehicleMonitoring', soapXml);
+        const vehicles = [];
 
-      const activityRegex = /<VehicleActivity>([\s\S]*?)<\/VehicleActivity>/gi;
-      let actMatch;
+        const activityRegex = /<VehicleActivity>([\s\S]*?)<\/VehicleActivity>/gi;
+        let actMatch;
 
-      while ((actMatch = activityRegex.exec(xml)) !== null) {
-        const itemXml = actMatch[1];
-        const lat = parseFloat(this.extractTag(itemXml, 'Latitude') || '0');
-        const lon = parseFloat(this.extractTag(itemXml, 'Longitude') || '0');
-        const line = this.extractTag(itemXml, 'LineRef') || lineRef;
-        const lineName = this.extractTag(itemXml, 'PublishedLineName') || '';
-        const directionName = this.extractTag(itemXml, 'DirectionName') || '';
-        const origin = this.extractTag(itemXml, 'OriginName') || '';
-        const dest = this.extractTag(itemXml, 'DestinationName') || '';
-        const vehicleRef = this.extractTag(itemXml, 'VehicleRef') || 'Bus';
-        const bearing = parseInt(this.extractTag(itemXml, 'Bearing') || '0', 10);
-        const velocity = parseFloat(this.extractTag(itemXml, 'Velocity') || '0');
-        const delayStr = this.extractTag(itemXml, 'Delay') || 'PT0M';
-        const delayMins = this.parseDurationMinutes(delayStr);
-        const recordedAt = this.extractTag(itemXml, 'RecordedAtTime') || ts;
+        while ((actMatch = activityRegex.exec(xml)) !== null) {
+          const itemXml = actMatch[1];
+          const lat = parseFloat(this.extractTag(itemXml, 'Latitude') || '0');
+          const lon = parseFloat(this.extractTag(itemXml, 'Longitude') || '0');
+          const line = this.extractTag(itemXml, 'LineRef') || lineRef;
+          const lineName = this.extractTag(itemXml, 'PublishedLineName') || '';
+          const directionName = this.extractTag(itemXml, 'DirectionName') || '';
+          const origin = this.extractTag(itemXml, 'OriginName') || '';
+          const dest = this.extractTag(itemXml, 'DestinationName') || '';
+          const vehicleRef = this.extractTag(itemXml, 'VehicleRef') || 'Bus';
+          const bearing = parseInt(this.extractTag(itemXml, 'Bearing') || '0', 10);
+          const velocity = parseFloat(this.extractTag(itemXml, 'Velocity') || '0');
+          const delayStr = this.extractTag(itemXml, 'Delay') || 'PT0M';
+          const delayMins = this.parseDurationMinutes(delayStr);
+          const recordedAt = this.extractTag(itemXml, 'RecordedAtTime') || ts;
 
-        if (lat && lon) {
-          vehicles.push({
-            vehicleId: vehicleRef,
-            lineId: line,
-            lineName,
-            directionName,
-            origin,
-            destination: dest,
-            lat: Math.round(lat * 1000000) / 1000000,
-            lon: Math.round(lon * 1000000) / 1000000,
-            bearing: (bearing + 360) % 360,
-            speedKmh: Math.round(velocity * 3.6) || (velocity > 0 ? Math.round(velocity) : 25),
-            delayMins,
-            delayFormatted: delayMins > 0 ? `+${delayMins} min retard` : (delayMins < 0 ? `${delayMins} min avançat` : 'Puntual'),
-            recordedAt,
-            isEstimated: false,
-            timestamp: Date.now()
-          });
+          if (lat && lon) {
+            vehicles.push({
+              vehicleId: vehicleRef,
+              lineId: line,
+              lineName,
+              directionName,
+              origin,
+              destination: dest,
+              lat: Math.round(lat * 1000000) / 1000000,
+              lon: Math.round(lon * 1000000) / 1000000,
+              bearing: (bearing + 360) % 360,
+              speedKmh: Math.round(velocity * 3.6) || (velocity > 0 ? Math.round(velocity) : 25),
+              delayMins,
+              delayFormatted: delayMins > 0 ? `+${delayMins} min retard` : (delayMins < 0 ? `${delayMins} min avançat` : 'Puntual'),
+              recordedAt,
+              isEstimated: false,
+              timestamp: Date.now()
+            });
+          }
         }
-      }
 
-      this.recordSuccess();
-      this.cache.set(cacheKey, { ts: Date.now(), data: vehicles });
-      return vehicles;
-    } catch (err) {
-      this.recordFailure(err.message);
-      const nowErr = Date.now();
-      if (err.message.includes('timeout') || err.message.includes('ECONNRESET') || err.message.includes('ECONNREFUSED')) {
-        if (nowErr - this.lastWarnTime > 60000) {
-          console.warn(`[SIRI] Avanza SIRI server transient issue (${err.message}). Using live cache & dead-reckoning fallback.`);
-          this.lastWarnTime = nowErr;
+        this.recordSuccess();
+        this.cache.set(cacheKey, { ts: Date.now(), data: vehicles });
+        return vehicles;
+      } catch (err) {
+        this.recordFailure(err.message);
+        const nowErr = Date.now();
+        if (err.message.includes('timeout') || err.message.includes('ECONNRESET') || err.message.includes('ECONNREFUSED')) {
+          if (nowErr - this.lastWarnTime > 60000) {
+            console.warn(`[SIRI] Avanza SIRI server transient issue (${err.message}). Using live cache & dead-reckoning fallback.`);
+            this.lastWarnTime = nowErr;
+          }
+        } else {
+          console.error(`[SIRI Error] GetVehicleMonitoring(${lineRef}):`, err.message);
         }
-      } else {
-        console.error(`[SIRI Error] GetVehicleMonitoring(${lineRef}):`, err.message);
+        if (cached && (Date.now() - cached.ts < this.staleFallbackTtlMs)) {
+          return cached.data.map(v => ({
+            ...v,
+            isEstimated: true,
+            isRealTime: false,
+            delayBadgeText: '⚡ En ruta (Estimat)',
+            statusText: '⚡ Estimació per pèrdua temporal de senyal'
+          }));
+        }
+        return [];
       }
-      if (cached && (Date.now() - cached.ts < this.staleFallbackTtlMs)) {
-        return cached.data.map(v => ({
-          ...v,
-          isEstimated: true,
-          isRealTime: false,
-          delayBadgeText: '⚡ En ruta (Estimat)',
-          statusText: '⚡ Estimació per pèrdua temporal de senyal'
-        }));
-      }
-      return [];
+    });
+  }
+
+  // Coalesce concurrent identical upstream requests: the first caller starts
+  // the fetch; simultaneous callers awaiting the same key share its result.
+  // Settled promises are always removed, including on failure, so the next
+  // request after a failure starts fresh. Never used as a response cache.
+  _coalesce(key, fn) {
+    if (this._inflight.has(key)) {
+      return this._inflight.get(key);
     }
+    const p = (async () => fn())().finally(() => {
+      this._inflight.delete(key);
+    });
+    this._inflight.set(key, p);
+    return p;
   }
 
   normalizeStopId(stopId) {
@@ -358,25 +374,19 @@ class MataroSiriClient {
 
     // 3. Pluggable RPC transport (Main process -> Ingestion worker)
     if (typeof this._rpcBackend === 'function') {
-      try {
-        const res = await this._rpcBackend('getMataroStopArrivals', { stopId: normStopId, lineRef });
-        if (Array.isArray(res) && res.length > 0) {
-          this.recordSuccess();
-          this.cache.set(cacheKey, { ts: now, data: res });
-          return res;
-        } else if (Array.isArray(res) && res.length === 0) {
-          if (cached && (now - cached.ts < this.staleFallbackTtlMs)) {
-            return cached.data.map(a => ({
-              ...a,
-              isEstimated: true,
-              isRealTime: false,
-              delayBadgeText: '⚡ En ruta (Estimat)'
-            }));
+      // Coalesced promise resolves to the FINAL caller-facing value so
+      // concurrent joiners (step 1b) get identical post-processed results.
+      return this._coalesce(cacheKey, async () => {
+        try {
+          const r = await this._rpcBackend('getMataroStopArrivals', { stopId: normStopId, lineRef });
+          if (Array.isArray(r) && r.length > 0) {
+            this.recordSuccess();
+            this.cache.set(cacheKey, { ts: Date.now(), data: r });
+            return r;
           }
-          return [];
+        } catch (err) {
+          this.recordFailure(err.message);
         }
-      } catch (err) {
-        this.recordFailure(err.message);
         if (cached && (now - cached.ts < this.staleFallbackTtlMs)) {
           return cached.data.map(a => ({
             ...a,
@@ -386,11 +396,13 @@ class MataroSiriClient {
           }));
         }
         return [];
-      }
+      });
     }
 
-    const ts = new Date().toISOString();
-    const soapXml = `<?xml version="1.0" encoding="utf-8"?>
+    // Direct SOAP fetch (worker / standalone): coalesced for concurrent callers
+    return this._coalesce(cacheKey, async () => {
+      const ts = new Date().toISOString();
+      const soapXml = `<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
   <soap:Body>
     <GetStopMonitoring xmlns="http://tempuri.org/">
@@ -410,8 +422,8 @@ class MataroSiriClient {
   </soap:Body>
 </soap:Envelope>`;
 
-    try {
-      const xml = await this.callSoap('GetStopMonitoring', soapXml);
+      try {
+        const xml = await this.callSoap('GetStopMonitoring', soapXml);
       const arrivals = [];
 
       const visitRegex = /<MonitoredStopVisit>([\s\S]*?)<\/MonitoredStopVisit>/gi;
@@ -509,7 +521,8 @@ class MataroSiriClient {
         }));
       }
       return [];
-    }
+      }
+    });
   }
 }
 
