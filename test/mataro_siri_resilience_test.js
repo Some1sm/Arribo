@@ -120,7 +120,6 @@ async function runResilienceTests() {
   // -------------------------------------------------------------
   console.log('\n4. Testing Target Stop ETA latency under SIRI downtime simulation...');
 
-  // First call warms lazy modules (e.g. intermodalHub)
   await mataroTracker.getTargetStopETA('1', '1001', '0');
 
   const tStart = process.hrtime.bigint();

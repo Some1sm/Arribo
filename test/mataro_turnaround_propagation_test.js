@@ -19,7 +19,7 @@ async function runTest() {
   const origGetStopArrivals = siriClient.getStopArrivals;
   const origGetLiveVehicles = siriClient.getLiveVehicles;
   const origGetDisruptions = tracker.getDisruptions;
-  const options = { dateObj: simDate, skipCache: true, skipIntermodal: true };
+  const options = { dateObj: simDate, skipCache: true };
   siriClient.getLiveVehicles = async () => [];
   tracker.getDisruptions = async () => [];
 

@@ -4575,42 +4575,6 @@ class TransitApp {
 
     listEl.innerHTML = modalItemsHtml + modalFooterHint;
 
-    // Render Multimodal Regional Connections (Rodalies R1 / Moventis e11)
-    const intermodalContainer = document.getElementById('modal-intermodal-container');
-    const intermodalList = document.getElementById('modal-intermodal-list');
-    const intermodalBadge = document.getElementById('modal-intermodal-badge');
-
-    if (intermodalContainer && intermodalList) {
-      if (data.isHub && Array.isArray(data.intermodalConnections) && data.intermodalConnections.length > 0) {
-        intermodalContainer.style.display = 'block';
-        if (intermodalBadge && data.hub?.name) {
-          intermodalBadge.textContent = data.hub.name;
-        }
-        intermodalList.innerHTML = data.intermodalConnections.map(c => `
-          <div class="intermodal-conn-card">
-            <div class="intermodal-conn-left">
-              <span class="intermodal-mode-pill" style="background:${c.lineColor || '#0ea5e9'};">
-                ${c.mode === 'train' ? '🚆' : '⚡'} ${this.esc(c.lineCode)}
-              </span>
-              <div>
-                <div class="intermodal-conn-dest">${this.esc(c.destination)}</div>
-                <div class="intermodal-conn-op">${this.esc(c.operator)}</div>
-              </div>
-            </div>
-            <div>
-              <div class="intermodal-conn-time">${this.esc(c.departureTime)} (${c.minutesAway} min)</div>
-              ${c.feasibility ? `
-                <div class="intermodal-conn-feasibility ${c.feasibility.badgeClass}">${this.esc(c.feasibility.badge)}</div>
-              ` : ''}
-            </div>
-          </div>
-        `).join('');
-      } else {
-        intermodalContainer.style.display = 'none';
-        intermodalList.innerHTML = '';
-      }
-    }
-
     // Configure Proximity Wake-Up Alarm Button
     const alarmBtn = document.getElementById('modal-proximity-alarm-btn');
     const alarmBtnText = document.getElementById('modal-alarm-btn-text');

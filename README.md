@@ -6,7 +6,7 @@ Arribo! combines Avanza SIRI vehicle and arrival data with local route geometry 
 
 ## Current scope
 
-The default line catalog, search, and background ingestion focus on Mataró's eight urban bus lines. The repository retains trackers from an earlier Catalonia-wide platform, but those operators are **not registered in the current default catalog**. Regional connections are available through the intermodal feature; that is not the same as full regional live-tracking coverage.
+The default line catalog, search, and background ingestion focus on Mataró's eight urban bus lines. The repository retains trackers from an earlier Catalonia-wide platform, but those operators are **not registered in the current default catalog**.
 
 Older C-10 API paths and some architecture documents reflect that earlier scope. Use the current source code and [AGENTS.md](AGENTS.md) when working on the active app.
 
@@ -17,7 +17,6 @@ Older C-10 API paths and some architecture documents reflect that earlier scope.
 - **Stop discovery:** search for lines, stops, and streets; find nearby stops using location; browse neighborhood shortcuts and save favorite stops locally.
 - **Journey planner:** the `/plan` page supports direct and one-transfer Mataró bus journeys, walking connections, and departure date/time selection.
 - **Service notices:** official Mataró Bus disruptions and line-specific notices.
-- **Intermodal connections:** regional rail and interurban bus connections at supported Mataró hubs, subject to upstream availability.
 - **Observatori:** historical delay reports, line rankings, hourly delay analysis, the “Termòmetre del Bus” scorecard, and CSV export.
 - **Mobile web app:** responsive layout, light/dark themes, arrival sounds, and a PWA manifest/service worker with offline app-shell support. Live arrivals still require connectivity.
 
@@ -44,7 +43,7 @@ Browser (vanilla JavaScript + Leaflet)
       - Cached analytics report generation
 ```
 
-The main process serves the frontend and API, maintains in-memory fleet/report caches, and uses worker RPC for SIRI and historical database operations. The worker owns SQLite persistence and scheduled ingestion. Other features, such as geocoding and regional connections, have their own client paths.
+The main process serves the frontend and API, maintains in-memory fleet/report caches, and uses worker RPC for SIRI and historical database operations. The worker owns SQLite persistence and scheduled ingestion. Geocoding has its own client path.
 
 - **Runtime:** Node.js **22.5 or newer**, required for built-in `node:sqlite`.
 - **Production dependencies:** `express`, `cors`, and `compression`.
@@ -101,7 +100,6 @@ API routes use GET; the server also permits HEAD. Other methods are rejected by 
 | `/api/line/:lineId/stop/:stopId/departures?direction=0` | Stop departure board |
 | `/api/stops/nearby?lat=:lat&lon=:lon` | Nearby stops and optional departures |
 | `/api/plan?from=:origin&to=:destination` | Mataró journey planning |
-| `/api/mataro/stop/:stopId/connections` | Regional connections at supported hubs |
 | `/api/mataro/line/:lineId/traffic` | Estimated line congestion information |
 | `/api/disruptions` | Service notices; optional `line` filter |
 | `/api/vehicles` and `/api/fleet/live` | Recorder-backed vehicle state |

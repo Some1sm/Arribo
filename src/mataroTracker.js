@@ -12,7 +12,6 @@ const timeUtils = require('./timeUtils');
 const flightRecorder = require('./flightRecorder');
 const BaseTracker = require('./core/BaseTracker');
 const transitRouter = require('./core/schedule/transitRouter');
-const intermodalHub = require('./core/intermodalHub');
 const mataroFleet = require('./data/mataroFleet');
 
 class MataroTracker extends BaseTracker {
@@ -2426,8 +2425,7 @@ class MataroTracker extends BaseTracker {
         try {
           const originBoard = await this.getStopDepartures(originStopId, lIdStr, dirKey, {
             ...options,
-            isDownstreamCheck: true,
-            skipIntermodal: true
+            isDownstreamCheck: true
           });
 
           if (originBoard && Array.isArray(originBoard.departures)) {
@@ -2692,17 +2690,6 @@ class MataroTracker extends BaseTracker {
       }
     }
 
-    let intermodal = null;
-    if (!options.skipIntermodal) {
-      try {
-        intermodal = await intermodalHub.getConnectionsForStop(sId, {
-          stopName: stopInfo.name,
-          lat: stopInfo.lat,
-          lon: stopInfo.lon
-        });
-      } catch (_) {}
-    }
-
     const result = {
       stop: {
         id: sId,
@@ -2712,10 +2699,7 @@ class MataroTracker extends BaseTracker {
         zone: 'Mataró Urbà'
       },
       departures: finalDepartures,
-      totalDepartures: finalDepartures.length,
-      isHub: intermodal ? Boolean(intermodal.isHub) : false,
-      hub: intermodal?.hub || null,
-      intermodalConnections: intermodal?.connections || []
+      totalDepartures: finalDepartures.length
     };
 
     // Store in memory cache for sub-millisecond retrieval
@@ -2783,7 +2767,7 @@ class MataroTracker extends BaseTracker {
     }
 
     const sId = String(chosenStop.id);
-    const stopDepartures = await this.getStopDepartures(sId, lId, String(dirIdx), { ...options, skipIntermodal: true });
+    const stopDepartures = await this.getStopDepartures(sId, lId, String(dirIdx), options);
     const deps = stopDepartures.departures || [];
     const nextBus = deps.length > 0 ? deps[0] : null;
 
@@ -2846,11 +2830,6 @@ class MataroTracker extends BaseTracker {
   // 4. In-Memory Journey Planner ("Com anar-hi")
   async planJourney(origin, destination, options = {}) {
     return transitRouter.planJourney(origin, destination, options);
-  }
-
-  // 5. Intermodal Multimodal Connections for Hubs (Rodalies R1 & Moventis e11)
-  async getIntermodalConnections(stopId, options = {}) {
-    return intermodalHub.getConnectionsForStop(stopId, options);
   }
 
   // 6. Dynamic Traffic Congestion & Slowdown Heatmap for Route Polylines

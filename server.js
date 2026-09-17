@@ -768,18 +768,6 @@ app.get(['/api/mataro/plan', '/api/plan'], async (req, res) => {
   }
 });
 
-// Intermodal Connections for a Stop (Rodalies R1 / RG1 & Moventis e11/C-10)
-app.get('/api/mataro/stop/:stopId/connections', async (req, res) => {
-  const { stopId } = req.params;
-  const arrivalMins = req.query.arrivalMins ? parseInt(req.query.arrivalMins, 10) : 0;
-  try {
-    const connections = await mataroTracker.getIntermodalConnections(stopId, { arrivalMinutes: arrivalMins });
-    res.json({ success: true, stopId, ...connections });
-  } catch (err) {
-    sendInternalError(req, res, err, { success: false, isHub: false, connections: [] });
-  }
-});
-
 // Traffic Congestion & Slowdown Heatmap for a line
 app.get('/api/mataro/line/:lineId/traffic', async (req, res) => {
   const { lineId } = req.params;

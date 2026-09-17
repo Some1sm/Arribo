@@ -1,12 +1,5 @@
 const assert = require('node:assert/strict');
-const Module = require('node:module');
-const load = Module._load;
-Module._load = function (id, ...args) {
-  if (id === './core/intermodalHub') return {};
-  return load.call(this, id, ...args);
-};
 const tracker = require('../src/mataroTracker');
-Module._load = load;
 const siri = require('../src/mataroSiriClient');
 const recorder = require('../src/flightRecorder');
 
