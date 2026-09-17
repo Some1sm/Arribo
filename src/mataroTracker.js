@@ -37,7 +37,35 @@ class MataroTracker extends BaseTracker {
     transitRouter.setTracker(this);
   }
 
+  setAvisosRpcBackend(backend) {
+    this._avisosRpcBackend = backend;
+  }
+
+  syncAvisos(avisos, timestamp) {
+    this.avisosCache = structuredClone(avisos);
+    this.avisosCacheTime = timestamp;
+    this.invalidateLineDetailsCache();
+  }
+
   async fetchAvisos() {
+    if (this.avisosCache && Date.now() - this.avisosCacheTime < this.avisosCacheTtlMs) {
+      return this.avisosCache;
+    }
+    if (!this._avisosInflight) {
+      this._avisosInflight = (async () => {
+        if (!this._avisosRpcBackend) return this._fetchAvisos();
+        const previousCache = this.avisosCache;
+        try {
+          const result = await this._avisosRpcBackend();
+          if (this.avisosCache === previousCache) this.syncAvisos(result.avisos, result.timestamp);
+        } catch (_) {}
+        return this.avisosCache || [];
+      })().finally(() => { this._avisosInflight = null; });
+    }
+    return this._avisosInflight;
+  }
+
+  async _fetchAvisos() {
     const now = Date.now();
     if (this.avisosCache && (now - this.avisosCacheTime < this.avisosCacheTtlMs)) {
       return this.avisosCache;

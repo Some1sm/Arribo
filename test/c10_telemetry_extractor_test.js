@@ -21,7 +21,6 @@ const c10Extractor = require('../src/c10TelemetryExtractor');
 const moventisClient = require('../src/moventisClient');
 const flightRecorder = require('../src/flightRecorder');
 const corridorTracker = require('../src/corridorTracker');
-const ingestionDaemon = require('../src/ingestionDaemon');
 const geoEngine = require('../src/core/geo/geoEngine');
 const delayEngine = require('../src/core/schedule/delayEngine');
 
@@ -447,7 +446,7 @@ console.log('\n📌 [SUITE 6] Request Coalescing & Inflight Protection...');
     totalAssertions += 3;
   });
 
-  await checkAsync('9.3 IngestionDaemon.pollCorridorDelays ingests active C-10 live telemetry', async () => {
+  await checkAsync('9.3 getLiveVehicles ingests active C-10 live telemetry into FlightRecorder', async () => {
     c10Extractor.setMockSource(async () => [
       {
         line: 'C-10',
@@ -460,12 +459,10 @@ console.log('\n📌 [SUITE 6] Request Coalescing & Inflight Protection...');
       }
     ]);
 
-    await ingestionDaemon.pollCorridorDelays();
-
-    const c10Fleet = flightRecorder.getLineVehicles('C-10');
-    assert.ok(Array.isArray(c10Fleet) && c10Fleet.length > 0);
-    const bus1405 = c10Fleet.find(b => b.vehicleId === 'c10_502_1405');
-    assert.ok(bus1405, 'Vehicle #1405 should be present in FlightRecorder');
+    const live = await c10Extractor.getLiveVehicles();
+    assert.ok(Array.isArray(live) && live.length > 0);
+    const bus1405 = live.find(b => b.vehicleId === 'c10_502_1405');
+    assert.ok(bus1405, 'Vehicle #1405 should be normalized from live telemetry');
     assert.strictEqual(bus1405.isRealTime, true);
     assert.strictEqual(bus1405.isEstimated, false);
 

@@ -87,6 +87,11 @@ async function executeDbOperation(op, args = {}) {
     case 'getLineDelayStats':
       return historyDb.getLineDelayStats(args.lineCode, args.hours ?? 24, args.lineId);
 
+    case 'getMataroAvisos': {
+      const avisos = await mataroTracker.fetchAvisos();
+      return { avisos, timestamp: mataroTracker.avisosCacheTime };
+    }
+
     case 'getMataroLiveVehicles':
       return mataroSiriClient.getLiveVehicles(String(args.lineRef || ''));
 

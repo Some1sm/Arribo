@@ -3,7 +3,7 @@ const { fork } = require('child_process');
 const path = require('path');
 const flightRecorder = require('../flightRecorder');
 const reportCacheService = require('../reportCacheService');
-const ambTracker = require('../ambTracker');
+const mataroTracker = require('../mataroTracker');
 
 class WorkerBridge extends EventEmitter {
   constructor(options = {}) {
@@ -135,12 +135,7 @@ class WorkerBridge extends EventEmitter {
 
       case 'DISRUPTIONS_UPDATE':
         if (payload && Array.isArray(payload.disruptions)) {
-          if (ambTracker && ambTracker.disruptionsCache) {
-            ambTracker.disruptionsCache = {
-              timestamp: payload.timestamp || Date.now(),
-              data: payload.disruptions
-            };
-          }
+          mataroTracker.syncAvisos(payload.disruptions, payload.timestamp || Date.now());
           this.emit('disruptions_update', payload);
         }
         break;

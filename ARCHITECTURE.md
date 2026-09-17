@@ -199,25 +199,12 @@ function getTrackerForLine(lineId) {
 ## 🎨 7. Frontend State Machine & URL Routing (`public/js/app.js`)
 
 ### URL Hash Navigation
-Users can directly bookmark or link to any transit line in Catalonia:
-- `https://bad-amb-bus-tracker.vercel.app/#r1` ➔ Rodalies Train R1
-- `https://bad-amb-bus-tracker.vercel.app/#n80` ➔ NitBus N80 (Moventis Maresme)
-- `https://bad-amb-bus-tracker.vercel.app/#b25` ➔ TUSGSAL B25 (Badalona)
-- `https://bad-amb-bus-tracker.vercel.app/#l80` ➔ Avanza L80 (Baix Llobregat)
-- `https://bad-amb-bus-tracker.vercel.app/#a1` ➔ Monbus Aerobús A1
-- `https://bad-amb-bus-tracker.vercel.app/#c10` ➔ Moventis C-10 Corridor
+Users can directly bookmark or link to any transit line:
+- `#1` through `#8` ➔ Mataró Bus Urbà lines L1–L8
 
 ### Line Explorer Modal Filtering
-Lines are organized into 9 network tabs:
-1. **🚆 Rodalies**: Renfe train lines (R1..R8, RG1, Regionals).
-2. **🟡 TUSGSAL**: Barcelonès Nord (B1..B84, M1..M30, NitBus N0..N28).
-3. **🔵 Avanza**: Baix Llobregat (L80..L99, Exprés X80..X97, Urbans CF/GA/VB, NitBus N12..N21).
-4. **🟠 Monbus**: Aerobús A1/A2, Baix Llobregat (L46, L52, L70..L78, M5, X43..X79).
-5. **🌊 Moventis**: Maresme (C-10, N80, N81, e11.1, e11.2, C-20, C-30), L'Hospitalet/El Prat (L16..L22, PR1..PR5, LH1/LH2, M12/M14, X30), Cerdanyola (CV1..CV5).
-6. **🦉 Sagalés**: NitBus & Interurbans (N82, N83, 603, N70, N71, N73).
-7. **🟢 Soler i Sauret**: EP1/EP2, JM, JT, SF1..SF3, MB1..MB3, SV1..SV4.
-8. **📍 Mataró Bus**: Urbans L1 through L8.
-9. **🟣 Baixbus / TGO**: CS1, CS2, CS3, CS4.
+The current catalog is Mataró Bus Urbà:
+1. **📍 Mataró Bus**: Urbans L1 through L8.
 
 ---
 
@@ -228,21 +215,7 @@ Run the comprehensive E2E test suite:
 npm test
 ```
 
-The test runner (`test/e2e_multiline_test.js`) verifies 14 test suites covering:
-- ✅ **Test 1**: Health check endpoint.
-- ✅ **Test 2**: `/api/lines` catalog integrity (288+ lines loaded).
-- ✅ **Test 3**: Universal stop search across bus stops and train stations.
-- ✅ **Test 4**: Mataró Bus Line 8 route & polyline.
-- ✅ **Test 5**: Mataró Bus Line 8 target stop ETA.
-- ✅ **Test 6**: C-10 Corridor target stop countdown.
-- ✅ **Test 7**: C-10 Corridor live checkpoints and GPS telemetry.
-- ✅ **Test 8**: Universal polymorphic API endpoint resolution.
-- ✅ **Test 9**: Sagalés N82 Night Bus integration.
-- ✅ **Test 10**: Rodalies de Catalunya train tracking (R1 line, 27 stations, track shape).
-- ✅ **Test 11**: DIREXIS TUSGSAL bus integration (B25 line).
-- ✅ **Test 12**: Avanza Baix Llobregat bus integration (L80 line).
-- ✅ **Test 13**: Monbus Aerobús integration (A1 line).
-- ✅ **Test 14**: Moventis / Casas NitBus N80 (37 stops, 1,451 shape coordinates).
+The test runner (`test/run.js`) auto-discovers every suite in `test/` and runs each in an isolated process. The E2E suite (`test/e2e_multiline_test.js`) covers the Mataró-only scope: health check, L1–L8 catalog integrity, stop search, per-line details, target-stop ETA, departure boards, and the analytics report.
 
 ---
 

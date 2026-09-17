@@ -8,7 +8,7 @@ Arribo! combines Avanza SIRI vehicle and arrival data with local route geometry 
 
 The default line catalog, search, and background ingestion focus on Mataró's eight urban bus lines. The repository retains trackers from an earlier Catalonia-wide platform, but those operators are **not registered in the current default catalog**. Regional connections are available through the intermodal feature; that is not the same as full regional live-tracking coverage.
 
-The package name `bad-amb-bus-tracker`, older C-10 API paths, and some architecture documents and tests reflect that earlier scope. Use the current source code and [AGENTS.md](AGENTS.md) when working on the active app.
+Older C-10 API paths and some architecture documents reflect that earlier scope. Use the current source code and [AGENTS.md](AGENTS.md) when working on the active app.
 
 ## Features
 
@@ -71,7 +71,7 @@ docker compose logs -f arribo
 
 The Compose service exposes port 3000 and mounts `./data:/app/data` for persistent storage. It uses Node 22 Alpine, `Europe/Madrid`, a 400 MB container memory limit, and a 160 MB V8 heap setting. See [docker-compose.yml](docker-compose.yml) and [Dockerfile](Dockerfile) for exact settings.
 
-The repository still contains `vercel.json`, but the current background-worker and persistent-SQLite design targets a long-running Node/Docker deployment. The legacy Vercel configuration is not evidence of equivalent support for those features.
+The repository targets a long-running Node/Docker deployment; retired serverless configuration has been removed.
 
 ### Storage settings
 
@@ -117,13 +117,11 @@ Mataró-specific aliases and older compatibility routes also exist; `server.js` 
 ## Testing
 
 ```bash
-npm run test:syntax   # JavaScript syntax checks
-npm run test:unit     # Shared core module tests
-npm run test:mataro   # Mataró timetable accuracy suite
-npm test             # Configured default suite
-npm run test:full    # Also includes performance and infrastructure suites
+npm test             # Auto-discovers every test/ suite (except listed exclusions)
+npm run test:list    # Show which suites would run and which are skipped
+npm run test:full    # Also includes the performance benchmark suites
 ```
 
-Additional focused regressions under `test/` cover routing, fleet estimation, reconnection deduplication, SIRI resilience, notices, nearby stops/favorites, and Observatori reports. Not every test file is included in the npm scripts.
+Every `test/*.js` file runs in its own Node process with isolated temporary storage. A handful of retired-provider diagnostics and manual load tests are skipped with printed reasons (see `test/run.js`).
 
-**Integration test note:** `test/e2e_multiline_test.js` covers the current Mataró L1–L8 catalog and active endpoints. Integration tests may start workers, contact upstream services, and write runtime data; inspect their setup before running against a deployment's data directory.
+**Integration test note:** integration suites may start workers, contact upstream services, and write runtime data; inspect their setup before running against a deployment's data directory.

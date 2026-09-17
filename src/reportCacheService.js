@@ -298,12 +298,20 @@ class ReportCacheService {
     return await this.generateAndSaveReport(canonicalHours, catalog);
   }
 
-  /**
-   * A report is stale when it lacks generation metadata (skeleton/empty
-   * object) or was generated longer than maxAgeMs ago. Default budget is
-   * 65 min: two generation intervals (2×30 min) plus margin, so a single
-   * missed cycle never triggers regeneration churn.
-   */
+  getFreshnessStatus() {
+    const now = Date.now();
+    return this.supportedHours.map(hours => {
+      const report = this.cachedReports.get(String(hours));
+      const timestamp = report?.meta?.generatedTimestamp;
+      return {
+        hours,
+        generatedTimestamp: Number.isFinite(timestamp) ? timestamp : null,
+        ageMs: Number.isFinite(timestamp) ? Math.max(0, now - timestamp) : null,
+        fresh: !!report && !this.isReportStale(report)
+      };
+    });
+  }
+
   isReportStale(report, options = {}) {
     const maxAgeMs = options.maxAgeMs || 65 * 60 * 1000;
     const ts = report?.meta?.generatedTimestamp;

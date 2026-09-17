@@ -67,7 +67,7 @@ transit operators** into a single polymorphic REST API and SPA frontend.
 | Dependencies | 3 production deps: `express`, `cors`, `compression` |
 | Database | SQLite via `node:sqlite` (WAL mode, zero external DB deps) |
 | Frontend | Vanilla JS SPA, no build step, Leaflet maps |
-| Deployment | Docker (primary), Vercel (secondary/legacy) |
+| Deployment | Docker (long-running Node) |
 
 ---
 
@@ -198,8 +198,7 @@ transit operators** into a single polymorphic REST API and SPA frontend.
 │
 ├── test/                             # Test suites (see §9)
 ├── Dockerfile                        # Node 22 Alpine production image
-├── docker-compose.yml                # Docker deployment with memory limits & healthcheck
-└── vercel.json                       # Vercel serverless deployment config
+└── docker-compose.yml                # Docker deployment with memory limits & healthcheck
 ```
 
 ---

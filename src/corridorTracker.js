@@ -21,6 +21,10 @@ function osrmCoversStops(coords, stops, thresholdM = 250) {
   return covered / stops.length >= 0.95;
 }
 const timeEngine = require('./core/time/timeEngine');
+// 398aac0 removed the local shims but left bare `timeToSec`/`secToTime` call
+// sites; restore the bindings so live-tracking trip sorting cannot crash.
+const timeToSec = (timeStr) => timeEngine.timeToSec(timeStr);
+const secToTime = (totalSec) => timeEngine.secToTime(totalSec);
 const calendarEngine = require('./core/time/calendarEngine');
 const delayEngine = require('./core/schedule/delayEngine');
 const delayMemory = require('./core/realtime/delayMemory');
@@ -318,8 +322,8 @@ class CorridorTracker extends BaseTracker {
     let resolvedGtfsId = stopGtfsId;
     let resolvedSeq = stopSeq;
     if (!resolvedGtfsId || resolvedSeq === null) {
-      const match = stopsList.find(s => 
-        (stopMouteId && s.mouteStopId === stopMouteId) || 
+      const match = stopsList.find(s =>
+        (stopMouteId && s.mouteStopId === stopMouteId) ||
         (stopGtfsId && s.gtfsStopId === stopGtfsId) ||
         (stopSeq !== null && s.seq === stopSeq)
       );
@@ -439,7 +443,7 @@ class CorridorTracker extends BaseTracker {
       const isRealtime = Boolean(s.realtime);
 
       const delayInfo = this.computeScheduledMatch(timeStr, isRealtime, stopGtfsId, direction, stopMouteId, stopSeq);
-      
+
       let matchedVehicleId = s.tripId || null;
       let matchedCoords = null;
       if (delayInfo.bestTrip) {
@@ -504,7 +508,7 @@ class CorridorTracker extends BaseTracker {
 
           // 1. Check if this trip is actively in transit right now
           const activeBusPos = this.interpolateBusPosition(trip, currentSec, stopsMap, stopsListCurrent, oppositeTrips);
-          
+
           if (activeBusPos && !activeBusPos.isTerminalLayover) {
             // Bus is in transit - inject if it hasn't passed this stop yet
             if (thisStopSeq >= activeBusPos.fromSeq) {

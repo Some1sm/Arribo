@@ -85,6 +85,8 @@ mataroSiriClient.setRpcBackend(async (op, args) => {
   } catch (_) { return []; }
 });
 
+mataroTracker.setAvisosRpcBackend(() => workerBridge.historyQuery('getMataroAvisos', {}, { timeoutMs: 7000 }));
+
 // Sync live fleet telemetry directly into Mataró tracker vehicle history
 workerBridge.on('fleet_update', (payload) => {
   if (payload && Array.isArray(payload.vehicles) && mataroTracker && typeof mataroTracker.syncFleetVehicles === 'function') {
@@ -311,11 +313,23 @@ app.get(['/plan', '/com-anar-hi', '/itinerari'], (req, res) => {
 
 // Health Check
 app.get('/api/health', (req, res) => {
+  const now = Date.now();
+  const worker = workerBridge.getStatus();
+  const reports = reportCacheService.getFreshnessStatus();
   res.json({
     status: 'ok',
     uptime: process.uptime(),
-    timestamp: Date.now(),
-    agency: 'Mataró Bus Urbà'
+    timestamp: now,
+    agency: 'Mataró Bus Urbà',
+    worker: {
+      healthy: worker.isHealthy,
+      running: worker.isRunning,
+      lastHeartbeat: worker.lastHeartbeat,
+      heartbeatAgeMs: Number.isFinite(worker.lastHeartbeat) ? Math.max(0, now - worker.lastHeartbeat) : null,
+      restarts: worker.restarts
+    },
+    reports,
+    dataReady: worker.isHealthy && reports.every(report => report.fresh)
   });
 });
 
