@@ -126,4 +126,4 @@ npm run test:full    # Also includes performance and infrastructure suites
 
 Additional focused regressions under `test/` cover routing, fleet estimation, reconnection deduplication, SIRI resilience, notices, nearby stops/favorites, and Observatori reports. Not every test file is included in the npm scripts.
 
-**Legacy test caveat:** some suites still assume the broader platform. For example, `test/e2e_multiline_test.js` expects at least nine catalog entries including C-10, whereas the default app exposes eight Mataró lines. Do not interpret this documentation as a claim that the full suite passes. Integration tests may start workers, contact upstream services, and write runtime data; inspect their setup before running against a deployment's data directory.
+**Integration test note:** `test/e2e_multiline_test.js` covers the current Mataró L1–L8 catalog and active endpoints. Integration tests may start workers, contact upstream services, and write runtime data; inspect their setup before running against a deployment's data directory.

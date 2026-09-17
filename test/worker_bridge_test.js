@@ -1,5 +1,11 @@
 const assert = require('assert');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'arribo-worker-'));
+process.env.DB_PATH = path.join(scratch, 'history.db');
+process.env.REPORTS_DIR = path.join(scratch, 'reports');
+let bridge;
 const { WorkerBridge } = require('../src/core/WorkerBridge');
 const flightRecorder = require('../src/flightRecorder');
 const reportCacheService = require('../src/reportCacheService');
@@ -59,7 +65,7 @@ async function testWorkerBridge() {
   const mockReport = {
     summary: { totalArrivals: 999, monitoredLinesCount: 42 },
     rankingMostDelayed: [{ lineCode: 'C-10', avgDelayMinutes: 5.2 }],
-    meta: { timeframeHours: 24, generatedAt: new Date().toISOString() }
+    meta: { timeframeHours: 24, generatedAt: new Date().toISOString(), generatedTimestamp: Date.now() }
   };
   reportCacheService.updateMemoryCache(24, mockReport);
   const cached24 = await reportCacheService.getLatestReport(24);
@@ -69,7 +75,7 @@ async function testWorkerBridge() {
 
   // 3. Test WorkerBridge supervisor lifecycle and IPC
   console.log('3. Testing WorkerBridge supervisor lifecycle...');
-  const bridge = new WorkerBridge({
+  bridge = new WorkerBridge({
     pingIntervalMs: 2000,
     pingTimeoutMs: 5000,
     baseBackoffMs: 500,
@@ -133,6 +139,10 @@ async function testWorkerBridge() {
 }
 
 testWorkerBridge()
+  .finally(async () => {
+    if (bridge) await bridge.shutdown(3000);
+    fs.rmSync(scratch, { recursive: true, force: true });
+  })
   .then(() => process.exit(0))
   .catch(err => {
     console.error('❌ Test failed:', err);

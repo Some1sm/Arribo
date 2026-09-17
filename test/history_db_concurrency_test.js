@@ -1,6 +1,15 @@
 const assert = require('assert');
 const { DatabaseSync } = require('node:sqlite');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'arribo-index-'));
+process.env.DB_PATH = path.join(scratch, 'history.db');
 const historyDb = require('../src/historyDb');
+process.on('exit', () => {
+  historyDb.close();
+  fs.rmSync(scratch, { recursive: true, force: true });
+});
 
 function runHistoryDbTests() {
   console.log('Testing HistoryDb SQLite Concurrency, PRAGMAs & Indexes...');
@@ -20,7 +29,7 @@ function runHistoryDbTests() {
   assert(synchronous.synchronous === 1, `Expected synchronous=1 (NORMAL), got ${synchronous.synchronous}`);
 
   const cacheSize = historyDb.db.prepare('PRAGMA cache_size;').get();
-  assert(cacheSize.cache_size === -2048, `Expected cache_size=-2048, got ${cacheSize.cache_size}`);
+  assert(cacheSize.cache_size === -1024, `Expected cache_size=-1024, got ${cacheSize.cache_size}`);
 
   const walCheckpoint = historyDb.db.prepare('PRAGMA wal_autocheckpoint;').get();
   assert(walCheckpoint.wal_autocheckpoint === 200, `Expected wal_autocheckpoint=200, got ${walCheckpoint.wal_autocheckpoint}`);
@@ -31,7 +40,7 @@ function runHistoryDbTests() {
   const autoVacuum = historyDb.db.prepare('PRAGMA auto_vacuum;').get();
   assert(autoVacuum.auto_vacuum === 2, `Expected auto_vacuum=2 (INCREMENTAL), got ${autoVacuum.auto_vacuum}`);
 
-  console.log('✓ All PRAGMAs verified (WAL, busy_timeout=5000, synchronous=NORMAL, cache_size=-2048, wal_autocheckpoint=200, temp_store=MEMORY, auto_vacuum=INCREMENTAL).');
+  console.log('✓ All PRAGMAs verified (WAL, busy_timeout=5000, synchronous=NORMAL, cache_size=-1024, wal_autocheckpoint=200, temp_store=MEMORY, auto_vacuum=INCREMENTAL).');
 
   // 2. Verify Indexes
   console.log('\n2. Verifying required direct and composite indexes...');
@@ -44,7 +53,6 @@ function runHistoryDbTests() {
   const requiredIndexes = [
     'idx_delay_time_line',
     'idx_delay_stop',
-    'idx_delay_stop_timestamp',
     'idx_veh_timestamp'
   ];
 
@@ -52,7 +60,7 @@ function runHistoryDbTests() {
     assert(indexNames.includes(req), `Index ${req} missing from database! Found: ${indexNames.join(', ')}`);
     console.log(`✓ Index ${req} verified.`);
   }
-  for (const dropped of ['idx_delay_timestamp', 'idx_delay_line_timestamp']) {
+  for (const dropped of ['idx_delay_timestamp', 'idx_delay_line_timestamp', 'idx_delay_stop_timestamp', 'idx_hourly_stats']) {
     assert(!indexNames.includes(dropped), `Redundant index ${dropped} should have been dropped by migration! Found: ${indexNames.join(', ')}`);
     console.log(`✓ Redundant index ${dropped} correctly absent.`);
   }
@@ -71,6 +79,24 @@ function runHistoryDbTests() {
   const usesVehTimestampIndex = qpVehTimestamp.some(s => s.detail.includes('idx_veh_timestamp'));
   assert(usesVehTimestampIndex, `Expected query on vehicle timestamp to use idx_veh_timestamp, got: ${JSON.stringify(qpVehTimestamp)}`);
   console.log('✓ EXPLAIN QUERY PLAN confirms idx_veh_timestamp used for vehicle queries.');
+
+  const stopPlan = historyDb.db.prepare('EXPLAIN QUERY PLAN SELECT * FROM delay_logs WHERE stop_id = ? AND timestamp >= ?').all('1016', cutoff);
+  assert(stopPlan.some(row => row.detail.includes('idx_delay_stop')));
+  const hourlyPlan = historyDb.db.prepare('EXPLAIN QUERY PLAN SELECT * FROM hourly_line_stats WHERE line_code = ? AND date_hour = ?').all('L1', '2026-09-16 08:00');
+  assert(hourlyPlan.some(row => row.detail.includes('sqlite_autoindex_hourly_line_stats')));
+
+  historyDb.db.exec(`
+    INSERT INTO hourly_line_stats (line_code, date_hour, timestamp) VALUES ('L1', '2026-09-16 08:00', 1);
+    CREATE INDEX idx_delay_stop_timestamp ON delay_logs(stop_id, timestamp);
+    CREATE INDEX idx_hourly_stats ON hourly_line_stats(line_code, date_hour);
+  `);
+  historyDb.close();
+  historyDb.init();
+  const migrated = historyDb.db.prepare("SELECT name FROM sqlite_master WHERE type = 'index'").all().map(row => row.name);
+  assert(!migrated.includes('idx_delay_stop_timestamp'));
+  assert(!migrated.includes('idx_hourly_stats'));
+  assert.strictEqual(historyDb.db.prepare('SELECT COUNT(*) AS n FROM hourly_line_stats').get().n, 1);
+  assert.throws(() => historyDb.db.exec("INSERT INTO hourly_line_stats (line_code, date_hour, timestamp) VALUES ('L1', '2026-09-16 08:00', 2)"), /UNIQUE/);
 
   // 4. Verify checkpointTruncate()
   console.log('\n4. Testing checkpointTruncate()...');

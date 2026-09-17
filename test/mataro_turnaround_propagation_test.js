@@ -17,6 +17,11 @@ async function runTest() {
 
   const simDate = new Date('2026-09-13T13:55:00+02:00'); // Sunday at 13:55
   const origGetStopArrivals = siriClient.getStopArrivals;
+  const origGetLiveVehicles = siriClient.getLiveVehicles;
+  const origGetDisruptions = tracker.getDisruptions;
+  const options = { dateObj: simDate, skipCache: true, skipIntermodal: true };
+  siriClient.getLiveVehicles = async () => [];
+  tracker.getDisruptions = async () => [];
 
   try {
     // Mock SIRI: incoming vehicle terminating at Rodalies (1016) at 13:55
@@ -40,7 +45,7 @@ async function runTest() {
     };
 
     // 1. Check Stop 1016 (Rodalies)
-    const d1016 = await tracker.getStopDepartures('1016', '1', '0', { dateObj: simDate, skipCache: true });
+    const d1016 = await tracker.getStopDepartures('1016', '1', '0', options);
     assert(d1016 && d1016.departures && d1016.departures.length > 0, 'Stop 1016 should return departures');
     const dep1016 = d1016.departures[0];
     assert.strictEqual(dep1016.departureTime, '13:56', 'Stop 1016 departure time should be 13:56');
@@ -50,7 +55,7 @@ async function runTest() {
     console.log('  ✓ Stop 1016 (Rodalies) departure correctly transitioned to 13:56 (+5 min delay)');
 
     // 2. Check Stop 1017 (Ronda Barceló, stop seq 2)
-    const d1017 = await tracker.getStopDepartures('1017', '1', '0', { dateObj: simDate, skipCache: true });
+    const d1017 = await tracker.getStopDepartures('1017', '1', '0', options);
     assert(d1017 && d1017.departures && d1017.departures.length > 0, 'Stop 1017 should return departures');
     const dep1017 = d1017.departures[0];
 
@@ -76,7 +81,7 @@ async function runTest() {
     console.log('  ✓ Stop 1017 scheduled departures preserve Europe/Madrid time without UTC offsets');
 
     // 4. Check Stop 1018 (Pl. Doctor Fleming, stop seq 3)
-    const d1018 = await tracker.getStopDepartures('1018', '1', '0', { dateObj: simDate, skipCache: true });
+    const d1018 = await tracker.getStopDepartures('1018', '1', '0', options);
     const dep1018 = d1018.departures[0];
     assert.strictEqual(dep1018.departureTime, '13:59', 'Stop 1018 departure time should be 13:59 (13:56 + 156s)');
     assert.strictEqual(dep1018.minutesAway, 4, 'Stop 1018 minutes away should be 4 min');
@@ -86,6 +91,8 @@ async function runTest() {
     console.log('\n🎉 ALL DOWNSTREAM PROPAGATION REGRESSION TESTS PASSED 100%!');
   } finally {
     siriClient.getStopArrivals = origGetStopArrivals;
+    siriClient.getLiveVehicles = origGetLiveVehicles;
+    tracker.getDisruptions = origGetDisruptions;
   }
 }
 
