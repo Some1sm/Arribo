@@ -904,7 +904,7 @@ app.get(['/api/analytics/journalism', '/api/retards/journalism'], async (req, re
   const allLines = trackerRegistry.getAllLines();
   try {
     let report = await reportCacheService.getLatestReport(hours, allLines);
-    if (!report) {
+    if (!report || !report.summary || Object.keys(report.summary).length === 0) {
       try {
         report = await workerBridge.historyQuery('generateReport', { hours, allLinesCatalog: allLines }, { timeoutMs: 30000 });
       } catch (_) {}

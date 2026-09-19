@@ -81,9 +81,11 @@ class ReportCacheService {
           const latestFile = files[0];
           try {
             const data = JSON.parse(fs.readFileSync(latestFile.fullPath, 'utf8'));
-            if (data && data.summary) {
+            if (data && data.summary && Object.keys(data.summary).length > 0) {
               this.cachedReports.set(String(h), data);
               console.log(`[ReportCacheService] ⚡ Loaded pre-generated ${h}h report from disk (${latestFile.filename}, generated at ${data.meta?.generatedAt || 'unknown'})`);
+            } else {
+              console.warn(`[ReportCacheService] ⚠️ Skipping corrupted/empty report on disk: ${latestFile.filename}`);
             }
           } catch (err) {
             console.error(`[ReportCacheService] Error reading ${latestFile.filename}:`, err.message);
@@ -321,6 +323,7 @@ class ReportCacheService {
     const maxAgeMs = options.maxAgeMs || 65 * 60 * 1000;
     const ts = report?.meta?.generatedTimestamp;
     if (!Number.isFinite(ts)) return true; // skeleton without meta = stale
+    if (!report.summary || Object.keys(report.summary).length === 0) return true; // empty summary = stale
     // >= (not >): immune to coarse clock granularity where elapsed can
     // equal maxAgeMs exactly on Windows timers.
     return (Date.now() - ts) >= maxAgeMs;
