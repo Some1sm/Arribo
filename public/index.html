@@ -681,6 +681,10 @@
             <span class="tab-text-full">🌡️ El Termòmetre</span>
             <span class="tab-text-compact">🌡️ Termòmetre</span>
           </button>
+          <button type="button" class="line-filter-tab incidents-tab" id="btn-observatori-incidents" data-tab="incidents" title="Investigador d'incidents crítics i retards extrems (+25m)">
+            <span class="tab-text-full">🔍 Top Incidents (+25m)</span>
+            <span class="tab-text-compact">🔍 Incidents</span>
+          </button>
         </div>
         <a href="/api/analytics/export/csv" class="btn-primary btn-csv-export" download>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -696,6 +700,9 @@
 
       <!-- Termòmetre Infographic Scorecard Container -->
       <div id="journalism-termometre-container" style="display:none; margin-bottom:1rem;"></div>
+
+      <!-- Incident Deep-Dive Inspector Container -->
+      <div id="journalism-incidents-container" style="display:none; margin-bottom:1rem;"></div>
 
       <!-- Journalism Content Dynamic Container -->
       <div class="modal-body" id="journalism-content-container" style="overflow-y:auto; overflow-x:hidden; max-width:100%; box-sizing:border-box; padding-right:0.25rem; flex:1; min-height:300px;">

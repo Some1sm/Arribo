@@ -485,36 +485,7 @@ class HistoryDatabase {
 
       const stopKey = row => JSON.stringify([row.agency, row.recordedLineId, row.stopId]);
 
-      const getHourlyTrafficContext = (hourNum) => {
-        if (hourNum === 8) {
-          return { tag: '🚨 Entrada escolar & feina', isSchoolHour: true, isPeak: true, icon: '🎒' };
-        }
-        if (hourNum === 9) {
-          return { tag: '🏫 Post-entrada escoles', isSchoolHour: true, isPeak: false, icon: '📚' };
-        }
-        if (hourNum === 13 || hourNum === 14) {
-          return { tag: '🥪 Migdia escolar & feina', isSchoolHour: true, isPeak: true, icon: '🥪' };
-        }
-        if (hourNum === 17) {
-          return { tag: '🚨 Sortida escolar', isSchoolHour: true, isPeak: true, icon: '🎒' };
-        }
-        if (hourNum === 18 || hourNum === 19) {
-          return { tag: '🚗 Punta tornada feina', isSchoolHour: false, isPeak: true, icon: '🚗' };
-        }
-        if (hourNum === 7) {
-          return { tag: '🌅 Primer torn de feina', isSchoolHour: false, isPeak: false, icon: '🌅' };
-        }
-        if (hourNum >= 10 && hourNum <= 12) {
-          return { tag: '🟢 Vall matinal regular', isSchoolHour: false, isPeak: false, icon: '🟢' };
-        }
-        if (hourNum >= 15 && hourNum <= 16) {
-          return { tag: '🟡 Vall tarda regular', isSchoolHour: false, isPeak: false, icon: '🟡' };
-        }
-        if (hourNum >= 20 && hourNum <= 22) {
-          return { tag: '🌙 Servei vespre', isSchoolHour: false, isPeak: false, icon: '🌙' };
-        }
-        return { tag: '🌙 Servei nocturn / vall', isSchoolHour: false, isPeak: false, icon: '🌙' };
-      };
+      const getHourlyTrafficContext = (hourNum) => this.getHourlyTrafficContext(hourNum);
 
       // Query Hourly Breakdown for Worst Stops (Bottlenecks)
       const stopHourlyStmt = this.db.prepare(`
@@ -782,6 +753,284 @@ class HistoryDatabase {
     } catch (e) {
       console.error('[HistoryDB] exportDelayLogsCsv error:', e.message);
       return 'Error exporting CSV\n';
+    }
+  }
+
+  getHourlyTrafficContext(hourNum) {
+    const h = Number(hourNum) || 0;
+    if (h === 8) {
+      return { tag: '🚨 Entrada escolar & feina', isSchoolHour: true, isPeak: true, icon: '🎒' };
+    }
+    if (h === 9) {
+      return { tag: '🏫 Post-entrada escoles', isSchoolHour: true, isPeak: false, icon: '📚' };
+    }
+    if (h === 13 || h === 14) {
+      return { tag: '🥪 Migdia escolar & feina', isSchoolHour: true, isPeak: true, icon: '🥪' };
+    }
+    if (h === 17) {
+      return { tag: '🚨 Sortida escolar', isSchoolHour: true, isPeak: true, icon: '🎒' };
+    }
+    if (h === 18 || h === 19) {
+      return { tag: '🚗 Punta tornada feina', isSchoolHour: false, isPeak: true, icon: '🚗' };
+    }
+    if (h === 7) {
+      return { tag: '🌅 Primer torn de feina', isSchoolHour: false, isPeak: false, icon: '🌅' };
+    }
+    if (h >= 10 && h <= 12) {
+      return { tag: '🟢 Vall matinal regular', isSchoolHour: false, isPeak: false, icon: '🟢' };
+    }
+    if (h >= 15 && h <= 16) {
+      return { tag: '🟡 Vall tarda regular', isSchoolHour: false, isPeak: false, icon: '🟡' };
+    }
+    if (h >= 20 && h <= 22) {
+      return { tag: '🌙 Servei vespre', isSchoolHour: false, isPeak: false, icon: '🌙' };
+    }
+    return { tag: '🌙 Servei nocturn / vall', isSchoolHour: false, isPeak: false, icon: '🌙' };
+  }
+
+  /**
+   * Deep-Dive Incident Inspector: Query and cluster high-delay occurrences.
+   * Enables analyzing where, when, and how severe delays (>5m) formed.
+   */
+  getDelayIncidents({ lineCode = 'all', hours = 168, limit = 20, minDelay = 5 } = {}) {
+    if (!this._ensureOpen()) {
+      return {
+        lineCode: String(lineCode || 'all').toUpperCase(),
+        hoursAnalyzed: Number(hours) || 168,
+        minDelayThreshold: Number(minDelay) || 5,
+        summary: {
+          totalRecordedIncidents: 0,
+          maxDelayMins: 0,
+          worstStop: 'Cap',
+          worstStopCount: 0,
+          worstHour: '--:00',
+          worstHourTag: '',
+          movingCount: 0,
+          stationaryCount: 0,
+          movingPct: 0
+        },
+        topIncidents: [],
+        incidentTrips: []
+      };
+    }
+
+    try {
+      const hoursNum = Math.max(1, Math.min(720, Number(hours) || 168));
+      const limitNum = Math.max(1, Math.min(100, Number(limit) || 20));
+      const minDelayNum = Math.max(1, Number(minDelay) || 5);
+      const cutoff = Date.now() - (hoursNum * 3600 * 1000);
+
+      const cleanCode = String(lineCode || '').toUpperCase().trim();
+      const isAll = !cleanCode || cleanCode === 'ALL' || cleanCode === 'TOTES';
+      const codeWithL = cleanCode.startsWith('L') ? cleanCode : `L${cleanCode}`;
+      const codeWithoutL = cleanCode.replace(/^L/, '');
+
+      let sqlWhere = 'timestamp >= ? AND delay_mins >= ?';
+      const baseParams = [cutoff, minDelayNum];
+      if (!isAll) {
+        sqlWhere += ' AND (UPPER(line_code) = ? OR UPPER(line_code) = ? OR line_id = ?)';
+        baseParams.push(codeWithL, codeWithoutL, codeWithoutL);
+      }
+
+      // 1. Summary Aggregate KPIs
+      const aggStmt = this.db.prepare(`
+        SELECT COUNT(*) as totalCount, COALESCE(MAX(delay_mins), 0) as maxDelay
+        FROM delay_logs
+        WHERE ${sqlWhere}
+      `);
+      const agg = aggStmt.get(...baseParams) || { totalCount: 0, maxDelay: 0 };
+
+      // Worst stop
+      const worstStopStmt = this.db.prepare(`
+        SELECT stop_name as stopName, COUNT(*) as cnt
+        FROM delay_logs
+        WHERE ${sqlWhere}
+        GROUP BY stop_name
+        ORDER BY cnt DESC
+        LIMIT 1
+      `);
+      const worstStopRow = worstStopStmt.get(...baseParams);
+
+      // Worst hour
+      const worstHourStmt = this.db.prepare(`
+        SELECT madrid_hour(timestamp) as hourOfDay, COUNT(*) as cnt
+        FROM delay_logs
+        WHERE ${sqlWhere}
+        GROUP BY hourOfDay
+        ORDER BY cnt DESC
+        LIMIT 1
+      `);
+      const worstHourRow = worstHourStmt.get(...baseParams);
+
+      // 2. Top individual delay records
+      const topStmt = this.db.prepare(`
+        SELECT 
+          id,
+          line_id as lineId,
+          line_code as lineCode,
+          agency,
+          stop_id as stopId,
+          stop_name as stopName,
+          delay_mins as delayMins,
+          is_realtime as isRealTime,
+          timestamp,
+          datetime(timestamp / 1000, 'unixepoch', 'localtime') as formattedDate,
+          madrid_hour(timestamp) as hourOfDay
+        FROM delay_logs
+        WHERE ${sqlWhere}
+        ORDER BY delay_mins DESC, timestamp DESC
+        LIMIT ?
+      `);
+      const topRows = topStmt.all(...baseParams, limitNum);
+      const enrichedTop = topRows.map((r, idx) => {
+        const h = parseInt(r.hourOfDay, 10);
+        const ctx = this.getHourlyTrafficContext(h);
+        return {
+          rank: idx + 1,
+          ...r,
+          isRealTime: Boolean(r.isRealTime),
+          trafficTag: ctx.tag,
+          trafficIcon: ctx.icon,
+          isPeak: ctx.isPeak,
+          isSchoolHour: ctx.isSchoolHour
+        };
+      });
+
+      // 3. Cluster incident trips (group consecutive telemetry pings within 15 min on same line)
+      const clusterStmt = this.db.prepare(`
+        SELECT 
+          id,
+          line_id as lineId,
+          line_code as lineCode,
+          agency,
+          stop_id as stopId,
+          stop_name as stopName,
+          delay_mins as delayMins,
+          is_realtime as isRealTime,
+          timestamp,
+          datetime(timestamp / 1000, 'unixepoch', 'localtime') as formattedDate,
+          madrid_hour(timestamp) as hourOfDay
+        FROM delay_logs
+        WHERE ${sqlWhere}
+        ORDER BY line_code ASC, timestamp ASC
+        LIMIT 3000
+      `);
+      const clusterRows = clusterStmt.all(...baseParams);
+
+      const byLine = new Map();
+      clusterRows.forEach(r => {
+        const lk = r.lineCode;
+        if (!byLine.has(lk)) byLine.set(lk, []);
+        byLine.get(lk).push(r);
+      });
+
+      const allClusters = [];
+      byLine.forEach((rows, lk) => {
+        let cur = null;
+        rows.forEach(r => {
+          if (!cur || (r.timestamp - cur.lastTs > 15 * 60 * 1000)) {
+            if (cur) allClusters.push(cur);
+            cur = {
+              lineCode: lk,
+              agency: r.agency,
+              firstTs: r.timestamp,
+              lastTs: r.timestamp,
+              startTime: r.formattedDate,
+              endTime: r.formattedDate,
+              hourOfDay: r.hourOfDay,
+              maxDelay: r.delayMins,
+              delaySum: r.delayMins,
+              sampleCount: 1,
+              stops: [r.stopName],
+              firstStop: r.stopName,
+              lastStop: r.stopName
+            };
+          } else {
+            cur.lastTs = r.timestamp;
+            cur.endTime = r.formattedDate;
+            cur.sampleCount++;
+            cur.delaySum += r.delayMins;
+            if (r.delayMins > cur.maxDelay) cur.maxDelay = r.delayMins;
+            if (!cur.stops.includes(r.stopName)) {
+              cur.stops.push(r.stopName);
+            }
+            cur.lastStop = r.stopName;
+          }
+        });
+        if (cur) allClusters.push(cur);
+      });
+
+      const enrichedClusters = allClusters.map(c => {
+        const durMins = Math.round((c.lastTs - c.firstTs) / 60000);
+        const h = parseInt(c.hourOfDay, 10);
+        const ctx = this.getHourlyTrafficContext(h);
+        const isMovingTraffic = c.stops.length > 1;
+        return {
+          lineCode: c.lineCode,
+          agency: c.agency,
+          startTime: c.startTime,
+          endTime: c.endTime,
+          durationMinutes: durMins,
+          maxDelayMins: c.maxDelay,
+          avgDelayMins: Math.round((c.delaySum / c.sampleCount) * 10) / 10,
+          sampleCount: c.sampleCount,
+          stopsTraversed: c.stops,
+          firstStop: c.firstStop,
+          lastStop: c.lastStop,
+          stopsCount: c.stops.length,
+          isMovingTraffic,
+          incidentType: isMovingTraffic ? 'traffic' : 'layover',
+          incidentTypeLabel: isMovingTraffic ? '🚗 Trànsit en Ruta' : '⏱️ Regulació / Capçalera',
+          trafficTag: ctx.tag,
+          trafficIcon: ctx.icon
+        };
+      }).sort((a, b) => b.maxDelayMins - a.maxDelayMins || b.sampleCount - a.sampleCount);
+
+      const movingCount = enrichedClusters.filter(c => c.isMovingTraffic).length;
+      const stationaryCount = enrichedClusters.filter(c => !c.isMovingTraffic).length;
+      const totalClusters = enrichedClusters.length;
+
+      const worstHourStr = worstHourRow?.hourOfDay != null ? `${String(worstHourRow.hourOfDay).padStart(2, '0')}:00` : '--:00';
+      const worstHourContext = worstHourRow?.hourOfDay != null ? this.getHourlyTrafficContext(parseInt(worstHourRow.hourOfDay, 10)) : null;
+
+      return {
+        lineCode: isAll ? 'ALL' : codeWithL,
+        hoursAnalyzed: hoursNum,
+        minDelayThreshold: minDelayNum,
+        summary: {
+          totalRecordedIncidents: agg.totalCount || 0,
+          maxDelayMins: agg.maxDelay || 0,
+          worstStop: worstStopRow?.stopName || 'Cap',
+          worstStopCount: worstStopRow?.cnt || 0,
+          worstHour: worstHourStr,
+          worstHourTag: worstHourContext ? worstHourContext.tag : '',
+          movingCount,
+          stationaryCount,
+          movingPct: totalClusters > 0 ? Math.round((movingCount / totalClusters) * 100) : 0
+        },
+        topIncidents: enrichedTop,
+        incidentTrips: enrichedClusters.slice(0, limitNum)
+      };
+    } catch (e) {
+      console.error('[HistoryDB] getDelayIncidents error:', e.message);
+      return {
+        lineCode: String(lineCode || 'all').toUpperCase(),
+        hoursAnalyzed: Number(hours) || 168,
+        minDelayThreshold: Number(minDelay) || 5,
+        summary: {
+          totalRecordedIncidents: 0,
+          maxDelayMins: 0,
+          worstStop: 'Cap',
+          worstStopCount: 0,
+          worstHour: '--:00',
+          worstHourTag: '',
+          movingCount: 0,
+          stationaryCount: 0,
+          movingPct: 0
+        },
+        topIncidents: [],
+        incidentTrips: []
+      };
     }
   }
 

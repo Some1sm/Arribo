@@ -1,0 +1,164 @@
+const assert = require('node:assert');
+const path = require('node:path');
+const fs = require('node:fs');
+const { DatabaseSync } = require('node:sqlite');
+
+console.log('🧪 Starting Delay Incident Inspector & Deep-Dive Test Suite...\n');
+
+// 1. Setup isolated test database
+const testDir = path.join(__dirname, '..', 'data', 'test_scratch');
+if (!fs.existsSync(testDir)) fs.mkdirSync(testDir, { recursive: true });
+const testDbPath = path.join(testDir, 'test_delay_incidents.db');
+if (fs.existsSync(testDbPath)) fs.unlinkSync(testDbPath);
+
+const historyDb = require('../src/historyDb');
+historyDb.init(testDbPath);
+
+const now = Date.now();
+const oneHour = 3600 * 1000;
+const twentySec = 20 * 1000;
+
+// Populate realistic test data into delay_logs:
+// Scenario A: Line 5 moving in evening rush hour (moving bus across 4 stops, reaching +25m delay)
+const l5Start = now - (2 * oneHour);
+const l5Stops = ['Rodalies', 'Via Europa', 'Pl. Itàlia', 'Hospital de Mataró'];
+l5Stops.forEach((stopName, idx) => {
+  // 3 pings per stop
+  for (let p = 0; p < 3; p++) {
+    historyDb.recordDelayLog({
+      lineId: '5',
+      lineCode: 'L5',
+      agency: 'Mataró Bus (Avanza)',
+      stopId: stopName,
+      stopName: stopName,
+      delayMins: 15 + (idx * 3) + p, // delays reaching 24-25 min
+      scheduledTime: '',
+      actualTime: '',
+      isRealTime: true
+    });
+  }
+});
+
+// Scenario B: Line 2 parked at terminal layover (stationary bus at same stop for 30 min, delay 20m)
+const l2Start = now - (3 * oneHour);
+for (let p = 0; p < 5; p++) {
+  historyDb.recordDelayLog({
+    lineId: '2',
+    lineCode: 'L2',
+    agency: 'Mataró Bus (Avanza)',
+    stopId: 'Estació Rodalies',
+    stopName: 'Estació Rodalies',
+    delayMins: 20,
+    scheduledTime: '',
+    actualTime: '',
+    isRealTime: true
+  });
+}
+
+// Scenario C: Minor delays (<5m) that should be excluded by default threshold
+for (let p = 0; p < 5; p++) {
+  historyDb.recordDelayLog({
+    lineId: '1',
+    lineCode: 'L1',
+    agency: 'Mataró Bus (Avanza)',
+    stopId: 'Pl. de les Tereses',
+    stopName: 'Pl. de les Tereses',
+    delayMins: 2,
+    scheduledTime: '',
+    actualTime: '',
+    isRealTime: true
+  });
+}
+
+console.log('--- 1. Testing getHourlyTrafficContext ---');
+const schoolCtx = historyDb.getHourlyTrafficContext(8);
+assert.strictEqual(schoolCtx.isSchoolHour, true);
+assert.strictEqual(schoolCtx.isPeak, true);
+assert.ok(schoolCtx.tag.includes('Entrada escolar'));
+
+const peakCtx = historyDb.getHourlyTrafficContext(19);
+assert.strictEqual(peakCtx.isPeak, true);
+assert.ok(peakCtx.tag.includes('Punta tornada feina'));
+
+const valleyCtx = historyDb.getHourlyTrafficContext(11);
+assert.strictEqual(valleyCtx.isPeak, false);
+assert.ok(valleyCtx.tag.includes('Vall matinal'));
+console.log('✅ getHourlyTrafficContext accurately identifies traffic windows.');
+
+console.log('\n--- 2. Testing getDelayIncidents for specific line (L5) ---');
+const l5Incidents = historyDb.getDelayIncidents({ lineCode: 'L5', hours: 24, limit: 10, minDelay: 5 });
+assert.strictEqual(l5Incidents.lineCode, 'L5');
+assert.ok(l5Incidents.summary.totalRecordedIncidents > 0);
+assert.ok(l5Incidents.summary.maxDelayMins >= 24);
+assert.ok(l5Incidents.topIncidents.length > 0);
+assert.strictEqual(l5Incidents.topIncidents[0].lineCode, 'L5');
+assert.ok(Number.isFinite(l5Incidents.topIncidents[0].rank));
+assert.ok(l5Incidents.topIncidents[0].trafficTag.length > 0);
+
+// Check trip clustering for moving bus
+assert.ok(l5Incidents.incidentTrips.length > 0);
+const l5Trip = l5Incidents.incidentTrips[0];
+assert.strictEqual(l5Trip.lineCode, 'L5');
+assert.strictEqual(l5Trip.isMovingTraffic, true);
+assert.strictEqual(l5Trip.incidentType, 'traffic');
+assert.ok(l5Trip.stopsTraversed.length >= 3);
+console.log('✅ Specific line query and moving bus trip clustering verified.');
+
+console.log('\n--- 3. Testing getDelayIncidents for stationary layover (L2) ---');
+const l2Incidents = historyDb.getDelayIncidents({ lineCode: 'L2', hours: 24, limit: 10, minDelay: 5 });
+assert.strictEqual(l2Incidents.lineCode, 'L2');
+assert.ok(l2Incidents.incidentTrips.length > 0);
+const l2Trip = l2Incidents.incidentTrips[0];
+assert.strictEqual(l2Trip.isMovingTraffic, false);
+assert.strictEqual(l2Trip.incidentType, 'layover');
+assert.strictEqual(l2Trip.stopsTraversed.length, 1);
+assert.strictEqual(l2Trip.stopsTraversed[0], 'Estació Rodalies');
+console.log('✅ Stationary layover vs moving vehicle detection verified.');
+
+console.log('\n--- 4. Testing network-wide query (ALL lines) ---');
+const allIncidents = historyDb.getDelayIncidents({ lineCode: 'all', hours: 24, limit: 20, minDelay: 5 });
+assert.strictEqual(allIncidents.lineCode, 'ALL');
+assert.ok(allIncidents.summary.totalRecordedIncidents >= l5Incidents.summary.totalRecordedIncidents + l2Incidents.summary.totalRecordedIncidents);
+assert.ok(allIncidents.summary.movingCount >= 1);
+assert.ok(allIncidents.summary.stationaryCount >= 1);
+assert.ok(allIncidents.summary.movingPct > 0 && allIncidents.summary.movingPct < 100);
+console.log('✅ Network-wide query and aggregate metrics verified.');
+
+console.log('\n--- 5. Testing threshold filter (minDelay) ---');
+// Line 1 only has delays of 2m; should yield 0 records with minDelay=5
+const l1Incidents = historyDb.getDelayIncidents({ lineCode: 'L1', hours: 24, minDelay: 5 });
+assert.strictEqual(l1Incidents.summary.totalRecordedIncidents, 0);
+assert.strictEqual(l1Incidents.topIncidents.length, 0);
+assert.strictEqual(l1Incidents.incidentTrips.length, 0);
+
+// With minDelay=1, Line 1 records must appear
+const l1IncidentsLow = historyDb.getDelayIncidents({ lineCode: 'L1', hours: 24, minDelay: 1 });
+assert.ok(l1IncidentsLow.summary.totalRecordedIncidents > 0);
+assert.strictEqual(l1IncidentsLow.topIncidents[0].lineCode, 'L1');
+console.log('✅ Delay threshold boundary filtering verified.');
+
+console.log('\n--- 6. Testing Worker RPC operation dispatch ---');
+const ingestionWorker = require('../src/workers/ingestionWorker');
+// Verify executeDbOperation is a function
+assert.strictEqual(typeof ingestionWorker.executeDbOperation, 'function');
+ingestionWorker.executeDbOperation('getDelayIncidents', { lineCode: 'L5', hours: 24 })
+  .then(res => {
+    assert.ok(res);
+    assert.strictEqual(res.lineCode, 'L5');
+    assert.ok(res.summary);
+    assert.ok(Array.isArray(res.topIncidents));
+    assert.ok(Array.isArray(res.incidentTrips));
+    console.log('✅ Worker RPC dispatch for getDelayIncidents verified.');
+
+    // Cleanup test database
+    try {
+      historyDb.close();
+      if (fs.existsSync(testDbPath)) fs.unlinkSync(testDbPath);
+    } catch (_) {}
+
+    console.log('\n🎉 ALL DELAY INCIDENT INSPECTOR TESTS PASSED PERFECTLY! 🎉');
+  })
+  .catch(err => {
+    console.error('❌ Worker RPC test failed:', err);
+    process.exit(1);
+  });

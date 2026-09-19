@@ -2108,6 +2108,7 @@ class TransitApp {
                     <th data-sort-table="mostDelayed" data-sort-key="avgDelay" role="button" tabindex="0">Retard Mitjà ${getSortIndicator('mostDelayed', 'avgDelay')}</th>
                     <th class="observatori-col-desktop" data-sort-table="mostDelayed" data-sort-key="maxDelay" role="button" tabindex="0">Retard Màx. ${getSortIndicator('mostDelayed', 'maxDelay')}</th>
                     <th data-sort-table="mostDelayed" data-sort-key="latePercentage" role="button" tabindex="0">% Expedicions Tardanes ${getSortIndicator('mostDelayed', 'latePercentage')}</th>
+                    <th style="text-align:center; min-width:105px;">Incidents</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2130,6 +2131,11 @@ class TransitApp {
                       <td class="observatori-col-desktop" style="color:var(--text-muted); white-space:nowrap;">${maxStr}</td>
                       <td style="white-space:nowrap; text-align:center;">
                         <span style="background:rgba(239,68,68,0.15); color:#f87171; padding:0.15rem 0.45rem; border-radius:6px; font-weight:600;">${l.latePercentage}%</span>
+                      </td>
+                      <td style="white-space:nowrap; text-align:center;">
+                        <button type="button" class="btn-locate-incident-stop" data-inspect-line="${this.esc(l.lineCode || l.lineId)}" title="Investigar retards i incidents crítics de ${this.esc(l.lineCode)}">
+                          <span>🔍 Investigar</span>
+                        </button>
                       </td>
                     </tr>
                   `;}).join('')}
@@ -4854,6 +4860,13 @@ class TransitApp {
         this.setWorstStopsLimit(Number(limitButton.dataset.worstLimit));
         return;
       }
+      const inspectBtn = e.target.closest('[data-inspect-line]');
+      if (inspectBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.openDelayIncidentsTab(inspectBtn.dataset.inspectLine);
+        return;
+      }
       const lineRow = e.target.closest('[data-open-line]');
       if (lineRow) {
         this.closeJournalismModal();
@@ -5230,6 +5243,7 @@ class TransitApp {
     this.setupTrafficEvents();
     this.setupProximityAlarmEvents();
     this.setupTermometreEvents();
+    this.setupDelayIncidentsEvents();
   }
 
   // ==========================================
@@ -5294,7 +5308,7 @@ class TransitApp {
       }
     });
 
-    document.querySelectorAll('#journalism-timeframe-tabs button:not(.termometre-tab)').forEach(btn => {
+    document.querySelectorAll('#journalism-timeframe-tabs button:not(.termometre-tab):not(.incidents-tab)').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.preventDefault();
         document.querySelectorAll('#journalism-timeframe-tabs button').forEach(b => b.classList.remove('active'));
@@ -5302,9 +5316,11 @@ class TransitApp {
         const searchBarWrap = document.getElementById('journalism-search-bar-wrap');
         const contentContainer = document.getElementById('journalism-content-container');
         const termometreContainer = document.getElementById('journalism-termometre-container');
+        const incidentsContainer = document.getElementById('journalism-incidents-container');
         if (searchBarWrap) searchBarWrap.style.display = 'block';
         if (contentContainer) contentContainer.style.display = 'block';
         if (termometreContainer) termometreContainer.style.display = 'none';
+        if (incidentsContainer) incidentsContainer.style.display = 'none';
         const hours = parseInt(btn.getAttribute('data-hours') || '24', 10);
         this.openJournalismModal(hours);
       });
@@ -6375,8 +6391,10 @@ class TransitApp {
       timeframeTabs?.querySelectorAll('.line-filter-tab').forEach(t => t.classList.remove('active'));
       termometreTab.classList.add('active');
 
+      const incidentsContainer = document.getElementById('journalism-incidents-container');
       if (searchBarWrap) searchBarWrap.style.display = 'none';
       if (contentContainer) contentContainer.style.display = 'none';
+      if (incidentsContainer) incidentsContainer.style.display = 'none';
       if (termometreContainer) {
         termometreContainer.style.display = 'block';
         termometreContainer.innerHTML = '<div style="text-align:center; padding:2rem;"><span class="loading-spinner-inline"></span> Generant la fitxa del Termòmetre...</div>';
@@ -6393,6 +6411,340 @@ class TransitApp {
         }
       }
     });
+  }
+
+  // ==========================================
+  // "INVESTIGADOR D'INCIDENTS CRÍTICS" DEEP-DIVE
+  // ==========================================
+
+  setupDelayIncidentsEvents() {
+    const incidentsTab = document.getElementById('btn-observatori-incidents');
+    const incidentsContainer = document.getElementById('journalism-incidents-container');
+
+    incidentsTab?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.openDelayIncidentsTab('all');
+    });
+
+    incidentsContainer?.addEventListener('click', (e) => {
+      const linePill = e.target.closest('[data-incident-line]');
+      if (linePill) {
+        e.preventDefault();
+        const line = linePill.dataset.incidentLine;
+        this.openDelayIncidentsView(line, this._currentIncidentHours || 168, this._currentIncidentMode || 'top');
+        return;
+      }
+
+      const hoursPill = e.target.closest('[data-incident-hours]');
+      if (hoursPill) {
+        e.preventDefault();
+        const hours = parseInt(hoursPill.dataset.incidentHours, 10) || 168;
+        this.openDelayIncidentsView(this._currentIncidentLine || 'all', hours, this._currentIncidentMode || 'top');
+        return;
+      }
+
+      const tabBtn = e.target.closest('[data-incident-tab]');
+      if (tabBtn) {
+        e.preventDefault();
+        const tab = tabBtn.dataset.incidentTab;
+        this._currentIncidentMode = tab;
+        if (this._lastIncidentData) {
+          this.renderDelayIncidentsView(this._lastIncidentData, this._currentIncidentLine || 'all', this._currentIncidentHours || 168, tab);
+        }
+        return;
+      }
+
+      const locateBtn = e.target.closest('[data-locate-stop]');
+      if (locateBtn) {
+        e.preventDefault();
+        const stopName = locateBtn.dataset.locateStop;
+        const lineCode = locateBtn.dataset.locateLine;
+        this.jumpToIncidentStop(lineCode, stopName);
+        return;
+      }
+    });
+  }
+
+  openDelayIncidentsTab(lineCode = 'all') {
+    const incidentsTab = document.getElementById('btn-observatori-incidents');
+    const timeframeTabs = document.getElementById('journalism-timeframe-tabs');
+    const incidentsContainer = document.getElementById('journalism-incidents-container');
+    const termometreContainer = document.getElementById('journalism-termometre-container');
+    const contentContainer = document.getElementById('journalism-content-container');
+    const searchBarWrap = document.getElementById('journalism-search-bar-wrap');
+
+    timeframeTabs?.querySelectorAll('.line-filter-tab').forEach(t => t.classList.remove('active'));
+    incidentsTab?.classList.add('active');
+
+    if (searchBarWrap) searchBarWrap.style.display = 'none';
+    if (contentContainer) contentContainer.style.display = 'none';
+    if (termometreContainer) termometreContainer.style.display = 'none';
+    if (incidentsContainer) incidentsContainer.style.display = 'block';
+
+    const hours = this.currentJournalismHours || 168;
+    this.openDelayIncidentsView(lineCode, hours, 'top');
+  }
+
+  async openDelayIncidentsView(lineCode = 'all', hours = 168, viewMode = 'top') {
+    this._currentIncidentLine = lineCode;
+    this._currentIncidentHours = hours;
+    this._currentIncidentMode = viewMode;
+
+    const container = document.getElementById('journalism-incidents-container');
+    if (!container) return;
+
+    const cleanLabel = (lineCode === 'all' || lineCode === 'ALL') ? 'tota la xarxa' : lineCode;
+    container.innerHTML = `
+      <div style="text-align:center; padding:3rem 1rem; color:var(--text-muted);">
+        <span class="loading-spinner-inline" style="width:24px; height:24px; border-width:3px; margin-bottom:0.75rem;"></span>
+        <div style="font-weight:700; font-size:0.95rem; color:var(--text-primary); margin-top:0.5rem;">Analitzant telemetria històrica...</div>
+        <div style="font-size:0.8rem; margin-top:0.25rem;">Cercant incidents crítics i traçant trajectòries per a ${cleanLabel}</div>
+      </div>
+    `;
+
+    try {
+      const cleanLine = encodeURIComponent(lineCode);
+      const res = await fetch(`/api/analytics/incidents?line=${cleanLine}&hours=${hours}&limit=30&minDelay=5`).then(r => r.json());
+      if (res && res.success) {
+        this._lastIncidentData = res;
+        this.renderDelayIncidentsView(res, lineCode, hours, viewMode);
+      } else {
+        container.innerHTML = `<div style="padding:2rem; text-align:center; color:#ef4444;">Error en carregar les dades d'incidents.</div>`;
+      }
+    } catch (err) {
+      container.innerHTML = `<div style="padding:2rem; text-align:center; color:#ef4444;">Error de connexió al carregar incidents.</div>`;
+    }
+  }
+
+  renderDelayIncidentsView(data, selectedLine = 'all', selectedHours = 168, activeTab = 'top') {
+    const container = document.getElementById('journalism-incidents-container');
+    if (!container || !data) return;
+
+    const s = data.summary || {};
+    const topList = data.topIncidents || [];
+    const tripsList = data.incidentTrips || [];
+    const activeLineNorm = String(selectedLine || 'all').toUpperCase();
+    const linesCatalog = ['L1', 'L2', 'L3', 'L4', 'L5', 'L6', 'L7', 'L8'];
+
+    const getLineColor = (code) => {
+      const match = (this.availableLines || []).find(l => String(l.code || l.id).toUpperCase() === String(code).toUpperCase());
+      return match?.color || 'var(--brand-primary)';
+    };
+
+    container.innerHTML = `
+      <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:1.1rem; margin-bottom:1.25rem;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.75rem;">
+          <div>
+            <span style="font-size:0.75rem; font-weight:800; color:#38bdf8; text-transform:uppercase; letter-spacing:0.5px;">Observatori de Mobilitat • Anàlisi de Causes</span>
+            <h3 style="font-size:1.35rem; font-weight:800; color:#fff; margin:0.2rem 0;">🔍 Investigador d'Incidents Crítics & Top Retards</h3>
+            <p style="font-size:0.78rem; color:var(--text-muted); margin:0; max-width:680px;">
+              Auditoria de retards extrems (&ge; 5 min) detectats per telemetria GPS. Permet investigar si els retards màxims (+25 min) corresponen a retencions de trànsit reals en moviment o a autobusos regulant a capçalera.
+            </p>
+          </div>
+        </div>
+
+        <!-- Filter Controls Row -->
+        <div style="display:flex; flex-direction:column; gap:0.65rem; margin-top:1rem; padding-top:0.85rem; border-top:1px solid var(--border-subtle);">
+          <!-- Timeframe selector -->
+          <div style="display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap;">
+            <span style="font-size:0.75rem; font-weight:700; color:var(--text-muted); min-width:60px;">Període:</span>
+            <button type="button" class="incident-filter-pill ${Number(selectedHours) === 24 ? 'active' : ''}" data-incident-hours="24">⏱️ 24 hores</button>
+            <button type="button" class="incident-filter-pill ${Number(selectedHours) === 48 ? 'active' : ''}" data-incident-hours="48">📅 48 hores</button>
+            <button type="button" class="incident-filter-pill ${Number(selectedHours) === 168 ? 'active' : ''}" data-incident-hours="168">🗓️ 7 dies</button>
+          </div>
+
+          <!-- Line selector -->
+          <div style="display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap;">
+            <span style="font-size:0.75rem; font-weight:700; color:var(--text-muted); min-width:60px;">Línia:</span>
+            <button type="button" class="incident-filter-pill ${activeLineNorm === 'ALL' ? 'active' : ''}" data-incident-line="all">🌐 Totes les línies</button>
+            ${linesCatalog.map(lCode => {
+              const isActive = activeLineNorm === lCode;
+              const color = getLineColor(lCode);
+              return `
+                <button type="button" class="incident-filter-pill ${isActive ? 'active' : ''}" data-incident-line="${lCode}">
+                  <span style="width:8px; height:8px; border-radius:50%; background:${color}; display:inline-block;"></span>
+                  <span>${lCode}</span>
+                </button>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      </div>
+
+      <!-- KPI Summary Cards -->
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.75rem; margin-bottom:1.25rem;">
+        <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
+          <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">Retard Màxim Registrat</div>
+          <div style="font-size:1.6rem; font-weight:800; color:#ef4444; margin-top:0.2rem;">+${s.maxDelayMins || 0} min</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">${(s.totalRecordedIncidents || 0).toLocaleString()} mostres amb retard &ge; 5m</div>
+        </div>
+
+        <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
+          <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">Punt Negre (Més Afectat)</div>
+          <div style="font-size:1.05rem; font-weight:700; color:var(--brand-primary); margin-top:0.25rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${this.esc(s.worstStop || 'Cap')}">📍 ${this.esc(s.worstStop || 'Cap')}</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">${s.worstStopCount || 0} afectacions registrades</div>
+        </div>
+
+        <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
+          <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">Franja amb Més Retards</div>
+          <div style="font-size:1.15rem; font-weight:700; color:#f59e0b; margin-top:0.25rem;">⏰ ${s.worstHour || '--:00'}</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">${s.worstHourTag || 'Horari regular'}</div>
+        </div>
+
+        <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
+          <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">Naturalesa de les Incidències</div>
+          <div style="font-size:1.05rem; font-weight:700; color:#38bdf8; margin-top:0.25rem;">${s.movingPct || 0}% Trànsit actiu</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">${s.stationaryCount || 0} aturades / regulacions a capçalera</div>
+        </div>
+      </div>
+
+      <!-- Sub-Tab Mode Switcher -->
+      <div style="display:flex; gap:0.5rem; border-bottom:1px solid var(--border-subtle); padding-bottom:0.75rem; margin-bottom:1rem;">
+        <button type="button" class="incident-view-mode-tab ${activeTab === 'top' ? 'active' : ''}" data-incident-tab="top">
+          <span>📋 Rànquing Retards Individuals (${topList.length})</span>
+        </button>
+        <button type="button" class="incident-view-mode-tab ${activeTab === 'trips' ? 'active' : ''}" data-incident-tab="trips">
+          <span>🚌 Expedicions & Trajectòries Afectades (${tripsList.length})</span>
+        </button>
+      </div>
+
+      <!-- Mode 1: Top Individual Delays Table -->
+      ${activeTab === 'top' ? `
+        ${topList.length === 0 ? `
+          <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:10px; padding:2rem; text-align:center; color:var(--text-muted);">
+            No s'han registrat retards greus (&ge; 5 min) per a la selecció actual (${selectedHours}h).
+          </div>
+        ` : `
+          <div class="observatori-table-wrapper">
+            <table class="observatori-table">
+              <thead>
+                <tr>
+                  <th style="width:45px; text-align:center;">#</th>
+                  <th>Retard</th>
+                  <th>Línia</th>
+                  <th>Parada Afectada</th>
+                  <th>Data i Hora</th>
+                  <th>Context Horari</th>
+                  <th style="text-align:center;">Senyal</th>
+                  <th style="text-align:center;">Mapa</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${topList.map((inc, i) => {
+                  const lColor = getLineColor(inc.lineCode);
+                  const delayClass = inc.delayMins >= 20 ? '#ef4444' : (inc.delayMins >= 10 ? '#f59e0b' : '#38bdf8');
+                  return `
+                    <tr>
+                      <td style="font-weight:700; color:var(--text-muted); text-align:center;">${inc.rank || (i + 1)}</td>
+                      <td style="font-weight:800; color:${delayClass}; white-space:nowrap;">+${inc.delayMins} min</td>
+                      <td>
+                        <span style="background:${lColor}; color:#fff; padding:0.15rem 0.45rem; border-radius:5px; font-weight:800; font-size:0.75rem;">${this.esc(inc.lineCode)}</span>
+                      </td>
+                      <td style="font-weight:600; color:var(--text-primary);">
+                        <span style="color:#38bdf8; margin-right:4px;">📍</span>${this.esc(inc.stopName)}
+                      </td>
+                      <td style="color:var(--text-secondary); white-space:nowrap; font-size:0.8rem;">
+                        ${this.esc(inc.formattedDate || '')}
+                      </td>
+                      <td style="white-space:nowrap; font-size:0.78rem;">
+                        <span>${inc.trafficIcon || '⏱️'}</span>
+                        <span style="color:var(--text-muted); margin-left:3px;">${this.esc(inc.trafficTag || '')}</span>
+                      </td>
+                      <td style="text-align:center; white-space:nowrap;">
+                        <span style="background:${inc.isRealTime ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)'}; color:${inc.isRealTime ? '#10b981' : '#fbbf24'}; padding:0.15rem 0.4rem; border-radius:5px; font-size:0.7rem; font-weight:700;">
+                          ${inc.isRealTime ? '🟢 GPS' : '⚡ Estimat'}
+                        </span>
+                      </td>
+                      <td style="text-align:center; white-space:nowrap;">
+                        <button type="button" class="btn-locate-incident-stop" data-locate-line="${this.esc(inc.lineCode)}" data-locate-stop="${this.esc(inc.stopName)}" title="Veure aquesta parada al mapa">
+                          <span>📍 Mapa</span>
+                        </button>
+                      </td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        `}
+      ` : `
+        <!-- Mode 2: Clustered Trips & Trajectories -->
+        ${tripsList.length === 0 ? `
+          <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:10px; padding:2rem; text-align:center; color:var(--text-muted);">
+            No s'han detectat expedicions amb retard greu continuat en aquest període.
+          </div>
+        ` : `
+          <div style="display:flex; flex-direction:column; gap:0.75rem;">
+            ${tripsList.map(trip => {
+              const lColor = getLineColor(trip.lineCode);
+              return `
+                <div class="trip-card">
+                  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+                    <div style="display:flex; align-items:center; gap:0.5rem;">
+                      <span style="background:${lColor}; color:#fff; padding:0.2rem 0.55rem; border-radius:6px; font-weight:800; font-size:0.8rem;">${this.esc(trip.lineCode)}</span>
+                      <strong style="color:var(--text-primary); font-size:0.9rem;">Expedició del ${this.esc(trip.startTime)}</strong>
+                      <span style="color:var(--text-muted); font-size:0.78rem;">(durada activa: ~${trip.durationMinutes || 1} min)</span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:0.5rem;">
+                      <span style="background:${trip.isMovingTraffic ? 'rgba(56,189,248,0.15)' : 'rgba(245,158,11,0.15)'}; color:${trip.isMovingTraffic ? '#38bdf8' : '#fbbf24'}; padding:0.2rem 0.5rem; border-radius:6px; font-size:0.74rem; font-weight:700;">
+                        ${this.esc(trip.incidentTypeLabel)}
+                      </span>
+                      <span style="background:rgba(239,68,68,0.15); color:#ef4444; padding:0.2rem 0.55rem; border-radius:6px; font-size:0.78rem; font-weight:800;">
+                        Màx: +${trip.maxDelayMins} min
+                      </span>
+                    </div>
+                  </div>
+
+                  <!-- Trajectory flow -->
+                  <div class="trip-trajectory-flow">
+                    <span style="font-weight:700; color:var(--text-muted); margin-right:0.25rem;">Trajectòria:</span>
+                    ${trip.stopsTraversed.map((st, sIdx) => `
+                      <span class="trip-stop-pill" title="${this.esc(st)}">📍 ${this.esc(st)}</span>
+                      ${sIdx < trip.stopsTraversed.length - 1 ? '<span class="trip-arrow">➔</span>' : ''}
+                    `).join('')}
+                  </div>
+
+                  <!-- Context and action footer -->
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.6rem; font-size:0.75rem; color:var(--text-muted); flex-wrap:wrap; gap:0.4rem;">
+                    <div>
+                      <span>${trip.trafficIcon || '⏱️'}</span>
+                      <span>${this.esc(trip.trafficTag || '')} • ${trip.sampleCount} mostres registrades (${trip.isMovingTraffic ? `recorregut per ${trip.stopsCount} parades en retenció` : 'aturat a parada / regulant capçalera'})</span>
+                    </div>
+                    <button type="button" class="btn-locate-incident-stop" data-locate-line="${this.esc(trip.lineCode)}" data-locate-stop="${this.esc(trip.firstStop || trip.stopsTraversed[0])}">
+                      <span>📍 Veure parada al mapa</span>
+                    </button>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `}
+      `}
+    `;
+  }
+
+  jumpToIncidentStop(lineId, stopName) {
+    const backdrop = document.getElementById('journalism-modal-backdrop');
+    backdrop?.classList.remove('active');
+
+    const cleanId = String(lineId || '').replace(/^L/i, '');
+    this.switchLine(cleanId);
+
+    setTimeout(() => {
+      let targetStop = (this.allStops || []).find(s => s.name?.toLowerCase() === stopName?.toLowerCase());
+      if (!targetStop && this.allStopsMap) {
+        for (const s of this.allStopsMap.values()) {
+          if (s.name?.toLowerCase() === stopName?.toLowerCase()) {
+            targetStop = s;
+            break;
+          }
+        }
+      }
+      if (targetStop && targetStop.lat && targetStop.lon) {
+        this.mapController?.focusTargetStop(targetStop.lat, targetStop.lon);
+        this.openStopDetailsModal(targetStop);
+      }
+    }, 300);
   }
 
   renderTermometreScorecard(t) {

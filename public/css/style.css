@@ -7897,3 +7897,116 @@ body {
 #journey-library { margin: 1rem 0; font-size: .85rem; }
 #journey-library button { padding: .4rem; cursor: pointer; }
 .is-offline .fav-countdown-badge { visibility: hidden; }
+
+/* Delay Incidents Inspector Styles */
+.incident-filter-pill {
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 20px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.incident-filter-pill:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border-color: var(--brand-primary);
+}
+
+.incident-filter-pill.active {
+  background: var(--brand-primary);
+  color: #ffffff;
+  border-color: var(--brand-primary);
+  box-shadow: 0 2px 8px rgba(0, 148, 133, 0.35);
+}
+
+.incident-view-mode-tab {
+  background: transparent;
+  color: var(--text-muted);
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 0.5rem 0.85rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.incident-view-mode-tab:hover {
+  color: var(--text-primary);
+}
+
+.incident-view-mode-tab.active {
+  color: var(--brand-primary);
+  border-bottom-color: var(--brand-primary);
+}
+
+.btn-locate-incident-stop {
+  background: rgba(56, 189, 248, 0.12);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 6px;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn-locate-incident-stop:hover {
+  background: rgba(56, 189, 248, 0.25);
+  border-color: #38bdf8;
+  color: #ffffff;
+}
+
+.trip-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 0.9rem;
+  margin-bottom: 0.75rem;
+  transition: border-color 0.2s ease;
+}
+
+.trip-card:hover {
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+.trip-trajectory-flow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.6rem;
+  background: var(--bg-elevated);
+  padding: 0.65rem 0.8rem;
+  border-radius: 8px;
+  font-size: 0.78rem;
+}
+
+.trip-stop-pill {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-subtle);
+  padding: 0.15rem 0.45rem;
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.trip-arrow {
+  color: var(--brand-primary);
+  font-weight: 800;
+  font-size: 0.72rem;
+}
+

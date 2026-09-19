@@ -107,6 +107,9 @@ async function executeDbOperation(op, args = {}) {
     case 'exportDelayLogsCsv':
       return historyDb.exportDelayLogsCsv(args.hours);
 
+    case 'getDelayIncidents':
+      return historyDb.getDelayIncidents(args);
+
     case 'generateReport': {
       const catalog = Array.isArray(args.allLinesCatalog)
         ? args.allLinesCatalog
@@ -258,7 +261,14 @@ async function bootWorker() {
   console.log('[Worker] ✅ Ingestion Worker Ready and Listening.');
 }
 
-bootWorker().catch(err => {
-  console.error('[Worker] Fatal bootstrap error:', err);
-  process.exit(1);
-});
+if (require.main === module) {
+  bootWorker().catch(err => {
+    console.error('[Worker] Fatal bootstrap error:', err);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  executeDbOperation,
+  bootWorker
+};

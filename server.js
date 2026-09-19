@@ -972,6 +972,37 @@ app.get(['/api/analytics/termometre', '/api/retards/termometre'], async (req, re
   }
 });
 
+// Incident Deep-Dive: Query and analyze extreme delays, bottlenecks, and affected trips
+app.get(['/api/analytics/incidents', '/api/retards/incidents', '/api/analytics/line/:lineId/incidents'], async (req, res) => {
+  const lineParam = req.params.lineId || req.query.line || 'all';
+  const hours = Math.max(1, Math.min(720, parseInt(req.query.hours, 10) || 168));
+  const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 20));
+  const minDelay = Math.max(1, parseInt(req.query.minDelay, 10) || 5);
+
+  try {
+    const data = await workerBridge.historyQuery('getDelayIncidents', {
+      lineCode: lineParam,
+      hours,
+      limit,
+      minDelay
+    }, { timeoutMs: 15000 });
+
+    res.json({
+      success: true,
+      ...data
+    });
+  } catch (err) {
+    sendInternalError(req, res, err, {
+      success: false,
+      lineCode: String(lineParam).toUpperCase(),
+      hoursAnalyzed: hours,
+      summary: {},
+      topIncidents: [],
+      incidentTrips: []
+    });
+  }
+});
+
 // Passive upstream diagnostics, served entirely from cached worker status
 app.get('/api/diagnostics/upstream', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
