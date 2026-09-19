@@ -475,6 +475,7 @@ class HistoryDatabase {
           ROUND((SUM(CASE WHEN delay_mins >= 5 THEN 1.0 ELSE 0.0 END) / COUNT(*)) * 100, 1) as severeLatePct
         FROM delay_logs
         WHERE timestamp >= ? AND delay_mins >= -15
+          AND madrid_hour(timestamp) NOT IN ('00', '01', '02', '03', '04')
         GROUP BY agency, line_id, stop_id
         HAVING arrivalCount >= 1 AND (avgDelay >= 1.5 OR severeLatePct >= 20.0)
         ORDER BY avgDelay DESC, maxDelay DESC
@@ -484,6 +485,19 @@ class HistoryDatabase {
       const stopKey = row => JSON.stringify([row.agency, row.recordedLineId, row.stopId]);
 
       const getHourlyTrafficContext = (hourNum) => this.getHourlyTrafficContext(hourNum);
+
+      // Official scheduled operating hours for Mataró Bus Urbà lines L1-L8.
+      // Outside these revenue hours, no buses operate and hourly cells are strictly empty.
+      const lineOperatingHours = {
+        '1': { minH: 5, maxH: 22 }, 'L1': { minH: 5, maxH: 22 },
+        '2': { minH: 5, maxH: 22 }, 'L2': { minH: 5, maxH: 22 },
+        '3': { minH: 6, maxH: 22 }, 'L3': { minH: 6, maxH: 22 },
+        '4': { minH: 7, maxH: 22 }, 'L4': { minH: 7, maxH: 22 },
+        '5': { minH: 5, maxH: 22 }, 'L5': { minH: 5, maxH: 22 },
+        '6': { minH: 6, maxH: 22 }, 'L6': { minH: 6, maxH: 22 },
+        '7': { minH: 7, maxH: 21 }, 'L7': { minH: 7, maxH: 21 },
+        '8': { minH: 6, maxH: 22 }, 'L8': { minH: 6, maxH: 22 }
+      };
 
       // Query Hourly Breakdown for Worst Stops (Bottlenecks)
       const stopHourlyStmt = this.db.prepare(`
@@ -500,6 +514,7 @@ class HistoryDatabase {
           ROUND((SUM(CASE WHEN delay_mins >= 5 THEN 1.0 ELSE 0.0 END) / COUNT(*)) * 100, 1) as severeLatePct
         FROM delay_logs
         WHERE timestamp >= ? AND delay_mins >= -15
+          AND madrid_hour(timestamp) NOT IN ('00', '01', '02', '03', '04')
         GROUP BY hourOfDay, agency, line_id, stop_id
         ORDER BY hourOfDay ASC, avgDelay DESC, arrivalCount DESC
       `);
@@ -559,11 +574,14 @@ class HistoryDatabase {
             isSchoolHour = ctx.isSchoolHour;
           }
 
+          const op = lineOperatingHours[cleanKey] || lineOperatingHours[rawKey] || { minH: 5, maxH: 22 };
+
           return {
             ...r,
             hourly: Array.from({ length: 24 }, (_, hour) => {
               const hourKey = String(hour).padStart(2, '0');
-              const bucket = hoursForStop.find(row => row.hourOfDay === hourKey);
+              const isOperating = hour >= op.minH && hour <= op.maxH;
+              const bucket = isOperating ? hoursForStop.find(row => row.hourOfDay === hourKey) : null;
               return {
                 hour: hourKey,
                 sampleCount: bucket?.arrivalCount || 0,
@@ -600,6 +618,7 @@ class HistoryDatabase {
           ROUND((SUM(CASE WHEN delay_mins >= 5 THEN 1.0 ELSE 0.0 END) / COUNT(*)) * 100, 1) as severeLatePercentage
         FROM delay_logs
         WHERE timestamp >= ? AND delay_mins >= -15
+          AND madrid_hour(timestamp) NOT IN ('00', '01', '02', '03', '04')
         GROUP BY hourOfDay
         ORDER BY hourOfDay ASC
       `);

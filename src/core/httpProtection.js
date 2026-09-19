@@ -35,7 +35,13 @@ function trustedProxies(value = '') {
   });
 }
 
-function createApiLimiter({ now = Date.now, windowMs = 60000, limit = 120, analyticsLimit = 12, maxClients = 10000 } = {}) {
+function createApiLimiter({
+  now = Date.now,
+  windowMs = 60000,
+  limit = 120,
+  analyticsLimit = Number(process.env.RATE_LIMIT_ANALYTICS_MAX) || (process.env.BENCHMARK_MODE === 'true' ? 120 : 12),
+  maxClients = 10000
+} = {}) {
   const clients = new Map();
   let lastSweep = 0;
   return (req, res, next) => {

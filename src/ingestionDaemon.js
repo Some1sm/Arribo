@@ -138,9 +138,10 @@ class IngestionDaemon {
               });
 
               // Sanity check: Do NOT record delay logs for ghost buses, parked vehicles, or terminal layovers.
-              // Also ignore depot telemetry outside revenue service hours (01:00 - 05:00 Europe/Madrid).
-              const madridHour = parseInt(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', hour: '2-digit', hourCycle: 'h23' }).format(new Date()), 10);
-              const isDepotHours = madridHour >= 1 && madridHour < 5;
+              // Also ignore depot telemetry outside revenue service hours (23:00 - 05:20 Europe/Madrid).
+              const madridTimeStr = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date());
+              const [mH, mM] = madridTimeStr.split(':').map(Number);
+              const isDepotHours = mH < 5 || (mH === 5 && mM < 20) || mH >= 23;
               const speed = Number.isFinite(b.speedKmh) ? b.speedKmh : 25;
               const isLayover = b.isTerminalLayover || isDepotHours || (speed <= 3 && (b.delayMins > 10 || b.delayMins < -5));
               if (b.delayMins !== undefined && !isLayover && b.delayMins >= -15 && b.delayMins <= 300) {
