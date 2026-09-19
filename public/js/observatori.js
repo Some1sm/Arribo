@@ -250,6 +250,14 @@ class ObservatoriApp {
         return;
       }
 
+      // Copy investigation report to clipboard
+      const copyInvBtn = e.target.closest('#btn-copy-investigation-report');
+      if (copyInvBtn) {
+        e.preventDefault();
+        this.copyInvestigationReport();
+        return;
+      }
+
       // Stop Heatmap: click cell to open stop drilldown menu with that hour highlighted
       const heatCell = e.target.closest('.stop-heat-cell[data-stop-idx]');
       if (heatCell) {
@@ -1526,6 +1534,7 @@ class ObservatoriApp {
 
     const s = data.summary || {};
     const topList = data.topIncidents || [];
+    const investigationList = data.investigationIncidents || [];
     const anomaliesList = data.telemetryAnomalies || [];
     const tripsList = data.incidentTrips || [];
     const activeLineNorm = String(selectedLine || 'all').toUpperCase();
@@ -1536,14 +1545,16 @@ class ObservatoriApp {
       return match?.color || 'var(--brand-primary)';
     };
 
+    const maxCommercialDelay = s.maxCommercialDelayMins || (topList.length > 0 ? topList[0].delayMins : (s.maxDelayMins <= 24 ? s.maxDelayMins : 0));
+
     container.innerHTML = `
       <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:1.1rem; margin-bottom:1.25rem;">
         <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.75rem;">
           <div>
             <span style="font-size:0.75rem; font-weight:800; color:#38bdf8; text-transform:uppercase; letter-spacing:0.5px;">Observatori de Mobilitat • Anàlisi de Causes</span>
-            <h3 style="font-size:1.35rem; font-weight:800; color:#fff; margin:0.2rem 0;">🔍 Investigador d'Incidents Crítics & Top Retards</h3>
-            <p style="font-size:0.78rem; color:var(--text-muted); margin:0; max-width:680px;">
-              Auditoria de retards extrems (&ge; 5 min) detectats per telemetria GPS. Permet investigar si els retards màxims (+25 min) corresponen a retencions de trànsit reals en moviment o a autobusos regulant a capçalera.
+            <h3 style="font-size:1.35rem; font-weight:800; color:#fff; margin:0.2rem 0;">🔍 Investigador d'Incidents de Trànsit &amp; Auditoria de Telemetria</h3>
+            <p style="font-size:0.78rem; color:var(--text-muted); margin:0; max-width:740px; line-height:1.45;">
+              Auditoria de retards per telemetria GPS. Els retards de servei comercial es presenten al rànquing de trànsit regular (0–24 min). Els desfasaments extrems (+24 min) es classifiquen en una taula separada com a horaris no normals pendents d'investigació per resoldre la seva causa real.
             </p>
           </div>
         </div>
@@ -1579,9 +1590,9 @@ class ObservatoriApp {
       <!-- KPI Summary Cards -->
       <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.75rem; margin-bottom:1.25rem;">
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
-          <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">Retard Màxim Registrat</div>
-          <div style="font-size:1.6rem; font-weight:800; color:#ef4444; margin-top:0.2rem;">+${s.maxDelayMins || 0} min</div>
-          <div style="font-size:0.72rem; color:var(--text-muted);">${(s.totalRecordedIncidents || 0).toLocaleString()} mostres amb retard &ge; 5m</div>
+          <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">Retard Màxim de Servei</div>
+          <div style="font-size:1.6rem; font-weight:800; color:#ef4444; margin-top:0.2rem;">+${maxCommercialDelay} min</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">${(s.totalRecordedIncidents || 0).toLocaleString()} mostres &ge; 5m • ${investigationList.length} en investigació</div>
         </div>
 
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
@@ -1597,33 +1608,45 @@ class ObservatoriApp {
         </div>
 
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
-          <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">Naturalesa de les Incidències</div>
-          <div style="font-size:1.05rem; font-weight:700; color:#38bdf8; margin-top:0.25rem;">${s.movingPct || 0}% Trànsit actiu</div>
-          <div style="font-size:0.72rem; color:var(--text-muted);">${s.stationaryCount || 0} regulacions • ${s.maintenanceCount || 0} cotxeres / proves</div>
+          <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">Horaris No Habituals</div>
+          <div style="font-size:1.15rem; font-weight:700; color:#fb7185; margin-top:0.25rem;">🔬 ${investigationList.length} en investigació</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">${anomaliesList.length} anomalies de cotxeres/SAE</div>
         </div>
       </div>
 
       <!-- Sub-Tab Mode Switcher -->
-      <div style="display:flex; gap:0.5rem; border-bottom:1px solid var(--border-subtle); padding-bottom:0.75rem; margin-bottom:1rem;">
+      <div style="display:flex; gap:0.5rem; border-bottom:1px solid var(--border-subtle); padding-bottom:0.75rem; margin-bottom:1rem; flex-wrap:wrap;">
         <button type="button" class="incident-view-mode-tab ${activeTab === 'top' ? 'active' : ''}" data-incident-tab="top">
-          <span>📋 Rànquing d'Incidents per Expedició (${topList.length})</span>
+          <span>📋 Rànquing d'Incidents de Servei (0–24 min) (${topList.length})</span>
+        </button>
+        <button type="button" class="incident-view-mode-tab ${activeTab === 'investigation' ? 'active' : ''}" data-incident-tab="investigation">
+          <span>🔬 Horaris No Habituals (+24 min) (${investigationList.length})</span>
         </button>
         <button type="button" class="incident-view-mode-tab ${activeTab === 'trips' ? 'active' : ''}" data-incident-tab="trips">
-          <span>🚌 Expedicions & Trajectòries Afectades (${tripsList.length})</span>
+          <span>🚌 Expedicions &amp; Trajectòries (${tripsList.length})</span>
         </button>
       </div>
 
-      <!-- Mode 1: Top Delays Table (Peak per Trip) -->
+      <!-- View Content Partition -->
       ${activeTab === 'top' ? `
+        <!-- Table 1: Top Delays Table (Peak per Trip 0-24m) -->
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px; margin-bottom:0.6rem;">
+          <div style="font-size:0.78rem; color:var(--text-muted); display:flex; align-items:center; gap:6px;">
+            <span>ℹ️</span>
+            <span>Mostrant incidents de servei comercial (0–24 min). S'agrupen els senyals cada 20s d'un mateix viatge per evitar duplicats.</span>
+          </div>
+          ${investigationList.length > 0 ? `
+            <div style="font-size:0.75rem; color:#fb7185; font-weight:700;">
+              ⚠️ ${investigationList.length} expedicions amb retard extrem (+24m) mogudes a la taula inferior d'investigació.
+            </div>
+          ` : ''}
+        </div>
+
         ${topList.length === 0 ? `
           <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:10px; padding:2rem; text-align:center; color:var(--text-muted);">
-            No s'han registrat retards greus (&ge; 5 min) per a la selecció actual (${selectedHours}h).
+            No s'han registrat retards comercials (5–24 min) per a la selecció actual (${selectedHours}h).
           </div>
         ` : `
-          <div style="font-size:0.78rem; color:var(--text-muted); margin-bottom:0.6rem; display:flex; align-items:center; gap:6px;">
-            <span>ℹ️</span>
-            <span>Mostrant incidents de servei comercial depurats (s'agrupen els senyals cada 20s d'un mateix viatge per evitar duplicats).</span>
-          </div>
           <div class="observatori-table-wrapper">
             <table class="observatori-table">
               <thead>
@@ -1680,7 +1703,90 @@ class ObservatoriApp {
           </div>
         `}
 
-        <!-- Anomaly & SAE Desync Audit Table for Operator/Municipality -->
+        <!-- Table 2: Dedicated Table for Non-Normal Schedules Under Investigation (+24 min - infinite) -->
+        <div style="margin-top:2.5rem; border-top:2px solid rgba(244, 63, 94, 0.35); padding-top:1.5rem;" id="section-investigation-incidents">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.75rem; margin-bottom:0.85rem;">
+            <div>
+              <div style="display:inline-flex; align-items:center; gap:6px; background:rgba(244, 63, 94, 0.15); color:#fb7185; padding:3px 8px; border-radius:6px; font-size:0.72rem; font-weight:800; text-transform:uppercase; letter-spacing:0.4px;">
+                <span>🔬 Pendent d'Investigació • Horaris No Habituals (+24 min)</span>
+              </div>
+              <h4 style="font-size:1.15rem; font-weight:800; color:#fff; margin:0.35rem 0 0.2rem 0;">
+                🔬 Horaris No Habituals &amp; Desfasaments Extrems (+24 min – infinit) (${investigationList.length})
+              </h4>
+              <p style="font-size:0.78rem; color:var(--text-muted); margin:0; max-width:760px; line-height:1.45;">
+                Aquests registres presenten un retard superior als 24 minuts. No es consideren retencions habituals de trànsit de la ciutat, sinó <strong>horaris no normals o possibles incidències de seguiment/telemetria</strong> (com ara autobusos aturats fora de servei en capçalera amb el SAE encès, talls excepcionals de carrer o desfasaments de torn). Estan pendents d'investigació per resoldre la seva causa real.
+              </p>
+            </div>
+            ${investigationList.length > 0 ? `
+              <button type="button" class="btn-primary" id="btn-copy-investigation-report" style="font-size:0.78rem; padding:0.45rem 0.85rem; display:inline-flex; align-items:center; gap:6px; background:rgba(244,63,94,0.15); color:#fb7185; border:1px solid rgba(244,63,94,0.35);" title="Copiar informe dels casos en investigació">
+                <span>📋 Copiar informe d'investigació</span>
+              </button>
+            ` : ''}
+          </div>
+
+          ${investigationList.length === 0 ? `
+            <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:10px; padding:1.5rem; text-align:center; color:var(--text-muted); font-size:0.85rem;">
+              ✅ Cap horari no habitual ni desfasament extrem (+24 min) detectat en aquest període (${selectedHours}h).
+            </div>
+          ` : `
+            <div class="observatori-table-wrapper">
+              <table class="observatori-table">
+                <thead>
+                  <tr>
+                    <th style="width:45px; text-align:center;">#</th>
+                    <th>Retard Transmès</th>
+                    <th>Línia</th>
+                    <th>Parada Afectada</th>
+                    <th>Data i Hora</th>
+                    <th>Estat / Diagnòstic</th>
+                    <th style="text-align:center; cursor:help;" title="Tipus de senyal: 🟢 GPS o ⚡ Estimat">Senyal ℹ️</th>
+                    <th style="text-align:center;">Mapa</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${investigationList.map((inc, i) => {
+                    const lColor = getLineColor(inc.lineCode);
+                    const signalTooltip = inc.isRealTime
+                      ? '🟢 Senyal GPS directe: Telemetria transmesa en temps real pel vehicle físic.'
+                      : '⚡ Estimació per estima (dead-reckoning) per pèrdua temporal de senyal.';
+                    return `
+                      <tr>
+                        <td style="font-weight:700; color:var(--text-muted); text-align:center;">${inc.rank || (i + 1)}</td>
+                        <td style="font-weight:800; color:#fb7185; white-space:nowrap;">+${inc.delayMins} min</td>
+                        <td>
+                          <span style="background:${lColor}; color:#fff; padding:0.15rem 0.45rem; border-radius:5px; font-weight:800; font-size:0.75rem;">${this.esc(inc.lineCode)}</span>
+                        </td>
+                        <td style="font-weight:600; color:var(--text-primary);">
+                          <span style="color:#fb7185; margin-right:4px;">⚠️</span>${this.esc(inc.stopName)}
+                        </td>
+                        <td style="color:var(--text-secondary); white-space:nowrap; font-size:0.8rem;">
+                          ${this.esc(inc.formattedDate || '')}
+                        </td>
+                        <td style="white-space:nowrap; font-size:0.78rem;">
+                          <span style="background:rgba(244,63,94,0.15); color:#fb7185; padding:0.2rem 0.5rem; border-radius:6px; font-weight:700; font-size:0.72rem; display:inline-flex; align-items:center; gap:4px;">
+                            🔬 Pendent d'investigació
+                          </span>
+                        </td>
+                        <td style="text-align:center; white-space:nowrap;">
+                          <span style="background:${inc.isRealTime ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)'}; color:${inc.isRealTime ? '#10b981' : '#fbbf24'}; padding:0.15rem 0.45rem; border-radius:5px; font-size:0.7rem; font-weight:700; cursor:help; display:inline-flex; align-items:center; gap:2px;" title="${this.esc(signalTooltip)}">
+                            ${inc.isRealTime ? '🟢 GPS' : '⚡ Estimat'}
+                          </span>
+                        </td>
+                        <td style="text-align:center; white-space:nowrap;">
+                          <button type="button" class="btn-locate-incident-stop" data-locate-line="${this.esc(inc.lineCode)}" data-locate-stop="${this.esc(inc.stopName)}" data-locate-stop-id="${this.esc(inc.stopId || '')}" title="Veure aquesta parada al mapa">
+                            <span>📍 Mapa</span>
+                          </button>
+                        </td>
+                      </tr>
+                    `;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>
+          `}
+        </div>
+
+        <!-- Table 3: Anomaly & SAE Desync Audit Table for Operator/Municipality -->
         <div style="margin-top:2.5rem; border-top:2px dashed var(--border-subtle); padding-top:1.5rem;">
           <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.75rem; margin-bottom:0.85rem;">
             <div>
@@ -1691,7 +1797,7 @@ class ObservatoriApp {
                 🛠️ Anomalies de Telemetria SAE &amp; Sortida de Cotxeres (${anomaliesList.length})
               </h4>
               <p style="font-size:0.78rem; color:var(--text-muted); margin:0; max-width:740px; line-height:1.45;">
-                Aquests registres no corresponen a retencions de trànsit de la ciutat, sinó a <strong>desfasaments de telemetria generats pel sistema SAE (CAD/AVL) d'Avanza</strong> a primera hora del matí (arrencada de servei abans de les 06:15) o durant proves nocturnes a cotxeres. Es produeixen quan el SAE assigna un autobús que comença torn a una expedició anterior no coberta o encén la consola en buit, transmetent retards artificials (+15 a +30 min). Es publiquen aquí per facilitar l'auditoria i la seva correcció per part de l'Ajuntament de Mataró.
+                Aquests registres no corresponen a retencions de trànsit de la ciutat, sinó a <strong>desfasaments de telemetria generats pel sistema SAE (CAD/AVL) d'Avanza</strong> a primera hora del matí (arrencada de servei abans de les 06:15) o durant proves nocturnes a cotxeres. Es publiquen aquí per facilitar l'auditoria i la seva correcció per part de l'Ajuntament de Mataró.
               </p>
             </div>
             ${anomaliesList.length > 0 ? `
@@ -1765,6 +1871,89 @@ class ObservatoriApp {
                               <span>📍 Mapa</span>
                             </button>
                           `}
+                        </td>
+                      </tr>
+                    `;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>
+          `}
+        </div>
+      ` : activeTab === 'investigation' ? `
+        <!-- Mode: Standalone Investigation Table Focus -->
+        <div style="margin-bottom:1.5rem;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.75rem; margin-bottom:0.85rem;">
+            <div>
+              <div style="display:inline-flex; align-items:center; gap:6px; background:rgba(244, 63, 94, 0.15); color:#fb7185; padding:3px 8px; border-radius:6px; font-size:0.72rem; font-weight:800; text-transform:uppercase; letter-spacing:0.4px;">
+                <span>🔬 Pendent d'Investigació • Horaris No Habituals (+24 min)</span>
+              </div>
+              <h4 style="font-size:1.25rem; font-weight:800; color:#fff; margin:0.35rem 0 0.2rem 0;">
+                🔬 Horaris No Habituals &amp; Desfasaments Extrems (+24 min – infinit) (${investigationList.length})
+              </h4>
+              <p style="font-size:0.8rem; color:var(--text-muted); margin:0; max-width:760px; line-height:1.45;">
+                Aquests registres presenten un retard superior als 24 minuts. No es consideren retencions habituals de trànsit de la ciutat, sinó <strong>horaris no normals o possibles incidències de seguiment/telemetria</strong> (com ara autobusos aturats fora de servei en capçalera amb el SAE encès, talls excepcionals de carrer o desfasaments de torn). Estan pendents d'investigació per resoldre la seva causa real.
+              </p>
+            </div>
+            ${investigationList.length > 0 ? `
+              <button type="button" class="btn-primary" id="btn-copy-investigation-report" style="font-size:0.78rem; padding:0.45rem 0.85rem; display:inline-flex; align-items:center; gap:6px; background:rgba(244,63,94,0.15); color:#fb7185; border:1px solid rgba(244,63,94,0.35);" title="Copiar informe dels casos en investigació">
+                <span>📋 Copiar informe d'investigació</span>
+              </button>
+            ` : ''}
+          </div>
+
+          ${investigationList.length === 0 ? `
+            <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:10px; padding:2rem; text-align:center; color:var(--text-muted); font-size:0.85rem;">
+              ✅ Cap horari no habitual ni desfasament extrem (+24 min) detectat en aquest període (${selectedHours}h).
+            </div>
+          ` : `
+            <div class="observatori-table-wrapper">
+              <table class="observatori-table">
+                <thead>
+                  <tr>
+                    <th style="width:45px; text-align:center;">#</th>
+                    <th>Retard Transmès</th>
+                    <th>Línia</th>
+                    <th>Parada Afectada</th>
+                    <th>Data i Hora</th>
+                    <th>Estat / Diagnòstic</th>
+                    <th style="text-align:center; cursor:help;" title="Tipus de senyal: 🟢 GPS o ⚡ Estimat">Senyal ℹ️</th>
+                    <th style="text-align:center;">Mapa</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${investigationList.map((inc, i) => {
+                    const lColor = getLineColor(inc.lineCode);
+                    const signalTooltip = inc.isRealTime
+                      ? '🟢 Senyal GPS directe transmès pel vehicle físic.'
+                      : '⚡ Estimació per estima (dead-reckoning) per pèrdua temporal de senyal.';
+                    return `
+                      <tr>
+                        <td style="font-weight:700; color:var(--text-muted); text-align:center;">${inc.rank || (i + 1)}</td>
+                        <td style="font-weight:800; color:#fb7185; white-space:nowrap;">+${inc.delayMins} min</td>
+                        <td>
+                          <span style="background:${lColor}; color:#fff; padding:0.15rem 0.45rem; border-radius:5px; font-weight:800; font-size:0.75rem;">${this.esc(inc.lineCode)}</span>
+                        </td>
+                        <td style="font-weight:600; color:var(--text-primary);">
+                          <span style="color:#fb7185; margin-right:4px;">⚠️</span>${this.esc(inc.stopName)}
+                        </td>
+                        <td style="color:var(--text-secondary); white-space:nowrap; font-size:0.8rem;">
+                          ${this.esc(inc.formattedDate || '')}
+                        </td>
+                        <td style="white-space:nowrap; font-size:0.78rem;">
+                          <span style="background:rgba(244,63,94,0.15); color:#fb7185; padding:0.2rem 0.5rem; border-radius:6px; font-weight:700; font-size:0.72rem; display:inline-flex; align-items:center; gap:4px;">
+                            🔬 Pendent d'investigació
+                          </span>
+                        </td>
+                        <td style="text-align:center; white-space:nowrap;">
+                          <span style="background:${inc.isRealTime ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)'}; color:${inc.isRealTime ? '#10b981' : '#fbbf24'}; padding:0.15rem 0.45rem; border-radius:5px; font-size:0.7rem; font-weight:700; cursor:help; display:inline-flex; align-items:center; gap:2px;" title="${this.esc(signalTooltip)}">
+                            ${inc.isRealTime ? '🟢 GPS' : '⚡ Estimat'}
+                          </span>
+                        </td>
+                        <td style="text-align:center; white-space:nowrap;">
+                          <button type="button" class="btn-locate-incident-stop" data-locate-line="${this.esc(inc.lineCode)}" data-locate-stop="${this.esc(inc.stopName)}" data-locate-stop-id="${this.esc(inc.stopId || '')}" title="Veure aquesta parada al mapa">
+                            <span>📍 Mapa</span>
+                          </button>
                         </td>
                       </tr>
                     `;
@@ -1871,6 +2060,43 @@ class ObservatoriApp {
       });
     } else {
       prompt('Copia el text següent per a la teva reclamació:', text);
+    }
+  }
+
+  copyInvestigationReport() {
+    if (!this.lastIncidentData || !Array.isArray(this.lastIncidentData.investigationIncidents)) return;
+    const list = this.lastIncidentData.investigationIncidents;
+    if (list.length === 0) return;
+
+    let text = `INFORME D'HORARIS NO HABITUALS & DESFASAMENTS EXTREMS (+24 MIN) — ARRIBO! MATARÓ\n`;
+    text += `Període: Darreres ${this._currentIncidentHours || 168}h | Línia: ${this._currentIncidentLine || 'Totes'}\n`;
+    text += `Data d'extracció: ${new Date().toLocaleString('ca-ES')}\n`;
+    text += `Total expedicions en investigació: ${list.length}\n\n`;
+    text += `Descripció: Aquests registres corresponen a horaris no normals o desfasaments extrems de telemetria (+24 minuts fins a infinit) pendents d'investigació per resoldre la causa real (busos aturats fora de servei, anomalies de servidor o desfasaments de torn).\n\n`;
+    text += `Llistat d'expedicions en investigació:\n`;
+
+    list.forEach((item, idx) => {
+      const sig = item.isRealTime ? 'GPS' : 'Estimat (dead-reckoning)';
+      text += `${idx + 1}. [${item.lineCode}] ${item.formattedDate} — Parada: "${item.stopName}" | Retard transmès: +${item.delayMins} min | Senyal: ${sig}\n`;
+    });
+
+    text += `\nGenerat per Arribo! Mataró (https://arribo.cat) — Telemetria de transport públic.`;
+
+    const finish = () => {
+      const btn = document.getElementById('btn-copy-investigation-report');
+      if (btn) {
+        const orig = btn.innerHTML;
+        btn.innerHTML = '<span>✅ Copiat al porta-retalls!</span>';
+        setTimeout(() => { btn.innerHTML = orig; }, 3000);
+      }
+    };
+
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      navigator.clipboard.writeText(text).then(finish).catch(() => {
+        prompt('Copia el resum per a la investigació:', text);
+      });
+    } else {
+      prompt('Copia el resum per a la investigació:', text);
     }
   }
 }

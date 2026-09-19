@@ -226,6 +226,24 @@ assert.strictEqual(has0514InTop, false, '05:14 maintenance anomaly must NOT appe
 assert.strictEqual(hasCotxeresInTop, false, 'Cotxeres maintenance must NOT appear in topIncidents');
 console.log('✅ Telemetry anomalies properly partitioned, 05:14 verified as maintenance, and labeled with diagnostic badges.');
 
+console.log('\n--- 5c. Testing investigationIncidents partitioning (0-24m vs 24-infinite) ---');
+assert.ok(Array.isArray(anomaliesCheck.investigationIncidents), 'investigationIncidents must be an array');
+// Verify every item in topIncidents has delay < 25 (0 to 24 min)
+for (const inc of anomaliesCheck.topIncidents) {
+  assert.ok(inc.delayMins < 25, `topIncidents item delay (${inc.delayMins}m) must be strictly < 25m (0-24m)`);
+}
+// Verify investigationIncidents contains delays >= 25m (24-infinite / +24m)
+assert.ok(anomaliesCheck.investigationIncidents.length > 0, 'Must have records in investigationIncidents (L5 peaked at 26m)');
+for (const inc of anomaliesCheck.investigationIncidents) {
+  assert.ok(inc.delayMins >= 25, `investigationIncidents item delay (${inc.delayMins}m) must be >= 25m`);
+  assert.strictEqual(inc.trafficTag, '🔬 En investigació');
+  assert.ok(inc.investigationReason.includes('Horari no habitual'));
+}
+assert.strictEqual(typeof anomaliesCheck.summary.investigationCount, 'number');
+assert.ok(anomaliesCheck.summary.investigationCount >= 1);
+assert.ok(anomaliesCheck.summary.maxCommercialDelayMins <= 24);
+console.log('✅ 0-24m commercial delays cleanly partitioned from 24-infinite non-normal schedules in investigation.');
+
 console.log('\n--- 6. Testing Worker RPC operation dispatch ---');
 const ingestionWorker = require('../src/workers/ingestionWorker');
 // Verify executeDbOperation is a function

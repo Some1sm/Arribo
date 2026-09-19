@@ -955,9 +955,10 @@ class HistoryDatabase {
       `);
       const worstHourRow = worstHourStmt.get(...baseParams);
 
-      // 2. Query candidates partitioned by anomaly status:
-      // Regular candidates query only non-anomaly rows (is_telemetry_anomaly = 0) with generous limit (3000)
-      // so raw duplicate pings from nocturnal cotxeres runs never starve genuine revenue trips from fulfilling the 30-item limit.
+      // 2. Query candidates partitioned into:
+      // a) Regular service incidents: non-anomalies with delay < 25 min (0-24 min)
+      // b) Non-normal schedules under investigation: non-anomalies with delay >= 25 min (24 min - infinite)
+      // c) Telemetry anomalies: SAE startup / cotxeres maintenance (is_telemetry_anomaly = 1)
       const regularStmt = this.db.prepare(`
         SELECT 
           id,
@@ -973,11 +974,32 @@ class HistoryDatabase {
           madrid_hour(timestamp) as hourOfDay,
           0 as isAnomaly
         FROM delay_logs
-        WHERE ${sqlWhere} AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
+        WHERE ${sqlWhere} AND delay_mins < 25 AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
         ORDER BY delay_mins DESC, timestamp DESC
         LIMIT 3000
       `);
       const regularCandidates = regularStmt.all(...baseParams);
+
+      const investigationStmt = this.db.prepare(`
+        SELECT 
+          id,
+          line_id as lineId,
+          line_code as lineCode,
+          agency,
+          stop_id as stopId,
+          stop_name as stopName,
+          delay_mins as delayMins,
+          is_realtime as isRealTime,
+          timestamp,
+          madrid_datetime(timestamp) as formattedDate,
+          madrid_hour(timestamp) as hourOfDay,
+          0 as isAnomaly
+        FROM delay_logs
+        WHERE ${sqlWhere} AND delay_mins >= 25 AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
+        ORDER BY delay_mins DESC, timestamp DESC
+        LIMIT 2000
+      `);
+      const investigationCandidates = investigationStmt.all(...baseParams);
 
       const anomalyStmt = this.db.prepare(`
         SELECT 
@@ -1030,6 +1052,7 @@ class HistoryDatabase {
       };
 
       const dedupedRegular = deduplicateTripRows(regularCandidates, limitNum);
+      const dedupedInvestigation = deduplicateTripRows(investigationCandidates, limitNum);
       const dedupedAnomalies = deduplicateTripRows(anomalyCandidates, limitNum);
 
       const enrichedTop = dedupedRegular.map((r, idx) => {
@@ -1041,6 +1064,21 @@ class HistoryDatabase {
           isRealTime: Boolean(r.isRealTime),
           trafficTag: ctx.tag,
           trafficIcon: ctx.icon,
+          isPeak: ctx.isPeak,
+          isSchoolHour: ctx.isSchoolHour
+        };
+      });
+
+      const enrichedInvestigation = dedupedInvestigation.map((r, idx) => {
+        const h = parseInt(r.hourOfDay, 10);
+        const ctx = this.getHourlyTrafficContext(h);
+        return {
+          rank: idx + 1,
+          ...r,
+          isRealTime: Boolean(r.isRealTime),
+          trafficTag: '🔬 En investigació',
+          trafficIcon: '🔬',
+          investigationReason: 'Horari no habitual (+24 min) — Pendent d\'investigació de telemetria / SAE',
           isPeak: ctx.isPeak,
           isSchoolHour: ctx.isSchoolHour
         };
@@ -1181,6 +1219,10 @@ class HistoryDatabase {
       const worstHourStr = worstHourRow?.hourOfDay != null ? `${String(worstHourRow.hourOfDay).padStart(2, '0')}:00` : '--:00';
       const worstHourContext = worstHourRow?.hourOfDay != null ? this.getHourlyTrafficContext(parseInt(worstHourRow.hourOfDay, 10)) : null;
 
+      const commercialMaxDelay = enrichedTop.length > 0
+        ? enrichedTop[0].delayMins
+        : (agg.maxDelay <= 24 ? agg.maxDelay : 0);
+
       return {
         lineCode: isAll ? 'ALL' : codeWithL,
         hoursAnalyzed: hoursNum,
@@ -1188,6 +1230,7 @@ class HistoryDatabase {
         summary: {
           totalRecordedIncidents: agg.totalCount || 0,
           maxDelayMins: agg.maxDelay || 0,
+          maxCommercialDelayMins: commercialMaxDelay,
           worstStop: worstStopRow?.stopName || 'Cap',
           worstStopCount: worstStopRow?.cnt || 0,
           worstHour: worstHourStr,
@@ -1195,9 +1238,11 @@ class HistoryDatabase {
           movingCount,
           stationaryCount,
           maintenanceCount,
-          movingPct: totalClusters > 0 ? Math.round((movingCount / totalClusters) * 100) : 0
+          movingPct: totalClusters > 0 ? Math.round((movingCount / totalClusters) * 100) : 0,
+          investigationCount: enrichedInvestigation.length
         },
         topIncidents: enrichedTop,
+        investigationIncidents: enrichedInvestigation,
         telemetryAnomalies: enrichedAnomalies,
         incidentTrips: enrichedClusters.slice(0, limitNum)
       };
@@ -1210,6 +1255,7 @@ class HistoryDatabase {
         summary: {
           totalRecordedIncidents: 0,
           maxDelayMins: 0,
+          maxCommercialDelayMins: 0,
           worstStop: 'Cap',
           worstStopCount: 0,
           worstHour: '--:00',
@@ -1217,9 +1263,11 @@ class HistoryDatabase {
           movingCount: 0,
           stationaryCount: 0,
           maintenanceCount: 0,
-          movingPct: 0
+          movingPct: 0,
+          investigationCount: 0
         },
         topIncidents: [],
+        investigationIncidents: [],
         telemetryAnomalies: [],
         incidentTrips: []
       };
