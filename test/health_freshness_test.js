@@ -39,7 +39,8 @@ function request() {
   assert.equal(cold.worker.heartbeatAgeMs, null);
   assert(cold.reports.every(report => !report.fresh && report.ageMs === null));
 
-  bridge.getStatus = () => ({ isHealthy: true, isRunning: true, lastHeartbeat: Date.now() - 1000, restarts: 2 });
+  const simulatedHeartbeat = Date.now() - 1200;
+  bridge.getStatus = () => ({ isHealthy: true, isRunning: true, lastHeartbeat: simulatedHeartbeat, restarts: 2 });
   for (const hours of reports.supportedHours) {
     reports.updateMemoryCache(hours, { summary: {}, meta: { generatedTimestamp: Date.now() - 60000 } });
   }

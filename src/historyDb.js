@@ -203,10 +203,8 @@ class HistoryDatabase {
     try {
       const delay = Number(entry.delayMins || 0);
 
-      // Sanity filter: Ignore phantom outlier delays from ghost buses / unclosed terminal sessions
-      // Urban transit lines (such as Mataró L1-L8) have total roundtrip cycles of 20-35 mins.
-      // Delays > 25 min or < -15 min represent vehicle layovers or stuck terminal sessions.
-      if (isNaN(delay) || delay > 25 || delay < -15) {
+      // Sanity filter: Ignore corrupt or impossible outlier delays (e.g. clock desyncs < -15 min or > 300 min)
+      if (isNaN(delay) || delay < -15 || delay > 300) {
         return;
       }
 
@@ -358,7 +356,7 @@ class HistoryDatabase {
           SUM(CASE WHEN delay_mins <= 3 THEN 1 ELSE 0 END) as totalOnTime,
           SUM(CASE WHEN delay_mins > 5 THEN 1 ELSE 0 END) as totalSignificantDelay
         FROM delay_logs
-        WHERE timestamp >= ? AND delay_mins <= 25 AND delay_mins >= -15
+        WHERE timestamp >= ? AND delay_mins >= -15
       `);
       const sum = summaryStmt.get(cutoff) || {};
       const totalArrivals = sum.totalRecordedArrivals || 0;
@@ -373,7 +371,7 @@ class HistoryDatabase {
           MAX(delay_mins) as maxDelay,
           ROUND((SUM(CASE WHEN delay_mins > 3 THEN 1.0 ELSE 0.0 END) / COUNT(*)) * 100, 1) as latePercentage
         FROM delay_logs
-        WHERE timestamp >= ? AND delay_mins <= 25 AND delay_mins >= -15
+        WHERE timestamp >= ? AND delay_mins >= -15
         GROUP BY line_code
         HAVING sampleCount >= 1
         ORDER BY avgDelay DESC
@@ -449,7 +447,7 @@ class HistoryDatabase {
           AVG(delay_mins) as avgDelay,
           ROUND((SUM(CASE WHEN delay_mins <= 3 THEN 1.0 ELSE 0.0 END) / COUNT(*)) * 100, 1) as onTimePct
         FROM delay_logs
-        WHERE timestamp >= ? AND delay_mins <= 25 AND delay_mins >= -15
+        WHERE timestamp >= ? AND delay_mins >= -15
         GROUP BY agency
         HAVING totalSamples >= 1
         ORDER BY avgDelay DESC
@@ -476,7 +474,7 @@ class HistoryDatabase {
           MAX(delay_mins) as maxDelay,
           ROUND((SUM(CASE WHEN delay_mins >= 5 THEN 1.0 ELSE 0.0 END) / COUNT(*)) * 100, 1) as severeLatePct
         FROM delay_logs
-        WHERE timestamp >= ? AND delay_mins <= 25 AND delay_mins >= -15
+        WHERE timestamp >= ? AND delay_mins >= -15
         GROUP BY agency, line_id, stop_id
         HAVING arrivalCount >= 1 AND (avgDelay >= 1.5 OR severeLatePct >= 20.0)
         ORDER BY avgDelay DESC, maxDelay DESC
@@ -501,7 +499,7 @@ class HistoryDatabase {
           MAX(delay_mins) as maxDelay,
           ROUND((SUM(CASE WHEN delay_mins >= 5 THEN 1.0 ELSE 0.0 END) / COUNT(*)) * 100, 1) as severeLatePct
         FROM delay_logs
-        WHERE timestamp >= ? AND delay_mins <= 25 AND delay_mins >= -15
+        WHERE timestamp >= ? AND delay_mins >= -15
         GROUP BY hourOfDay, agency, line_id, stop_id
         ORDER BY hourOfDay ASC, avgDelay DESC, arrivalCount DESC
       `);
@@ -601,7 +599,7 @@ class HistoryDatabase {
           ROUND((SUM(CASE WHEN delay_mins > 3 THEN 1.0 ELSE 0.0 END) / COUNT(*)) * 100, 1) as latePercentage,
           ROUND((SUM(CASE WHEN delay_mins >= 5 THEN 1.0 ELSE 0.0 END) / COUNT(*)) * 100, 1) as severeLatePercentage
         FROM delay_logs
-        WHERE timestamp >= ? AND delay_mins <= 25 AND delay_mins >= -15
+        WHERE timestamp >= ? AND delay_mins >= -15
         GROUP BY hourOfDay
         ORDER BY hourOfDay ASC
       `);

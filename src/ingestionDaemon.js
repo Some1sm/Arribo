@@ -143,7 +143,7 @@ class IngestionDaemon {
               const isDepotHours = madridHour >= 1 && madridHour < 5;
               const speed = Number.isFinite(b.speedKmh) ? b.speedKmh : 25;
               const isLayover = b.isTerminalLayover || isDepotHours || (speed <= 3 && (b.delayMins > 10 || b.delayMins < -5));
-              if (b.delayMins !== undefined && !isLayover && b.delayMins <= 25 && b.delayMins >= -15) {
+              if (b.delayMins !== undefined && !isLayover && b.delayMins >= -15 && b.delayMins <= 300) {
                 historyDb.recordDelayLog({
                   lineId: lId,
                   lineCode: `L${lId}`,

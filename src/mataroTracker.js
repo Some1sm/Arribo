@@ -1182,7 +1182,7 @@ class MataroTracker extends BaseTracker {
       const isTerminal = (b.speedKmh <= 3 || b.speedKmh === undefined) && (segInfo.totalProgress > 92 || segInfo.totalProgress < 8);
       const isEst = Boolean(b.isEstimated);
       const isGhostDelay = !isEst && isTerminal && b.delayMins > 10;
-      const cleanDelayMins = isGhostDelay ? 0 : Math.min(25, Math.max(-10, b.delayMins || 0));
+      const cleanDelayMins = isGhostDelay ? 0 : Math.max(-15, b.delayMins || 0);
       const cleanDelayFormatted = isEst
         ? '⚡ Estimació en circuit'
         : (isGhostDelay 
