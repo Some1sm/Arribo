@@ -206,6 +206,16 @@ class PlannerPageApp {
       });
     }
 
+    // Secondary options toggle (Horari, a peu, trajectes desats)
+    const toggleSecondaryBtn = document.getElementById('btn-toggle-secondary-options');
+    if (toggleSecondaryBtn) {
+      toggleSecondaryBtn.addEventListener('click', () => {
+        const secondary = document.getElementById('planner-secondary-options');
+        const isCollapsed = secondary?.classList.contains('is-collapsed');
+        this.setSecondaryOptionsVisibility(isCollapsed);
+      });
+    }
+
     // Guided Navigation Sheet controls
     const btnCloseGuide = document.getElementById('btn-close-nav-guide');
     const btnNavPrev = document.getElementById('btn-nav-prev');
@@ -371,6 +381,33 @@ class PlannerPageApp {
       } else {
         summary.style.display = 'none';
         form.style.display = 'block';
+      }
+    }
+  }
+
+  setSecondaryOptionsVisibility(visible) {
+    const secondaryOptions = document.getElementById('planner-secondary-options');
+    const toggleBtn = document.getElementById('btn-toggle-secondary-options');
+    const toggleLabel = document.getElementById('label-secondary-toggle');
+    if (!secondaryOptions) return;
+
+    if (visible) {
+      secondaryOptions.classList.remove('is-collapsed');
+      if (toggleBtn) {
+        toggleBtn.classList.add('is-open');
+        toggleBtn.setAttribute('aria-expanded', 'true');
+      }
+      if (toggleLabel) {
+        toggleLabel.textContent = 'Menys opcions (Amagar detalls)';
+      }
+    } else {
+      secondaryOptions.classList.add('is-collapsed');
+      if (toggleBtn) {
+        toggleBtn.classList.remove('is-open');
+        toggleBtn.setAttribute('aria-expanded', 'false');
+      }
+      if (toggleLabel) {
+        toggleLabel.textContent = 'Més opcions (Horari, a peu, trajectes)';
       }
     }
   }
@@ -639,6 +676,9 @@ class PlannerPageApp {
       if (requestId !== this.searchGeneration) return;
 
       if (!data.success) {
+        const searchBox = document.getElementById('plan-search-box');
+        if (searchBox) searchBox.classList.remove('has-results');
+        this.setSecondaryOptionsVisibility(true);
         const errorReason = data.error || data.message || "No s'ha pogut trobar la parada o adreça especificada.";
         resultsContainer.innerHTML = `
           <div style="text-align:center; padding:2.5rem 1rem;">
@@ -654,6 +694,9 @@ class PlannerPageApp {
       this.currentItineraries = data.itineraries || [];
       this.journeyControls?.record();
       if (this.currentItineraries.length === 0) {
+        const searchBox = document.getElementById('plan-search-box');
+        if (searchBox) searchBox.classList.remove('has-results');
+        this.setSecondaryOptionsVisibility(true);
         resultsContainer.innerHTML = `
           <div style="text-align:center; padding:2.5rem 1rem; color:var(--text-secondary);">
             <div style="width:36px; height:36px; border-radius:50%; background:rgba(148,163,184,0.12); color:var(--text-muted); display:flex; align-items:center; justify-content:center; margin:0 auto 0.75rem auto; font-size:1rem; font-weight:800;">?</div>
@@ -666,6 +709,11 @@ class PlannerPageApp {
         }
         return;
       }
+
+      // Hide secondary options (Horari, Paràmetres a peu, Els teus trajectes, Presets) so results take full prominence
+      this.setSecondaryOptionsVisibility(false);
+      const searchBox = document.getElementById('plan-search-box');
+      if (searchBox) searchBox.classList.add('has-results');
 
       // Save search state and start live polling (refreshes every 15s)
       this.lastSearchUrl = url;
@@ -702,8 +750,9 @@ class PlannerPageApp {
         scrollHint.style.opacity = '1';
       }
 
-      // Render Itineraries
+      // Render Itineraries and scroll results to top
       this.renderItineraries(this.currentItineraries, data.originStop, data.destStop);
+      resultsContainer.scrollTop = 0;
 
       // Select target itinerary and paint on map
       const selectIdx = (targetIndex >= 0 && targetIndex < this.currentItineraries.length) ? targetIndex : 0;
@@ -716,6 +765,9 @@ class PlannerPageApp {
     } catch (err) {
       if (err.name === 'AbortError' || requestId !== this.searchGeneration) return;
       console.error('Plan search error:', err);
+      const searchBox = document.getElementById('plan-search-box');
+      if (searchBox) searchBox.classList.remove('has-results');
+      this.setSecondaryOptionsVisibility(true);
       let errorTitle = "No s'ha pogut connectar amb el servei";
       let errorDesc = "No s'ha pogut obtenir la planificació del servidor d'Arribo!.";
 
@@ -831,7 +883,7 @@ class PlannerPageApp {
                         Pujar a: <strong>${this.esc(leg.fromStop.name)}</strong>
                       </div>
                       <div style="font-size:0.82rem; color:var(--text-secondary);">
-                        Baixar a: <strong>${this.esc(leg.toStop.name)}</strong> (${leg.stopsCount || leg.stopCount} parades, ~${leg.travelTimeMins || leg.durationMinutes} min)
+                        Baixar a: <strong>${this.esc(leg.toStop.name)}</strong> (${leg.stopsCount || leg.stopCount} parades, ~${Math.round(leg.travelTimeMins || leg.durationMinutes || 0)} min)
                       </div>
                     </div>
                   </div>

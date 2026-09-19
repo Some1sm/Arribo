@@ -6435,7 +6435,7 @@ class TransitApp {
                     🟢 Pujar a: <strong>${this.esc(leg.fromStop.name)}</strong>
                   </div>
                   <div style="font-size:0.82rem; color:var(--text-secondary);">
-                    ${lIdx === it.legs.length - 1 ? '🏁' : '🔄'} Baixar a: <strong>${this.esc(leg.toStop.name)}</strong> (${leg.stopCount || leg.stopsCount} parades, ~${leg.travelTimeMins || leg.durationMinutes} min)
+                    ${lIdx === it.legs.length - 1 ? '🏁' : '🔄'} Baixar a: <strong>${this.esc(leg.toStop.name)}</strong> (${leg.stopCount || leg.stopsCount} parades, ~${Math.round(leg.travelTimeMins || leg.durationMinutes || 0)} min)
                   </div>
                 </div>
               </div>
