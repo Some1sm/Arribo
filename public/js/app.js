@@ -13,6 +13,8 @@ const MATARO_ZONES = [
   { id: 'llantia', name: 'La Llàntia / Via Europa', icon: '🏫', desc: 'Línies L1, L2, L5, L8', lat: 41.5480, lon: 2.4320 }
 ];
 
+const CANONICAL_BUS_ICON_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1.5px; margin-right:3px; display:inline-block;"><path d="M19 17h2l.64-2.54a6 6 0 0 0 .36-2V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v6.46a6 6 0 0 0 .36 2L3 17h2"/><path d="M7 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2"/><path d="M14 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2"/><circle cx="6.5" cy="12.5" r="1.5"/><circle cx="17.5" cy="12.5" r="1.5"/><line x1="2" y1="9" x2="22" y2="9"/></svg>';
+
 class TransitApp {
   constructor() {
     this.activeLineId = null;
@@ -404,17 +406,22 @@ class TransitApp {
     const subtitle = document.getElementById('header-subtitle');
 
     if (badge) {
-      badge.textContent = '🚌';
-      badge.style.background = 'var(--c10-primary)';
-      badge.style.color = '#ffffff';
-      badge.style.fontSize = '1.25rem';
+      badge.innerHTML = `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M19 17h2l.64-2.54a6 6 0 0 0 .36-2V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v6.46a6 6 0 0 0 .36 2L3 17h2"/>
+        <path d="M7 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2"/>
+        <path d="M14 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2"/>
+        <circle cx="6.5" cy="12.5" r="1.5"/>
+        <circle cx="17.5" cy="12.5" r="1.5"/>
+        <line x1="2" y1="9" x2="22" y2="9"/>
+      </svg>`;
+      badge.removeAttribute('style');
     }
     if (modeBadge) {
       modeBadge.textContent = 'Temps Real';
       modeBadge.className = 'header-mode-badge universal';
     }
     if (subtitle) {
-      subtitle.textContent = 'Telemetria de busos en directe a Catalunya';
+      subtitle.textContent = 'Mataró Bus Urbà en directe';
     }
 
     document.title = "Arribo! | Telemetria i Seguiment d'Autobusos en Temps Real";
@@ -1783,7 +1790,7 @@ class TransitApp {
           <span class="disruption-title">⚠️ ${this.esc(this.decodeHtml(d.title))}</span>
           ${d.affectedCities ? `<span class="disruption-tag">📍 ${this.esc(this.decodeHtml(d.affectedCities.trim()))}</span>` : ''}
         </div>
-        ${d.affectedLines ? `<div class="disruption-lines-badge">🚌 ${this.esc(this.decodeHtml(d.affectedLines))}</div>` : ''}
+        ${d.affectedLines ? `<div class="disruption-lines-badge">${CANONICAL_BUS_ICON_SVG} ${this.esc(this.decodeHtml(d.affectedLines))}</div>` : ''}
         ${d.affectedStops ? `<div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:0.4rem;">🚏 ${this.esc(this.decodeHtml(d.affectedStops))}</div>` : ''}
         <div class="disruption-body-text">${this.esc(this.decodeHtml(d.description))}</div>
       </div>
@@ -3964,7 +3971,7 @@ class TransitApp {
               <strong class="stops-dir-name">${this.esc(dirName)}</strong>
               <span class="stops-dir-count-pill">${stops.length} parades</span>
               <span class="schematic-bus-active-count">
-                🚌 ${activeVehicles.length} ${activeVehicles.length === 1 ? 'bus actiu' : 'busos actius'}
+                ${CANONICAL_BUS_ICON_SVG} ${activeVehicles.length} ${activeVehicles.length === 1 ? 'bus actiu' : 'busos actius'}
               </span>
             </div>
           </div>
@@ -4192,7 +4199,7 @@ class TransitApp {
               <span class="schematic-dir-title">⇄ Ambdós sentits (${allDirs.length} recorreguts, ${totalStops} parades)</span>
             </div>
             <span class="schematic-bus-active-count">
-              🚌 ${allActiveVehicles.length} ${allActiveVehicles.length === 1 ? 'bus actiu' : 'busos actius'}
+              ${CANONICAL_BUS_ICON_SVG} ${allActiveVehicles.length} ${allActiveVehicles.length === 1 ? 'bus actiu' : 'busos actius'}
             </span>
           </div>
 
@@ -4257,7 +4264,7 @@ class TransitApp {
             <span class="schematic-dir-title">${this.esc(dirName)}</span>
           </div>
           <span class="schematic-bus-active-count">
-            🚌 ${allActiveVehicles.length} ${allActiveVehicles.length === 1 ? 'bus actiu' : 'busos actius'}
+            ${CANONICAL_BUS_ICON_SVG} ${allActiveVehicles.length} ${allActiveVehicles.length === 1 ? 'bus actiu' : 'busos actius'}
           </span>
         </div>
     `;
@@ -6819,7 +6826,7 @@ class TransitApp {
           <span>📋 Rànquing d'Incidents per Expedició (${topList.length})</span>
         </button>
         <button type="button" class="incident-view-mode-tab ${activeTab === 'trips' ? 'active' : ''}" data-incident-tab="trips">
-          <span>🚌 Expedicions & Trajectòries Afectades (${tripsList.length})</span>
+          <span>${CANONICAL_BUS_ICON_SVG} Expedicions & Trajectòries Afectades (${tripsList.length})</span>
         </button>
       </div>
 
@@ -6906,15 +6913,15 @@ class TransitApp {
               </div>
               <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:0.6rem; font-size:0.76rem; color:var(--text-muted);">
                 <div style="background:var(--bg-surface); padding:0.55rem 0.75rem; border-radius:6px; border:1px solid var(--border-subtle);">
-                  <strong style="color:var(--text-primary); display:block; margin-bottom:2px;">🚌 Bus ID individual</strong>
+                  <strong style="color:var(--text-primary); display:block; margin-bottom:2px;">${CANONICAL_BUS_ICON_SVG} Bus ID individual</strong>
                   Cada vehicle es monitoritza per separat; no es barregen diferents autobusos que circulin alhora per la mateixa línia.
                 </div>
                 <div style="background:var(--bg-surface); padding:0.55rem 0.75rem; border-radius:6px; border:1px solid var(--border-subtle);">
-                  <strong style="color:var(--text-primary); display:block; margin-bottom:2px;">📍 Progressió parada a parada</strong>
+                  <strong style="color:var(--text-primary); display:block; margin-bottom:2px;">Progressió parada a parada</strong>
                   Permet veure exactament a quina parada s'origina la retenció i com el bus va recuperant temps de trajecte.
                 </div>
                 <div style="background:var(--bg-surface); padding:0.55rem 0.75rem; border-radius:6px; border:1px solid var(--border-subtle);">
-                  <strong style="color:var(--text-primary); display:block; margin-bottom:2px;">🏁 Normalització de l'horari</strong>
+                  <strong style="color:var(--text-primary); display:block; margin-bottom:2px;">Normalització de l'horari</strong>
                   Si la seqüència s'acaba abans del final de la línia, indica que el vehicle ja ha absorbit el retard (&lt;3 min) o ha finalitzat el torn.
                 </div>
               </div>

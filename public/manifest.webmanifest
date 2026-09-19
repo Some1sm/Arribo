@@ -5,12 +5,12 @@
   "start_url": "/",
   "id": "/",
   "display": "standalone",
-  "background_color": "#0f172a",
-  "theme_color": "#0ea5e9",
+  "background_color": "#09090b",
+  "theme_color": "#10b981",
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%230ea5e9'/><text y='72' x='14' font-size='62'>🚌</text></svg>",
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%2309090b'/><g transform='translate(16,16) scale(2.83)' stroke='%2310b981' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'><path d='M19 17h2l.64-2.54a6 6 0 0 0 .36-2V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v6.46a6 6 0 0 0 .36 2L3 17h2'/><path d='M7 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2'/><path d='M14 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2'/><circle cx='6.5' cy='12.5' r='1.5'/><circle cx='17.5' cy='12.5' r='1.5'/><line x1='2' y1='9' x2='22' y2='9'/></g></svg>",
       "sizes": "192x192 512x512",
       "type": "image/svg+xml",
       "purpose": "any maskable"

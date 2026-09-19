@@ -18,6 +18,8 @@ function escHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
+const CANONICAL_BUS_ICON_INNER_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle;"><path d="M19 17h2l.64-2.54a6 6 0 0 0 .36-2V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v6.46a6 6 0 0 0 .36 2L3 17h2"/><path d="M7 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2"/><path d="M14 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2"/><circle cx="6.5" cy="12.5" r="1.5"/><circle cx="17.5" cy="12.5" r="1.5"/><line x1="2" y1="9" x2="22" y2="9"/></svg>';
+
 
 /**
  * Projects a stop position onto the nearest vertex of a route polyline using a
@@ -1457,10 +1459,12 @@ class C10Map {
             <div class="map-popup-title-group">
               <div class="map-popup-bus-icon ${isGhost ? 'ghost' : ''}" style="border-color:${isGhost ? 'rgba(245, 158, 11, 0.5)' : (busColor ? busColor + '66' : 'rgba(14, 165, 233, 0.3)')}; color:${isGhost ? '#fbbf24' : (busColor || '#38bdf8')};">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M19 17h2l.64-2.54c.24-.959.24-1.962 0-2.92l-1.07-4.27A3 3 0 0 0 17.66 5H4a2 2 0 0 0-2 2v10h2"/>
-                  <circle cx="7" cy="17" r="2"/>
-                  <path d="M9 17h6"/>
-                  <circle cx="17" cy="17" r="2"/>
+                  <path d="M19 17h2l.64-2.54a6 6 0 0 0 .36-2V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v6.46a6 6 0 0 0 .36 2L3 17h2"/>
+                  <path d="M7 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2"/>
+                  <path d="M14 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2"/>
+                  <circle cx="6.5" cy="12.5" r="1.5"/>
+                  <circle cx="17.5" cy="12.5" r="1.5"/>
+                  <line x1="2" y1="9" x2="22" y2="9"/>
                 </svg>
               </div>
               <div class="map-popup-title-text">
@@ -1559,7 +1563,7 @@ class C10Map {
               ? '<span class="map-popup-chip electric"><span class="chip-icon">⚡</span> 100% Elèctric</span>' 
               : (bus.isHybrid 
                 ? '<span class="map-popup-chip hybrid"><span class="chip-icon">🌱</span> Híbrid Eco</span>' 
-                : (bus.propulsion ? `<span class="map-popup-chip propulsion"><span class="chip-icon">🚌</span> ${escHtml(bus.propulsion)}</span>` : ''))}
+                : (bus.propulsion ? `<span class="map-popup-chip propulsion"><span class="chip-icon">${CANONICAL_BUS_ICON_INNER_SVG}</span> ${escHtml(bus.propulsion)}</span>` : ''))}
             ${bus.modelName ? `<span class="map-popup-chip model" title="${escHtml(bus.modelName)}"><span class="chip-icon">🚍</span> ${escHtml(bus.modelName)}</span>` : ''}
             ${bus.tripStartTime || bus.departureTime ? `<span class="map-popup-chip start-time"><span class="chip-icon">🕐</span> Sortida ${escHtml(bus.tripStartTime || bus.departureTime)}</span>` : ''}
           </div>` : ''}
@@ -1651,7 +1655,7 @@ class C10Map {
           }
           const iconInner = el.querySelector('.bus-icon-inner');
           if (iconInner) {
-            iconInner.textContent = isGhost ? '⚡' : (bus.isTerminalLayover ? '🅿️' : '🚌');
+            iconInner.innerHTML = isGhost ? '⚡' : (bus.isTerminalLayover ? '🅿️' : CANONICAL_BUS_ICON_INNER_SVG);
           }
           obj.marker.setZIndexOffset(isSelected ? 5000 : (isGhost ? 1500 : 2000));
         }
@@ -1672,7 +1676,7 @@ class C10Map {
               <div class="bus-heading-arrow"></div>
             </div>
             <div class="live-bus-pin" style="background: ${pinBg};">
-              <span class="bus-icon-inner" style="transform: scaleX(${isHeadingWest ? -1 : 1});">${isGhost ? '⚡' : '🚌'}</span>
+              <span class="bus-icon-inner" style="transform: scaleX(${isHeadingWest ? -1 : 1});">${isGhost ? '⚡' : CANONICAL_BUS_ICON_INNER_SVG}</span>
               <span class="bus-status-dot ${isGhost ? 'ghost' : (isEst ? 'estimated' : 'live')}"></span>
             </div>
           </div>
