@@ -2332,17 +2332,25 @@ class TransitApp {
   renderStopHeatmap(stops) {
     if (!stops.length) return '';
     if (!stops.every(stop => Array.isArray(stop.hourly))) return '<p>Detall horari pendent de la propera actualització.</p>';
+
+    const hasData = h => stops.some(s => (s.hourly?.[h]?.sampleCount || 0) > 0);
+    let visibleHours = Array.from({ length: 24 }, (_, h) => h).filter(hasData);
+    if (!visibleHours.length) {
+      visibleHours = Array.from({ length: 17 }, (_, i) => i + 6);
+    }
+
     const cell = bucket => {
-      const label = bucket.sampleCount ? `${bucket.avgDelay} min; ${bucket.sampleCount} mostres; màxim ${bucket.maxDelay} min; ${bucket.severeLatePct}% amb retard ≥5 min` : 'Sense dades';
-      const level = !bucket.sampleCount ? 'empty' : bucket.avgDelay >= 5 ? 'late' : bucket.avgDelay >= 3 ? 'moderate' : 'regular';
-      return `<td class="stop-heat-cell heat-${level}" title="${this.esc(label)}"><span aria-label="${this.esc(label)}">${bucket.sampleCount ? bucket.avgDelay : '—'}</span>${bucket.sampleCount > 0 && bucket.sampleCount < 5 ? '<small> *</small>' : ''}</td>`;
+      const b = bucket || { sampleCount: 0 };
+      const label = b.sampleCount ? `${b.avgDelay} min; ${b.sampleCount} mostres; màxim ${b.maxDelay} min; ${b.severeLatePct}% amb retard ≥5 min` : 'Sense dades';
+      const level = !b.sampleCount ? 'empty' : b.avgDelay >= 5 ? 'late' : b.avgDelay >= 3 ? 'moderate' : 'regular';
+      return `<td class="stop-heat-cell heat-${level}" title="${this.esc(label)}"><span aria-label="${this.esc(label)}">${b.sampleCount ? b.avgDelay : '—'}</span>${b.sampleCount > 0 && b.sampleCount < 5 ? '<small> *</small>' : ''}</td>`;
     };
     return `<section class="stop-hourly-section"><h4>Retard per parada i hora</h4>
       <p>Observacions registrades, no viatges únics ni causes de congestió. Hora local: Europe/Madrid. Valors en minuts. * Menys de 5 mostres.</p>
       <p class="stop-heat-legend"><span class="heat-regular">Menys de 3 min</span> <span class="heat-moderate">3–5 min</span> <span class="heat-late">5 min o més</span> <span>— Sense dades</span></p>
-      <div class="observatori-table-wrapper"><table class="observatori-table stop-heatmap"><caption>Retard mitjà per hora</caption><thead><tr><th scope="col">Parada / línia</th>${Array.from({ length: 24 }, (_, h) => `<th scope="col">${String(h).padStart(2, '0')}</th>`).join('')}</tr></thead>
-      <tbody>${stops.map(stop => `<tr><th scope="row">${this.esc(stop.stopName)} / ${this.esc(stop.lineCode)}</th>${stop.hourly.map(cell).join('')}</tr>`).join('')}</tbody></table></div>
-      ${stops.map(stop => `<details class="stop-hourly-detail"><summary>${this.esc(stop.stopName)} · ${this.esc(stop.lineCode)} — Detall horari (${stop.arrivalCount} mostres)</summary><div class="observatori-table-wrapper"><table class="observatori-table"><thead><tr><th>Hora</th><th>Mostres</th><th>Mitjana (min)</th><th>Màxim (min)</th><th>Retard ≥5 min</th></tr></thead><tbody>${stop.hourly.map(b => `<tr><th scope="row">${b.hour}:00</th><td>${b.sampleCount}${b.sampleCount > 0 && b.sampleCount < 5 ? ' *' : ''}</td><td>${b.avgDelay ?? '—'}</td><td>${b.maxDelay ?? '—'}</td><td>${b.severeLatePct === null ? '—' : `${b.severeLatePct}%`}</td></tr>`).join('')}</tbody></table></div></details>`).join('')}
+      <div class="observatori-table-wrapper"><table class="observatori-table stop-heatmap"><caption>Retard mitjà per hora</caption><thead><tr><th scope="col">Parada / línia</th>${visibleHours.map(h => `<th scope="col">${String(h).padStart(2, '0')}</th>`).join('')}</tr></thead>
+      <tbody>${stops.map(stop => `<tr><th scope="row">${this.esc(stop.stopName)} / ${this.esc(stop.lineCode)}</th>${visibleHours.map(h => cell(stop.hourly?.[h])).join('')}</tr>`).join('')}</tbody></table></div>
+      ${stops.map(stop => `<details class="stop-hourly-detail"><summary>${this.esc(stop.stopName)} · ${this.esc(stop.lineCode)} — Detall horari (${stop.arrivalCount} mostres)</summary><div class="observatori-table-wrapper"><table class="observatori-table"><thead><tr><th>Hora</th><th>Mostres</th><th>Mitjana (min)</th><th>Màxim (min)</th><th>Retard ≥5 min</th></tr></thead><tbody>${stop.hourly.filter(b => visibleHours.includes(parseInt(b.hour, 10))).map(b => `<tr><th scope="row">${b.hour}:00</th><td>${b.sampleCount}${b.sampleCount > 0 && b.sampleCount < 5 ? ' *' : ''}</td><td>${b.avgDelay ?? '—'}</td><td>${b.maxDelay ?? '—'}</td><td>${b.severeLatePct === null ? '—' : `${b.severeLatePct}%`}</td></tr>`).join('')}</tbody></table></div></details>`).join('')}
     </section>`;
   }
 
