@@ -685,15 +685,58 @@ class TransitApp {
     const favGrid = document.getElementById('landing-favorites-grid');
     const nearbyGrid = document.getElementById('landing-nearby-grid');
     const zoneGrid = document.getElementById('zone-picker-grid');
+    const dropdown = document.getElementById('landing-search-results-dropdown');
 
     heroInput?.addEventListener('input', (e) => {
-      const q = e.target.value;
-      if (clearBtn) clearBtn.style.display = q ? 'block' : 'none';
+      const rawVal = e.target.value;
+      const q = rawVal.trim();
+      if (clearBtn) clearBtn.style.display = rawVal ? 'block' : 'none';
       clearTimeout(this.landingSearchDebounceTimer);
-      this.landingSearchDebounceTimer = setTimeout(() => {
-        this.landingSearch = q;
+
+      if (q.length < 1) {
+        if (dropdown) {
+          dropdown.classList.remove('active');
+          dropdown.innerHTML = '';
+        }
+        this.landingSearch = '';
+        this.landingSearchResults = null;
         this.renderLandingLines();
-      }, 150);
+        return;
+      }
+
+      this.landingSearchDebounceTimer = setTimeout(async () => {
+        this.landingSearch = q;
+        try {
+          const res = await fetch(`/api/search/stops?q=${encodeURIComponent(q)}`).then(r => r.json());
+          if (res.success && Array.isArray(res.results)) {
+            this.landingSearchResults = res.results;
+            if (dropdown) {
+              this.renderSearchResults(res.results, dropdown, heroInput);
+            }
+          }
+        } catch (err) {
+          console.error('[LandingSearch] Search error:', err);
+        }
+        this.renderLandingLines();
+      }, 200);
+    });
+
+    heroInput?.addEventListener('focus', () => {
+      if (heroInput.value.trim().length >= 1 && this.landingSearchResults && dropdown) {
+        this.renderSearchResults(this.landingSearchResults, dropdown, heroInput);
+      }
+    });
+
+    heroInput?.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && dropdown) {
+        dropdown.classList.remove('active');
+      }
+    });
+
+    document.addEventListener('click', (e) => {
+      if (heroInput && dropdown && !heroInput.contains(e.target) && !dropdown.contains(e.target)) {
+        dropdown.classList.remove('active');
+      }
     });
 
     clearBtn?.addEventListener('click', (e) => {
@@ -702,8 +745,13 @@ class TransitApp {
         heroInput.value = '';
         heroInput.focus();
       }
+      if (dropdown) {
+        dropdown.classList.remove('active');
+        dropdown.innerHTML = '';
+      }
       clearBtn.style.display = 'none';
       this.landingSearch = '';
+      this.landingSearchResults = null;
       this.renderLandingLines();
     });
 
@@ -815,11 +863,32 @@ class TransitApp {
 
     // Single delegated click listener on container (eliminates thousands of closure allocations)
     container?.addEventListener('click', (e) => {
+      const stopCard = e.target.closest('.landing-stop-card');
+      if (stopCard) {
+        e.preventDefault();
+        const lineId = stopCard.getAttribute('data-line-id') || '1';
+        const stopId = stopCard.getAttribute('data-stop-id');
+        const stopName = stopCard.getAttribute('data-stop-name');
+        const lat = parseFloat(stopCard.getAttribute('data-lat'));
+        const lon = parseFloat(stopCard.getAttribute('data-lon'));
+        if (dropdown) dropdown.classList.remove('active');
+        this.switchLine(lineId);
+        if (stopId) {
+          this.setTargetStop(stopId);
+          if (lat && lon) {
+            this.mapController.focusTargetStop(lat, lon);
+          }
+          this.inspectStop(stopId, stopName);
+        }
+        return;
+      }
+
       const card = e.target.closest('.landing-line-card');
       if (card) {
         e.preventDefault();
         const lineId = card.getAttribute('data-line-id');
         if (lineId) {
+          if (dropdown) dropdown.classList.remove('active');
           this.switchLine(lineId);
         }
         return;
@@ -862,47 +931,96 @@ class TransitApp {
 
     const linesToRender = this.availableLines.filter(filterFn);
 
-    if (linesToRender.length === 0) {
+    let stopsToRender = [];
+    if (q && Array.isArray(this.landingSearchResults)) {
+      stopsToRender = this.landingSearchResults.filter(r => !r.isLine && (r.type === 'stop' || r.stopId));
+      if (!this.showTrainsInUI) {
+        stopsToRender = stopsToRender.filter(r => !r.isTrain && !r.lineCode?.startsWith('R') && !r.agency?.toLowerCase().includes('rodalies') && !r.agency?.toLowerCase().includes('renfe'));
+      }
+      if (activeFilter !== 'all') {
+        stopsToRender = stopsToRender.filter(s => {
+          const lId = String(s.lineId || '').toLowerCase();
+          const lCode = String(s.lineCode || '').toLowerCase();
+          return lId === activeFilter.toLowerCase() || lCode === `l${activeFilter}`.toLowerCase();
+        });
+      }
+    }
+
+    if (linesToRender.length === 0 && stopsToRender.length === 0) {
       container.innerHTML = `
         <div style="padding: 3rem 1rem; text-align: center; color: var(--text-muted); background:var(--bg-card-gradient); border-radius:var(--radius-lg); border:1px solid var(--border-subtle);">
           <div style="font-size: 2.2rem; margin-bottom: 0.5rem;">🔍</div>
-          <div style="font-size:1.1rem; font-weight: 700; color: #fff; margin-bottom: 0.35rem;">Cap línia trobada</div>
-          <div style="font-size: 0.85rem; max-width:450px; margin:0 auto;">No hi ha cap resultat per a "${this.esc(this.landingSearch)}". Prova cercant per línia (ex: L1, L2, L3, 5, 8) o parada.</div>
+          <div style="font-size:1.1rem; font-weight: 700; color: #fff; margin-bottom: 0.35rem;">Cap línia ni parada trobada</div>
+          <div style="font-size: 0.85rem; max-width:450px; margin:0 auto;">No hi ha cap resultat per a "${this.esc(this.landingSearch)}". Prova cercant per línia (ex: L1, L2, L3, 5, 8) o parada (ex: Hospital, Rodalies, Tereses).</div>
         </div>
       `;
       return;
     }
 
-    let html = `
-      <div class="landing-group-section">
-        <div class="landing-group-header">
-          <h3><span>📍</span> Mataró Bus Urbà</h3>
-          <span class="landing-group-badge">${linesToRender.length} línia${linesToRender.length === 1 ? '' : 'es'}</span>
-        </div>
-        <div class="landing-lines-grid">
-          ${linesToRender.map(l => {
-            const contrast = this.getContrastColor(l.color);
-            const dirCount = l.directions ? `${l.directions.length} sentits` : 'En servei';
-            return `
-              <div class="landing-line-card" data-line-id="${this.esc(l.id)}" title="Fes clic per seguir la línia ${this.esc(l.code)} en directe">
-                <span class="landing-line-badge" style="background:${this.esc(l.color)}; color:${contrast};">${this.esc(l.code)}</span>
-                <div class="landing-line-info">
-                  <div class="landing-line-title">${this.esc(l.name)}</div>
-                  <div class="landing-line-operator">
-                    <span>${this.esc(l.agency || 'Mataró Bus')}</span>
-                    <span>•</span>
-                    <span>${dirCount}</span>
+    let html = '';
+    if (linesToRender.length > 0) {
+      html += `
+        <div class="landing-group-section">
+          <div class="landing-group-header">
+            <h3><span>📍</span> Mataró Bus Urbà</h3>
+            <span class="landing-group-badge">${linesToRender.length} línia${linesToRender.length === 1 ? '' : 'es'}</span>
+          </div>
+          <div class="landing-lines-grid">
+            ${linesToRender.map(l => {
+              const contrast = this.getContrastColor(l.color);
+              const dirCount = l.directions ? `${l.directions.length} sentits` : 'En servei';
+              return `
+                <div class="landing-line-card" data-line-id="${this.esc(l.id)}" title="Fes clic per seguir la línia ${this.esc(l.code)} en directe">
+                  <span class="landing-line-badge" style="background:${this.esc(l.color)}; color:${contrast};">${this.esc(l.code)}</span>
+                  <div class="landing-line-info">
+                    <div class="landing-line-title">${this.esc(l.name)}</div>
+                    <div class="landing-line-operator">
+                      <span>${this.esc(l.agency || 'Mataró Bus')}</span>
+                      <span>•</span>
+                      <span>${dirCount}</span>
+                    </div>
                   </div>
+                  <span class="landing-line-arrow">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                  </span>
                 </div>
-                <span class="landing-line-arrow">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-                </span>
-              </div>
-            `;
-          }).join('')}
+              `;
+            }).join('')}
+          </div>
         </div>
-      </div>
-    `;
+      `;
+    }
+
+    if (stopsToRender.length > 0) {
+      html += `
+        <div class="landing-group-section" style="${linesToRender.length > 0 ? 'margin-top:1.5rem;' : ''}">
+          <div class="landing-group-header">
+            <h3><span>🚏</span> Parades trobades</h3>
+            <span class="landing-group-badge">${stopsToRender.length} parada${stopsToRender.length === 1 ? '' : 'es'}</span>
+          </div>
+          <div class="landing-lines-grid">
+            ${stopsToRender.map(s => {
+              const contrast = this.getContrastColor(s.lineColor || '#009485');
+              return `
+                <div class="landing-line-card landing-stop-card" data-stop-id="${this.esc(s.stopId || s.code)}" data-stop-name="${this.esc(s.stopName || s.name)}" data-line-id="${this.esc(s.lineId || '1')}" data-lat="${this.esc(s.lat || '')}" data-lon="${this.esc(s.lon || '')}" title="Veure arribades a ${this.esc(s.stopName || s.name)}">
+                  <span class="landing-line-badge" style="background:${this.esc(s.lineColor || '#009485')}; color:${contrast};">${this.esc(s.lineCode || 'Bus')}</span>
+                  <div class="landing-line-info">
+                    <div class="landing-line-title">${this.esc(s.stopName || s.name)}</div>
+                    <div class="landing-line-operator">
+                      <span>${this.esc(s.zone || 'Mataró Urbà')}${s.code ? ` • Codi: #${this.esc(s.code)}` : ''}</span>
+                      ${s.directionText ? `<span>• ${this.esc(s.directionText)}</span>` : ''}
+                    </div>
+                  </div>
+                  <span class="landing-line-arrow">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                  </span>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    }
 
     container.innerHTML = html;
   }
@@ -4674,8 +4792,21 @@ class TransitApp {
         const type = item.getAttribute('data-type');
         const lineId = item.getAttribute('data-line-id');
         dropdown.classList.remove('active');
+        if (input) {
+          input.value = '';
+        }
         const searchInput = document.getElementById('global-search-input');
         if (searchInput) searchInput.value = '';
+        const heroInput = document.getElementById('landing-hero-search-input');
+        if (heroInput) heroInput.value = '';
+        const clearBtn = document.getElementById('btn-landing-search-clear');
+        if (clearBtn) clearBtn.style.display = 'none';
+        const landingDropdown = document.getElementById('landing-search-results-dropdown');
+        if (landingDropdown) landingDropdown.classList.remove('active');
+        const globalDropdown = document.getElementById('search-results-dropdown');
+        if (globalDropdown) globalDropdown.classList.remove('active');
+        this.landingSearch = '';
+        this.landingSearchResults = null;
 
         if (type === 'line') {
           this.switchLine(lineId);

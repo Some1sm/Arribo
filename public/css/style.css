@@ -4214,7 +4214,7 @@ body {
   box-shadow: var(--shadow-md);
   text-align: center;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .landing-hero-card::before {
@@ -4315,6 +4315,12 @@ body {
 
 .landing-search-clear-btn:hover {
   color: var(--text-primary);
+}
+
+.landing-search-results-dropdown {
+  width: 100%;
+  max-width: 100%;
+  text-align: left;
 }
 
 .landing-filter-tabs {
