@@ -66,9 +66,41 @@ let appServer;
   assert.ok(obsCode.includes('renderTermometreScorecard'), 'observatori.js must have renderTermometreScorecard');
   assert.ok(obsCode.includes('renderDelayIncidentsView'), 'observatori.js must have renderDelayIncidentsView');
   assert.ok(obsCode.includes('initObservatoriTableScrolls'), 'observatori.js must have initObservatoriTableScrolls');
+  assert.ok(obsCode.includes('stop-heatmap-wrapper'), 'observatori.js must wrap stop-heatmap with stop-heatmap-wrapper');
+  assert.ok(obsCode.includes('is-scrolled-vertical'), 'observatori.js must handle vertical scroll state');
   assert.ok(obsCode.includes('initUrlState'), 'observatori.js must have initUrlState');
   assert.ok(obsCode.includes('updateUrl'), 'observatori.js must have updateUrl');
+  assert.ok(obsCode.includes('openStopHourlyDrilldown'), 'observatori.js must have openStopHourlyDrilldown');
+  assert.ok(obsCode.includes('openHourSummaryDrilldown'), 'observatori.js must have openHourSummaryDrilldown');
+  assert.ok(obsCode.includes('closeStopHourlyDrilldown'), 'observatori.js must have closeStopHourlyDrilldown');
+  assert.ok(obsCode.includes('observatori-rank-num'), 'observatori.js must display ranking numbers');
+  assert.ok(obsCode.includes('observatori-group-by-line'), 'observatori.js must have group-by-line toggle');
+  assert.ok(obsCode.includes('observatori-group-header-row'), 'observatori.js must render group header rows');
+  assert.ok(obsCode.includes('overallRank'), 'observatori.js must track overallRank');
   console.log('  ✓ 5. public/js/observatori.js components & deep-linking handlers verified.');
+
+  // 6. Verify stop heatmap sticky headers and CSS scroll container
+  const cssPath = path.join(__dirname, '..', 'public', 'css', 'style.css');
+  assert.ok(fs.existsSync(cssPath), 'style.css must exist');
+  const cssCode = fs.readFileSync(cssPath, 'utf8');
+  assert.ok(cssCode.includes('.stop-heatmap-wrapper'), 'style.css must define .stop-heatmap-wrapper');
+  assert.ok(cssCode.includes('.stop-heatmap thead th'), 'style.css must style .stop-heatmap thead th');
+  assert.ok(cssCode.includes('position: sticky'), 'style.css must use sticky positioning');
+  assert.ok(cssCode.includes('top: 0'), 'style.css must pin headers at top: 0');
+  assert.ok(cssCode.includes('.observatori-rank-num'), 'style.css must style .observatori-rank-num');
+  assert.ok(cssCode.includes('.observatori-group-toggle'), 'style.css must style .observatori-group-toggle');
+  assert.ok(cssCode.includes('.observatori-group-header-row'), 'style.css must style .observatori-group-header-row');
+  console.log('  ✓ 6. public/css/style.css sticky headers, rank badges & group rows verified.');
+
+  // 7. Verify service worker and HTML asset version alignment
+  const versionMatch = swCode.match(/const VERSION = '([^']+)';/);
+  assert.ok(versionMatch, 'sw.js must define VERSION');
+  const currentVersion = versionMatch[1];
+  for (const page of ['index.html', 'dades.html', 'plan.html']) {
+    const pageHtml = fs.readFileSync(path.join(__dirname, '..', 'public', page), 'utf8');
+    assert.ok(pageHtml.includes(`style.css?v=${currentVersion}`), `${page} must include style.css?v=${currentVersion}`);
+  }
+  console.log(`  ✓ 7. Service worker and HTML asset versions aligned at v${currentVersion}.`);
 
   console.log('\n🎉 ALL DADES / OBSERVATORI STANDALONE TESTS PASSED!\n');
 })().catch(err => {

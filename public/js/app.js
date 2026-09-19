@@ -1815,7 +1815,7 @@ class TransitApp {
       current.asc = !current.asc;
     } else {
       current.key = columnKey;
-      current.asc = columnKey === 'lineCode' || columnKey === 'agency' || columnKey === 'stopName';
+      current.asc = columnKey === 'lineCode' || columnKey === 'agency' || columnKey === 'stopName' || columnKey === 'overallRank';
     }
     this.journalismSorts[tableKey] = current;
     if (this.currentJournalismReport) {
@@ -1848,7 +1848,9 @@ class TransitApp {
 
     const s = report.summary || {};
     let mostDelayed = [...(report.rankingMostDelayed || [])].filter(l => (l.sampleCount || 0) > 0 || (l.avgDelay || 0) > 0);
-    let worstStops = [...(report.rankingWorstStops || [])].filter(st => (st.arrivalCount || 0) > 0);
+    let worstStops = [...(report.rankingWorstStops || [])]
+      .filter(st => (st.arrivalCount || 0) > 0)
+      .map((st, idx) => ({ ...st, overallRank: idx + 1 }));
     let agencies = [...(report.agencyStats || [])].filter(a => (a.totalSamples || 0) > 0);
 
     // Apply text search filtering (with punctuation-agnostic matching e.g. c10 matches C-10)
@@ -2117,16 +2119,108 @@ class TransitApp {
           const totalWorst = worstStops.length;
           const displayedWorstStops = worstStops.slice(0, worstLimit);
           const hasMoreWorst = totalWorst > worstLimit;
+          const isGroupedByLine = !!this.journalismGroupByLine;
+
+          const renderStopRow = (st) => {
+            const sAvgStr = Number(st.avgDelay) > 0 ? `+${st.avgDelay} min` : (Number(st.avgDelay) < 0 ? `${st.avgDelay} min` : '0.0 min');
+            const sMaxStr = Number(st.maxDelay) > 0 ? `+${st.maxDelay} min` : `${st.maxDelay || 0} min`;
+            const lColor = this.getLineColor(st.lineCode);
+            const isLight = lColor === '#ffcc00' || lColor === '#febf01';
+            const badgeTextColor = isLight ? '#000' : '#fff';
+            return `
+            <tr>
+              <td class="sticky-col" style="font-weight:600; color:var(--text-primary);">
+                <div class="observatori-stop-cell">
+                  <span class="observatori-rank-num ${st.overallRank <= 3 ? 'rank-' + st.overallRank : ''}" title="Rànquing de retard a la xarxa: #${st.overallRank}">#${st.overallRank}</span>
+                  <span style="color:#f59e0b; flex-shrink:0;">📍</span>
+                  <span class="observatori-stop-name" title="${this.esc(st.stopName)}">${this.esc(st.stopName)}</span>
+                  <span class="observatori-mobile-only" style="background:${lColor}; color:${badgeTextColor}; padding:0.1rem 0.35rem; border-radius:4px; font-size:0.7rem; font-weight:800; margin-left:0.25rem;">${this.esc(st.lineCode)}</span>
+                </div>
+              </td>
+              <td class="observatori-col-desktop" style="font-weight:700; white-space:nowrap; text-align:center;">
+                <span class="observatori-line-badge" style="background:${lColor}; color:${badgeTextColor}; font-size:0.72rem; padding:0.12rem 0.45rem; border-radius:4px;">${this.esc(st.lineCode)}</span>
+              </td>
+              <td class="observatori-col-desktop" style="color:var(--text-muted); white-space:nowrap;">${this.esc(st.agency)}</td>
+              <td style="font-weight:700; color:${Number(st.avgDelay) > 0 ? '#ef4444' : '#10b981'}; white-space:nowrap;">${sAvgStr}</td>
+              <td style="white-space:nowrap; text-align:center;">
+                <span style="background:${st.severeLatePct >= 30 ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.15)'}; color:${st.severeLatePct >= 30 ? '#f87171' : '#fbbf24'}; padding:0.15rem 0.45rem; border-radius:6px; font-weight:600;">${st.severeLatePct}%</span>
+              </td>
+              <td style="white-space:nowrap;">
+                ${st.criticalHour && st.criticalHour !== '--' ? `
+                  <div class="bottleneck-hour-badge" title="Retard mitjà en aquesta franja: +${st.criticalHourAvgDelay} min">
+                    <span class="badge-time">${this.esc(st.criticalHour)}</span>
+                    <span class="badge-delay">(+${st.criticalHourAvgDelay}m)</span>
+                  </div>
+                ` : '<span style="color:var(--text-muted); font-size:0.75rem;">Uniforme</span>'}
+              </td>
+              <td class="observatori-col-desktop" style="color:var(--text-muted); white-space:nowrap;">${sMaxStr}</td>
+            </tr>
+          `;};
+
+          let tableBodyHtml = '';
+          if (!isGroupedByLine) {
+            tableBodyHtml = displayedWorstStops.map(st => renderStopRow(st)).join('');
+          } else {
+            const lineGroups = new Map();
+            for (const st of displayedWorstStops) {
+              const lCode = st.lineCode || 'Altres';
+              if (!lineGroups.has(lCode)) {
+                lineGroups.set(lCode, []);
+              }
+              lineGroups.get(lCode).push(st);
+            }
+
+            const sortedLineCodes = Array.from(lineGroups.keys()).sort((a, b) => {
+              const numA = parseInt(a.replace(/\D/g, ''), 10);
+              const numB = parseInt(b.replace(/\D/g, ''), 10);
+              if (!isNaN(numA) && !isNaN(numB) && numA !== numB) return numA - numB;
+              return a.localeCompare(b);
+            });
+
+            tableBodyHtml = sortedLineCodes.map(lineCode => {
+              const lineStops = lineGroups.get(lineCode);
+              const lColor = this.getLineColor(lineCode);
+              const isLight = lColor === '#ffcc00' || lColor === '#febf01';
+              const badgeTextColor = isLight ? '#000' : '#fff';
+              const lineMatch = (this.availableLines || []).find(l => String(l.code || l.id).toUpperCase() === String(lineCode).toUpperCase());
+              const lineTitle = lineMatch?.name || `Línia ${lineCode}`;
+              const lineAvg = (lineStops.reduce((sum, s) => sum + (Number(s.avgDelay) || 0), 0) / lineStops.length).toFixed(1);
+              const slowestStop = lineStops.reduce((prev, curr) => (prev.overallRank < curr.overallRank ? prev : curr), lineStops[0]);
+
+              return `
+                <tr class="observatori-group-header-row">
+                  <td colspan="7">
+                    <div class="observatori-group-header-content">
+                      <div class="observatori-group-header-left">
+                        <span class="observatori-line-badge" style="background:${lColor}; color:${badgeTextColor}; font-weight:800; font-size:0.75rem; padding:0.15rem 0.45rem; border-radius:4px;">${this.esc(lineCode)}</span>
+                        <span style="font-weight:700; color:var(--text-primary); font-size:0.83rem;">${this.esc(lineTitle)}</span>
+                        <span style="font-size:0.72rem; color:var(--text-muted); font-weight:500;">(${lineStops.length} ${lineStops.length === 1 ? 'parada' : 'parades'})</span>
+                      </div>
+                      <div class="observatori-group-header-right">
+                        <span>Retard mitjà: <strong style="color:${Number(lineAvg) >= 3 ? '#ef4444' : '#f59e0b'};">+${lineAvg} min</strong></span>
+                        <span style="border-left:1px solid var(--border-subtle); padding-left:0.6rem;">Parada més lenta: <strong style="color:var(--brand-primary);">#${slowestStop.overallRank}</strong> (${this.esc(slowestStop.stopName)})</span>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+                ${lineStops.map(st => renderStopRow(st)).join('')}
+              `;
+            }).join('');
+          }
 
           return `
           <div class="observatori-table-container">
             <div class="observatori-table-header-row">
               <h4 class="observatori-table-title">
                 <span>📍 Colls d'Ampolla: Parades amb Més Retard</span>
-                <span class="observatori-table-subtitle">(Mostrant ${displayedWorstStops.length} de ${totalWorst})</span>
+                <span class="observatori-table-subtitle">(Mostrant ${displayedWorstStops.length} de ${totalWorst}${isGroupedByLine ? ' • Agrupat per línia' : ''})</span>
               </h4>
-              <div class="observatori-filter-group">
-                <span style="font-size:0.7rem; color:var(--text-muted); padding:0 6px; font-weight:700;">FILTRE:</span>
+              <div class="observatori-filter-group" style="display:flex; align-items:center; flex-wrap:wrap; gap:0.4rem;">
+                <label class="observatori-group-toggle" title="Agrupa les parades per línia d'autobús o desmarca per veure l'ordre real">
+                  <input type="checkbox" id="observatori-group-by-line" ${isGroupedByLine ? 'checked' : ''}>
+                  <span>Agrupar per línia</span>
+                </label>
+                <span style="font-size:0.7rem; color:var(--text-muted); padding:0 4px; font-weight:700;">FILTRE:</span>
                 <button type="button" class="observatori-pill-btn ${worstLimit === 10 ? 'active' : ''}" data-worst-limit="10">Top 10</button>
                 <button type="button" class="observatori-pill-btn ${worstLimit === 25 ? 'active' : ''}" data-worst-limit="25">Top 25</button>
                 <button type="button" class="observatori-pill-btn ${worstLimit >= 9999 ? 'active' : ''}" data-worst-limit="9999">Totes (${totalWorst})</button>
@@ -2142,7 +2236,7 @@ class TransitApp {
                 <table class="observatori-table">
                   <thead>
                     <tr>
-                      <th class="sticky-col" data-sort-table="worstStops" data-sort-key="stopName" role="button" tabindex="0">Parada (Punt Negre) ${getSortIndicator('worstStops', 'stopName')}</th>
+                      <th class="sticky-col" data-sort-table="worstStops" data-sort-key="overallRank" role="button" tabindex="0">Rànquing / Parada (Punt Negre) ${getSortIndicator('worstStops', 'overallRank')}</th>
                       <th class="observatori-col-desktop" data-sort-table="worstStops" data-sort-key="lineCode" role="button" tabindex="0">Línia ${getSortIndicator('worstStops', 'lineCode')}</th>
                       <th class="observatori-col-desktop" data-sort-table="worstStops" data-sort-key="agency" role="button" tabindex="0">Operador ${getSortIndicator('worstStops', 'agency')}</th>
                       <th data-sort-table="worstStops" data-sort-key="avgDelay" role="button" tabindex="0">Retard Mitjà ${getSortIndicator('worstStops', 'avgDelay')}</th>
@@ -2152,35 +2246,7 @@ class TransitApp {
                     </tr>
                   </thead>
                   <tbody>
-                    ${displayedWorstStops.map((st, i) => {
-                      const sAvgStr = Number(st.avgDelay) > 0 ? `+${st.avgDelay} min` : (Number(st.avgDelay) < 0 ? `${st.avgDelay} min` : '0.0 min');
-                      const sMaxStr = Number(st.maxDelay) > 0 ? `+${st.maxDelay} min` : `${st.maxDelay || 0} min`;
-                      return `
-                      <tr>
-                        <td class="sticky-col" style="font-weight:600; color:var(--text-primary);">
-                          <div class="observatori-stop-cell">
-                            <span style="color:#f59e0b; flex-shrink:0;">📍</span>
-                            <span class="observatori-stop-name" title="${this.esc(st.stopName)}">${this.esc(st.stopName)}</span>
-                            <span class="observatori-mobile-only" style="background:var(--brand-primary); color:#fff; padding:0.1rem 0.35rem; border-radius:4px; font-size:0.7rem; font-weight:800; margin-left:0.25rem;">${this.esc(st.lineCode)}</span>
-                          </div>
-                        </td>
-                        <td class="observatori-col-desktop" style="font-weight:700; color:var(--brand-primary); white-space:nowrap; text-align:center;">${this.esc(st.lineCode)}</td>
-                        <td class="observatori-col-desktop" style="color:var(--text-muted); white-space:nowrap;">${this.esc(st.agency)}</td>
-                        <td style="font-weight:700; color:${Number(st.avgDelay) > 0 ? '#ef4444' : '#10b981'}; white-space:nowrap;">${sAvgStr}</td>
-                        <td style="white-space:nowrap; text-align:center;">
-                          <span style="background:${st.severeLatePct >= 30 ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.15)'}; color:${st.severeLatePct >= 30 ? '#f87171' : '#fbbf24'}; padding:0.15rem 0.45rem; border-radius:6px; font-weight:600;">${st.severeLatePct}%</span>
-                        </td>
-                        <td style="white-space:nowrap;">
-                          ${st.criticalHour && st.criticalHour !== '--' ? `
-                            <div class="bottleneck-hour-badge" title="Retard mitjà en aquesta franja: +${st.criticalHourAvgDelay} min">
-                              <span class="badge-time">${this.esc(st.criticalHour)}</span>
-                              <span class="badge-delay">(+${st.criticalHourAvgDelay}m)</span>
-                            </div>
-                          ` : '<span style="color:var(--text-muted); font-size:0.75rem;">Uniforme</span>'}
-                        </td>
-                        <td class="observatori-col-desktop" style="color:var(--text-muted); white-space:nowrap;">${sMaxStr}</td>
-                      </tr>
-                    `;}).join('')}
+                    ${tableBodyHtml}
                   </tbody>
                 </table>
               </div>
@@ -2294,29 +2360,229 @@ class TransitApp {
     this.initObservatoriTableScrolls();
   }
 
+  getLineColor(code) {
+    const match = (this.availableLines || []).find(l => String(l.code || l.id).toUpperCase() === String(code).toUpperCase());
+    return match?.color || 'var(--brand-primary)';
+  }
+
   renderStopHeatmap(stops) {
     if (!stops.length) return '';
     if (!stops.every(stop => Array.isArray(stop.hourly))) return '<p>Detall horari pendent de la propera actualització.</p>';
 
+    this._heatmapStops = stops;
     const hasData = h => stops.some(s => (s.hourly?.[h]?.sampleCount || 0) > 0);
     let visibleHours = Array.from({ length: 24 }, (_, h) => h).filter(hasData);
     if (!visibleHours.length) {
       visibleHours = Array.from({ length: 17 }, (_, i) => i + 6);
     }
+    this._heatmapVisibleHours = visibleHours;
 
-    const cell = bucket => {
+    const cell = (bucket, stopIdx, h) => {
       const b = bucket || { sampleCount: 0 };
       const label = b.sampleCount ? `${b.avgDelay} min; ${b.sampleCount} mostres; màxim ${b.maxDelay} min; ${b.severeLatePct}% amb retard ≥5 min` : 'Sense dades';
       const level = !b.sampleCount ? 'empty' : b.avgDelay >= 5 ? 'late' : b.avgDelay >= 3 ? 'moderate' : 'regular';
-      return `<td class="stop-heat-cell heat-${level}" title="${this.esc(label)}"><span aria-label="${this.esc(label)}">${b.sampleCount ? b.avgDelay : '—'}</span>${b.sampleCount > 0 && b.sampleCount < 5 ? '<small> *</small>' : ''}</td>`;
+      return `<td class="stop-heat-cell heat-${level}" data-stop-idx="${stopIdx}" data-hour="${h}" role="button" tabindex="0" title="${this.esc(label)} (Clica per obrir el menú de detall)"><span aria-label="${this.esc(label)}">${b.sampleCount ? b.avgDelay : '—'}</span>${b.sampleCount > 0 && b.sampleCount < 5 ? '<small> *</small>' : ''}</td>`;
     };
+
     return `<section class="stop-hourly-section"><h4>Retard per parada i hora</h4>
-      <p>Observacions registrades, no viatges únics ni causes de congestió. Hora local: Europe/Madrid. Valors en minuts. * Menys de 5 mostres.</p>
+      <p>Observacions registrades, no viatges únics ni causes de congestió. Hora local: Europe/Madrid. Valors en minuts. * Menys de 5 mostres. <strong>Clica a qualsevol franja horària o parada per obrir el menú de detall.</strong></p>
       <p class="stop-heat-legend"><span class="heat-regular">Menys de 3 min</span> <span class="heat-moderate">3–5 min</span> <span class="heat-late">5 min o més</span> <span>— Sense dades</span></p>
-      <div class="observatori-table-wrapper"><table class="observatori-table stop-heatmap"><caption>Retard mitjà per hora</caption><thead><tr><th scope="col">Parada / línia</th>${visibleHours.map(h => `<th scope="col">${String(h).padStart(2, '0')}</th>`).join('')}</tr></thead>
-      <tbody>${stops.map(stop => `<tr><th scope="row">${this.esc(stop.stopName)} / ${this.esc(stop.lineCode)}</th>${visibleHours.map(h => cell(stop.hourly?.[h])).join('')}</tr>`).join('')}</tbody></table></div>
-      ${stops.map(stop => `<details class="stop-hourly-detail"><summary>${this.esc(stop.stopName)} · ${this.esc(stop.lineCode)} — Detall horari (${stop.arrivalCount} mostres)</summary><div class="observatori-table-wrapper"><table class="observatori-table"><thead><tr><th>Hora</th><th>Mostres</th><th>Mitjana (min)</th><th>Màxim (min)</th><th>Retard ≥5 min</th></tr></thead><tbody>${stop.hourly.filter(b => visibleHours.includes(parseInt(b.hour, 10))).map(b => `<tr><th scope="row">${b.hour}:00</th><td>${b.sampleCount}${b.sampleCount > 0 && b.sampleCount < 5 ? ' *' : ''}</td><td>${b.avgDelay ?? '—'}</td><td>${b.maxDelay ?? '—'}</td><td>${b.severeLatePct === null ? '—' : `${b.severeLatePct}%`}</td></tr>`).join('')}</tbody></table></div></details>`).join('')}
+      <div class="observatori-table-wrapper stop-heatmap-wrapper"><table class="observatori-table stop-heatmap"><caption>Retard mitjà per hora (clica a una franja per al detall)</caption><thead><tr><th scope="col">Parada / línia</th>${visibleHours.map(h => `<th scope="col" data-hour="${h}" role="button" tabindex="0" title="Clica per veure el resum de les ${String(h).padStart(2, '0')}:00h">${String(h).padStart(2, '0')}</th>`).join('')}</tr></thead>
+      <tbody>${stops.map((stop, stopIdx) => `<tr><th scope="row" data-stop-idx="${stopIdx}" role="button" tabindex="0" title="Clica per veure el menú de detall de ${this.esc(stop.stopName)}">${this.esc(stop.stopName)} / ${this.esc(stop.lineCode)}</th>${visibleHours.map(h => cell(stop.hourly?.[h], stopIdx, h)).join('')}</tr>`).join('')}</tbody></table></div>
+      
+      <!-- Single Drilldown Modal Menu -->
+      <div class="modal-backdrop" id="stop-drilldown-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="stop-drilldown-modal-title" style="display:none;">
+        <div class="modal-card stop-drilldown-modal" id="stop-drilldown-modal-content"></div>
+      </div>
     </section>`;
+  }
+
+  openStopHourlyDrilldown(stopIdx, selectedHour = null) {
+    const stops = this._heatmapStops || [];
+    const stop = stops[stopIdx];
+    if (!stop) return;
+
+    this._activeDrilldownStopIdx = stopIdx;
+    this._activeDrilldownHour = selectedHour !== null ? parseInt(selectedHour, 10) : null;
+
+    const backdrop = document.getElementById('stop-drilldown-modal-backdrop');
+    const content = document.getElementById('stop-drilldown-modal-content');
+    if (!backdrop || !content) return;
+
+    const visibleHours = this._heatmapVisibleHours || Array.from({ length: 24 }, (_, i) => i);
+    const selH = this._activeDrilldownHour;
+    const selectedBucket = selH !== null ? stop.hourly?.[selH] : null;
+    const lColor = this.getLineColor(stop.lineCode);
+
+    content.innerHTML = `
+      <button type="button" class="modal-close-btn" id="stop-drilldown-close-btn" aria-label="Tancar finestra">&times;</button>
+      <div class="stop-drilldown-header">
+        <div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap;">
+          <span class="stop-drilldown-line-badge" style="background:${lColor};">${this.esc(stop.lineCode)}</span>
+          <h3 class="stop-drilldown-title" id="stop-drilldown-modal-title">${this.esc(stop.stopName)}</h3>
+        </div>
+        <p class="stop-drilldown-subtitle">
+          Detall horari complet • ${stop.arrivalCount} observacions analitzades • Retard mitjà global: <strong>+${stop.avgDelay} min</strong> • Retard màxim: <strong>+${stop.maxDelay || 0} min</strong>
+        </p>
+      </div>
+
+      ${selH !== null && selectedBucket ? `
+        <div class="drilldown-hour-highlight">
+          <div class="drilldown-kpi">
+            <span class="drilldown-kpi-label">Franja Horària</span>
+            <strong class="drilldown-kpi-val">${String(selH).padStart(2, '0')}:00 - ${String(selH).padStart(2, '0')}:59</strong>
+          </div>
+          <div class="drilldown-kpi">
+            <span class="drilldown-kpi-label">Retard Mitjà</span>
+            <strong class="drilldown-kpi-val ${selectedBucket.avgDelay >= 5 ? 'severe' : selectedBucket.avgDelay >= 3 ? 'warning' : 'ok'}">
+              ${selectedBucket.sampleCount ? `+${selectedBucket.avgDelay} min` : 'Sense dades'}
+            </strong>
+          </div>
+          <div class="drilldown-kpi">
+            <span class="drilldown-kpi-label">Mostres Registrades</span>
+            <strong class="drilldown-kpi-val">${selectedBucket.sampleCount || 0}</strong>
+          </div>
+          <div class="drilldown-kpi">
+            <span class="drilldown-kpi-label">Retard Màxim</span>
+            <strong class="drilldown-kpi-val">${selectedBucket.maxDelay !== null ? `+${selectedBucket.maxDelay} min` : '—'}</strong>
+          </div>
+          <div class="drilldown-kpi">
+            <span class="drilldown-kpi-label">Viatges Retard &ge; 5m</span>
+            <strong class="drilldown-kpi-val ${selectedBucket.severeLatePct >= 30 ? 'severe' : selectedBucket.severeLatePct >= 15 ? 'warning' : 'ok'}">
+              ${selectedBucket.severeLatePct !== null ? `${selectedBucket.severeLatePct}%` : '—'}
+            </strong>
+          </div>
+        </div>
+      ` : ''}
+
+      <div style="font-size:0.78rem; color:var(--text-muted); margin-bottom:0.4rem; display:flex; justify-content:space-between; align-items:center;">
+        <span>Clica a qualsevol franja per canviar l'anàlisi destacada</span>
+        <span>* Menys de 5 mostres</span>
+      </div>
+
+      <div class="observatori-table-wrapper" style="max-height: 48vh; overflow:auto;">
+        <table class="observatori-table stop-drilldown-table">
+          <thead>
+            <tr>
+              <th>Hora</th>
+              <th>Mostres</th>
+              <th>Mitjana (min)</th>
+              <th>Màxim (min)</th>
+              <th>Retard &ge; 5 min</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${stop.hourly.filter(b => visibleHours.includes(parseInt(b.hour, 10))).map(b => {
+              const bHour = parseInt(b.hour, 10);
+              const isSelected = selH !== null && bHour === selH;
+              return `
+                <tr class="${isSelected ? 'drilldown-selected-row' : ''}" data-select-drilldown-hour="${bHour}" role="button" tabindex="0" title="Clica per seleccionar les ${b.hour}:00h">
+                  <th scope="row" style="font-weight:700;">${b.hour}:00 ${isSelected ? '📍' : ''}</th>
+                  <td>${b.sampleCount}${b.sampleCount > 0 && b.sampleCount < 5 ? ' *' : ''}</td>
+                  <td style="font-weight:${isSelected ? '800' : '600'}; color:${b.avgDelay >= 5 ? '#ef4444' : b.avgDelay >= 3 ? '#f59e0b' : 'var(--text-primary)'};">
+                    ${b.avgDelay !== null ? `+${b.avgDelay} min` : '—'}
+                  </td>
+                  <td>${b.maxDelay !== null ? `+${b.maxDelay} min` : '—'}</td>
+                  <td>${b.severeLatePct !== null ? `${b.severeLatePct}%` : '—'}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    backdrop.style.display = 'flex';
+    requestAnimationFrame(() => {
+      backdrop.classList.add('active');
+    });
+    document.body.style.overflow = 'hidden';
+  }
+
+  openHourSummaryDrilldown(hour) {
+    const stops = this._heatmapStops || [];
+    const h = parseInt(hour, 10);
+    const stopsAtHour = stops.map((s, idx) => ({ ...s, stopIdx: idx, bucket: s.hourly?.[h] }))
+      .filter(s => (s.bucket?.sampleCount || 0) > 0)
+      .sort((a, b) => (b.bucket.avgDelay || 0) - (a.bucket.avgDelay || 0));
+
+    const backdrop = document.getElementById('stop-drilldown-modal-backdrop');
+    const content = document.getElementById('stop-drilldown-modal-content');
+    if (!backdrop || !content) return;
+
+    content.innerHTML = `
+      <button type="button" class="modal-close-btn" id="stop-drilldown-close-btn" aria-label="Tancar finestra">&times;</button>
+      <div class="stop-drilldown-header">
+        <div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap;">
+          <span class="stop-drilldown-line-badge" style="background:var(--brand-primary);">⏰ ${String(h).padStart(2, '0')}:00h</span>
+          <h3 class="stop-drilldown-title" id="stop-drilldown-modal-title">Franja Horària ${String(h).padStart(2, '0')}:00 - ${String(h).padStart(2, '0')}:59</h3>
+        </div>
+        <p class="stop-drilldown-subtitle">
+          Comparativa de retards a totes les parades a aquesta hora • ${stopsAtHour.length} parades registrades amb servei
+        </p>
+      </div>
+
+      <div style="font-size:0.78rem; color:var(--text-muted); margin-bottom:0.4rem;">
+        Clica a qualsevol parada per obrir el seu menú horari complet
+      </div>
+
+      <div class="observatori-table-wrapper" style="max-height: 55vh; overflow:auto;">
+        <table class="observatori-table stop-drilldown-table">
+          <thead>
+            <tr>
+              <th style="width:40px; text-align:center;">#</th>
+              <th>Parada / Línia</th>
+              <th>Mostres</th>
+              <th>Retard Mitjà</th>
+              <th>Retard Màxim</th>
+              <th>Retard &ge; 5 min</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${stopsAtHour.length === 0 ? `
+              <tr><td colspan="6" style="text-align:center; padding:1.5rem; color:var(--text-muted);">Sense dades d'expedicions en aquesta franja horària.</td></tr>
+            ` : stopsAtHour.map((s, idx) => {
+              const b = s.bucket;
+              const lColor = this.getLineColor(s.lineCode);
+              return `
+                <tr data-switch-stop-idx="${s.stopIdx}" data-switch-hour="${h}" role="button" tabindex="0" style="cursor:pointer;" title="Clica per obrir el detall complet de ${this.esc(s.stopName)}">
+                  <td style="font-weight:700; color:var(--text-muted); text-align:center;">${idx + 1}</td>
+                  <td style="font-weight:600; color:var(--text-primary);">
+                    <div style="display:flex; align-items:center; gap:0.4rem;">
+                      <span style="background:${lColor}; color:#fff; padding:0.1rem 0.35rem; border-radius:4px; font-size:0.7rem; font-weight:800;">${this.esc(s.lineCode)}</span>
+                      <span>${this.esc(s.stopName)}</span>
+                    </div>
+                  </td>
+                  <td>${b.sampleCount}${b.sampleCount > 0 && b.sampleCount < 5 ? ' *' : ''}</td>
+                  <td style="font-weight:700; color:${b.avgDelay >= 5 ? '#ef4444' : b.avgDelay >= 3 ? '#f59e0b' : 'var(--text-primary)'};">
+                    ${b.avgDelay !== null ? `+${b.avgDelay} min` : '—'}
+                  </td>
+                  <td>${b.maxDelay !== null ? `+${b.maxDelay} min` : '—'}</td>
+                  <td>${b.severeLatePct !== null ? `${b.severeLatePct}%` : '—'}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    backdrop.style.display = 'flex';
+    requestAnimationFrame(() => {
+      backdrop.classList.add('active');
+    });
+    document.body.style.overflow = 'hidden';
+  }
+
+  closeStopHourlyDrilldown() {
+    const backdrop = document.getElementById('stop-drilldown-modal-backdrop');
+    if (backdrop) {
+      backdrop.classList.remove('active');
+      setTimeout(() => {
+        backdrop.style.display = 'none';
+      }, 200);
+    }
+    document.body.style.overflow = '';
   }
 
   initObservatoriTableScrolls() {
@@ -2343,6 +2609,13 @@ class TransitApp {
               hint.style.display = 'none';
             }
           }
+
+          const maxScrollY = wrapper.scrollHeight - wrapper.clientHeight;
+          if (maxScrollY > 4) {
+            wrapper.classList.toggle('is-scrolled-vertical', wrapper.scrollTop > 5);
+          } else {
+            wrapper.classList.remove('is-scrolled-vertical');
+          }
         };
 
         if (wrapper._observatoriScrollHandler) {
@@ -2353,6 +2626,62 @@ class TransitApp {
 
         updateScrollState();
       });
+
+      const journalismContainer = document.getElementById('journalism-content-container');
+      if (journalismContainer && !journalismContainer._hasDrilldownListener) {
+        journalismContainer._hasDrilldownListener = true;
+        journalismContainer.addEventListener('click', (e) => {
+          const heatCell = e.target.closest('.stop-heat-cell[data-stop-idx]');
+          if (heatCell) {
+            e.preventDefault();
+            const stopIdx = parseInt(heatCell.dataset.stopIdx, 10);
+            const hour = parseInt(heatCell.dataset.hour, 10);
+            this.openStopHourlyDrilldown(stopIdx, hour);
+            return;
+          }
+
+          const stopHeader = e.target.closest('.stop-heatmap tbody th[data-stop-idx]');
+          if (stopHeader) {
+            e.preventDefault();
+            const stopIdx = parseInt(stopHeader.dataset.stopIdx, 10);
+            this.openStopHourlyDrilldown(stopIdx, null);
+            return;
+          }
+
+          const colHeader = e.target.closest('.stop-heatmap thead th[data-hour]');
+          if (colHeader) {
+            e.preventDefault();
+            const hour = parseInt(colHeader.dataset.hour, 10);
+            this.openHourSummaryDrilldown(hour);
+            return;
+          }
+
+          const selectHourRow = e.target.closest('[data-select-drilldown-hour]');
+          if (selectHourRow) {
+            e.preventDefault();
+            const h = parseInt(selectHourRow.dataset.selectDrilldownHour, 10);
+            if (this._activeDrilldownStopIdx !== undefined && this._activeDrilldownStopIdx !== null) {
+              this.openStopHourlyDrilldown(this._activeDrilldownStopIdx, h);
+            }
+            return;
+          }
+
+          const switchStopRow = e.target.closest('[data-switch-stop-idx]');
+          if (switchStopRow) {
+            e.preventDefault();
+            const stopIdx = parseInt(switchStopRow.dataset.switchStopIdx, 10);
+            const h = parseInt(switchStopRow.dataset.switchHour, 10);
+            this.openStopHourlyDrilldown(stopIdx, h);
+            return;
+          }
+
+          if (e.target.closest('#stop-drilldown-close-btn') || e.target.id === 'stop-drilldown-modal-backdrop') {
+            e.preventDefault();
+            this.closeStopHourlyDrilldown();
+            return;
+          }
+        });
+      }
     });
   }
 
