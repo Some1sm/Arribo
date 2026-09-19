@@ -6910,10 +6910,31 @@ class TransitApp {
                   <!-- Trajectory flow -->
                   <div class="trip-trajectory-flow">
                     <span style="font-weight:700; color:var(--text-muted); margin-right:0.25rem;">Trajectòria:</span>
-                    ${trip.stopsTraversed.map((st, sIdx) => `
-                      <span class="trip-stop-pill" title="${this.esc(st)}">📍 ${this.esc(st)}</span>
-                      ${sIdx < trip.stopsTraversed.length - 1 ? '<span class="trip-arrow">➔</span>' : ''}
-                    `).join('')}
+                    ${(trip.stopProgression && trip.stopProgression.length > 0 
+                      ? trip.stopProgression 
+                      : (trip.stopsTraversed || []).map(s => ({ stopName: s, delayMins: null, isRecovered: false }))
+                    ).map((st, sIdx, arr) => {
+                      const dMins = st.delayMins;
+                      let delayBadge = '';
+                      let pillClass = st.isRecovered ? 'trip-stop-pill pill-recovered' : 'trip-stop-pill';
+                      if (dMins != null) {
+                        const delayClass = st.isRecovered
+                          ? 'delay-recovered'
+                          : (dMins >= 10 ? 'delay-severe' : 'delay-moderate');
+                        const delayText = st.isRecovered
+                          ? `${dMins > 0 ? `+${dMins}` : dMins}m ✓`
+                          : `+${dMins}`;
+                        delayBadge = `<span class="trip-stop-delay ${delayClass}">${delayText}</span>`;
+                      }
+                      return `
+                        <span class="${pillClass}" title="${this.esc(st.stopName)}${dMins != null ? ` (${st.isRecovered ? 'Recuperat' : 'Retard'}: +${dMins} min)` : ''}">
+                          <span>${st.isRecovered ? '🟢' : '📍'}</span>
+                          <span>${this.esc(st.stopName)}</span>
+                          ${delayBadge}
+                        </span>
+                        ${sIdx < arr.length - 1 ? '<span class="trip-arrow">➔</span>' : ''}
+                      `;
+                    }).join('')}
                   </div>
 
                   <!-- Context and action footer -->

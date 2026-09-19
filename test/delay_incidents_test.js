@@ -123,7 +123,11 @@ assert.strictEqual(l5Trip.lineCode, 'L5');
 assert.strictEqual(l5Trip.isMovingTraffic, true);
 assert.strictEqual(l5Trip.incidentType, 'traffic');
 assert.ok(l5Trip.stopsTraversed.length >= 3);
-console.log('✅ Specific line query and moving bus trip clustering verified.');
+assert.ok(Array.isArray(l5Trip.stopProgression));
+assert.strictEqual(l5Trip.stopProgression.length, l5Trip.stopsTraversed.length);
+assert.strictEqual(l5Trip.stopProgression[0].stopName, 'Rodalies');
+assert.ok(Number.isFinite(l5Trip.stopProgression[0].delayMins));
+console.log('✅ Specific line query and moving bus trip clustering with stopProgression verified.');
 
 console.log('\n--- 3. Testing getDelayIncidents for stationary layover (L2) ---');
 const l2Incidents = historyDb.getDelayIncidents({ lineCode: 'L2', hours: 24, limit: 10, minDelay: 5 });
@@ -134,6 +138,10 @@ assert.strictEqual(l2Trip.isMovingTraffic, false);
 assert.strictEqual(l2Trip.incidentType, 'layover');
 assert.strictEqual(l2Trip.stopsTraversed.length, 1);
 assert.strictEqual(l2Trip.stopsTraversed[0], 'Estació Rodalies');
+assert.ok(Array.isArray(l2Trip.stopProgression));
+assert.strictEqual(l2Trip.stopProgression.length, 1);
+assert.strictEqual(l2Trip.stopProgression[0].stopName, 'Estació Rodalies');
+assert.strictEqual(l2Trip.stopProgression[0].delayMins, 20);
 console.log('✅ Stationary layover vs moving vehicle detection verified.');
 
 console.log('\n--- 4. Testing network-wide query (ALL lines) ---');

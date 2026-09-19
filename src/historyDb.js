@@ -1117,6 +1117,21 @@ class HistoryDatabase {
       `);
       const clusterRows = clusterStmt.all(...baseParams);
 
+      const recoveryStmt = this.db.prepare(`
+        SELECT 
+          stop_name as stopName, 
+          delay_mins as delayMins, 
+          timestamp
+        FROM delay_logs
+        WHERE (UPPER(line_code) = ? OR UPPER(line_code) = ?)
+          AND timestamp > ?
+          AND timestamp <= ?
+          AND delay_mins < ?
+          AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
+        ORDER BY timestamp ASC
+        LIMIT 1
+      `);
+
       const byLine = new Map();
       clusterRows.forEach(r => {
         const lk = r.lineCode;
@@ -1153,6 +1168,7 @@ class HistoryDatabase {
               delaySum: r.delayMins,
               sampleCount: 1,
               stops: [r.stopName],
+              stopProgression: [{ stopName: r.stopName, delayMins: r.delayMins, isRecovered: false }],
               firstStop: r.stopName,
               lastStop: r.stopName,
               isDepot: isDepotHour
@@ -1165,6 +1181,14 @@ class HistoryDatabase {
             if (r.delayMins > cur.maxDelay) cur.maxDelay = r.delayMins;
             if (!cur.stops.includes(r.stopName)) {
               cur.stops.push(r.stopName);
+              cur.stopProgression.push({ stopName: r.stopName, delayMins: r.delayMins, isRecovered: false });
+            } else {
+              const lastEntry = cur.stopProgression[cur.stopProgression.length - 1];
+              if (lastEntry && lastEntry.stopName === r.stopName) {
+                if (r.delayMins > lastEntry.delayMins) {
+                  lastEntry.delayMins = r.delayMins;
+                }
+              }
             }
             cur.lastStop = r.stopName;
           }
@@ -1173,6 +1197,25 @@ class HistoryDatabase {
       });
 
       const enrichedClusters = allClusters.map(c => {
+        // Check if there was a recovery ping shortly after the trip (within 15 min) where delay dropped below threshold
+        if (!c.isDepot && c.stops.length > 1) {
+          try {
+            const lk = c.lineCode;
+            const lkWithL = lk.startsWith('L') ? lk : `L${lk}`;
+            const lkNoL = lk.replace(/^L/i, '');
+            const recoveryPing = recoveryStmt.get(lkWithL, lkNoL, c.lastTs, c.lastTs + 15 * 60 * 1000, minDelayNum);
+            if (recoveryPing && recoveryPing.stopName && !c.stops.includes(recoveryPing.stopName)) {
+              c.stops.push(recoveryPing.stopName);
+              c.stopProgression.push({
+                stopName: recoveryPing.stopName,
+                delayMins: recoveryPing.delayMins,
+                isRecovered: true
+              });
+              c.lastStop = recoveryPing.stopName;
+            }
+          } catch (_) {}
+        }
+
         const durMins = Math.round((c.lastTs - c.firstTs) / 60000);
         const h = parseInt(c.hourOfDay, 10);
         const ctx = this.getHourlyTrafficContext(h);
@@ -1199,6 +1242,7 @@ class HistoryDatabase {
           avgDelayMins: Math.round((c.delaySum / c.sampleCount) * 10) / 10,
           sampleCount: c.sampleCount,
           stopsTraversed: c.stops,
+          stopProgression: c.stopProgression,
           firstStop: c.firstStop,
           lastStop: c.lastStop,
           stopsCount: c.stops.length,
