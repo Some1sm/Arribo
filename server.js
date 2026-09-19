@@ -984,11 +984,25 @@ app.get(['/api/analytics/termometre', '/api/retards/termometre'], async (req, re
 });
 
 // Incident Deep-Dive: Query and analyze extreme delays, bottlenecks, and affected trips
+const incidentQueryCache = new Map();
+const INCIDENT_CACHE_TTL_MS = 60 * 1000; // 60s TTL
+
 app.get(['/api/analytics/incidents', '/api/retards/incidents', '/api/analytics/line/:lineId/incidents'], async (req, res) => {
   const lineParam = req.params.lineId || req.query.line || 'all';
   const hours = Math.max(1, Math.min(720, parseInt(req.query.hours, 10) || 168));
   const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 20));
   const minDelay = Math.max(1, parseInt(req.query.minDelay, 10) || 5);
+
+  const cacheKey = `${String(lineParam).toUpperCase()}_${hours}_${limit}_${minDelay}`;
+  const now = Date.now();
+  const cached = incidentQueryCache.get(cacheKey);
+  if (cached && (now - cached.timestamp) < INCIDENT_CACHE_TTL_MS) {
+    res.setHeader('X-Cache', 'HIT');
+    return res.json({
+      success: true,
+      ...cached.data
+    });
+  }
 
   try {
     const data = await workerBridge.historyQuery('getDelayIncidents', {
@@ -996,8 +1010,17 @@ app.get(['/api/analytics/incidents', '/api/retards/incidents', '/api/analytics/l
       hours,
       limit,
       minDelay
-    }, { timeoutMs: 15000 });
+    }, { timeoutMs: 35000 });
 
+    if (data) {
+      incidentQueryCache.set(cacheKey, { data, timestamp: now });
+      if (incidentQueryCache.size > 40) {
+        const oldestKey = incidentQueryCache.keys().next().value;
+        incidentQueryCache.delete(oldestKey);
+      }
+    }
+
+    res.setHeader('X-Cache', 'MISS');
     res.json({
       success: true,
       ...data

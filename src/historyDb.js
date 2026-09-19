@@ -925,11 +925,11 @@ class HistoryDatabase {
         baseParams.push(codeWithL, codeWithoutL, codeWithoutL);
       }
 
-      // 1. Summary Aggregate KPIs
+      // 1. Summary Aggregate KPIs (filtered to revenue commercial service)
       const aggStmt = this.db.prepare(`
         SELECT COUNT(*) as totalCount, COALESCE(MAX(delay_mins), 0) as maxDelay
         FROM delay_logs
-        WHERE ${sqlWhere}
+        WHERE ${sqlWhere} AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
       `);
       const agg = aggStmt.get(...baseParams) || { totalCount: 0, maxDelay: 0 };
 
@@ -937,7 +937,7 @@ class HistoryDatabase {
       const worstStopStmt = this.db.prepare(`
         SELECT stop_name as stopName, COUNT(*) as cnt
         FROM delay_logs
-        WHERE ${sqlWhere}
+        WHERE ${sqlWhere} AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
         GROUP BY stop_name
         ORDER BY cnt DESC
         LIMIT 1
@@ -948,15 +948,17 @@ class HistoryDatabase {
       const worstHourStmt = this.db.prepare(`
         SELECT madrid_hour(timestamp) as hourOfDay, COUNT(*) as cnt
         FROM delay_logs
-        WHERE ${sqlWhere}
+        WHERE ${sqlWhere} AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
         GROUP BY hourOfDay
         ORDER BY cnt DESC
         LIMIT 1
       `);
       const worstHourRow = worstHourStmt.get(...baseParams);
 
-      // 2. Top delay records (deduplicated by trip: keeping peak delay moment per journey)
-      const topStmt = this.db.prepare(`
+      // 2. Query candidates partitioned by anomaly status:
+      // Regular candidates query only non-anomaly rows (is_telemetry_anomaly = 0) with generous limit (3000)
+      // so raw duplicate pings from nocturnal cotxeres runs never starve genuine revenue trips from fulfilling the 30-item limit.
+      const regularStmt = this.db.prepare(`
         SELECT 
           id,
           line_id as lineId,
@@ -969,28 +971,41 @@ class HistoryDatabase {
           timestamp,
           madrid_datetime(timestamp) as formattedDate,
           madrid_hour(timestamp) as hourOfDay,
-          is_telemetry_anomaly(timestamp, delay_mins, stop_name) as isAnomaly
+          0 as isAnomaly
         FROM delay_logs
-        WHERE ${sqlWhere}
+        WHERE ${sqlWhere} AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
+        ORDER BY delay_mins DESC, timestamp DESC
+        LIMIT 3000
+      `);
+      const regularCandidates = regularStmt.all(...baseParams);
+
+      const anomalyStmt = this.db.prepare(`
+        SELECT 
+          id,
+          line_id as lineId,
+          line_code as lineCode,
+          agency,
+          stop_id as stopId,
+          stop_name as stopName,
+          delay_mins as delayMins,
+          is_realtime as isRealTime,
+          timestamp,
+          madrid_datetime(timestamp) as formattedDate,
+          madrid_hour(timestamp) as hourOfDay,
+          1 as isAnomaly
+        FROM delay_logs
+        WHERE ${sqlWhere} AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 1
         ORDER BY delay_mins DESC, timestamp DESC
         LIMIT 2000
       `);
-      const candidateRows = topStmt.all(...baseParams);
-
-      const regularCandidates = [];
-      const anomalyCandidates = [];
-
-      for (const r of candidateRows) {
-        if (r.isAnomaly) {
-          const anomalyCtx = this.getAnomalyContext(r.timestamp, r.delayMins, r.stopName);
-          anomalyCandidates.push({
-            ...r,
-            ...anomalyCtx
-          });
-        } else {
-          regularCandidates.push(r);
-        }
-      }
+      const rawAnomalyRows = anomalyStmt.all(...baseParams);
+      const anomalyCandidates = rawAnomalyRows.map(r => {
+        const anomalyCtx = this.getAnomalyContext(r.timestamp, r.delayMins, r.stopName);
+        return {
+          ...r,
+          ...anomalyCtx
+        };
+      });
 
       // Deduplicate: A single delayed trip produces raw pings every 20 seconds.
       // We keep the peak delay record for each trip on the line (sliding window of 20 min).

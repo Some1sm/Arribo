@@ -257,6 +257,8 @@ class ReportCacheService {
       console.log('[ReportCacheService] 🔄 Starting batch generation for all timeframes (24h, 48h, 7d/168h)...');
       for (const h of this.supportedHours) {
         await this.generateAndSaveReport(h, allLinesCatalog);
+        // Yield to Node.js event loop between heavy reports so pending IPC requests (like getDelayIncidents) can execute
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
       console.log('[ReportCacheService] ✅ Batch report generation completed for all timeframes.');
     } catch (e) {

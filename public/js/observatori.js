@@ -18,6 +18,7 @@ class ObservatoriApp {
     this.currentReport = null;
     this.termometreData = null;
     this.lastIncidentData = null;
+    this._incidentCache = new Map();
     this._currentIncidentLine = 'all';
     this._currentIncidentHours = 168;
     this._currentIncidentMode = 'top';
@@ -128,6 +129,7 @@ class ObservatoriApp {
     // Refresh Button
     document.getElementById('btn-observatori-refresh')?.addEventListener('click', (e) => {
       e.preventDefault();
+      this._incidentCache?.clear();
       this.loadActiveTab(true);
     });
 
@@ -258,7 +260,7 @@ class ObservatoriApp {
     if (this.currentTab === 'termometre') {
       this.loadTermometre(24, force);
     } else if (this.currentTab === 'incidents') {
-      this.openDelayIncidentsTab('all');
+      this.openDelayIncidentsTab(this._currentIncidentLine || 'all', force);
     } else {
       this.loadJournalismReport(this.currentHours, force);
     }
@@ -1040,7 +1042,7 @@ class ObservatoriApp {
   // 4. TOP INCIDENTS (+25M) DEEP-DIVE
   // ==========================================
 
-  openDelayIncidentsTab(lineCode = 'all') {
+  openDelayIncidentsTab(lineCode = 'all', force = false) {
     const incidentsContainer = document.getElementById('journalism-incidents-container');
     const termometreContainer = document.getElementById('journalism-termometre-container');
     const contentContainer = document.getElementById('journalism-content-container');
@@ -1052,10 +1054,10 @@ class ObservatoriApp {
     if (incidentsContainer) incidentsContainer.style.display = 'block';
 
     const hours = this._currentIncidentHours || 168;
-    this.openDelayIncidentsView(lineCode, hours, 'top');
+    this.openDelayIncidentsView(lineCode, hours, this._currentIncidentMode || 'top', 0, force);
   }
 
-  async openDelayIncidentsView(lineCode = 'all', hours = 168, viewMode = 'top') {
+  async openDelayIncidentsView(lineCode = 'all', hours = 168, viewMode = 'top', retryCount = 0, forceRefresh = false) {
     this._currentIncidentLine = lineCode;
     this._currentIncidentHours = hours;
     this._currentIncidentMode = viewMode;
@@ -1063,12 +1065,23 @@ class ObservatoriApp {
     const container = document.getElementById('journalism-incidents-container');
     if (!container) return;
 
+    const cacheKey = `${lineCode}:${hours}`;
+    if (!forceRefresh && retryCount === 0 && this._incidentCache) {
+      const cached = this._incidentCache.get(cacheKey);
+      if (cached && (Date.now() - cached.timestamp < 45000)) {
+        this.lastIncidentData = cached.data;
+        this.renderDelayIncidentsView(cached.data, lineCode, hours, viewMode);
+        return;
+      }
+    }
+
     const cleanLabel = (lineCode === 'all' || lineCode === 'ALL') ? 'tota la xarxa' : lineCode;
+    const retryMsg = retryCount > 0 ? ' (sincronitzant amb el procés de fons...)' : '';
     container.innerHTML = `
       <div style="text-align:center; padding:3rem 1rem; color:var(--text-muted);">
         <span class="loading-spinner-inline" style="width:24px; height:24px; border-width:3px; margin-bottom:0.75rem;"></span>
         <div style="font-weight:700; font-size:0.95rem; color:var(--text-primary); margin-top:0.5rem;">Analitzant telemetria històrica...</div>
-        <div style="font-size:0.8rem; margin-top:0.25rem;">Cercant incidents crítics i traçant trajectòries per a ${cleanLabel}</div>
+        <div style="font-size:0.8rem; margin-top:0.25rem;">Cercant incidents crítics i traçant trajectòries per a ${cleanLabel}${retryMsg}</div>
       </div>
     `;
 
@@ -1076,14 +1089,46 @@ class ObservatoriApp {
       const cleanLine = encodeURIComponent(lineCode);
       const res = await fetch(`/api/analytics/incidents?line=${cleanLine}&hours=${hours}&limit=30&minDelay=5`).then(r => r.json());
       if (res && res.success) {
+        if (this._incidentCache) {
+          this._incidentCache.set(cacheKey, { data: res, timestamp: Date.now() });
+        }
         this.lastIncidentData = res;
         this.renderDelayIncidentsView(res, lineCode, hours, viewMode);
       } else {
-        container.innerHTML = `<div style="padding:2rem; text-align:center; color:#ef4444;">Error en carregar les dades d'incidents.</div>`;
+        if (retryCount === 0) {
+          setTimeout(() => this.openDelayIncidentsView(lineCode, hours, viewMode, 1, forceRefresh), 2000);
+          return;
+        }
+        this.renderIncidentErrorState(container, lineCode, hours, viewMode);
       }
     } catch (_) {
-      container.innerHTML = `<div style="padding:2rem; text-align:center; color:#ef4444;">Error de connexió al carregar incidents.</div>`;
+      if (retryCount === 0) {
+        setTimeout(() => this.openDelayIncidentsView(lineCode, hours, viewMode, 1, forceRefresh), 2000);
+        return;
+      }
+      this.renderIncidentErrorState(container, lineCode, hours, viewMode);
     }
+  }
+
+  renderIncidentErrorState(container, lineCode, hours, viewMode) {
+    container.innerHTML = `
+      <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:12px; padding:2.5rem 1.5rem; text-align:center; color:var(--text-muted); max-width:540px; margin:2rem auto;">
+        <div style="font-size:2rem; margin-bottom:0.6rem;">⏱️</div>
+        <div style="font-weight:700; font-size:1.05rem; color:var(--text-primary); margin-bottom:0.4rem;">El servidor està processant les dades de ${hours}h</div>
+        <p style="font-size:0.82rem; margin:0 0 1.25rem 0; line-height:1.45;">
+          Quan es calculen informes de 7 dies o es reindexa la telemetria històrica en segon pla, pot trigar uns instants a sincronitzar.
+        </p>
+        <button type="button" class="btn-primary" id="btn-retry-incidents-tab" style="font-size:0.82rem; padding:0.5rem 1.1rem; display:inline-flex; align-items:center; gap:6px;">
+          <span>🔄 Reintentar ara</span>
+        </button>
+      </div>
+    `;
+    document.getElementById('btn-retry-incidents-tab')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      const cacheKey = `${lineCode}:${hours}`;
+      this._incidentCache?.delete(cacheKey);
+      this.openDelayIncidentsView(lineCode, hours, viewMode, 0, true);
+    });
   }
 
   renderDelayIncidentsView(data, selectedLine = 'all', selectedHours = 168, activeTab = 'top') {
