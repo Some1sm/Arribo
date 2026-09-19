@@ -223,28 +223,61 @@ class TrackerRegistry {
     // 2. Search stops across Mataró stops map
     const mataroEntry = this.providers.get('mataro');
     if (mataroEntry && mataroEntry.tracker && mataroEntry.tracker.allStopsMap) {
+      const lineMap = new Map();
+      allLines.forEach(l => {
+        lineMap.set(String(l.id).toLowerCase(), l);
+        lineMap.set(String(l.code).toLowerCase(), l);
+      });
+
       mataroEntry.tracker.allStopsMap.forEach(s => {
         if (results.length >= limit || !s) return;
         const sName = (s.name || '').toLowerCase();
         const sCode = String(s.code || s.id || '').toLowerCase();
-        if (sName.includes(q) || sCode.includes(q)) {
-          results.push({
-            type: 'stop',
-            lineId: (s.lineas && s.lineas[0] ? String(s.lineas[0].id) : '1'),
-            lineCode: (s.lineas && s.lineas[0] ? `L${s.lineas[0].id}` : 'L1'),
-            lineName: s.name,
-            lineColor: '#009485',
-            stopId: String(s.id),
-            stopName: s.name,
-            code: String(s.id),
-            zone: 'Mataró Urbà',
-            directionText: s.directionText || '',
-            destinations: s.destinations || [],
-            isTrain: false,
-            lat: s.lat,
-            lon: s.lon,
-            lineas: s.lineas || []
-          });
+        const matchesStop = sName.includes(q) || sCode.includes(q);
+
+        const linesForStop = Array.isArray(s.lineas) && s.lineas.length > 0
+          ? s.lineas
+          : [{ id: '1', name: 'Circular', color: '#ff00ff' }];
+
+        for (const lineRef of linesForStop) {
+          if (results.length >= limit) break;
+          const lId = String(lineRef.id || '');
+          const lCode = `L${lId}`;
+          const catalogLine = lineMap.get(lId.toLowerCase()) || lineMap.get(lCode.toLowerCase());
+          const lColor = catalogLine?.color || lineRef.color || '#009485';
+
+          let matched = matchesStop;
+          if (!matched) {
+            const qTokens = q.split(/\s+/);
+            if (qTokens.length > 1) {
+              const hasLineToken = qTokens.some(t => t === lId || t === lCode.toLowerCase() || t === `l${lId}` || t === `línia${lId}` || t === `linia${lId}`);
+              const otherTokens = qTokens.filter(t => t !== lId && t !== lCode.toLowerCase() && t !== `l${lId}` && t !== `línia${lId}` && t !== `linia${lId}`);
+              const otherText = otherTokens.join(' ');
+              if (hasLineToken && (sName.includes(otherText) || sCode.includes(otherText))) {
+                matched = true;
+              }
+            }
+          }
+
+          if (matched) {
+            results.push({
+              type: 'stop',
+              lineId: lId,
+              lineCode: lCode,
+              lineName: s.name,
+              lineColor: lColor,
+              stopId: String(s.id),
+              stopName: s.name,
+              code: String(s.id),
+              zone: 'Mataró Urbà',
+              directionText: s.directionText || '',
+              destinations: s.destinations || [],
+              isTrain: false,
+              lat: s.lat,
+              lon: s.lon,
+              lineas: s.lineas || []
+            });
+          }
         }
       });
     }

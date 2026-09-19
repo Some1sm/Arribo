@@ -71,6 +71,11 @@ assert(stopResult, 'searchStopsAndLines("ample") must find stop named Ample');
 assert.equal(stopResult.code, '1028');
 assert(stopResult.lineCode, 'stop result must include lineCode');
 assert(stopResult.lineColor, 'stop result must include lineColor');
-console.log(`   ✓ Search API contract verified: found "${stopResult.stopName}" (#${stopResult.code}) on ${stopResult.lineCode}.`);
+
+const stopResultL8 = results.find(r => r.type === 'stop' && r.stopName.toLowerCase().includes('ample') && (r.lineCode === 'L8' || r.lineId === '8'));
+assert(stopResultL8, 'searchStopsAndLines("ample") must find stop Ample for Line 8');
+assert.equal(stopResultL8.lineCode, 'L8');
+assert.equal(stopResultL8.lineColor, '#008040');
+console.log(`   ✓ Multi-line stop search contract verified: found Ample for both L1 and L8 (#008040).`);
 
 console.log('\n🎉 ALL LANDING SEARCH STOP RESULTS TESTS PASSED PERFECTLY!\n');
