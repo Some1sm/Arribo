@@ -145,7 +145,9 @@ class IngestionDaemon {
               const speed = Number.isFinite(b.speedKmh) ? b.speedKmh : 25;
               const isLayover = b.isTerminalLayover || isDepotHours || (speed <= 3 && (b.delayMins > 10 || b.delayMins < -5));
               if (b.delayMins !== undefined && !isLayover && b.delayMins >= -15 && b.delayMins <= 300) {
+                const vehId = b.vehicleId || (b.plateNumber ? `mataro_${lId}_${b.plateNumber}` : `mataro_${lId}_bus`);
                 historyDb.recordDelayLog({
+                  vehicleId: vehId,
                   lineId: lId,
                   lineCode: `L${lId}`,
                   agency: 'Mataró Bus (Avanza)',

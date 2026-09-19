@@ -1982,6 +1982,7 @@ class ObservatoriApp {
                     <div style="display:flex; align-items:center; gap:0.5rem;">
                       <span style="background:${lColor}; color:#fff; padding:0.2rem 0.55rem; border-radius:6px; font-weight:800; font-size:0.8rem;">${this.esc(trip.lineCode)}</span>
                       <strong style="color:var(--text-primary); font-size:0.9rem;">Expedició del ${this.esc(trip.startTime)}</strong>
+                      ${trip.vehicleId ? `<span style="background:rgba(255,255,255,0.08); color:var(--text-secondary); padding:0.15rem 0.45rem; border-radius:4px; font-size:0.75rem; font-weight:600;" title="Identificador de vehicle oficial">🚌 Bus #${this.esc(trip.vehicleId.replace(/^mataro_\d+_/i, ''))}</span>` : ''}
                       <span style="color:var(--text-muted); font-size:0.78rem;">(durada activa: ~${trip.durationMinutes || 1} min)</span>
                     </div>
                     <div style="display:flex; align-items:center; gap:0.5rem;">

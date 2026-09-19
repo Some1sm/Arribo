@@ -252,6 +252,68 @@ assert.ok(anomaliesCheck.summary.investigationCount >= 1);
 assert.ok(anomaliesCheck.summary.maxCommercialDelayMins <= 24);
 console.log('✅ 0-24m commercial delays cleanly partitioned from 24-infinite non-normal schedules in investigation.');
 
+console.log('\n--- 5d. Testing simultaneous multi-bus separation on the same line (Line 3) ---');
+// Insert interleaved pings from two distinct buses on Line 3
+const baseT = now - (1 * oneHour);
+// Bus A (vehicle 2665 in Cirera): Pau Picasso (+15) -> Escola Freta (+14)
+// Bus B (vehicle 2680 in Cerdanyola): Ample (+6) -> Roca Blanca (+5)
+historyDb.recordDelayLog({
+  vehicleId: '2665',
+  lineId: '3',
+  lineCode: 'L3',
+  agency: 'Mataró Bus (Avanza)',
+  stopId: 'Pau Picasso',
+  stopName: 'Pau Picasso',
+  delayMins: 15,
+  timestamp: baseT
+});
+historyDb.recordDelayLog({
+  vehicleId: '2680',
+  lineId: '3',
+  lineCode: 'L3',
+  agency: 'Mataró Bus (Avanza)',
+  stopId: 'Ample',
+  stopName: 'Ample',
+  delayMins: 6,
+  timestamp: baseT + 15000
+});
+historyDb.recordDelayLog({
+  vehicleId: '2665',
+  lineId: '3',
+  lineCode: 'L3',
+  agency: 'Mataró Bus (Avanza)',
+  stopId: 'Escola Freta',
+  stopName: 'Escola Freta',
+  delayMins: 14,
+  timestamp: baseT + 30000
+});
+historyDb.recordDelayLog({
+  vehicleId: '2680',
+  lineId: '3',
+  lineCode: 'L3',
+  agency: 'Mataró Bus (Avanza)',
+  stopId: 'Roca Blanca',
+  stopName: 'Roca Blanca',
+  delayMins: 5,
+  timestamp: baseT + 45000
+});
+
+const l3Incidents = historyDb.getDelayIncidents({ lineCode: 'L3', hours: 24, minDelay: 5 });
+assert.ok(Array.isArray(l3Incidents.incidentTrips));
+// Must be cleanly partitioned into 2 separate trips, NOT 1 merged trip!
+assert.strictEqual(l3Incidents.incidentTrips.length, 2, 'Simultaneous buses on Line 3 must be partitioned into 2 distinct trips');
+
+const tripA = l3Incidents.incidentTrips.find(t => t.vehicleId === '2665');
+assert.ok(tripA, 'Trip for Bus 2665 must exist');
+assert.deepStrictEqual(tripA.stopsTraversed, ['Pau Picasso', 'Escola Freta']);
+assert.strictEqual(tripA.maxDelayMins, 15);
+
+const tripB = l3Incidents.incidentTrips.find(t => t.vehicleId === '2680');
+assert.ok(tripB, 'Trip for Bus 2680 must exist');
+assert.deepStrictEqual(tripB.stopsTraversed, ['Ample', 'Roca Blanca']);
+assert.strictEqual(tripB.maxDelayMins, 6);
+console.log('✅ Simultaneous buses on the same line cleanly separated by vehicleId and spatial continuity.');
+
 console.log('\n--- 6. Testing Worker RPC operation dispatch ---');
 const ingestionWorker = require('../src/workers/ingestionWorker');
 // Verify executeDbOperation is a function
