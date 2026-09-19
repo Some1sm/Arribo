@@ -6733,6 +6733,17 @@ class TransitApp {
       return match?.color || 'var(--brand-primary)';
     };
 
+    const formatBusBadge = (vehicleId) => {
+      if (!vehicleId) return '';
+      const clean = String(vehicleId)
+        .replace(/^mataro_\w+_/i, '')
+        .replace(/^c10_\w+_/i, '')
+        .replace(/^AMB-/i, '')
+        .trim();
+      if (!clean || clean.toLowerCase() === 'bus') return '';
+      return `<span style="background:rgba(255,255,255,0.08); color:var(--text-secondary); border:1px solid var(--border-subtle); padding:0.12rem 0.38rem; border-radius:4px; font-size:0.7rem; font-weight:700; white-space:nowrap;" title="Identificador de vehicle oficial: ${this.esc(vehicleId)}">🚌 #${this.esc(clean)}</span>`;
+    };
+
     container.innerHTML = `
       <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:1.1rem; margin-bottom:1.25rem;">
         <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.75rem;">
@@ -6847,7 +6858,10 @@ class TransitApp {
                       <td style="font-weight:700; color:var(--text-muted); text-align:center;">${inc.rank || (i + 1)}</td>
                       <td style="font-weight:800; color:${delayClass}; white-space:nowrap;">+${inc.delayMins} min</td>
                       <td>
-                        <span style="background:${lColor}; color:#fff; padding:0.15rem 0.45rem; border-radius:5px; font-weight:800; font-size:0.75rem;">${this.esc(inc.lineCode)}</span>
+                        <div style="display:inline-flex; align-items:center; gap:5px; flex-wrap:wrap;">
+                          <span style="background:${lColor}; color:#fff; padding:0.15rem 0.45rem; border-radius:5px; font-weight:800; font-size:0.75rem;">${this.esc(inc.lineCode)}</span>
+                          ${formatBusBadge(inc.vehicleId)}
+                        </div>
                       </td>
                       <td style="font-weight:600; color:var(--text-primary);">
                         <span style="color:#38bdf8; margin-right:4px;">📍</span>${this.esc(inc.stopName)}
@@ -6923,7 +6937,7 @@ class TransitApp {
                     <div style="display:flex; align-items:center; gap:0.5rem;">
                       <span style="background:${lColor}; color:#fff; padding:0.2rem 0.55rem; border-radius:6px; font-weight:800; font-size:0.8rem;">${this.esc(trip.lineCode)}</span>
                       <strong style="color:var(--text-primary); font-size:0.9rem;">Expedició del ${this.esc(trip.startTime)}</strong>
-                      ${trip.vehicleId ? `<span style="background:rgba(255,255,255,0.08); color:var(--text-secondary); padding:0.15rem 0.45rem; border-radius:4px; font-size:0.75rem; font-weight:600;" title="Identificador de vehicle oficial">🚌 Bus #${this.esc(trip.vehicleId.replace(/^mataro_\d+_/i, ''))}</span>` : ''}
+                      ${formatBusBadge(trip.vehicleId)}
                       <span style="color:var(--text-muted); font-size:0.78rem;">(durada activa: ~${trip.durationMinutes || 1} min)</span>
                     </div>
                     <div style="display:flex; align-items:center; gap:0.5rem;">

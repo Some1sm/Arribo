@@ -1001,6 +1001,7 @@ class HistoryDatabase {
       const regularStmt = this.db.prepare(`
         SELECT 
           id,
+          vehicle_id as vehicleId,
           line_id as lineId,
           line_code as lineCode,
           agency,
@@ -1022,6 +1023,7 @@ class HistoryDatabase {
       const investigationStmt = this.db.prepare(`
         SELECT 
           id,
+          vehicle_id as vehicleId,
           line_id as lineId,
           line_code as lineCode,
           agency,
@@ -1043,6 +1045,7 @@ class HistoryDatabase {
       const anomalyStmt = this.db.prepare(`
         SELECT 
           id,
+          vehicle_id as vehicleId,
           line_id as lineId,
           line_code as lineCode,
           agency,
@@ -1076,7 +1079,7 @@ class HistoryDatabase {
         const TRIP_WINDOW_MS = 20 * 60 * 1000;
 
         for (const r of rows) {
-          const lk = r.lineCode;
+          const lk = r.vehicleId ? `${r.lineCode}_${r.vehicleId}` : r.lineCode;
           const accepted = lineTripWindows.get(lk) || [];
           const isSameTrip = accepted.some(ts => Math.abs(r.timestamp - ts) < TRIP_WINDOW_MS);
           if (isSameTrip) continue;
