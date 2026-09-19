@@ -293,6 +293,7 @@ class TransitApp {
 
     const searchStr = queryPart || window.location.search.replace(/^\?/, '');
     const params = new URLSearchParams(searchStr);
+    const lineParam = params.get('line') || params.get('lineId') || params.get('linia');
     const busParam = params.get('bus') || params.get('vehicle') || params.get('vehicleId');
     const stopParam = params.get('stop') || params.get('stopId');
     const dirParam = params.get('dir') || params.get('direction');
@@ -302,6 +303,10 @@ class TransitApp {
     if (stopParam) this.pendingFocusStopId = String(stopParam).trim();
     if (dirParam) this.pendingDirection = String(dirParam).trim();
     if (qParam) this.pendingSearchQuery = String(qParam).trim();
+
+    if (!rawHash && lineParam) {
+      rawHash = String(lineParam).trim();
+    }
 
     const hash = rawHash.toLowerCase().trim();
     if (!hash || ['home', 'inici', 'lines', 'linies', 'totes', 'index'].includes(hash)) {
@@ -319,6 +324,11 @@ class TransitApp {
 
     if (hash.startsWith('l') && /^\d+$/.test(hash.replace('l', ''))) {
       this.activeLineId = hash.replace('l', '');
+      return;
+    }
+
+    if (/^\d+$/.test(hash)) {
+      this.activeLineId = hash;
       return;
     }
 
@@ -3514,10 +3524,27 @@ class TransitApp {
     }
 
     if (this.pendingFocusStopId) {
-      const sId = this.pendingFocusStopId;
+      const rawTarget = this.pendingFocusStopId;
+      const targetQuery = rawTarget.toLowerCase().trim();
       this.pendingFocusStopId = null;
       setTimeout(() => {
+        const stopObj = (this.allStops || []).find(s => 
+          String(s.id || '').toLowerCase() === targetQuery ||
+          String(s.code || '').toLowerCase() === targetQuery ||
+          String(s.name || '').toLowerCase() === targetQuery ||
+          String(s.name || '').toLowerCase().includes(targetQuery) ||
+          targetQuery.includes(String(s.name || '').toLowerCase())
+        );
+
+        const sId = stopObj ? String(stopObj.id || stopObj.code) : rawTarget;
+        const sName = stopObj?.name || rawTarget;
         this.setTargetStop(sId);
+
+        if (stopObj && stopObj.lat && stopObj.lon) {
+          this.mapController?.focusTargetStop(stopObj.lat, stopObj.lon);
+          this.inspectStop(sId, sName);
+        }
+
         const sBlock = document.querySelector(`.schematic-stop-block [data-stop-id="${sId}"]`);
         if (sBlock) {
           sBlock.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -4069,17 +4096,25 @@ class TransitApp {
 
   setTargetStop(stopId) {
     const routeKey = `${this.activeLineId}_${this.activeDirection}`;
-    this.targetStopsByLine[routeKey] = String(stopId);
-    this.targetStopsByLine[this.activeLineId] = String(stopId);
+    const rawTarget = String(stopId || '').toLowerCase().trim();
+    const foundStop = (this.allStops || []).find(s => 
+      String(s.id || s.mouteStopId || s.code || '').toLowerCase() === rawTarget ||
+      String(s.name || '').toLowerCase() === rawTarget ||
+      String(s.name || '').toLowerCase().includes(rawTarget)
+    );
+    const resolvedId = foundStop ? String(foundStop.id || foundStop.code) : String(stopId);
+
+    this.targetStopsByLine[routeKey] = resolvedId;
+    this.targetStopsByLine[this.activeLineId] = resolvedId;
     localStorage.setItem('bad_amb_target_stops', JSON.stringify(this.targetStopsByLine));
 
     // Instant SWR Target Card render from client cache if available (<0ms)
-    const etaCacheKey = `${routeKey}_${stopId}`;
+    const etaCacheKey = `${routeKey}_${resolvedId}`;
     const cachedEta = this.targetEtaCache.get(etaCacheKey);
     if (cachedEta && (Date.now() - cachedEta.ts < this.TARGET_ETA_TTL_MS)) {
       this.renderTargetCard(cachedEta.data, this.activeLineData);
     } else {
-      const stopObj = this.allStops.find(s => String(s.id || s.mouteStopId || s.code) === String(stopId));
+      const stopObj = foundStop || this.allStops.find(s => String(s.id || s.mouteStopId || s.code) === resolvedId);
       if (stopObj) {
         const destName = this.activeLineData?.directions?.[0]?.name || this.activeLineData?.name || 'Destí';
         this.renderTargetCardLoading(this.activeLineData, stopObj.name, stopObj.code || stopObj.id, destName);

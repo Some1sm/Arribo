@@ -223,8 +223,11 @@ class ObservatoriApp {
       if (locateBtn) {
         e.preventDefault();
         const stopName = locateBtn.dataset.locateStop;
+        const stopId = locateBtn.dataset.locateStopId;
         const lineCode = locateBtn.dataset.locateLine;
-        window.location.href = `/?line=${encodeURIComponent(lineCode)}&stop=${encodeURIComponent(stopName)}`;
+        const cleanLine = String(lineCode || '').toLowerCase().replace(/^l/, '');
+        const targetStop = stopId || stopName;
+        window.location.href = `/?line=${encodeURIComponent(lineCode)}&stop=${encodeURIComponent(targetStop)}#l${cleanLine}`;
         return;
       }
     });
@@ -1222,7 +1225,7 @@ class ObservatoriApp {
                         </span>
                       </td>
                       <td style="text-align:center; white-space:nowrap;">
-                        <button type="button" class="btn-locate-incident-stop" data-locate-line="${this.esc(inc.lineCode)}" data-locate-stop="${this.esc(inc.stopName)}" title="Veure aquesta parada al mapa">
+                        <button type="button" class="btn-locate-incident-stop" data-locate-line="${this.esc(inc.lineCode)}" data-locate-stop="${this.esc(inc.stopName)}" data-locate-stop-id="${this.esc(inc.stopId || '')}" title="Veure aquesta parada al mapa">
                           <span>📍 Mapa</span>
                         </button>
                       </td>
