@@ -1301,7 +1301,10 @@ class CorridorTracker extends BaseTracker {
           segEndSec: turnaroundDepartureSec,
           secondsToNextStop: 0,
           currentSegmentTime: `Arribat a les ${secToTime(lastArr).substring(0, 5)} • Sortida tornada a les ${depTimeStr} (en ~${minsLeft} min)`,
-          allStops: []
+          allStops: [],
+          isDeadReckoned: true,
+          isEstimated: true,
+          statusText: '⚡ Estimació de Posició (Dead-Reckoning)'
         };
       }
     }

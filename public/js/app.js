@@ -1953,7 +1953,7 @@ class TransitApp {
         <div class="hourly-delays-section">
           <div class="hourly-chart-header">
             <h4 class="hourly-chart-title">
-              <span>⏰ Distribució Horària i Afectació Escolar (Hores amb Més Retards)</span>
+              <span>Distribució Horària (Hores amb Més Retards)</span>
             </h4>
             <div class="hourly-chart-legend">
               <div class="hourly-legend-item">
@@ -1967,9 +1967,6 @@ class TransitApp {
               <div class="hourly-legend-item">
                 <span class="hourly-legend-dot" style="background:#ef4444;"></span>
                 <span>Crític (&gt;3.5m)</span>
-              </div>
-              <div class="hourly-legend-item">
-                <span>🎒 Franja Escolar</span>
               </div>
             </div>
           </div>
@@ -1987,7 +1984,7 @@ class TransitApp {
                         ? 'linear-gradient(180deg, #10b981 0%, #047857 100%)' 
                         : 'rgba(255, 255, 255, 0.08)'));
               const delayLabel = dVal > 0 ? `+${dVal}m` : (h.sampleCount > 0 ? '0m' : '-');
-              const tooltip = `${h.timeWindow} • Retard mitjà: +${dVal} min • ${h.latePercentage}% viatges tardans (${h.sampleCount} expedicions) • ${h.trafficTag}`;
+              const tooltip = `${h.timeWindow} • Retard mitjà: +${dVal} min • ${h.latePercentage}% viatges tardans (${h.sampleCount} expedicions)`;
               return `
                 <div class="hourly-bar-col" title="${this.esc(tooltip)}">
                   <div class="hourly-bar-track">
@@ -1995,7 +1992,6 @@ class TransitApp {
                     <div class="hourly-bar-fill" style="height:${pctHeight}%; background:${barBg};"></div>
                   </div>
                   <span class="hourly-bar-label">${h.hour}h</span>
-                  <span class="hourly-bar-icon">${h.isSchoolHour ? h.icon : ''}</span>
                 </div>
               `;
             }).join('')}
@@ -2004,23 +2000,17 @@ class TransitApp {
           <!-- Peak Hours Ranking & Critical Bottlenecks -->
           ${peakHours.length > 0 ? `
             <div style="font-size:0.8rem; font-weight:700; color:var(--text-secondary); margin-top:0.25rem;">
-              🚨 Franges Crítiques de Congestió i Colls d'Ampolla Associats:
+              Franges amb Més Retards:
             </div>
             <div class="peak-hours-grid">
               ${peakHours.slice(0, 3).map((ph, idx) => {
-                const cleanTag = (ph.trafficTag || '')
-                  .replace('Hora punta tornada feina', 'Punta tornada feina')
-                  .replace('Sortida escolar & extraescolars', 'Sortida escolar')
-                  .replace('Migdia & torn tarda escoles', 'Migdia escolar & feina');
                 return `
                 <div class="peak-hour-card">
                   <div class="peak-hour-header">
                     <div class="peak-hour-time">
-                      <span style="font-size:1.15rem;">${ph.icon || '⏱️'}</span>
                       <span>${this.esc(ph.timeWindow)}</span>
                       <span style="font-size:0.7rem; color:var(--brand-primary); font-weight:700;">#${idx + 1}</span>
                     </div>
-                    <span class="peak-hour-tag ${ph.isSchoolHour ? 'school' : ''}">${this.esc(cleanTag)}</span>
                   </div>
 
                   <div class="peak-hour-metrics">
@@ -2182,8 +2172,7 @@ class TransitApp {
                         </td>
                         <td style="white-space:nowrap;">
                           ${st.criticalHour && st.criticalHour !== '--' ? `
-                            <div class="bottleneck-hour-badge ${st.isSchoolHour ? 'school-rush' : ''}" title="${this.esc(st.criticalHourTag)} • Retard mitjà en aquesta franja: +${st.criticalHourAvgDelay} min">
-                              <span class="badge-icon">${st.criticalHourIcon || (st.isSchoolHour ? '🎒' : '⏱️')}</span>
+                            <div class="bottleneck-hour-badge" title="Retard mitjà en aquesta franja: +${st.criticalHourAvgDelay} min">
                               <span class="badge-time">${this.esc(st.criticalHour)}</span>
                               <span class="badge-delay">(+${st.criticalHourAvgDelay}m)</span>
                             </div>
