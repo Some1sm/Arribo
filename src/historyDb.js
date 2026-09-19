@@ -140,7 +140,6 @@ class HistoryDatabase {
           -- removed as redundant.
           CREATE INDEX IF NOT EXISTS idx_delay_stop ON delay_logs(stop_id, timestamp);
           CREATE INDEX IF NOT EXISTS idx_delay_time_line ON delay_logs(timestamp, line_code);
-          CREATE INDEX IF NOT EXISTS idx_delay_veh_time ON delay_logs(vehicle_id, timestamp);
 
           -- Incremental rollup progress. last_id = highest delay_logs.id folded
           -- into hourly_line_stats so successive runs only touch new rows.

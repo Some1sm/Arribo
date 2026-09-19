@@ -190,6 +190,9 @@ class ReportCacheService {
 
       console.log(`[ReportCacheService] 📊 Generating fresh ${canonicalHours}h Journalism Report (catalog lines: ${catalog?.length || 0})...`);
       const report = this._db.getJournalismReport(canonicalHours, catalog || []);
+      if (!report || !report.summary || report.summary.totalRecordedArrivals === undefined) {
+        throw new Error('historyDb.getJournalismReport returned empty or invalid summary');
+      }
 
       const now = Date.now();
       if (this.consecutiveFailures.get(String(canonicalHours))) {
