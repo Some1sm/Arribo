@@ -128,7 +128,7 @@ class IngestionDaemon {
                 lon: b.lon,
                 latitude: b.lat,
                 longitude: b.lon,
-                speedKmh: b.speedKmh || 25,
+                speedKmh: Number.isFinite(b.speedKmh) ? b.speedKmh : 25,
                 bearing: b.bearing || 0,
                 delayMins: b.delayMins || 0,
                 destination: b.destination || '',
@@ -137,8 +137,12 @@ class IngestionDaemon {
                 serviceableMs: 90 * 1000
               });
 
-              // Sanity check: Do NOT record delay logs for ghost buses, parked vehicles, or terminal layovers
-              const isLayover = b.isTerminalLayover || (b.speedKmh <= 3 && (b.delayMins > 10 || b.delayMins < -5));
+              // Sanity check: Do NOT record delay logs for ghost buses, parked vehicles, or terminal layovers.
+              // Also ignore depot telemetry outside revenue service hours (01:00 - 05:00 Europe/Madrid).
+              const madridHour = parseInt(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', hour: '2-digit', hourCycle: 'h23' }).format(new Date()), 10);
+              const isDepotHours = madridHour >= 1 && madridHour < 5;
+              const speed = Number.isFinite(b.speedKmh) ? b.speedKmh : 25;
+              const isLayover = b.isTerminalLayover || isDepotHours || (speed <= 3 && (b.delayMins > 10 || b.delayMins < -5));
               if (b.delayMins !== undefined && !isLayover && b.delayMins <= 25 && b.delayMins >= -15) {
                 historyDb.recordDelayLog({
                   lineId: lId,

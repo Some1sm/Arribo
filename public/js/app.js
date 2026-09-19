@@ -6594,7 +6594,7 @@ class TransitApp {
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
           <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">Naturalesa de les Incidències</div>
           <div style="font-size:1.05rem; font-weight:700; color:#38bdf8; margin-top:0.25rem;">${s.movingPct || 0}% Trànsit actiu</div>
-          <div style="font-size:0.72rem; color:var(--text-muted);">${s.stationaryCount || 0} aturades / regulacions a capçalera</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">${s.stationaryCount || 0} regulacions • ${s.maintenanceCount || 0} cotxeres / proves</div>
         </div>
       </div>
 
@@ -6677,6 +6677,9 @@ class TransitApp {
           <div style="display:flex; flex-direction:column; gap:0.75rem;">
             ${tripsList.map(trip => {
               const lColor = getLineColor(trip.lineCode);
+              const typeBadgeClass = trip.incidentType === 'maintenance'
+                ? 'incident-badge-maintenance'
+                : (trip.isMovingTraffic ? 'incident-badge-traffic' : 'incident-badge-layover');
               return `
                 <div class="trip-card">
                   <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
@@ -6686,7 +6689,7 @@ class TransitApp {
                       <span style="color:var(--text-muted); font-size:0.78rem;">(durada activa: ~${trip.durationMinutes || 1} min)</span>
                     </div>
                     <div style="display:flex; align-items:center; gap:0.5rem;">
-                      <span style="background:${trip.isMovingTraffic ? 'rgba(56,189,248,0.15)' : 'rgba(245,158,11,0.15)'}; color:${trip.isMovingTraffic ? '#38bdf8' : '#fbbf24'}; padding:0.2rem 0.5rem; border-radius:6px; font-size:0.74rem; font-weight:700;">
+                      <span class="${typeBadgeClass}" style="padding:0.2rem 0.5rem; border-radius:6px; font-size:0.74rem; font-weight:700;">
                         ${this.esc(trip.incidentTypeLabel)}
                       </span>
                       <span style="background:rgba(239,68,68,0.15); color:#ef4444; padding:0.2rem 0.55rem; border-radius:6px; font-size:0.78rem; font-weight:800;">
@@ -6708,7 +6711,7 @@ class TransitApp {
                   <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.6rem; font-size:0.75rem; color:var(--text-muted); flex-wrap:wrap; gap:0.4rem;">
                     <div>
                       <span>${trip.trafficIcon || '⏱️'}</span>
-                      <span>${this.esc(trip.trafficTag || '')} • ${trip.sampleCount} mostres registrades (${trip.isMovingTraffic ? `recorregut per ${trip.stopsCount} parades en retenció` : 'aturat a parada / regulant capçalera'})</span>
+                      <span>${this.esc(trip.trafficTag || '')} • ${trip.sampleCount} mostres registrades (${trip.incidentType === 'maintenance' ? 'proves o encesa a cotxeres' : (trip.isMovingTraffic ? `recorregut per ${trip.stopsCount} parades en retenció` : 'aturat a parada / regulant capçalera')})</span>
                     </div>
                     <button type="button" class="btn-locate-incident-stop" data-locate-line="${this.esc(trip.lineCode)}" data-locate-stop="${this.esc(trip.firstStop || trip.stopsTraversed[0])}">
                       <span>📍 Veure parada al mapa</span>

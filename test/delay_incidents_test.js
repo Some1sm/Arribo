@@ -70,7 +70,28 @@ for (let p = 0; p < 5; p++) {
   });
 }
 
+// Scenario D: Line 8 depot testing at night (04:00 Madrid time)
+const l8Start = now - (5 * oneHour);
+for (let p = 0; p < 3; p++) {
+  historyDb.recordDelayLog({
+    lineId: '8',
+    lineCode: 'L8',
+    agency: 'Mataró Bus (Avanza)',
+    stopId: 'Cotxeres Avanza',
+    stopName: 'Cotxeres Avanza',
+    delayMins: 21,
+    scheduledTime: '',
+    actualTime: '',
+    isRealTime: true,
+    timestamp: l8Start + (p * 30 * 1000)
+  });
+}
+
 console.log('--- 1. Testing getHourlyTrafficContext ---');
+const depotCtx = historyDb.getHourlyTrafficContext(4);
+assert.strictEqual(depotCtx.isDepot, true);
+assert.ok(depotCtx.tag.includes('Cotxeres'));
+
 const schoolCtx = historyDb.getHourlyTrafficContext(8);
 assert.strictEqual(schoolCtx.isSchoolHour, true);
 assert.strictEqual(schoolCtx.isPeak, true);
@@ -83,7 +104,7 @@ assert.ok(peakCtx.tag.includes('Punta tornada feina'));
 const valleyCtx = historyDb.getHourlyTrafficContext(11);
 assert.strictEqual(valleyCtx.isPeak, false);
 assert.ok(valleyCtx.tag.includes('Vall matinal'));
-console.log('✅ getHourlyTrafficContext accurately identifies traffic windows.');
+console.log('✅ getHourlyTrafficContext accurately identifies traffic windows & depot maintenance.');
 
 console.log('\n--- 2. Testing getDelayIncidents for specific line (L5) ---');
 const l5Incidents = historyDb.getDelayIncidents({ lineCode: 'L5', hours: 24, limit: 10, minDelay: 5 });

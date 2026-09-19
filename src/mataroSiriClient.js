@@ -313,7 +313,7 @@ class MataroSiriClient {
               lat: Math.round(lat * 1000000) / 1000000,
               lon: Math.round(lon * 1000000) / 1000000,
               bearing: (bearing + 360) % 360,
-              speedKmh: Math.round(velocity * 3.6) || (velocity > 0 ? Math.round(velocity) : 25),
+              speedKmh: Number.isFinite(velocity) && velocity >= 0 ? Math.round(velocity * 3.6) : 25,
               delayMins,
               delayFormatted: delayMins > 0 ? `+${delayMins} min retard` : (delayMins < 0 ? `${delayMins} min avançat` : 'Puntual'),
               recordedAt,

@@ -758,34 +758,43 @@ class HistoryDatabase {
 
   getHourlyTrafficContext(hourNum) {
     const h = Number(hourNum) || 0;
-    if (h === 8) {
-      return { tag: '🚨 Entrada escolar & feina', isSchoolHour: true, isPeak: true, icon: '🎒' };
+    if (h >= 0 && h < 5) {
+      return { tag: '🔧 Cotxeres / Manteniment nocturn', isSchoolHour: false, isPeak: false, icon: '🔧', isDepot: true };
     }
-    if (h === 9) {
-      return { tag: '🏫 Post-entrada escoles', isSchoolHour: true, isPeak: false, icon: '📚' };
+    if (h === 5) {
+      return { tag: '🌅 Sortida primeres expedicions', isSchoolHour: false, isPeak: false, icon: '🌅', isDepot: false };
     }
-    if (h === 13 || h === 14) {
-      return { tag: '🥪 Migdia escolar & feina', isSchoolHour: true, isPeak: true, icon: '🥪' };
-    }
-    if (h === 17) {
-      return { tag: '🚨 Sortida escolar', isSchoolHour: true, isPeak: true, icon: '🎒' };
-    }
-    if (h === 18 || h === 19) {
-      return { tag: '🚗 Punta tornada feina', isSchoolHour: false, isPeak: true, icon: '🚗' };
+    if (h === 6) {
+      return { tag: '🌅 Inici servei matinal', isSchoolHour: false, isPeak: false, icon: '🌅', isDepot: false };
     }
     if (h === 7) {
-      return { tag: '🌅 Primer torn de feina', isSchoolHour: false, isPeak: false, icon: '🌅' };
+      return { tag: '🌅 Primer torn de feina', isSchoolHour: false, isPeak: false, icon: '🌅', isDepot: false };
+    }
+    if (h === 8) {
+      return { tag: '🚨 Entrada escolar & feina', isSchoolHour: true, isPeak: true, icon: '🎒', isDepot: false };
+    }
+    if (h === 9) {
+      return { tag: '🏫 Post-entrada escoles', isSchoolHour: true, isPeak: false, icon: '📚', isDepot: false };
     }
     if (h >= 10 && h <= 12) {
-      return { tag: '🟢 Vall matinal regular', isSchoolHour: false, isPeak: false, icon: '🟢' };
+      return { tag: '🟢 Vall matinal regular', isSchoolHour: false, isPeak: false, icon: '🟢', isDepot: false };
+    }
+    if (h === 13 || h === 14) {
+      return { tag: '🥪 Migdia escolar & feina', isSchoolHour: true, isPeak: true, icon: '🥪', isDepot: false };
     }
     if (h >= 15 && h <= 16) {
-      return { tag: '🟡 Vall tarda regular', isSchoolHour: false, isPeak: false, icon: '🟡' };
+      return { tag: '🟡 Vall tarda regular', isSchoolHour: false, isPeak: false, icon: '🟡', isDepot: false };
+    }
+    if (h === 17) {
+      return { tag: '🚨 Sortida escolar', isSchoolHour: true, isPeak: true, icon: '🎒', isDepot: false };
+    }
+    if (h === 18 || h === 19) {
+      return { tag: '🚗 Punta tornada feina', isSchoolHour: false, isPeak: true, icon: '🚗', isDepot: false };
     }
     if (h >= 20 && h <= 22) {
-      return { tag: '🌙 Servei vespre', isSchoolHour: false, isPeak: false, icon: '🌙' };
+      return { tag: '🌙 Servei vespre', isSchoolHour: false, isPeak: false, icon: '🌙', isDepot: false };
     }
-    return { tag: '🌙 Servei nocturn / vall', isSchoolHour: false, isPeak: false, icon: '🌙' };
+    return { tag: '🌙 Tancament servei', isSchoolHour: false, isPeak: false, icon: '🌙', isDepot: false };
   }
 
   /**
@@ -928,7 +937,18 @@ class HistoryDatabase {
       byLine.forEach((rows, lk) => {
         let cur = null;
         rows.forEach(r => {
-          if (!cur || (r.timestamp - cur.lastTs > 15 * 60 * 1000)) {
+          const h = parseInt(r.hourOfDay, 10);
+          const isDepotHour = h < 5;
+          const prevWasDepot = cur ? parseInt(cur.hourOfDay, 10) < 5 : false;
+          const depotTransition = cur && (isDepotHour !== prevWasDepot);
+          // Split cluster if:
+          // 1. Telemetry gap exceeds 12 minutes
+          // 2. Active trip duration exceeds 45 minutes (a normal Mataró transit trip cycle is ~30-40 min)
+          // 3. Transition between depot maintenance hours (< 05:00) and revenue service hours (>= 05:00)
+          const isGapTooLong = cur && (r.timestamp - cur.lastTs > 12 * 60 * 1000);
+          const isTripTooLong = cur && (r.timestamp - cur.firstTs > 45 * 60 * 1000);
+
+          if (!cur || isGapTooLong || isTripTooLong || depotTransition) {
             if (cur) allClusters.push(cur);
             cur = {
               lineCode: lk,
@@ -943,7 +963,8 @@ class HistoryDatabase {
               sampleCount: 1,
               stops: [r.stopName],
               firstStop: r.stopName,
-              lastStop: r.stopName
+              lastStop: r.stopName,
+              isDepot: isDepotHour
             };
           } else {
             cur.lastTs = r.timestamp;
@@ -964,7 +985,19 @@ class HistoryDatabase {
         const durMins = Math.round((c.lastTs - c.firstTs) / 60000);
         const h = parseInt(c.hourOfDay, 10);
         const ctx = this.getHourlyTrafficContext(h);
-        const isMovingTraffic = c.stops.length > 1;
+        const isDepot = h < 5;
+        const isMovingTraffic = !isDepot && c.stops.length > 1;
+
+        let incidentType = 'traffic';
+        let incidentTypeLabel = '🚗 Trànsit en Ruta';
+        if (isDepot) {
+          incidentType = 'maintenance';
+          incidentTypeLabel = '🔧 Cotxeres / Manteniment';
+        } else if (!isMovingTraffic) {
+          incidentType = 'layover';
+          incidentTypeLabel = '⏱️ Regulació / Capçalera';
+        }
+
         return {
           lineCode: c.lineCode,
           agency: c.agency,
@@ -979,15 +1012,17 @@ class HistoryDatabase {
           lastStop: c.lastStop,
           stopsCount: c.stops.length,
           isMovingTraffic,
-          incidentType: isMovingTraffic ? 'traffic' : 'layover',
-          incidentTypeLabel: isMovingTraffic ? '🚗 Trànsit en Ruta' : '⏱️ Regulació / Capçalera',
+          isDepot,
+          incidentType,
+          incidentTypeLabel,
           trafficTag: ctx.tag,
           trafficIcon: ctx.icon
         };
       }).sort((a, b) => b.maxDelayMins - a.maxDelayMins || b.sampleCount - a.sampleCount);
 
-      const movingCount = enrichedClusters.filter(c => c.isMovingTraffic).length;
-      const stationaryCount = enrichedClusters.filter(c => !c.isMovingTraffic).length;
+      const movingCount = enrichedClusters.filter(c => c.incidentType === 'traffic').length;
+      const stationaryCount = enrichedClusters.filter(c => c.incidentType === 'layover').length;
+      const maintenanceCount = enrichedClusters.filter(c => c.incidentType === 'maintenance').length;
       const totalClusters = enrichedClusters.length;
 
       const worstHourStr = worstHourRow?.hourOfDay != null ? `${String(worstHourRow.hourOfDay).padStart(2, '0')}:00` : '--:00';
@@ -1006,6 +1041,7 @@ class HistoryDatabase {
           worstHourTag: worstHourContext ? worstHourContext.tag : '',
           movingCount,
           stationaryCount,
+          maintenanceCount,
           movingPct: totalClusters > 0 ? Math.round((movingCount / totalClusters) * 100) : 0
         },
         topIncidents: enrichedTop,
@@ -1026,6 +1062,7 @@ class HistoryDatabase {
           worstHourTag: '',
           movingCount: 0,
           stationaryCount: 0,
+          maintenanceCount: 0,
           movingPct: 0
         },
         topIncidents: [],
