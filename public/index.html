@@ -15,13 +15,18 @@
   <meta name="apple-mobile-web-app-title" content="Arribo! Mataró">
 
   <!-- Favicon -->
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚌</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%2310b981%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22><path d=%22M19 17h2l.64-2.54a6 6 0 0 0 .36-2V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v6.46a6 6 0 0 0 .36 2L3 17h2%22/><circle cx=%226.5%22 cy=%2212.5%22 r=%221.5%22/><circle cx=%2217.5%22 cy=%2212.5%22 r=%221.5%22/></svg>">
+  
+  <!-- Fonts: Geist & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
   
   <!-- App Styles -->
-  <link rel="stylesheet" href="/css/style.css?v=6.2.0">
+  <link rel="stylesheet" href="/css/style.css?v=6.3.0">
 </head>
 <body>
 
@@ -29,11 +34,29 @@
   <header class="app-header">
     <div class="header-container">
       <div class="logo-group" id="header-logo-group" title="Arribo! - Tornar a l'inici" role="button" tabindex="0">
-        <div class="logo-brand-badge" id="header-line-badge">🚌</div>
+        <div class="brand-mark-box" id="header-line-badge">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 17h2l.64-2.54a6 6 0 0 0 .36-2V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v6.46a6 6 0 0 0 .36 2L3 17h2"/>
+            <path d="M7 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2"/>
+            <path d="M14 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2"/>
+            <circle cx="6.5" cy="12.5" r="1.5"/>
+            <circle cx="17.5" cy="12.5" r="1.5"/>
+            <line x1="2" y1="9" x2="22" y2="9"/>
+          </svg>
+        </div>
         <div class="app-title-group">
-          <h1>Arribo! <span class="app-version-pill">Mataró</span></h1>
+          <h1>Arribo! <span class="brand-badge-pill">Mataró</span></h1>
           <p class="app-subtitle" id="header-subtitle">Mataró Bus Urbà en directe</p>
         </div>
+      </div>
+
+      <!-- Live Status Telemetry Beacon -->
+      <div class="telemetry-beacon">
+        <span class="beacon-pulse">
+          <span class="beacon-pulse-ring"></span>
+          <span class="beacon-pulse-dot"></span>
+        </span>
+        <span>En viu • <strong>8 línies actives</strong></span>
       </div>
 
       <!-- Universal Stop & Line Search Input -->
@@ -47,28 +70,27 @@
       <div class="header-actions">
         <!-- Journey Planner Navigation Button -->
         <a href="/plan" class="btn-header-nav planner-btn" id="btn-header-planner" title="Com anar-hi: Planificador de viatges A a B" style="text-decoration:none;">
-          <span class="nav-icon">🧭</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
           <span>Com anar-hi</span>
         </a>
 
         <!-- Favorite Stops Hub Button -->
         <button type="button" class="btn-header-nav favorites-btn" id="btn-header-favorites" title="Veure les meves parades preferides">
-          <span class="nav-icon">⭐</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
           <span id="header-favs-count-text">Preferides</span>
         </button>
 
         <!-- Journalism & Delay Analytics Link -->
         <a href="/dades" class="btn-header-nav journalism-btn" id="btn-open-journalism" title="Veure anàlisi de retards històrics, puntualitat i dades" style="text-decoration:none;">
-          <span class="nav-icon">📊</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
           <span>Dades</span>
         </a>
 
         <!-- Live Incidents / Disruptions Button -->
         <button type="button" class="btn-header-nav incidents-btn" id="btn-open-incidents" title="Veure avisos de servei i incidències en temps real">
-          <span class="nav-icon">⚠️</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
           <span id="incidents-count-text">Avisos</span>
         </button>
-
 
         <!-- Utility Actions -->
         <button type="button" class="btn-icon btn-theme-toggle" id="btn-theme-toggle" title="Canviar tema clar / fosc" aria-label="Canviar tema clar o fosc">
@@ -119,7 +141,13 @@
       
       <!-- Landing Hero Card -->
       <section class="landing-hero-card" aria-label="Benvinguda a Arribo!">
-        <div class="landing-hero-badge">✨ Mataró Bus Urbà en Directe (L1–L8)</div>
+        <div class="landing-hero-badge">
+          <span class="beacon-pulse" style="display:inline-flex; width:6px; height:6px; margin-right:4px;">
+            <span class="beacon-pulse-ring" style="width:6px; height:6px;"></span>
+            <span class="beacon-pulse-dot" style="width:6px; height:6px;"></span>
+          </span>
+          <span>Xarxa Urbana • Mataró Bus • Telemetria en Temps Real</span>
+        </div>
         <h2 class="landing-hero-title">Quin autobús de Mataró vols seguir?</h2>
         <p class="landing-hero-subtitle">
           Cerca entre les 8 línies de Mataró Bus Urbà amb telemetria GPS en directe, horaris reals i temps d'espera exactes.
@@ -128,7 +156,7 @@
         <!-- Big Hero Search Input -->
         <div class="landing-hero-search-wrapper">
           <svg class="landing-search-icon-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input type="text" id="landing-hero-search-input" class="landing-hero-search-input" placeholder="🔍 Cerca per línia (ex: L1, L2, L3, 5, 8) o parada (ex: Hospital, Rodalies, Tereses)..." autocomplete="off">
+          <input type="text" id="landing-hero-search-input" class="landing-hero-search-input" placeholder="Cerca per línia (ex: L1, L2, L3, 5, 8) o parada (ex: Hospital, Rodalies, Tereses)..." autocomplete="off">
           <button type="button" class="landing-search-clear-btn" id="btn-landing-search-clear" aria-label="Netejar cerca" style="display:none;">&times;</button>
           <div class="search-results-dropdown landing-search-results-dropdown" id="landing-search-results-dropdown"></div>
         </div>
@@ -136,37 +164,40 @@
         <!-- Quick GPS, Journey Planner & Mataró Zone Actions -->
         <div class="landing-hero-actions-row">
           <a href="/plan" class="btn-hero-action btn-hero-planner" id="btn-hero-planner" title="Com anar-hi: Planifica la teva ruta entre dues parades" style="text-decoration:none;">
-            <span class="hero-action-icon">🧭</span>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
             <span>Com anar-hi</span>
           </a>
           <button type="button" class="btn-hero-action btn-hero-geo" id="btn-hero-geo" title="Troba les parades més properes amb GPS o per barri">
-            <span class="hero-action-icon">📍</span>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
             <span>Parades a prop</span>
           </button>
           <button type="button" class="btn-hero-action btn-hero-zones" id="btn-hero-zones" title="Tria un barri o zona clau de Mataró">
-            <span class="hero-action-icon">🏙️</span>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
             <span>Tria zona / barri</span>
           </button>
         </div>
 
         <!-- Network & Operator Filter Tabs -->
         <div class="landing-filter-tabs" id="landing-filter-tabs">
-          <button type="button" class="landing-filter-tab active" data-filter="all">🌐 Totes les línies</button>
-          <button type="button" class="landing-filter-tab" data-filter="1">L1</button>
-          <button type="button" class="landing-filter-tab" data-filter="2">L2</button>
-          <button type="button" class="landing-filter-tab" data-filter="3">L3</button>
-          <button type="button" class="landing-filter-tab" data-filter="4">L4</button>
-          <button type="button" class="landing-filter-tab" data-filter="5">L5</button>
-          <button type="button" class="landing-filter-tab" data-filter="6">L6</button>
-          <button type="button" class="landing-filter-tab" data-filter="7">L7</button>
-          <button type="button" class="landing-filter-tab" data-filter="8">L8</button>
+          <button type="button" class="landing-filter-tab active" data-filter="all">Totes les línies (8)</button>
+          <button type="button" class="landing-filter-tab tabular-nums" data-filter="1">L1</button>
+          <button type="button" class="landing-filter-tab tabular-nums" data-filter="2">L2</button>
+          <button type="button" class="landing-filter-tab tabular-nums" data-filter="3">L3</button>
+          <button type="button" class="landing-filter-tab tabular-nums" data-filter="4">L4</button>
+          <button type="button" class="landing-filter-tab tabular-nums" data-filter="5">L5</button>
+          <button type="button" class="landing-filter-tab tabular-nums" data-filter="6">L6</button>
+          <button type="button" class="landing-filter-tab tabular-nums" data-filter="7">L7</button>
+          <button type="button" class="landing-filter-tab tabular-nums" data-filter="8">L8</button>
         </div>
       </section>
 
       <!-- Favorite Stops Dynamic Section -->
       <section class="landing-favorites-section" id="landing-favorites-section" style="display:none;" aria-label="Parades preferides">
         <div class="landing-group-header">
-          <h3><span>⭐</span> Les Meves Parades Preferides</h3>
+          <h3>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <span>Les Meves Parades Preferides</span>
+          </h3>
           <span class="landing-group-badge" id="fav-stops-count-badge">0 parades</span>
         </div>
         <div class="landing-favorites-grid" id="landing-favorites-grid"></div>
@@ -175,9 +206,12 @@
       <!-- Nearby Stops Dynamic Section -->
       <section class="landing-nearby-section" id="landing-nearby-section" style="display:none;" aria-label="Parades a prop">
         <div class="landing-group-header">
-          <h3><span>📍</span> Parades a Prop (<span id="nearby-zone-title">La teva ubicació</span>)</h3>
+          <h3>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+            <span>Parades a Prop (<span id="nearby-zone-title">La teva ubicació</span>)</span>
+          </h3>
           <div style="display:flex; align-items:center; gap:0.5rem;">
-            <button type="button" class="btn-nearby-change-zone" id="btn-nearby-change-zone">Canviar zona 🏙️</button>
+            <button type="button" class="btn-nearby-change-zone" id="btn-nearby-change-zone">Canviar zona</button>
             <button type="button" class="btn-nearby-close" id="btn-nearby-close" title="Tancar parades properes">&times;</button>
           </div>
         </div>
@@ -188,7 +222,7 @@
       <section class="landing-lines-section" aria-label="Llistat de línies disponibles">
         <div id="landing-lines-container" class="landing-lines-container">
           <div style="padding:2.5rem 1rem; text-align:center; color:var(--text-muted);">
-            <div style="font-size:1.8rem; margin-bottom:0.5rem;">🚌</div>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--c10-primary)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:0.5rem;"><path d="M19 17h2l.64-2.54a6 6 0 0 0 .36-2V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v6.46a6 6 0 0 0 .36 2L3 17h2"/><path d="M7 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2"/><path d="M14 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2"/><circle cx="6.5" cy="12.5" r="1.5"/><circle cx="17.5" cy="12.5" r="1.5"/><line x1="2" y1="9" x2="22" y2="9"/></svg>
             <div>Carregant línies de Mataró Bus...</div>
           </div>
         </div>
@@ -197,7 +231,9 @@
       <!-- Platform Features & Live Status Highlights -->
       <section class="landing-stats-grid" aria-label="Característiques de la plataforma">
         <div class="landing-stat-card">
-          <div class="stat-icon-badge">🚌</div>
+          <div class="stat-icon-badge">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c10-primary)" stroke-width="2"><path d="M19 17h2l.64-2.54a6 6 0 0 0 .36-2V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v6.46a6 6 0 0 0 .36 2L3 17h2"/><circle cx="6.5" cy="12.5" r="1.5"/><circle cx="17.5" cy="12.5" r="1.5"/></svg>
+          </div>
           <div class="stat-card-text">
             <strong>8 Línies Urbanes</strong>
             <span>Cobertura completa de tota la xarxa urbana de Mataró Bus (L1 a L8)</span>
@@ -205,7 +241,9 @@
         </div>
 
         <div class="landing-stat-card">
-          <div class="stat-icon-badge">🛰️</div>
+          <div class="stat-icon-badge">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"/></svg>
+          </div>
           <div class="stat-card-text">
             <strong>Telemetria GPS en Directe</strong>
             <span>Posició exacta dels autobusos i velocitat en temps real via SIRI</span>
@@ -213,7 +251,9 @@
         </div>
 
         <div class="landing-stat-card">
-          <div class="stat-icon-badge">⏱️</div>
+          <div class="stat-icon-badge">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </div>
           <div class="stat-card-text">
             <strong>1.678 Horaris Oficials</strong>
             <span>Minuts d'espera calculats amb dades oficials feiners, dissabtes i diumenges</span>
@@ -221,7 +261,9 @@
         </div>
 
         <div class="landing-stat-card">
-          <div class="stat-icon-badge">⚠️</div>
+          <div class="stat-icon-badge">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f43f5e" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          </div>
           <div class="stat-card-text">
             <strong>Avisos i Desviaments</strong>
             <span>Incidències oficials i avisos de Mataró Bus al moment</span>
@@ -738,12 +780,12 @@
   <footer class="app-footer">
     <div class="footer-content">
       <div>
-        <span>🚌 <strong>Arribo! Mataró</strong> • Dades oficials en temps real: Mataró Bus Urbà (Avanza / Ajuntament de Mataró)</span>
+        <span><strong>Arribo! Mataró</strong> • Dades oficials en temps real: Mataró Bus Urbà (Avanza / Ajuntament de Mataró)</span>
       </div>
       <div class="footer-links">
         <a href="#" id="footer-link-home">Totes les línies</a>
-        <a href="#" id="footer-link-incidents">⚠️ Avisos de servei</a>
-        <a href="/dades" id="footer-link-journalism">📊 Observatori de retards</a>
+        <a href="#" id="footer-link-incidents">Avisos de servei</a>
+        <a href="/dades" id="footer-link-journalism">Observatori de retards</a>
       </div>
     </div>
   </footer>
@@ -752,15 +794,15 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   
   <!-- App Scripts -->
-  <script src="/js/utils.js?v=6.2.0"></script>
-  <script src="/js/storage.js?v=6.2.0"></script>
-  <script src="/js/requests.js?v=6.2.0"></script>
-  <script src="/js/stopFeatures.js?v=6.2.0"></script>
-  <script src="/js/journeys.js?v=6.2.0"></script>
-  <script src="/js/journeyControls.js?v=6.2.0"></script>
-  <script src="/js/pwa.js?v=6.2.0"></script>
+  <script src="/js/utils.js?v=6.3.0"></script>
+  <script src="/js/storage.js?v=6.3.0"></script>
+  <script src="/js/requests.js?v=6.3.0"></script>
+  <script src="/js/stopFeatures.js?v=6.3.0"></script>
+  <script src="/js/journeys.js?v=6.3.0"></script>
+  <script src="/js/journeyControls.js?v=6.3.0"></script>
+  <script src="/js/pwa.js?v=6.3.0"></script>
 
-  <script src="/js/map.js?v=6.2.0"></script>
-  <script src="/js/app.js?v=6.2.0"></script>
+  <script src="/js/map.js?v=6.3.0"></script>
+  <script src="/js/app.js?v=6.3.0"></script>
 </body>
 </html>

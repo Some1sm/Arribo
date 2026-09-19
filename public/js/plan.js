@@ -433,11 +433,11 @@ class PlannerPageApp {
                 <div class="planner-dropdown-item" data-type="stop" data-stop-name="${this.esc(s.name)}" data-stop-id="${this.esc(s.id)}" data-direction="${this.esc(s.directionText || '')}" data-lat="${s.lat || ''}" data-lon="${s.lon || ''}">
                   <div style="display:flex; flex-direction:column; gap:2px;">
                     <div style="font-weight:700; color:var(--text-primary); font-size:0.9rem; display:flex; align-items:center; gap:6px;">
-                      <span style="color:#0ea5e9;">🚏</span> <span>${this.esc(s.name)}</span>
+                      <span style="color:#10b981; font-weight:700;">•</span> <span>${this.esc(s.name)}</span>
                     </div>
                     ${s.directionText ? `
-                      <div style="font-size:0.75rem; color:#38bdf8; font-weight:600; display:flex; align-items:center; gap:4px; padding-left:1.35rem;">
-                        <span>➔</span> <span>${this.esc(s.directionText)}</span>
+                      <div style="font-size:0.75rem; color:#38bdf8; font-weight:600; display:flex; align-items:center; gap:4px; padding-left:0.85rem;">
+                        <span>→</span> <span>${this.esc(s.directionText)}</span>
                       </div>
                     ` : ''}
                   </div>
@@ -455,14 +455,14 @@ class PlannerPageApp {
                 <div class="planner-dropdown-item" data-type="street" data-stop-name="${this.esc(st.name)}" data-lat="${st.lat}" data-lon="${st.lon}" data-nearest-id="${this.esc(st.nearestStop?.id || '')}">
                   <div style="display:flex; flex-direction:column; gap:2px;">
                     <div style="font-weight:700; color:var(--text-primary); font-size:0.9rem; display:flex; align-items:center; gap:6px;">
-                      <span style="color:#f59e0b;">🛣️</span> <span>${this.esc(st.name)}</span>
+                      <span style="color:#06b6d4; font-weight:700;">•</span> <span>${this.esc(st.name)}</span>
                     </div>
-                    <div style="font-size:0.75rem; color:var(--text-muted); padding-left:1.35rem;">
+                    <div style="font-size:0.75rem; color:var(--text-muted); padding-left:0.85rem;">
                       ${this.esc(st.subtitle || `Carrer a ${st.cityName}`)}
                     </div>
                   </div>
                   <div style="text-align:right;">
-                    <span style="font-size:0.72rem; color:#f59e0b; background:rgba(245,158,11,0.12); padding:2px 6px; border-radius:4px; font-weight:600;">Carrer</span>
+                    <span style="font-size:0.72rem; color:#06b6d4; background:rgba(6,182,212,0.12); padding:2px 6px; border-radius:4px; font-weight:600;">Carrer</span>
                   </div>
                 </div>
               `).join('');
@@ -573,11 +573,11 @@ class PlannerPageApp {
             }
           }
         } catch (_) {}
-        if (gpsBtn) gpsBtn.innerHTML = '<span>📍 GPS</span>';
+        if (gpsBtn) gpsBtn.innerHTML = '<span>GPS</span>';
       },
       () => {
         alert("No s'ha pogut obtenir la teva ubicació.");
-        if (gpsBtn) gpsBtn.innerHTML = '<span>📍 GPS</span>';
+        if (gpsBtn) gpsBtn.innerHTML = '<span>GPS</span>';
       },
       { timeout: 8000, enableHighAccuracy: true }
     );
@@ -603,8 +603,8 @@ class PlannerPageApp {
 
     resultsContainer.innerHTML = `
       <div style="text-align:center; padding:3rem 1rem;">
-        <div style="font-size:2rem; animation:spin 1s infinite linear; display:inline-block;">⏱️</div>
-        <div style="margin-top:0.75rem; font-weight:700; color:var(--text-primary);">Calculant les millors connexions...</div>
+        <div style="width:28px; height:28px; border:2px solid var(--border-subtle); border-top-color:var(--brand-primary); border-radius:50%; animation:spin 0.8s linear infinite; margin:0 auto;"></div>
+        <div style="margin-top:0.75rem; font-weight:600; color:var(--text-primary); font-size:0.9rem;">Calculant les millors connexions...</div>
       </div>
     `;
 
@@ -642,7 +642,7 @@ class PlannerPageApp {
         const errorReason = data.error || data.message || "No s'ha pogut trobar la parada o adreça especificada.";
         resultsContainer.innerHTML = `
           <div style="text-align:center; padding:2.5rem 1rem;">
-            <div style="font-size:2.2rem; margin-bottom:0.5rem;">🚏</div>
+            <div style="width:36px; height:36px; border-radius:50%; background:rgba(239,68,68,0.12); color:#ef4444; display:flex; align-items:center; justify-content:center; margin:0 auto 0.75rem auto; font-size:1.1rem; font-weight:800;">!</div>
             <div style="font-weight:700; color:var(--text-primary); font-size:1.05rem; margin-bottom:0.4rem;">Parada o carrer no trobat</div>
             <div style="font-size:0.85rem; color:var(--text-secondary); max-width:340px; margin:0 auto 0.75rem auto; line-height:1.4;">${this.esc(errorReason)}</div>
             <div style="font-size:0.78rem; color:var(--text-muted); line-height:1.4;">Comprova l'ortografia d'origen i destinació, o tria directament una opció suggerida del menú desplegable.</div>
@@ -656,7 +656,7 @@ class PlannerPageApp {
       if (this.currentItineraries.length === 0) {
         resultsContainer.innerHTML = `
           <div style="text-align:center; padding:2.5rem 1rem; color:var(--text-secondary);">
-            <div style="font-size:2.2rem; margin-bottom:0.5rem;">🔍</div>
+            <div style="width:36px; height:36px; border-radius:50%; background:rgba(148,163,184,0.12); color:var(--text-muted); display:flex; align-items:center; justify-content:center; margin:0 auto 0.75rem auto; font-size:1rem; font-weight:800;">?</div>
             <div style="font-weight:700; color:var(--text-primary); font-size:1.05rem; margin-bottom:0.4rem;">Cap combinació disponible</div>
             <div style="font-size:0.85rem; max-width:340px; margin:0 auto; line-height:1.4;">${this.esc(data.message || 'No s\'ha trobat cap ruta directa ni amb 1 sol transbordament entre aquestes dues ubicacions actualment.')}</div>
           </div>
@@ -681,7 +681,7 @@ class PlannerPageApp {
 
       const routesCountLabel = document.getElementById('label-sheet-routes');
       if (routesCountLabel) {
-        routesCountLabel.textContent = `📋 Rutes (${this.currentItineraries.length})`;
+        routesCountLabel.textContent = `Rutes (${this.currentItineraries.length})`;
       }
       const floatBadge = document.getElementById('floating-routes-badge');
       if (floatBadge) {
@@ -731,11 +731,11 @@ class PlannerPageApp {
 
       resultsContainer.innerHTML = `
         <div style="text-align:center; padding:2.5rem 1.2rem; background:rgba(239, 68, 68, 0.06); border:1px solid rgba(239, 68, 68, 0.2); border-radius:12px; margin:1rem 0;">
-          <div style="font-size:2.2rem; margin-bottom:0.5rem;">⚠️</div>
+          <div style="width:36px; height:36px; border-radius:50%; background:rgba(239,68,68,0.12); color:#ef4444; display:flex; align-items:center; justify-content:center; margin:0 auto 0.75rem auto; font-size:1.1rem; font-weight:800;">!</div>
           <div style="font-weight:700; color:#ef4444; font-size:1.05rem; margin-bottom:0.4rem;">${this.esc(errorTitle)}</div>
           <div style="font-size:0.85rem; color:var(--text-secondary); max-width:340px; margin:0 auto 1.25rem auto; line-height:1.4;">${this.esc(errorDesc)}</div>
           <button type="button" class="btn-primary plan-retry-btn" style="display:inline-flex; align-items:center; gap:6px; font-size:0.85rem; padding:0.45rem 1.1rem; cursor:pointer;">
-            <span>🔄 Reintentar connexió</span>
+            <span>Reintentar connexió</span>
           </button>
         </div>
       `;
@@ -773,18 +773,18 @@ class PlannerPageApp {
                ${Number.isFinite(waitMin) ? `En temps real: ${waitMin} min` : 'En temps real'}
              </span>`
           : `<span style="display:inline-flex; align-items:center; gap:5px; font-size:0.75rem; color:#f59e0b; font-weight:600; background:rgba(245,158,11,0.1); border:1px solid rgba(245,158,11,0.2); padding:2px 7px; border-radius:4px;">
-               <span>📅</span> Horari oficial: ${firstLeg?.departureTime || (Number.isFinite(waitMin) ? `${waitMin} min` : 'Teòric')}
+               Horari oficial: ${firstLeg?.departureTime || (Number.isFinite(waitMin) ? `${waitMin} min` : 'Teòric')}
              </span>`;
 
         return `
           <div class="planner-itinerary-card ${idx === this.activeItineraryIndex ? 'plan-itinerary-active' : ''}" data-itinerary-index="${idx}" style="cursor:pointer;">
             <div class="planner-card-header">
               <div class="planner-total-duration" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                <span>⏱️ ~${it.totalDurationMins} min</span>
+                <span>~${it.totalDurationMins} min</span>
                 ${waitBadge}
               </div>
               <span class="${isDirect ? 'planner-tag-direct' : 'planner-tag-transfer'}">
-                ${isDirect ? '✓ Ruta Directa' : '🔄 1 Transbordament'}
+                ${isDirect ? 'Ruta Directa' : '1 Transbordament'}
               </span>
             </div>
 
@@ -793,7 +793,7 @@ class PlannerPageApp {
             <div class="planner-legs-flow">
               ${it.walkToFirstStop && it.walkToFirstStop.distanceMeters > 15 ? `
                 <div style="display:flex; align-items:center; gap:8px; padding:4px 0 6px 0; color:var(--text-secondary); font-size:0.83rem; border-bottom:1px dashed var(--border-subtle); margin-bottom:6px;">
-                  <span style="font-size:1.1rem; line-height:1;">🚶</span>
+                  <span style="font-size:0.75rem; color:var(--text-muted); font-weight:700;">A PEU</span>
                   <div>
                     <span>Caminar des de <strong>${this.esc((it.walkToFirstStop.fromName && !/^\d+$/.test(it.walkToFirstStop.fromName.trim())) ? it.walkToFirstStop.fromName : (originVal || 'l\'origen'))}</strong></span>
                     <span style="font-size:0.75rem; color:var(--text-muted); margin-left:4px;">(~${it.walkToFirstStop.walkingMinutes} min • ${it.walkToFirstStop.distanceMeters} m)</span>
@@ -806,7 +806,7 @@ class PlannerPageApp {
                 return `
                   ${lIdx > 0 && it.transferWalk && it.transferWalk.distanceMeters > 15 ? `
                     <div style="display:flex; align-items:center; gap:8px; padding:4px 0 6px 0; color:var(--text-muted); font-size:0.8rem; margin-bottom:4px;">
-                      <span>🔄🚶</span>
+                      <span style="font-size:0.75rem; color:var(--text-muted); font-weight:700;">ENLLAÇ</span>
                       <span>Enllaç a peu fins a <strong>${this.esc(leg.fromStop.name)}</strong> (~${it.transferWalk.walkingMinutes} min • ${it.transferWalk.distanceMeters} m)</span>
                     </div>
                   ` : ''}
@@ -823,15 +823,15 @@ class PlannerPageApp {
                         </div>
                         ${leg.departureTime && leg.departureTime !== 'En breu' ? `
                           <span style="font-size:0.75rem; font-weight:700; color:${leg.isRealTime ? '#10b981' : '#f59e0b'}; background:${leg.isRealTime ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)'}; padding:2px 6px; border-radius:4px;">
-                            🕐 ${this.esc(leg.departureTime)}${leg.isRealTime ? ' • En viu' : ' • Horari'}
+                            ${this.esc(leg.departureTime)}${leg.isRealTime ? ' • En viu' : ' • Horari'}
                           </span>
                         ` : ''}
                       </div>
                       <div style="font-size:0.82rem; color:var(--text-secondary); margin-top:3px;">
-                        🟢 Pujar a: <strong>${this.esc(leg.fromStop.name)}</strong>
+                        Pujar a: <strong>${this.esc(leg.fromStop.name)}</strong>
                       </div>
                       <div style="font-size:0.82rem; color:var(--text-secondary);">
-                        ${lIdx === it.legs.length - 1 ? '🏁' : '🔄'} Baixar a: <strong>${this.esc(leg.toStop.name)}</strong> (${leg.stopsCount || leg.stopCount} parades, ~${leg.travelTimeMins || leg.durationMinutes} min)
+                        Baixar a: <strong>${this.esc(leg.toStop.name)}</strong> (${leg.stopsCount || leg.stopCount} parades, ~${leg.travelTimeMins || leg.durationMinutes} min)
                       </div>
                     </div>
                   </div>
@@ -840,7 +840,7 @@ class PlannerPageApp {
 
               ${it.walkFromLastStop && it.walkFromLastStop.distanceMeters > 15 ? `
                 <div style="display:flex; align-items:center; gap:8px; padding:6px 0 2px 0; color:var(--text-secondary); font-size:0.83rem; border-top:1px dashed var(--border-subtle); margin-top:6px;">
-                  <span style="font-size:1.1rem; line-height:1;">🚶</span>
+                  <span style="font-size:0.75rem; color:var(--text-muted); font-weight:700;">A PEU</span>
                   <div>
                     <span>Caminar fins a <strong>${this.esc((it.walkFromLastStop.toName && !/^\d+$/.test(it.walkFromLastStop.toName.trim())) ? it.walkFromLastStop.toName : (destVal || 'la destinació'))}</strong></span>
                     <span style="font-size:0.75rem; color:var(--text-muted); margin-left:4px;">(~${it.walkFromLastStop.walkingMinutes} min • ${it.walkFromLastStop.distanceMeters} m)</span>
@@ -851,17 +851,16 @@ class PlannerPageApp {
 
             <!-- Eco-Impact CO2 Savings Badge (clearly indicated as approximate) -->
             <div class="planner-eco-strip" style="display:flex; align-items:center; gap:6px; margin-top:0.75rem; font-size:0.75rem; color:#10b981; background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.2); padding:4px 8px; border-radius:5px;">
-              <span>🌱</span>
               <span>Estalvi aprox. <strong>${this.esc(it.co2Formatted || (it.co2SavedGrams ? (it.co2SavedGrams >= 1000 ? '~' + it.co2SavedKg + ' kg' : '~' + it.co2SavedGrams + ' g') : '~350 g'))}</strong> CO₂ respecte al cotxe</span>
               <span style="color:var(--text-muted); font-size:0.7rem; margin-left:auto;">(${it.transitDistanceKm || '3.5'} km bus)</span>
             </div>
 
             <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.75rem; border-top:1px solid var(--border-subtle); padding-top:0.6rem; gap:8px;">
               <button type="button" class="btn-start-guided-nav" data-itinerary-index="${idx}" title="Iniciar guia interactiva pas a pas d'aquest viatge" style="display:inline-flex; align-items:center; gap:5px; background:linear-gradient(135deg, #0ea5e9, #0284c7); color:#fff; border:none; border-radius:6px; padding:6px 12px; font-size:0.82rem; font-weight:700; cursor:pointer; box-shadow:0 2px 6px rgba(14,165,233,0.3);">
-                <span>🚀 Iniciar viatge</span>
+                <span>Iniciar viatge</span>
               </button>
               <span style="font-size:0.73rem; color:var(--text-muted); font-weight:600; text-align:right;">
-                ${idx === this.activeItineraryIndex ? '📍 Mostrant al mapa' : 'Fes clic per veure la ruta'}
+                ${idx === this.activeItineraryIndex ? 'Mostrant al mapa' : 'Fes clic per veure la ruta'}
               </span>
             </div>
           </div>
@@ -966,7 +965,7 @@ class PlannerPageApp {
       steps.push({
         type: 'walk',
         title: 'Camina fins a la primera parada',
-        icon: '🚶',
+        icon: '•',
         desc: `Camina des de <strong>${this.esc(itin.walkToFirstStop.fromName || originVal)}</strong> fins a la parada <strong>${this.esc(itin.legs[0].fromStop.name)}</strong>.`,
         details: `${itin.walkToFirstStop.distanceMeters} metres • aproximadament ${itin.walkToFirstStop.walkingMinutes} minuts`,
         coord: itin.walkToFirstStop.to
@@ -980,18 +979,18 @@ class PlannerPageApp {
       steps.push({
         type: 'bus_board',
         title: `Puja a l'autobús ${leg.lineCode}`,
-        icon: '🚌',
+        icon: '•',
         lineColor: leg.lineColor || '#009485',
         lineCode: leg.lineCode,
         desc: `Agafa la línia <span class="planner-leg-badge" style="background:${leg.lineColor || '#009485'}; display:inline-block; padding:1px 6px; border-radius:4px; font-weight:700; color:#fff;">${this.esc(leg.lineCode)}</span> a <strong>${this.esc(leg.fromStop.name)}</strong> cap a <strong>${this.esc(destName)}</strong>.`,
-        details: `Sortida: ${leg.departureTime || 'En breu'}${leg.isRealTime ? ' • En temps real 🟢' : ' • Horari oficial 📅'}`,
+        details: `Sortida: ${leg.departureTime || 'En breu'}${leg.isRealTime ? ' • En temps real' : ' • Horari oficial'}`,
         coord: [leg.fromStop.lat, leg.fromStop.lon]
       });
 
       steps.push({
         type: 'bus_ride',
         title: `Trajecte de ${leg.stopsCount || leg.stopCount} parades`,
-        icon: '🛣️',
+        icon: '•',
         desc: `Viatja a bord del bus durant ${leg.stopsCount || leg.stopCount} parades (~${leg.travelTimeMins || leg.durationMinutes} min).`,
         details: `Prepara't per baixar a: <strong>${this.esc(leg.toStop.name)}</strong>`,
         coord: [leg.toStop.lat, leg.toStop.lon]
@@ -1001,7 +1000,7 @@ class PlannerPageApp {
         steps.push({
           type: 'transfer_walk',
           title: 'Transbordament a peu',
-          icon: '🔄',
+          icon: '•',
           desc: `Camina ${itin.transferWalk.distanceMeters} m (~${itin.transferWalk.walkingMinutes} min) des de <strong>${this.esc(leg.toStop.name)}</strong> fins a <strong>${this.esc(itin.legs[lIdx + 1].fromStop.name)}</strong>.`,
           details: `Enllaç amb la línia ${itin.legs[lIdx + 1].lineCode}`,
           coord: itin.transferWalk.to
@@ -1013,9 +1012,9 @@ class PlannerPageApp {
       steps.push({
         type: 'walk_dest',
         title: 'Arribada a la destinació',
-        icon: '🏁',
+        icon: '•',
         desc: `Camina ${itin.walkFromLastStop.distanceMeters} m (~${itin.walkFromLastStop.walkingMinutes} min) des de <strong>${this.esc(itin.walkFromLastStop.fromName)}</strong> fins a <strong>${this.esc(itin.walkFromLastStop.toName || destVal)}</strong>.`,
-        details: 'Has completat el teu trajecte amb Arribo! 🎉',
+        details: 'Has completat el teu trajecte amb Arribo!.',
         coord: itin.walkFromLastStop.to
       });
     }

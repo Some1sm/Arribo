@@ -90,7 +90,7 @@ class TransitApp {
       btn.className = `btn-map-control ${this.stopsViewMode === 'schematic' ? 'active' : ''}`;
       btn.id = 'btn-map-toggle-schematic';
       btn.title = "Veure termòmetre esquemàtic d'estil metro";
-      btn.innerHTML = '<span>🚇 Termòmetre</span>';
+      btn.innerHTML = '<span>Termòmetre</span>';
       btn.addEventListener('click', (e) => {
         e.preventDefault();
         const nextMode = this.stopsViewMode === 'schematic' ? 'list' : 'schematic';
@@ -112,10 +112,10 @@ class TransitApp {
       pillsDiv.id = 'stops-view-mode-pills';
       pillsDiv.innerHTML = `
         <button type="button" class="btn-stops-view-mode ${this.stopsViewMode === 'schematic' ? 'active' : ''}" id="btn-stops-mode-schematic" data-mode="schematic" title="Veure termòmetre esquemàtic estil metro amb posició de busos en viu">
-          <span>🚇 Termòmetre</span>
+          <span>Termòmetre</span>
         </button>
         <button type="button" class="btn-stops-view-mode ${this.stopsViewMode === 'list' ? 'active' : ''}" id="btn-stops-mode-list" data-mode="list" title="Veure llista detallada de parades">
-          <span>📋 Llista</span>
+          <span>Llista</span>
         </button>
       `;
       pillsDiv.addEventListener('click', (e) => {
@@ -959,7 +959,7 @@ class TransitApp {
     if (linesToRender.length === 0 && stopsToRender.length === 0) {
       container.innerHTML = `
         <div style="padding: 3rem 1rem; text-align: center; color: var(--text-muted); background:var(--bg-card-gradient); border-radius:var(--radius-lg); border:1px solid var(--border-subtle);">
-          <div style="font-size: 2.2rem; margin-bottom: 0.5rem;">🔍</div>
+          <div style="width:36px; height:36px; border-radius:50%; background:rgba(148,163,184,0.12); color:var(--text-muted); display:flex; align-items:center; justify-content:center; margin:0 auto 0.75rem auto; font-size:1rem; font-weight:800;">?</div>
           <div style="font-size:1.1rem; font-weight: 700; color: #fff; margin-bottom: 0.35rem;">Cap línia ni parada trobada</div>
           <div style="font-size: 0.85rem; max-width:450px; margin:0 auto;">No hi ha cap resultat per a "${this.esc(this.landingSearch)}". Prova cercant per línia (ex: L1, L2, L3, 5, 8) o parada (ex: Hospital, Rodalies, Tereses).</div>
         </div>
@@ -972,7 +972,7 @@ class TransitApp {
       html += `
         <div class="landing-group-section">
           <div class="landing-group-header">
-            <h3><span>📍</span> Mataró Bus Urbà</h3>
+            <h3>Mataró Bus Urbà</h3>
             <span class="landing-group-badge">${linesToRender.length} línia${linesToRender.length === 1 ? '' : 'es'}</span>
           </div>
           <div class="landing-lines-grid">
@@ -1005,7 +1005,7 @@ class TransitApp {
       html += `
         <div class="landing-group-section" style="${linesToRender.length > 0 ? 'margin-top:1.5rem;' : ''}">
           <div class="landing-group-header">
-            <h3><span>🚏</span> Parades trobades</h3>
+            <h3>Parades trobades</h3>
             <span class="landing-group-badge">${stopsToRender.length} parada${stopsToRender.length === 1 ? '' : 'es'}</span>
           </div>
           <div class="landing-lines-grid">
@@ -1109,14 +1109,14 @@ class TransitApp {
         if (d.isRealTime) {
           const rawText = String(d.delayBadgeText || '').replace(/^[🟢⏱️⚠️]\s*/, '').trim();
           if (rawText.toLowerCase().includes('regulaci') || (d.delayBadgeText && d.delayBadgeText.includes('⏱️'))) {
-            delayBadge = `<span class="fav-status-badge status-regulation">⏱️ Regulació</span>`;
+            delayBadge = `<span class="fav-status-badge status-regulation">Regulació</span>`;
           } else if (rawText.toLowerCase().includes('retard') || (d.delayMinutes && d.delayMinutes > 2)) {
             delayBadge = `<span class="fav-status-badge status-delay">+${d.delayMinutes || 3}m</span>`;
           } else {
-            delayBadge = `<span class="fav-status-badge status-ontime">🟢 Puntual</span>`;
+            delayBadge = `<span class="fav-status-badge status-ontime">Puntual</span>`;
           }
         } else {
-          delayBadge = `<span class="fav-status-badge status-scheduled">📅 Teòric</span>`;
+          delayBadge = `<span class="fav-status-badge status-scheduled">Teòric</span>`;
         }
 
         const cleanDest = (d.destination || 'Destí').replace(/^Cap a\s+/i, '').trim();
@@ -4027,15 +4027,16 @@ class TransitApp {
                     const badgeText = b.delayBadgeText || (b.delayMins > 0 ? `+${b.delayMins} min` : 'A l\'hora');
                     const isHybrid = Boolean(b.isHybrid || b.propulsion === 'hybrid');
                     const ecoClass = isHybrid ? 'is-hybrid' : 'is-diesel';
-                    const ecoBadge = b.propulsionBadge || (isHybrid ? '🌱 Híbrid Eco' : '🚌 Dièsel');
+                    const ecoBadge = b.propulsionBadge || (isHybrid ? 'Híbrid Eco' : 'Dièsel');
                     return `
                       <div class="schematic-bus-chip docked ${delayClass}" data-vehicle-id="${this.esc(b.vehicleId)}" data-lat="${b.latitude || b.lat}" data-lon="${b.longitude || b.lon}" title="Fes clic per centrar aquest bus al mapa">
                         <span class="schematic-bus-pulse-dot"></span>
-                        <span class="schematic-bus-icon">🚌</span>
-                        <strong class="schematic-bus-id">Bus ${this.esc(b.vehicleId)}</strong>
+                        <strong class="schematic-bus-id">#${this.esc(b.vehicleId)}</strong>
                         <span class="schematic-bus-badge">${this.esc(badgeText)}</span>
                         <span class="schematic-bus-eco ${ecoClass}">${this.esc(ecoBadge)}</span>
-                        <button type="button" class="btn-share-bus" data-share-bus="${this.esc(b.vehicleId)}" title="Compartir enllaç en directe del Bus #${this.esc(b.vehicleId)}">🔗</button>
+                        <button type="button" class="btn-share-bus" data-share-bus="${this.esc(b.vehicleId)}" title="Compartir enllaç en directe del Bus #${this.esc(b.vehicleId)}">
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                        </button>
                       </div>
                     `;
                   }).join('')}
@@ -4054,16 +4055,17 @@ class TransitApp {
                   const speedText = b.speedKmh ? `${Math.round(b.speedKmh)} km/h` : 'En trànsit';
                   const isHybrid = Boolean(b.isHybrid || b.propulsion === 'hybrid');
                   const ecoClass = isHybrid ? 'is-hybrid' : 'is-diesel';
-                  const ecoBadge = b.propulsionBadge || (isHybrid ? '🌱 Híbrid Eco' : '🚌 Dièsel');
+                  const ecoBadge = b.propulsionBadge || (isHybrid ? 'Híbrid Eco' : 'Dièsel');
                   return `
                     <div class="schematic-bus-chip in-transit ${delayClass}" data-vehicle-id="${this.esc(b.vehicleId)}" data-lat="${b.latitude || b.lat}" data-lon="${b.longitude || b.lon}" title="Fes clic per centrar aquest bus al mapa">
-                      <span class="schematic-transit-arrow">⬇️</span>
-                      <span class="schematic-bus-icon">🚌</span>
-                      <strong class="schematic-bus-id">Bus ${this.esc(b.vehicleId)}</strong>
+                      <span class="schematic-transit-arrow">↓</span>
+                      <strong class="schematic-bus-id">#${this.esc(b.vehicleId)}</strong>
                       <span class="schematic-bus-speed">${this.esc(speedText)}</span>
                       <span class="schematic-bus-badge">${this.esc(badgeText)}</span>
                       <span class="schematic-bus-eco ${ecoClass}">${this.esc(ecoBadge)}</span>
-                      <button type="button" class="btn-share-bus" data-share-bus="${this.esc(b.vehicleId)}" title="Compartir enllaç en directe del Bus #${this.esc(b.vehicleId)}">🔗</button>
+                      <button type="button" class="btn-share-bus" data-share-bus="${this.esc(b.vehicleId)}" title="Compartir enllaç en directe del Bus #${this.esc(b.vehicleId)}">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                      </button>
                     </div>
                   `;
                 }).join('')}
@@ -6741,7 +6743,7 @@ class TransitApp {
         .replace(/^AMB-/i, '')
         .trim();
       if (!clean || clean.toLowerCase() === 'bus') return '';
-      return `<span style="background:rgba(255,255,255,0.08); color:var(--text-secondary); border:1px solid var(--border-subtle); padding:0.12rem 0.38rem; border-radius:4px; font-size:0.7rem; font-weight:700; white-space:nowrap;" title="Identificador de vehicle oficial: ${this.esc(vehicleId)}">🚌 #${this.esc(clean)}</span>`;
+      return `<span class="bus-id-badge" title="Identificador de vehicle oficial: ${this.esc(vehicleId)}">[ #${this.esc(clean)} ]</span>`;
     };
 
     container.innerHTML = `
@@ -6749,7 +6751,7 @@ class TransitApp {
         <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.75rem;">
           <div>
             <span style="font-size:0.75rem; font-weight:800; color:#38bdf8; text-transform:uppercase; letter-spacing:0.5px;">Observatori de Mobilitat • Anàlisi de Causes</span>
-            <h3 style="font-size:1.35rem; font-weight:800; color:#fff; margin:0.2rem 0;">🔍 Investigador d'Incidents Crítics & Top Retards</h3>
+            <h3 style="font-size:1.35rem; font-weight:800; color:#fff; margin:0.2rem 0;">Investigador d'Incidents Crítics & Top Retards</h3>
             <p style="font-size:0.78rem; color:var(--text-muted); margin:0; max-width:680px;">
               Auditoria de retards extrems (&ge; 5 min) detectats per telemetria GPS. Permet investigar si els retards màxims (+25 min) corresponen a retencions de trànsit reals en moviment o a autobusos regulant a capçalera.
             </p>

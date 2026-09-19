@@ -5,26 +5,52 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Com anar-hi a Mataró — Planificador de Rutes | Arribo!</title>
   <meta name="description" content="Planificador de viatges i connexions d'autobús urbà i Rodalies a Mataró. Descobreix la millor ruta directa o amb transbordament.">
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧭</text></svg>">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2310b981' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='10'/><polygon points='16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76'/></svg>">
+  
+  <!-- Fonts: Geist & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-  <link rel="stylesheet" href="/css/style.css?v=6.2.0">
+  <link rel="stylesheet" href="/css/style.css?v=6.3.0">
 </head>
 <body class="planner-page-body">
   <!-- Top Navigation Bar -->
   <header class="plan-header">
-    <a href="/" class="plan-logo" title="Tornar al visor complet d'Arribo!">
-      <span style="font-size:1.3rem;">🚌</span>
+    <a href="/" class="brand-title-wrap" title="Tornar al visor complet d'Arribo!">
+      <div class="brand-mark-box">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M19 17h2l.64-2.54a6 6 0 0 0 .36-2V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v6.46a6 6 0 0 0 .36 2L3 17h2"/>
+          <path d="M7 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2"/>
+          <path d="M14 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2"/>
+          <circle cx="6.5" cy="12.5" r="1.5"/>
+          <circle cx="17.5" cy="12.5" r="1.5"/>
+          <line x1="2" y1="9" x2="22" y2="9"/>
+        </svg>
+      </div>
       <span>Arribo!</span>
-      <span style="font-size:0.75rem; font-weight:600; background:rgba(14,165,233,0.2); color:#38bdf8; padding:2px 6px; border-radius:4px; margin-left:4px;">Rutes</span>
+      <span class="brand-badge-pill">Rutes</span>
     </a>
 
-    <div style="display:flex; align-items:center; gap:8px;">
-      <a href="/" class="btn-itinerary-back" style="text-decoration:none;">
-        <span>🗺️</span>
+    <div class="header-nav-links">
+      <a href="/" class="header-nav-link" title="Tornar al mapa en temps real">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/></svg>
         <span>Mapa general</span>
       </a>
-      <button type="button" class="btn-icon btn-theme-toggle" id="btn-page-theme-toggle" title="Canviar tema" style="background:transparent; border:none; font-size:1.1rem; cursor:pointer;">
-        🌓
+      <a href="/dades" class="header-nav-link" title="Observatori de retards i dades">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        <span>Dades</span>
+      </a>
+      <button type="button" class="btn-icon btn-theme-toggle" id="btn-page-theme-toggle" title="Canviar tema clar / fosc" aria-label="Canviar tema clar o fosc">
+        <svg class="theme-icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="5"></circle>
+          <line x1="12" y1="1" x2="12" y2="3"></line>
+          <line x1="12" y1="21" x2="12" y2="23"></line>
+        </svg>
+        <svg class="theme-icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+        </svg>
       </button>
     </div>
   </header>
@@ -37,13 +63,16 @@
         <div class="sheet-drag-pill" id="sheet-drag-pill"></div>
         <div class="sheet-view-toggles">
           <button type="button" class="sheet-toggle-btn" id="btn-sheet-map" title="Veure mapa ampliat">
-            <span>🗺️ Mapa</span>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/></svg>
+            <span>Mapa</span>
           </button>
           <button type="button" class="sheet-toggle-btn active" id="btn-sheet-split" title="Vista dividida">
-            <span>⚖️ Mig</span>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
+            <span>Mig</span>
           </button>
           <button type="button" class="sheet-toggle-btn" id="btn-sheet-routes" title="Veure rutes a pantalla completa">
-            <span id="label-sheet-routes">📋 Rutes</span>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+            <span id="label-sheet-routes">Rutes</span>
           </button>
         </div>
       </div>
@@ -79,7 +108,8 @@
               <div class="planner-input-wrapper">
                 <input type="text" id="page-planner-origin" class="planner-input" placeholder="Parada d'origen (ex: Roca Blanca)" autocomplete="off">
                 <button type="button" class="btn-planner-geo btn-planner-gps" id="btn-page-planner-gps" title="Utilitzar la meva ubicació actual">
-                  <span>📍 GPS</span>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                  <span>GPS</span>
                 </button>
               </div>
               <div id="page-planner-origin-dropdown" class="planner-dropdown" style="display:none;"></div>
@@ -88,7 +118,7 @@
             <!-- Swap Button -->
             <div style="display:flex; justify-content:center; margin:-6px 0 2px 0;">
               <button type="button" class="btn-planner-swap" id="btn-page-planner-swap" title="Intercanviar origen i destinació">
-                <span>⇅</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg>
               </button>
             </div>
 
@@ -108,9 +138,18 @@
             <div class="planner-prefs-container">
               <span class="planner-prefs-label">PREFERÈNCIA:</span>
               <div class="planner-prefs-pills" id="planner-prefs-group">
-                <button type="button" class="plan-pref-pill active" data-pref="fastest" title="Troba la ruta amb menys temps total">⚡ Més ràpid</button>
-                <button type="button" class="plan-pref-pill" data-pref="least_walking" title="Prioritza rutes amb menys distància caminant">🚶 Menys caminar</button>
-                <button type="button" class="plan-pref-pill" data-pref="direct_only" title="Mostra només línies directes sense transbordament">🚫 Sense transbord</button>
+                <button type="button" class="plan-pref-pill active" data-pref="fastest" title="Troba la ruta amb menys temps total">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                  <span>Més ràpid</span>
+                </button>
+                <button type="button" class="plan-pref-pill" data-pref="least_walking" title="Prioritza rutes amb menys distància caminant">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="2"/><path d="m9 20 3-6 3 2 2 4"/></svg>
+                  <span>Menys caminar</span>
+                </button>
+                <button type="button" class="plan-pref-pill" data-pref="direct_only" title="Mostra només línies directes sense transbordament">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                  <span>Sense transbord</span>
+                </button>
               </div>
             </div>
 
@@ -119,8 +158,14 @@
               <div class="planner-time-toggle-row">
                 <span class="planner-prefs-label">HORARI:</span>
                 <div class="planner-time-tabs" id="planner-time-tabs">
-                  <button type="button" class="plan-time-tab active" id="btn-time-now" data-time-mode="now">⏱️ Ara mateix</button>
-                  <button type="button" class="plan-time-tab" id="btn-time-future" data-time-mode="future">📅 Sortir a les...</button>
+                  <button type="button" class="plan-time-tab active" id="btn-time-now" data-time-mode="now">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    <span>Ara mateix</span>
+                  </button>
+                  <button type="button" class="plan-time-tab" id="btn-time-future" data-time-mode="future">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                    <span>Sortir a les...</span>
+                  </button>
                 </div>
               </div>
               <div class="planner-time-inputs" id="planner-time-inputs" style="display:none;">
@@ -137,23 +182,62 @@
               </div>
             </div>
 
-            <label for="plan-walking-speed">Ritme a peu</label>
-            <select id="plan-walking-speed"><option value="80">Normal</option><option value="50">Tranquil</option><option value="100">Ràpid</option></select>
-            <label for="plan-max-walk">Màxim a peu (metres, total)</label><input id="plan-max-walk" type="number" min="50" max="5000" value="2000">
-            <p>Accessibilitat sense esglaons: desconeguda.</p>
-            <section id="journey-library" aria-label="Trajectes desats"></section>
+            <!-- Engineered Walking Settings -->
+            <div class="planner-walking-settings">
+              <div class="walking-settings-header">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="2"/><path d="m9 20 3-6 3 2 2 4"/><path d="m6 16 3-4-1-4 4-2 3 3"/></svg>
+                <span>Paràmetres a peu</span>
+              </div>
+              <div class="walking-settings-grid">
+                <div class="setting-field">
+                  <label for="plan-walking-speed" class="setting-label">Ritme a peu</label>
+                  <div class="select-wrapper">
+                    <select id="plan-walking-speed" class="planner-select">
+                      <option value="50">Tranquil (3.0 km/h)</option>
+                      <option value="80" selected>Normal (4.8 km/h)</option>
+                      <option value="100">Ràpid (6.0 km/h)</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="setting-field">
+                  <label for="plan-max-walk" class="setting-label">Distància màx. (metres)</label>
+                  <input id="plan-max-walk" class="planner-number-input" type="number" min="50" max="5000" step="50" value="2000">
+                </div>
+              </div>
+              <div class="accessibility-note">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                <span>Accessibilitat sense esglaons segons vehicle assignat.</span>
+              </div>
+            </div>
+
+            <!-- Saved Trips Section -->
+            <section id="journey-library" class="journey-library-card" aria-label="Trajectes desats"></section>
+
             <!-- Search Button -->
-            <button type="button" class="btn-planner-search" id="btn-page-planner-search" style="padding:0.7rem; font-size:0.92rem;">
-              <span>🔍 Cercar la millor ruta</span>
+            <button type="button" class="btn-planner-search" id="btn-page-planner-search" style="padding:0.75rem; font-size:0.92rem;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <span>Cercar la millor ruta</span>
             </button>
 
             <!-- Quick Presets -->
             <div class="plan-presets">
               <span style="font-size:0.7rem; color:var(--text-muted); font-weight:700;">DESTINACIONS:</span>
-              <button type="button" class="plan-preset-chip" data-stop="Hospital de Mataró">🏥 Hospital</button>
-              <button type="button" class="plan-preset-chip" data-stop="Estació Rodalies">🚆 Rodalies</button>
-              <button type="button" class="plan-preset-chip" data-stop="Mataró Parc">🛍️ Mataró Parc</button>
-              <button type="button" class="plan-preset-chip" data-stop="Pl. de les Tereses">🏛️ Pl. Tereses</button>
+              <button type="button" class="plan-preset-chip" data-stop="Hospital de Mataró">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 6v12"/><path d="M6 12h12"/></svg>
+                <span>Hospital</span>
+              </button>
+              <button type="button" class="plan-preset-chip" data-stop="Estació Rodalies">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="14" rx="2"/><path d="M4 11h16"/><circle cx="8" cy="14" r="1"/><circle cx="16" cy="14" r="1"/></svg>
+                <span>Rodalies</span>
+              </button>
+              <button type="button" class="plan-preset-chip" data-stop="Mataró Parc">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+                <span>Mataró Parc</span>
+              </button>
+              <button type="button" class="plan-preset-chip" data-stop="Pl. de les Tereses">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/></svg>
+                <span>Pl. Tereses</span>
+              </button>
             </div>
           </div>
         </div>
@@ -163,7 +247,7 @@
       <div class="plan-results-wrapper">
         <div class="plan-results-area" id="page-planner-results">
           <div style="text-align:center; padding:3rem 1rem; color:var(--text-secondary);">
-            <div style="font-size:2.5rem; margin-bottom:0.75rem;">🧭</div>
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--c10-primary)" stroke-width="1.8" style="margin-bottom:0.75rem;"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
             <div style="font-weight:700; font-size:1rem; color:var(--text-primary); margin-bottom:0.35rem;">On vols anar a Mataró?</div>
             <div style="font-size:0.85rem; line-height:1.4;">Introdueix una parada d'origen i una de destinació per calcular la combinació més ràpida de bus.</div>
           </div>
@@ -178,7 +262,8 @@
     <section class="plan-map-view" aria-label="Visualització del mapa del trajecte">
       <div id="plan-map"></div>
       <button type="button" class="btn-floating-routes" id="btn-floating-routes" title="Veure llistat de rutes">
-        <span>📋 Veure rutes</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+        <span>Veure rutes</span>
         <span class="floating-routes-badge" id="floating-routes-badge"></span>
       </button>
     </section>
@@ -189,7 +274,10 @@
     <div class="nav-guide-sheet">
       <div class="nav-guide-header">
         <div class="nav-guide-title-row">
-          <span class="nav-guide-badge">🧭 Guia de Viatge Pas a Pas</span>
+          <span class="nav-guide-badge">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
+            <span>Guia de Viatge Pas a Pas</span>
+          </span>
           <span class="nav-guide-step-counter" id="nav-guide-step-counter">Pas 1 de 3</span>
         </div>
         <button type="button" class="nav-guide-close-btn" id="btn-close-nav-guide" title="Tancar guia">&times;</button>
@@ -206,25 +294,25 @@
       <!-- Step Controls -->
       <div class="nav-guide-footer">
         <button type="button" class="btn-nav-step" id="btn-nav-prev" disabled>
-          <span>⬅ Pas anterior</span>
+          <span>← Pas anterior</span>
         </button>
         <button type="button" class="btn-nav-step primary" id="btn-nav-next">
-          <span>Següent pas ➔</span>
+          <span>Següent pas →</span>
         </button>
       </div>
     </div>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="/js/utils.js?v=6.2.0"></script>
-  <script src="/js/storage.js?v=6.2.0"></script>
-  <script src="/js/requests.js?v=6.2.0"></script>
-  <script src="/js/stopFeatures.js?v=6.2.0"></script>
-  <script src="/js/journeys.js?v=6.2.0"></script>
-  <script src="/js/journeyControls.js?v=6.2.0"></script>
-  <script src="/js/pwa.js?v=6.2.0"></script>
+  <script src="/js/utils.js?v=6.3.0"></script>
+  <script src="/js/storage.js?v=6.3.0"></script>
+  <script src="/js/requests.js?v=6.3.0"></script>
+  <script src="/js/stopFeatures.js?v=6.3.0"></script>
+  <script src="/js/journeys.js?v=6.3.0"></script>
+  <script src="/js/journeyControls.js?v=6.3.0"></script>
+  <script src="/js/pwa.js?v=6.3.0"></script>
 
-  <script src="/js/map.js?v=6.2.0"></script>
-  <script src="/js/plan.js?v=6.2.0"></script>
+  <script src="/js/map.js?v=6.3.0"></script>
+  <script src="/js/plan.js?v=6.3.0"></script>
 </body>
 </html>

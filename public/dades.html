@@ -5,30 +5,52 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Observatori de Retards i Puntualitat — Dades | Arribo! Mataró</title>
   <meta name="description" content="Anàlisi històrica de retards, puntualitat de les línies de Mataró Bus Urbà, mapa de colls d'ampolla i el Termòmetre setmanal.">
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
-  <link rel="stylesheet" href="/css/style.css?v=6.2.0">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2310b981' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><line x1='18' y1='20' x2='18' y2='10'/><line x1='12' y1='20' x2='12' y2='4'/><line x1='6' y1='20' x2='6' y2='14'/></svg>">
+  
+  <!-- Fonts: Geist & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="/css/style.css?v=6.3.0">
 </head>
 <body class="observatori-page-body observatori-page">
 
   <!-- Top Navigation Bar -->
   <header class="observatori-header">
-    <a href="/" class="observatori-logo" title="Tornar al visor d'Arribo!">
-      <span style="font-size:1.3rem;">🚌</span>
+    <a href="/" class="brand-title-wrap" title="Tornar al visor d'Arribo!">
+      <div class="brand-mark-box">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M19 17h2l.64-2.54a6 6 0 0 0 .36-2V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v6.46a6 6 0 0 0 .36 2L3 17h2"/>
+          <path d="M7 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2"/>
+          <path d="M14 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2"/>
+          <circle cx="6.5" cy="12.5" r="1.5"/>
+          <circle cx="17.5" cy="12.5" r="1.5"/>
+          <line x1="2" y1="9" x2="22" y2="9"/>
+        </svg>
+      </div>
       <span>Arribo!</span>
-      <span style="font-size:0.75rem; font-weight:600; background:rgba(56, 189, 248, 0.2); color:#38bdf8; padding:2px 6px; border-radius:4px; margin-left:4px;">Dades</span>
+      <span class="brand-badge-pill">Dades</span>
     </a>
 
-    <div style="display:flex; align-items:center; gap:8px;">
-      <a href="/" class="btn-itinerary-back" style="text-decoration:none;" title="Tornar al mapa en temps real">
-        <span>🗺️</span>
+    <div class="header-nav-links">
+      <a href="/" class="header-nav-link" title="Tornar al mapa en temps real">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/></svg>
         <span>Mapa general</span>
       </a>
-      <a href="/plan" class="btn-itinerary-back" style="text-decoration:none;" title="Planificador de rutes">
-        <span>🧭</span>
+      <a href="/plan" class="header-nav-link" title="Planificador de rutes">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
         <span>Com anar-hi</span>
       </a>
-      <button type="button" class="btn-icon btn-theme-toggle" id="btn-page-theme-toggle" title="Canviar tema" style="background:transparent; border:none; font-size:1.1rem; cursor:pointer;" aria-label="Canviar tema clar o fosc">
-        🌓
+      <button type="button" class="btn-icon btn-theme-toggle" id="btn-page-theme-toggle" title="Canviar tema clar / fosc" aria-label="Canviar tema clar o fosc">
+        <svg class="theme-icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="5"></circle>
+          <line x1="12" y1="1" x2="12" y2="3"></line>
+          <line x1="12" y1="21" x2="12" y2="23"></line>
+        </svg>
+        <svg class="theme-icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+        </svg>
       </button>
       <button type="button" class="btn-icon" id="btn-observatori-refresh" title="Actualitzar dades" aria-label="Actualitzar dades">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -43,10 +65,10 @@
 
     <!-- Page Header / Hero -->
     <div class="observatori-page-hero">
-      <div class="observatori-hero-tag">
-        <span class="pulse-indicator" aria-hidden="true">
-          <span class="pulse-ring"></span>
-          <span class="pulse-dot"></span>
+      <div class="telemetry-beacon" style="margin-bottom:0.75rem;">
+        <span class="beacon-pulse">
+          <span class="beacon-pulse-ring"></span>
+          <span class="beacon-pulse-dot"></span>
         </span>
         <span>Xarxa Urbana • Mataró Bus • Telemetria en Temps Real</span>
       </div>
@@ -117,7 +139,7 @@
     <!-- Search Input Filter -->
     <div class="line-picker-search-bar" id="journalism-search-bar-wrap">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <input type="text" id="journalism-search-input" class="line-picker-search-input" placeholder="🔍 Cerca per línia (ex: L1, L2, L3, 5, 8), parada o empresa..." autocomplete="off">
+      <input type="text" id="journalism-search-input" class="line-picker-search-input" placeholder="Cerca per línia (ex: L1, L2, L3, 5, 8), parada o empresa..." autocomplete="off">
     </div>
 
     <!-- Termòmetre Infographic Scorecard Container -->
@@ -139,20 +161,20 @@
   <footer class="app-footer">
     <div class="footer-content">
       <div>
-        <span>🚌 <strong>Arribo! Mataró</strong> • Dades oficials en temps real: Mataró Bus Urbà (Avanza / Ajuntament de Mataró)</span>
+        <span><strong>Arribo! Mataró</strong> • Dades oficials en temps real: Mataró Bus Urbà (Avanza / Ajuntament de Mataró)</span>
       </div>
       <div class="footer-links">
-        <a href="/">🗺️ Mapa general</a>
-        <a href="/plan">🧭 Com anar-hi</a>
-        <a href="/dades">📊 Observatori de retards</a>
+        <a href="/">Mapa general</a>
+        <a href="/plan">Com anar-hi</a>
+        <a href="/dades">Observatori de retards</a>
       </div>
     </div>
   </footer>
 
   <!-- Scripts -->
-  <script src="/js/utils.js?v=6.2.0"></script>
-  <script src="/js/storage.js?v=6.2.0"></script>
-  <script src="/js/pwa.js?v=6.2.0"></script>
-  <script src="/js/observatori.js?v=6.2.0"></script>
+  <script src="/js/utils.js?v=6.3.0"></script>
+  <script src="/js/storage.js?v=6.3.0"></script>
+  <script src="/js/pwa.js?v=6.3.0"></script>
+  <script src="/js/observatori.js?v=6.3.0"></script>
 </body>
 </html>
