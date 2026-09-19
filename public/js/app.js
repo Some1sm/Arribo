@@ -6878,6 +6878,34 @@ class TransitApp {
         `}
       ` : `
         <!-- Mode 2: Clustered Trips & Trajectories -->
+        <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:10px; padding:0.85rem 1rem; margin-bottom:1rem; font-size:0.8rem; line-height:1.5;">
+          <div style="display:flex; align-items:flex-start; gap:0.65rem;">
+            <span style="font-size:1.15rem; line-height:1; margin-top:2px;">ℹ️</span>
+            <div style="flex:1;">
+              <div style="font-weight:700; color:var(--text-primary); margin-bottom:0.25rem;">
+                Com funcionen les expedicions i trajectòries?
+              </div>
+              <div style="color:var(--text-secondary); margin-bottom:0.6rem;">
+                Cada targeta reconstrueix el recorregut continu d'un <strong>autobús físic individual</strong> (separat per identificador de vehicle), seguint cronològicament com evoluciona el seu retard parada a parada al llarg del servei:
+              </div>
+              <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:0.6rem; font-size:0.76rem; color:var(--text-muted);">
+                <div style="background:var(--bg-surface); padding:0.55rem 0.75rem; border-radius:6px; border:1px solid var(--border-subtle);">
+                  <strong style="color:var(--text-primary); display:block; margin-bottom:2px;">🚌 Bus ID individual</strong>
+                  Cada vehicle es monitoritza per separat; no es barregen diferents autobusos que circulin alhora per la mateixa línia.
+                </div>
+                <div style="background:var(--bg-surface); padding:0.55rem 0.75rem; border-radius:6px; border:1px solid var(--border-subtle);">
+                  <strong style="color:var(--text-primary); display:block; margin-bottom:2px;">📍 Progressió parada a parada</strong>
+                  Permet veure exactament a quina parada s'origina la retenció i com el bus va recuperant temps de trajecte.
+                </div>
+                <div style="background:var(--bg-surface); padding:0.55rem 0.75rem; border-radius:6px; border:1px solid var(--border-subtle);">
+                  <strong style="color:var(--text-primary); display:block; margin-bottom:2px;">🏁 Normalització de l'horari</strong>
+                  Si la seqüència s'acaba abans del final de la línia, indica que el vehicle ja ha absorbit el retard (&lt;3 min) o ha finalitzat el torn.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         ${tripsList.length === 0 ? `
           <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:10px; padding:2rem; text-align:center; color:var(--text-muted);">
             No s'han detectat expedicions amb retard greu continuat en aquest període.

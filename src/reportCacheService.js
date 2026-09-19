@@ -323,7 +323,6 @@ class ReportCacheService {
     const maxAgeMs = options.maxAgeMs || 65 * 60 * 1000;
     const ts = report?.meta?.generatedTimestamp;
     if (!Number.isFinite(ts)) return true; // skeleton without meta = stale
-    if (!report.summary || Object.keys(report.summary).length === 0) return true; // empty summary = stale
     // >= (not >): immune to coarse clock granularity where elapsed can
     // equal maxAgeMs exactly on Windows timers.
     return (Date.now() - ts) >= maxAgeMs;
