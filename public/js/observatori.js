@@ -1160,20 +1160,24 @@ class ObservatoriApp {
       <!-- Sub-Tab Mode Switcher -->
       <div style="display:flex; gap:0.5rem; border-bottom:1px solid var(--border-subtle); padding-bottom:0.75rem; margin-bottom:1rem;">
         <button type="button" class="incident-view-mode-tab ${activeTab === 'top' ? 'active' : ''}" data-incident-tab="top">
-          <span>📋 Rànquing Retards Individuals (${topList.length})</span>
+          <span>📋 Rànquing d'Incidents per Expedició (${topList.length})</span>
         </button>
         <button type="button" class="incident-view-mode-tab ${activeTab === 'trips' ? 'active' : ''}" data-incident-tab="trips">
           <span>🚌 Expedicions & Trajectòries Afectades (${tripsList.length})</span>
         </button>
       </div>
 
-      <!-- Mode 1: Top Individual Delays Table -->
+      <!-- Mode 1: Top Delays Table (Peak per Trip) -->
       ${activeTab === 'top' ? `
         ${topList.length === 0 ? `
           <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:10px; padding:2rem; text-align:center; color:var(--text-muted);">
             No s'han registrat retards greus (&ge; 5 min) per a la selecció actual (${selectedHours}h).
           </div>
         ` : `
+          <div style="font-size:0.78rem; color:var(--text-muted); margin-bottom:0.6rem; display:flex; align-items:center; gap:6px;">
+            <span>ℹ️</span>
+            <span>Mostrant el pic de retard màxim de cada expedició afectada (s'agrupen els senyals cada 20s d'un mateix viatge per evitar duplicats).</span>
+          </div>
           <div class="observatori-table-wrapper">
             <table class="observatori-table">
               <thead>
@@ -1184,7 +1188,7 @@ class ObservatoriApp {
                   <th>Parada Afectada</th>
                   <th>Data i Hora</th>
                   <th>Context Horari</th>
-                  <th style="text-align:center;">Senyal</th>
+                  <th style="text-align:center; cursor:help;" title="Tipus de senyal: 🟢 GPS (dades directes en temps real) o ⚡ Estimat (bus físic amb pèrdua temporal de cobertura, projectat per estima dead-reckoning fins a 90s)">Senyal ℹ️</th>
                   <th style="text-align:center;">Mapa</th>
                 </tr>
               </thead>
@@ -1192,6 +1196,9 @@ class ObservatoriApp {
                 ${topList.map((inc, i) => {
                   const lColor = getLineColor(inc.lineCode);
                   const delayClass = inc.delayMins >= 20 ? '#ef4444' : (inc.delayMins >= 10 ? '#f59e0b' : '#38bdf8');
+                  const signalTooltip = inc.isRealTime
+                    ? '🟢 Senyal GPS directe: Telemetria transmesa en temps real pel vehicle físic.'
+                    : '⚡ Estimació per estima (dead-reckoning): Autobús físic amb GPS que ha perdut la cobertura temporalment (túnels, carrers estrets o caiguda de xarxa). La posició i el retard es calculen avançant la darrera velocitat i retard coneguts (màxim 90 segons). Mai s\'aplica a autobusos sense GPS.';
                   return `
                     <tr>
                       <td style="font-weight:700; color:var(--text-muted); text-align:center;">${inc.rank || (i + 1)}</td>
@@ -1210,7 +1217,7 @@ class ObservatoriApp {
                         <span style="color:var(--text-muted); margin-left:3px;">${this.esc(inc.trafficTag || '')}</span>
                       </td>
                       <td style="text-align:center; white-space:nowrap;">
-                        <span style="background:${inc.isRealTime ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)'}; color:${inc.isRealTime ? '#10b981' : '#fbbf24'}; padding:0.15rem 0.4rem; border-radius:5px; font-size:0.7rem; font-weight:700;">
+                        <span style="background:${inc.isRealTime ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)'}; color:${inc.isRealTime ? '#10b981' : '#fbbf24'}; padding:0.15rem 0.45rem; border-radius:5px; font-size:0.7rem; font-weight:700; cursor:help; display:inline-flex; align-items:center; gap:2px;" title="${this.esc(signalTooltip)}">
                           ${inc.isRealTime ? '🟢 GPS' : '⚡ Estimat'}
                         </span>
                       </td>

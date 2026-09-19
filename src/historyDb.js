@@ -888,7 +888,7 @@ class HistoryDatabase {
       `);
       const worstHourRow = worstHourStmt.get(...baseParams);
 
-      // 2. Top individual delay records
+      // 2. Top delay records (deduplicated by trip: keeping peak delay moment per journey)
       const topStmt = this.db.prepare(`
         SELECT 
           id,
@@ -905,10 +905,30 @@ class HistoryDatabase {
         FROM delay_logs
         WHERE ${sqlWhere}
         ORDER BY delay_mins DESC, timestamp DESC
-        LIMIT ?
+        LIMIT 2000
       `);
-      const topRows = topStmt.all(...baseParams, limitNum);
-      const enrichedTop = topRows.map((r, idx) => {
+      const candidateRows = topStmt.all(...baseParams);
+
+      // Deduplicate: A single delayed trip produces raw pings every 20 seconds.
+      // We keep the peak delay record for each trip on the line (sliding window of 20 min).
+      const dedupedRows = [];
+      const lineTripWindows = new Map(); // lineCode -> array of timestamps of accepted peak incidents
+      const TRIP_WINDOW_MS = 20 * 60 * 1000;
+
+      for (const r of candidateRows) {
+        const lk = r.lineCode;
+        const accepted = lineTripWindows.get(lk) || [];
+        const isSameTrip = accepted.some(ts => Math.abs(r.timestamp - ts) < TRIP_WINDOW_MS);
+        if (isSameTrip) continue;
+
+        accepted.push(r.timestamp);
+        lineTripWindows.set(lk, accepted);
+        dedupedRows.push(r);
+
+        if (dedupedRows.length >= limitNum) break;
+      }
+
+      const enrichedTop = dedupedRows.map((r, idx) => {
         const h = parseInt(r.hourOfDay, 10);
         const ctx = this.getHourlyTrafficContext(h);
         return {
