@@ -78,9 +78,10 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   checks catchable departures, calculates absolute times, ranks and deduplicates.
 - [pedestrianRouter](src/core/geo/pedestrianRouter.js): configured ORS foot-walking
   or labeled approximate fallback. Never substitute driving routes.
-- [app.js](public/js/app.js) coordinates the main UI; observatory rendering remains
-  there, with its extraction deferred. [stopFeatures.js](public/js/stopFeatures.js)
+- [app.js](public/js/app.js) coordinates the main UI; [stopFeatures.js](public/js/stopFeatures.js)
   extracts favorite/nearby behavior behind existing app delegates.
+- [dades.html](public/dades.html) and [observatori.js](public/js/observatori.js) own
+  standalone historical delay analysis, peak hours, stop heatmaps, termòmetre, and incident deep-dives.
 - [storage.js](public/js/storage.js), [requests.js](public/js/requests.js),
   [journeys.js](public/js/journeys.js), [journeyControls.js](public/js/journeyControls.js)
   own safe storage, cancellable requests and saved/recent journey controls.

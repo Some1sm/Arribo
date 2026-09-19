@@ -414,8 +414,19 @@ app.get('/api/fleet/events', fleetBroadcaster.handleRequest);
 app.use(compression());
 
 // Dedicated Journey Planner Full Page
-app.get(['/plan', '/com-anar-hi', '/itinerari'], (req, res) => {
+app.get(['/plan', '/com-anar-hi', '/rutes', '/itinerari'], (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   res.sendFile(path.join(__dirname, 'public', 'plan.html'));
+});
+
+// Dedicated Observatori & Delay Analytics Full Page
+app.get(['/dades', '/observatori', '/analytics'], (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.sendFile(path.join(__dirname, 'public', 'dades.html'));
 });
 
 // Health Check
@@ -1078,11 +1089,19 @@ app.get('/sw.js', (req, res) => {
 });
 
 // Dedicated Planner HTML Routes
-app.get(['/plan', '/com-anar-hi', '/rutes'], (req, res) => {
+app.get(['/plan', '/com-anar-hi', '/rutes', '/itinerari'], (req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
   res.sendFile(path.join(__dirname, 'public', 'plan.html'));
+});
+
+// Dedicated Observatori HTML Routes
+app.get(['/dades', '/observatori', '/analytics'], (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.sendFile(path.join(__dirname, 'public', 'dades.html'));
 });
 
 // 404 handler for unmatched API routes

@@ -1784,50 +1784,16 @@ class TransitApp {
   // 1.5 JOURNALISM & HISTORICAL DELAY ANALYTICS
   // ==========================================
 
-  async openJournalismModal(hours = 24, initialFilter = null) {
-    const backdrop = document.getElementById('journalism-modal-backdrop');
-    const container = document.getElementById('journalism-content-container');
-    const searchInput = document.getElementById('journalism-search-input');
-    if (!backdrop || !container) return;
-
-    if (initialFilter !== null && initialFilter !== undefined) {
-      this.journalismFilterText = initialFilter;
-      if (searchInput) searchInput.value = initialFilter;
-    } else if (searchInput) {
-      this.journalismFilterText = searchInput.value || '';
-    }
-
-    backdrop.classList.add('active');
-    if (!this.currentJournalismReport) {
-      container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);">Carregant informe de retards i puntualitat del servidor central...</div>';
-    }
-
-    try {
-      const [res, snapshotRes] = await Promise.allSettled([
-        fetch(`/api/analytics/journalism?hours=${hours}`).then(r => r.json()),
-        fetch(`/api/routes/snapshots`).then(r => r.json())
-      ]);
-
-      const journalismData = res.status === 'fulfilled' && res.value?.success ? (res.value.report || res.value) : null;
-      const snapshotsData = snapshotRes.status === 'fulfilled' && snapshotRes.value?.success ? snapshotRes.value : null;
-
-      if (journalismData) {
-        journalismData.snapshotInfo = snapshotsData;
-        this.renderJournalismReport(journalismData);
-        if (initialFilter && searchInput) {
-          searchInput.focus();
-        }
-      } else {
-        container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);">No hi ha prou dades de retards registrades encara. El servidor està capturant la telemetria contínua.</div>';
-      }
-    } catch(err) {
-      container.innerHTML = `<div style="text-align:center; padding:2rem; color:var(--danger);">Error en carregar informe de periodisme: ${this.esc(err.message)}</div>`;
-    }
+  openJournalismModal(hours = 24, initialFilter = null) {
+    const params = new URLSearchParams();
+    if (hours && Number(hours) !== 24) params.set('h', String(hours));
+    if (initialFilter) params.set('q', String(initialFilter));
+    const qs = params.toString() ? '?' + params.toString() : '';
+    window.location.href = `/dades${qs}`;
   }
 
   closeJournalismModal() {
-    const backdrop = document.getElementById('journalism-modal-backdrop');
-    if (backdrop) backdrop.classList.remove('active');
+    // Extracted to standalone /dades page
   }
 
   handleJournalismSort(tableKey, columnKey) {
@@ -5298,61 +5264,10 @@ class TransitApp {
 
   setupJournalismModal() {
     const openBtn = document.getElementById('btn-open-journalism');
-    const backdrop = document.getElementById('journalism-modal-backdrop');
-    const closeBtn = document.getElementById('journalism-modal-close-btn');
-
     openBtn?.addEventListener('click', (e) => {
       e.preventDefault();
-      this.openJournalismModal(24);
+      window.location.href = '/dades';
     });
-
-    closeBtn?.addEventListener('click', () => {
-      backdrop?.classList.remove('active');
-    });
-
-    backdrop?.addEventListener('click', (e) => {
-      if (e.target === backdrop) {
-        backdrop.classList.remove('active');
-      }
-    });
-
-    document.querySelectorAll('#journalism-timeframe-tabs button:not(.termometre-tab):not(.incidents-tab)').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        document.querySelectorAll('#journalism-timeframe-tabs button').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        const searchBarWrap = document.getElementById('journalism-search-bar-wrap');
-        const contentContainer = document.getElementById('journalism-content-container');
-        const termometreContainer = document.getElementById('journalism-termometre-container');
-        const incidentsContainer = document.getElementById('journalism-incidents-container');
-        if (searchBarWrap) searchBarWrap.style.display = 'block';
-        if (contentContainer) contentContainer.style.display = 'block';
-        if (termometreContainer) termometreContainer.style.display = 'none';
-        if (incidentsContainer) incidentsContainer.style.display = 'none';
-        const hours = parseInt(btn.getAttribute('data-hours') || '24', 10);
-        this.openJournalismModal(hours);
-      });
-    });
-
-    const searchInput = document.getElementById('journalism-search-input');
-    searchInput?.addEventListener('input', (e) => {
-      this.journalismFilterText = e.target.value;
-      if (this.currentJournalismReport) {
-        this.renderJournalismReport(this.currentJournalismReport);
-      }
-    });
-
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && backdrop?.classList.contains('active')) {
-        backdrop.classList.remove('active');
-      }
-    });
-
-    window.addEventListener('resize', () => {
-      if (backdrop?.classList.contains('active')) {
-        this.initObservatoriTableScrolls();
-      }
-    }, { passive: true });
   }
 
   // ==========================================
@@ -6388,37 +6303,7 @@ class TransitApp {
   // ==========================================
 
   setupTermometreEvents() {
-    const termometreTab = document.getElementById('btn-observatori-termometre');
-    const timeframeTabs = document.getElementById('journalism-timeframe-tabs');
-    const termometreContainer = document.getElementById('journalism-termometre-container');
-    const contentContainer = document.getElementById('journalism-content-container');
-    const searchBarWrap = document.getElementById('journalism-search-bar-wrap');
-
-    termometreTab?.addEventListener('click', async (e) => {
-      e.preventDefault();
-      timeframeTabs?.querySelectorAll('.line-filter-tab').forEach(t => t.classList.remove('active'));
-      termometreTab.classList.add('active');
-
-      const incidentsContainer = document.getElementById('journalism-incidents-container');
-      if (searchBarWrap) searchBarWrap.style.display = 'none';
-      if (contentContainer) contentContainer.style.display = 'none';
-      if (incidentsContainer) incidentsContainer.style.display = 'none';
-      if (termometreContainer) {
-        termometreContainer.style.display = 'block';
-        termometreContainer.innerHTML = '<div style="text-align:center; padding:2rem;"><span class="loading-spinner-inline"></span> Generant la fitxa del Termòmetre...</div>';
-      }
-
-      try {
-        const res = await fetch('/api/analytics/termometre?hours=24').then(r => r.json());
-        if (res.success && res.termometre) {
-          this.renderTermometreScorecard(res.termometre);
-        }
-      } catch (err) {
-        if (termometreContainer) {
-          termometreContainer.innerHTML = '<div style="color:var(--danger); text-align:center;">Error en carregar el Termòmetre.</div>';
-        }
-      }
-    });
+    // Extracted to /dades (ObservatoriApp)
   }
 
   // ==========================================
@@ -6426,51 +6311,7 @@ class TransitApp {
   // ==========================================
 
   setupDelayIncidentsEvents() {
-    const incidentsTab = document.getElementById('btn-observatori-incidents');
-    const incidentsContainer = document.getElementById('journalism-incidents-container');
-
-    incidentsTab?.addEventListener('click', (e) => {
-      e.preventDefault();
-      this.openDelayIncidentsTab('all');
-    });
-
-    incidentsContainer?.addEventListener('click', (e) => {
-      const linePill = e.target.closest('[data-incident-line]');
-      if (linePill) {
-        e.preventDefault();
-        const line = linePill.dataset.incidentLine;
-        this.openDelayIncidentsView(line, this._currentIncidentHours || 168, this._currentIncidentMode || 'top');
-        return;
-      }
-
-      const hoursPill = e.target.closest('[data-incident-hours]');
-      if (hoursPill) {
-        e.preventDefault();
-        const hours = parseInt(hoursPill.dataset.incidentHours, 10) || 168;
-        this.openDelayIncidentsView(this._currentIncidentLine || 'all', hours, this._currentIncidentMode || 'top');
-        return;
-      }
-
-      const tabBtn = e.target.closest('[data-incident-tab]');
-      if (tabBtn) {
-        e.preventDefault();
-        const tab = tabBtn.dataset.incidentTab;
-        this._currentIncidentMode = tab;
-        if (this._lastIncidentData) {
-          this.renderDelayIncidentsView(this._lastIncidentData, this._currentIncidentLine || 'all', this._currentIncidentHours || 168, tab);
-        }
-        return;
-      }
-
-      const locateBtn = e.target.closest('[data-locate-stop]');
-      if (locateBtn) {
-        e.preventDefault();
-        const stopName = locateBtn.dataset.locateStop;
-        const lineCode = locateBtn.dataset.locateLine;
-        this.jumpToIncidentStop(lineCode, stopName);
-        return;
-      }
-    });
+    // Extracted to /dades (ObservatoriApp)
   }
 
   openDelayIncidentsTab(lineCode = 'all') {

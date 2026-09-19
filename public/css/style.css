@@ -5765,8 +5765,9 @@ body {
 }
 
 /* ======================================================== */
-/* OBSERVATORI DE RETARDS & JOURNALISM MODAL STYLES         */
+/* OBSERVATORI DE RETARDS & JOURNALISM STYLES               */
 /* ======================================================== */
+.observatori-page .line-picker-filter-tabs,
 #journalism-modal-backdrop .line-picker-filter-tabs {
   background: rgba(15, 23, 42, 0.6);
   padding: 4px;
@@ -5777,6 +5778,7 @@ body {
   gap: 4px;
 }
 
+.observatori-page .line-filter-tab,
 #journalism-modal-backdrop .line-filter-tab {
   background: transparent;
   border: 1px solid transparent;
@@ -5787,13 +5789,16 @@ body {
   color: var(--text-secondary);
   transition: all 0.15s ease;
   height: 32px;
+  cursor: pointer;
 }
 
+.observatori-page .line-filter-tab:hover:not(.active),
 #journalism-modal-backdrop .line-filter-tab:hover:not(.active) {
   background: rgba(255, 255, 255, 0.08);
   color: var(--text-primary);
 }
 
+.observatori-page .line-filter-tab.active,
 #journalism-modal-backdrop .line-filter-tab.active {
   background: linear-gradient(135deg, #009485 0%, #0d9488 100%);
   color: #ffffff;
@@ -5801,18 +5806,21 @@ body {
   box-shadow: 0 2px 8px rgba(0, 148, 133, 0.35);
 }
 
+.observatori-page .termometre-tab,
 #journalism-modal-backdrop .termometre-tab {
   background: rgba(56, 189, 248, 0.08);
   border: 1px solid rgba(56, 189, 248, 0.25);
   color: #38bdf8;
 }
 
+.observatori-page .termometre-tab:hover:not(.active),
 #journalism-modal-backdrop .termometre-tab:hover:not(.active) {
   background: rgba(56, 189, 248, 0.18);
   color: #7dd3fc;
   border-color: rgba(56, 189, 248, 0.45);
 }
 
+.observatori-page .termometre-tab.active,
 #journalism-modal-backdrop .termometre-tab.active {
   background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%) !important;
   color: #ffffff !important;
@@ -8027,5 +8035,135 @@ body {
   color: #fbbf24;
   border: 1px solid rgba(245, 158, 11, 0.3);
 }
+
+/* ==========================================================================
+   14. OBSERVATORI DE DADES I PUNTUALITAT (DADES.HTML)
+   ========================================================================== */
+
+body.observatori-page-body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-main, #090d16);
+  color: var(--text-primary, #f1f5f9);
+  font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.observatori-header {
+  height: 56px;
+  background: var(--bg-surface-elevated, #111827);
+  border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.25rem;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.observatori-logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  color: var(--text-primary, #fff);
+  font-weight: 800;
+  font-size: 1.15rem;
+}
+
+.observatori-page-container {
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 3.5rem 1.25rem;
+  box-sizing: border-box;
+  flex: 1;
+}
+
+.observatori-page-hero {
+  margin-bottom: 1.25rem;
+}
+
+.observatori-page-hero .target-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  margin-bottom: 0.5rem;
+}
+
+.observatori-page-hero h1 {
+  font-size: 1.65rem;
+  font-weight: 800;
+  margin: 0 0 0.4rem 0;
+  color: var(--text-primary, #f8fafc);
+  letter-spacing: -0.02em;
+}
+
+.observatori-page-hero p {
+  font-size: 0.9rem;
+  color: var(--text-secondary, #94a3b8);
+  margin: 0;
+  max-width: 800px;
+  line-height: 1.45;
+}
+
+.observatori-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.observatori-page .line-picker-search-bar {
+  margin-bottom: 1.25rem;
+}
+
+@media (max-width: 768px) {
+  .observatori-page-container {
+    padding: 1rem 0.75rem 2.5rem 0.75rem;
+  }
+  .observatori-page-hero h1 {
+    font-size: 1.35rem;
+  }
+  .observatori-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .observatori-toolbar .line-picker-filter-tabs {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    overflow-x: auto;
+  }
+  .observatori-toolbar .line-filter-tab {
+    flex: 1 1 auto;
+    padding: 0.35rem 0.4rem;
+    text-align: center;
+  }
+  .observatori-toolbar .btn-csv-export {
+    width: 100%;
+    justify-content: center;
+    box-sizing: border-box;
+  }
+}
+
 
 

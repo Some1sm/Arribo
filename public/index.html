@@ -57,11 +57,11 @@
           <span id="header-favs-count-text">Preferides</span>
         </button>
 
-        <!-- Journalism & Delay Analytics Button -->
-        <button type="button" class="btn-header-nav journalism-btn" id="btn-open-journalism" title="Veure anàlisi de retards històrics, puntualitat i dades">
+        <!-- Journalism & Delay Analytics Link -->
+        <a href="/dades" class="btn-header-nav journalism-btn" id="btn-open-journalism" title="Veure anàlisi de retards històrics, puntualitat i dades" style="text-decoration:none;">
           <span class="nav-icon">📊</span>
           <span>Dades</span>
-        </button>
+        </a>
 
         <!-- Live Incidents / Disruptions Button -->
         <button type="button" class="btn-header-nav incidents-btn" id="btn-open-incidents" title="Veure avisos de servei i incidències en temps real">
@@ -652,64 +652,7 @@
     </div>
   </div>
 
-  <!-- Journalism & Historical Delay Analytics Modal Drawer -->
-  <div class="modal-backdrop" id="journalism-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="journalism-modal-title">
-    <div class="modal-card" style="max-width: 860px; max-height: 88vh; overflow-x: hidden;">
-      <button type="button" class="modal-close-btn" id="journalism-modal-close-btn" aria-label="Tancar">&times;</button>
 
-      <div class="line-picker-header" style="margin-bottom:0.75rem;">
-        <div class="target-badge" style="background:rgba(56, 189, 248, 0.15); color:#38bdf8; border:1px solid rgba(56, 189, 248, 0.35);">📊 Observatori de Puntualitat</div>
-        <h3 class="line-picker-title" id="journalism-modal-title">Observatori de Retards i Puntualitat</h3>
-        <p class="line-picker-subtitle">Dades històriques registrades pel nostre servidor central de telemetria</p>
-      </div>
-
-      <!-- Timeframe Toggle & CSV Export Row -->
-      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.85rem;">
-        <div class="line-picker-filter-tabs" style="margin-bottom:0;" id="journalism-timeframe-tabs">
-          <button type="button" class="line-filter-tab active" data-hours="24">
-            <span class="tab-text-full">⏱️ Darreres 24h</span>
-            <span class="tab-text-compact">⏱️ 24h</span>
-          </button>
-          <button type="button" class="line-filter-tab" data-hours="48">
-            <span class="tab-text-full">📅 48 hores</span>
-            <span class="tab-text-compact">📅 48h</span>
-          </button>
-          <button type="button" class="line-filter-tab" data-hours="168">
-            <span>🗓️ 7 dies</span>
-          </button>
-          <button type="button" class="line-filter-tab termometre-tab" id="btn-observatori-termometre" data-tab="termometre" title="Fitxa setmanal i infografia resumida">
-            <span class="tab-text-full">🌡️ El Termòmetre</span>
-            <span class="tab-text-compact">🌡️ Termòmetre</span>
-          </button>
-          <button type="button" class="line-filter-tab incidents-tab" id="btn-observatori-incidents" data-tab="incidents" title="Investigador d'incidents crítics i retards extrems (+25m)">
-            <span class="tab-text-full">🔍 Top Incidents (+25m)</span>
-            <span class="tab-text-compact">🔍 Incidents</span>
-          </button>
-        </div>
-        <a href="/api/analytics/export/csv" class="btn-primary btn-csv-export" download>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          <span>Descarregar CSV per Excel</span>
-        </a>
-      </div>
-
-      <!-- Dedicated Observatori Search Bar -->
-      <div class="line-picker-search-bar" id="journalism-search-bar-wrap" style="margin-bottom: 1rem;">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="text" id="journalism-search-input" class="line-picker-search-input" placeholder="🔍 Cerca per línia (ex: B25, L95, C-10, e11.1), parada o empresa..." autocomplete="off">
-      </div>
-
-      <!-- Termòmetre Infographic Scorecard Container -->
-      <div id="journalism-termometre-container" style="display:none; margin-bottom:1rem;"></div>
-
-      <!-- Incident Deep-Dive Inspector Container -->
-      <div id="journalism-incidents-container" style="display:none; margin-bottom:1rem;"></div>
-
-      <!-- Journalism Content Dynamic Container -->
-      <div class="modal-body" id="journalism-content-container" style="overflow-y:auto; overflow-x:hidden; max-width:100%; box-sizing:border-box; padding-right:0.25rem; flex:1; min-height:300px;">
-        <div style="text-align:center; padding:2rem; color:var(--text-muted);">Carregant estadístiques de retards...</div>
-      </div>
-    </div>
-  </div>
 
   <!-- Mataró Zones & Neighborhoods Picker Modal -->
   <div class="modal-backdrop" id="zone-picker-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="zone-picker-modal-title">
@@ -800,7 +743,7 @@
       <div class="footer-links">
         <a href="#" id="footer-link-home">Totes les línies</a>
         <a href="#" id="footer-link-incidents">⚠️ Avisos de servei</a>
-        <a href="#" id="footer-link-journalism">📊 Observatori de retards</a>
+        <a href="/dades" id="footer-link-journalism">📊 Observatori de retards</a>
       </div>
     </div>
   </footer>

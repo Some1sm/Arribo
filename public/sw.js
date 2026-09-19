@@ -1,9 +1,9 @@
 // Arribo shell versions stay isolated until the user accepts an update.
-const CACHE_NAME = 'arribo-mataro-cache-v10';
+const CACHE_NAME = 'arribo-mataro-cache-v11';
 const DATA_CACHE = `${CACHE_NAME}-data`;
 const VERSION = '6.1.0';
-const STATIC_SHELL_ASSETS = ['/', '/index.html', '/plan', '/plan.html', '/manifest.webmanifest',
-  `/css/style.css?v=${VERSION}`, ...['utils', 'storage', 'requests', 'stopFeatures', 'journeys', 'journeyControls', 'pwa', 'app', 'plan', 'map'].map(name => `/js/${name}.js?v=${VERSION}`)];
+const STATIC_SHELL_ASSETS = ['/', '/index.html', '/plan', '/plan.html', '/dades', '/dades.html', '/observatori', '/manifest.webmanifest',
+  `/css/style.css?v=${VERSION}`, ...['utils', 'storage', 'requests', 'stopFeatures', 'journeys', 'journeyControls', 'pwa', 'app', 'plan', 'map', 'observatori'].map(name => `/js/${name}.js?v=${VERSION}`)];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_SHELL_ASSETS)));
@@ -47,8 +47,9 @@ self.addEventListener('fetch', event => {
   if (request.mode === 'navigate') {
     event.respondWith(fetch(request).catch(async () => {
       const planner = ['/plan', '/plan.html', '/com-anar-hi', '/itinerari', '/rutes'].includes(url.pathname);
+      const dades = ['/dades', '/dades.html', '/observatori', '/analytics'].includes(url.pathname);
       const cache = await caches.open(CACHE_NAME);
-      return await cache.match(planner ? '/plan.html' : '/index.html') || offline();
+      return await cache.match(planner ? '/plan.html' : (dades ? '/dades.html' : '/index.html')) || offline();
     }));
     return;
   }
