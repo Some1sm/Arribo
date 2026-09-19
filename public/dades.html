@@ -6,7 +6,7 @@
   <title>Observatori de Retards i Puntualitat — Dades | Arribo! Mataró</title>
   <meta name="description" content="Anàlisi històrica de retards, puntualitat de les línies de Mataró Bus Urbà, mapa de colls d'ampolla i el Termòmetre setmanal.">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
-  <link rel="stylesheet" href="/css/style.css?v=6.1.4">
+  <link rel="stylesheet" href="/css/style.css?v=6.1.5">
 </head>
 <body class="observatori-page-body observatori-page">
 
@@ -43,38 +43,74 @@
 
     <!-- Page Header / Hero -->
     <div class="observatori-page-hero">
-      <div class="target-badge">📊 Observatori de Puntualitat</div>
+      <div class="observatori-hero-tag">
+        <span class="pulse-indicator" aria-hidden="true">
+          <span class="pulse-ring"></span>
+          <span class="pulse-dot"></span>
+        </span>
+        <span>Xarxa Urbana • Mataró Bus • Telemetria en Temps Real</span>
+      </div>
       <h1>Observatori de Retards i Puntualitat</h1>
       <p>Dades històriques registrades pel nostre servidor central de telemetria a Mataró Bus Urbà. Informació objectiva de puntualitat, colls d'ampolla i congestió horària.</p>
     </div>
 
     <!-- Timeframe Selector & CSV Download Toolbar -->
     <div class="observatori-toolbar">
-      <div class="line-picker-filter-tabs" id="journalism-timeframe-tabs">
-        <button type="button" class="line-filter-tab active" data-hours="24">
-          <span class="tab-text-full">⏱️ Darreres 24h</span>
-          <span class="tab-text-compact">⏱️ 24h</span>
+      <div class="line-picker-filter-tabs" id="journalism-timeframe-tabs" role="tablist" aria-label="Selecció de període d'anàlisi">
+        <button type="button" class="line-filter-tab active" data-hours="24" role="tab" aria-selected="true" title="Dades de les darreres 24 hores">
+          <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+          <span class="tab-text-full">24 hores</span>
+          <span class="tab-text-compact">24h</span>
         </button>
-        <button type="button" class="line-filter-tab" data-hours="48">
-          <span class="tab-text-full">📅 48 hores</span>
-          <span class="tab-text-compact">📅 48h</span>
+        <button type="button" class="line-filter-tab" data-hours="48" role="tab" aria-selected="false" title="Dades de les darreres 48 hores">
+          <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M8 2v4"></path>
+            <path d="M16 2v4"></path>
+            <rect x="3" y="4" width="18" height="18" rx="2"></rect>
+            <path d="M3 10h18"></path>
+          </svg>
+          <span class="tab-text-full">48 hores</span>
+          <span class="tab-text-compact">48h</span>
         </button>
-        <button type="button" class="line-filter-tab" data-hours="168">
-          <span>🗓️ 7 dies</span>
+        <button type="button" class="line-filter-tab" data-hours="168" role="tab" aria-selected="false" title="Dades dels darrers 7 dies">
+          <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="18" y1="20" x2="18" y2="10"></line>
+            <line x1="12" y1="20" x2="12" y2="4"></line>
+            <line x1="6" y1="20" x2="6" y2="14"></line>
+          </svg>
+          <span class="tab-text-full">7 dies</span>
+          <span class="tab-text-compact">7d</span>
         </button>
-        <button type="button" class="line-filter-tab termometre-tab" id="btn-observatori-termometre" data-tab="termometre" title="Fitxa resumida i infografia del Termòmetre">
-          <span class="tab-text-full">🌡️ El Termòmetre</span>
-          <span class="tab-text-compact">🌡️ Termòmetre</span>
+        <span class="tab-divider" aria-hidden="true"></span>
+        <button type="button" class="line-filter-tab termometre-tab" id="btn-observatori-termometre" data-tab="termometre" role="tab" aria-selected="false" title="Fitxa resumida i infografia del Termòmetre">
+          <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"></path>
+          </svg>
+          <span class="tab-text-full">El Termòmetre</span>
+          <span class="tab-text-compact">Termòmetre</span>
         </button>
-        <button type="button" class="line-filter-tab incidents-tab" id="btn-observatori-incidents" data-tab="incidents" title="Investigador d'incidents crítics i retards extrems (+25m)">
-          <span class="tab-text-full">🔍 Top Incidents (+25m)</span>
-          <span class="tab-text-compact">🔍 Incidents</span>
+        <button type="button" class="line-filter-tab incidents-tab" id="btn-observatori-incidents" data-tab="incidents" role="tab" aria-selected="false" title="Investigador d'incidents crítics i retards extrems (+25m)">
+          <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+          <span class="tab-text-full">Top Incidents</span>
+          <span class="tab-text-compact">Incidents</span>
+          <span class="tab-badge-alert">+25m</span>
         </button>
       </div>
 
       <a href="/api/analytics/export/csv" class="btn-primary btn-csv-export" download title="Descarregar fitxer CSV complet per a anàlisi amb Excel o fulls de càlcul">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        <span>Descarregar CSV per Excel</span>
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+        <span>Exportar CSV</span>
       </a>
     </div>
 
@@ -114,9 +150,9 @@
   </footer>
 
   <!-- Scripts -->
-  <script src="/js/utils.js?v=6.1.4"></script>
-  <script src="/js/storage.js?v=6.1.4"></script>
-  <script src="/js/pwa.js?v=6.1.4"></script>
-  <script src="/js/observatori.js?v=6.1.4"></script>
+  <script src="/js/utils.js?v=6.1.5"></script>
+  <script src="/js/storage.js?v=6.1.5"></script>
+  <script src="/js/pwa.js?v=6.1.5"></script>
+  <script src="/js/observatori.js?v=6.1.5"></script>
 </body>
 </html>
