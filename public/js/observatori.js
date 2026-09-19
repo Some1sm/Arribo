@@ -1290,6 +1290,7 @@ class ObservatoriApp {
                   ${anomaliesList.map((inc, i) => {
                     const lColor = getLineColor(inc.lineCode);
                     const isStartup = inc.anomalyType === 'startup_sae';
+                    const isMaintenance = inc.anomalyType === 'maintenance' || !isStartup;
                     const badgeBg = isStartup ? 'rgba(245, 158, 11, 0.15)' : 'rgba(147, 51, 234, 0.15)';
                     const badgeColor = isStartup ? '#f59e0b' : '#c084fc';
                     const signalTooltip = inc.isRealTime
@@ -1303,7 +1304,11 @@ class ObservatoriApp {
                           <span style="background:${lColor}; color:#fff; padding:0.15rem 0.45rem; border-radius:5px; font-weight:800; font-size:0.75rem;">${this.esc(inc.lineCode)}</span>
                         </td>
                         <td style="font-weight:600; color:var(--text-primary);">
-                          <span style="color:#f59e0b; margin-right:4px;">📍</span>${this.esc(inc.stopName)}
+                          ${isMaintenance ? `
+                            <span style="color:var(--text-muted); font-size:0.85rem;" title="Sense parada comercial (proves o manteniment a cotxeres)">—</span>
+                          ` : `
+                            <span style="color:#f59e0b; margin-right:4px;">📍</span>${this.esc(inc.stopName)}
+                          `}
                         </td>
                         <td style="color:var(--text-secondary); white-space:nowrap; font-size:0.8rem;">
                           ${this.esc(inc.formattedDate || '')}
@@ -1319,9 +1324,13 @@ class ObservatoriApp {
                           </span>
                         </td>
                         <td style="text-align:center; white-space:nowrap;">
-                          <button type="button" class="btn-locate-incident-stop" data-locate-line="${this.esc(inc.lineCode)}" data-locate-stop="${this.esc(inc.stopName)}" data-locate-stop-id="${this.esc(inc.stopId || '')}" title="Veure aquesta parada al mapa">
-                            <span>📍 Mapa</span>
-                          </button>
+                          ${isMaintenance ? `
+                            <span style="color:var(--text-muted); font-size:0.85rem;" title="No aplica (operació de cotxeres)">—</span>
+                          ` : `
+                            <button type="button" class="btn-locate-incident-stop" data-locate-line="${this.esc(inc.lineCode)}" data-locate-stop="${this.esc(inc.stopName)}" data-locate-stop-id="${this.esc(inc.stopId || '')}" title="Veure aquesta parada al mapa">
+                              <span>📍 Mapa</span>
+                            </button>
+                          `}
                         </td>
                       </tr>
                     `;
@@ -1377,9 +1386,11 @@ class ObservatoriApp {
                       <span>${trip.trafficIcon || '⏱️'}</span>
                       <span>${this.esc(trip.trafficTag || '')} • ${trip.sampleCount} mostres registrades (${trip.incidentType === 'maintenance' ? 'proves o encesa a cotxeres' : (trip.isMovingTraffic ? `recorregut per ${trip.stopsCount} parades en retenció` : 'aturat a parada / regulant capçalera')})</span>
                     </div>
-                    <button type="button" class="btn-locate-incident-stop" data-locate-line="${this.esc(trip.lineCode)}" data-locate-stop="${this.esc(trip.firstStop || trip.stopsTraversed[0])}">
-                      <span>📍 Veure parada al mapa</span>
-                    </button>
+                    ${trip.incidentType !== 'maintenance' ? `
+                      <button type="button" class="btn-locate-incident-stop" data-locate-line="${this.esc(trip.lineCode)}" data-locate-stop="${this.esc(trip.firstStop || trip.stopsTraversed[0])}">
+                        <span>📍 Veure parada al mapa</span>
+                      </button>
+                    ` : ''}
                   </div>
                 </div>
               `;
@@ -1404,7 +1415,9 @@ class ObservatoriApp {
 
     list.forEach((item, idx) => {
       const sig = item.isRealTime ? 'GPS' : 'Estimat (dead-reckoning)';
-      text += `${idx + 1}. [${item.lineCode}] ${item.formattedDate} — Parada: "${item.stopName}" | Retard transmès: +${item.delayMins} min | Causa: ${item.trafficTag || item.diagnosticBadge || 'Anomalia'} | Senyal: ${sig}\n`;
+      const isMaint = item.anomalyType === 'maintenance' || item.anomalyType !== 'startup_sae';
+      const stopInfo = isMaint ? 'Cotxeres / Manteniment' : `Parada: "${item.stopName}"`;
+      text += `${idx + 1}. [${item.lineCode}] ${item.formattedDate} — ${stopInfo} | Retard transmès: +${item.delayMins} min | Causa: ${item.trafficTag || item.diagnosticBadge || 'Anomalia'} | Senyal: ${sig}\n`;
     });
 
     text += `\nGenerat per Arribo! Mataró (https://arribo.cat) a partir del feed oficial SIRI d'Avanza.`;

@@ -54,7 +54,24 @@ class HistoryDatabase {
       try {
         this.db = new DatabaseSync(this.dbPath);
         const madridHour = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', hour: '2-digit', hourCycle: 'h23' });
-        this.db.function('madrid_hour', { deterministic: true }, timestamp => madridHour.format(new Date(Number(timestamp))));
+        this.db.function('madrid_hour', { deterministic: true }, timestamp => {
+          if (!timestamp) return '00';
+          return madridHour.format(new Date(Number(timestamp)));
+        });
+        const madridDateTimeFmt = new Intl.DateTimeFormat('sv-SE', {
+          timeZone: 'Europe/Madrid',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hourCycle: 'h23'
+        });
+        this.db.function('madrid_datetime', { deterministic: true }, timestamp => {
+          if (!timestamp) return '';
+          return madridDateTimeFmt.format(new Date(Number(timestamp)));
+        });
         const madridTimeFmt = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
         this.db.function('is_telemetry_anomaly', { deterministic: true }, (timestamp, delayMins, stopName) => {
           if (!timestamp) return 0;
@@ -65,9 +82,10 @@ class HistoryDatabase {
           const h = parseInt(hStr, 10);
           const m = parseInt(mStr, 10);
           const delay = Number(delayMins || 0);
-          if (h >= 23 || h < 5) return 1;
-          if (h === 5 && delay >= 8) return 1;
-          if (h === 6 && m < 15 && delay >= 10) return 1;
+          // Maintenance hours: night and early morning before 06:00 (first revenue trips start ~06:00)
+          if (h >= 23 || h < 6) return 1;
+          // Morning rollout SAE trip misassignment: 06:00 to 06:30 with high delay
+          if (h === 6 && m <= 30 && delay >= 10) return 1;
           return 0;
         });
         this.db.exec(`
@@ -768,7 +786,7 @@ class HistoryDatabase {
       const cutoff = Date.now() - hoursBack * 3600 * 1000;
       const stmt = this.db.prepare(`
         SELECT 
-          datetime(timestamp / 1000, 'unixepoch', 'localtime') as formatted_date,
+          madrid_datetime(timestamp) as formatted_date,
           line_code,
           agency,
           stop_name,
@@ -797,11 +815,8 @@ class HistoryDatabase {
 
   getHourlyTrafficContext(hourNum) {
     const h = Number(hourNum) || 0;
-    if (h >= 0 && h < 5) {
+    if (h >= 0 && h < 6) {
       return { tag: '🔧 Cotxeres / Manteniment nocturn', isSchoolHour: false, isPeak: false, icon: '🔧', isDepot: true };
-    }
-    if (h === 5) {
-      return { tag: '🌅 Sortida primeres expedicions', isSchoolHour: false, isPeak: false, icon: '🌅', isDepot: false };
     }
     if (h === 6) {
       return { tag: '🌅 Inici servei matinal', isSchoolHour: false, isPeak: false, icon: '🌅', isDepot: false };
@@ -850,7 +865,7 @@ class HistoryDatabase {
     const [hStr] = timeStr.split(':');
     const h = parseInt(hStr, 10);
 
-    if (h >= 23 || h < 5 || isDepotStop) {
+    if (h >= 23 || h < 6 || isDepotStop) {
       return {
         anomalyType: 'maintenance',
         diagnosticBadge: '🔧 Cotxeres / Manteniment nocturn',
@@ -952,7 +967,7 @@ class HistoryDatabase {
           delay_mins as delayMins,
           is_realtime as isRealTime,
           timestamp,
-          datetime(timestamp / 1000, 'unixepoch', 'localtime') as formattedDate,
+          madrid_datetime(timestamp) as formattedDate,
           madrid_hour(timestamp) as hourOfDay,
           is_telemetry_anomaly(timestamp, delay_mins, stop_name) as isAnomaly
         FROM delay_logs
@@ -1040,7 +1055,7 @@ class HistoryDatabase {
           delay_mins as delayMins,
           is_realtime as isRealTime,
           timestamp,
-          datetime(timestamp / 1000, 'unixepoch', 'localtime') as formattedDate,
+          madrid_datetime(timestamp) as formattedDate,
           madrid_hour(timestamp) as hourOfDay
         FROM delay_logs
         WHERE ${sqlWhere}
@@ -1061,13 +1076,13 @@ class HistoryDatabase {
         let cur = null;
         rows.forEach(r => {
           const h = parseInt(r.hourOfDay, 10);
-          const isDepotHour = h < 5;
-          const prevWasDepot = cur ? parseInt(cur.hourOfDay, 10) < 5 : false;
+          const isDepotHour = h < 6;
+          const prevWasDepot = cur ? parseInt(cur.hourOfDay, 10) < 6 : false;
           const depotTransition = cur && (isDepotHour !== prevWasDepot);
           // Split cluster if:
           // 1. Telemetry gap exceeds 12 minutes
           // 2. Active trip duration exceeds 45 minutes (a normal Mataró transit trip cycle is ~30-40 min)
-          // 3. Transition between depot maintenance hours (< 05:00) and revenue service hours (>= 05:00)
+          // 3. Transition between depot maintenance hours (< 06:00) and revenue service hours (>= 06:00)
           const isGapTooLong = cur && (r.timestamp - cur.lastTs > 12 * 60 * 1000);
           const isTripTooLong = cur && (r.timestamp - cur.firstTs > 45 * 60 * 1000);
 
@@ -1108,7 +1123,7 @@ class HistoryDatabase {
         const durMins = Math.round((c.lastTs - c.firstTs) / 60000);
         const h = parseInt(c.hourOfDay, 10);
         const ctx = this.getHourlyTrafficContext(h);
-        const isDepot = h < 5;
+        const isDepot = h < 6;
         const isMovingTraffic = !isDepot && c.stops.length > 1;
 
         let incidentType = 'traffic';
