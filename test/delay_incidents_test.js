@@ -158,6 +158,50 @@ assert.ok(l1IncidentsLow.summary.totalRecordedIncidents > 0);
 assert.strictEqual(l1IncidentsLow.topIncidents[0].lineCode, 'L1');
 console.log('✅ Delay threshold boundary filtering verified.');
 
+console.log('\n--- 5b. Testing telemetryAnomalies partitioning & diagnostics ---');
+// Insert an early morning SAE startup anomaly at 06:03 (Madrid time) with +16 min delay
+const madridFmt = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit' });
+const [dDay, dMon, dYr] = madridFmt.format(new Date()).split('/');
+const morning0603Ts = new Date(`${dYr}-${dMon}-${dDay}T06:03:09+02:00`).getTime();
+
+historyDb.recordDelayLog({
+  lineId: '2',
+  lineCode: 'L2',
+  agency: 'Mataró Bus (Avanza)',
+  stopId: 'Sant Isidor',
+  stopName: 'Sant Isidor',
+  delayMins: 16,
+  scheduledTime: '',
+  actualTime: '',
+  isRealTime: true,
+  timestamp: morning0603Ts
+});
+
+const anomaliesCheck = historyDb.getDelayIncidents({ lineCode: 'all', hours: 48, minDelay: 5 });
+assert.ok(Array.isArray(anomaliesCheck.telemetryAnomalies));
+assert.ok(anomaliesCheck.telemetryAnomalies.length >= 2, 'Should have at least nocturnal maintenance and morning rollout anomalies');
+
+// Check nocturnal maintenance anomaly (L8 Cotxeres)
+const maintAnomaly = anomaliesCheck.telemetryAnomalies.find(a => a.lineCode === 'L8' || a.anomalyType === 'maintenance');
+assert.ok(maintAnomaly, 'Nocturnal maintenance anomaly must be detected');
+assert.strictEqual(maintAnomaly.anomalyType, 'maintenance');
+assert.strictEqual(maintAnomaly.diagnosticBadge, '🔧 Cotxeres / Manteniment nocturn');
+assert.strictEqual(maintAnomaly.trafficIcon, '🔧');
+
+// Check early morning startup anomaly (L2 06:03:09)
+const startupAnomaly = anomaliesCheck.telemetryAnomalies.find(a => a.lineCode === 'L2' && a.stopName === 'Sant Isidor');
+assert.ok(startupAnomaly, 'Early morning rollout anomaly must be detected in telemetryAnomalies');
+assert.strictEqual(startupAnomaly.anomalyType, 'startup_sae');
+assert.strictEqual(startupAnomaly.diagnosticBadge, '⚠️ Desfasament SAE torn matinal');
+assert.strictEqual(startupAnomaly.trafficIcon, '⚠️');
+
+// Ensure topIncidents only contains regular revenue service delays (no Cotxeres or 06:03 startup)
+const hasStartupInTop = anomaliesCheck.topIncidents.some(i => i.lineCode === 'L2' && i.stopName === 'Sant Isidor' && i.timestamp === morning0603Ts);
+const hasCotxeresInTop = anomaliesCheck.topIncidents.some(i => i.stopName.includes('Cotxeres'));
+assert.strictEqual(hasStartupInTop, false, 'Early morning startup anomaly must NOT appear in topIncidents');
+assert.strictEqual(hasCotxeresInTop, false, 'Cotxeres maintenance must NOT appear in topIncidents');
+console.log('✅ Telemetry anomalies properly partitioned and labeled with diagnostic badges.');
+
 console.log('\n--- 6. Testing Worker RPC operation dispatch ---');
 const ingestionWorker = require('../src/workers/ingestionWorker');
 // Verify executeDbOperation is a function

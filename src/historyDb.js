@@ -32,7 +32,11 @@ class HistoryDatabase {
   }
 
   // Public init() kept for backwards compatibility; delegates to lazy open.
-  init() {
+  init(customPath = null) {
+    if (customPath && typeof customPath === 'string' && customPath !== this.dbPath) {
+      this.close();
+      this.dbPath = customPath;
+    }
     return this._ensureOpen();
   }
 
@@ -50,7 +54,22 @@ class HistoryDatabase {
       try {
         this.db = new DatabaseSync(this.dbPath);
         const madridHour = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', hour: '2-digit', hourCycle: 'h23' });
-        this.db.function('madrid_hour', { deterministic: true }, timestamp => madridHour.format(new Date(timestamp)));
+        this.db.function('madrid_hour', { deterministic: true }, timestamp => madridHour.format(new Date(Number(timestamp))));
+        const madridTimeFmt = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+        this.db.function('is_telemetry_anomaly', { deterministic: true }, (timestamp, delayMins, stopName) => {
+          if (!timestamp) return 0;
+          const sName = String(stopName || '').toLowerCase();
+          if (sName.includes('cotxeres') || sName.includes('depot') || sName.includes('taller')) return 1;
+          const timeStr = madridTimeFmt.format(new Date(Number(timestamp)));
+          const [hStr, mStr] = timeStr.split(':');
+          const h = parseInt(hStr, 10);
+          const m = parseInt(mStr, 10);
+          const delay = Number(delayMins || 0);
+          if (h >= 23 || h < 5) return 1;
+          if (h === 5 && delay >= 8) return 1;
+          if (h === 6 && m < 15 && delay >= 10) return 1;
+          return 0;
+        });
         this.db.exec(`
           PRAGMA auto_vacuum = INCREMENTAL;
           PRAGMA journal_mode = WAL;
@@ -476,6 +495,7 @@ class HistoryDatabase {
         FROM delay_logs
         WHERE timestamp >= ? AND delay_mins >= -15
           AND madrid_hour(timestamp) NOT IN ('00', '01', '02', '03', '04')
+          AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
         GROUP BY agency, line_id, stop_id
         HAVING arrivalCount >= 1 AND (avgDelay >= 1.5 OR severeLatePct >= 20.0)
         ORDER BY avgDelay DESC, maxDelay DESC
@@ -515,6 +535,7 @@ class HistoryDatabase {
         FROM delay_logs
         WHERE timestamp >= ? AND delay_mins >= -15
           AND madrid_hour(timestamp) NOT IN ('00', '01', '02', '03', '04')
+          AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
         GROUP BY hourOfDay, agency, line_id, stop_id
         ORDER BY hourOfDay ASC, avgDelay DESC, arrivalCount DESC
       `);
@@ -619,6 +640,7 @@ class HistoryDatabase {
         FROM delay_logs
         WHERE timestamp >= ? AND delay_mins >= -15
           AND madrid_hour(timestamp) NOT IN ('00', '01', '02', '03', '04')
+          AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
         GROUP BY hourOfDay
         ORDER BY hourOfDay ASC
       `);
@@ -814,6 +836,35 @@ class HistoryDatabase {
     return { tag: '🌙 Tancament servei', isSchoolHour: false, isPeak: false, icon: '🌙', isDepot: false };
   }
 
+  getAnomalyContext(timestamp, delayMins, stopName) {
+    const sName = String(stopName || '').toLowerCase();
+    const isDepotStop = sName.includes('cotxeres') || sName.includes('depot') || sName.includes('taller');
+    const madridFmt = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Europe/Madrid',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23'
+    });
+    const d = new Date(Number(timestamp));
+    const timeStr = madridFmt.format(d);
+    const [hStr] = timeStr.split(':');
+    const h = parseInt(hStr, 10);
+
+    if (h >= 23 || h < 5 || isDepotStop) {
+      return {
+        anomalyType: 'maintenance',
+        diagnosticBadge: '🔧 Cotxeres / Manteniment nocturn',
+        anomalyIcon: '🔧'
+      };
+    }
+
+    return {
+      anomalyType: 'startup_sae',
+      diagnosticBadge: '⚠️ Desfasament SAE torn matinal',
+      anomalyIcon: '⚠️'
+    };
+  }
+
   /**
    * Deep-Dive Incident Inspector: Query and cluster high-delay occurrences.
    * Enables analyzing where, when, and how severe delays (>5m) formed.
@@ -836,6 +887,7 @@ class HistoryDatabase {
           movingPct: 0
         },
         topIncidents: [],
+        telemetryAnomalies: [],
         incidentTrips: []
       };
     }
@@ -901,7 +953,8 @@ class HistoryDatabase {
           is_realtime as isRealTime,
           timestamp,
           datetime(timestamp / 1000, 'unixepoch', 'localtime') as formattedDate,
-          madrid_hour(timestamp) as hourOfDay
+          madrid_hour(timestamp) as hourOfDay,
+          is_telemetry_anomaly(timestamp, delay_mins, stop_name) as isAnomaly
         FROM delay_logs
         WHERE ${sqlWhere}
         ORDER BY delay_mins DESC, timestamp DESC
@@ -909,26 +962,47 @@ class HistoryDatabase {
       `);
       const candidateRows = topStmt.all(...baseParams);
 
-      // Deduplicate: A single delayed trip produces raw pings every 20 seconds.
-      // We keep the peak delay record for each trip on the line (sliding window of 20 min).
-      const dedupedRows = [];
-      const lineTripWindows = new Map(); // lineCode -> array of timestamps of accepted peak incidents
-      const TRIP_WINDOW_MS = 20 * 60 * 1000;
+      const regularCandidates = [];
+      const anomalyCandidates = [];
 
       for (const r of candidateRows) {
-        const lk = r.lineCode;
-        const accepted = lineTripWindows.get(lk) || [];
-        const isSameTrip = accepted.some(ts => Math.abs(r.timestamp - ts) < TRIP_WINDOW_MS);
-        if (isSameTrip) continue;
-
-        accepted.push(r.timestamp);
-        lineTripWindows.set(lk, accepted);
-        dedupedRows.push(r);
-
-        if (dedupedRows.length >= limitNum) break;
+        if (r.isAnomaly) {
+          const anomalyCtx = this.getAnomalyContext(r.timestamp, r.delayMins, r.stopName);
+          anomalyCandidates.push({
+            ...r,
+            ...anomalyCtx
+          });
+        } else {
+          regularCandidates.push(r);
+        }
       }
 
-      const enrichedTop = dedupedRows.map((r, idx) => {
+      // Deduplicate: A single delayed trip produces raw pings every 20 seconds.
+      // We keep the peak delay record for each trip on the line (sliding window of 20 min).
+      const deduplicateTripRows = (rows, maxLimit) => {
+        const deduped = [];
+        const lineTripWindows = new Map(); // lineCode -> array of timestamps of accepted peak incidents
+        const TRIP_WINDOW_MS = 20 * 60 * 1000;
+
+        for (const r of rows) {
+          const lk = r.lineCode;
+          const accepted = lineTripWindows.get(lk) || [];
+          const isSameTrip = accepted.some(ts => Math.abs(r.timestamp - ts) < TRIP_WINDOW_MS);
+          if (isSameTrip) continue;
+
+          accepted.push(r.timestamp);
+          lineTripWindows.set(lk, accepted);
+          deduped.push(r);
+
+          if (deduped.length >= maxLimit) break;
+        }
+        return deduped;
+      };
+
+      const dedupedRegular = deduplicateTripRows(regularCandidates, limitNum);
+      const dedupedAnomalies = deduplicateTripRows(anomalyCandidates, limitNum);
+
+      const enrichedTop = dedupedRegular.map((r, idx) => {
         const h = parseInt(r.hourOfDay, 10);
         const ctx = this.getHourlyTrafficContext(h);
         return {
@@ -939,6 +1013,18 @@ class HistoryDatabase {
           trafficIcon: ctx.icon,
           isPeak: ctx.isPeak,
           isSchoolHour: ctx.isSchoolHour
+        };
+      });
+
+      const enrichedAnomalies = dedupedAnomalies.map((r, idx) => {
+        return {
+          rank: idx + 1,
+          ...r,
+          isRealTime: Boolean(r.isRealTime),
+          trafficTag: r.diagnosticBadge,
+          trafficIcon: r.anomalyIcon,
+          diagnosticBadge: r.diagnosticBadge,
+          anomalyType: r.anomalyType
         };
       });
 
@@ -1082,6 +1168,7 @@ class HistoryDatabase {
           movingPct: totalClusters > 0 ? Math.round((movingCount / totalClusters) * 100) : 0
         },
         topIncidents: enrichedTop,
+        telemetryAnomalies: enrichedAnomalies,
         incidentTrips: enrichedClusters.slice(0, limitNum)
       };
     } catch (e) {
@@ -1103,6 +1190,7 @@ class HistoryDatabase {
           movingPct: 0
         },
         topIncidents: [],
+        telemetryAnomalies: [],
         incidentTrips: []
       };
     }

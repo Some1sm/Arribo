@@ -230,6 +230,14 @@ class ObservatoriApp {
         window.location.href = `/?line=${encodeURIComponent(lineCode)}&stop=${encodeURIComponent(targetStop)}#l${cleanLine}`;
         return;
       }
+
+      // Copy anomalies report to clipboard
+      const copyBtn = e.target.closest('#btn-copy-anomalies-report');
+      if (copyBtn) {
+        e.preventDefault();
+        this.copyAnomaliesReport();
+        return;
+      }
     });
 
     // Keyboard support for sort headers
@@ -1084,6 +1092,7 @@ class ObservatoriApp {
 
     const s = data.summary || {};
     const topList = data.topIncidents || [];
+    const anomaliesList = data.telemetryAnomalies || [];
     const tripsList = data.incidentTrips || [];
     const activeLineNorm = String(selectedLine || 'all').toUpperCase();
     const linesCatalog = ['L1', 'L2', 'L3', 'L4', 'L5', 'L6', 'L7', 'L8'];
@@ -1179,7 +1188,7 @@ class ObservatoriApp {
         ` : `
           <div style="font-size:0.78rem; color:var(--text-muted); margin-bottom:0.6rem; display:flex; align-items:center; gap:6px;">
             <span>ℹ️</span>
-            <span>Mostrant el pic de retard màxim de cada expedició afectada (s'agrupen els senyals cada 20s d'un mateix viatge per evitar duplicats).</span>
+            <span>Mostrant incidents de servei comercial depurats (s'agrupen els senyals cada 20s d'un mateix viatge per evitar duplicats).</span>
           </div>
           <div class="observatori-table-wrapper">
             <table class="observatori-table">
@@ -1236,6 +1245,92 @@ class ObservatoriApp {
             </table>
           </div>
         `}
+
+        <!-- Anomaly & SAE Desync Audit Table for Operator/Municipality -->
+        <div style="margin-top:2.5rem; border-top:2px dashed var(--border-subtle); padding-top:1.5rem;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.75rem; margin-bottom:0.85rem;">
+            <div>
+              <div style="display:inline-flex; align-items:center; gap:6px; background:rgba(245, 158, 11, 0.15); color:#f59e0b; padding:3px 8px; border-radius:6px; font-size:0.72rem; font-weight:800; text-transform:uppercase; letter-spacing:0.4px;">
+                <span>🛠️ Auditoria Operador &amp; Ajuntament</span>
+              </div>
+              <h4 style="font-size:1.15rem; font-weight:800; color:#fff; margin:0.35rem 0 0.2rem 0;">
+                🛠️ Anomalies de Telemetria SAE &amp; Sortida de Cotxeres (${anomaliesList.length})
+              </h4>
+              <p style="font-size:0.78rem; color:var(--text-muted); margin:0; max-width:740px; line-height:1.45;">
+                Aquests registres no corresponen a retencions de trànsit de la ciutat, sinó a <strong>desfasaments de telemetria generats pel sistema SAE (CAD/AVL) d'Avanza</strong> a primera hora del matí (arrencada de servei abans de les 06:15) o durant proves nocturnes a cotxeres. Es produeixen quan el SAE assigna un autobús que comença torn a una expedició anterior no coberta o encén la consola en buit, transmetent retards artificials (+15 a +30 min). Es publiquen aquí per facilitar l'auditoria i la seva correcció per part de l'Ajuntament de Mataró.
+              </p>
+            </div>
+            ${anomaliesList.length > 0 ? `
+              <button type="button" class="btn-primary btn-copy-anomalies" id="btn-copy-anomalies-report" style="font-size:0.78rem; padding:0.45rem 0.85rem; display:inline-flex; align-items:center; gap:6px;" title="Copiar resum d'anomalies per a informe o reclamació a l'Ajuntament / Avanza">
+                <span>📋 Copiar informe d'anomalies</span>
+              </button>
+            ` : ''}
+          </div>
+
+          ${anomaliesList.length === 0 ? `
+            <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:10px; padding:1.5rem; text-align:center; color:var(--text-muted); font-size:0.85rem;">
+              ✅ Cap anomalia d'arrencada o manteniment detectada en el període seleccionat (${selectedHours}h).
+            </div>
+          ` : `
+            <div class="observatori-table-wrapper">
+              <table class="observatori-table">
+                <thead>
+                  <tr>
+                    <th style="width:45px; text-align:center;">#</th>
+                    <th>Retard Transmès</th>
+                    <th>Línia</th>
+                    <th>Parada / Punt d'observació</th>
+                    <th>Data i Hora</th>
+                    <th>Diagnòstic / Causa Probable</th>
+                    <th style="text-align:center; cursor:help;" title="Tipus de senyal: 🟢 GPS o ⚡ Estimat">Senyal ℹ️</th>
+                    <th style="text-align:center;">Mapa</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${anomaliesList.map((inc, i) => {
+                    const lColor = getLineColor(inc.lineCode);
+                    const isStartup = inc.anomalyType === 'startup_sae';
+                    const badgeBg = isStartup ? 'rgba(245, 158, 11, 0.15)' : 'rgba(147, 51, 234, 0.15)';
+                    const badgeColor = isStartup ? '#f59e0b' : '#c084fc';
+                    const signalTooltip = inc.isRealTime
+                      ? '🟢 Senyal GPS directe transmès pel vehicle físic.'
+                      : '⚡ Estimació per estima (dead-reckoning) per pèrdua temporal de senyal.';
+                    return `
+                      <tr>
+                        <td style="font-weight:700; color:var(--text-muted); text-align:center;">${inc.rank || (i + 1)}</td>
+                        <td style="font-weight:800; color:#f59e0b; white-space:nowrap;">+${inc.delayMins} min</td>
+                        <td>
+                          <span style="background:${lColor}; color:#fff; padding:0.15rem 0.45rem; border-radius:5px; font-weight:800; font-size:0.75rem;">${this.esc(inc.lineCode)}</span>
+                        </td>
+                        <td style="font-weight:600; color:var(--text-primary);">
+                          <span style="color:#f59e0b; margin-right:4px;">📍</span>${this.esc(inc.stopName)}
+                        </td>
+                        <td style="color:var(--text-secondary); white-space:nowrap; font-size:0.8rem;">
+                          ${this.esc(inc.formattedDate || '')}
+                        </td>
+                        <td style="white-space:nowrap; font-size:0.78rem;">
+                          <span style="background:${badgeBg}; color:${badgeColor}; padding:0.2rem 0.5rem; border-radius:6px; font-weight:700; font-size:0.72rem; display:inline-flex; align-items:center; gap:4px;">
+                            ${this.esc(inc.diagnosticBadge || inc.trafficTag || '⚠️ Anomalia SAE')}
+                          </span>
+                        </td>
+                        <td style="text-align:center; white-space:nowrap;">
+                          <span style="background:${inc.isRealTime ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)'}; color:${inc.isRealTime ? '#10b981' : '#fbbf24'}; padding:0.15rem 0.45rem; border-radius:5px; font-size:0.7rem; font-weight:700; cursor:help; display:inline-flex; align-items:center; gap:2px;" title="${this.esc(signalTooltip)}">
+                            ${inc.isRealTime ? '🟢 GPS' : '⚡ Estimat'}
+                          </span>
+                        </td>
+                        <td style="text-align:center; white-space:nowrap;">
+                          <button type="button" class="btn-locate-incident-stop" data-locate-line="${this.esc(inc.lineCode)}" data-locate-stop="${this.esc(inc.stopName)}" data-locate-stop-id="${this.esc(inc.stopId || '')}" title="Veure aquesta parada al mapa">
+                            <span>📍 Mapa</span>
+                          </button>
+                        </td>
+                      </tr>
+                    `;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>
+          `}
+        </div>
       ` : `
         <!-- Mode 2: Clustered Trips & Trajectories -->
         ${tripsList.length === 0 ? `
@@ -1293,6 +1388,43 @@ class ObservatoriApp {
         `}
       `}
     `;
+  }
+
+  copyAnomaliesReport() {
+    if (!this.lastIncidentData || !Array.isArray(this.lastIncidentData.telemetryAnomalies)) return;
+    const list = this.lastIncidentData.telemetryAnomalies;
+    if (list.length === 0) return;
+
+    let text = `INFORME D'ANOMALIES DE TELEMETRIA SAE — ARRIBO! MATARÓ\n`;
+    text += `Període: Darreres ${this._currentIncidentHours || 168}h | Línia: ${this._currentIncidentLine || 'Totes'}\n`;
+    text += `Data d'extracció: ${new Date().toLocaleString('ca-ES')}\n`;
+    text += `Total anomalies detectades: ${list.length}\n\n`;
+    text += `Descripció: Aquests registres corresponen a desfasaments transmesos pel sistema SAE (CAD/AVL) d'Avanza (habitualment per assignació d'autobusos que inicien torn a expedicions anteriors no cobertes o arrencada a cotxeres amb consola encesa abans de sortida). No reflecteixen retencions de trànsit reals a la ciutat.\n\n`;
+    text += `Llistat d'incidències per auditar amb Avanza / Ajuntament de Mataró:\n`;
+
+    list.forEach((item, idx) => {
+      const sig = item.isRealTime ? 'GPS' : 'Estimat (dead-reckoning)';
+      text += `${idx + 1}. [${item.lineCode}] ${item.formattedDate} — Parada: "${item.stopName}" | Retard transmès: +${item.delayMins} min | Causa: ${item.trafficTag || item.diagnosticBadge || 'Anomalia'} | Senyal: ${sig}\n`;
+    });
+
+    text += `\nGenerat per Arribo! Mataró (https://arribo.cat) a partir del feed oficial SIRI d'Avanza.`;
+
+    const finish = () => {
+      const btn = document.getElementById('btn-copy-anomalies-report');
+      if (btn) {
+        const orig = btn.innerHTML;
+        btn.innerHTML = '<span>✅ Copiat al porta-retalls!</span>';
+        setTimeout(() => { btn.innerHTML = orig; }, 3000);
+      }
+    };
+
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      navigator.clipboard.writeText(text).then(finish).catch(() => {
+        prompt('Copia el text següent per a la teva reclamació:', text);
+      });
+    } else {
+      prompt('Copia el text següent per a la teva reclamació:', text);
+    }
   }
 }
 
