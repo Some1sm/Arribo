@@ -16,6 +16,7 @@ class ObservatoriApp {
     };
     this.worstStopsLimit = 10;
     this.groupByLine = false;
+    this.stopFilterMode = 'bottlenecks'; // 'bottlenecks' | 'all'
     this.currentReport = null;
     this.termometreData = null;
     this.lastIncidentData = null;
@@ -81,6 +82,11 @@ class ObservatoriApp {
       this.groupByLine = true;
     }
 
+    const stopsMode = params.get('stops');
+    if (stopsMode === 'all' || stopsMode === 'bottlenecks') {
+      this.stopFilterMode = stopsMode;
+    }
+
     // Set initial active tab button UI
     document.querySelectorAll('#journalism-timeframe-tabs button').forEach(btn => {
       btn.classList.remove('active');
@@ -117,6 +123,10 @@ class ObservatoriApp {
 
     if (this.groupByLine && this.currentTab === 'journalism') {
       params.set('grouped', '1');
+    }
+
+    if (this.stopFilterMode && this.stopFilterMode !== 'bottlenecks' && this.currentTab === 'journalism') {
+      params.set('stops', this.stopFilterMode);
     }
 
     const newUrl = `${window.location.pathname}${params.toString() ? '?' + params.toString() : ''}`;
@@ -196,6 +206,21 @@ class ObservatoriApp {
         e.preventDefault();
         const limit = parseInt(limitBtn.getAttribute('data-worst-limit') || '10', 10);
         this.setWorstStopsLimit(limit);
+        return;
+      }
+
+      // Stop filter mode toggle (bottlenecks vs all)
+      const stopModeBtn = e.target.closest('[data-toggle-stop-mode]');
+      if (stopModeBtn) {
+        e.preventDefault();
+        const mode = stopModeBtn.getAttribute('data-toggle-stop-mode');
+        if (mode === 'all' || mode === 'bottlenecks') {
+          this.stopFilterMode = mode;
+          this.updateUrl();
+          if (this.currentReport && this.currentTab === 'journalism') {
+            this.renderJournalismReport(this.currentReport);
+          }
+        }
         return;
       }
 
@@ -480,8 +505,31 @@ class ObservatoriApp {
     const cleanFilter = norm(filterText);
 
     const s = report.summary || {};
+    const isAllStopsMode = this.stopFilterMode === 'all';
+    const allStopsSource = (report.allStopDelays && report.allStopDelays.length > 0)
+      ? report.allStopDelays
+      : (report.rankingWorstStops || []);
+    const bottlenecksSource = (report.rankingWorstStops && report.rankingWorstStops.length > 0)
+      ? report.rankingWorstStops
+      : allStopsSource.filter(s => s.isBottleneck);
+
+    // Calculate full matching stops vs bottleneck matching stops for contextual notice
+    let matchingAllStops = allStopsSource.filter(st => (st.arrivalCount || 0) > 0);
+    if (filterText) {
+      matchingAllStops = matchingAllStops.filter(st =>
+        (st.stopName && (st.stopName.toLowerCase().includes(filterText) || norm(st.stopName).includes(cleanFilter))) ||
+        (st.lineCode && (st.lineCode.toLowerCase().includes(filterText) || norm(st.lineCode).includes(cleanFilter))) ||
+        (st.agency && (st.agency.toLowerCase().includes(filterText) || norm(st.agency).includes(cleanFilter)))
+      );
+    }
+    const matchingTotalCount = matchingAllStops.length;
+    const matchingBottleneckCount = matchingAllStops.filter(s => s.isBottleneck).length;
+    const matchingPunctualCount = Math.max(0, matchingTotalCount - matchingBottleneckCount);
+
+    const activeStopsSource = isAllStopsMode ? allStopsSource : bottlenecksSource;
+
     let mostDelayed = [...(report.rankingMostDelayed || [])].filter(l => (l.sampleCount || 0) > 0 || (l.avgDelay || 0) > 0);
-    let worstStops = [...(report.rankingWorstStops || [])]
+    let worstStops = [...activeStopsSource]
       .filter(st => (st.arrivalCount || 0) > 0)
       .map((st, idx) => ({ ...st, overallRank: idx + 1 }));
     let agencies = [...(report.agencyStats || [])].filter(a => (a.totalSamples || 0) > 0);
@@ -761,17 +809,56 @@ class ObservatoriApp {
         const hasMoreWorst = totalWorst > worstLimit;
         const isGroupedByLine = !!this.groupByLine;
 
+        let stopNoticeHtml = '';
+        if (!isAllStopsMode && matchingPunctualCount > 0) {
+          const lineNotice = filterText ? "d'aquesta línia" : 'a la xarxa';
+          stopNoticeHtml = `
+            <div class="observatori-filter-notice" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.6rem; background:rgba(0,148,133,0.08); border:1px solid rgba(0,148,133,0.25); border-radius:10px; padding:0.65rem 0.95rem; margin-bottom:1rem; font-size:0.8rem;">
+              <div style="display:flex; align-items:center; gap:0.55rem; color:var(--text-primary);">
+                <span style="font-size:1.15rem; flex-shrink:0;">ℹ️</span>
+                <div>
+                  <strong>Només es mostren colls d'ampolla</strong> (retard &ge; 1.5 min o &ge; 20% greus).
+                  <span style="color:var(--text-muted); margin-left:0.25rem;">Les altres <strong>${matchingPunctualCount}</strong> parades ${lineNotice} han funcionat amb puntualitat (&lt; 1.5 min).</span>
+                </div>
+              </div>
+              <button type="button" class="observatori-action-btn btn-secondary" data-toggle-stop-mode="all" style="padding:0.35rem 0.8rem; font-size:0.75rem; font-weight:700; border-radius:8px; cursor:pointer; display:inline-flex; align-items:center; gap:0.35rem;">
+                <span>🔓</span>
+                <span>Veure totes les parades (${matchingTotalCount})</span>
+              </button>
+            </div>
+          `;
+        } else if (isAllStopsMode) {
+          stopNoticeHtml = `
+            <div class="observatori-filter-notice" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.6rem; background:rgba(2,132,199,0.08); border:1px solid rgba(56,189,248,0.25); border-radius:10px; padding:0.65rem 0.95rem; margin-bottom:1rem; font-size:0.8rem;">
+              <div style="display:flex; align-items:center; gap:0.55rem; color:var(--text-primary);">
+                <span style="font-size:1.15rem; flex-shrink:0;">📋</span>
+                <div>
+                  <strong>Mostrant totes les ${worstStops.length} parades actives</strong> (inclou parades puntuals i colls d'ampolla).
+                  <span style="color:var(--text-muted); margin-left:0.25rem;">${matchingBottleneckCount} són colls d'ampolla.</span>
+                </div>
+              </div>
+              <button type="button" class="observatori-action-btn btn-secondary" data-toggle-stop-mode="bottlenecks" style="padding:0.35rem 0.8rem; font-size:0.75rem; font-weight:700; border-radius:8px; cursor:pointer; display:inline-flex; align-items:center; gap:0.35rem;">
+                <span>⚠️</span>
+                <span>Només colls d'ampolla (${matchingBottleneckCount})</span>
+              </button>
+            </div>
+          `;
+        }
+
         const renderStopRow = (st) => {
-          const sAvgStr = Number(st.avgDelay) > 0 ? `+${st.avgDelay} min` : (Number(st.avgDelay) < 0 ? `${st.avgDelay} min` : '0.0 min');
+          const sAvg = Number(st.avgDelay) || 0;
+          const sAvgStr = sAvg > 0 ? `+${st.avgDelay} min` : (sAvg < 0 ? `${st.avgDelay} min` : '0.0 min');
           const sMaxStr = Number(st.maxDelay) > 0 ? `+${st.maxDelay} min` : `${st.maxDelay || 0} min`;
           const lColor = this.getLineColor(st.lineCode);
           const isLight = lColor === '#ffcc00' || lColor === '#febf01';
           const badgeTextColor = isLight ? '#000' : '#fff';
+          const isSevereStop = sAvg >= 1.5 || (st.severeLatePct || 0) >= 20;
+          const avgDelayColor = sAvg >= 1.5 ? '#ef4444' : (sAvg >= 0.8 ? '#f59e0b' : '#10b981');
           return `
           <tr>
             <td class="sticky-col" style="font-weight:600; color:var(--text-primary);">
               <div class="observatori-stop-cell">
-                <span class="observatori-rank-num ${st.overallRank <= 3 ? 'rank-' + st.overallRank : ''}" title="Rànquing de retard a la xarxa: #${st.overallRank}">#${st.overallRank}</span>
+                <span class="observatori-rank-num ${isSevereStop && st.overallRank <= 3 ? 'rank-' + st.overallRank : ''}" title="Rànquing: #${st.overallRank}">#${st.overallRank}</span>
                 <span class="observatori-stop-name" title="${this.esc(st.stopName)}">${this.esc(st.stopName)}</span>
                 <span class="observatori-mobile-only" style="background:${lColor}; color:${badgeTextColor}; padding:0.1rem 0.35rem; border-radius:4px; font-size:0.7rem; font-weight:800; margin-left:0.25rem;">${this.esc(st.lineCode)}</span>
               </div>
@@ -780,17 +867,19 @@ class ObservatoriApp {
               <span class="observatori-line-badge" style="background:${lColor}; color:${badgeTextColor}; font-size:0.72rem; padding:0.12rem 0.45rem; border-radius:4px;">${this.esc(st.lineCode)}</span>
             </td>
             <td class="observatori-col-desktop" style="color:var(--text-muted); white-space:nowrap;">${this.esc(st.agency)}</td>
-            <td style="font-weight:700; color:${Number(st.avgDelay) > 0 ? '#ef4444' : '#10b981'}; white-space:nowrap;">${sAvgStr}</td>
+            <td style="font-weight:700; color:${avgDelayColor}; white-space:nowrap;">${sAvgStr}</td>
             <td style="white-space:nowrap; text-align:center;">
-              <span style="background:${st.severeLatePct >= 30 ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.15)'}; color:${st.severeLatePct >= 30 ? '#f87171' : '#fbbf24'}; padding:0.15rem 0.45rem; border-radius:6px; font-weight:600;">${st.severeLatePct}%</span>
+              ${st.severeLatePct > 0 ? `
+                <span style="background:${st.severeLatePct >= 30 ? 'rgba(239,68,68,0.2)' : (st.severeLatePct >= 20 ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.06)')}; color:${st.severeLatePct >= 30 ? '#f87171' : (st.severeLatePct >= 20 ? '#fbbf24' : 'var(--text-muted)')}; padding:0.15rem 0.45rem; border-radius:6px; font-weight:600;">${st.severeLatePct}%</span>
+              ` : '<span style="color:#10b981; font-weight:600; font-size:0.75rem;">0%</span>'}
             </td>
             <td style="white-space:nowrap;">
-              ${st.criticalHour && st.criticalHour !== '--' ? `
+              ${st.criticalHour && st.criticalHour !== '--' && Number(st.criticalHourAvgDelay) >= 1.5 ? `
                 <div class="bottleneck-hour-badge" title="Retard mitjà en aquesta franja: +${st.criticalHourAvgDelay} min">
                   <span class="badge-time">${this.esc(st.criticalHour)}</span>
                   <span class="badge-delay">(+${st.criticalHourAvgDelay}m)</span>
                 </div>
-              ` : '<span style="color:var(--text-muted); font-size:0.75rem;">Uniforme</span>'}
+              ` : (isSevereStop ? '<span style="color:var(--text-muted); font-size:0.75rem;">Uniforme</span>' : '<span style="color:#10b981; font-size:0.75rem; font-weight:600;">✓ Puntual</span>')}
             </td>
             <td class="observatori-col-desktop" style="color:var(--text-muted); white-space:nowrap;">${sMaxStr}</td>
           </tr>
@@ -849,12 +938,17 @@ class ObservatoriApp {
 
         return `
         <div class="observatori-table-container" style="margin-bottom:1.5rem;">
+          ${stopNoticeHtml}
           <div class="observatori-table-header-row">
             <h4 class="observatori-table-title">
-              <span>Colls d'Ampolla: Parades amb Més Retard</span>
+              <span>${isAllStopsMode ? 'Totes les Parades per Retard Mitjà' : "Colls d'Ampolla: Parades amb Més Retard"}</span>
               <span class="observatori-table-subtitle">(Mostrant ${displayedWorstStops.length} de ${totalWorst}${isGroupedByLine ? ' • Agrupat per línia' : ''})</span>
             </h4>
             <div class="observatori-filter-group" style="display:flex; align-items:center; flex-wrap:wrap; gap:0.4rem;">
+              <div class="observatori-mode-toggle-group" style="display:inline-flex; border:1px solid var(--border-subtle); border-radius:14px; padding:2px; background:var(--bg-surface); gap:2px; margin-right:0.25rem;">
+                <button type="button" class="observatori-pill-btn ${!isAllStopsMode ? 'active' : ''}" data-toggle-stop-mode="bottlenecks" title="Mostra exclusivament les parades amb retards significatius">⚠️ Colls d'ampolla</button>
+                <button type="button" class="observatori-pill-btn ${isAllStopsMode ? 'active' : ''}" data-toggle-stop-mode="all" title="Mostra el 100% de les parades registrades, incloent-hi les puntuals">📋 Totes les parades</button>
+              </div>
               <label class="observatori-group-toggle" title="Agrupa les parades per línia d'autobús o desmarca per veure l'ordre real">
                 <input type="checkbox" id="observatori-group-by-line" ${isGroupedByLine ? 'checked' : ''}>
                 <span>Agrupar per línia</span>
@@ -865,7 +959,7 @@ class ObservatoriApp {
               <button type="button" class="observatori-pill-btn ${worstLimit >= 9999 ? 'active' : ''}" data-worst-limit="9999">Totes (${totalWorst})</button>
             </div>
           </div>
-          ${totalWorst === 0 ? '<div style="color:var(--text-muted); font-size:0.85rem; padding:0.8rem; background:var(--bg-elevated); border-radius:8px;">Sense punts negres registrats o cap parada coincideix amb el filtre.</div>' : `
+          ${totalWorst === 0 ? `<div style="color:var(--text-muted); font-size:0.85rem; padding:0.8rem; background:var(--bg-elevated); border-radius:8px;">${isAllStopsMode ? 'Cap parada coincideix amb el filtre.' : 'Sense punts negres registrats o cap parada coincideix amb el filtre.'}</div>` : `
             <div class="observatori-table-scroll-hint" aria-hidden="true">
               <span class="scroll-hint-icon">↔</span>
               <span>Desplaça en horitzontal per veure totes les dades</span>
@@ -875,7 +969,7 @@ class ObservatoriApp {
               <table class="observatori-table">
                 <thead>
                   <tr>
-                    <th class="sticky-col" data-sort-table="worstStops" data-sort-key="overallRank" role="button" tabindex="0">Rànquing / Parada (Punt Negre) ${getSortIndicator('worstStops', 'overallRank')}</th>
+                    <th class="sticky-col" data-sort-table="worstStops" data-sort-key="overallRank" role="button" tabindex="0">${isAllStopsMode ? 'Rànquing / Parada' : 'Rànquing / Parada (Punt Negre)'} ${getSortIndicator('worstStops', 'overallRank')}</th>
                     <th class="observatori-col-desktop" data-sort-table="worstStops" data-sort-key="lineCode" role="button" tabindex="0">Línia ${getSortIndicator('worstStops', 'lineCode')}</th>
                     <th class="observatori-col-desktop" data-sort-table="worstStops" data-sort-key="agency" role="button" tabindex="0">Operador ${getSortIndicator('worstStops', 'agency')}</th>
                     <th data-sort-table="worstStops" data-sort-key="avgDelay" role="button" tabindex="0">Retard Mitjà ${getSortIndicator('worstStops', 'avgDelay')}</th>

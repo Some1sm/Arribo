@@ -418,7 +418,7 @@ class HistoryDatabase {
   }
 
   getJournalismReport(hoursBack = 24, allLinesCatalog = []) {
-    if (!this._ensureOpen()) return { summary: {}, rankingMostDelayed: [], rankingBestPunctuality: [], rankingWorstStops: [], agencyStats: [] };
+    if (!this._ensureOpen()) return { summary: {}, rankingMostDelayed: [], rankingBestPunctuality: [], rankingWorstStops: [], allStopDelays: [], agencyStats: [] };
     try {
       const cutoff = Date.now() - hoursBack * 3600 * 1000;
 
@@ -537,8 +537,8 @@ class HistoryDatabase {
         .filter(a => (a.totalSamples || 0) >= 1)
         .sort((a, b) => b.totalSamples - a.totalSamples);
 
-      // 5. Ranking of Worst Stops (Bottlenecks)
-      const worstStopsStmt = this.db.prepare(`
+      // 5. Ranking of Stops (Bottlenecks and Full Network Stops)
+      const allStopsStmt = this.db.prepare(`
         SELECT 
           stop_id as stopId,
           line_id as recordedLineId,
@@ -554,9 +554,8 @@ class HistoryDatabase {
           AND madrid_hour(timestamp) NOT IN ('00', '01', '02', '03', '04')
           AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
         GROUP BY agency, line_id, stop_id
-        HAVING arrivalCount >= 1 AND (avgDelay >= 1.5 OR severeLatePct >= 20.0)
+        HAVING arrivalCount >= 1
         ORDER BY avgDelay DESC, maxDelay DESC
-        LIMIT 100
       `);
 
       const stopKey = row => JSON.stringify([row.agency, row.recordedLineId, row.stopId]);
@@ -576,7 +575,7 @@ class HistoryDatabase {
         '8': { minH: 6, maxH: 22 }, 'L8': { minH: 6, maxH: 22 }
       };
 
-      // Query Hourly Breakdown for Worst Stops (Bottlenecks)
+      // Query Hourly Breakdown for All Stops
       const stopHourlyStmt = this.db.prepare(`
         SELECT 
           madrid_hour(timestamp) as hourOfDay,
@@ -611,7 +610,7 @@ class HistoryDatabase {
         hourlyStopsMap.get(hKey).push(r);
       });
 
-      const rankingWorstStops = worstStopsStmt.all(cutoff)
+      const allStopDelays = allStopsStmt.all(cutoff)
         .map(r => ({
           ...r,
           avgDelay: Math.round((r.avgDelay || 0) * 10) / 10
@@ -627,7 +626,7 @@ class HistoryDatabase {
           const rawKey = String(r.lineCode || '').toUpperCase();
           const catalogLine = validCatalogMap.get(cleanKey) || validCatalogMap.get(rawKey);
           
-          // Attach critical peak hour for this bottleneck stop
+          // Attach critical peak hour for this stop
           const sKey = stopKey(r);
           const hoursForStop = stopHoursMap.get(sKey) || [];
           hoursForStop.sort((a, b) => (b.avgDelay - a.avgDelay) || (b.arrivalCount - a.arrivalCount));
@@ -653,9 +652,11 @@ class HistoryDatabase {
           }
 
           const op = lineOperatingHours[cleanKey] || lineOperatingHours[rawKey] || { minH: 5, maxH: 22 };
+          const isBottleneck = ((r.avgDelay || 0) >= 1.5 || (r.severeLatePct || 0) >= 20.0);
 
           return {
             ...r,
+            isBottleneck,
             hourly: Array.from({ length: 24 }, (_, hour) => {
               const hourKey = String(hour).padStart(2, '0');
               const isOperating = hour >= op.minH && hour <= op.maxH;
@@ -679,6 +680,10 @@ class HistoryDatabase {
             isSchoolHour
           };
         });
+
+      const rankingWorstStops = allStopDelays
+        .filter(r => r.isBottleneck)
+        .slice(0, 100);
 
       const totalMonitoredCount = allLinesCatalog && allLinesCatalog.length > 0
         ? allLinesCatalog.length
@@ -811,11 +816,12 @@ class HistoryDatabase {
         rankingMostDelayed,
         rankingBestPunctuality,
         rankingWorstStops,
+        allStopDelays,
         agencyStats
       };
     } catch (e) {
       console.error('[HistoryDB] getJournalismReport error:', e.message);
-      return { summary: {}, termometre: null, rankingMostDelayed: [], rankingBestPunctuality: [], rankingWorstStops: [], agencyStats: [] };
+      return { summary: {}, termometre: null, rankingMostDelayed: [], rankingBestPunctuality: [], rankingWorstStops: [], allStopDelays: [], agencyStats: [] };
     }
   }
 
