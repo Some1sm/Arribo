@@ -110,6 +110,9 @@ function getDirectionSchedule(lineId, direction = '0', dayType = 'weekday') {
   const catDay = toCatalanDayType(dayType);
   const departures = dirObj.schedules[normDay] || dirObj.schedules[catDay] || [];
   const afternoonOnly = Boolean(dirObj.afternoonOnly?.[normDay]);
+  const totalTravelSec = (dirObj.dayTravelSec && dirObj.dayTravelSec[normDay]) || dirObj.totalTravelSec || 0;
+  const totalTravelMinutes = Math.round(totalTravelSec / 60) || dirObj.totalTravelMinutes || 0;
+  const stopTravelSecMap = (dirObj.dayStopTravelSec && dirObj.dayStopTravelSec[normDay]) || dirObj.stopTravelSecMap || {};
 
   return {
     lineId: lineObj.lineId,
@@ -124,9 +127,9 @@ function getDirectionSchedule(lineId, direction = '0', dayType = 'weekday') {
     terminalStop: dirObj.terminalStop,
     departures: departures,
     stops: dirObj.stops || [],
-    stopTravelSecMap: dirObj.stopTravelSecMap || {},
-    totalTravelSec: dirObj.totalTravelSec || 0,
-    totalTravelMinutes: dirObj.totalTravelMinutes || 0,
+    stopTravelSecMap: stopTravelSecMap,
+    totalTravelSec: totalTravelSec,
+    totalTravelMinutes: totalTravelMinutes,
     totalDistanceMeters: dirObj.totalDistanceMeters || 0,
     totalDistanceKm: dirObj.totalDistanceKm || 0,
     afternoonOnly: afternoonOnly,
@@ -142,10 +145,11 @@ function getDirectionSchedule(lineId, direction = '0', dayType = 'weekday') {
  * @param {string|number} lineId 
  * @param {string|number} [direction='0'] 
  * @param {string|number} stopId 
+ * @param {string} [dayType='weekday']
  * @returns {number} Travel time in seconds (0 if origin or not found)
  */
-function getStopTravelTime(lineId, direction = '0', stopId) {
-  const dirSched = getDirectionSchedule(lineId, direction);
+function getStopTravelTime(lineId, direction = '0', stopId, dayType = 'weekday') {
+  const dirSched = getDirectionSchedule(lineId, direction, dayType);
   if (!dirSched || !dirSched.stopTravelSecMap) return 0;
   const sId = String(stopId);
   return dirSched.stopTravelSecMap[sId] || 0;

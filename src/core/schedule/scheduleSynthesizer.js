@@ -433,7 +433,7 @@ function compileStopDepartures(options = {}) {
       if (hasExplicitAimed && liveAimedMin !== null) {
         let diffAimed = Math.abs(liveAimedMin - scheduledMinOfDay);
         if (diffAimed > 720) diffAimed = 1440 - diffAimed;
-        if (diffAimed <= 3) {
+        if (diffAimed <= duplicateWindowMinutes) {
           return true;
         }
       }
@@ -450,7 +450,7 @@ function compileStopDepartures(options = {}) {
       if (delay !== 0 && hasExplicitAimed && liveAimedMin !== null) {
         let diffDelayed = Math.abs(liveAimedMin - scheduledMinOfDay);
         if (diffDelayed > 720) diffDelayed = 1440 - diffDelayed;
-        if (diffDelayed <= 3) {
+        if (diffDelayed <= duplicateWindowMinutes) {
           return true;
         }
       }

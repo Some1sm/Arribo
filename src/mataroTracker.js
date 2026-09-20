@@ -871,6 +871,43 @@ class MataroTracker extends BaseTracker {
       if (cleanDir && cleanR && (cleanDir.includes(cleanR) || cleanR.includes(cleanDir))) return i;
     }
 
+    // 4. Spatial / Geometric Fallback: Match against route polylines using GPS position and bearing
+    const vLat = vehicle.lat !== undefined ? vehicle.lat : vehicle.latitude;
+    const vLon = vehicle.lon !== undefined ? vehicle.lon : vehicle.longitude;
+    if (vLat && vLon) {
+      let bestIdx = 0;
+      let minDistance = Infinity;
+
+      for (let i = 0; i < routes.length; i++) {
+        const coords = (routes[i].coords || []).map(c => ({
+          lat: parseFloat(c.Latitude !== undefined ? c.Latitude : (c.lat || 0)),
+          lon: parseFloat(c.Longitude !== undefined ? c.Longitude : (c.lon || 0))
+        })).filter(c => !isNaN(c.lat) && !isNaN(c.lon) && (c.lat !== 0 || c.lon !== 0));
+
+        if (coords.length < 2) continue;
+
+        const snap = geoEngine.snapPointToPolyline(vLat, vLon, coords);
+        let dist = snap.dist;
+
+        // If vehicle bearing is available, penalize opposite direction travel along the polyline
+        const vBearing = vehicle.bearing;
+        if (vBearing !== undefined && vBearing !== null && snap.bearing !== undefined) {
+          const bearingDiff = Math.abs((vBearing - snap.bearing + 540) % 360 - 180);
+          if (bearingDiff > 100) {
+            // Bus is traveling opposite to this route polyline flow
+            dist += 1200;
+          }
+        }
+
+        if (dist < minDistance) {
+          minDistance = dist;
+          bestIdx = i;
+        }
+      }
+
+      return bestIdx;
+    }
+
     return 0;
   }
 
@@ -2713,7 +2750,7 @@ class MataroTracker extends BaseTracker {
       const dirSchedToday = mataroSchedules.getDirectionSchedule(lIdStr, dirKey, dayTypeToday);
       const dirSchedTomorrow = mataroSchedules.getDirectionSchedule(lIdStr, dirKey, dayTypeTomorrow);
 
-      let stopTravelSec = mataroSchedules.getStopTravelTime(lIdStr, dirKey, sId);
+      let stopTravelSec = mataroSchedules.getStopTravelTime(lIdStr, dirKey, sId, dayTypeToday);
       if (stopTravelSec === 0 && r.stops && r.stops.length > 0) {
         const travelTimes = scheduleSynthesizer.estimateStopTravelTimes(r.stops, {
           speedMps: 4.8,

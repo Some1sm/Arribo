@@ -20,6 +20,8 @@ const path = require('path');
 const mataroTracker = require('../src/mataroTracker');
 const siriClient = require('../src/mataroSiriClient');
 const geoEngine = require('../src/core/geo/geoEngine');
+const mataroSchedules = require('../src/data/mataroSchedules');
+const scheduleSynthesizer = require('../src/core/schedule/scheduleSynthesizer');
 
 async function runTests() {
   console.log('--- Starting Telemetry Identity Stitching & Anti-Duplication Tests ---');
@@ -362,12 +364,102 @@ async function runTests() {
     console.log('  ✓ Test 5 Passed: Cross-direction anonymous buses correctly matched to respective corridors.');
   }
 
+  // =========================================================================
+  // Test 6: Spatial Route Matching Without Direction Text (Prevents Teleporting)
+  // =========================================================================
+  console.log('📌 Test 6: Spatial Route Matching Without Direction Text (Cerdanyola vs Via Europa)...');
+  {
+    const routes = mataroTracker.routesData['1'];
+    // Bus at Gatassa (lat: 41.5377, lon: 2.42801) has NO direction text
+    const busGatassa = {
+      vehicleId: '2663',
+      lineId: '1',
+      lat: 41.5377,
+      lon: 2.42801,
+      speedKmh: 20
+    };
+    // Bus at Caputxins (lat: 41.5511, lon: 2.44606) has NO direction text
+    const busCaputxins = {
+      vehicleId: '2683',
+      lineId: '1',
+      lat: 41.5511,
+      lon: 2.44606,
+      speedKmh: 20
+    };
+
+    const matchGatassa = mataroTracker.matchVehicleToRouteIndex(busGatassa, routes);
+    const matchCaputxins = mataroTracker.matchVehicleToRouteIndex(busCaputxins, routes);
+
+    assert.strictEqual(matchGatassa, 1, 'Bus in Cerdanyola/Gatassa must match Direction 1 (Rodalies -> Hospital)');
+    assert.strictEqual(matchCaputxins, 0, 'Bus at Caputxins must match Direction 0 (Hospital -> Rodalies)');
+
+    console.log('  ✓ Test 6 Passed: Spatial polyline matching correctly identifies route index with zero direction text.');
+  }
+
+  // =========================================================================
+  // Test 7: Stop 1015 (El Cargol) Official Timetable Calibration & Deduplication
+  // =========================================================================
+  console.log('📌 Test 7: Stop 1015 (El Cargol) Official Timetable Calibration & Deduplication...');
+  {
+    const travelSecSun = mataroSchedules.getStopTravelTime('1', '12', '1015', 'sunday');
+    assert.strictEqual(travelSecSun, 1500, 'Stop 1015 (El Cargol) Sunday travelSec must be 1500s (25 min from Hospital)');
+
+    const travelSecWk = mataroSchedules.getStopTravelTime('1', '12', '1015', 'weekday');
+    assert.strictEqual(travelSecWk, 1188, 'Stop 1015 (El Cargol) Weekday travelSec must be 1188s (19.8 min from Hospital)');
+
+    // 13:53 Hospital departure + 1500s -> 14:18:00
+    const targetDate = new Date('2026-09-20T14:09:00+02:00'); // Sunday at 14:09
+    const liveBus = {
+      lineId: '1',
+      destination: 'Rodalies',
+      directionId: '0',
+      vehicleId: '2683',
+      departureTime: '14:23',
+      scheduledTime: '14:18',
+      expectedIso: '2026-09-20T12:23:00.000Z',
+      aimedIso: '2026-09-20T12:18:00.000Z',
+      minutesAway: 14,
+      isRealTime: true,
+      delayMins: 5
+    };
+
+    const compiled = scheduleSynthesizer.compileStopDepartures({
+      baseDeparturesToday: ['13:53', '14:28', '15:03'],
+      stopTravelSec: 1500,
+      liveDepartures: [liveBus],
+      duplicateWindowMinutes: 8,
+      dateObj: targetDate,
+      limit: 5
+    });
+
+    // Check that there is NO phantom 14:12 departure
+    const has1412 = compiled.some(d => d.departureTime === '14:12' || d.scheduledTime === '14:12');
+    assert.strictEqual(has1412, false, 'Must NOT contain phantom 14:12 departure');
+
+    // Check that the live bus is present and has official time 14:18
+    const liveMatch = compiled.find(d => d.isRealTime);
+    assert(liveMatch, 'Live bus must be present');
+    assert.strictEqual(liveMatch.departureTime, '14:23');
+    assert.strictEqual(liveMatch.scheduledTime, '14:18');
+
+    // Check that the next departure is the 14:28 trip -> 14:53 (not duplicated with 14:18)
+    const nextTrip = compiled.find(d => !d.isRealTime);
+    assert(nextTrip, 'Next scheduled trip must be present');
+    assert.strictEqual(nextTrip.departureTime, '14:53');
+    assert.strictEqual(nextTrip.scheduledTime, '14:53');
+
+    // Total departures for these 2 trips must be exactly 2 (zero duplicates)
+    assert.strictEqual(compiled.length, 3, 'Must have 1 live trip + 2 future scheduled trips');
+
+    console.log('  ✓ Test 7 Passed: Authoritative passing time 14:18 verified and live trip deduplication confirmed with zero phantoms.');
+  }
+
   // Clean up
   mataroTracker.vehicleHistory.clear();
   mataroTracker.invalidateLineDetailsCache();
 
   console.log('\n========================================================');
-  console.log('🎉 ALL TELEMETRY IDENTITY STITCHING TESTS PASSED (5/5)!');
+  console.log('🎉 ALL TELEMETRY IDENTITY STITCHING TESTS PASSED (7/7)!');
   console.log('========================================================\n');
 }
 
