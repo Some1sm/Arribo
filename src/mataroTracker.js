@@ -2433,7 +2433,7 @@ class MataroTracker extends BaseTracker {
             const lIdStr = String(dep.lineId);
             const dirKey = String(matchingRoute.id || '0');
 
-            let stopTravelSec = mataroSchedules.getStopTravelTime(lIdStr, dirKey, sId);
+            let stopTravelSec = mataroSchedules.getStopTravelTime(lIdStr, dirKey, sId, dayTypeToday);
             if (stopTravelSec <= 0) {
               const travelTimes = scheduleSynthesizer.estimateStopTravelTimes(matchingRoute.stops, {
                 speedMps: 4.8,
@@ -2636,7 +2636,7 @@ class MataroTracker extends BaseTracker {
           });
 
           if (originBoard && Array.isArray(originBoard.departures)) {
-            let stopTravelSec = mataroSchedules.getStopTravelTime(lIdStr, dirKey, sId);
+            let stopTravelSec = mataroSchedules.getStopTravelTime(lIdStr, dirKey, sId, dayTypeToday);
             if (stopTravelSec <= 0 && r.stops && r.stops.length > 0) {
               const travelTimes = scheduleSynthesizer.estimateStopTravelTimes(r.stops, {
                 speedMps: 4.8,
@@ -2984,7 +2984,7 @@ class MataroTracker extends BaseTracker {
     const dayTypeTomorrow = dateCompTomorrow.isSunday ? 'sunday' : (dateCompTomorrow.isSaturday ? 'saturday' : 'weekday');
 
     const dirSchedTomorrow = mataroSchedules.getDirectionSchedule(lId, selectedRoute?.id || String(dirIdx), dayTypeTomorrow);
-    const stopTravelSec = mataroSchedules.getStopTravelTime(lId, selectedRoute?.id || String(dirIdx), sId);
+    const stopTravelSec = mataroSchedules.getStopTravelTime(lId, selectedRoute?.id || String(dirIdx), sId, dayTypeTomorrow);
 
     let firstTimeTomorrow = '06:30';
     if (dirSchedTomorrow && dirSchedTomorrow.firstTrip) {

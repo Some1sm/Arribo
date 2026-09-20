@@ -132,3 +132,53 @@ node scripts/docs_check.js # Local guide links and npm script references
 Every `test/*.js` file runs in its own Node process with isolated temporary storage. A handful of retired-provider diagnostics and manual load tests are skipped with printed reasons (see `test/run.js`).
 
 **Integration test note:** integration suites may start workers, contact upstream services, and write runtime data; inspect their setup before running against a deployment's data directory.
+
+## Avanza Mataró Timetable API & Data Extraction
+
+The official Avanza Mataró portal (`https://mataro.avanzagrupo.com`) runs on a Liferay CMS that exposes internal AJAX service endpoints returning authoritative transit geometries, route variants, origin timetables, and stop-by-stop passing times across all day types (*Feiners*, *Dissabtes*, and *Diumenges i Festius*).
+
+Other open-source tools and community transit projects can query these endpoints directly:
+
+### 1. Route Variants & Geometry (`getTrayectosIda` / `getTrayectosVuelta`)
+
+- **URL:** `POST https://mataro.avanzagrupo.com/detalle-linea?p_p_id=adoLinea_routes_AdoLineaRoutesPortlet_INSTANCE_9eVaGQ76b4lw&p_p_lifecycle=2&p_p_state=normal&p_p_mode=view&p_p_cacheability=cacheLevelPage&_adoLinea_routes_AdoLineaRoutesPortlet_INSTANCE_9eVaGQ76b4lw_cmd=getTrayectosIda`
+- **Form Data:**
+  - `_adoLinea_routes_AdoLineaRoutesPortlet_INSTANCE_9eVaGQ76b4lw_idBusLine`: Line number (`1`–`8`).
+  - `_adoLinea_routes_AdoLineaRoutesPortlet_INSTANCE_9eVaGQ76b4lw_pathIdBusLine`: Direction path ID (e.g. `11`, `12`).
+- **Response:** JSON containing GeoJSON `MultiLineString` route alignment, all sequenced stops (`outTrip.features` / `backTrip.features`), and route variants in `trayectosResponse`.
+
+### 2. Origin Scheduled Departures (`getHorariosTeoricos`)
+
+- **URL:** `POST https://mataro.avanzagrupo.com/detalle-linea?p_p_id=adoLinea_routes_AdoLineaRoutesPortlet_INSTANCE_9eVaGQ76b4lw&p_p_lifecycle=2&p_p_state=normal&p_p_mode=view&p_p_cacheability=cacheLevelPage&_adoLinea_routes_AdoLineaRoutesPortlet_INSTANCE_9eVaGQ76b4lw_cmd=getHorariosTeoricos`
+- **Form Data:**
+  - `_adoLinea_routes_AdoLineaRoutesPortlet_INSTANCE_9eVaGQ76b4lw_idBusLine`: Line number (`1`–`8`).
+  - `_adoLinea_routes_AdoLineaRoutesPortlet_INSTANCE_9eVaGQ76b4lw_pathIdBusLine`: Direction path ID (e.g. `11`, `12`).
+  - `_adoLinea_routes_AdoLineaRoutesPortlet_INSTANCE_9eVaGQ76b4lw_direccion`: `'I'` (outbound / anada) or `'V'` (return / tornada).
+  - `_adoLinea_routes_AdoLineaRoutesPortlet_INSTANCE_9eVaGQ76b4lw_primeraParada`: Origin stop ID (e.g. `1016`).
+- **Response:** JSON containing `horariosTeoricosResponse` with complete departure lists by day type.
+
+### 3. Stop-by-Stop Passing Times (`getHorarios`)
+
+- **URL:** `POST https://mataro.avanzagrupo.com/detalleparada?p_p_id=com_ado_portlet_parada_AdoParadaPortlet_INSTANCE_PNmv1B2yu9UG&p_p_lifecycle=2&p_p_state=normal&p_p_mode=view&p_p_cacheability=cacheLevelPage&_com_ado_portlet_parada_AdoParadaPortlet_INSTANCE_PNmv1B2yu9UG_cmd=getHorarios`
+- **Form Data:**
+  - `_com_ado_portlet_parada_AdoParadaPortlet_INSTANCE_PNmv1B2yu9UG_idB`: Line number (`1`–`8`).
+  - `_com_ado_portlet_parada_AdoParadaPortlet_INSTANCE_PNmv1B2yu9UG_busStopID`: Stop ID (e.g. `1015` El Cargol, `1134` Gatassa).
+  - `_com_ado_portlet_parada_AdoParadaPortlet_INSTANCE_PNmv1B2yu9UG_busDir`: Direction (`1` for outbound, `2` for return).
+- **Response:** JSON containing `horariosIdajson` with exact passing times at that specific stop for each day type.
+
+### Protocol & Connection Notes
+
+- **Session Cookies:** Send an initial `GET https://mataro.avanzagrupo.com/detalle-linea?idBusLine=1` to receive session cookies (`JSESSIONID`, `COOKIE_SUPPORT`), and supply them in the `Cookie` header on subsequent POSTs.
+- **Headers:** Include `'X-Requested-With': 'XMLHttpRequest'` and `'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'`.
+- **TLS Certificate Chain:** The upstream server certificate may lack intermediate certificates on standard Node trust stores; set `NODE_TLS_REJECT_UNAUTHORIZED=0` or supply intermediate CAs.
+
+### Automated Scraper Script
+
+Arribo! includes a scraper script to automate extraction and calibration across all 8 lines and 153 stops:
+
+```bash
+node scripts/scrape_avanza_schedules.js
+```
+
+This updates the network schedule cache in `src/data/mataro_schedules.json` and creates an archival snapshot in `data/cities/mataro/avanza_raw_timetables.json`.
+

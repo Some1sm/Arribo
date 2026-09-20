@@ -169,7 +169,7 @@ function getDeparturesForStop(lineId, direction = '0', stopId, dayType = 'weekda
   const dirSched = getDirectionSchedule(lineId, direction, dayType);
   if (!dirSched || !Array.isArray(dirSched.departures)) return [];
 
-  const travelSec = getStopTravelTime(lineId, direction, stopId);
+  const travelSec = getStopTravelTime(lineId, direction, stopId, dayType);
   if (travelSec === 0) return dirSched.departures.slice();
 
   return dirSched.departures.map(originTime => {
