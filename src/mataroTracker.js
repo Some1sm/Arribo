@@ -874,6 +874,160 @@ class MataroTracker extends BaseTracker {
     return 0;
   }
 
+  /**
+   * Trajectory Continuity & Identity Stitching:
+   * Avanza SIRI occasionally drops <VehicleRef>, sending anonymous tags like <VehicleRef>Bus</VehicleRef>.
+   * This method inspects incoming live vehicles, identifies anonymous pings, and matches them to
+   * active physical vehicles from vehicleHistory on this line seen within the last 90 seconds.
+   * By restoring the physical vehicle ID to the live GPS fix:
+   * 1. The live bus displays with its true vehicle fleet ID (e.g. #2683).
+   * 2. Dead-reckoning recognises the vehicle as actively transmitting live GPS and skips creating a duplicate clone.
+   * 3. Legitimate bus bunching (multiple physical buses running close together) is fully preserved without coarse distance suppression.
+   *
+   * @param {Array} liveVehicles Raw live telemetry vehicles
+   * @param {string} lineId Normalized line ID (e.g. '1')
+   * @param {Array} routes Array of route objects for this line
+   * @param {Date|number} [referenceDate=new Date()] Reference date/time for evaluation
+   * @returns {Array} Stitched live vehicles array
+   */
+  stitchAnonymousVehicles(liveVehicles, lineId, routes, referenceDate = new Date()) {
+    if (!Array.isArray(liveVehicles) || liveVehicles.length === 0) {
+      return liveVehicles || [];
+    }
+
+    const isAnonymous = (v) => {
+      if (!v) return true;
+      const rawId = v.vehicleId !== undefined && v.vehicleId !== null ? String(v.vehicleId).trim() : '';
+      if (!rawId) return true;
+      const lower = rawId.toLowerCase();
+      return lower === 'bus' || lower === 'vehicle' || lower === 'unknown';
+    };
+
+    const hasAnonymous = liveVehicles.some(isAnonymous);
+    if (!hasAnonymous) {
+      return liveVehicles;
+    }
+
+    const now = (referenceDate instanceof Date)
+      ? referenceDate.getTime()
+      : (typeof referenceDate === 'number' ? referenceDate : Date.now());
+
+    // 1. Identify all active physical vehicle IDs already transmitting in this batch
+    const activeKnownIds = new Set();
+    liveVehicles.forEach(v => {
+      if (!isAnonymous(v)) {
+        activeKnownIds.add(String(v.vehicleId).trim());
+      }
+    });
+
+    // 2. Collect eligible candidate vehicles from vehicleHistory (seen within 90s, same line, not synthetic, not already transmitting)
+    const eligibleCandidates = [];
+    for (const [vId, hist] of this.vehicleHistory.entries()) {
+      const cleanVid = String(vId).trim();
+      if (!cleanVid || isAnonymous({ vehicleId: cleanVid })) continue;
+      if (cleanVid.startsWith('EST_') || hist.isGhostVehicle || hist.isTheoretical) continue;
+      if (String(hist.lineId) !== String(lineId)) continue;
+      if (activeKnownIds.has(cleanVid)) continue;
+
+      const elapsedSec = (now - (hist.lastSeen || 0)) / 1000;
+      if (Math.abs(elapsedSec) <= 90) {
+        eligibleCandidates.push({
+          vehicleId: cleanVid,
+          direction: hist.direction,
+          lat: hist.lat,
+          lon: hist.lon,
+          bearing: hist.bearing,
+          speedKmh: hist.speedKmh,
+          delayMins: hist.delayMins,
+          lineName: hist.lineName,
+          directionName: hist.directionName,
+          origin: hist.origin,
+          destination: hist.destination,
+          elapsedSec: Math.max(0, elapsedSec)
+        });
+      }
+    }
+
+    if (eligibleCandidates.length === 0) {
+      return liveVehicles;
+    }
+
+    // 3. For each anonymous vehicle, find the best matching candidate along the route polyline
+    const claimedCandidates = new Set();
+
+    liveVehicles.forEach(anon => {
+      if (!isAnonymous(anon)) return;
+
+      const anonLat = anon.lat !== undefined ? anon.lat : anon.latitude;
+      const anonLon = anon.lon !== undefined ? anon.lon : anon.longitude;
+      if (!anonLat || !anonLon) return;
+
+      // Determine route/direction of anonymous fix
+      const anonDirIdx = this.matchVehicleToRouteIndex(anon, routes);
+
+      let bestCandidate = null;
+      let bestScore = Infinity;
+
+      for (const candidate of eligibleCandidates) {
+        if (claimedCandidates.has(candidate.vehicleId)) continue;
+
+        const dist = geoEngine.calculateDistanceMeters(candidate.lat, candidate.lon, anonLat, anonLon);
+        // Plausible movement window: bus traveling at max 72 km/h (20 m/s) + buffer for GPS jitter
+        const maxPlausibleDist = Math.max(400, (candidate.elapsedSec + 15) * 22);
+        if (dist > maxPlausibleDist) continue;
+
+        // Direction alignment score
+        const dirMatch = (candidate.direction !== undefined && candidate.direction !== null)
+          ? (String(candidate.direction) === String(anonDirIdx))
+          : true;
+
+        // Score prioritizing direction match and closest distance
+        const score = dist + (dirMatch ? 0 : 2500);
+
+        if (score < bestScore) {
+          bestScore = score;
+          bestCandidate = candidate;
+        }
+      }
+
+      if (bestCandidate) {
+        claimedCandidates.add(bestCandidate.vehicleId);
+        activeKnownIds.add(bestCandidate.vehicleId);
+
+        // Stitch identity onto the live vehicle
+        anon.vehicleId = bestCandidate.vehicleId;
+        anon.stitchedFromHistory = true;
+        if (!anon.lineName && bestCandidate.lineName) anon.lineName = bestCandidate.lineName;
+        if (!anon.directionName && bestCandidate.directionName) anon.directionName = bestCandidate.directionName;
+        if (!anon.origin && bestCandidate.origin) anon.origin = bestCandidate.origin;
+        if (!anon.destination && bestCandidate.destination) anon.destination = bestCandidate.destination;
+
+        // Update vehicleHistory with the fresh live GPS fix
+        this.vehicleHistory.set(String(bestCandidate.vehicleId), {
+          ...this.vehicleHistory.get(bestCandidate.vehicleId),
+          vehicleId: bestCandidate.vehicleId,
+          lineId: String(lineId),
+          direction: String(anonDirIdx),
+          lat: anonLat,
+          lon: anonLon,
+          bearing: anon.bearing !== undefined ? anon.bearing : bestCandidate.bearing,
+          speedKmh: anon.speedKmh !== undefined ? anon.speedKmh : bestCandidate.speedKmh,
+          delayMins: anon.delayMins !== undefined ? anon.delayMins : bestCandidate.delayMins,
+          lastSeen: now,
+          directionName: anon.directionName || bestCandidate.directionName,
+          origin: anon.origin || bestCandidate.origin,
+          destination: anon.destination || bestCandidate.destination
+        });
+
+        // Clean up dummy 'Bus' / 'bus' entry if present in vehicleHistory
+        this.vehicleHistory.delete('Bus');
+        this.vehicleHistory.delete('bus');
+      }
+    });
+
+    return liveVehicles;
+  }
+
   async getLineDetails(lineId, direction = '0', options = {}) {
     if (typeof direction === 'object' && direction !== null) {
       options = direction;
@@ -974,6 +1128,12 @@ class MataroTracker extends BaseTracker {
       }
     }
 
+    // Trajectory Continuity & Identity Stitching:
+    // Restore dropped fleet IDs on live GPS fixes before direction assignment and dead-reckoning
+    if (Array.isArray(liveVehicles) && liveVehicles.length > 0) {
+      this.stitchAnonymousVehicles(liveVehicles, lId, routes, targetDate);
+    }
+
     // Fallback: If still empty, check this.vehicleHistory for active/recent buses (up to 10 mins)
     if (!liveVehicles || liveVehicles.length === 0) {
       const now = targetDate.getTime();
@@ -1006,8 +1166,14 @@ class MataroTracker extends BaseTracker {
     // Apply Deterministic Direction Matching & Road-Snapping with 10-minute dead reckoning
     // Always process live vehicles for all directions to establish full line fleet ground truth
     const isMultiDir = routes.length > 1;
-    const vehs0 = isMultiDir ? liveVehicles.filter(v => this.matchVehicleToRouteIndex(v, routes) === 0) : liveVehicles;
-    const vehs1 = isMultiDir ? liveVehicles.filter(v => this.matchVehicleToRouteIndex(v, routes) === 1) : [];
+    liveVehicles.forEach(v => {
+      if (v.direction === undefined || v.direction === null || v.direction === '') {
+        v.direction = String(isMultiDir ? this.matchVehicleToRouteIndex(v, routes) : 0);
+      }
+    });
+
+    const vehs0 = isMultiDir ? liveVehicles.filter(v => String(v.direction) === '0') : liveVehicles;
+    const vehs1 = isMultiDir ? liveVehicles.filter(v => String(v.direction) === '1') : [];
 
     const stops0 = (allDirections && allDirections[0]?.stops) || routes[0]?.stops || stops;
     const stops1 = (allDirections && allDirections[1]?.stops) || routes[1]?.stops || stops;
@@ -1255,7 +1421,8 @@ class MataroTracker extends BaseTracker {
         if (estPos) {
           // Anti-bunching & duplicate guard: Never dead-reckon if an active physical bus on this direction is within 600m
           const isBunchedWithPhysical = (allLineLiveVehicles || liveBuses).some(b => {
-            if (String(b.direction) !== String(dirId)) return false;
+            const bDir = (b.direction !== undefined && b.direction !== null && b.direction !== '') ? String(b.direction) : null;
+            if (bDir !== null && bDir !== String(dirId)) return false;
             const bLat = b.lat || b.latitude;
             const bLon = b.lon || b.longitude;
             if (!bLat || !bLon) return false;
@@ -1865,6 +2032,9 @@ class MataroTracker extends BaseTracker {
         if (!options.skipSiri) {
           try {
             liveVehicles = await siriClient.getLiveVehicles(lId);
+            if (Array.isArray(liveVehicles) && liveVehicles.length > 0) {
+              this.stitchAnonymousVehicles(liveVehicles, lId, routes, targetDate);
+            }
           } catch (_) {}
         }
 
