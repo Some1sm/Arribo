@@ -12,51 +12,59 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="/css/style.css?v=6.3.9">
+  <link rel="stylesheet" href="/css/style.css?v=6.4.0">
 </head>
 <body class="observatori-page-body observatori-page">
 
   <!-- Top Navigation Bar -->
-  <header class="observatori-header">
-    <a href="/" class="brand-title-wrap" title="Tornar al visor d'Arribo!">
-      <div class="brand-mark-box">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M19 17h2l.64-2.54a6 6 0 0 0 .36-2V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v6.46a6 6 0 0 0 .36 2L3 17h2"/>
-          <path d="M7 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2"/>
-          <path d="M14 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2"/>
-          <circle cx="6.5" cy="12.5" r="1.5"/>
-          <circle cx="17.5" cy="12.5" r="1.5"/>
-          <line x1="2" y1="9" x2="22" y2="9"/>
-        </svg>
-      </div>
-      <span>Arribo!</span>
-      <span class="brand-badge-pill">Dades</span>
-    </a>
+  <header class="app-header observatori-header">
+    <div class="header-container">
+      <a href="/" class="brand-title-wrap" id="header-logo-group" title="Arribo! - Tornar al mapa en temps real">
+        <div class="brand-mark-box" id="header-line-badge">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 17h2l.64-2.54a6 6 0 0 0 .36-2V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v6.46a6 6 0 0 0 .36 2L3 17h2"/>
+            <path d="M7 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2"/>
+            <path d="M14 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2"/>
+            <circle cx="6.5" cy="12.5" r="1.5"/>
+            <circle cx="17.5" cy="12.5" r="1.5"/>
+            <line x1="2" y1="9" x2="22" y2="9"/>
+          </svg>
+        </div>
+        <span>Arribo!</span>
+        <span class="brand-badge-pill" id="header-city-pill">Dades</span>
+      </a>
 
-    <div class="header-nav-links">
-      <a href="/" class="header-nav-link" title="Tornar al mapa en temps real">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/></svg>
-        <span>Mapa general</span>
-      </a>
-      <a href="/plan" class="header-nav-link" title="Planificador de rutes">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
-        <span>Com anar-hi</span>
-      </a>
-      <button type="button" class="btn-icon btn-theme-toggle" id="btn-page-theme-toggle" title="Canviar tema clar / fosc" aria-label="Canviar tema clar o fosc">
-        <svg class="theme-icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="5"></circle>
-          <line x1="12" y1="1" x2="12" y2="3"></line>
-          <line x1="12" y1="21" x2="12" y2="23"></line>
-        </svg>
-        <svg class="theme-icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-        </svg>
-      </button>
-      <button type="button" class="btn-icon" id="btn-observatori-refresh" title="Actualitzar dades" aria-label="Actualitzar dades">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
-        </svg>
-      </button>
+      <div class="header-actions">
+        <!-- Back to Main Map -->
+        <a href="/" class="btn-header-nav map-btn" id="btn-header-map" title="Tornar al mapa en temps real" style="text-decoration:none;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/></svg>
+          <span>Mapa general</span>
+        </a>
+
+        <!-- Journey Planner Navigation Button -->
+        <a href="/plan" class="btn-header-nav planner-btn" id="btn-header-planner" title="Com anar-hi: Planificador de viatges A a B" style="text-decoration:none;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
+          <span>Com anar-hi</span>
+        </a>
+
+        <!-- Theme Toggle Button -->
+        <button type="button" class="btn-icon btn-theme-toggle" id="btn-page-theme-toggle" title="Canviar tema clar / fosc" aria-label="Canviar tema clar o fosc">
+          <svg class="theme-icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <svg class="theme-icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        </button>
+      </div>
     </div>
   </header>
 
@@ -172,9 +180,9 @@
   </footer>
 
   <!-- Scripts -->
-  <script src="/js/utils.js?v=6.3.9"></script>
-  <script src="/js/storage.js?v=6.3.9"></script>
-  <script src="/js/pwa.js?v=6.3.9"></script>
-  <script src="/js/observatori.js?v=6.3.9"></script>
+  <script src="/js/utils.js?v=6.4.0"></script>
+  <script src="/js/storage.js?v=6.4.0"></script>
+  <script src="/js/pwa.js?v=6.4.0"></script>
+  <script src="/js/observatori.js?v=6.4.0"></script>
 </body>
 </html>

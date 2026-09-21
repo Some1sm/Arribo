@@ -13,45 +13,58 @@
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-  <link rel="stylesheet" href="/css/style.css?v=6.3.9">
+  <link rel="stylesheet" href="/css/style.css?v=6.4.0">
 </head>
 <body class="planner-page-body">
   <!-- Top Navigation Bar -->
-  <header class="plan-header">
-    <a href="/" class="brand-title-wrap" title="Tornar al visor complet d'Arribo!">
-      <div class="brand-mark-box">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M19 17h2l.64-2.54a6 6 0 0 0 .36-2V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v6.46a6 6 0 0 0 .36 2L3 17h2"/>
-          <path d="M7 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2"/>
-          <path d="M14 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2"/>
-          <circle cx="6.5" cy="12.5" r="1.5"/>
-          <circle cx="17.5" cy="12.5" r="1.5"/>
-          <line x1="2" y1="9" x2="22" y2="9"/>
-        </svg>
-      </div>
-      <span>Arribo!</span>
-      <span class="brand-badge-pill">Rutes</span>
-    </a>
+  <header class="app-header plan-header">
+    <div class="header-container">
+      <a href="/" class="brand-title-wrap" id="header-logo-group" title="Arribo! - Tornar al mapa en temps real">
+        <div class="brand-mark-box" id="header-line-badge">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 17h2l.64-2.54a6 6 0 0 0 .36-2V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v6.46a6 6 0 0 0 .36 2L3 17h2"/>
+            <path d="M7 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2"/>
+            <path d="M14 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2"/>
+            <circle cx="6.5" cy="12.5" r="1.5"/>
+            <circle cx="17.5" cy="12.5" r="1.5"/>
+            <line x1="2" y1="9" x2="22" y2="9"/>
+          </svg>
+        </div>
+        <span>Arribo!</span>
+        <span class="brand-badge-pill" id="header-city-pill">Rutes</span>
+      </a>
 
-    <div class="header-nav-links">
-      <a href="/" class="header-nav-link" title="Tornar al mapa en temps real">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/></svg>
-        <span>Mapa general</span>
-      </a>
-      <a href="/dades" class="header-nav-link" title="Observatori de retards i dades">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-        <span>Dades</span>
-      </a>
-      <button type="button" class="btn-icon btn-theme-toggle" id="btn-page-theme-toggle" title="Canviar tema clar / fosc" aria-label="Canviar tema clar o fosc">
-        <svg class="theme-icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="5"></circle>
-          <line x1="12" y1="1" x2="12" y2="3"></line>
-          <line x1="12" y1="21" x2="12" y2="23"></line>
-        </svg>
-        <svg class="theme-icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-        </svg>
-      </button>
+      <div class="header-actions">
+        <!-- Back to Main Map -->
+        <a href="/" class="btn-header-nav map-btn" id="btn-header-map" title="Tornar al mapa en temps real" style="text-decoration:none;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/></svg>
+          <span>Mapa general</span>
+        </a>
+
+        <!-- Journalism & Delay Analytics Link -->
+        <a href="/dades" class="btn-header-nav journalism-btn" id="btn-open-journalism" title="Veure anàlisi de retards històrics, puntualitat i dades" style="text-decoration:none;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+          <span>Dades</span>
+        </a>
+
+        <!-- Theme Toggle Button -->
+        <button type="button" class="btn-icon btn-theme-toggle" id="btn-page-theme-toggle" title="Canviar tema clar / fosc" aria-label="Canviar tema clar o fosc">
+          <svg class="theme-icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <svg class="theme-icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        </button>
+      </div>
     </div>
   </header>
 
@@ -318,15 +331,15 @@
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="/js/utils.js?v=6.3.9"></script>
-  <script src="/js/storage.js?v=6.3.9"></script>
-  <script src="/js/requests.js?v=6.3.9"></script>
-  <script src="/js/stopFeatures.js?v=6.3.9"></script>
-  <script src="/js/journeys.js?v=6.3.9"></script>
-  <script src="/js/journeyControls.js?v=6.3.9"></script>
-  <script src="/js/pwa.js?v=6.3.9"></script>
+  <script src="/js/utils.js?v=6.4.0"></script>
+  <script src="/js/storage.js?v=6.4.0"></script>
+  <script src="/js/requests.js?v=6.4.0"></script>
+  <script src="/js/stopFeatures.js?v=6.4.0"></script>
+  <script src="/js/journeys.js?v=6.4.0"></script>
+  <script src="/js/journeyControls.js?v=6.4.0"></script>
+  <script src="/js/pwa.js?v=6.4.0"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="/js/map.js?v=6.3.9"></script>
-  <script src="/js/plan.js?v=6.3.9"></script>
+  <script src="/js/map.js?v=6.4.0"></script>
+  <script src="/js/plan.js?v=6.4.0"></script>
 </body>
 </html>
