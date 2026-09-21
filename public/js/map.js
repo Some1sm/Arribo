@@ -1254,6 +1254,14 @@ class C10Map {
       this.selectedVehicleId = selectedVehicleId;
     }
 
+    if (!activeBuses || activeBuses.length === 0) {
+      for (const [tId, obj] of this.busMarkersMap.entries()) {
+        if (obj.marker) this.map.removeLayer(obj.marker);
+      }
+      this.busMarkersMap.clear();
+      return;
+    }
+
     const now = Date.now();
     const currentTripIds = new Set(activeBuses.map(b => String(b.tripId || b.vehicleId || `${b.lat}_${b.lon}`)));
     const activePhysicalVehIds = new Set(activeBuses.map(b => String(b.vehicleId || '').trim()).filter(Boolean));

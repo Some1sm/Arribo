@@ -18,14 +18,22 @@ const now = Date.now();
 const oneHour = 3600 * 1000;
 const twentySec = 20 * 1000;
 
+const madridHourFmt = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', hour: 'numeric', hourCycle: 'h23' });
+const currentMadridHour = parseInt(madridHourFmt.format(new Date()), 10);
+const hoursBackTo16 = (currentMadridHour >= 16) ? (currentMadridHour - 16) : (currentMadridHour + 24 - 16);
+const daytimeBase = now - (hoursBackTo16 * oneHour);
+const hoursBackTo04 = (currentMadridHour >= 4) ? (currentMadridHour - 4) : (currentMadridHour + 24 - 4);
+const nightBase = now - (hoursBackTo04 * oneHour);
+
 // Populate realistic test data into delay_logs:
 // Scenario A: Line 5 moving in evening rush hour (moving bus across 4 stops, reaching +25m delay)
-const l5Start = now - (2 * oneHour);
+const l5Start = daytimeBase;
 const l5Stops = ['Rodalies', 'Via Europa', 'Pl. Itàlia', 'Hospital de Mataró'];
 l5Stops.forEach((stopName, idx) => {
   // 3 pings per stop
   for (let p = 0; p < 3; p++) {
     historyDb.recordDelayLog({
+      vehicleId: '2684',
       lineId: '5',
       lineCode: 'L5',
       agency: 'Mataró Bus (Avanza)',
@@ -34,15 +42,17 @@ l5Stops.forEach((stopName, idx) => {
       delayMins: 15 + (idx * 3) + p, // delays reaching 24-25 min
       scheduledTime: '',
       actualTime: '',
-      isRealTime: true
+      isRealTime: true,
+      timestamp: l5Start + (idx * 3 + p) * twentySec
     });
   }
 });
 
 // Scenario B: Line 2 parked at terminal layover (stationary bus at same stop for 30 min, delay 20m)
-const l2Start = now - (3 * oneHour);
+const l2Start = daytimeBase - oneHour;
 for (let p = 0; p < 5; p++) {
   historyDb.recordDelayLog({
+    vehicleId: '2670',
     lineId: '2',
     lineCode: 'L2',
     agency: 'Mataró Bus (Avanza)',
@@ -51,7 +61,8 @@ for (let p = 0; p < 5; p++) {
     delayMins: 20,
     scheduledTime: '',
     actualTime: '',
-    isRealTime: true
+    isRealTime: true,
+    timestamp: l2Start + (p * 5 * 60 * 1000)
   });
 }
 
@@ -66,12 +77,13 @@ for (let p = 0; p < 5; p++) {
     delayMins: 2,
     scheduledTime: '',
     actualTime: '',
-    isRealTime: true
+    isRealTime: true,
+    timestamp: daytimeBase + (p * twentySec)
   });
 }
 
 // Scenario D: Line 8 depot testing at night (04:00 Madrid time)
-const l8Start = now - (5 * oneHour);
+const l8Start = nightBase;
 for (let p = 0; p < 3; p++) {
   historyDb.recordDelayLog({
     lineId: '8',

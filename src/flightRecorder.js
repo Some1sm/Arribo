@@ -22,10 +22,10 @@ class FlightRecorder {
     // Async persistence gateway: async (op, args) => result. Backed by RPC in
     // the main process and by direct dispatch in the worker.
     this._gateway = null;
-    // Maximum cumulative dead-reckoning window per vehicle (10 minutes retention).
-    this.maxExtrapolationMs = 10 * 60 * 1000;
-    // Hard ceiling on API-serving staleness (10 minutes).
-    this.staleEvictionCeilingMs = 10 * 60 * 1000;
+    // Maximum cumulative dead-reckoning window per vehicle (strict 90s window, §7.6).
+    this.maxExtrapolationMs = 90000;
+    // Hard ceiling on API-serving staleness (strict 90s window).
+    this.staleEvictionCeilingMs = 90000;
     this.init();
   }
 
@@ -179,8 +179,8 @@ class FlightRecorder {
 
   extrapolateStaleVehicles() {
     const now = Date.now();
-    const expirationThresholdMs = 10 * 60 * 1000; // 10 mins without GPS = expired
-    const extrapolateThresholdMs = 15 * 1000;     // >15s without GPS = dead reckon
+    const expirationThresholdMs = this.maxExtrapolationMs; // 90s without GPS = expired (§7.6)
+    const extrapolateThresholdMs = 15 * 1000;              // >15s without GPS = dead reckon
 
     for (const [vId, v] of this.vehicles.entries()) {
       const elapsed = now - v.lastSeen;
@@ -203,6 +203,8 @@ class FlightRecorder {
         }
         // Project vehicle forward along bearing vector
         v.status = 'extrapolated';
+        v.isEstimated = true;
+        v.isRealTime = false;
         v.extrapolatedMs = Math.min(this.maxExtrapolationMs, projectedMs + 5000);
         const speedMps = (v.speedKmh * 1000) / 3600;
         const distMeters = speedMps * 5; // 5-second interval distance

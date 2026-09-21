@@ -276,9 +276,9 @@ function getScheduledFleetRequirement(lineId, dayType, nowSec = null) {
 
   if (trips.length === 0) return 0;
 
-  // Evaluate the maximum concurrent active trips in the operational window (+/- 75 mins around nowSec)
-  const winStart = nowSec !== null ? Math.max(0, nowSec - 4500) : 0;
-  const winEnd = nowSec !== null ? Math.min(86400, nowSec + 4500) : 86400;
+  // Evaluate the maximum concurrent active trips in the operational window (from nowSec forward up to 60 mins)
+  const winStart = nowSec !== null ? nowSec : 0;
+  const winEnd = nowSec !== null ? Math.min(86400, nowSec + 3600) : 86400;
 
   let maxConcurrent = 0;
   for (let s = winStart; s <= winEnd; s += 30) {
@@ -286,7 +286,7 @@ function getScheduledFleetRequirement(lineId, dayType, nowSec = null) {
     if (count > maxConcurrent) maxConcurrent = count;
   }
 
-  return Math.max(1, maxConcurrent);
+  return nowSec !== null ? maxConcurrent : Math.max(1, maxConcurrent);
 }
 
 module.exports = {

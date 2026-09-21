@@ -1157,47 +1157,58 @@ class MataroTracker extends BaseTracker {
       });
     }
 
-    if (!liveVehicles || liveVehicles.length === 0) {
-      const frVehs = flightRecorder.getLineVehicles(`L${lId}`);
-      const mataroVehs = (frVehs || []).filter(v => (v.agency || '').includes('Mataró') || String(v.lineId) === lId);
-      if (mataroVehs.length > 0) {
-        liveVehicles = mataroVehs;
-      }
-    }
+    // Operational Hours Gate: Compute line scheduled fleet requirement dynamically from timetable
+    const targetDateComp = calendarEngine.getDateComponents(targetDate, this.agencyTimezone);
+    const targetDayType = targetDateComp.isSunday ? 'sunday' : (targetDateComp.isSaturday ? 'saturday' : 'weekday');
+    const targetDateSec = (targetDateComp.hour || 0) * 3600 + (targetDateComp.minute || 0) * 60 + (targetDateComp.second || 0);
+    const lineMaxFleet = mataroSchedules.getScheduledFleetRequirement(lId, targetDayType, targetDateSec);
 
-    // Trajectory Continuity & Identity Stitching:
-    // Restore dropped fleet IDs on live GPS fixes before direction assignment and dead-reckoning
-    if (Array.isArray(liveVehicles) && liveVehicles.length > 0) {
-      this.stitchAnonymousVehicles(liveVehicles, lId, routes, targetDate);
-    }
-
-    // Fallback: If still empty, check this.vehicleHistory for active/recent buses (up to 10 mins)
-    if (!liveVehicles || liveVehicles.length === 0) {
-      const now = targetDate.getTime();
-      const histVehs = [];
-      for (const [vId, hist] of this.vehicleHistory.entries()) {
-        if (String(hist.lineId) === String(lId) && (now - hist.lastSeen) <= 600000) {
-          histVehs.push({
-            vehicleId: hist.vehicleId,
-            lineId: hist.lineId,
-            direction: hist.direction,
-            directionName: hist.directionName,
-            origin: hist.origin,
-            destination: hist.destination,
-            lat: hist.lat,
-            lon: hist.lon,
-            bearing: hist.bearing,
-            speedKmh: hist.speedKmh,
-            delayMins: hist.delayMins,
-            isEstimated: true,
-            isRealTime: false,
-            timestamp: hist.lastSeen
-          });
+    // If line has 0 scheduled fleet (service ended for the day), residual telemetry or stale ghosts must NEVER circulate
+    if (lineMaxFleet > 0) {
+      if (!liveVehicles || liveVehicles.length === 0) {
+        const frVehs = flightRecorder.getLineVehicles(`L${lId}`);
+        const mataroVehs = (frVehs || []).filter(v => (v.agency || '').includes('Mataró') || String(v.lineId) === lId);
+        if (mataroVehs.length > 0) {
+          liveVehicles = mataroVehs;
         }
       }
-      if (histVehs.length > 0) {
-        liveVehicles = histVehs;
+
+      // Trajectory Continuity & Identity Stitching:
+      // Restore dropped fleet IDs on live GPS fixes before direction assignment and dead-reckoning
+      if (Array.isArray(liveVehicles) && liveVehicles.length > 0) {
+        this.stitchAnonymousVehicles(liveVehicles, lId, routes, targetDate);
       }
+
+      // Fallback: If still empty, check this.vehicleHistory for active/recent buses (strict 90s window, §7.6)
+      if (!liveVehicles || liveVehicles.length === 0) {
+        const now = targetDate.getTime();
+        const histVehs = [];
+        for (const [vId, hist] of this.vehicleHistory.entries()) {
+          if (String(hist.lineId) === String(lId) && (now - hist.lastSeen) <= 90000) {
+            histVehs.push({
+              vehicleId: hist.vehicleId,
+              lineId: hist.lineId,
+              direction: hist.direction,
+              directionName: hist.directionName,
+              origin: hist.origin,
+              destination: hist.destination,
+              lat: hist.lat,
+              lon: hist.lon,
+              bearing: hist.bearing,
+              speedKmh: hist.speedKmh,
+              delayMins: hist.delayMins,
+              isEstimated: true,
+              isRealTime: false,
+              timestamp: hist.lastSeen
+            });
+          }
+        }
+        if (histVehs.length > 0) {
+          liveVehicles = histVehs;
+        }
+      }
+    } else {
+      liveVehicles = [];
     }
 
     // Apply Deterministic Direction Matching & Road-Snapping with 10-minute dead reckoning
@@ -1215,8 +1226,8 @@ class MataroTracker extends BaseTracker {
     const stops0 = (allDirections && allDirections[0]?.stops) || routes[0]?.stops || stops;
     const stops1 = (allDirections && allDirections[1]?.stops) || routes[1]?.stops || stops;
 
-    const buses0 = this.processBusesWithDeadReckoning(vehs0, routes[0] || selectedRoute, stops0, '0', liveVehicles);
-    const buses1 = isMultiDir ? this.processBusesWithDeadReckoning(vehs1, routes[1], stops1, '1', liveVehicles) : [];
+    const buses0 = this.processBusesWithDeadReckoning(vehs0, routes[0] || selectedRoute, stops0, '0', liveVehicles, targetDate);
+    const buses1 = isMultiDir ? this.processBusesWithDeadReckoning(vehs1, routes[1], stops1, '1', liveVehicles, targetDate) : [];
 
     let allLineProcessedBuses = [...buses0, ...buses1];
 
@@ -1269,21 +1280,19 @@ class MataroTracker extends BaseTracker {
 
     // Fleet Ceiling Guard: Physical buses (live GPS & dead-reckoned) strictly take priority over synthetic ghost buses.
     // The combined fleet can never exceed the line's scheduled capacity at this hour (both whole-line and per-direction).
-    const targetDateComp = calendarEngine.getDateComponents(targetDate, this.agencyTimezone);
-    const targetDayType = targetDateComp.isSunday ? 'sunday' : (targetDateComp.isSaturday ? 'saturday' : 'weekday');
-    const targetDateSec = (targetDateComp.hour || 0) * 3600 + (targetDateComp.minute || 0) * 60 + (targetDateComp.second || 0);
-    const lineMaxFleet = mataroSchedules.getScheduledFleetRequirement(lId, targetDayType, targetDateSec);
-
-    const maxFleetLimit = isBoth ? lineMaxFleet : Math.max(1, Math.ceil(lineMaxFleet / Math.max(1, routes.length)));
-    if (processedBuses.length > maxFleetLimit) {
+    const maxFleetLimit = isBoth ? lineMaxFleet : (lineMaxFleet === 0 ? 0 : Math.max(1, Math.ceil(lineMaxFleet / Math.max(1, routes.length))));
+    if (maxFleetLimit === 0) {
+      processedBuses = [];
+    } else if (processedBuses.length > maxFleetLimit) {
       const physicalBuses = processedBuses.filter(b => this.isPhysicalVehicle(b));
       const syntheticVehicles = processedBuses.filter(b => !this.isPhysicalVehicle(b));
-      const remainingSlots = Math.max(0, maxFleetLimit - physicalBuses.length);
-      processedBuses = [...physicalBuses, ...syntheticVehicles.slice(0, remainingSlots)];
+      const cappedPhysical = physicalBuses.slice(0, maxFleetLimit);
+      const remainingSlots = Math.max(0, maxFleetLimit - cappedPhysical.length);
+      processedBuses = [...cappedPhysical, ...syntheticVehicles.slice(0, remainingSlots)];
     }
 
-    const hasLiveGps = processedBuses.some(b => !b.isEstimated);
-    const isOnlyEstimated = processedBuses.length > 0 && processedBuses.every(b => b.isEstimated);
+    const hasLiveGps = maxFleetLimit > 0 && processedBuses.some(b => !b.isEstimated);
+    const isOnlyEstimated = maxFleetLimit > 0 && processedBuses.length > 0 && processedBuses.every(b => b.isEstimated);
     const disruptions = await this.getDisruptions(lId);
     const cancelledStopsMap = this.getCancelledStopsForLine(lId, disruptions, targetDate);
 
@@ -1338,8 +1347,12 @@ class MataroTracker extends BaseTracker {
       allDirections: allDirsWithStatus,
       activeBuses: processedBuses,
       totalActiveBuses: processedBuses.length,
-      totalVehiclesInCircuit: processedBuses.length,
-      fleetStatus,
+      fleetStatus: (lineMaxFleet === 0 || maxFleetLimit === 0) ? {
+        scheduledVehicles: 0,
+        liveGpsVehicles: 0,
+        estimatedVehicles: 0,
+        fleetCoveragePct: 100
+      } : fleetStatus,
       isRealTime: hasLiveGps,
       isEstimated: isOnlyEstimated,
       isScheduleBaseline: processedBuses.length === 0,
@@ -1349,8 +1362,8 @@ class MataroTracker extends BaseTracker {
   }
 
   // Dead-Zone Position Estimation (Dead-Reckoning along Polyline)
-  processBusesWithDeadReckoning(liveBuses, route, stops, dirId = '0', allLineLiveVehicles = liveBuses) {
-    const now = Date.now();
+  processBusesWithDeadReckoning(liveBuses, route, stops, dirId = '0', allLineLiveVehicles = liveBuses, targetDate = new Date()) {
+    const now = (targetDate && typeof targetDate.getTime === 'function') ? targetDate.getTime() : Date.now();
     const result = [];
     const polyCoords = (route.coords || []).map(c => ({ lat: parseFloat(c.Latitude), lon: parseFloat(c.Longitude) }));
 
@@ -1383,7 +1396,10 @@ class MataroTracker extends BaseTracker {
 
       // Sanity check for terminal layovers / ghost buses (e.g. parked with velocity 0 at terminus)
       const isTerminal = (b.speedKmh <= 3 || b.speedKmh === undefined) && (segInfo.totalProgress > 92 || segInfo.totalProgress < 8);
-      const isEst = Boolean(b.isEstimated);
+      // GPS Freshness Invariant: A vehicle is ONLY live GPS if its fix was observed within the last 45 seconds (§7.6)
+      const busAgeSec = Math.max(0, (now - (b.timestamp || b.lastSeen || now)) / 1000);
+      const isStaleFix = busAgeSec > 45;
+      const isEst = Boolean(b.isEstimated) || isStaleFix;
       const isGhostDelay = !isEst && isTerminal && b.delayMins > 10;
       const cleanDelayMins = isGhostDelay ? 0 : Math.max(-15, b.delayMins || 0);
       const cleanDelayFormatted = isEst
@@ -1392,7 +1408,7 @@ class MataroTracker extends BaseTracker {
             ? 'Regulant a capçalera' 
             : (cleanDelayMins > 0 ? `+${cleanDelayMins} min retard` : (cleanDelayMins < 0 ? `${cleanDelayMins} min avançat` : 'Puntual')));
       const statusText = isEst
-        ? '⚡ Estimació per pèrdua temporal de senyal'
+        ? (isStaleFix ? `⚡ Estimació (${Math.round(busAgeSec)}s sense GPS)` : '⚡ Estimació per pèrdua temporal de senyal')
         : (isGhostDelay ? '⏱️ Regulant a capçalera' : '🟢 Senyal GPS Actiu');
 
       result.push({
@@ -1446,7 +1462,7 @@ class MataroTracker extends BaseTracker {
       if (String(hist.direction) !== String(dirId)) continue; // Only dead-reckon on the matching direction
       const elapsedSec = (now - hist.lastSeen) / 1000;
 
-      if (elapsedSec > 900) {
+      if (elapsedSec > 90) {
         this.vehicleHistory.delete(vId);
         continue;
       }
@@ -2115,10 +2131,14 @@ class MataroTracker extends BaseTracker {
         if (targetStopIdx === -1) return; // This route direction does not visit this stop
 
         const dirSched = mataroSchedules.getDirectionSchedule(lId, String(route.id || routeIdx), dayType);
-        const lastTripSec = dirSched && dirSched.lastTrip ? timeEngine.timeStringToSeconds(dirSched.lastTrip) : 22 * 3600 + 35 * 60;
+        const routeTravelSec = dirSched?.totalTravelSec || (dirSched?.totalTravelMinutes * 60) || 1800;
+        const lastTripDepSec = dirSched && dirSched.departures && dirSched.departures.length > 0
+          ? timeEngine.timeStringToSeconds(dirSched.departures[dirSched.departures.length - 1])
+          : (dirSched && dirSched.lastTrip ? timeEngine.timeStringToSeconds(dirSched.lastTrip) : 0);
+        const lastTripArrivalSec = lastTripDepSec + routeTravelSec;
 
-        // If service for today has ended (past last trip + 20m grace period), do not synthesize arrivals
-        if (currentSec > lastTripSec + 1200) {
+        // If service for this route direction has ended (past last trip arrival + 15m delay grace period), do not synthesize arrivals
+        if (lastTripDepSec > 0 && currentSec > lastTripArrivalSec + 900) {
           return;
         }
 
