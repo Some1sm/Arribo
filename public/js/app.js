@@ -5704,16 +5704,31 @@ class TransitApp {
     expandWidthBtn?.addEventListener('click', (e) => {
       e.preventDefault();
       isExpanded = !isExpanded;
-      explorerGrid?.classList.toggle('expanded-width', isExpanded);
-      expandWidthBtn.classList.toggle('active', isExpanded);
-      if (expandLabel) {
-        expandLabel.textContent = isExpanded ? 'Normal' : 'Ample';
+
+      const performToggle = () => {
+        explorerGrid?.classList.toggle('expanded-width', isExpanded);
+        expandWidthBtn.classList.toggle('active', isExpanded);
+        if (expandLabel) {
+          expandLabel.textContent = isExpanded ? 'Normal' : 'Ample';
+        }
+        expandWidthBtn.title = isExpanded ? 'Reduir mapa a la vista estàndard' : 'Ampliar mapa a tota l\'amplada';
+        if (mapContainer) {
+          mapContainer.style.height = isExpanded ? '560px' : '';
+        }
+      };
+
+      if (typeof document.startViewTransition === 'function' && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        const transition = document.startViewTransition(() => {
+          performToggle();
+        });
+        animateResize(480);
+        transition.finished.finally(() => {
+          this.mapController?.invalidateSize();
+        });
+      } else {
+        performToggle();
+        animateResize(480);
       }
-      expandWidthBtn.title = isExpanded ? 'Reduir mapa a la vista estàndard' : 'Ampliar mapa a tota l\'amplada';
-      if (mapContainer) {
-        mapContainer.style.height = isExpanded ? '560px' : '';
-      }
-      animateResize(380);
     });
 
     mapContainer?.addEventListener('transitionend', () => {

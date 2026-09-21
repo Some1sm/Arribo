@@ -2104,7 +2104,7 @@ body {
   grid-template-columns: 1.5fr 1fr;
   gap: 1.5rem;
   align-items: stretch;
-  transition: all var(--transition-normal);
+  transition: grid-template-columns 0.45s cubic-bezier(0.22, 1, 0.36, 1), gap 0.45s cubic-bezier(0.22, 1, 0.36, 1);
   width: 100%;
   max-width: 100%;
   min-width: 0;
@@ -2116,7 +2116,7 @@ body {
 }
 
 .explorer-grid.expanded-width #map-container {
-  min-height: 540px;
+  min-height: 560px;
 }
 
 @media (max-width: 900px) {
@@ -2128,6 +2128,7 @@ body {
 }
 
 .map-card {
+  view-transition-name: map-card;
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
@@ -2142,6 +2143,12 @@ body {
   max-width: 100%;
   box-sizing: border-box;
   overflow: hidden;
+  transition: box-shadow 0.45s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.explorer-grid.expanded-width .map-card {
+  border-color: rgba(16, 185, 129, 0.3);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35), 0 0 24px var(--c10-primary-glow);
 }
 
 .map-header {
@@ -2244,7 +2251,7 @@ body {
   overflow: hidden;
   z-index: 10;
   box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.2);
-  transition: min-height 0.3s cubic-bezier(0.16, 1, 0.3, 1), height 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: min-height 0.45s cubic-bezier(0.22, 1, 0.36, 1), height 0.45s cubic-bezier(0.22, 1, 0.36, 1);
   box-sizing: border-box;
 }
 
@@ -2275,6 +2282,7 @@ body {
 
 /* Stops Browser Card */
 .stops-browser-card {
+  view-transition-name: stops-card;
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
@@ -2286,6 +2294,59 @@ body {
   max-width: 100%;
   box-sizing: border-box;
   overflow: hidden;
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes paradesDropReveal {
+  0% {
+    opacity: 0.2;
+    transform: translateY(-36px);
+  }
+  65% {
+    opacity: 0.95;
+    transform: translateY(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.explorer-grid.expanded-width .stops-browser-card {
+  animation: paradesDropReveal 0.48s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* View Transitions for Map Expansion & Card Drop Down */
+::view-transition-group(map-card),
+::view-transition-group(stops-card) {
+  animation-duration: 480ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+::view-transition-old(map-card),
+::view-transition-new(map-card),
+::view-transition-old(stops-card),
+::view-transition-new(stops-card) {
+  animation-duration: 480ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  overflow: clip;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .explorer-grid,
+  .map-card,
+  #map-container,
+  .stops-browser-card {
+    transition: none !important;
+  }
+  .explorer-grid.expanded-width .stops-browser-card {
+    animation: none !important;
+  }
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
 }
 
 .stops-card-header-row {
