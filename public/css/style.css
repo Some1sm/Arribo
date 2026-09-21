@@ -1496,8 +1496,10 @@ body {
 
 @media (max-width: 900px) {
   .departures-list {
-    max-height: none;
-    overflow-y: visible;
+    max-height: 295px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
   }
 }
 
@@ -4202,11 +4204,18 @@ body {
 
 @media (max-width: 768px) {
   .app-header {
-    padding: 0.55rem 0.75rem;
+    padding: 0.45rem 0.65rem 0.55rem;
+    height: auto !important;
+    min-height: unset;
     width: 100%;
     max-width: 100vw;
     box-sizing: border-box;
     overflow-x: hidden;
+    overflow-y: visible;
+  }
+
+  .telemetry-beacon {
+    display: none !important;
   }
 
   .header-container {
@@ -4220,7 +4229,8 @@ body {
     box-sizing: border-box;
   }
 
-  .logo-group {
+  .logo-group,
+  .brand-title-wrap {
     width: auto;
     justify-content: flex-start;
     min-width: 0;
@@ -4252,7 +4262,7 @@ body {
     width: 100%;
     max-width: 100%;
     order: 3;
-    margin-top: 0.2rem;
+    margin-top: 0.1rem;
     box-sizing: border-box;
   }
 
@@ -4263,23 +4273,32 @@ body {
   .header-actions {
     display: flex;
     align-items: center;
-    gap: 0.3rem;
+    gap: 0.2rem;
     width: auto;
     flex: 0 0 auto;
     box-sizing: border-box;
     flex-wrap: nowrap;
   }
 
+  .btn-header-nav span:not(.nav-icon) {
+    display: none !important;
+  }
+
   .btn-header-nav {
-    padding: 0.3rem 0.5rem;
-    font-size: 0.72rem;
+    padding: 0;
+    border-radius: 50%;
+    width: 29px;
+    height: 29px;
+    min-width: 29px;
+    justify-content: center;
     flex-shrink: 0;
   }
 
   .btn-icon {
     flex-shrink: 0;
-    width: 30px;
-    height: 30px;
+    width: 29px;
+    height: 29px;
+    min-width: 29px;
   }
 
   .btn-icon svg {
@@ -4482,10 +4501,11 @@ body {
   }
 
   .btn-header-nav {
-    padding: 0.3rem 0.45rem;
+    padding: 0;
     border-radius: 50%;
-    width: 30px;
-    height: 30px;
+    width: 29px;
+    height: 29px;
+    min-width: 29px;
     justify-content: center;
   }
 
@@ -4515,6 +4535,12 @@ body {
   .btn-map-control {
     padding: 0 0.5rem;
     font-size: 0.72rem;
+  }
+}
+
+@media (max-width: 360px) {
+  #header-city-pill {
+    display: none !important;
   }
 }
 
@@ -9013,7 +9039,6 @@ body.observatori-page-body {
 }
 
 /* Unified Navigation Bar Styling */
-.app-header,
 .plan-header,
 .observatori-header {
   height: 56px;
@@ -9025,6 +9050,21 @@ body.observatori-page-body {
   align-items: center;
   justify-content: space-between;
   padding: 0 1.25rem;
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  box-sizing: border-box;
+}
+
+.app-header {
+  min-height: 56px;
+  height: auto;
+  background: var(--bg-surface-glass);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border-subtle);
+  display: block;
+  padding: 0.6rem 1.25rem;
   position: sticky;
   top: 0;
   z-index: 1000;
