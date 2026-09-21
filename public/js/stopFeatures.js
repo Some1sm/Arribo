@@ -16,6 +16,7 @@
       localStorage.setItem('arribo_mataro_fav_stops', JSON.stringify(this.favoriteStops));
     } catch (_) {}
     this.updateHeaderFavoritesBadge();
+    this.updateTargetFavButton?.();
   },
 
   isFavoriteStop(stopId) {

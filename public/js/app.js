@@ -2931,8 +2931,30 @@ class TransitApp {
       mapsLinkEl.href = `https://www.google.com/maps/search/?api=1&query=${stop.lat},${stop.lon}`;
     }
 
+    // Update target stop quick actions
+    const planAction = document.getElementById('btn-target-plan-from');
+    if (planAction) {
+      planAction.href = `/plan?from=${encodeURIComponent(stop.name || '')}`;
+      planAction.title = `Planificar ruta des de ${stop.name || 'aquesta parada'}`;
+    }
+    this.updateTargetFavButton(stop.id || stop.code);
+
     this.renderEtaDisplay(next, etaBigEl, etaClockEl, etaPillEl, etaStatusText);
     this.renderDeparturesInto('departures-list-container', 'dep-count-badge', data.upcomingDepartures || []);
+  }
+
+  updateTargetFavButton(stopId) {
+    const favBtn = document.getElementById('btn-target-toggle-fav');
+    if (!favBtn) return;
+    const currentId = stopId || this.targetStopId || this.activeLineData?.targetStop?.id || this.activeLineData?.targetStop?.code;
+    const isFav = currentId ? this.isFavoriteStop(currentId) : false;
+    favBtn.classList.toggle('is-favorite', isFav);
+    favBtn.setAttribute('aria-pressed', isFav ? 'true' : 'false');
+    const textEl = document.getElementById('target-fav-text');
+    if (textEl) {
+      textEl.textContent = 'Preferida';
+    }
+    favBtn.title = isFav ? 'Aquesta parada és a les teves preferides (fes clic per treure-la)' : 'Afegir aquesta parada a les teves preferides';
   }
 
   renderEtaDisplay(next, etaBigEl, etaClockEl, etaPillEl, etaStatusText) {
@@ -5596,6 +5618,39 @@ class TransitApp {
     // Target Stop Dropdown
     document.getElementById('target-stop-select')?.addEventListener('change', (e) => {
       if (e.target.value) this.setTargetStop(e.target.value);
+    });
+
+    // Target Stop Quick Action Buttons
+    document.getElementById('btn-target-focus-map')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      const currentStopId = this.targetStopId || this.activeLineData?.targetStop?.id || this.activeLineData?.targetStop?.code;
+      const stopObj = (this.activeLineData?.stops || []).find(s => 
+        String(s.id) === String(currentStopId) || String(s.code) === String(currentStopId)
+      ) || (this.allStops || []).find(s => 
+        String(s.id) === String(currentStopId) || String(s.code) === String(currentStopId)
+      ) || this.activeLineData?.targetStop;
+
+      if (stopObj && stopObj.lat && stopObj.lon) {
+        this.mapController?.focusTargetStop(stopObj.lat, stopObj.lon);
+        document.getElementById('map-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+
+    document.getElementById('btn-target-toggle-fav')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      const currentStopId = this.targetStopId || this.activeLineData?.targetStop?.id || this.activeLineData?.targetStop?.code;
+      const stopObj = (this.activeLineData?.stops || []).find(s => 
+        String(s.id) === String(currentStopId) || String(s.code) === String(currentStopId)
+      ) || (this.allStops || []).find(s => 
+        String(s.id) === String(currentStopId) || String(s.code) === String(currentStopId)
+      ) || this.activeLineData?.targetStop;
+
+      const sId = currentStopId || stopObj?.id || stopObj?.code;
+      const sName = stopObj?.name || (this.activeLineData?.targetStop?.name) || `Parada ${sId}`;
+      if (sId) {
+        this.toggleFavoriteStop(sId, sName, [this.activeLineId || 'L1']);
+        this.updateTargetFavButton(sId);
+      }
     });
 
     // Refresh Button
