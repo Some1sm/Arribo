@@ -1873,9 +1873,37 @@ class C10Map {
     }
   }
 
-  focusTargetStop(lat, lon) {
+  focusTargetStop(lat, lon, stopId = null) {
     if (!this.map || !lat || !lon) return;
-    this.map.flyTo([lat, lon], 15, { duration: 1.2 });
+    this.map.flyTo([lat, lon], 16, { duration: 1.0 });
+    this.invalidateSize();
+
+    // After flight/scroll settles, highlight the target marker & open its tooltip
+    setTimeout(() => {
+      this.invalidateSize();
+      if (this.stopMarkers && this.stopMarkers.length > 0) {
+        const match = this.stopMarkers.find(m => {
+          if (stopId && m._stopMeta?.id && String(m._stopMeta.id) === String(stopId)) return true;
+          const ll = m.getLatLng();
+          return Math.abs(ll.lat - lat) < 0.0006 && Math.abs(ll.lng - lon) < 0.0006;
+        });
+        if (match) {
+          try { match.openTooltip(); } catch (_) {}
+          const dot = match._dotEl || (match.getElement() ? match.getElement().querySelector('.stop-marker-dot') : null);
+          if (dot) {
+            dot.style.transform = 'scale(2.2)';
+            dot.style.boxShadow = '0 0 16px var(--c10-primary, #009485)';
+            dot.style.transition = 'transform 0.4s ease, box-shadow 0.4s ease';
+            setTimeout(() => {
+              if (dot) {
+                dot.style.transform = '';
+                dot.style.boxShadow = '';
+              }
+            }, 3000);
+          }
+        }
+      }
+    }, 450);
   }
 
   focusDetour(detour) {

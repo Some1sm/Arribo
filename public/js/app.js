@@ -2880,6 +2880,35 @@ class TransitApp {
     }
   }
 
+  getCurrentTargetStop() {
+    if (this.currentTargetStop && (this.currentTargetStop.lat || this.currentTargetStop.id || this.currentTargetStop.code)) {
+      if (this.currentTargetStop.lat && this.currentTargetStop.lon) return this.currentTargetStop;
+    }
+    const routeKey = `${this.activeLineId}_${this.activeDirection}`;
+    const savedStopId = this.targetStopsByLine[routeKey] || this.targetStopsByLine[this.activeLineId];
+    const selectVal = document.getElementById('target-stop-select')?.value;
+    const targetId = savedStopId || selectVal || this.currentTargetStop?.id || this.currentTargetStop?.code;
+
+    if (targetId) {
+      const match = (this.activeLineData?.stops || []).find(s => 
+        String(s.id) === String(targetId) || String(s.code) === String(targetId) || String(s.mouteStopId) === String(targetId)
+      ) || (this.allStops || []).find(s => 
+        String(s.id) === String(targetId) || String(s.code) === String(targetId) || String(s.mouteStopId) === String(targetId)
+      );
+      if (match) return match;
+    }
+
+    if (this.activeLineData?.targetStop) {
+      return this.activeLineData.targetStop;
+    }
+
+    if (this.activeLineData?.stops && this.activeLineData.stops.length > 0) {
+      return this.activeLineData.stops[0];
+    }
+
+    return this.currentTargetStop || null;
+  }
+
   renderTargetCard(data, lData) {
     const titleEl = document.getElementById('target-stop-title');
     const codeEl = document.getElementById('target-stop-code');
@@ -2894,6 +2923,9 @@ class TransitApp {
     const mapsLinkEl = document.getElementById('target-maps-link');
 
     const stop = data.targetStop || {};
+    this.currentTargetStop = stop;
+    this.currentTargetStopData = data;
+    this.currentTargetLineData = lData;
     const next = data.nextBus || (data.upcomingDepartures && data.upcomingDepartures[0]) || null;
 
     if (titleEl) titleEl.textContent = stop.name || 'Parada';
@@ -2927,8 +2959,13 @@ class TransitApp {
       }
     }
 
-    if (mapsLinkEl && stop.lat && stop.lon) {
-      mapsLinkEl.href = `https://www.google.com/maps/search/?api=1&query=${stop.lat},${stop.lon}`;
+    if (mapsLinkEl) {
+      if (stop.lat && stop.lon) {
+        mapsLinkEl.href = `https://www.google.com/maps/search/?api=1&query=${stop.lat},${stop.lon}`;
+      } else {
+        const query = encodeURIComponent((stop.name || 'Mataró') + ' Mataró');
+        mapsLinkEl.href = `https://www.google.com/maps/search/?api=1&query=${query}`;
+      }
     }
 
     // Update target stop quick actions
@@ -2946,10 +2983,14 @@ class TransitApp {
   updateTargetFavButton(stopId) {
     const favBtn = document.getElementById('btn-target-toggle-fav');
     if (!favBtn) return;
-    const currentId = stopId || this.targetStopId || this.activeLineData?.targetStop?.id || this.activeLineData?.targetStop?.code;
+    const currentId = stopId || this.currentTargetStop?.id || this.currentTargetStop?.code || this.getCurrentTargetStop()?.id;
     const isFav = currentId ? this.isFavoriteStop(currentId) : false;
     favBtn.classList.toggle('is-favorite', isFav);
     favBtn.setAttribute('aria-pressed', isFav ? 'true' : 'false');
+    const starEl = document.getElementById('target-fav-star');
+    if (starEl) {
+      starEl.textContent = isFav ? '⭐' : '☆';
+    }
     const textEl = document.getElementById('target-fav-text');
     if (textEl) {
       textEl.textContent = 'Preferida';
@@ -5623,30 +5664,27 @@ class TransitApp {
     // Target Stop Quick Action Buttons
     document.getElementById('btn-target-focus-map')?.addEventListener('click', (e) => {
       e.preventDefault();
-      const currentStopId = this.targetStopId || this.activeLineData?.targetStop?.id || this.activeLineData?.targetStop?.code;
-      const stopObj = (this.activeLineData?.stops || []).find(s => 
-        String(s.id) === String(currentStopId) || String(s.code) === String(currentStopId)
-      ) || (this.allStops || []).find(s => 
-        String(s.id) === String(currentStopId) || String(s.code) === String(currentStopId)
-      ) || this.activeLineData?.targetStop;
+      const stopObj = this.getCurrentTargetStop();
 
+      // 1. Smoothly scroll directly down to the interactive map
+      const mapCard = document.getElementById('map-card');
+      if (mapCard) {
+        mapCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+
+      // 2. Focus and highlight stop on Leaflet map
       if (stopObj && stopObj.lat && stopObj.lon) {
-        this.mapController?.focusTargetStop(stopObj.lat, stopObj.lon);
-        document.getElementById('map-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        this.mapController?.focusTargetStop(stopObj.lat, stopObj.lon, stopObj.id || stopObj.code);
+      } else if (this.mapController) {
+        this.mapController.invalidateSize();
       }
     });
 
     document.getElementById('btn-target-toggle-fav')?.addEventListener('click', (e) => {
       e.preventDefault();
-      const currentStopId = this.targetStopId || this.activeLineData?.targetStop?.id || this.activeLineData?.targetStop?.code;
-      const stopObj = (this.activeLineData?.stops || []).find(s => 
-        String(s.id) === String(currentStopId) || String(s.code) === String(currentStopId)
-      ) || (this.allStops || []).find(s => 
-        String(s.id) === String(currentStopId) || String(s.code) === String(currentStopId)
-      ) || this.activeLineData?.targetStop;
-
-      const sId = currentStopId || stopObj?.id || stopObj?.code;
-      const sName = stopObj?.name || (this.activeLineData?.targetStop?.name) || `Parada ${sId}`;
+      const stopObj = this.getCurrentTargetStop();
+      const sId = stopObj?.id || stopObj?.code;
+      const sName = stopObj?.name || document.getElementById('target-stop-title')?.textContent || `Parada ${sId}`;
       if (sId) {
         this.toggleFavoriteStop(sId, sName, [this.activeLineId || 'L1']);
         this.updateTargetFavButton(sId);

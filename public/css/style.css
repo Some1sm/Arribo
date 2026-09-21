@@ -1156,17 +1156,20 @@ body {
 
 .target-header {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.75rem;
+  flex-direction: column;
+  gap: 0.25rem;
   margin-bottom: 0.25rem;
-  flex-wrap: wrap;
   min-width: 0;
 }
 
-.target-header > div:first-child {
-  min-width: 0;
-  flex: 1 1 200px;
+.target-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+  flex-wrap: wrap;
+  width: 100%;
 }
 
 .target-badge {
@@ -1253,12 +1256,20 @@ body {
   color: var(--text-primary);
 }
 
+/* Target Body: groups ETA and Meta */
+.target-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
 /* ETA Hero Display */
 .eta-hero-display {
   display: flex;
   align-items: baseline;
   gap: 1.25rem;
-  margin: 0.35rem 0 0.15rem;
+  margin: 0.25rem 0 0.1rem;
   flex-wrap: wrap;
   min-width: 0;
 }
@@ -1332,13 +1343,34 @@ body {
   border: 1px solid rgba(245, 158, 11, 0.35);
 }
 
-.target-actions-bar {
+.target-meta {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 1.25rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 0.82rem;
+  color: var(--text-secondary);
   flex-wrap: wrap;
-  padding: 0.2rem 0;
+}
+
+.target-meta span strong {
+  color: var(--text-primary);
+}
+
+.target-actions-bar {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.45rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  margin-top: auto;
   min-width: 0;
+  width: 100%;
+}
+
+[data-theme="light"] .target-actions-bar {
+  border-top-color: rgba(0, 0, 0, 0.08);
 }
 
 .btn-target-action {
@@ -1346,12 +1378,13 @@ body {
   align-items: center;
   justify-content: center;
   gap: 0.35rem;
-  padding: 0.35rem 0.65rem;
+  padding: 0.4rem 0.7rem;
+  min-height: 32px;
   background: var(--bg-surface-elevated);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
-  font-size: 0.75rem;
+  font-size: 0.76rem;
   font-weight: 600;
   cursor: pointer;
   text-decoration: none;
@@ -1385,20 +1418,10 @@ body {
   border-color: rgba(245, 158, 11, 0.4);
 }
 
-.target-meta {
-  display: flex;
-  align-items: center;
-  gap: 1.5rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--border-subtle);
-  font-size: 0.82rem;
-  color: var(--text-secondary);
-  flex-wrap: wrap;
-  margin-top: auto;
-}
-
-.target-meta span strong {
-  color: var(--text-primary);
+.stop-target-focused .stop-marker-dot {
+  transform: scale(2.2) !important;
+  box-shadow: 0 0 16px var(--c10-primary, #009485) !important;
+  transition: transform 0.4s ease, box-shadow 0.4s ease !important;
 }
 
 /* ===================================================================
@@ -4314,7 +4337,7 @@ body {
 
   .target-actions-bar {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+    grid-template-columns: repeat(2, 1fr);
     gap: 0.45rem;
     width: 100%;
   }

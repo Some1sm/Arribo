@@ -26,7 +26,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
   
   <!-- App Styles -->
-  <link rel="stylesheet" href="/css/style.css?v=6.3.7">
+  <link rel="stylesheet" href="/css/style.css?v=6.3.8">
 </head>
 <body>
 
@@ -350,58 +350,58 @@
         <!-- Primary Target Card -->
         <div class="target-card">
           <div class="target-header">
-            <div style="flex:1;">
-              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.4rem; flex-wrap:wrap; gap:0.4rem;">
-                <div class="target-badge" id="target-header-badge">⭐ Parada Principal</div>
-                <div class="target-select-wrapper">
-                  <label for="target-stop-select" style="font-size:0.75rem; color:var(--text-muted); margin-right:0.3rem;">Canviar:</label>
-                  <select id="target-stop-select" class="target-stop-select" aria-label="Selecciona la teva parada principal">
-                    <option value="">Carregant parades...</option>
-                  </select>
-                </div>
-              </div>
-              <h2 class="target-name" id="target-stop-title">Selecciona una parada</h2>
-              <div class="target-subname">
-                <span>Codi: <strong id="target-stop-code">--</strong></span> • 
-                <span id="target-direction-sub">Sentit</span>
+            <div class="target-header-top">
+              <div class="target-badge" id="target-header-badge">⭐ Parada Principal</div>
+              <div class="target-select-wrapper">
+                <label for="target-stop-select" style="font-size:0.75rem; color:var(--text-muted); margin-right:0.3rem;">Canviar:</label>
+                <select id="target-stop-select" class="target-stop-select" aria-label="Selecciona la teva parada principal">
+                  <option value="">Carregant parades...</option>
+                </select>
               </div>
             </div>
-            <a id="target-maps-link" href="#" target="_blank" rel="noopener noreferrer" class="maps-link" title="Obrir a Google Maps">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-              <span>Google Maps</span>
-            </a>
+            <h2 class="target-name" id="target-stop-title">Selecciona una parada</h2>
+            <div class="target-subname">
+              <span>Codi: <strong id="target-stop-code">--</strong></span> • 
+              <span id="target-direction-sub">Sentit</span>
+            </div>
           </div>
 
-          <div class="eta-hero-display">
-            <div class="eta-big-time" id="eta-big-display">-- min</div>
-            <div class="eta-details">
-              <div class="eta-exact-time" id="eta-clock-display">Hora estimada: --:--</div>
-              <div class="eta-status-pill scheduled" id="eta-status-pill">
-                <span class="live-dot" style="width:6px; height:6px;"></span>
-                <span id="eta-status-text">Calculant temps...</span>
+          <div class="target-body">
+            <div class="eta-hero-display">
+              <div class="eta-big-time" id="eta-big-display">-- min</div>
+              <div class="eta-details">
+                <div class="eta-exact-time" id="eta-clock-display">Hora estimada: --:--</div>
+                <div class="eta-status-pill scheduled" id="eta-status-pill">
+                  <span class="live-dot" style="width:6px; height:6px;"></span>
+                  <span id="eta-status-text">Calculant temps...</span>
+                </div>
               </div>
+            </div>
+
+            <div class="target-meta">
+              <div><span>Línia: <strong id="target-line-tag" style="color:var(--c10-primary);">--</strong></span></div>
+              <div><span>Destí: <strong id="next-bus-dest">Destí</strong></span></div>
+              <div><span>Operador: <strong id="target-operator-name">Operador</strong></span></div>
             </div>
           </div>
 
           <div class="target-actions-bar" id="target-actions-bar">
-            <button type="button" class="btn-target-action" id="btn-target-focus-map" title="Centrar mapa en aquesta parada">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polygon points="12 8 8 12 12 16 12 8"/></svg>
-              <span>Centrar al mapa</span>
+            <button type="button" class="btn-target-action" id="btn-target-focus-map" title="Centrar el mapa en aquesta parada">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
+              <span>Al mapa</span>
             </button>
             <a href="/plan" class="btn-target-action" id="btn-target-plan-from" title="Planificar ruta des d'aquesta parada">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
               <span>Planificar</span>
+            </a>
+            <a id="target-maps-link" href="#" target="_blank" rel="noopener noreferrer" class="btn-target-action" title="Obrir la ubicació a Google Maps">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+              <span>Google Maps</span>
             </a>
             <button type="button" class="btn-target-action" id="btn-target-toggle-fav" title="Afegir o treure de preferides">
               <span id="target-fav-star">⭐</span>
               <span id="target-fav-text">Preferida</span>
             </button>
-          </div>
-
-          <div class="target-meta">
-            <div><span>Línia: <strong id="target-line-tag" style="color:var(--c10-primary);">--</strong></span></div>
-            <div><span>Destí: <strong id="next-bus-dest">Destí</strong></span></div>
-            <div><span>Operador: <strong id="target-operator-name">Operador</strong></span></div>
           </div>
         </div>
 
@@ -809,15 +809,15 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   
   <!-- App Scripts -->
-  <script src="/js/utils.js?v=6.3.7"></script>
-  <script src="/js/storage.js?v=6.3.7"></script>
-  <script src="/js/requests.js?v=6.3.7"></script>
-  <script src="/js/stopFeatures.js?v=6.3.7"></script>
-  <script src="/js/journeys.js?v=6.3.7"></script>
-  <script src="/js/journeyControls.js?v=6.3.7"></script>
-  <script src="/js/pwa.js?v=6.3.7"></script>
+  <script src="/js/utils.js?v=6.3.8"></script>
+  <script src="/js/storage.js?v=6.3.8"></script>
+  <script src="/js/requests.js?v=6.3.8"></script>
+  <script src="/js/stopFeatures.js?v=6.3.8"></script>
+  <script src="/js/journeys.js?v=6.3.8"></script>
+  <script src="/js/journeyControls.js?v=6.3.8"></script>
+  <script src="/js/pwa.js?v=6.3.8"></script>
 
-  <script src="/js/map.js?v=6.3.7"></script>
-  <script src="/js/app.js?v=6.3.7"></script>
+  <script src="/js/map.js?v=6.3.8"></script>
+  <script src="/js/app.js?v=6.3.8"></script>
 </body>
 </html>
