@@ -84,40 +84,20 @@ class TransitApp {
   }
 
   ensureViewModeControlsExist() {
-    // 1. Ensure Map Header Button exists
-    const mapControls = document.querySelector('.map-controls-group');
-    if (mapControls && !document.getElementById('btn-map-toggle-schematic')) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = `btn-map-control ${this.stopsViewMode === 'schematic' ? 'active' : ''}`;
-      btn.id = 'btn-map-toggle-schematic';
-      btn.title = "Veure termòmetre esquemàtic d'estil metro";
-      btn.innerHTML = '<span>Termòmetre</span>';
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        const nextMode = this.stopsViewMode === 'schematic' ? 'list' : 'schematic';
-        this.setStopsViewMode(nextMode);
-        const stopsCard = document.querySelector('.stops-browser-card');
-        if (stopsCard && window.innerWidth <= 900) {
-          stopsCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-      });
-      const expandBtn = document.getElementById('btn-map-expand-height') || mapControls.firstChild;
-      mapControls.insertBefore(btn, expandBtn);
-    }
-
-    // 2. Ensure Stops Card Header Pills exist
+    // Ensure Stops Card Header Pills exist
     const headerRow = document.querySelector('.stops-card-header-row');
     if (headerRow && !document.getElementById('stops-view-mode-pills')) {
       const pillsDiv = document.createElement('div');
       pillsDiv.className = 'stops-view-mode-pills';
       pillsDiv.id = 'stops-view-mode-pills';
+      pillsDiv.setAttribute('role', 'tablist');
+      pillsDiv.setAttribute('aria-label', 'Mode de visualització de parades');
       pillsDiv.innerHTML = `
-        <button type="button" class="btn-stops-view-mode ${this.stopsViewMode === 'schematic' ? 'active' : ''}" id="btn-stops-mode-schematic" data-mode="schematic" title="Veure termòmetre esquemàtic estil metro amb posició de busos en viu">
-          <span>Termòmetre</span>
+        <button type="button" class="btn-map-control btn-stops-view-mode ${this.stopsViewMode === 'schematic' ? 'active' : ''}" id="btn-stops-mode-schematic" data-mode="schematic" role="tab" aria-selected="${this.stopsViewMode === 'schematic'}" title="Veure termòmetre esquemàtic estil metro amb posició de busos en viu">
+          <span>🚇 Termòmetre</span>
         </button>
-        <button type="button" class="btn-stops-view-mode ${this.stopsViewMode === 'list' ? 'active' : ''}" id="btn-stops-mode-list" data-mode="list" title="Veure llista detallada de parades">
-          <span>Llista</span>
+        <button type="button" class="btn-map-control btn-stops-view-mode ${this.stopsViewMode === 'list' ? 'active' : ''}" id="btn-stops-mode-list" data-mode="list" role="tab" aria-selected="${this.stopsViewMode === 'list'}" title="Veure llista detallada de parades">
+          <span>📋 Llista</span>
         </button>
       `;
       pillsDiv.addEventListener('click', (e) => {
@@ -3710,7 +3690,6 @@ class TransitApp {
     this.stopsViewMode = mode;
     const listBtn = document.getElementById('btn-stops-mode-list');
     const schematicBtn = document.getElementById('btn-stops-mode-schematic');
-    const mapSchematicBtn = document.getElementById('btn-map-toggle-schematic');
     const listScroll = document.getElementById('stops-list-scroll');
     const schematicScroll = document.getElementById('stops-schematic-scroll');
     const searchInput = document.getElementById('stop-search-input');
@@ -3720,7 +3699,6 @@ class TransitApp {
       listBtn?.setAttribute('aria-selected', 'false');
       schematicBtn?.classList.add('active');
       schematicBtn?.setAttribute('aria-selected', 'true');
-      mapSchematicBtn?.classList.add('active');
       if (listScroll) listScroll.style.display = 'none';
       if (schematicScroll) schematicScroll.style.display = 'block';
       if (searchInput) {
@@ -3732,7 +3710,6 @@ class TransitApp {
     } else {
       schematicBtn?.classList.remove('active');
       schematicBtn?.setAttribute('aria-selected', 'false');
-      mapSchematicBtn?.classList.remove('active');
       listBtn?.classList.add('active');
       listBtn?.setAttribute('aria-selected', 'true');
       if (schematicScroll) schematicScroll.style.display = 'none';
@@ -5469,19 +5446,6 @@ class TransitApp {
       });
     }
 
-    // Map control button to toggle schematic thermometer directly from map toolbar
-    const mapSchematicBtn = document.getElementById('btn-map-toggle-schematic');
-    if (mapSchematicBtn) {
-      mapSchematicBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        const nextMode = this.stopsViewMode === 'schematic' ? 'list' : 'schematic';
-        this.setStopsViewMode(nextMode);
-        const stopsCard = document.querySelector('.stops-browser-card');
-        if (stopsCard && window.innerWidth <= 900) {
-          stopsCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-      });
-    }
 
     // Schematic Thermometer container delegation (AGENTS.md §8 compliant)
     const schematicContainer = document.getElementById('stops-schematic-scroll');
@@ -5717,9 +5681,8 @@ class TransitApp {
   // ==========================================
 
   setupMapResizeControls() {
-    const expandHeightBtn = document.getElementById('btn-map-expand-height');
-    const heightLabel = document.getElementById('map-height-label');
     const expandWidthBtn = document.getElementById('btn-map-expand-width');
+    const expandLabel = document.getElementById('map-expand-label') || expandWidthBtn?.querySelector('span');
     const mapContainer = document.getElementById('map-container');
     const explorerGrid = document.querySelector('.explorer-grid');
     const resizeBar = document.getElementById('map-resize-bar');
@@ -5737,23 +5700,19 @@ class TransitApp {
       requestAnimationFrame(tick);
     };
 
-    let isTall = false;
-    expandHeightBtn?.addEventListener('click', (e) => {
-      e.preventDefault();
-      isTall = !isTall;
-      if (mapContainer) {
-        mapContainer.style.height = isTall ? '580px' : '380px';
-      }
-      if (heightLabel) heightLabel.textContent = isTall ? 'Normal' : 'Gran';
-      animateResize(380);
-    });
-
-    let isFullWidth = false;
+    let isExpanded = false;
     expandWidthBtn?.addEventListener('click', (e) => {
       e.preventDefault();
-      isFullWidth = !isFullWidth;
-      explorerGrid?.classList.toggle('expanded-width', isFullWidth);
-      expandWidthBtn.classList.toggle('active', isFullWidth);
+      isExpanded = !isExpanded;
+      explorerGrid?.classList.toggle('expanded-width', isExpanded);
+      expandWidthBtn.classList.toggle('active', isExpanded);
+      if (expandLabel) {
+        expandLabel.textContent = isExpanded ? 'Normal' : 'Ample';
+      }
+      expandWidthBtn.title = isExpanded ? 'Reduir mapa a la vista estàndard' : 'Ampliar mapa a tota l\'amplada';
+      if (mapContainer) {
+        mapContainer.style.height = isExpanded ? '560px' : '';
+      }
       animateResize(380);
     });
 
