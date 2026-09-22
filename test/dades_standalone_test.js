@@ -77,7 +77,13 @@ let appServer;
   assert.ok(obsCode.includes('observatori-group-by-line'), 'observatori.js must have group-by-line toggle');
   assert.ok(obsCode.includes('observatori-group-header-row'), 'observatori.js must render group header rows');
   assert.ok(obsCode.includes('overallRank'), 'observatori.js must track overallRank');
-  console.log('  ✓ 5. public/js/observatori.js components & deep-linking handlers verified.');
+  assert.ok(!obsCode.includes('Agrupat per línia'), 'observatori.js must NOT append dynamic group suffix to subtitle (prevents layout shift)');
+
+  const appPath = path.join(__dirname, '..', 'public', 'js', 'app.js');
+  const appCode = fs.readFileSync(appPath, 'utf8');
+  assert.ok(!appCode.includes('Agrupat per línia'), 'app.js must NOT append dynamic group suffix to subtitle');
+  assert.ok(appCode.includes("target.id === 'observatori-group-by-line'"), 'app.js must handle group-by-line change event');
+  console.log('  ✓ 5. public/js/observatori.js & app.js components, stable subtitles & handlers verified.');
 
   // 6. Verify stop heatmap sticky headers and CSS scroll container
   const cssPath = path.join(__dirname, '..', 'public', 'css', 'style.css');
@@ -89,8 +95,19 @@ let appServer;
   assert.ok(cssCode.includes('top: 0'), 'style.css must pin headers at top: 0');
   assert.ok(cssCode.includes('.observatori-rank-num'), 'style.css must style .observatori-rank-num');
   assert.ok(cssCode.includes('.observatori-group-toggle'), 'style.css must style .observatori-group-toggle');
+  assert.ok(cssCode.includes('.observatori-group-toggle:has(input[type="checkbox"]:checked)'), 'style.css must style active group toggle pill');
   assert.ok(cssCode.includes('.observatori-group-header-row'), 'style.css must style .observatori-group-header-row');
-  console.log('  ✓ 6. public/css/style.css sticky headers, rank badges & group rows verified.');
+  assert.ok(cssCode.includes('.incident-view-mode-tabs-container'), 'style.css must define .incident-view-mode-tabs-container');
+  assert.ok(cssCode.includes('.incident-view-mode-tab'), 'style.css must define .incident-view-mode-tab');
+  assert.ok(cssCode.includes('flex: 1 1 0;'), 'incident-view-mode-tab must use flex: 1 1 0 for equal distribution');
+  assert.ok(cssCode.includes('.incident-tab-title'), 'style.css must define .incident-tab-title');
+  assert.ok(cssCode.includes('.incident-tab-meta'), 'style.css must define .incident-tab-meta');
+  assert.ok(obsCode.includes('incident-tab-title'), 'observatori.js must wrap titles in incident-tab-title');
+  assert.ok(obsCode.includes('incident-tab-meta'), 'observatori.js must wrap badges in incident-tab-meta');
+  assert.ok(appCode.includes('incident-view-mode-tabs-container'), 'app.js must use incident-view-mode-tabs-container');
+  assert.ok(appCode.includes('incident-tab-title'), 'app.js must wrap titles in incident-tab-title');
+  assert.ok(appCode.includes("closest('[data-incident-tab]')"), 'app.js must handle data-incident-tab click events');
+  console.log('  ✓ 6. public/css/style.css sticky headers, rank badges, incident view mode full-width tabs & group rows verified.');
 
   // 7. Verify service worker and HTML asset version alignment
   const versionMatch = swCode.match(/const VERSION = '([^']+)';/);

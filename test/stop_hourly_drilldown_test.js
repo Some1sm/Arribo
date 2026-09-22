@@ -97,8 +97,16 @@ async function run() {
   assert.ok(generated.rankingWorstStops.every(s => Array.isArray(s.hourly) && s.hourly.length === 24),
     'report cache carries hourly data through');
 
-  // Timeframe boundary: a row older than the window is excluded
-  insert({ lineId: 'L1', lineCode: 'L1', agency: 'Mataró Bus', stopId: '1016', stopName: 'Estació Rodalies', delayMins: 4, timestamp: now - 25 * 3600 * 1000 });
+  // Timeframe boundary: a row older than 24h but within 48h is excluded from 24h and included in 48h.
+  // Anchor timestamp to daytime revenue hours (12:00 UTC / 14:00 Madrid) so it is not excluded by anomaly filters near midnight.
+  let boundaryTs = now - 30 * 3600 * 1000;
+  const bd = new Date(boundaryTs);
+  bd.setUTCHours(12, 0, 0, 0);
+  boundaryTs = bd.getTime();
+  if (boundaryTs <= now - 48 * 3600 * 1000) boundaryTs += 24 * 3600 * 1000;
+  if (boundaryTs >= now - 24 * 3600 * 1000) boundaryTs -= 24 * 3600 * 1000;
+
+  insert({ lineId: 'L1', lineCode: 'L1', agency: 'Mataró Bus', stopId: '1016', stopName: 'Estació Rodalies', delayMins: 4, timestamp: boundaryTs });
   const report24 = historyDb.getJournalismReport(24, catalog);
   const l1b = report24.rankingWorstStops.find(s => s.stopId === '1016' && s.lineCode === 'L1');
   assert.equal(l1b.hourly.reduce((a, b) => a + b.sampleCount, 0), 5, 'row outside 24h window excluded');

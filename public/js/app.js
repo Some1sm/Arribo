@@ -2264,7 +2264,7 @@ class TransitApp {
             <div class="observatori-table-header-row">
               <h4 class="observatori-table-title">
                 <span>${isAllStopsMode ? '📍 Totes les Parades per Retard Mitjà' : "📍 Colls d'Ampolla: Parades amb Més Retard"}</span>
-                <span class="observatori-table-subtitle">(Mostrant ${displayedWorstStops.length} de ${totalWorst}${isGroupedByLine ? ' • Agrupat per línia' : ''})</span>
+                <span class="observatori-table-subtitle">(Mostrant ${displayedWorstStops.length} de ${totalWorst})</span>
               </h4>
               <div class="observatori-filter-toolbar">
                 <div class="observatori-mode-toggle-group">
@@ -5433,6 +5433,18 @@ class TransitApp {
         this.switchLine(lineRow.dataset.openLine);
       }
     });
+
+    // Checkbox toggle: group stops by line in app journalism report
+    document.addEventListener('change', (e) => {
+      const target = e.target;
+      if (target && target.id === 'observatori-group-by-line') {
+        this.journalismGroupByLine = !!target.checked;
+        if (this.currentJournalismReport) {
+          this.renderJournalismReport(this.currentJournalismReport);
+        }
+      }
+    });
+
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter' && e.key !== ' ') return;
       const sortHeader = e.target.closest?.('[data-sort-table]');
@@ -6936,7 +6948,48 @@ class TransitApp {
   // ==========================================
 
   setupDelayIncidentsEvents() {
-    // Extracted to /dades (ObservatoriApp)
+    document.addEventListener('click', (e) => {
+      // Incident pills: hours
+      const hoursPill = e.target.closest('[data-incident-hours]');
+      if (hoursPill) {
+        e.preventDefault();
+        const h = parseInt(hoursPill.dataset.incidentHours, 10) || 168;
+        this.openDelayIncidentsView(this._currentIncidentLine || 'all', h, this._currentIncidentMode || 'top');
+        return;
+      }
+
+      // Incident pills: line
+      const linePill = e.target.closest('[data-incident-line]');
+      if (linePill) {
+        e.preventDefault();
+        const line = linePill.dataset.incidentLine;
+        this.openDelayIncidentsView(line, this._currentIncidentHours || 168, this._currentIncidentMode || 'top');
+        return;
+      }
+
+      // Incident mode tabs (top vs trips)
+      const tabBtn = e.target.closest('[data-incident-tab]');
+      if (tabBtn) {
+        e.preventDefault();
+        const mode = tabBtn.dataset.incidentTab;
+        this._currentIncidentMode = mode;
+        if (this._lastIncidentData) {
+          this.renderDelayIncidentsView(this._lastIncidentData, this._currentIncidentLine || 'all', this._currentIncidentHours || 168, mode);
+        }
+        return;
+      }
+
+      // Locate stop on main map from incident tables
+      const locateBtn = e.target.closest('[data-locate-stop]');
+      if (locateBtn) {
+        e.preventDefault();
+        const stopName = locateBtn.dataset.locateStop;
+        const lineCode = locateBtn.dataset.locateLine;
+        this.closeJournalismModal();
+        if (lineCode) this.switchLine(lineCode);
+        return;
+      }
+    });
   }
 
   openDelayIncidentsTab(lineCode = 'all') {
@@ -7084,12 +7137,12 @@ class TransitApp {
       </div>
 
       <!-- Sub-Tab Mode Switcher -->
-      <div style="display:flex; gap:0.5rem; border-bottom:1px solid var(--border-subtle); padding-bottom:0.75rem; margin-bottom:1rem;">
-        <button type="button" class="incident-view-mode-tab ${activeTab === 'top' ? 'active' : ''}" data-incident-tab="top">
-          <span>📋 Rànquing d'Incidents per Expedició (${topList.length})</span>
+      <div class="incident-view-mode-tabs-container" role="tablist" aria-label="Mode d'anàlisi d'incidents">
+        <button type="button" class="incident-view-mode-tab ${activeTab === 'top' ? 'active' : ''}" data-incident-tab="top" role="tab" aria-selected="${activeTab === 'top'}">
+          <span><span class="incident-tab-title">📋 Rànquing d'Incidents per Expedició</span> <span class="incident-tab-meta">(${topList.length})</span></span>
         </button>
-        <button type="button" class="incident-view-mode-tab ${activeTab === 'trips' ? 'active' : ''}" data-incident-tab="trips">
-          <span>${CANONICAL_BUS_ICON_SVG} Expedicions & Trajectòries Afectades (${tripsList.length})</span>
+        <button type="button" class="incident-view-mode-tab ${activeTab === 'trips' ? 'active' : ''}" data-incident-tab="trips" role="tab" aria-selected="${activeTab === 'trips'}">
+          <span><span class="incident-tab-title">${CANONICAL_BUS_ICON_SVG} Expedicions &amp; Trajectòries Afectades</span> <span class="incident-tab-meta">(${tripsList.length})</span></span>
         </button>
       </div>
 

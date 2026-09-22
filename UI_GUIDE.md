@@ -101,7 +101,7 @@ Used for secondary operations, exports, filters, and modal navigation.
 
 ---
 
-### 3.3 Segmented Control & Filter Pills (`.line-filter-tab`, `.observatori-pill-btn`, `.incident-filter-pill`, `.landing-filter-tab`)
+### 3.3 Segmented Control & Filter Pills (`.line-filter-tab`, `.observatori-pill-btn`, `.incident-filter-pill`, `.incident-view-mode-tab`, `.landing-filter-tab`)
 
 Used for multi-option switchers, timeframes, line pickers, and view mode tabs.
 
@@ -123,6 +123,7 @@ Used for multi-option switchers, timeframes, line pickers, and view mode tabs.
 - **Hover Item**: `background: rgba(255, 255, 255, 0.08)` (Dark) / `rgba(0, 0, 0, 0.05)` (Light), `color: var(--text-primary)`, `transform: translateY(-1px)`.
 - **Active Item**: `background: var(--c10-primary) !important`, `color: #ffffff !important`, `border-color: var(--c10-primary) !important`, `box-shadow: 0 2px 10px var(--c10-primary-glow) !important`.
 - **Toolbar Wrapper**: Controls that contain multiple segmented docks should wrap them inside an unboxed flex toolbar (`.observatori-filter-toolbar`) with `flex-wrap: wrap; gap: 0.5rem;`.
+- **Full-Width View Mode Docks**: For full-width switcher bars (`.incident-view-mode-tabs-container`), child tabs (`.incident-view-mode-tab`) expand equally with `flex: 1 1 0; min-width: 0; text-align: center; justify-content: center;` to fill the container rectangle cleanly without dead space. Titles and badge metadata are wrapped in `.incident-tab-title` and `.incident-tab-meta` to keep text, icons, and counter ranges atomic when wrapping. On mobile viewports (≤ 768px), the container stacks vertically (`flex-direction: column`) with `width: 100%` full-width touch targets.
 
 ---
 

@@ -242,7 +242,7 @@ class ObservatoriApp {
         return;
       }
 
-      // Incident mode tabs (top vs trips)
+      // Incident mode tabs (top vs investigation vs trips)
       const tabBtn = e.target.closest('[data-incident-tab]');
       if (tabBtn) {
         e.preventDefault();
@@ -250,6 +250,8 @@ class ObservatoriApp {
         this._currentIncidentMode = mode;
         if (this.lastIncidentData) {
           this.renderDelayIncidentsView(this.lastIncidentData, this._currentIncidentLine || 'all', this._currentIncidentHours || 168, mode);
+        } else {
+          this.openDelayIncidentsView(this._currentIncidentLine || 'all', this._currentIncidentHours || 168, mode);
         }
         return;
       }
@@ -942,7 +944,7 @@ class ObservatoriApp {
           <div class="observatori-table-header-row">
             <h4 class="observatori-table-title">
               <span>${isAllStopsMode ? 'Totes les Parades per Retard Mitjà' : "Colls d'Ampolla: Parades amb Més Retard"}</span>
-              <span class="observatori-table-subtitle">(Mostrant ${displayedWorstStops.length} de ${totalWorst}${isGroupedByLine ? ' • Agrupat per línia' : ''})</span>
+              <span class="observatori-table-subtitle">(Mostrant ${displayedWorstStops.length} de ${totalWorst})</span>
             </h4>
             <div class="observatori-filter-toolbar">
               <div class="observatori-mode-toggle-group">
@@ -1629,6 +1631,7 @@ class ObservatoriApp {
   renderDelayIncidentsView(data, selectedLine = 'all', selectedHours = 168, activeTab = 'top') {
     const container = document.getElementById('journalism-incidents-container');
     if (!container || !data) return;
+    this.lastIncidentData = data;
 
     const s = data.summary || {};
     const topList = data.topIncidents || [];
@@ -1726,13 +1729,13 @@ class ObservatoriApp {
       <!-- Sub-Tab Mode Switcher -->
       <div class="incident-view-mode-tabs-container" role="tablist" aria-label="Mode d'anàlisi d'incidents">
         <button type="button" class="incident-view-mode-tab ${activeTab === 'top' ? 'active' : ''}" data-incident-tab="top" role="tab" aria-selected="${activeTab === 'top'}">
-          <span>Rànquing d'Incidents de Servei (0–24 min) (${topList.length})</span>
+          <span><span class="incident-tab-title">Rànquing d'Incidents de Servei</span> <span class="incident-tab-meta">(0–24 min) (${topList.length})</span></span>
         </button>
         <button type="button" class="incident-view-mode-tab ${activeTab === 'investigation' ? 'active' : ''}" data-incident-tab="investigation" role="tab" aria-selected="${activeTab === 'investigation'}">
-          <span>Horaris No Habituals (+24 min) (${investigationList.length})</span>
+          <span><span class="incident-tab-title">Horaris No Habituals</span> <span class="incident-tab-meta">(+24 min) (${investigationList.length})</span></span>
         </button>
         <button type="button" class="incident-view-mode-tab ${activeTab === 'trips' ? 'active' : ''}" data-incident-tab="trips" role="tab" aria-selected="${activeTab === 'trips'}">
-          <span>Expedicions &amp; Trajectòries (${tripsList.length})</span>
+          <span><span class="incident-tab-title">Expedicions &amp; Trajectòries</span> <span class="incident-tab-meta">(${tripsList.length})</span></span>
         </button>
       </div>
 

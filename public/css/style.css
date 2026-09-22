@@ -6986,12 +6986,14 @@ body {
   display: flex;
   align-items: center;
   gap: 0.4rem;
+  flex-wrap: wrap;
 }
 
 .observatori-table-subtitle {
   font-size: 0.74rem;
   font-weight: 400;
   color: var(--text-muted);
+  white-space: nowrap;
 }
 
 /* Scroll hint pill shown on mobile and narrow viewports */
@@ -7255,11 +7257,24 @@ body {
   border: 1px solid var(--border-subtle);
   transition: all 0.15s ease;
   user-select: none;
+  white-space: nowrap;
 }
 
 .observatori-group-toggle:hover {
   background: rgba(255, 255, 255, 0.08);
   color: var(--text-primary);
+}
+
+.observatori-group-toggle:has(input[type="checkbox"]:checked) {
+  background: rgba(0, 148, 133, 0.14);
+  border-color: rgba(0, 148, 133, 0.4);
+  color: var(--text-primary);
+}
+
+[data-theme="light"] .observatori-group-toggle:has(input[type="checkbox"]:checked) {
+  background: rgba(0, 148, 133, 0.1);
+  border-color: rgba(0, 148, 133, 0.35);
+  color: #065f46;
 }
 
 .observatori-group-toggle input[type="checkbox"] {
@@ -9113,26 +9128,56 @@ body {
   border: 1px solid var(--border-subtle);
   border-radius: var(--btn-radius-md, 8px);
   margin-bottom: 1.25rem;
-  flex-wrap: wrap;
+  width: 100%;
+  box-sizing: border-box;
+  align-items: stretch;
 }
 
 .incident-view-mode-tab {
+  flex: 1 1 0;
+  min-width: 0;
+  box-sizing: border-box;
   background: transparent;
   color: var(--text-secondary);
   border: 1px solid transparent;
   border-radius: 6px;
-  padding: 0.42rem 0.9rem;
-  font-size: 0.8rem;
+  padding: 0.42rem clamp(0.4rem, 1vw, 0.75rem);
+  font-size: 0.78rem;
   font-weight: 700;
   font-family: inherit;
   cursor: pointer;
   transition: var(--btn-transition);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  text-align: center;
+  gap: 5px;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+  line-height: 1.35;
+}
+
+.incident-view-mode-tab > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  text-align: center;
+}
+
+.incident-tab-title {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.incident-tab-meta {
+  white-space: nowrap;
+  font-weight: 600;
+  opacity: 0.9;
 }
 
 .incident-view-mode-tab:hover:not(.active) {
@@ -9409,6 +9454,15 @@ body.observatori-page-body {
     width: 100%;
     justify-content: center;
     box-sizing: border-box;
+  }
+  .incident-view-mode-tabs-container {
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+  .incident-view-mode-tab {
+    width: 100%;
+    flex: 1 1 auto;
+    padding: 0.52rem 0.75rem;
   }
 }
 
