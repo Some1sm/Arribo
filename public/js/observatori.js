@@ -821,7 +821,7 @@ class ObservatoriApp {
                   <span style="color:var(--text-muted); margin-left:0.25rem;">Les altres <strong>${matchingPunctualCount}</strong> parades ${lineNotice} han funcionat amb puntualitat (&lt; 1.5 min).</span>
                 </div>
               </div>
-              <button type="button" class="observatori-action-btn btn-secondary" data-toggle-stop-mode="all" style="padding:0.35rem 0.8rem; font-size:0.75rem; font-weight:700; border-radius:8px; cursor:pointer; display:inline-flex; align-items:center; gap:0.35rem;">
+              <button type="button" class="observatori-action-btn btn-secondary btn-sm" data-toggle-stop-mode="all">
                 <span>🔓</span>
                 <span>Veure totes les parades (${matchingTotalCount})</span>
               </button>
@@ -837,7 +837,7 @@ class ObservatoriApp {
                   <span style="color:var(--text-muted); margin-left:0.25rem;">${matchingBottleneckCount} són colls d'ampolla.</span>
                 </div>
               </div>
-              <button type="button" class="observatori-action-btn btn-secondary" data-toggle-stop-mode="bottlenecks" style="padding:0.35rem 0.8rem; font-size:0.75rem; font-weight:700; border-radius:8px; cursor:pointer; display:inline-flex; align-items:center; gap:0.35rem;">
+              <button type="button" class="observatori-action-btn btn-secondary btn-sm" data-toggle-stop-mode="bottlenecks">
                 <span>⚠️</span>
                 <span>Només colls d'ampolla (${matchingBottleneckCount})</span>
               </button>
@@ -944,8 +944,8 @@ class ObservatoriApp {
               <span>${isAllStopsMode ? 'Totes les Parades per Retard Mitjà' : "Colls d'Ampolla: Parades amb Més Retard"}</span>
               <span class="observatori-table-subtitle">(Mostrant ${displayedWorstStops.length} de ${totalWorst}${isGroupedByLine ? ' • Agrupat per línia' : ''})</span>
             </h4>
-            <div class="observatori-filter-group" style="display:flex; align-items:center; flex-wrap:wrap; gap:0.4rem;">
-              <div class="observatori-mode-toggle-group" style="display:inline-flex; border:1px solid var(--border-subtle); border-radius:14px; padding:2px; background:var(--bg-surface); gap:2px; margin-right:0.25rem;">
+            <div class="observatori-filter-toolbar">
+              <div class="observatori-mode-toggle-group">
                 <button type="button" class="observatori-pill-btn ${!isAllStopsMode ? 'active' : ''}" data-toggle-stop-mode="bottlenecks" title="Mostra exclusivament les parades amb retards significatius">⚠️ Colls d'ampolla</button>
                 <button type="button" class="observatori-pill-btn ${isAllStopsMode ? 'active' : ''}" data-toggle-stop-mode="all" title="Mostra el 100% de les parades registrades, incloent-hi les puntuals">📋 Totes les parades</button>
               </div>
@@ -953,10 +953,12 @@ class ObservatoriApp {
                 <input type="checkbox" id="observatori-group-by-line" ${isGroupedByLine ? 'checked' : ''}>
                 <span>Agrupar per línia</span>
               </label>
-              <span style="font-size:0.7rem; color:var(--text-muted); padding:0 4px; font-weight:700;">FILTRE:</span>
-              <button type="button" class="observatori-pill-btn ${worstLimit === 10 ? 'active' : ''}" data-worst-limit="10">Top 10</button>
-              <button type="button" class="observatori-pill-btn ${worstLimit === 25 ? 'active' : ''}" data-worst-limit="25">Top 25</button>
-              <button type="button" class="observatori-pill-btn ${worstLimit >= 9999 ? 'active' : ''}" data-worst-limit="9999">Totes (${totalWorst})</button>
+              <div class="observatori-filter-group" aria-label="Filtre de parades">
+                <span class="observatori-filter-label">FILTRE:</span>
+                <button type="button" class="observatori-pill-btn ${worstLimit === 10 ? 'active' : ''}" data-worst-limit="10">Top 10</button>
+                <button type="button" class="observatori-pill-btn ${worstLimit === 25 ? 'active' : ''}" data-worst-limit="25">Top 25</button>
+                <button type="button" class="observatori-pill-btn ${worstLimit >= 9999 ? 'active' : ''}" data-worst-limit="9999">Totes (${totalWorst})</button>
+              </div>
             </div>
           </div>
           ${totalWorst === 0 ? `<div style="color:var(--text-muted); font-size:0.85rem; padding:0.8rem; background:var(--bg-elevated); border-radius:8px;">${isAllStopsMode ? 'Cap parada coincideix amb el filtre.' : 'Sense punts negres registrats o cap parada coincideix amb el filtre.'}</div>` : `
@@ -1453,11 +1455,13 @@ class ObservatoriApp {
             Dades de les darreres ${t.timeframeHours || 24} hores
           </div>
           <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-            <button type="button" class="btn-primary" id="btn-termometre-share">
-              Copiar Resum per Xarxes
+            <button type="button" class="btn-primary btn-termometre-action" id="btn-termometre-share">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              <span>Copiar Resum per Xarxes</span>
             </button>
-            <button type="button" class="btn-primary" id="btn-termometre-download">
-              Descarregar Fitxa
+            <button type="button" class="btn-secondary btn-termometre-action" id="btn-termometre-download">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              <span>Descarregar Fitxa</span>
             </button>
           </div>
         </div>
@@ -1608,8 +1612,9 @@ class ObservatoriApp {
         <p style="font-size:0.82rem; margin:0 0 1.25rem 0; line-height:1.45;">
           Quan es calculen informes de 7 dies o es reindexa la telemetria històrica en segon pla, pot trigar uns instants a sincronitzar.
         </p>
-        <button type="button" class="btn-primary" id="btn-retry-incidents-tab" style="font-size:0.82rem; padding:0.5rem 1.1rem; display:inline-flex; align-items:center; gap:6px;">
-          <span>🔄 Reintentar ara</span>
+        <button type="button" class="btn-primary" id="btn-retry-incidents-tab">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          <span>Reintentar ara</span>
         </button>
       </div>
     `;
@@ -1719,14 +1724,14 @@ class ObservatoriApp {
       </div>
 
       <!-- Sub-Tab Mode Switcher -->
-      <div style="display:flex; gap:0.5rem; border-bottom:1px solid var(--border-subtle); padding-bottom:0.75rem; margin-bottom:1rem; flex-wrap:wrap;">
-        <button type="button" class="incident-view-mode-tab ${activeTab === 'top' ? 'active' : ''}" data-incident-tab="top">
+      <div class="incident-view-mode-tabs-container" role="tablist" aria-label="Mode d'anàlisi d'incidents">
+        <button type="button" class="incident-view-mode-tab ${activeTab === 'top' ? 'active' : ''}" data-incident-tab="top" role="tab" aria-selected="${activeTab === 'top'}">
           <span>Rànquing d'Incidents de Servei (0–24 min) (${topList.length})</span>
         </button>
-        <button type="button" class="incident-view-mode-tab ${activeTab === 'investigation' ? 'active' : ''}" data-incident-tab="investigation">
+        <button type="button" class="incident-view-mode-tab ${activeTab === 'investigation' ? 'active' : ''}" data-incident-tab="investigation" role="tab" aria-selected="${activeTab === 'investigation'}">
           <span>Horaris No Habituals (+24 min) (${investigationList.length})</span>
         </button>
-        <button type="button" class="incident-view-mode-tab ${activeTab === 'trips' ? 'active' : ''}" data-incident-tab="trips">
+        <button type="button" class="incident-view-mode-tab ${activeTab === 'trips' ? 'active' : ''}" data-incident-tab="trips" role="tab" aria-selected="${activeTab === 'trips'}">
           <span>Expedicions &amp; Trajectòries (${tripsList.length})</span>
         </button>
       </div>
@@ -1798,6 +1803,7 @@ class ObservatoriApp {
                       </td>
                       <td style="text-align:center; white-space:nowrap;">
                         <button type="button" class="btn-locate-incident-stop" data-locate-line="${this.esc(inc.lineCode)}" data-locate-stop="${this.esc(inc.stopName)}" data-locate-stop-id="${this.esc(inc.stopId || '')}" title="Veure aquesta parada al mapa">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
                           <span>Mapa</span>
                         </button>
                       </td>
@@ -1824,7 +1830,8 @@ class ObservatoriApp {
               </p>
             </div>
             ${investigationList.length > 0 ? `
-              <button type="button" class="btn-primary" id="btn-copy-investigation-report" style="font-size:0.78rem; padding:0.45rem 0.85rem; display:inline-flex; align-items:center; gap:6px; background:rgba(244,63,94,0.15); color:#fb7185; border:1px solid rgba(244,63,94,0.35);" title="Copiar informe dels casos en investigació">
+              <button type="button" class="btn-report-action btn-report-investigation" id="btn-copy-investigation-report" title="Copiar informe dels casos en investigació">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                 <span>Copiar informe d'investigació</span>
               </button>
             ` : ''}
@@ -1884,6 +1891,7 @@ class ObservatoriApp {
                         </td>
                         <td style="text-align:center; white-space:nowrap;">
                           <button type="button" class="btn-locate-incident-stop" data-locate-line="${this.esc(inc.lineCode)}" data-locate-stop="${this.esc(inc.stopName)}" data-locate-stop-id="${this.esc(inc.stopId || '')}" title="Veure aquesta parada al mapa">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
                             <span>Mapa</span>
                           </button>
                         </td>
@@ -1911,7 +1919,8 @@ class ObservatoriApp {
               </p>
             </div>
             ${anomaliesList.length > 0 ? `
-              <button type="button" class="btn-primary btn-copy-anomalies" id="btn-copy-anomalies-report" style="font-size:0.78rem; padding:0.45rem 0.85rem; display:inline-flex; align-items:center; gap:6px;" title="Copiar resum d'anomalies per a informe o reclamació a l'Ajuntament / Avanza">
+              <button type="button" class="btn-report-action btn-report-anomalies btn-copy-anomalies" id="btn-copy-anomalies-report" title="Copiar resum d'anomalies per a informe o reclamació a l'Ajuntament / Avanza">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                 <span>Copiar informe d'anomalies</span>
               </button>
             ` : ''}
@@ -1982,6 +1991,7 @@ class ObservatoriApp {
                             <span style="color:var(--text-muted); font-size:0.85rem;" title="No aplica (operació de cotxeres)">—</span>
                           ` : `
                             <button type="button" class="btn-locate-incident-stop" data-locate-line="${this.esc(inc.lineCode)}" data-locate-stop="${this.esc(inc.stopName)}" data-locate-stop-id="${this.esc(inc.stopId || '')}" title="Veure aquesta parada al mapa">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
                               <span>Mapa</span>
                             </button>
                           `}
@@ -2010,7 +2020,8 @@ class ObservatoriApp {
               </p>
             </div>
             ${investigationList.length > 0 ? `
-              <button type="button" class="btn-primary" id="btn-copy-investigation-report" style="font-size:0.78rem; padding:0.45rem 0.85rem; display:inline-flex; align-items:center; gap:6px; background:rgba(244,63,94,0.15); color:#fb7185; border:1px solid rgba(244,63,94,0.35);" title="Copiar informe dels casos en investigació">
+              <button type="button" class="btn-report-action btn-report-investigation" id="btn-copy-investigation-report" title="Copiar informe dels casos en investigació">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                 <span>Copiar informe d'investigació</span>
               </button>
             ` : ''}
@@ -2070,6 +2081,7 @@ class ObservatoriApp {
                         </td>
                         <td style="text-align:center; white-space:nowrap;">
                           <button type="button" class="btn-locate-incident-stop" data-locate-line="${this.esc(inc.lineCode)}" data-locate-stop="${this.esc(inc.stopName)}" data-locate-stop-id="${this.esc(inc.stopId || '')}" title="Veure aquesta parada al mapa">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
                             <span>Mapa</span>
                           </button>
                         </td>
@@ -2175,7 +2187,8 @@ class ObservatoriApp {
                       <span>${this.esc(trip.trafficTag || '')} • ${trip.sampleCount} mostres registrades (${trip.incidentType === 'maintenance' ? 'proves o encesa a cotxeres' : (trip.isMovingTraffic ? `recorregut per ${trip.stopsCount} parades en retenció` : 'aturat a parada / regulant capçalera')})</span>
                     </div>
                     ${trip.incidentType !== 'maintenance' ? `
-                      <button type="button" class="btn-locate-incident-stop" data-locate-line="${this.esc(trip.lineCode)}" data-locate-stop="${this.esc(trip.firstStop || trip.stopsTraversed[0])}">
+                      <button type="button" class="btn-locate-incident-stop" data-locate-line="${this.esc(trip.lineCode)}" data-locate-stop="${this.esc(trip.firstStop || trip.stopsTraversed[0])}" title="Veure aquesta parada al mapa">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
                         <span>Veure parada</span>
                       </button>
                     ` : ''}

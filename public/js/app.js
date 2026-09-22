@@ -2142,7 +2142,7 @@ class TransitApp {
                     <span style="color:var(--text-muted); margin-left:0.25rem;">Les altres <strong>${matchingPunctualCount}</strong> parades ${lineNotice} han funcionat amb puntualitat (&lt; 1.5 min).</span>
                   </div>
                 </div>
-                <button type="button" class="observatori-action-btn btn-secondary" data-toggle-stop-mode="all" style="padding:0.35rem 0.8rem; font-size:0.75rem; font-weight:700; border-radius:8px; cursor:pointer; display:inline-flex; align-items:center; gap:0.35rem;">
+                <button type="button" class="observatori-action-btn btn-secondary btn-sm" data-toggle-stop-mode="all">
                   <span>🔓</span>
                   <span>Veure totes les parades (${matchingTotalCount})</span>
                 </button>
@@ -2158,7 +2158,7 @@ class TransitApp {
                     <span style="color:var(--text-muted); margin-left:0.25rem;">${matchingBottleneckCount} són colls d'ampolla.</span>
                   </div>
                 </div>
-                <button type="button" class="observatori-action-btn btn-secondary" data-toggle-stop-mode="bottlenecks" style="padding:0.35rem 0.8rem; font-size:0.75rem; font-weight:700; border-radius:8px; cursor:pointer; display:inline-flex; align-items:center; gap:0.35rem;">
+                <button type="button" class="observatori-action-btn btn-secondary btn-sm" data-toggle-stop-mode="bottlenecks">
                   <span>⚠️</span>
                   <span>Només colls d'ampolla (${matchingBottleneckCount})</span>
                 </button>
@@ -2266,8 +2266,8 @@ class TransitApp {
                 <span>${isAllStopsMode ? '📍 Totes les Parades per Retard Mitjà' : "📍 Colls d'Ampolla: Parades amb Més Retard"}</span>
                 <span class="observatori-table-subtitle">(Mostrant ${displayedWorstStops.length} de ${totalWorst}${isGroupedByLine ? ' • Agrupat per línia' : ''})</span>
               </h4>
-              <div class="observatori-filter-group" style="display:flex; align-items:center; flex-wrap:wrap; gap:0.4rem;">
-                <div class="observatori-mode-toggle-group" style="display:inline-flex; border:1px solid var(--border-subtle); border-radius:14px; padding:2px; background:var(--bg-surface); gap:2px; margin-right:0.25rem;">
+              <div class="observatori-filter-toolbar">
+                <div class="observatori-mode-toggle-group">
                   <button type="button" class="observatori-pill-btn ${!isAllStopsMode ? 'active' : ''}" data-toggle-stop-mode="bottlenecks" title="Mostra exclusivament les parades amb retards significatius">⚠️ Colls d'ampolla</button>
                   <button type="button" class="observatori-pill-btn ${isAllStopsMode ? 'active' : ''}" data-toggle-stop-mode="all" title="Mostra el 100% de les parades registrades, incloent-hi les puntuals">📋 Totes les parades</button>
                 </div>
@@ -2275,10 +2275,12 @@ class TransitApp {
                   <input type="checkbox" id="observatori-group-by-line" ${isGroupedByLine ? 'checked' : ''}>
                   <span>Agrupar per línia</span>
                 </label>
-                <span style="font-size:0.7rem; color:var(--text-muted); padding:0 4px; font-weight:700;">FILTRE:</span>
-                <button type="button" class="observatori-pill-btn ${worstLimit === 10 ? 'active' : ''}" data-worst-limit="10">Top 10</button>
-                <button type="button" class="observatori-pill-btn ${worstLimit === 25 ? 'active' : ''}" data-worst-limit="25">Top 25</button>
-                <button type="button" class="observatori-pill-btn ${worstLimit >= 9999 ? 'active' : ''}" data-worst-limit="9999">Totes (${totalWorst})</button>
+                <div class="observatori-filter-group" aria-label="Filtre de parades">
+                  <span class="observatori-filter-label">FILTRE:</span>
+                  <button type="button" class="observatori-pill-btn ${worstLimit === 10 ? 'active' : ''}" data-worst-limit="10">Top 10</button>
+                  <button type="button" class="observatori-pill-btn ${worstLimit === 25 ? 'active' : ''}" data-worst-limit="25">Top 25</button>
+                  <button type="button" class="observatori-pill-btn ${worstLimit >= 9999 ? 'active' : ''}" data-worst-limit="9999">Totes (${totalWorst})</button>
+                </div>
               </div>
             </div>
             ${totalWorst === 0 ? `<div style="color:var(--text-muted); font-size:0.85rem; padding:0.8rem; background:var(--bg-elevated); border-radius:8px;">${isAllStopsMode ? 'Cap parada coincideix amb el filtre.' : 'Sense punts negres registrats o cap parada coincideix amb el filtre.'}</div>` : `
@@ -7354,11 +7356,13 @@ class TransitApp {
             Dades de les darreres ${t.timeframeHours || 24} hores
           </div>
           <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-            <button type="button" class="btn-primary" id="btn-termometre-share">
-              📋 Copiar Resum per Xarxes
+            <button type="button" class="btn-primary btn-termometre-action" id="btn-termometre-share">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              <span>Copiar Resum per Xarxes</span>
             </button>
-            <button type="button" class="btn-primary" id="btn-termometre-download">
-              📸 Descarregar Fitxa
+            <button type="button" class="btn-secondary btn-termometre-action" id="btn-termometre-download">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              <span>Descarregar Fitxa</span>
             </button>
           </div>
         </div>
