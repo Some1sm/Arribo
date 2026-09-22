@@ -1395,7 +1395,8 @@ class MataroTracker extends BaseTracker {
       const segInfo = this.findNearestSegment(roadLat, roadLon, stops, polyCoords);
 
       // Sanity check for terminal layovers / ghost buses (e.g. parked with velocity 0 at terminus)
-      const isTerminal = (b.speedKmh <= 3 || b.speedKmh === undefined) && (segInfo.totalProgress > 92 || segInfo.totalProgress < 8);
+      const isTerminal = (b.speedKmh <= 3 || b.speedKmh === undefined) &&
+        ((segInfo.totalProgress > 92 && segInfo.distanceToNextMeters <= 50) || segInfo.totalProgress < 8);
       // GPS Freshness Invariant: A vehicle is ONLY live GPS if its fix was observed within the last 45 seconds (§7.6)
       const busAgeSec = Math.max(0, (now - (b.timestamp || b.lastSeen || now)) / 1000);
       const isStaleFix = busAgeSec > 45;

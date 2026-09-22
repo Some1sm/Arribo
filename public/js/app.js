@@ -1278,7 +1278,7 @@ class TransitApp {
   async refreshAllData(shouldFitBounds = false) {
     if (this._isRefreshingData) return;
     this._isRefreshingData = true;
-    this.secondsRemaining = this.pollInterval;
+    this.secondsRemaining = this.fleetStreamOk ? 60 : this.pollInterval;
     this.updateCountdownLabel();
     try {
       const reqSeq = ++this.activeRequestSeq;
@@ -1432,7 +1432,7 @@ class TransitApp {
         console.error('Target ETA async handler error:', err);
       });
 
-      this.secondsRemaining = this.pollInterval;
+      this.secondsRemaining = this.fleetStreamOk ? 60 : this.pollInterval;
       this.updateCountdownLabel();
     } catch (err) {
       console.error('Data refresh error:', err);

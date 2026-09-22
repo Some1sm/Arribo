@@ -1423,7 +1423,7 @@ class C10Map {
           <div class="map-popup-route-ribbon">
             <div class="map-popup-route-stop from">
               <span class="map-popup-stop-dot"></span>
-              <span class="map-popup-stop-name">${fromStop || 'Capçalera de Línia'}</span>
+              <span class="map-popup-stop-name">${((bus.totalProgress >= 90 && bus.toStop) ? toStop : fromStop) || 'Capçalera de Línia'}</span>
             </div>
             <div class="map-popup-route-badge-layover">${bus.departureTime ? `Sortida: ${escHtml(bus.departureTime)}` : 'Pausa de servei'}</div>
           </div>

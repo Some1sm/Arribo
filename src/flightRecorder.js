@@ -89,6 +89,7 @@ class FlightRecorder {
         vehicleId: vId,
         lineId: snap.lineId || '',
         lineCode: lineCode,
+        direction: snap.direction !== undefined ? String(snap.direction) : undefined,
         agency: snap.agency || 'Transit',
         plateNumber: snap.plateNumber || '',
         lat: Number(snap.lat),
@@ -113,7 +114,14 @@ class FlightRecorder {
         status: 'active',
         lastSeen: now,
         lastPersistedAt: 0,
-        history: []
+        history: [],
+        isTerminalLayover: Boolean(snap.isTerminalLayover),
+        fromStop: snap.fromStop !== undefined ? snap.fromStop : undefined,
+        toStop: snap.toStop !== undefined ? snap.toStop : undefined,
+        fromSeq: snap.fromSeq !== undefined ? snap.fromSeq : undefined,
+        toSeq: snap.toSeq !== undefined ? snap.toSeq : undefined,
+        totalProgress: snap.totalProgress !== undefined ? snap.totalProgress : undefined,
+        distanceToNextMeters: snap.distanceToNextMeters !== undefined ? snap.distanceToNextMeters : undefined
       };
       this.vehicles.set(vId, v);
     } else {
@@ -123,6 +131,7 @@ class FlightRecorder {
       v.bearing = Number(snap.bearing || 0);
       v.delayMins = Number(snap.delayMins || 0);
       if (snap.destination) v.destination = snap.destination;
+      if (snap.direction !== undefined) v.direction = String(snap.direction);
       v.isRealTime = snap.isRealTime !== false;
       v.isEstimated = Boolean(snap.isEstimated || snap.isDeadReckoned);
       if (snap.serviceableMs !== undefined) {
@@ -135,6 +144,13 @@ class FlightRecorder {
       v.extrapolatedMs = 0;
       v.lastSeen = now;
       if (lineCode) v.lineCode = lineCode;
+      v.isTerminalLayover = Boolean(snap.isTerminalLayover);
+      if (snap.fromStop !== undefined) v.fromStop = snap.fromStop;
+      if (snap.toStop !== undefined) v.toStop = snap.toStop;
+      if (snap.fromSeq !== undefined) v.fromSeq = snap.fromSeq;
+      if (snap.toSeq !== undefined) v.toSeq = snap.toSeq;
+      if (snap.totalProgress !== undefined) v.totalProgress = snap.totalProgress;
+      if (snap.distanceToNextMeters !== undefined) v.distanceToNextMeters = snap.distanceToNextMeters;
     }
 
     // Add to memory breadcrumb trail
@@ -333,6 +349,7 @@ class FlightRecorder {
         vehicleId: vId,
         lineId: v.lineId || '',
         lineCode: lineCode,
+        direction: v.direction !== undefined ? String(v.direction) : (existing ? existing.direction : undefined),
         agency: v.agency || 'Transit',
         plateNumber: v.plateNumber || '',
         lat: Number(v.lat),
@@ -351,7 +368,14 @@ class FlightRecorder {
         lastSeen: v.lastSeen || now,
         lastPersistedAt: v.lastPersistedAt || 0,
         extrapolatedMs: v.extrapolatedMs || (existing ? existing.extrapolatedMs : 0),
-        history: history
+        history: history,
+        isTerminalLayover: Boolean(v.isTerminalLayover),
+        fromStop: v.fromStop !== undefined ? v.fromStop : (existing ? existing.fromStop : undefined),
+        toStop: v.toStop !== undefined ? v.toStop : (existing ? existing.toStop : undefined),
+        fromSeq: v.fromSeq !== undefined ? v.fromSeq : (existing ? existing.fromSeq : undefined),
+        toSeq: v.toSeq !== undefined ? v.toSeq : (existing ? existing.toSeq : undefined),
+        totalProgress: v.totalProgress !== undefined ? v.totalProgress : (existing ? existing.totalProgress : undefined),
+        distanceToNextMeters: v.distanceToNextMeters !== undefined ? v.distanceToNextMeters : (existing ? existing.distanceToNextMeters : undefined)
       };
 
       newMap.set(vId, state);

@@ -134,7 +134,14 @@ class IngestionDaemon {
                 destination: b.destination || '',
                 isRealTime: !b.isEstimated,
                 isEstimated: Boolean(b.isEstimated),
-                serviceableMs: 90 * 1000
+                serviceableMs: 90 * 1000,
+                isTerminalLayover: Boolean(b.isTerminalLayover),
+                fromStop: b.fromStop !== undefined ? b.fromStop : undefined,
+                toStop: b.toStop !== undefined ? b.toStop : undefined,
+                fromSeq: b.fromSeq !== undefined ? b.fromSeq : undefined,
+                toSeq: b.toSeq !== undefined ? b.toSeq : undefined,
+                totalProgress: b.totalProgress !== undefined ? b.totalProgress : undefined,
+                distanceToNextMeters: b.distanceToNextMeters !== undefined ? b.distanceToNextMeters : undefined
               });
 
               // Sanity check: Do NOT record delay logs for ghost buses, parked vehicles, or terminal layovers.
