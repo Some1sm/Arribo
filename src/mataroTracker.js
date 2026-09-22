@@ -2201,12 +2201,16 @@ class MataroTracker extends BaseTracker {
           if (minutesAway <= 45) {
             const arrDate = new Date(now + minutesAway * 60000);
             const formattedTime = timeUtils.formatTimeToTimezone(arrDate, this.agencyTimezone);
-            const badge = veh.isEstimated
-              ? (veh.delayBadgeText || `⚡ En ruta (Estimat)`)
-              : (veh.delayMins > 0 ? `+${veh.delayMins} min retard` : `⚡ En ruta (Bus #${veh.vehicleId})`);
+            const isVehDelayed = (veh.delayMins !== undefined && veh.delayMins !== null && Number(veh.delayMins) >= 2);
+            const badge = isVehDelayed
+              ? `+${Number(veh.delayMins)} min retard`
+              : (veh.isEstimated
+                  ? (veh.delayBadgeText || `⚡ En ruta (Estimat)`)
+                  : (veh.delayMins > 0 ? `+${veh.delayMins} min retard` : `⚡ En ruta (Bus #${veh.vehicleId})`));
 
             const termStopObj = routeStops[routeStops.length - 1];
-            const resolvedDest = termStopObj?.name || route.name;
+            const rawDest = termStopObj?.name || route.name;
+            const resolvedDest = (rawDest || '').trim().replace(/\s*-\s*\d+\s*$/, '').trim();
 
             estimatedArrivals.push({
               lineId: lId,
@@ -2223,7 +2227,7 @@ class MataroTracker extends BaseTracker {
               formattedStatus: minutesAway === 0 ? 'Imminent' : (minutesAway === 1 ? '1 min' : `${minutesAway} min`),
               delayMins: veh.delayMins || 0,
               delayBadgeText: badge,
-              delayStatus: 'estimated',
+              delayStatus: isVehDelayed ? 'delayed' : 'estimated',
               isRealTime: false,
               isEstimated: true,
               freshness: { source: 'position', fetchedAt: now, observedAt: veh.freshness?.observedAt || null },

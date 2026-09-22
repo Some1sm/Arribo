@@ -3203,9 +3203,11 @@ class TransitApp {
       const isApproachingTerminal = isRegulating && arrMinsAway !== null && arrMinsAway > 0;
       const isParkedAtTerminal = isRegulating && arrMinsAway !== null && arrMinsAway <= 0;
 
-      const tagLabel = (isFirstMorning || isFirstToday)
-        ? '🌅 1r Servei'
-        : (isTomorrow ? 'Programat' : (dep.isEstimated ? '⚡ En ruta' : (dep.isRealTime ? '🟢 Temps Real' : 'Programat')));
+      const tagLabel = isParkedAtTerminal
+        ? ''
+        : ((isFirstMorning || isFirstToday)
+            ? '🌅 1r Servei'
+            : (isTomorrow ? 'Programat' : (dep.isEstimated ? '⚡ En ruta' : (dep.isRealTime ? '🟢 Temps Real' : 'Programat'))));
 
       let regBadgeText = '';
       let regBadgeTitle = '';
@@ -3242,7 +3244,9 @@ class TransitApp {
       } else if (isTomorrow) {
         pillLabel = 'Programat';
       } else if (dep.isEstimated) {
-        pillLabel = '⚡ En ruta';
+        const hasExplicitDelay = Boolean(dep.delayBadgeText && (dep.delayBadgeText.includes('retard') || dep.delayBadgeText.includes('avançat')));
+        const estDelayBadge = hasExplicitDelay ? dep.delayBadgeText : delayText;
+        pillLabel = rawDelayMins >= 2 ? estDelayBadge : '⚡ En ruta';
       } else {
         pillLabel = dep.delayBadgeText || 'Puntual';
       }
@@ -3316,7 +3320,7 @@ class TransitApp {
               ${isRegulating
                 ? `<span class="dep-regulating-pill" title="${this.esc(regBadgeTitle)}">${regBadgeText}</span>`
                 : (isDiff ? `<span class="dep-sched-pill" title="Horari oficial teòric: ${schedTime}">Oficial: ${schedTime}</span>` : '')}
-              <span class="dep-tag-sub ${(isFirstMorning || isFirstToday) ? 'first-service' : ''}" title="${this.esc(tagLabel)}">${tagLabel}</span>
+              ${(!isParkedAtTerminal && tagLabel) ? `<span class="dep-tag-sub ${(isFirstMorning || isFirstToday) ? 'first-service' : ''}" title="${this.esc(tagLabel)}">${tagLabel}</span>` : ''}
             </div>
             <div class="dep-dest" title="Cap a ${this.esc(cleanDest)}">
               Cap a <strong>${this.esc(cleanDest)}</strong>
@@ -3327,7 +3331,7 @@ class TransitApp {
           </div>
           <div class="dep-status">
             <span class="dep-mins" style="${(isFirstMorning || isFirstToday) ? 'color:#fbbf24;' : (isTomorrow ? 'color:#94a3b8;' : '')}">${minsText}</span>
-            <span class="dep-delay-pill ${pillClass}" title="${this.esc(dep.delayBadgeText || pillLabel)}">
+            <span class="dep-delay-pill ${pillClass}" title="${this.esc((dep.isEstimated && rawDelayMins >= 2) ? pillLabel : (dep.delayBadgeText || pillLabel))}">
               ${this.esc(pillLabel)}
             </span>
             ${hasActiveBus ? `
@@ -4921,9 +4925,11 @@ class TransitApp {
       const isApproachingTerminal = isRegulating && arrMinsAway !== null && arrMinsAway > 0;
       const isParkedAtTerminal = isRegulating && arrMinsAway !== null && arrMinsAway <= 0;
 
-      const tagLabel = (isFirstMorning || isFirstToday)
-        ? '🌅 1r Servei'
-        : (isTomorrow ? 'Programat' : (d.isEstimated ? '⚡ En ruta' : (d.isRealTime ? '🟢 Temps Real' : 'Programat')));
+      const tagLabel = isParkedAtTerminal
+        ? ''
+        : ((isFirstMorning || isFirstToday)
+            ? '🌅 1r Servei'
+            : (isTomorrow ? 'Programat' : (d.isEstimated ? '⚡ En ruta' : (d.isRealTime ? '🟢 Temps Real' : 'Programat'))));
 
       let regBadgeText = '';
       let regBadgeTitle = '';
@@ -4960,7 +4966,9 @@ class TransitApp {
       } else if (isTomorrow) {
         pillLabel = 'Programat';
       } else if (d.isEstimated) {
-        pillLabel = '⚡ En ruta';
+        const hasExplicitDelay = Boolean(d.delayBadgeText && (d.delayBadgeText.includes('retard') || d.delayBadgeText.includes('avançat')));
+        const estDelayBadge = hasExplicitDelay ? d.delayBadgeText : delayText;
+        pillLabel = rawDelayMins >= 2 ? estDelayBadge : '⚡ En ruta';
       } else {
         pillLabel = d.delayBadgeText || 'Puntual';
       }
@@ -5034,7 +5042,7 @@ class TransitApp {
               ${isRegulating
                 ? `<span class="dep-regulating-pill" title="${this.esc(regBadgeTitle)}">${regBadgeText}</span>`
                 : (isDiff ? `<span class="dep-sched-pill" title="Horari oficial teòric: ${schedTime}">Oficial: ${schedTime}</span>` : '')}
-              <span class="dep-tag-sub ${(isFirstMorning || isFirstToday) ? 'first-service' : ''}" title="${this.esc(tagLabel)}">${tagLabel}</span>
+              ${(!isParkedAtTerminal && tagLabel) ? `<span class="dep-tag-sub ${(isFirstMorning || isFirstToday) ? 'first-service' : ''}" title="${this.esc(tagLabel)}">${tagLabel}</span>` : ''}
             </div>
             
             <div class="dep-dest" title="Cap a ${this.esc(cleanDest)}">
@@ -5049,7 +5057,7 @@ class TransitApp {
 
           <div class="dep-status">
             <span class="dep-mins" style="${(isFirstMorning || isFirstToday) ? 'color:#fbbf24;' : (isTomorrow ? 'color:#94a3b8;' : '')}">${minsText}</span>
-            <span class="dep-delay-pill ${pillClass}" title="${this.esc(d.delayBadgeText || pillLabel)}">${this.esc(pillLabel)}</span>
+            <span class="dep-delay-pill ${pillClass}" title="${this.esc((d.isEstimated && rawDelayMins >= 2) ? pillLabel : (d.delayBadgeText || pillLabel))}">${this.esc(pillLabel)}</span>
             ${hasActiveBus ? `
               <span class="dep-map-cta">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polygon points="12 8 8 12 12 16 12 8"/></svg>

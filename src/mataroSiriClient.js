@@ -114,7 +114,7 @@ class MataroSiriClient {
         port: this.port,
         path: this.path,
         method: 'POST',
-        timeout: 2500,
+        timeout: 3500,
         headers: {
           'Content-Type': 'text/xml; charset=utf-8',
           'SOAPAction': `http://tempuri.org/${action}`,
