@@ -10,7 +10,7 @@
     "build": "echo 'Build complete'",
     "start": "node server.js",
     "dev": "node server.js",
-    "lint": "node --check server.js src/*.js src/core/*.js src/core/geo/*.js src/core/schedule/*.js src/core/time/*.js src/workers/*.js public/js/app.js public/js/map.js",
+    "lint": "eslint .",
     "test:syntax": "node test/syntax_check.js",
     "test:core": "node test/verification_test.js && node test/core_transit_modules_test.js",
     "test:unit": "node test/core_transit_modules_test.js",
@@ -24,8 +24,12 @@
     "test": "node test/run.js"
   },
   "dependencies": {
-    "compression": "^1.8.1",
+    "compression": "^1.8.2",
     "cors": "^2.8.5",
-    "express": "^4.19.2"
+    "express": "^4.22.3"
+  },
+  "devDependencies": {
+    "eslint": "^10.11.0",
+    "globals": "^17.12.0"
   }
 }

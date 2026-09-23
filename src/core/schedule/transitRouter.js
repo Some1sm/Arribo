@@ -40,13 +40,13 @@ class TransitRouter {
           id: String(s.id),
           shorthandId: String(s.id).replace(/^10*/, ''),
           name: (s.name || '').replace(/ - \d+$/, '').trim(),
-          lat: parseFloat(s.latitude || (s.coords && s.coords.lat) || 0),
-          lon: parseFloat(s.longitude || (s.coords && s.coords.lon) || 0)
+          lat: parseFloat(s.latitude ?? (s.coords && s.coords.lat) ?? 0),
+          lon: parseFloat(s.longitude ?? (s.coords && s.coords.lon) ?? 0)
         }));
 
         const rawCoords = (r.coords || []).map(c => [
-          parseFloat(c.Latitude || c.lat || c.latitude),
-          parseFloat(c.Longitude || c.lon || c.longitude)
+          parseFloat(c.Latitude ?? c.lat ?? c.latitude),
+          parseFloat(c.Longitude ?? c.lon ?? c.longitude)
         ]).filter(c => Number.isFinite(c[0]) && Number.isFinite(c[1]));
 
         if (stopsList.length > 1) {
@@ -198,8 +198,8 @@ class TransitRouter {
     // Add all sibling stops with identical clean name OR within 150 meters (opposite sides of street, hubs)
     const candidates = new Map();
     for (const b of baseStops) {
-      const bLat = parseFloat(b.lat || b.latitude);
-      const bLon = parseFloat(b.lon || b.longitude);
+      const bLat = parseFloat(b.lat ?? b.latitude);
+      const bLon = parseFloat(b.lon ?? b.longitude);
       const bClean = (b.name || '').replace(/ - \d+$/, '').trim().toLowerCase();
       const bId = String(b.id);
 
@@ -218,8 +218,8 @@ class TransitRouter {
         const sId = String(s.id);
         if (candidates.has(sId)) continue;
         const sClean = (s.name || '').replace(/ - \d+$/, '').trim().toLowerCase();
-        const sLat = parseFloat(s.lat || s.latitude);
-        const sLon = parseFloat(s.lon || s.longitude);
+        const sLat = parseFloat(s.lat ?? s.latitude);
+        const sLon = parseFloat(s.lon ?? s.longitude);
 
         // Identical base name (e.g. "Roca Blanca" or "Rodalies" opposite platforms)
         if (sClean === bClean) {
@@ -264,8 +264,8 @@ class TransitRouter {
     let minDistance = Infinity;
 
     for (const [id, s] of this.tracker.allStopsMap.entries()) {
-      const sLat = parseFloat(s.lat || s.latitude);
-      const sLon = parseFloat(s.lon || s.longitude);
+      const sLat = parseFloat(s.lat ?? s.latitude);
+      const sLon = parseFloat(s.lon ?? s.longitude);
       if (!Number.isFinite(sLat) || !Number.isFinite(sLon)) continue;
 
       const dist = geoEngine.calculateDistanceMeters(nLat, nLon, sLat, sLon);

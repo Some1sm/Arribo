@@ -6,8 +6,11 @@ class MataroSiriClient {
     this.hostname = 'sirimataro.avanzagrupo.com';
     this.port = 443;
     this.path = '/Siri/SiriWS.asmx';
-    this.accountId = 'Mataro';
-    this.accountKey = 'Mataro*WS';
+    // Avanza publishes these as well-known client defaults shared by every
+    // consumer of the portal, so they are not secrets. They remain the
+    // fallback for unchanged deployments; override per-instance via env.
+    this.accountId = process.env.MATARO_SIRI_ACCOUNT_ID || 'Mataro';
+    this.accountKey = process.env.MATARO_SIRI_ACCOUNT_KEY || 'Mataro*WS';
     this.cache = new Map();
     this._inflight = new Map(); // key -> upstream fetch/parse promise (coalesces concurrent identical requests)
     this.cacheTtlMs = 20000; // 20-second live cache with 10-minute (600s) stale fallback buffer

@@ -56,8 +56,9 @@ structured output printed directly to the user:
 ## 1. Current scope
 
 Arribo! serves Mataró Bus Urbà **L1–L8**, eight lines and 153 indexed stops.
-TrackerRegistry registers only Mataró. Retained Catalonia-wide trackers are inactive;
-do not re-enable them during routine maintenance. [ARCHITECTURE.md](ARCHITECTURE.md)
+TrackerRegistry registers only Mataró. The Catalonia-wide trackers and their
+GTFS/indexer helpers have been deleted, not left dormant; there is nothing to
+re-enable. [ARCHITECTURE.md](ARCHITECTURE.md)
 is historical. Use [README.md](README.md) and [OPERATIONS.md](OPERATIONS.md) for current
 setup and contracts; verify disagreements against source, not fixed source-line lists.
 
@@ -92,8 +93,7 @@ setup and contracts; verify disagreements against source, not fixed source-line 
 ## 3. Invariants
 
 - Use Europe/Madrid core engines, not host-local getHours/getDay. Preserve service
-  dates through midnight and DST. Retained night providers have previous-day service
-  rules but are not active Mataró routes.
+  dates across midnight and DST. No non-Mataró night providers remain in the tree.
 - Internal/Leaflet geometry is [lat,lon]; GeoJSON/ORS is [lon,lat]. Preserve zero
   coordinates and lat/lon plus latitude/longitude vehicle compatibility fields.
 - Reuse geoEngine, calendarEngine, timeEngine, delayEngine and scheduleSynthesizer.
@@ -120,9 +120,8 @@ or SQLite. Preserve aliases; inspect server.js rather than restoring retired con
 
 Never publish credential values or log endpoint queries, coordinates or keys.
 ORS_BASE_URL / ORS_API_KEY configure walking; AMB_API_KEY belongs to inactive AMB.
-SIRI still has legacy built-in account configuration, not environment overrides.
-A future MATARO_SIRI_ACCOUNT_ID / MATARO_SIRI_ACCOUNT_KEY migration needs a separate
-client change; setting those names alone currently does nothing. Documentation
+MATARO_SIRI_ACCOUNT_ID / MATARO_SIRI_ACCOUNT_KEY override the SIRI account and fall
+back to the built-in Avanza well-known defaults when unset. Documentation
 redaction does not revoke secrets, erase history or remove legacy source defaults.
 Historical exposure needs operator review; do not rotate accounts incidentally.
 
