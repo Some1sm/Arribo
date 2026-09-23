@@ -1400,7 +1400,8 @@ class HistoryDatabase {
           stationaryCount,
           maintenanceCount,
           movingPct: totalClusters > 0 ? Math.round((movingCount / totalClusters) * 100) : 0,
-          investigationCount: enrichedInvestigation.length
+          investigationCount: enrichedInvestigation.length,
+          dataQuality: this._delayDataQuality({ hours: hoursNum, lineCode: lineCode })
         },
         topIncidents: enrichedTop,
         investigationIncidents: enrichedInvestigation,
@@ -1433,6 +1434,161 @@ class HistoryDatabase {
         incidentTrips: []
       };
     }
+  }
+
+  // ── Forensic delay inspection ──────────────────────────────────────
+  // Groups raw delay rows into episodes, grades each episode's provenance,
+  // flags retired-scope lines and feed-tail saturation, and surfaces the
+  // underlying observations so an operator can judge whether an "insane delay"
+  // is a real event or a measurement artefact.
+  inspectDelayIncident({ lineCode = 'all', stopName = '', at, windowMins = 60, minDelay = 5 } = {}) {
+    if (!this._ensureOpen()) {
+      return { found: false, error: 'database unavailable', episode: null, dataQuality: {} };
+    }
+    try {
+      const windowMs = Math.max(5, Math.min(240, Number(windowMins) || 60)) * 60000;
+      const center = Number(at) > 0 ? Number(at) : Date.now();
+      const from = Math.floor(center - windowMs / 2);
+      const to = Math.floor(center + windowMs / 2);
+      const minDelayNum = Math.max(1, Number(minDelay) || 5);
+
+      const cleanCode = String(lineCode || '').toUpperCase().trim();
+      const isAll = !cleanCode || cleanCode === 'ALL' || cleanCode === 'TOTES';
+      const codeWithL = cleanCode.startsWith('L') ? cleanCode : `L${cleanCode}`;
+      const codeWithoutL = cleanCode.replace(/^L/, '');
+
+      let sqlWhere = 'timestamp >= ? AND timestamp <= ? AND delay_mins >= ?';
+      const params = [from, to, minDelayNum];
+      if (!isAll) {
+        sqlWhere += ' AND (UPPER(line_code) = ? OR UPPER(line_code) = ? OR line_id = ?)';
+        params.push(codeWithL, codeWithoutL, codeWithoutL);
+      }
+      if (stopName) {
+        sqlWhere += ' AND stop_name LIKE ?';
+        params.push(`%${stopName}%`);
+      }
+
+      const stmt = this.db.prepare(`
+        SELECT id, vehicle_id as vehicleId, line_id as lineId, line_code as lineCode,
+          agency, stop_id as stopId, stop_name as stopName, delay_mins as delayMins,
+          is_realtime as isRealTime, timestamp, madrid_datetime(timestamp) as formattedDate,
+          scheduled_time as scheduledTime, actual_time as actualTime,
+          is_telemetry_anomaly(timestamp, delay_mins, stop_name) as isAnomaly
+        FROM delay_logs
+        WHERE ${sqlWhere}
+        ORDER BY timestamp ASC
+        LIMIT 500
+      `);
+      const rows = stmt.all(...params);
+      if (!rows.length) {
+        return { found: false, lineCode: isAll ? 'ALL' : codeWithL, stopName, windowMs, dataQuality: {}, episode: null };
+      }
+
+      // ── Group into episodes: consecutive rows within 5 minutes ──────
+      const GAP_MS = 5 * 60 * 1000;
+      const episodes = [];
+      let cur = [];
+      for (const r of rows) {
+        if (cur.length && r.timestamp - cur[cur.length - 1].timestamp > GAP_MS) {
+          episodes.push(cur); cur = [];
+        }
+        cur.push(r);
+      }
+      if (cur.length) episodes.push(cur);
+
+      const pick = episodes.find(e => center >= e[0].timestamp && center <= e[e.length - 1].timestamp + GAP_MS)
+        || episodes.reduce((a, b) => (b[b.length - 1].delayMins > a[a.length - 1].delayMins ? b : a));
+
+      const vehicleIds = [...new Set(pick.map(r => r.vehicleId).filter(Boolean))];
+      const rowsWithTimes = pick.filter(r => r.scheduledTime && r.scheduledTime !== '' && r.actualTime && r.actualTime !== '').length;
+      const snapshotRows = vehicleIds.length ? this._snapshotTrail(vehicleIds[0], pick[0].timestamp, pick[pick.length - 1].timestamp) : [];
+
+      const hasVehicleId = vehicleIds.length > 0;
+      const hasProvenanceTimes = rowsWithTimes > 0;
+      const hasSnapshotTrail = snapshotRows.length >= 2;
+
+      let verdict, verdictLabel;
+      if (pick.every(r => r.isAnomaly)) {
+        verdict = 'telemetry_anomaly'; verdictLabel = 'Telemetry anomaly — depot / night maintenance';
+      } else if (hasVehicleId && (hasProvenanceTimes || hasSnapshotTrail)) {
+        verdict = 'corroborated'; verdictLabel = 'Corroborated — vehicle identity plus independent evidence';
+      } else if (pick.length >= 3 && (!hasVehicleId || vehicleIds.length <= 1)) {
+        verdict = 'poll_inflated'; verdictLabel = 'Inflated by repeated polling — same bus logged every 20 s';
+      } else {
+        verdict = 'unverifiable'; verdictLabel = 'Unverifiable — no vehicle identity or independent evidence';
+      }
+
+      const retiredScope = !isAll && !['L1','L2','L3','L4','L5','L6','L7','L8'].includes(codeWithL);
+      const vehicleDist = {};
+      pick.forEach(r => { vehicleDist[r.vehicleId || '(none)'] = (vehicleDist[r.vehicleId || '(none)'] || 0) + 1; });
+
+      return {
+        found: true,
+        lineCode: isAll ? 'ALL' : codeWithL,
+        stopName: pick[0].stopName,
+        incidentTime: new Date(pick[0].timestamp).toLocaleString('en-GB', { timeZone: 'Europe/Madrid' }),
+        episode: {
+          start: new Date(pick[0].timestamp).toLocaleString('en-GB', { timeZone: 'Europe/Madrid' }),
+          end: new Date(pick[pick.length - 1].timestamp).toLocaleString('en-GB', { timeZone: 'Europe/Madrid' }),
+          durationMinutes: +(pick[pick.length - 1].timestamp - pick[0].timestamp) / 60000,
+          peakDelayMins: Math.max(...pick.map(r => r.delayMins)),
+          peakAt: new Date(pick.reduce((a, b) => b.delayMins > a.delayMins ? b : a).timestamp).toLocaleString('en-GB', { timeZone: 'Europe/Madrid' }),
+          rowCount: pick.length,
+          distinctVehicles: vehicleIds,
+          verdict, verdictLabel,
+          evidence: {
+            hasVehicleId, hasProvenanceTimes, hasSnapshotTrail,
+            vehicleIdDistribution: vehicleDist,
+            rowsWithProvenanceTimes: rowsWithTimes,
+            snapshotTrailPoints: snapshotRows.length,
+            rowsWithoutProvenance: pick.length - rowsWithTimes
+          },
+          timetableCheck: {
+            available: false,
+            note: 'Scheduled / actual times are empty strings in the stored rows — the delay cannot be recomputed from a timetable in this DB'
+          },
+          retiredScope,
+          rawRows: pick.slice(0, 100).map(r => ({
+            delayMins: r.delayMins, stopName: r.stopName, vehicleId: r.vehicleId,
+            formattedDate: r.formattedDate, isRealTime: Boolean(r.isRealTime),
+            hasTimes: !!(r.scheduledTime && r.scheduledTime !== '')
+          }))
+        },
+        dataQuality: {
+          totalRawRowsReturned: rows.length,
+          episodesInWindow: episodes.length,
+          feedTailCap: 'Delays ≥ 25 min appear to be the upstream SIRI feed tail cap, not real-world outliers',
+          retiredScopeLinesPresent: retiredScope
+        }
+      };
+    } catch (e) {
+      console.error('[HistoryDB] inspectDelayIncident error:', e.message);
+      return { found: false, error: e.message, episode: null, dataQuality: {} };
+    }
+  }
+
+  _snapshotTrail(vehicleId, from, to) {
+    try {
+      const stmt = this.db.prepare(`SELECT lat, lon, speed_kmh as speedKmh, delay_mins as delayMins, timestamp FROM vehicle_snapshots WHERE vehicle_id = ? AND timestamp >= ? AND timestamp <= ? ORDER BY timestamp ASC LIMIT 50`);
+      return stmt.all(String(vehicleId), from, to);
+    } catch { return []; }
+  }
+
+  _delayDataQuality({ hours, lineCode }) {
+    if (!this._ensureOpen()) return { totalRawRows: 0, distinctEpisodes: 0, rowsWithoutVehicleId: 0, rowsWithoutProvenance: 0, feedTailCap: '' };
+    try {
+      const cutoff = Date.now() - (Math.max(1, Math.min(720, Number(hours) || 168)) * 3600 * 1000);
+      const cleanCode = String(lineCode || '').toUpperCase().trim();
+      const isAll = !cleanCode || cleanCode === 'ALL' || cleanCode === 'TOTES';
+      const codeWithL = cleanCode.startsWith('L') ? cleanCode : `L${cleanCode}`;
+      const codeWithoutL = cleanCode.replace(/^L/, '');
+      let wh = 'timestamp >= ?';
+      const wp = [cutoff];
+      if (!isAll) { wh += ' AND (UPPER(line_code) = ? OR UPPER(line_code) = ? OR line_id = ?)'; wp.push(codeWithL, codeWithoutL, codeWithoutL); }
+      const agg = this.db.prepare(`SELECT COUNT(*) as n, SUM(CASE WHEN vehicle_id = '' OR vehicle_id IS NULL THEN 1 ELSE 0 END) as noVeh, SUM(CASE WHEN scheduled_time = '' OR scheduled_time IS NULL OR actual_time = '' OR actual_time IS NULL THEN 1 ELSE 0 END) as noProv, COUNT(DISTINCT CASE WHEN vehicle_id != '' AND vehicle_id IS NOT NULL THEN vehicle_id END) as vehIds FROM delay_logs WHERE ${wh}`).get(...wp);
+      const ep = this.db.prepare(`SELECT COUNT(*) as n FROM (SELECT line_code, COUNT(DISTINCT CASE WHEN vehicle_id != '' AND vehicle_id IS NOT NULL THEN vehicle_id END || '-' || stop_name) as k FROM delay_logs WHERE ${wh} GROUP BY line_code, stop_name HAVING COUNT(*) > 1)`).get(...wp);
+      return { totalRawRows: agg.n || 0, rowsWithoutVehicleId: agg.noVeh || 0, rowsWithoutProvenance: agg.noProv || 0, distinctEpisodes: ep.n || 0, feedTailCap: 'Delays ≥ 25 min appear to be the upstream SIRI feed tail cap, not real-world outliers' };
+    } catch { return { totalRawRows: 0, distinctEpisodes: 0, rowsWithoutVehicleId: 0, rowsWithoutProvenance: 0, feedTailCap: '' }; }
   }
 
   aggregateHourlyStats() {

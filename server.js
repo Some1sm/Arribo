@@ -1037,6 +1037,28 @@ app.get(['/api/analytics/incidents', '/api/retards/incidents', '/api/analytics/l
   }
 });
 
+// Inspect endpoint: deep-dive forensic packet for a given incident window
+app.get('/api/analytics/incidents/inspect', async (req, res) => {
+  const lineParam = req.query.line || 'all';
+  const at = Number(req.query.at || 0);
+  const windowMins = Math.max(5, Math.min(240, parseInt(req.query.windowMins || 60, 10)));
+  const minDelay = Math.max(1, parseInt(req.query.minDelay || 5, 10));
+
+  try {
+    const data = await workerBridge.historyQuery('inspectDelayIncident', {
+      lineCode: lineParam, stopName: String(req.query.stop || ''), at, windowMins, minDelay
+    }, { timeoutMs: 35000 });
+
+    if (data && data.found) {
+      res.json({ success: true, ...data });
+    } else {
+      res.json({ success: true, found: false, error: data?.error || 'no data in window', episode: null, dataQuality: data?.dataQuality || {} });
+    }
+  } catch (err) {
+    sendInternalError(req, res, err, { success: false, found: false, error: err.message, episode: null, dataQuality: {} });
+  }
+});
+
 // Passive upstream diagnostics, served entirely from cached worker status
 app.get('/api/diagnostics/upstream', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');

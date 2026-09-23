@@ -269,6 +269,17 @@ class ObservatoriApp {
         return;
       }
 
+      // Investigate incident: open forensic drill-down panel
+      const investigateBtn = e.target.closest('[data-investigate-stop]');
+      if (investigateBtn) {
+        e.preventDefault();
+        const line = investigateBtn.dataset.investigateLine;
+        const stop = investigateBtn.dataset.investigateStop;
+        const at = investigateBtn.dataset.investigateAt ? Number(investigateBtn.dataset.investigateAt) : undefined;
+        this.openIncidentDrilldown(line, stop, at);
+        return;
+      }
+
       // Copy anomalies report to clipboard
       const copyBtn = e.target.closest('#btn-copy-anomalies-report');
       if (copyBtn) {
@@ -1606,6 +1617,91 @@ class ObservatoriApp {
     }
   }
 
+  async openIncidentDrilldown(lineCode, stopName, at) {
+    const panel = document.getElementById('incident-drilldown-panel');
+    const content = document.getElementById('drilldown-content');
+    const summary = document.getElementById('drilldown-summary');
+    if (!panel || !content || !summary) return;
+    panel.style.display = 'block';
+    content.innerHTML = '<span style="color:var(--text-muted);">Carregant investigació…</span>';
+    summary.innerHTML = '';
+    panel.scrollIntoView({ behavior: 'smooth' });
+    try {
+      const params = new URLSearchParams({ line: lineCode, stop: stopName });
+      if (at > 0) params.set('at', String(at));
+      const res = await fetch(`/api/analytics/incidents/inspect?${params}`);
+      const data = await res.json();
+      if (!data || data.found === false) {
+        content.innerHTML = `<span style="color:#fb7185;">No es poden carregar mostres en aquesta finestra. ${data?.error || ''}</span>`;
+        summary.innerHTML = `<p style="color:var(--text-muted); font-size:0.82rem;">Cap mostra amb retard ≥5 minuts en els darrers 60 minuts per ${this.esc(lineCode)} @ ${this.esc(stopName)}.</p>`;
+        return;
+      }
+      const ep = data.episode || {};
+      const ev = ep.evidence || {};
+      const verdictColors = { corroborated: '#34d399', poll_inflated: '#f59e0b', unverifiable: '#fb7185', telemetry_anomaly: '#94a3b8' };
+      const verdictLabel = verdictColors[ep.verdict] || '#fff';
+      const vehicleBadge = ep.distinctVehicles.length ? ep.distinctVehicles.map(v => `<span style="background:rgba(255,255,255,0.08); padding:2px 6px; border-radius:4px; font-size:0.74rem;">${this.esc(v)}</span>`).join(' ') : '<span style="color:#fb7185;">cap vehicle_id registrat</span>';
+      const timesBadge = ev.rowsWithProvenanceTimes > 0 ? `<span style="color:#34d399;">${ev.rowsWithProvenanceTimes} mostres amb horari teòric/réal</span>` : `<span style="color:#fb7185;">cap mostra amb horari teòric ni real</span>`;
+      const snapshotBadge = ev.snapshotTrailPoints >= 2 ? `<span style="color:#34d399;">${ev.snapshotTrailPoints} punts GPS</span>` : '<span style="color:#fb7185;">cap traçal GPS proper</span>';
+      summary.innerHTML = `
+        <table style="width:100%; border-collapse:collapse; font-size:0.82rem;">
+          <tr><td style="color:var(--text-muted); padding:3px 0;">Veïnatge</td><td style="color:${verdictLabel}; font-weight:600;">${this.esc(ep.verdictLabel)}</td></tr>
+          <tr><td style="color:var(--text-muted); padding:3px 0;">Vehicles</td><td style="color:var(--text-secondary);">${vehicleBadge}</td></tr>
+          <tr><td style="color:var(--text-muted); padding:3px 0;">Horaris</td><td style="color:var(--text-secondary);">${timesBadge}</td></tr>
+          <tr><td style="color:var(--text-muted); padding:3px 0;">Traçal</td><td style="color:var(--text-secondary);">${snapshotBadge}</td></tr>
+          <tr><td style="color:var(--text-muted); padding:3px 0;">Linies retirades</td><td style="color:${data.dataQuality?.retiredScopeLinesPresent ? '#fb7185' : '#34d399'};">${data.dataQuality?.retiredScopeLinesPresent ? 'Sí — hi ha dades de línies extintes' : 'No'}</td></tr>
+          <tr><td style="color:var(--text-muted); padding:3px 0;">Total mostres raw</td><td style="color:var(--text-secondary);">${data.dataQuality?.totalRawRows || 0} → ${data.dataQuality?.episodesInWindow || 0} episodis</td></tr>
+        </table>
+      `;
+      const rawHtml = (ep.rawRows || []).map(r => {
+        const vB = r.vehicleId ? this.esc(r.vehicleId) : '<span style="color:#fb7185;">—</span>';
+        const tB = r.hasTimes ? '<span style="color:#34d399;">sí</span>' : '<span style="color:#fb7185;">no</span>';
+        return `<div style="padding:4px 0; border-bottom:1px solid var(--border-subtle); font-size:0.78rem; display:flex; justify-content:space-between; gap:0.5rem; flex-wrap:wrap;">
+          <span style="color:var(--text-secondary);">${this.esc(r.formattedDate)}</span>
+          <span style="color:${r.delayMins >= 20 ? '#ef4444' : '#f59e0b'}; font-weight:700;">+${r.delayMins} min</span>
+          <span style="color:var(--text-muted);">${r.stopName}</span>
+          <span>${vB}</span> <span>${tB}</span> <span>${r.isRealTime ? 'GPS' : 'estim'}</span>
+        </div>`;
+      }).join('');
+      content.innerHTML = `
+        <div style="margin-bottom:0.6rem;">
+          <strong style="color:#fff;">Pics d'aquest episodi:</strong>
+          <span style="color:#fff; font-weight:800;"> ${ep.peakDelayMins} min</span>
+          <span style="color:var(--text-muted); font-size:0.78rem;"> (${this.esc(ep.start)} → ${this.esc(ep.end)}, ${ep.durationMinutes.toFixed(1)} min)</span>
+        </div>
+        <div style="margin-bottom:0.6rem; font-size:0.78rem; color:#fbbf24;">
+          ⚠️ Aquest episodi agrupa ${ep.rowCount} mostres brutes de registre cada 20 s. El nombre d'"incidents" que apareix al rànquing és el compte de mostres, no de viatges.
+        </div>
+        <div style="max-height:320px; overflow:auto;">${rawHtml || '<span style="color:var(--text-muted);">Cap mostra</span>'}</div>
+      `;
+    } catch (e) {
+      content.innerHTML = `<span style="color:#ef4444;">Error carregant la investigació: ${this.esc(e.message)}</span>`;
+    }
+  }
+
+  _renderIncidentDataQualityBanner(s) {
+    const q = s.dataQuality || {};
+    if (!q.totalRawRows && !q.rowsWithoutVehicleId) return '';
+    return `
+      <div style="background:rgba(251,191,36,0.07); border:1px solid rgba(251,191,36,0.25); border-radius:12px; padding:0.85rem 1rem; margin-bottom:1.25rem;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.75rem; flex-wrap:wrap;">
+          <div>
+            <div style="font-size:0.78rem; font-weight:800; color:#f59e0b;">Qualitat de les dades del "Top incidents"</div>
+            <div style="font-size:0.76rem; color:var(--text-secondary); margin-top:0.2rem; line-height:1.5;">
+              Aquestes xifres es calculen sobre les mostres raw de la base de dades. El rànquing ja deduplica els pings cada 20 s, però els KPIs continuen sent mostres, no viatges.
+            </div>
+          </div>
+          <div style="font-size:0.74rem; color:var(--text-muted); text-align:right;">
+            ${q.totalRawRows || 0} mostres raw<br>
+            ${q.rowsWithoutVehicleId || 0} sense vehicle<br>
+            ${q.rowsWithoutProvenance || 0} sense horari<br>
+            ${q.distinctEpisodes || 0} episodis reals
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   renderIncidentErrorState(container, lineCode, hours, viewMode) {
     container.innerHTML = `
       <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:12px; padding:2.5rem 1.5rem; text-align:center; color:var(--text-muted); max-width:540px; margin:2rem auto;">
@@ -1809,6 +1905,10 @@ class ObservatoriApp {
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
                           <span>Mapa</span>
                         </button>
+                        <button type="button" class="btn-investigate-incident" data-investigate-line="${this.esc(inc.lineCode)}" data-investigate-stop="${this.esc(inc.stopName)}" data-investigate-at="${inc.timestamp || ''}" title="Investigar aquest retard: veure les mostres originals que el contenen">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+                          <span>Investigar</span>
+                        </button>
                       </td>
                     </tr>
                   `;
@@ -1817,6 +1917,23 @@ class ObservatoriApp {
             </table>
           </div>
         `}
+
+        <!-- Data-quality banner: what the "Top incidents" numbers actually count -->
+        ${this._renderIncidentDataQualityBanner(s)}
+
+        <!-- Forensic drill-down panel (populated on click) -->
+        <div id="incident-drilldown-panel" style="margin-top:2rem; padding:1.5rem; background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; display:none;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; flex-wrap:wrap;">
+            <div style="flex:1; min-width:280px;">
+              <h3 style="margin:0 0 0.5rem 0; font-size:1.2rem; color:#fff;">Investigació del retard</h3>
+              <div id="drilldown-content" style="color:var(--text-secondary); line-height:1.5; font-size:0.84rem;">Selecciona un retard de la taula per a investigar-lo.</div>
+            </div>
+            <div style="flex:0 0 260px;">
+              <h4 style="margin:0 0 0.4rem 0; font-size:0.9rem; color:var(--text-muted);">Evidència</h4>
+              <div id="drilldown-summary" style="font-size:0.84rem; color:var(--text-primary);"></div>
+            </div>
+          </div>
+        </div>
 
         <!-- Table 2: Dedicated Table for Non-Normal Schedules Under Investigation (+24 min - infinite) -->
         <div style="margin-top:2.5rem; border-top:2px solid rgba(244, 63, 94, 0.35); padding-top:1.5rem;" id="section-investigation-incidents">

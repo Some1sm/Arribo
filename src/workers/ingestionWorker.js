@@ -108,6 +108,9 @@ async function executeDbOperation(op, args = {}) {
     case 'getDelayIncidents':
       return historyDb.getDelayIncidents(args);
 
+    case 'inspectDelayIncident':
+      return historyDb.inspectDelayIncident(args);
+
     case 'generateReport': {
       const catalog = Array.isArray(args.allLinesCatalog)
         ? args.allLinesCatalog

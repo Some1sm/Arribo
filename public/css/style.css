@@ -9255,6 +9255,59 @@ body {
   box-shadow: 0 2px 8px rgba(2, 132, 199, 0.3);
 }
 
+/* ── Incident investigation button ─────────────────────────────────── */
+.btn-investigate-incident {
+  background: rgba(251, 191, 36, 0.1);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  border-radius: var(--btn-radius-sm, 6px);
+  padding: 0.28rem 0.62rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  transition: var(--btn-transition);
+  user-select: none;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.btn-investigate-incident:hover {
+  background: rgba(251, 191, 36, 0.22);
+  border-color: #fbbf24;
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(251, 191, 36, 0.3);
+}
+
+.btn-investigate-incident:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+.btn-investigate-incident:focus-visible {
+  outline: 2px solid #fbbf24;
+  outline-offset: 1px;
+}
+
+[data-theme="light"] .btn-investigate-incident {
+  background: rgba(217, 119, 6, 0.1);
+  color: #d97706;
+  border-color: rgba(217, 119, 6, 0.35);
+}
+
+[data-theme="light"] .btn-investigate-incident:hover {
+  background: #d97706;
+  color: #ffffff;
+  border-color: #d97706;
+  box-shadow: 0 2px 8px rgba(217, 119, 6, 0.3);
+}
+
 .trip-card {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
