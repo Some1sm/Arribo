@@ -326,7 +326,7 @@ const CDP_PORT = 9224;
   console.log('  ✓ Tab interactivity: clicking investigation tab activates it correctly.');
   chromeProc.kill();
   server.close();
-  try { fs.rmSync(tmpProfile, { recursive: true, force: true }); } catch (_) {}
+  try { fs.rmSync(tmpProfile, { recursive: true, force: true }); } catch {}
   console.log('\n🎉 ALL OBSERVATORI CDP LAYOUT SHIFT AUDITS PASSED PERFECTLY!\n');
   process.exit(0);
 })().catch(err => {

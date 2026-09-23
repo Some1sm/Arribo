@@ -1,6 +1,9 @@
 // Arribo! - Plataforma de Telemetria i Seguiment d'Autobusos en Temps Real
 // Suport universal per a totes les línies d'autobús urbà i interurbà de Catalunya
 
+// Read cross-file by public/js/stopFeatures.js via the shared classic-script
+// global scope, so ESLint cannot see the reference from here.
+// eslint-disable-next-line no-unused-vars
 const MATARO_ZONES = [
   { id: 'tereses', name: 'Pl. de les Tereses / Centre', icon: '🏛️', desc: 'Línies L1, L2, L3, L4, L5, L7, L8', lat: 41.5392, lon: 2.4445 },
   { id: 'rodalies', name: 'Estació Rodalies Renfe', icon: '🚆', desc: 'Línies L1, L2, L3, L4, L5, L8', lat: 41.5327, lon: 2.4440 },
@@ -23,7 +26,7 @@ class TransitApp {
     this.availableLines = [];
     this.activeLineData = null;
     
-    try { this.targetStopsByLine = JSON.parse(localStorage.getItem('bad_amb_target_stops') || '{}') || {}; } catch (_) { this.targetStopsByLine = {}; }
+    try { this.targetStopsByLine = JSON.parse(localStorage.getItem('bad_amb_target_stops') || '{}') || {}; } catch { this.targetStopsByLine = {}; }
     this.favoriteStops = this.loadFavoriteStops();
     this.currentNearbyStops = [];
     this.activeNearbyZone = null;
@@ -48,7 +51,7 @@ class TransitApp {
     this.searchDebounceTimer = null;
     this.landingSearchDebounceTimer = null;
     
-    try { this.soundEnabled = localStorage.getItem('c10_sound') === 'true'; } catch (_) { this.soundEnabled = false; }
+    try { this.soundEnabled = localStorage.getItem('c10_sound') === 'true'; } catch { this.soundEnabled = false; }
     this.audioContext = null;
     this.lastAlertedTrip = null;
 
@@ -217,7 +220,7 @@ class TransitApp {
 
     try {
       // 1. Initialize Map
-      this.mapController = new C10Map('map-container');
+      this.mapController = new TransitMap('map-container');
       this.mapController.setTheme(this.currentTheme);
 
       // 2. Load Available Lines & Determine Initial Route from URL hash
@@ -467,7 +470,7 @@ class TransitApp {
         if (Array.isArray(cached) && cached.length > 0) {
           this.availableLines = cached;
         }
-      } catch (_) {}
+      } catch {}
     }
 
     if (!this.availableLines || this.availableLines.length === 0) {
@@ -487,7 +490,7 @@ class TransitApp {
           this.availableLines = json.lines;
           try {
             localStorage.setItem('arribo_lines_cache', JSON.stringify(json.lines));
-          } catch (_) {}
+          } catch {}
           if (!this.activeLineId) {
             this.renderLandingLines();
           }
@@ -1119,7 +1122,7 @@ class TransitApp {
           </div>
         `;
       }).join('');
-    } catch (_) {
+    } catch {
       if (document.getElementById(`fav-arrivals-${stopId}`)) {
         el.innerHTML = '<div style="font-size:0.75rem; color:var(--text-muted);">Horari disponible en consultar</div>';
       }
@@ -1281,7 +1284,7 @@ class TransitApp {
     this.secondsRemaining = this.fleetStreamOk ? 60 : this.pollInterval;
     this.updateCountdownLabel();
     try {
-      const reqSeq = ++this.activeRequestSeq;
+      ++this.activeRequestSeq;
       const lId = this.activeLineId;
       const dir = this.activeDirection;
       if (!lId) return;
@@ -1522,7 +1525,7 @@ class TransitApp {
         if (res.success && res.stats) {
           stats = res.stats;
         }
-      } catch (err) {
+      } catch {
         // Silently continue
       }
     }
@@ -3947,7 +3950,7 @@ class TransitApp {
       document.execCommand('copy');
       document.body.removeChild(ta);
       this.showToast(successMsg);
-    } catch (_) {
+    } catch {
       prompt('Copia aquest enllaç de seguiment en directe:', text);
     }
   }
@@ -4623,8 +4626,7 @@ class TransitApp {
     const listEl = document.getElementById('modal-departures-list');
     const countBadge = document.getElementById('modal-departures-count-badge');
     const setTargetBtn = document.getElementById('modal-set-target-btn');
-    const mapsLink = document.getElementById('modal-maps-link');
-
+    
     const prevBtn = document.getElementById('modal-prev-stop-btn');
     const prevName = document.getElementById('modal-prev-stop-name');
     const nextBtn = document.getElementById('modal-next-stop-btn');
@@ -4847,13 +4849,6 @@ class TransitApp {
 
     const currStop = (currIndex >= 0 && stopsList) ? stopsList[currIndex] : null;
     const stopSeq = currStop?.seq || (currIndex >= 0 ? currIndex + 1 : null);
-
-    const cancelledBanner = currStop?.isCancelled ? `
-      <div style="background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.4); border-radius:8px; padding:0.65rem 0.9rem; margin-bottom:0.85rem; font-size:0.82rem; color:#fca5a5; display:flex; align-items:center; gap:8px;">
-        <span style="font-size:1.1rem;">⚠️</span>
-        <div><strong>Parada fora de servei:</strong> Aquesta parada està temporalment anul·lada per obres / desviament. Els autobusos d'aquesta línia no s'aturen aquí.</div>
-      </div>
-    ` : '';
 
     const modalItemsHtml = deps.map((d, idx) => {
       const rawTime = (d.expectedIso && !d.expectedIso.startsWith('0001-') && !d.expectedIso.startsWith('1970-'))
@@ -6069,7 +6064,7 @@ class TransitApp {
 
     try {
       this.fleetSource = new EventSource('/api/fleet/events');
-    } catch (_) {
+    } catch {
       this.fleetSource = null;
       return;
     }
@@ -6078,7 +6073,7 @@ class TransitApp {
       let snapshot;
       try {
         snapshot = JSON.parse(ev.data);
-      } catch (_) {
+      } catch {
         return;
       }
       if (!snapshot || !Array.isArray(snapshot.vehicles)) return;
@@ -6101,7 +6096,7 @@ class TransitApp {
 
   closeFleetStream() {
     if (this.fleetSource) {
-      try { this.fleetSource.close(); } catch (_) {}
+      try { this.fleetSource.close(); } catch {}
       this.fleetSource = null;
     }
     this.fleetStreamOk = false;
@@ -6387,7 +6382,7 @@ class TransitApp {
           try {
             const errBody = await fetchRes.json();
             if (errBody.error) serverMsg = errBody.error;
-          } catch (_) {}
+          } catch {}
           throw new Error(serverMsg);
         }
 
@@ -6517,7 +6512,7 @@ class TransitApp {
               });
             }
           }
-        } catch (_) {}
+        } catch {}
 
         if (matches.length === 0) {
           closeDropdown();
@@ -6900,7 +6895,7 @@ class TransitApp {
     if (navigator.vibrate) {
       try {
         navigator.vibrate([400, 200, 400, 200, 800, 200, 800]);
-      } catch (_) {}
+      } catch {}
     }
 
     this.playChime();
@@ -6916,7 +6911,7 @@ class TransitApp {
           body: `Estàs arribant a ${stop.stopName || stop.name}! Prepara't per baixar.`,
           icon: '/favicon.ico'
         });
-      } catch (_) {}
+      } catch {}
     }
 
     this.clearProximityAlarm();
@@ -6983,8 +6978,7 @@ class TransitApp {
       const locateBtn = e.target.closest('[data-locate-stop]');
       if (locateBtn) {
         e.preventDefault();
-        const stopName = locateBtn.dataset.locateStop;
-        const lineCode = locateBtn.dataset.locateLine;
+                const lineCode = locateBtn.dataset.locateLine;
         this.closeJournalismModal();
         if (lineCode) this.switchLine(lineCode);
         return;
@@ -7038,7 +7032,7 @@ class TransitApp {
       } else {
         container.innerHTML = `<div style="padding:2rem; text-align:center; color:#ef4444;">Error en carregar les dades d'incidents.</div>`;
       }
-    } catch (err) {
+    } catch {
       container.innerHTML = `<div style="padding:2rem; text-align:center; color:#ef4444;">Error de connexió al carregar incidents.</div>`;
     }
   }

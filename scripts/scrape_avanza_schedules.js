@@ -97,7 +97,7 @@ async function fetchOriginHorarios(lineId, pathId, direction, originStopId) {
 
   try {
     return JSON.parse(res.horariosTeoricosResponse);
-  } catch (e) {
+  } catch {
     return null;
   }
 }
@@ -118,7 +118,7 @@ async function fetchStopHorarios(lineId, stopId, busDir = '1') {
 
   try {
     return JSON.parse(res.horariosIdajson);
-  } catch (e) {
+  } catch {
     return null;
   }
 }

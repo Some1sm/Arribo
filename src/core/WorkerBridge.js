@@ -295,9 +295,9 @@ class WorkerBridge extends EventEmitter {
       // checkpoint and close the DB cleanly. Escalate to SIGKILL if it hangs.
       try {
         this.send('SHUTDOWN');
-      } catch (e) {}
+      } catch {}
       const killTimer = setTimeout(() => {
-        try { targetWorker.kill('SIGKILL'); } catch (e) {}
+        try { targetWorker.kill('SIGKILL'); } catch {}
       }, 2000);
       if (killTimer && typeof killTimer.unref === 'function') killTimer.unref();
 
@@ -326,7 +326,7 @@ class WorkerBridge extends EventEmitter {
       this._forceSpawnFallback = setTimeout(() => {
         this._forceSpawnFallback = null;
         console.warn('[WorkerBridge] ⚠️ Old worker did not exit within 5s of restart; forcing SIGKILL...');
-        try { targetWorker.kill('SIGKILL'); } catch (e) {}
+        try { targetWorker.kill('SIGKILL'); } catch {}
         // Absolute fallback in case even SIGKILL produces no observable exit.
         this._forceSpawnFallback = setTimeout(finishReplacement, 2000);
         if (this._forceSpawnFallback && typeof this._forceSpawnFallback.unref === 'function') {
@@ -401,7 +401,7 @@ class WorkerBridge extends EventEmitter {
       if (pending.timer) clearTimeout(pending.timer);
       try {
         pending.reject(new Error(reason));
-      } catch (e) {
+      } catch {
         // A misbehaving rejection handler must never break exit processing.
       }
     }
@@ -455,7 +455,7 @@ class WorkerBridge extends EventEmitter {
           console.warn('[WorkerBridge] Worker did not exit gracefully within timeout. Sending SIGKILL...');
           try {
             targetWorker.kill('SIGKILL');
-          } catch (e) {}
+          } catch {}
           finish();
         }
       }, timeoutMs);
@@ -472,10 +472,10 @@ class WorkerBridge extends EventEmitter {
       // Send SHUTDOWN message
       try {
         this.send('SHUTDOWN');
-      } catch (err) {
+      } catch {
         try {
           targetWorker.kill('SIGTERM');
-        } catch (e) {}
+        } catch {}
       }
     });
   }

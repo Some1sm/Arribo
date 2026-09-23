@@ -3,7 +3,6 @@ const trackerRegistry = require('../src/core/TrackerRegistry');
 const mataroTracker = require('../src/mataroTracker');
 const siriClient = require('../src/mataroSiriClient');
 const historyDb = require('../src/historyDb');
-const flightRecorder = require('../src/flightRecorder');
 const timeUtils = require('../src/timeUtils');
 const { runMataroTimetableAccuracyTests } = require('./mataro_timetable_accuracy_test');
 

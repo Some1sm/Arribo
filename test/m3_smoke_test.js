@@ -12,7 +12,7 @@ function request(path) {
       res.on('data', c => data += c);
       res.on('end', () => {
         try { resolve({ status: res.statusCode, body: JSON.parse(data), raw: data }); }
-        catch (_) { resolve({ status: res.statusCode, raw: data }); }
+        catch { resolve({ status: res.statusCode, raw: data }); }
       });
     }).on('error', reject);
   });

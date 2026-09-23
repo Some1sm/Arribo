@@ -77,7 +77,6 @@ function getVehicleFleetInfo(rawId) {
   const numId = parseInt(normId, 10);
 
   let propulsion = 'diesel';
-  let isElectric = false;
   let isHybrid = false;
   let modelName = 'Autobús Urbà Dièsel';
   let badgeText = 'Autobús Dièsel';

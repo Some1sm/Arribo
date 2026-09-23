@@ -6,7 +6,6 @@
  * bus deduplication, milestone checkpoints, and service status synthesis.
  */
 
-const timeEngine = require('./time/timeEngine');
 const calendarEngine = require('./time/calendarEngine');
 const geoEngine = require('./geo/geoEngine');
 const delayEngine = require('./schedule/delayEngine');
@@ -386,7 +385,7 @@ class BaseTracker {
     let localHour;
     try {
       localHour = calendarEngine.getDateComponents(new Date(), this.agencyTimezone).hour;
-    } catch (_) {
+    } catch {
       localHour = new Date().getHours();
     }
     const isOperating = (buses.length > 0) || upcoming.length > 0 || (localHour >= 6 && localHour < 22);

@@ -66,7 +66,7 @@ function timedRequest(port, reqPath, options = {}) {
         let parsed = null;
         try {
           parsed = JSON.parse(data);
-        } catch (_) {
+        } catch {
           parsed = data;
         }
         resolve({
@@ -214,7 +214,7 @@ async function runStartupBenchmark() {
     if (child) {
       try {
         child.kill('SIGTERM');
-      } catch (_) {}
+      } catch {}
       child = null;
     }
   };

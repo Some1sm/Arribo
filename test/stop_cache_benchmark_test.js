@@ -40,7 +40,7 @@ async function runTests() {
 
   console.log("\nEstimating RAM footprint of cache entries...");
   let totalBytes = 0;
-  for (const [k, v] of mataroTracker.stopDeparturesMemoryCache.entries()) {
+  for (const [, v] of mataroTracker.stopDeparturesMemoryCache.entries()) {
     totalBytes += Buffer.byteLength(JSON.stringify(v));
   }
   const kbSize = totalBytes / 1024;

@@ -8,7 +8,6 @@
  * - BaseTracker & TrackerRegistry robustness under adverse inputs
  */
 
-const assert = require('assert');
 
 const geoEngine = require('../src/core/geo/geoEngine');
 const timeEngine = require('../src/core/time/timeEngine');
@@ -16,7 +15,6 @@ const calendarEngine = require('../src/core/time/calendarEngine');
 const delayEngine = require('../src/core/schedule/delayEngine');
 const scheduleSynthesizer = require('../src/core/schedule/scheduleSynthesizer');
 const BaseTracker = require('../src/core/BaseTracker');
-const trackerRegistry = require('../src/core/TrackerRegistry');
 
 let passedAssertions = 0;
 const failureList = [];

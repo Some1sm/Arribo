@@ -5,11 +5,10 @@
  */
 const fs = require('fs');
 const path = require('path');
-const assert = require('assert');
 
 process.env.DB_PATH = path.join(__dirname, '..', 'data', 'test_scratch', 'amb_observations_test.db');
 fs.mkdirSync(path.dirname(process.env.DB_PATH), { recursive: true });
-try { for (const suffix of ['', '-wal', '-shm']) fs.unlinkSync(process.env.DB_PATH + suffix); } catch (_) {}
+try { for (const suffix of ['', '-wal', '-shm']) fs.unlinkSync(process.env.DB_PATH + suffix); } catch {}
 
 const historyDb = require('../src/historyDb');
 
@@ -53,7 +52,7 @@ async function main() {
   check('purged row gone', !afterPurge.some(o => o.tripId === 'T4'));
 
   // Retention clamp: short-run trip survives beyond 2h but dies past... verify floor
-  const rShort = historyDb.saveAmbObservations([{ agency: 'x', lineCode: 'L1', lineId: 'l1', direction: '0', tripId: 'TS', stopId: 'A', scheduledMs: now, actualMs: now, delayMins: 0, runDurationSecs: 600 }]);
+  await historyDb.saveAmbObservations([{ agency: 'x', lineCode: 'L1', lineId: 'l1', direction: '0', tripId: 'TS', stopId: 'A', scheduledMs: now, actualMs: now, delayMins: 0, runDurationSecs: 600 }]);
   historyDb.db.prepare(`UPDATE amb_bus_observations SET created_ms = ?`).run(Date.now() - 2 * 3600000 - 60000);
   const r3 = historyDb.saveAmbObservations([]);
   check('retention floor (2h) purges short-run trips', r3.purged >= 1);

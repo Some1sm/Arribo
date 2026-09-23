@@ -57,7 +57,7 @@ class MataroTracker extends BaseTracker {
         try {
           const result = await this._avisosRpcBackend();
           if (this.avisosCache === previousCache) this.syncAvisos(result.avisos, result.timestamp);
-        } catch (_) {}
+        } catch {}
         return this.avisosCache || [];
       })().finally(() => { this._avisosInflight = null; });
     }
@@ -162,7 +162,7 @@ class MataroTracker extends BaseTracker {
         this.avisosCacheTime = now;
         return onlineAvisos;
       }
-    } catch (_) {}
+    } catch {}
 
     // Fallback to local JSON if offline
     try {
@@ -192,7 +192,7 @@ class MataroTracker extends BaseTracker {
           return fallback;
         }
       }
-    } catch (_) {}
+    } catch {}
 
     return this.avisosCache || [];
   }
@@ -632,7 +632,7 @@ class MataroTracker extends BaseTracker {
       // Pre-compute direction and terminus for each stop so users can disambiguate opposite-side stops
       const stopDirections = new Map();
       if (this.routesData) {
-        for (const [lineId, routes] of Object.entries(this.routesData)) {
+        for (const [, routes] of Object.entries(this.routesData)) {
           if (!Array.isArray(routes)) continue;
           routes.forEach((route) => {
             if (!Array.isArray(route.stops)) return;
@@ -826,7 +826,7 @@ class MataroTracker extends BaseTracker {
           departures: upcoming,
           totalDepartures: depData?.departures?.length || 0
         };
-      } catch (e) {
+      } catch {
         return {
           ...stop,
           departures: [],
@@ -1137,7 +1137,7 @@ class MataroTracker extends BaseTracker {
     if (!options.skipSiri) {
       try {
         liveVehicles = await siriClient.getLiveVehicles(lId);
-      } catch (_) {}
+      } catch {}
     }
 
     // Strict validation: Filter out out-of-area vehicles and erroneous test/depot artifacts
@@ -1183,7 +1183,7 @@ class MataroTracker extends BaseTracker {
       if (!liveVehicles || liveVehicles.length === 0) {
         const now = targetDate.getTime();
         const histVehs = [];
-        for (const [vId, hist] of this.vehicleHistory.entries()) {
+        for (const [, hist] of this.vehicleHistory.entries()) {
           if (String(hist.lineId) === String(lId) && (now - hist.lastSeen) <= 90000) {
             histVehs.push({
               vehicleId: hist.vehicleId,
@@ -2080,7 +2080,7 @@ class MataroTracker extends BaseTracker {
         if (lineDetails && Array.isArray(lineDetails.activeBuses)) {
           liveVehicles = lineDetails.activeBuses;
         }
-      } catch (_) {}
+      } catch {}
 
       if (!liveVehicles || liveVehicles.length === 0) {
         if (!options.skipSiri) {
@@ -2089,7 +2089,7 @@ class MataroTracker extends BaseTracker {
             if (Array.isArray(liveVehicles) && liveVehicles.length > 0) {
               this.stitchAnonymousVehicles(liveVehicles, lId, routes, targetDate);
             }
-          } catch (_) {}
+          } catch {}
         }
 
         if (!liveVehicles || liveVehicles.length === 0) {
@@ -2098,7 +2098,7 @@ class MataroTracker extends BaseTracker {
           if (mataroVehs.length > 0) {
             liveVehicles = mataroVehs;
           } else {
-            for (const [vId, hist] of this.vehicleHistory.entries()) {
+            for (const [, hist] of this.vehicleHistory.entries()) {
               if (String(hist.lineId) === String(lId) && (now - hist.lastSeen) <= 600000) {
                 liveVehicles.push({
                   vehicleId: hist.vehicleId,
@@ -2751,7 +2751,7 @@ class MataroTracker extends BaseTracker {
               });
             }
           }
-        } catch (_) {}
+        } catch {}
       }
     }
 
@@ -2969,7 +2969,7 @@ class MataroTracker extends BaseTracker {
         this.getStopDepartures(sId, lId, '0', { skipCache: true, skipSiri: true }).catch(() => null)
       );
       await Promise.allSettled(promises);
-    } catch (e) {
+    } catch {
       // Non-blocking warming
     }
   }
@@ -3079,7 +3079,7 @@ class MataroTracker extends BaseTracker {
     let liveBuses = [];
     try {
       liveBuses = await this.fetchLiveVehicles(lId);
-    } catch (_) {}
+    } catch {}
     const combinedVehicles = [...frVehicles, ...(liveBuses || [])];
 
     const polyline = (route.coords || []).map(c => [

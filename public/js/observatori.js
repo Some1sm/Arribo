@@ -139,7 +139,7 @@ class ObservatoriApp {
       if (res && res.success && Array.isArray(res.lines)) {
         this.availableLines = res.lines;
       }
-    } catch (_) {
+    } catch {
       // Non-critical fallback
     }
   }
@@ -1389,7 +1389,7 @@ class ObservatoriApp {
           termometreContainer.innerHTML = '<div style="color:var(--danger); text-align:center; padding:2rem;">No s\'ha pogut generar el Termòmetre.</div>';
         }
       }
-    } catch (_) {
+    } catch {
       if (termometreContainer) {
         termometreContainer.innerHTML = '<div style="color:var(--danger); text-align:center; padding:2rem;">Error de connexió al carregar el Termòmetre.</div>';
       }
@@ -1597,7 +1597,7 @@ class ObservatoriApp {
         }
         this.renderIncidentErrorState(container, lineCode, hours, viewMode);
       }
-    } catch (_) {
+    } catch {
       if (retryCount === 0) {
         setTimeout(() => this.openDelayIncidentsView(lineCode, hours, viewMode, 1, forceRefresh), 2000);
         return;

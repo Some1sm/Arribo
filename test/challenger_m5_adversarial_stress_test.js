@@ -14,15 +14,11 @@
 const assert = require('assert');
 const http = require('http');
 const net = require('net');
-const path = require('path');
-const fs = require('fs');
 const { performance, monitorEventLoopDelay } = require('perf_hooks');
 
 // Import system under test
 const app = require('../server');
 const workerBridge = require('../src/core/WorkerBridge');
-const reportCacheService = require('../src/reportCacheService');
-const flightRecorder = require('../src/flightRecorder');
 
 // =========================================================================
 // STATISTICAL & HTTP HELPER UTILITIES
@@ -105,7 +101,7 @@ function timedRequest(port, reqPath, agent = keepAliveAgent, timeout = 10000) {
         let parsed = null;
         try {
           parsed = JSON.parse(data);
-        } catch (_) {
+        } catch {
           parsed = data;
         }
         resolve({
@@ -278,8 +274,7 @@ async function runAdversarialStressSuite() {
 
     // Simultaneously bombard HTTP server with 100 concurrent requests during the calculation
     console.log('   Bombarding HTTP server with 100 concurrent requests during active SQLite calculation...');
-    const analyticsLoadStart = performance.now();
-    const analyticsRequestsCount = 100;
+        const analyticsRequestsCount = 100;
     const analyticsPromises = [];
 
     const loadEndpoints = [
@@ -302,8 +297,7 @@ async function runAdversarialStressSuite() {
     }
 
     const analyticsResponses = await Promise.all(analyticsPromises);
-    const analyticsLoadDuration = performance.now() - analyticsLoadStart;
-
+    
     // Await report calculations completion on worker
     await reportIpcPromise;
 
@@ -419,7 +413,7 @@ async function runAdversarialStressSuite() {
     }
 
     const crashResponses = await Promise.all(crashRequests);
-    const restartedPayload = await restartPromise;
+    await restartPromise;
     const newWorkerPid = workerBridge.pid;
 
     console.log(`   ✓ Supervisor auto-restarted worker with new PID: ${newWorkerPid} (Restarts: ${workerBridge.restarts})`);

@@ -4,8 +4,6 @@
  */
 
 const geoEngine = require('../geo/geoEngine');
-const timeEngine = require('../time/timeEngine');
-const calendarEngine = require('../time/calendarEngine');
 
 class TransitRouter {
   constructor(mataroTracker = null) {
@@ -128,7 +126,7 @@ class TransitRouter {
       const maxRadiusMeters = query.radiusMeters || 500;
       const nearby = [];
 
-      for (const [id, s] of allStops.entries()) {
+      for (const [, s] of allStops.entries()) {
         const sLat = parseFloat(s.lat ?? s.latitude);
         const sLon = parseFloat(s.lon ?? s.longitude);
         if (!Number.isFinite(sLat) || !Number.isFinite(sLon)) continue;
@@ -183,7 +181,7 @@ class TransitRouter {
       }
     }
     // 3. Name match (contains or starts with)
-    for (const [id, s] of allStops.entries()) {
+    for (const [, s] of allStops.entries()) {
       const sName = (s.name || '').toLowerCase();
       if (sName.includes(lower) || lower.includes(sName)) {
         if (!baseStops.some(b => String(b.id) === String(s.id))) {
@@ -214,7 +212,7 @@ class TransitRouter {
         });
       }
 
-      for (const [id, s] of allStops.entries()) {
+      for (const [, s] of allStops.entries()) {
         const sId = String(s.id);
         if (candidates.has(sId)) continue;
         const sClean = (s.name || '').replace(/ - \d+$/, '').trim().toLowerCase();
@@ -263,7 +261,7 @@ class TransitRouter {
     let closest = null;
     let minDistance = Infinity;
 
-    for (const [id, s] of this.tracker.allStopsMap.entries()) {
+    for (const [, s] of this.tracker.allStopsMap.entries()) {
       const sLat = parseFloat(s.lat ?? s.latitude);
       const sLon = parseFloat(s.lon ?? s.longitude);
       if (!Number.isFinite(sLat) || !Number.isFinite(sLon)) continue;

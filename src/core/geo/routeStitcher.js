@@ -15,13 +15,11 @@
  * expensive DB scan runs once per line/direction, not per request.
  */
 const fs = require('fs');
-const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 const { fetchRoadRoute } = require('./osrmClient');
 const { composeRouteWithStops, calculateDistanceMeters } = require('./geoEngine');
 
 const dbHandles = new Map();   // dbPath -> DatabaseSync
-const coordCache = new Map(); // shapeId -> [[lat,lon]] (only shapes actually selected)
 const resultCache = new Map(); // cacheKey -> {coords, stitched, source} | null
 const RESULT_CACHE_MAX = 300;
 
@@ -109,8 +107,7 @@ function computeStitch(coords, stops, dbPath, primaryShapeId, thresholdM, cacheK
     }
   }
 
-  const gapStops = runs.flatMap(r => stops.slice(r.start, r.end + 1));
-
+  
   // 3. Scan shapes.db for candidates covering every gap stop.
   const db = getDb(dbPath);
   if (!db) return null;
@@ -126,7 +123,7 @@ function computeStitch(coords, stops, dbPath, primaryShapeId, thresholdM, cacheK
   for (const row of rows) {
     if (row.shape_id === primaryShapeId) continue;
     let c;
-    try { c = JSON.parse(row.coords); } catch (_) { continue; }
+    try { c = JSON.parse(row.coords); } catch { continue; }
     if (!Array.isArray(c) || c.length < 5) continue;
 
     for (const oriented of [c, [...c].reverse()]) {
@@ -189,8 +186,7 @@ function computeStitch(coords, stops, dbPath, primaryShapeId, thresholdM, cacheK
     let prevCut = -1;
     for (let ri = 0; ri < runs.length; ri++) {
       const r = runs[ri];
-      const seg = cand.segments ? null : null;
-      const { startJ, endJ } = segments[ri];
+            const { startJ, endJ } = segments[ri];
       const portion = cand.oriented.slice(startJ, endJ + 1);
       const fromV = r.prevV >= 0 ? r.prevV : 0;           // inclusive primary start
       const toV = r.nextV >= 0 ? r.nextV : coords.length - 1; // exclusive primary end
@@ -250,7 +246,7 @@ function discoverShapeForStops({ stops, dbPath, thresholdM = 200, minCoverage = 
 
   for (const row of rows) {
     let c;
-    try { c = JSON.parse(row.coords); } catch (_) { continue; }
+    try { c = JSON.parse(row.coords); } catch { continue; }
     if (!Array.isArray(c) || c.length < stops.length) continue;
 
     // Walk stops in order, requiring monotonically advancing vertex indices.

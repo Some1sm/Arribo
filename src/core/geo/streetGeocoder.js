@@ -74,7 +74,7 @@ class StreetGeocoder {
           if (mataroTracker && mataroTracker.allStopsMap) {
             this.setStopsCatalog(mataroTracker.allStopsMap);
           }
-        } catch (_) {}
+        } catch {}
       }
 
       // Constrain query to Maresme/Mataró bounding box with city bias
@@ -153,7 +153,7 @@ class StreetGeocoder {
       this.cache.set(normKey, { ts: Date.now(), results: streetResults });
 
       return streetResults.slice(0, limit);
-    } catch (err) {
+    } catch {
       return [];
     }
   }

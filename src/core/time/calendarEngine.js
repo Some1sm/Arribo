@@ -5,7 +5,6 @@
  * Day-type detection, GTFS calendar validity, exception matching, and seasonal descriptors.
  */
 
-const { getNetworkTime } = require('./timeEngine');
 
 /**
  * Returns structured calendar components for a given date in agency timezone.

@@ -286,7 +286,7 @@ async function runMainChallengerSuite() {
     assert(Array.isArray(res), 'Main thread queries must succeed concurrently');
   }
 
-  const threadResults = await Promise.all(threadPromises);
+  await Promise.all(threadPromises);
   const threadDuration = performance.now() - t0Threads;
   console.log(`  ✅ 4-Thread Worker Concurrency completed in ${threadDuration.toFixed(2)}ms with 0 thread deadlocks or collisions.`);
 
@@ -572,7 +572,7 @@ async function runMainChallengerSuite() {
 
   try {
     process.kill(initialPid, 'SIGKILL');
-  } catch (e) {
+  } catch {
     // Ignore if already terminating
   }
 
@@ -598,7 +598,7 @@ async function runMainChallengerSuite() {
     if (fs.existsSync(testDbPath)) fs.unlinkSync(testDbPath);
     if (fs.existsSync(`${testDbPath}-wal`)) fs.unlinkSync(`${testDbPath}-wal`);
     if (fs.existsSync(`${testDbPath}-shm`)) fs.unlinkSync(`${testDbPath}-shm`);
-  } catch (e) {}
+  } catch {}
 
   return true;
 }

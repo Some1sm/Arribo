@@ -60,7 +60,7 @@ function readDiskCache(cacheFile) {
       return parsed;
     }
     return null;
-  } catch (_) {
+  } catch {
     return null;
   }
 }
@@ -74,7 +74,7 @@ function writeDiskCache(cacheFile, coords) {
   try {
     fs.mkdirSync(CACHE_DIR, { recursive: true });
     fs.writeFileSync(cacheFile, JSON.stringify(coords), 'utf8');
-  } catch (_) {
+  } catch {
     // Cache write failure is non-fatal; the in-memory memo still covers us.
   }
 }
@@ -159,13 +159,13 @@ async function fetchRoadRoute(stops, opts = {}) {
             } else {
               finish(null);
             }
-          } catch (_) {
+          } catch {
             finish(null);
           }
         });
         res.on('error', () => finish(null));
       });
-    } catch (_) {
+    } catch {
       finish(null);
       return;
     }

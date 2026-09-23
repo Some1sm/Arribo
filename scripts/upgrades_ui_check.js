@@ -7,16 +7,6 @@ function check(name, ok, detail = '') {
   results.push({ name, ok });
   console.log(`${ok ? 'PASS' : 'FAIL'}: ${name}${detail ? ` — ${detail}` : ''}`);
 }
-function waitForMessage(ws, predicate, timeoutMs = 20000) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => { ws.removeEventListener('message', onMsg); reject(new Error('CDP timeout')); }, timeoutMs);
-    function onMsg(ev) {
-      const msg = JSON.parse(ev.data);
-      if (predicate(msg)) { clearTimeout(timer); ws.removeEventListener('message', onMsg); resolve(msg); }
-    }
-    ws.addEventListener('message', onMsg);
-  });
-}
 (async () => {
   const target = await new Promise((resolve, reject) => {
     const req = http.request(`http://localhost:9222/json/new?${encodeURIComponent(APP_URL)}`, { method: 'PUT' }, res => {

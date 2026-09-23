@@ -1,5 +1,3 @@
-const fs = require('fs');
-const path = require('path');
 
 class TrackerRegistry {
   constructor() {
@@ -41,7 +39,7 @@ class TrackerRegistry {
     try {
       const mataroTracker = require('../mataroTracker');
       this.registerTracker('mataro', mataroTracker, { agency: 'Mataró Bus', priority: 100 });
-    } catch (_) {}
+    } catch {}
   }
 
   /**
@@ -153,7 +151,7 @@ class TrackerRegistry {
     const sortedEntries = Array.from(this.providers.entries())
       .sort((a, b) => (b[1].meta.priority || 50) - (a[1].meta.priority || 50));
 
-    for (const [key, entry] of sortedEntries) {
+    for (const [, entry] of sortedEntries) {
       if (typeof entry.tracker.getLines === 'function') {
         const lines = entry.tracker.getLines();
         if (Array.isArray(lines)) {

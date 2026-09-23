@@ -418,10 +418,10 @@ async function run() {
     assert.strictEqual(lt.regColor, '#7e22ce', 'Light theme regulating accent must be #7e22ce (WCAG AA compliant)');
 
     console.log('\n🎉 ALL CARD HEIGHT AND VISUAL CADENCE ASSERTIONS PASSED PERFECTLY!\n');
-    try { ws.close(); } catch (_) {}
+    try { ws.close(); } catch {}
   } finally {
-    try { chromeProc.kill('SIGKILL'); } catch (_) {}
-    try { fs.rmSync(tmpProfile, { recursive: true, force: true }); } catch (_) {}
+    try { chromeProc.kill('SIGKILL'); } catch {}
+    try { fs.rmSync(tmpProfile, { recursive: true, force: true }); } catch {}
   }
 }
 

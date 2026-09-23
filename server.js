@@ -33,15 +33,15 @@ try {
       try {
         fs.unlinkSync(path.join(__dirname, file));
         console.log(`[Startup] Cleaned residual core dump file: ${file}`);
-      } catch (_) {}
+      } catch {}
     }
   }
-} catch (_) {}
+} catch {}
 
 // Idle RAM compactor: periodically trim V8 working set if garbage collector is exposed
 if (typeof global.gc === 'function') {
   setInterval(() => {
-    try { global.gc(); } catch (_) {}
+    try { global.gc(); } catch {}
   }, 10 * 60 * 1000).unref();
 }
 
@@ -137,7 +137,7 @@ function resolveTrackerOr404(res, lineId) {
       return null;
     }
     return resolution;
-  } catch (_) {
+  } catch {
     res.status(404).json({ success: false, error: 'Unknown line' });
     return null;
   }
@@ -152,7 +152,7 @@ function getCalendarInfoFor(tracker, date = new Date()) {
     if (tracker && typeof tracker.getServiceCalendarInfo === 'function') {
       return tracker.getServiceCalendarInfo(date);
     }
-  } catch (_) {}
+  } catch {}
   return buildDefaultCalendarInfo(date);
 }
 
@@ -333,7 +333,7 @@ const fleetBroadcaster = (() => {
       } else {
         client.res.write(`event: waiting\ndata: {}\n\n`);
       }
-    } catch (err) {
+    } catch {
       removeClient(client);
     }
   }
@@ -341,7 +341,7 @@ const fleetBroadcaster = (() => {
   function removeClient(client) {
     if (!clients.has(client)) return;
     clients.delete(client);
-    try { client.res.end(); } catch (_) {}
+    try { client.res.end(); } catch {}
   }
 
   function broadcast(snapshot) {
@@ -349,7 +349,7 @@ const fleetBroadcaster = (() => {
     for (const client of Array.from(clients)) {
       try {
         client.res.write(`event: fleet\ndata: ${JSON.stringify(snapshot)}\n\n`);
-      } catch (err) {
+      } catch {
         removeClient(client);
       }
     }
@@ -383,7 +383,7 @@ const fleetBroadcaster = (() => {
     // telemetry is fresh.
     heartbeatTimer = setInterval(() => {
       for (const client of Array.from(clients)) {
-        try { client.res.write(': ping\n\n'); } catch (err) { removeClient(client); }
+        try { client.res.write(': ping\n\n'); } catch { removeClient(client); }
       }
     }, 25000);
     if (heartbeatTimer && typeof heartbeatTimer.unref === 'function') heartbeatTimer.unref();
@@ -503,7 +503,7 @@ app.get('/api/search/stops', async (req, res) => {
   if (q.trim().length >= 3) {
     try {
       streets = await streetGeocoder.searchStreets(q.trim(), 4);
-    } catch (_) {}
+    } catch {}
   }
 
   res.json({
@@ -777,7 +777,7 @@ app.get(['/api/mataro/plan', '/api/plan'], async (req, res) => {
         if (found.length > 0) {
           origin = { lat: found[0].lat, lon: found[0].lon, name: found[0].name || origin };
         }
-      } catch (_) {}
+      } catch {}
     }
   }
 
@@ -789,7 +789,7 @@ app.get(['/api/mataro/plan', '/api/plan'], async (req, res) => {
         if (found.length > 0) {
           destination = { lat: found[0].lat, lon: found[0].lon, name: found[0].name || destination };
         }
-      } catch (_) {}
+      } catch {}
     }
   }
 
@@ -907,7 +907,7 @@ app.get(['/api/analytics/journalism', '/api/retards/journalism'], async (req, re
     if (!report || !report.summary || Object.keys(report.summary).length === 0) {
       try {
         report = await workerBridge.historyQuery('generateReport', { hours, allLinesCatalog: allLines }, { timeoutMs: 30000 });
-      } catch (_) {}
+      } catch {}
     }
     if (!report) {
       return res.status(503).json({ success: false, error: 'Report is warming up, retry shortly.' });
@@ -937,7 +937,7 @@ app.get(['/api/retards/ranking', '/api/analytics/ranking'], async (req, res) => 
     if (!report) {
       try {
         report = await workerBridge.historyQuery('generateReport', { hours: 24, allLinesCatalog: allLines }, { timeoutMs: 30000 });
-      } catch (_) {}
+      } catch {}
     }
     const rankingMostDelayed = report ? (report.rankingMostDelayed || []) : [];
     const agencyStats = report ? (report.agencyStats || []) : [];
@@ -963,7 +963,7 @@ app.get(['/api/analytics/termometre', '/api/retards/termometre'], async (req, re
     if (!report) {
       try {
         report = await workerBridge.historyQuery('generateReport', { hours, allLinesCatalog: allLines }, { timeoutMs: 30000 });
-      } catch (_) {}
+      } catch {}
     }
     const termometre = report?.termometre || {
       title: `El Termòmetre del Bus (${hours}h)`,

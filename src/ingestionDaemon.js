@@ -1,5 +1,3 @@
-const fs = require('fs');
-const path = require('path');
 const flightRecorder = require('./flightRecorder');
 const mataroTracker = require('./mataroTracker');
 const reportCacheService = require('./reportCacheService');
@@ -28,7 +26,7 @@ class IngestionDaemon {
       try {
         this.ipcCallback(type, payload);
         return;
-      } catch (e) {
+      } catch {
         // Callback error
       }
     }
@@ -36,7 +34,7 @@ class IngestionDaemon {
       if (typeof process.send === 'function') {
         process.send({ type, payload });
       }
-    } catch (e) {
+    } catch {
       // IPC channel disconnected
     }
   }
@@ -169,7 +167,7 @@ class IngestionDaemon {
             });
           }
 
-        } catch (err) {
+        } catch {
           // Skip individual line
         }
       }));

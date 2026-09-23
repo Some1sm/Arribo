@@ -48,7 +48,7 @@ class DelayMemory {
         this._mem.push({ ...r, createdMs: now });
       }
       if (this._mem.length > MEM_FALLBACK_LIMIT) this._mem.splice(0, this._mem.length - MEM_FALLBACK_LIMIT);
-    } catch (_) { /* best-effort */ }
+    } catch { /* best-effort */ }
   }
 
   /**
@@ -69,7 +69,7 @@ class DelayMemory {
         .filter(o => o.lineId === String(lineId) && String(o.direction ?? '0') === String(direction) && Number(o.scheduledMs) >= cutoff)
         .sort((a, b) => Number(b.scheduledMs) - Number(a.scheduledMs))
         .slice(0, limit);
-    } catch (_) {
+    } catch {
       return [];
     }
   }
@@ -145,7 +145,7 @@ class DelayMemory {
         entry.formattedStatus = diffMin <= 0 ? 'Imminent' : `${diffMin} min`;
       }
       departures.sort((a, b) => (a.minutesAway ?? Infinity) - (b.minutesAway ?? Infinity));
-    } catch (_) { /* best-effort */ }
+    } catch { /* best-effort */ }
     return departures;
   }
 }

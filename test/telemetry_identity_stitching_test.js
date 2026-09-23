@@ -16,9 +16,7 @@
  */
 
 const assert = require('assert');
-const path = require('path');
 const mataroTracker = require('../src/mataroTracker');
-const siriClient = require('../src/mataroSiriClient');
 const geoEngine = require('../src/core/geo/geoEngine');
 const mataroSchedules = require('../src/data/mataroSchedules');
 const scheduleSynthesizer = require('../src/core/schedule/scheduleSynthesizer');

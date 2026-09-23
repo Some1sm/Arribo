@@ -13,7 +13,6 @@ const calendarEngine = require('../src/core/time/calendarEngine');
 const scheduleSynthesizer = require('../src/core/schedule/scheduleSynthesizer');
 const delayEngine = require('../src/core/schedule/delayEngine');
 const BaseTracker = require('../src/core/BaseTracker');
-const trackerRegistry = require('../src/core/TrackerRegistry');
 
 console.log('🔬 Starting Hostile Adversarial Stress Test Suite...\n');
 

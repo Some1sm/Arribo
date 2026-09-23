@@ -8,7 +8,6 @@ global.Date = class extends NativeDate {
 const assert = require('assert');
 const mataroTracker = require('../src/mataroTracker');
 const siriClient = require('../src/mataroSiriClient');
-const flightRecorder = require('../src/flightRecorder');
 
 async function runResilienceTests() {
   console.log('🧪 Starting Mataró SIRI Resilience & Dead-Reckoning Tests...');

@@ -113,11 +113,11 @@
         for (const legacyKey of LEGACY_THEME_KEYS) {
           const legacy = localStorage.getItem(legacyKey);
           if (legacy === 'light' || legacy === 'dark') {
-            try { localStorage.setItem(THEME_STORAGE_KEY, legacy); } catch (_) {}
+            try { localStorage.setItem(THEME_STORAGE_KEY, legacy); } catch {}
             return legacy;
           }
         }
-      } catch (_) {}
+      } catch {}
       if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
         return 'light';
       }
@@ -135,7 +135,7 @@
         for (const legacyKey of LEGACY_THEME_KEYS) {
           localStorage.setItem(legacyKey, theme);
         }
-      } catch (_) {}
+      } catch {}
       if (typeof document !== 'undefined' && document.documentElement) {
         document.documentElement.setAttribute('data-theme', theme);
       }

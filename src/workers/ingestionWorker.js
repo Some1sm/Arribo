@@ -4,8 +4,6 @@
  * in an isolated Node.js process / thread.
  */
 
-const path = require('path');
-const fs = require('fs');
 const ingestionDaemon = require('../ingestionDaemon');
 const historyDb = require('../historyDb');
 const reportCacheService = require('../reportCacheService');
@@ -20,7 +18,7 @@ try {
   if (workerThreads.parentPort) {
     parentPort = workerThreads.parentPort;
   }
-} catch (e) {
+} catch {
   // worker_threads not in use or error
 }
 
@@ -43,13 +41,13 @@ function sendToMaster(type, payload = {}) {
   if (typeof process.send === 'function') {
     try {
       process.send(message);
-    } catch (err) {
+    } catch {
       // Parent channel closed or disconnected
     }
   } else if (parentPort) {
     try {
       parentPort.postMessage(message);
-    } catch (err) {
+    } catch {
       // Parent port closed
     }
   }
@@ -129,7 +127,7 @@ function sendDbResponse(response) {
   if (typeof process.send === 'function') {
     try {
       process.send(response);
-    } catch (err) {
+    } catch {
       // Parent channel closed or disconnected
     }
   }
@@ -140,7 +138,7 @@ function sendDbResponse(response) {
  */
 function handleMasterMessage(message) {
   if (!message || typeof message !== 'object') return;
-  const { type, payload = {} } = message;
+  const { type } = message;
 
   switch (type) {
     case 'PING':
@@ -201,7 +199,7 @@ function handleMasterMessage(message) {
       try {
         ingestionDaemon.stop();
         historyDb.close();
-      } catch (e) {}
+      } catch {}
       process.exit(0);
       break;
 

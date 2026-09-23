@@ -65,7 +65,7 @@ async function main() {
         res.on('data', chunk => raw += chunk);
         res.on('end', () => {
           try { resolve({ status: res.statusCode, body: JSON.parse(raw) }); }
-          catch (e) { resolve({ status: res.statusCode, raw }); }
+          catch { resolve({ status: res.statusCode, raw }); }
         });
       }).on('error', reject);
     });

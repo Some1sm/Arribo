@@ -4,7 +4,7 @@ const fs = require('fs');
 let DatabaseSync;
 try {
   DatabaseSync = require('node:sqlite').DatabaseSync;
-} catch (e) {
+} catch {
   DatabaseSync = null;
   console.error('[HistoryDB] ⚠️ node:sqlite is not available in this Node.js runtime.');
   console.error('[HistoryDB] ⚠️ node:sqlite requires Node.js >= 22.5. Current version:', process.version);
@@ -234,7 +234,7 @@ class HistoryDatabase {
         String(snap.status || 'active'),
         snap.timestamp || Date.now()
       );
-    } catch (e) {
+    } catch {
       // Ignore transient write errors
     }
   }
@@ -254,7 +254,7 @@ class HistoryDatabase {
           }
         });
       }
-    } catch (_) {}
+    } catch {}
     return this._stopCoordsMap;
   }
 
@@ -305,7 +305,7 @@ class HistoryDatabase {
         delay > 3 ? 1 : 0,
         entry.timestamp || Date.now()
       );
-    } catch (e) {
+    } catch {
       // Ignore transient write errors
     }
   }
@@ -1329,7 +1329,7 @@ class HistoryDatabase {
               });
               c.lastStop = recoveryPing.stopName;
             }
-          } catch (_) {}
+          } catch {}
         }
 
         const durMins = Math.round((c.lastTs - c.firstTs) / 60000);
@@ -1513,7 +1513,7 @@ class HistoryDatabase {
       this.db.exec(`PRAGMA optimize; PRAGMA incremental_vacuum; PRAGMA shrink_memory;`);
       this.checkpointTruncate();
       if (typeof global.gc === 'function') {
-        try { global.gc(); } catch (_) {}
+        try { global.gc(); } catch {}
       }
       const snapshotChanges = deletedSnapshots?.changes || 0;
       const delayChanges = deletedDelays?.changes || 0;
@@ -1596,7 +1596,7 @@ class HistoryDatabase {
         }
         this.db.exec('COMMIT');
       } catch (e) {
-        try { this.db.exec('ROLLBACK'); } catch (_) {}
+        try { this.db.exec('ROLLBACK'); } catch {}
         throw e;
       }
 
@@ -1607,7 +1607,7 @@ class HistoryDatabase {
         WHERE created_ms < ? - MAX(7200000, MIN(21600000, 2 * COALESCE(run_duration_secs, 3600) * 1000))
       `);
       let purged = 0;
-      try { purged = purge.run(now).changes; } catch (_) {}
+      try { purged = purge.run(now).changes; } catch {}
       return { inserted, purged };
     } catch (e) {
       console.error('[HistoryDB] saveAmbObservations error:', e.message);

@@ -44,7 +44,7 @@
           reloaded = true;
           global.location.reload();
         });
-      } catch (_) { /* The regular online app remains usable without a worker. */ }
+      } catch { /* The regular online app remains usable without a worker. */ }
     };
     if (document.readyState === 'complete') register();
     else global.addEventListener('load', register, { once: true });

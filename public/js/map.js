@@ -49,7 +49,7 @@ function snapStopToPolyline(stopLat, stopLon, polyCoords, maxSnapM = 120) {
   return [bestLat, bestLon];
 }
 
-class C10Map {
+class TransitMap {
   constructor(containerId) {
     this.containerId = containerId;
     this.map = null;
@@ -112,7 +112,7 @@ class C10Map {
     // Respect a previous manual dismissal of the hint bubble.
     try {
       if (sessionStorage.getItem('arribo_loc_hint_dismissed') === '1') return;
-    } catch (_) {}
+    } catch {}
     if (!navigator.geolocation || !window.isSecureContext) {
       // Geolocation only works in secure contexts (HTTPS or localhost).
       this.showLocationPermissionHint(!window.isSecureContext ? 'insecure' : 'unsupported');
@@ -178,7 +178,7 @@ class C10Map {
       // Delegated clicks: message area = retry, ✕ button = dismiss for this session.
       badge.addEventListener('click', (e) => {
         if (e.target && e.target.closest('.user-location-badge-close')) {
-          try { sessionStorage.setItem('arribo_loc_hint_dismissed', '1'); } catch (_) {}
+          try { sessionStorage.setItem('arribo_loc_hint_dismissed', '1'); } catch {}
           badge.style.display = 'none';
           return;
         }
@@ -588,8 +588,6 @@ class C10Map {
           if (primaryStopIds.has(stopIdentifier) && primaryCoords.has(coordKey)) {
             return;
           }
-
-          const isTarget = stopIdentifier === String(targetStopId);
 
           const markerHtml = `
             <div class="stop-marker-dot secondary" style="
@@ -1093,11 +1091,11 @@ class C10Map {
       const group = new L.featureGroup(boundsGroup);
       try {
         this.map.fitBounds(group.getBounds(), { padding: [35, 35], maxZoom: 15 });
-      } catch(e) {}
+      } catch {}
     } else if (this.activePolylineCoords && this.activePolylineCoords.length > 0) {
       try {
         this.map.fitBounds(L.latLngBounds(this.activePolylineCoords), { padding: [35, 35], maxZoom: 15 });
-      } catch(e) {}
+      } catch {}
     }
   }
 
@@ -1119,7 +1117,7 @@ class C10Map {
 
     try {
       this.map.fitBounds(this.routePolyline.getBounds(), { padding: [30, 30], maxZoom: 15 });
-    } catch(e) {}
+    } catch {}
   }
 
   clearAll() {
@@ -1175,7 +1173,7 @@ class C10Map {
   clearAllBusMarkers() {
     if (!this.map) return;
     this.clearVehicleTrail();
-    for (const [tId, obj] of this.busMarkersMap.entries()) {
+    for (const [, obj] of this.busMarkersMap.entries()) {
       if (obj.marker) {
         this.map.removeLayer(obj.marker);
       }
@@ -1198,7 +1196,7 @@ class C10Map {
     this.selectedVehicleId = selectedVehicleId;
     let targetLatLng = null;
 
-    for (const [tId, obj] of this.busMarkersMap.entries()) {
+    for (const [, obj] of this.busMarkersMap.entries()) {
       const isSel = this.isBusSelected(obj.busData, selectedVehicleId);
       const el = obj.marker.getElement();
       if (el) {
@@ -1228,7 +1226,7 @@ class C10Map {
   openBusPopup(selectedVehicleId) {
     if (!selectedVehicleId) return;
     const s = String(selectedVehicleId).trim();
-    for (const [tId, obj] of this.busMarkersMap.entries()) {
+    for (const [, obj] of this.busMarkersMap.entries()) {
       if (this.isBusSelected(obj.busData, s)) {
         obj.marker.openPopup();
         break;
@@ -1255,7 +1253,7 @@ class C10Map {
     }
 
     if (!activeBuses || activeBuses.length === 0) {
-      for (const [tId, obj] of this.busMarkersMap.entries()) {
+      for (const [, obj] of this.busMarkersMap.entries()) {
         if (obj.marker) this.map.removeLayer(obj.marker);
       }
       this.busMarkersMap.clear();
@@ -1744,7 +1742,7 @@ class C10Map {
   // Smooth continuous client-side gliding with zero rollbacks and anti-flicker hysteresis
   stepBusAnimation(nowSec) {
     if (!this.busMarkersMap || this.busMarkersMap.size === 0) return;
-    for (const [tId, obj] of this.busMarkersMap.entries()) {
+    for (const [, obj] of this.busMarkersMap.entries()) {
       const bus = obj.busData;
       if (!bus || !obj.marker) continue;
 
@@ -1896,7 +1894,7 @@ class C10Map {
           return Math.abs(ll.lat - lat) < 0.0006 && Math.abs(ll.lng - lon) < 0.0006;
         });
         if (match) {
-          try { match.openTooltip(); } catch (_) {}
+          try { match.openTooltip(); } catch {}
           const dot = match._dotEl || (match.getElement() ? match.getElement().querySelector('.stop-marker-dot') : null);
           if (dot) {
             dot.style.transform = 'scale(2.2)';
@@ -1945,10 +1943,10 @@ class C10Map {
       if (this.vehicleTrailPolyline && typeof this.vehicleTrailPolyline.redraw === 'function') {
         this.vehicleTrailPolyline.redraw();
       }
-    } catch(e) {
+    } catch {
       // Benign layout timing exception during rapid container transitions
     }
   }
 }
 
-window.C10Map = C10Map;
+window.TransitMap = TransitMap;

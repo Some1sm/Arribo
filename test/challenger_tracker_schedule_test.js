@@ -10,8 +10,6 @@
 const assert = require('assert');
 const scheduleSynthesizer = require('../src/core/schedule/scheduleSynthesizer');
 const timeEngine = require('../src/core/time/timeEngine');
-const calendarEngine = require('../src/core/time/calendarEngine');
-const delayEngine = require('../src/core/schedule/delayEngine');
 const BaseTracker = require('../src/core/BaseTracker');
 const trackerRegistry = require('../src/core/TrackerRegistry');
 
@@ -257,12 +255,9 @@ async function runChallengerTestSuite() {
   // TrackerRegistry.getAllLines() iterates hardcoded keys ['maresme', 'mataro', 'rodalies', 'sagales', 'amb']
   // If registered under an existing known key (e.g. 'sagales'), it invalidates and updates properly.
   // If registered under an unknown key (e.g. 'new_provider'), getAllLines() currently omits it.
-  let isDynamicKeySupported = false;
   stressRegistry.registerTracker('new_provider', new SyntheticProvider('np', [{ id: 'new_line_9999', code: 'NEW-99', agency: 'NewOp' }]));
   const dynamicKeyCache = stressRegistry.getAllLines();
-  if (dynamicKeyCache.length === 999 && dynamicKeyCache.some(l => l.id === 'new_line_9999')) {
-    isDynamicKeySupported = true;
-  } else {
+  if (dynamicKeyCache.length !== 999 || !dynamicKeyCache.some(l => l.id === 'new_line_9999')) {
     console.log('  ⚠️ FINDING: TrackerRegistry.getAllLines() skips custom provider keys not in hardcoded priority list.');
   }
 

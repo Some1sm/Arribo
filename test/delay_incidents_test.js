@@ -1,7 +1,6 @@
 const assert = require('node:assert');
 const path = require('node:path');
 const fs = require('node:fs');
-const { DatabaseSync } = require('node:sqlite');
 
 console.log('🧪 Starting Delay Incident Inspector & Deep-Dive Test Suite...\n');
 
@@ -343,7 +342,7 @@ ingestionWorker.executeDbOperation('getDelayIncidents', { lineCode: 'L5', hours:
     try {
       historyDb.close();
       if (fs.existsSync(testDbPath)) fs.unlinkSync(testDbPath);
-    } catch (_) {}
+    } catch {}
 
     console.log('\n🎉 ALL DELAY INCIDENT INSPECTOR TESTS PASSED PERFECTLY! 🎉');
   })

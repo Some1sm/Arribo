@@ -13,21 +13,6 @@ function check(name, ok, detail = '') {
 function cdpSend(ws, id, method, params = {}) {
   ws.send(JSON.stringify({ id, method, params }));
 }
-function waitForMessage(ws, predicate, timeoutMs = 15000) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => { ws.removeEventListener('message', onMsg); reject(new Error('CDP timeout')); }, timeoutMs);
-    function onMsg(ev) {
-      const msg = JSON.parse(ev.data);
-      if (predicate(msg)) {
-        clearTimeout(timer);
-        ws.removeEventListener('message', onMsg);
-        resolve(msg);
-      }
-    }
-    ws.addEventListener('message', onMsg);
-  });
-}
-
 (async () => {
   // 1. Create target
   const target = await new Promise((resolve, reject) => {

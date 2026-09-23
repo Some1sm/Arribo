@@ -6,7 +6,7 @@
       const raw = localStorage.getItem('arribo_mataro_fav_stops');
       const parsed = raw ? JSON.parse(raw) : [];
       return Array.isArray(parsed) ? parsed.filter(stop => stop && stop.id).slice(0, 100) : [];
-    } catch (_) {
+    } catch {
       return [];
     }
   },
@@ -14,7 +14,7 @@
   saveFavoriteStops() {
     try {
       localStorage.setItem('arribo_mataro_fav_stops', JSON.stringify(this.favoriteStops));
-    } catch (_) {}
+    } catch {}
     this.updateHeaderFavoritesBadge();
     this.updateTargetFavButton?.();
   },

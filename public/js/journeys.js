@@ -37,10 +37,6 @@
     return [saved.from.query, saved.to.query, saved.from.stopId || (saved.from.lat ?? ''), saved.to.stopId || (saved.to.lat ?? '')].join('>');
   }
 
-  function load(key, limit) {
-    return store().read(key, [], entry => entry.from && entry.to && normalizeEndpoint(entry.from) && normalizeEndpoint(entry.to), limit);
-  }
-
   function sameEndpoint(a, b) {
     return a.query === b.query && (a.stopId || null) === (b.stopId || null) && (a.lat ?? null) === (b.lat ?? null) && (a.lon ?? null) === (b.lon ?? null);
   }

@@ -54,7 +54,7 @@ async function run() {
   assert.strictEqual(stopCalls, 1, 'identical stop burst must coalesce');
   assert.strictEqual(stopBurst[0][0].minutesAway, 5);
   assert.strictEqual(stopCalls, 1);
-  const otherStop = await siriClient.getStopArrivals('1001', '1');
+  await siriClient.getStopArrivals('1001', '1');
   assert.strictEqual(stopCalls, 2, 'different stop must fetch separately');
 
   // 5. Failure clears in-flight; retry starts a new upstream attempt
@@ -62,6 +62,7 @@ async function run() {
   siriClient.setRpcBackend(async () => { failures++; throw new Error('upstream down'); });
   const firstAttempt = await siriClient.getLiveVehicles('9');
   assert.deepStrictEqual(firstAttempt, [], 'upstream failure with no cache returns empty');
+  assert.strictEqual(failures, 1, 'the failure must reach the backend exactly once');
   assert.strictEqual(siriClient._inflight.size, 0, 'failed promise must be removed from in-flight map');
 
   // circuit is now open (2 consecutive failures) — reset to test retry path

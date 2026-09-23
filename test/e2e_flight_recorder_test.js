@@ -1,9 +1,7 @@
 const assert = require('assert');
-const http = require('http');
 const server = require('../server');
 const historyDb = require('../src/historyDb');
 const flightRecorder = require('../src/flightRecorder');
-const ingestionDaemon = require('../src/ingestionDaemon');
 
 async function runTests() {
   console.log('🧪 Starting Centralized Flight Recorder & Journalism Server Tests...');

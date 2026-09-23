@@ -58,9 +58,9 @@ module.exports = [
         // properties of `window`; they resolve through the shared global
         // lexical scope, which means they only work while the HTML script
         // order is preserved (app.js defines MATARO_ZONES, map.js defines
-        // C10Map via an explicit window assignment).
+        // TransitMap via an explicit window assignment).
         MATARO_ZONES: 'readonly',
-        C10Map: 'readonly'
+        TransitMap: 'readonly'
       }
     },
     rules: correctness

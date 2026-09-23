@@ -16,7 +16,6 @@ const rawSchedules = require('../src/data/mataro_schedules.json');
 const scheduleSynthesizer = require('../src/core/schedule/scheduleSynthesizer');
 const delayEngine = require('../src/core/schedule/delayEngine');
 const timeEngine = require('../src/core/time/timeEngine');
-const calendarEngine = require('../src/core/time/calendarEngine');
 const mataroTracker = require('../src/mataroTracker');
 
 /**

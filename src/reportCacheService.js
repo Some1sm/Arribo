@@ -31,7 +31,7 @@ class ReportCacheService {
       try {
         this.ipcCallback(type, payload);
         return;
-      } catch (e) {
+      } catch {
         // Callback error
       }
     }
@@ -39,7 +39,7 @@ class ReportCacheService {
       if (typeof process.send === 'function') {
         process.send({ type, payload });
       }
-    } catch (e) {
+    } catch {
       // IPC channel disconnected
     }
   }
@@ -116,7 +116,7 @@ class ReportCacheService {
         .sort((a, b) => b.mtime - a.mtime); // Newest first
 
       return files;
-    } catch (e) {
+    } catch {
       return [];
     }
   }
@@ -137,7 +137,7 @@ class ReportCacheService {
           };
         })
         .sort((a, b) => b.mtime - a.mtime);
-    } catch (e) {
+    } catch {
       return [];
     }
   }
@@ -167,7 +167,7 @@ class ReportCacheService {
           if (f.startsWith('journalism_report_') && !f.includes('h_') && f.endsWith('.json')) {
             try {
               fs.unlinkSync(path.join(this.reportsDir, f));
-            } catch (e) {}
+            } catch {}
           }
         });
       }
@@ -237,7 +237,7 @@ class ReportCacheService {
 
       // Free transient JSON strings and query row arrays from memory
       if (typeof global.gc === 'function') {
-        try { global.gc(); } catch (_) {}
+        try { global.gc(); } catch {}
       }
 
       return fullReport;

@@ -79,7 +79,7 @@ class PlannerPageApp {
 
   initMap() {
     try {
-      this.mapController = new C10Map('plan-map');
+      this.mapController = new TransitMap('plan-map');
     } catch (err) {
       console.error('Error initializing map:', err);
     }
@@ -358,7 +358,7 @@ class PlannerPageApp {
       setTimeout(() => {
         try {
           this.mapController.map.invalidateSize();
-        } catch (_) {}
+        } catch {}
       }, 320);
     }
   }
@@ -508,7 +508,7 @@ class PlannerPageApp {
             dropdownElem.innerHTML = html;
           }
           dropdownElem.style.display = 'block';
-        } catch (err) {
+        } catch {
           closeDropdown();
         }
       }, 180);
@@ -609,7 +609,7 @@ class PlannerPageApp {
               }
             }
           }
-        } catch (_) {}
+        } catch {}
         if (gpsBtn) gpsBtn.innerHTML = '<span>GPS</span>';
       },
       () => {
@@ -668,7 +668,7 @@ class PlannerPageApp {
         try {
           const errJson = await res.json();
           if (errJson.error) serverErrorMsg = errJson.error;
-        } catch (_) {}
+        } catch {}
         throw new Error(serverErrorMsg);
       }
 
@@ -998,7 +998,7 @@ class PlannerPageApp {
 
       // Preserve active card without re-fitting map bounds
       this.selectItinerary(this.activeItineraryIndex, false);
-    } catch (_) {}
+    } catch {}
   }
 
   startGuidedNavigation(index) {
@@ -1121,7 +1121,7 @@ class PlannerPageApp {
     if (step.coord && this.mapController && this.mapController.map) {
       try {
         this.mapController.map.panTo([step.coord[0], step.coord[1]], { animate: true, duration: 0.6 });
-      } catch (_) {}
+      } catch {}
     }
   }
 

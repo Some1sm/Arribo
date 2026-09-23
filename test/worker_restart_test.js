@@ -40,7 +40,7 @@ async function testWorkerCrashAndRestart() {
   process.kill(firstPid, 'SIGKILL');
 
   // Wait for restarted worker to become ready
-  const restartPayload = await restartPromise;
+  await restartPromise;
   const secondPid = bridge.pid;
 
   assert(secondPid > 0, 'Second worker PID should be valid');
