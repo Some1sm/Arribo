@@ -130,10 +130,32 @@ node scripts/history_backup.js verify /backups/history-2026-09-17.db
 node scripts/history_backup.js restore /backups/history-2026-09-17.db /restore-check/history.db
 ```
 
+## Backfilling derived timetable times
+
+Live ingestion derives `scheduled_time` / `actual_time` for each new delay row from
+the static timetable and stamps `times_source='derived_timetable'`. Rows written
+before that existed have neither. This CLI fills them in.
+
+The values are **approximations, not observations**. Old rows carry no direction and
+no stop sequence number, so the match is made on line + stop name + time + delay
+across every direction the line runs, keeping the best-fitting one. Every row it
+touches is stamped `times_source='derived_timetable_backfill'`, which the Observatori
+drilldown reports differently from a live derivation and from a real upstream time.
+
+The pending backlog is mostly retired-provider data (Catalonia-wide agencies whose
+trackers were deleted). Those lines have no timetable in this repo, so they are
+counted as skipped rather than silently attempted. Back up first; it is a dry run
+unless `--apply` is passed.
+
+```bash
+node scripts/backfill_delay_times.js                    # report only
+node scripts/backfill_delay_times.js --limit 500        # sample a subset
+node scripts/backfill_delay_times.js --apply            # write
+```
+
 Verification returns counts for delay_logs and vehicle_snapshots. Restore writes a
 **new isolated target**, never replacing live storage. Never copy only the main file
 of a running WAL database. To promote a restore:
-
 1. Verify and restore to a new directory. Inspect counts; use a read-only SQLite
    client on that scratch copy for additional read queries if needed.
 2. Obtain operator approval and stop the application; confirm the worker exited.

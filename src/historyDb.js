@@ -132,7 +132,9 @@ class HistoryDatabase {
             actual_time TEXT,
             is_realtime INTEGER DEFAULT 1,
             is_delayed INTEGER DEFAULT 0,
-            timestamp INTEGER NOT NULL
+            timestamp INTEGER NOT NULL,
+            direction TEXT DEFAULT '',
+            times_source TEXT DEFAULT ''
           );
 
           -- idx_delay_line / idx_delay_line_timestamp (exact duplicates of each
@@ -189,6 +191,16 @@ class HistoryDatabase {
         }
         if (!this.db.prepare('PRAGMA table_info(delay_logs)').all().some(column => column.name === 'vehicle_id')) {
           this.db.exec("ALTER TABLE delay_logs ADD COLUMN vehicle_id TEXT DEFAULT '';");
+        }
+        // Provenance columns. Without direction a scheduled time cannot be
+        // re-derived later, because the same line runs both ways with
+        // different timetables. times_source records that scheduled/actual
+        // were derived from the static timetable, not observed upstream.
+        if (!this.db.prepare('PRAGMA table_info(delay_logs)').all().some(column => column.name === 'direction')) {
+          this.db.exec("ALTER TABLE delay_logs ADD COLUMN direction TEXT DEFAULT '';");
+        }
+        if (!this.db.prepare('PRAGMA table_info(delay_logs)').all().some(column => column.name === 'times_source')) {
+          this.db.exec("ALTER TABLE delay_logs ADD COLUMN times_source TEXT DEFAULT '';");
         }
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_delay_veh_time ON delay_logs(vehicle_id, timestamp);');
         // Preserve legacy rollups whose raw observations have already been pruned.
@@ -286,8 +298,8 @@ class HistoryDatabase {
       if (!this._delayStmt) {
         this._delayStmt = this.db.prepare(`
           INSERT INTO delay_logs
-          (vehicle_id, line_id, line_code, agency, stop_id, stop_name, delay_mins, scheduled_time, actual_time, is_realtime, is_delayed, timestamp)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (vehicle_id, line_id, line_code, agency, stop_id, stop_name, delay_mins, scheduled_time, actual_time, is_realtime, is_delayed, timestamp, direction, times_source)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
       }
       const stmt = this._delayStmt;
@@ -303,7 +315,9 @@ class HistoryDatabase {
         String(entry.actualTime || ''),
         entry.isRealTime ? 1 : 0,
         delay > 3 ? 1 : 0,
-        entry.timestamp || Date.now()
+        entry.timestamp || Date.now(),
+        String(entry.direction || ''),
+        String(entry.timesSource || '')
       );
     } catch {
       // Ignore transient write errors
@@ -1471,6 +1485,7 @@ class HistoryDatabase {
       const stmt = this.db.prepare(`
         SELECT id, vehicle_id as vehicleId, line_id as lineId, line_code as lineCode,
           agency, stop_id as stopId, stop_name as stopName, delay_mins as delayMins,
+          direction, times_source as timesSource,
           is_realtime as isRealTime, timestamp, madrid_datetime(timestamp) as formattedDate,
           scheduled_time as scheduledTime, actual_time as actualTime,
           is_telemetry_anomaly(timestamp, delay_mins, stop_name) as isAnomaly
@@ -1501,10 +1516,23 @@ class HistoryDatabase {
 
       const vehicleIds = [...new Set(pick.map(r => r.vehicleId).filter(Boolean))];
       const rowsWithTimes = pick.filter(r => r.scheduledTime && r.scheduledTime !== '' && r.actualTime && r.actualTime !== '').length;
+      const derivedRows = pick.filter(r => r.timesSource === 'derived_timetable').length;
+      const observedTimeRows = pick.filter(r => r.scheduledTime && r.scheduledTime !== '' && r.actualTime && r.actualTime !== '' && r.timesSource !== 'derived_timetable').length;
       const snapshotRows = vehicleIds.length ? this._snapshotTrail(vehicleIds[0], pick[0].timestamp, pick[pick.length - 1].timestamp) : [];
 
       const hasVehicleId = vehicleIds.length > 0;
-      const hasProvenanceTimes = rowsWithTimes > 0;
+      // The vehicle_id column was added by ALTER TABLE on 2026-09-19, so every
+      // row written before then reads back '' through the column DEFAULT even
+      // though the daemon has always passed a real value. The id was never
+      // stored, so it cannot be recovered — say why instead of implying the
+      // feed simply omitted it.
+      const vehicleIdColumnAddedMs = Date.parse('2026-09-19T00:00:00Z');
+      const allPredateVehicleIdColumn = pick.every(r => r.timestamp < vehicleIdColumnAddedMs);
+      const vehicleIdGapExplained = !hasVehicleId && allPredateVehicleIdColumn;
+      // Derived times are weaker evidence than observed ones, so they count
+      // for corroboration only alongside a GPS trail.
+      const hasProvenanceTimes = observedTimeRows > 0;
+      const hasDerivedTimes = derivedRows > 0;
       const hasSnapshotTrail = snapshotRows.length >= 2;
 
       let verdict, verdictLabel;
@@ -1512,6 +1540,8 @@ class HistoryDatabase {
         verdict = 'telemetry_anomaly'; verdictLabel = 'Telemetry anomaly — depot / night maintenance';
       } else if (hasVehicleId && (hasProvenanceTimes || hasSnapshotTrail)) {
         verdict = 'corroborated'; verdictLabel = 'Corroborated — vehicle identity plus independent evidence';
+      } else if (hasVehicleId && hasDerivedTimes) {
+        verdict = 'derived_only'; verdictLabel = 'Derived only — timetable time reconstructed, no observed evidence';
       } else if (pick.length >= 3 && (!hasVehicleId || vehicleIds.length <= 1)) {
         verdict = 'poll_inflated'; verdictLabel = 'Inflated by repeated polling — same bus logged every 20 s';
       } else {
@@ -1537,21 +1567,34 @@ class HistoryDatabase {
           distinctVehicles: vehicleIds,
           verdict, verdictLabel,
           evidence: {
-            hasVehicleId, hasProvenanceTimes, hasSnapshotTrail,
+            hasVehicleId, hasProvenanceTimes, hasSnapshotTrail, hasDerivedTimes,
+            vehicleIdGapExplained,
+            vehicleIdNote: vehicleIdGapExplained
+              ? 'Rows predate the vehicle_id column (added 2026-09-19). The bus was recorded but the id was not stored, and no snapshot trail survives to recover it.'
+              : (hasVehicleId ? '' : 'No vehicle identity on these rows, and they postdate the vehicle_id column — the feed genuinely omitted it.'),
             vehicleIdDistribution: vehicleDist,
             rowsWithProvenanceTimes: rowsWithTimes,
+            rowsWithDerivedTimes: derivedRows,
+            rowsWithObservedTimes: observedTimeRows,
             snapshotTrailPoints: snapshotRows.length,
             rowsWithoutProvenance: pick.length - rowsWithTimes
           },
           timetableCheck: {
-            available: false,
-            note: 'Scheduled / actual times are empty strings in the stored rows — the delay cannot be recomputed from a timetable in this DB'
+            available: derivedRows > 0 || observedTimeRows > 0,
+            derivedFromTimetable: derivedRows > 0,
+            note: derivedRows > 0
+              ? 'Scheduled / actual times were derived from the static timetable, not reported by the upstream feed'
+              : 'Scheduled / actual times are empty in the stored rows — the delay cannot be recomputed from a timetable'
           },
           retiredScope,
           rawRows: pick.slice(0, 100).map(r => ({
             delayMins: r.delayMins, stopName: r.stopName, vehicleId: r.vehicleId,
             formattedDate: r.formattedDate, isRealTime: Boolean(r.isRealTime),
-            hasTimes: !!(r.scheduledTime && r.scheduledTime !== '')
+            hasTimes: !!(r.scheduledTime && r.scheduledTime !== ''),
+            scheduledTime: r.scheduledTime || '',
+            actualTime: r.actualTime || '',
+            timesSource: r.timesSource || '',
+            direction: r.direction || ''
           }))
         },
         dataQuality: {

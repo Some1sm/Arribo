@@ -1638,10 +1638,18 @@ class ObservatoriApp {
       }
       const ep = data.episode || {};
       const ev = ep.evidence || {};
-      const verdictColors = { corroborated: '#34d399', poll_inflated: '#f59e0b', unverifiable: '#fb7185', telemetry_anomaly: '#94a3b8' };
+      const verdictColors = { corroborated: '#34d399', derived_only: '#a78bfa', poll_inflated: '#f59e0b', unverifiable: '#fb7185', telemetry_anomaly: '#94a3b8' };
       const verdictLabel = verdictColors[ep.verdict] || '#fff';
-      const vehicleBadge = ep.distinctVehicles.length ? ep.distinctVehicles.map(v => `<span style="background:rgba(255,255,255,0.08); padding:2px 6px; border-radius:4px; font-size:0.74rem;">${this.esc(v)}</span>`).join(' ') : '<span style="color:#fb7185;">cap vehicle_id registrat</span>';
-      const timesBadge = ev.rowsWithProvenanceTimes > 0 ? `<span style="color:#34d399;">${ev.rowsWithProvenanceTimes} mostres amb horari teòric/réal</span>` : `<span style="color:#fb7185;">cap mostra amb horari teòric ni real</span>`;
+      const vehicleBadge = ep.distinctVehicles.length
+        ? ep.distinctVehicles.map(v => `<span style="background:rgba(255,255,255,0.08); padding:2px 6px; border-radius:4px; font-size:0.74rem;">${this.esc(v)}</span>`).join(' ')
+        : ev.vehicleIdGapExplained
+          ? '<span style="color:#fb7185;">cap vehicle_id — <span style="opacity:0.8;">aquestes files són anteriors a la columna</span></span>'
+          : '<span style="color:#fb7185;">cap vehicle_id registrat</span>';
+      const timesBadge = ev.rowsWithProvenanceTimes > 0
+        ? `<span style="color:#34d399;">${ev.rowsWithProvenanceTimes} mostres amb horari observat</span>`
+        : ev.rowsWithDerivedTimes > 0
+          ? `<span style="color:#a78bfa;">${ev.rowsWithDerivedTimes} mostres amb horari <strong>derivat</strong> del horari teòric</span>`
+          : '<span style="color:#fb7185;">cap mostra amb horari teòric ni real</span>';
       const snapshotBadge = ev.snapshotTrailPoints >= 2 ? `<span style="color:#34d399;">${ev.snapshotTrailPoints} punts GPS</span>` : '<span style="color:#fb7185;">cap traçal GPS proper</span>';
       summary.innerHTML = `
         <table style="width:100%; border-collapse:collapse; font-size:0.82rem;">
@@ -1652,10 +1660,16 @@ class ObservatoriApp {
           <tr><td style="color:var(--text-muted); padding:3px 0;">Linies retirades</td><td style="color:${data.dataQuality?.retiredScopeLinesPresent ? '#fb7185' : '#34d399'};">${data.dataQuality?.retiredScopeLinesPresent ? 'Sí — hi ha dades de línies extintes' : 'No'}</td></tr>
           <tr><td style="color:var(--text-muted); padding:3px 0;">Total mostres raw</td><td style="color:var(--text-secondary);">${data.dataQuality?.totalRawRows || 0} → ${data.dataQuality?.episodesInWindow || 0} episodis</td></tr>
         </table>
+        ${ep.timetableCheck?.derivedFromTimetable ? '<p style="color:#a78bfa; font-size:0.78rem; margin:8px 0 0;">L\'horari teòric i real d\'aquestes mostres s\'ha <strong>derivat</strong> del quadre horari estàtic: el feed upstream només dona el retard, mai l\'hora amb què es compara. Serveix per contextualitzar, però no és una observació independent.</p>' : ''}
+        ${ev.vehicleIdNote ? `<p style="color:var(--text-muted); font-size:0.78rem; margin:6px 0 0;">${this.esc(ev.vehicleIdNote)}</p>` : ''}
       `;
       const rawHtml = (ep.rawRows || []).map(r => {
         const vB = r.vehicleId ? this.esc(r.vehicleId) : '<span style="color:#fb7185;">—</span>';
-        const tB = r.hasTimes ? '<span style="color:#34d399;">sí</span>' : '<span style="color:#fb7185;">no</span>';
+        const tB = !r.hasTimes
+          ? '<span style="color:#fb7185;">no</span>'
+          : r.timesSource === 'derived_timetable'
+            ? `<span style="color:#a78bfa;">${this.esc((r.scheduledTime || '').slice(0, 5))}→${this.esc((r.actualTime || '').slice(0, 5))} derivat</span>`
+            : `<span style="color:#34d399;">${this.esc((r.scheduledTime || '').slice(0, 5))}→${this.esc((r.actualTime || '').slice(0, 5))}</span>`;
         return `<div style="padding:4px 0; border-bottom:1px solid var(--border-subtle); font-size:0.78rem; display:flex; justify-content:space-between; gap:0.5rem; flex-wrap:wrap;">
           <span style="color:var(--text-secondary);">${this.esc(r.formattedDate)}</span>
           <span style="color:${r.delayMins >= 20 ? '#ef4444' : '#f59e0b'}; font-weight:700;">+${r.delayMins} min</span>

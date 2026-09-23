@@ -60,6 +60,17 @@ historyDb.recordDelayLog({
   timestamp: baseTs + 5 * twentySec
 });
 
+// ── Test Scenario: Derived (not observed) timetable times ──
+for (let i = 0; i < 2; i++) {
+  historyDb.recordDelayLog({
+    vehicleId: '2690', lineId: '5', lineCode: 'L5', agency: 'Mataró',
+    stopId: 'Teatre', stopName: 'Teatre Municipal', delayMins: 8,
+    scheduledTime: '07:30:00', actualTime: '07:38:00',
+    direction: '0', timesSource: 'derived_timetable',
+    isRealTime: true, timestamp: baseTs + 7 * twentySec + i * twentySec
+  });
+}
+
 async function runTests() {
   let passed = 0;
   const failed = [];
@@ -92,11 +103,21 @@ async function runTests() {
   check(ep3.found === true, 'Plaça incident found');
   check(ep3.episode?.verdict === 'corroborated', 'Verdict is corroborated for row with scheduled_time');
 
-  console.log('\n--- 4. Retired-scope flag ---');
+  console.log('\n--- 4. Derived timetable times are not treated as observed ---');
+  const epDerived = await historyDb.inspectDelayIncident({ lineCode: 'L5', stopName: 'Teatre', at: baseTs + 7 * twentySec, minDelay: 5 });
+  check(epDerived.found === true, 'Teatre incident found');
+  check(epDerived.episode?.verdict === 'derived_only', 'Derived times alone do not corroborate — verdict is derived_only');
+  check(epDerived.episode?.evidence?.hasDerivedTimes === true, 'Derived-time rows are counted');
+  check(epDerived.episode?.evidence?.hasProvenanceTimes === false, 'Derived times are not counted as observed provenance');
+  check(epDerived.episode?.timetableCheck?.derivedFromTimetable === true, 'Drilldown flags the times as derived from the timetable');
+  check(epDerived.episode?.rawRows?.[0]?.timesSource === 'derived_timetable', 'Raw rows carry their times_source through');
+  check(epDerived.episode?.rawRows?.[0]?.direction === '0', 'Raw rows carry the direction needed to re-derive the join');
+
+  console.log('\n--- 5. Retired-scope flag ---');
   const retiredEp = await historyDb.inspectDelayIncident({ lineCode: 'C-10', stopName: 'El Masnou', at: baseTs + 6 * twentySec, minDelay: 10 });
   check(retiredEp.episode?.retiredScope === true || retiredEp.dataQuality?.retiredScopeLinesPresent === true, 'Retirement scope detected for non-L1-L8 line');
 
-  console.log('\n--- 5. Data quality summary in getDelayIncidents ---');
+  console.log('\n--- 6. Data quality summary in getDelayIncidents ---');
   const summary = await historyDb.getDelayIncidents({ lineCode: 'all', hours: 24, minDelay: 5 });
   check(summary.summary.dataQuality !== undefined, 'Data quality block present in summary');
   check(summary.summary.dataQuality.totalRawRows > 0, 'Total raw rows > 0');
@@ -104,7 +125,7 @@ async function runTests() {
   check(summary.summary.dataQuality.rowsWithoutProvenance >= 0, 'Rows without provenance counted');
   check(summary.summary.dataQuality.distinctEpisodes >= 0, 'Distinct episodes calculated');
 
-  console.log('\n--- 6. Worker RPC dispatch ---');
+  console.log('\n--- 7. Worker RPC dispatch ---');
   const worker = require('../src/workers/ingestionWorker');
   const rpcResult = await worker.executeDbOperation('inspectDelayIncident', { lineCode: 'L5', at: baseTs, windowMins: 60, minDelay: 5 });
   check(rpcResult.found === true || rpcResult.found === false, 'RPC dispatch returns valid structure');

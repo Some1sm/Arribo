@@ -2,6 +2,7 @@ const flightRecorder = require('./flightRecorder');
 const mataroTracker = require('./mataroTracker');
 const reportCacheService = require('./reportCacheService');
 const historyDb = require('./historyDb');
+const tripMatcher = require('./core/schedule/tripMatcher');
 
 class IngestionDaemon {
   constructor() {
@@ -151,16 +152,33 @@ class IngestionDaemon {
               const isLayover = b.isTerminalLayover || isDepotHours || (speed <= 3 && (b.delayMins > 10 || b.delayMins < -5));
               if (b.delayMins !== undefined && !isLayover && b.delayMins >= -15 && b.delayMins <= 300) {
                 const vehId = b.vehicleId || (b.plateNumber ? `mataro_${lId}_${b.plateNumber}` : `mataro_${lId}_bus`);
+                // Recover the scheduled/actual passing time from the static
+                // timetable. The feed reports a delay but never the time it is
+                // measured against, so these times are DERIVED, not observed —
+                // times_source records that so Observatori can say so.
+                const trip = tripMatcher.matchTrip({
+                  lineId: lId,
+                  direction: b.direction,
+                  toSeq: b.toSeq,
+                  stopName: b.toStop,
+                  delayMins: b.delayMins,
+                  at: b.timestamp || Date.now()
+                });
                 historyDb.recordDelayLog({
                   vehicleId: vehId,
                   lineId: lId,
                   lineCode: `L${lId}`,
                   agency: 'Mataró Bus (Avanza)',
+                  // stop_id stays the stop NAME: getDelayIncidents groups and
+                  // geolocates by it, so its semantics must not change. The
+                  // numeric schedule id is only needed for the join above.
                   stopId: b.toStop || 'Parada',
                   stopName: b.toStop || 'Parada',
                   delayMins: b.delayMins,
-                  scheduledTime: '',
-                  actualTime: '',
+                  scheduledTime: trip.matched ? trip.scheduledTime : '',
+                  actualTime: trip.matched ? trip.actualTime : '',
+                  direction: b.direction !== undefined ? String(b.direction) : '',
+                  timesSource: trip.matched ? 'derived_timetable' : '',
                   isRealTime: !b.isEstimated
                 });
               }
