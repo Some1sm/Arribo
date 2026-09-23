@@ -132,12 +132,45 @@ async function evaluate(candidates, tracker, options = {}) {
     });
     results.push(itin);
   }
-  results.sort((a, b) => (options.preference === 'least_walking' ? a.walkingDistanceMeters - b.walkingDistanceMeters : 0) || Date.parse(a.arrivalAt) - Date.parse(b.arrivalAt) || a.walkingDistanceMeters - b.walkingDistanceMeters);
+  // Ranking. Arrival time on its own produces absurd results: a one-transfer
+  // itinerary that lands a minute earlier beats the direct bus, and starting
+  // by walking three stops in the wrong direction is free, so the search
+  // happily offers it. Each itinerary therefore carries a complexity cost and
+  // the two are traded off. The weights are deliberately conservative —
+  // a transfer still wins when it is genuinely worth it.
+  const WEIGHTS = {
+    fastest: { transfer: 7, walk: 2, walkCap: 25, perMeter: 0 },
+    direct_only: { transfer: 7, walk: 2, walkCap: 25, perMeter: 0 },
+    least_walking: { transfer: 5, walk: 4, walkCap: 60, perMeter: 0.004 }
+  };
+  const weights = WEIGHTS[options.preference] || WEIGHTS.fastest;
+  const rankScore = itin => {
+    const transfers = Number.isFinite(itin.transfersCount) ? itin.transfersCount : Math.max(0, itin.legs.length - 1);
+    return Date.parse(itin.arrivalAt) / 60000
+      + transfers * weights.transfer
+      + Math.min(weights.walkCap, (itin.walkingMinutes || 0) * weights.walk)
+      + (itin.walkingDistanceMeters || 0) * weights.perMeter;
+  };
+  results.sort((a, b) => rankScore(a) - rankScore(b)
+    || Date.parse(a.arrivalAt) - Date.parse(b.arrivalAt)
+    || a.walkingDistanceMeters - b.walkingDistanceMeters);
   const selected = [];
   const signatures = new Set();
+  let sawTransfer = false;
+  let sawDirect = false;
   for (const itin of results) {
     const signature = itin.legs.map(leg => leg.lineId).join('->');
     if (signatures.has(signature)) continue;
+    // Keep the board varied but not lopsided: never spend more than two of the
+    // four slots on transfer routes when a direct one is available, so a slow
+    // direct does not push every direct option off the list behind transfers.
+    if (itin.transfersCount > 0) {
+      if (!sawDirect && selected.length >= 2) continue;
+      if (sawTransfer && selected.length >= 3) continue;
+      sawTransfer = true;
+    } else {
+      sawDirect = true;
+    }
     signatures.add(signature);
     selected.push(itin);
     if (selected.length === 4) break;

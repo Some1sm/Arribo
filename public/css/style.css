@@ -8222,19 +8222,13 @@ body {
   text-transform: uppercase;
 }
 
-.planner-prefs-pills {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  flex-wrap: wrap;
-}
-
+/* The three preference pills must stay on ONE line. Layout-critical
+   properties for them are declared in the "Clean Preference Pills" block
+   further down this file, which wins on source order. */
 .plan-pref-pill {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--border-subtle);
   border-radius: 16px;
-  padding: 4px 10px;
-  font-size: 0.76rem;
   font-weight: 600;
   color: var(--text-secondary);
   cursor: pointer;
@@ -9868,6 +9862,58 @@ input#plan-max-walk:focus {
   background: rgba(16, 185, 129, 0.15);
   border-color: rgba(16, 185, 129, 0.35);
   color: var(--c10-primary);
+}
+
+/* The three preference pills must share ONE row. This block comes after the
+   earlier .plan-pref-pill definition and therefore wins on source order, so
+   the layout-critical properties live here. Equal flex basis + no wrap keeps
+   them on one line; the labels shrink and ellipsis rather than stack. */
+.planner-prefs-pills {
+  display: flex;
+  align-items: stretch;
+  gap: 5px;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.plan-pref-pill {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.74rem;
+  justify-content: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.plan-pref-pill svg {
+  flex: 0 0 auto;
+}
+
+/* Narrow phones: the three labels only fit on one row without the icons.
+   Each pill's title attribute still carries its meaning. */
+@media (max-width: 520px) {
+  .plan-pref-pill {
+    padding: 0.4rem 0.3rem;
+    font-size: 0.68rem;
+    letter-spacing: -0.01em;
+  }
+  .plan-pref-pill svg {
+    display: none;
+  }
+}
+
+/* Smallest common phones (SE, older Androids): the longest label
+   ("Sense transbord") still needs the extra room. */
+@media (max-width: 400px) {
+  .planner-prefs-pills {
+    gap: 3px;
+  }
+  .plan-pref-pill {
+    padding: 0.4rem 2px;
+    font-size: 0.62rem;
+  }
 }
 
 /* Preset Chips */
