@@ -9564,6 +9564,17 @@ body.observatori-page-body {
   box-sizing: border-box;
 }
 
+/* The planner is a full-bleed app shell, not a centred document: the sidebar
+   is pinned to the left viewport edge and the map fills the rest. A centred
+   max-width container left the logo and buttons floating hundreds of pixels
+   in from both edges and misaligned with the sidebar below, so on this page
+   the header content spans the full width like the rest of the shell.
+   The map and Observatori pages keep the centred container. */
+.planner-page-body .header-container {
+  max-width: none;
+  width: 100%;
+}
+
 .brand-mark-box {
   width: 30px;
   height: 30px;
