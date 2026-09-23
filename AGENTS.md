@@ -107,6 +107,17 @@ setup and contracts; verify disagreements against source, not fixed source-line 
 - Preserve unbuffered SSE and close its clients/timers on shutdown. Dynamic arrivals,
   fleet and planner responses stay out of offline caches.
 - Keep both HTML script order/versions aligned with the service-worker shell.
+- **Three things move together for any shell asset change** (`css/style.css`, any
+  `js/*.js`): the `?v=` query in all three HTML files, `VERSION` in [sw.js](public/sw.js),
+  **and** `CACHE_NAME`. Bumping only the HTML `?v=` is not enough — the worker
+  precaches `/css/style.css?v=VERSION`, so an unchanged URL keeps serving the stale
+  copy and the fix appears to do nothing in the browser. The `CACHE_NAME` bump is what
+  evicts the old shell on activate; `VERSION` alone does not. When a CSS/JS change
+  mysteriously has no effect locally, check for a precached shell before re-debugging.
+- The planner is a full-bleed app shell: `body.planner-page-body .header-container`
+  spans the viewport while the map and Observatori pages keep a centred
+  `max-width` container. Do not unify these — the centred layout is correct for the
+  document pages.
 
 ## 4. Runtime, configuration and privacy
 
