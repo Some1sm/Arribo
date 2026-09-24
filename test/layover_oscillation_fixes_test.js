@@ -108,7 +108,12 @@ assert.ok(
   'refreshAllData must not contain bare "this.secondsRemaining = this.pollInterval;"'
 );
 
-const matches = refreshBody.match(/this\.secondsRemaining\s*=\s*this\.fleetStreamOk\s*\?\s*60\s*:\s*this\.pollInterval;/g);
+// The invariant here is STRUCTURAL: the countdown must respect the SSE backoff
+// rather than resetting to the bare 20s pollInterval, and there must be exactly
+// two such guards (entry and exit). The backoff VALUE is a tunable served by the
+// named constant sseRestRefreshSec, so it is deliberately not asserted here --
+// pinning a literal number would make ordinary tuning a test-breaking change.
+const matches = refreshBody.match(/this\.secondsRemaining\s*=\s*this\.fleetStreamOk\s*\?\s*this\.sseRestRefreshSec\s*:\s*this\.pollInterval;/g);
 assert.ok(matches && matches.length === 2, 'refreshAllData must contain exactly 2 fleetStreamOk backoff guards (entry and exit)');
 
 console.log('   ✓ app.js polling countdown backoff preservation verified.\n');

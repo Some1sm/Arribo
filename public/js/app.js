@@ -46,6 +46,13 @@ class TransitApp {
     this.expandedGroups = new Set(); // Group IDs expanded by user on landing page
 
     this.pollInterval = 20;
+    // REST refresh cadence while the SSE fleet stream is healthy. Vehicle
+    // positions keep streaming at full rate, so this only governs how often the
+    // departure board and line details are re-fetched -- and it is the one knob
+    // that decides how stale a rider's board can look. Each refresh costs two
+    // /api calls per open tab against a 120 req/min per-IP limiter, so this is
+    // deliberately a named value rather than a literal repeated inline.
+    this.sseRestRefreshSec = 30;
     this.secondsRemaining = this.pollInterval;
     this.pollTimer = null;
     this.searchDebounceTimer = null;
@@ -1281,7 +1288,7 @@ class TransitApp {
   async refreshAllData(shouldFitBounds = false) {
     if (this._isRefreshingData) return;
     this._isRefreshingData = true;
-    this.secondsRemaining = this.fleetStreamOk ? 60 : this.pollInterval;
+    this.secondsRemaining = this.fleetStreamOk ? this.sseRestRefreshSec : this.pollInterval;
     this.updateCountdownLabel();
     try {
       ++this.activeRequestSeq;
@@ -1435,7 +1442,7 @@ class TransitApp {
         console.error('Target ETA async handler error:', err);
       });
 
-      this.secondsRemaining = this.fleetStreamOk ? 60 : this.pollInterval;
+      this.secondsRemaining = this.fleetStreamOk ? this.sseRestRefreshSec : this.pollInterval;
       this.updateCountdownLabel();
     } catch (err) {
       console.error('Data refresh error:', err);
@@ -6223,7 +6230,7 @@ class TransitApp {
       }
       // While the SSE fleet stream is delivering snapshots, stretch the REST
       // refresh to a slow static-data cadence; the stream keeps vehicles live.
-      const effectiveInterval = this.fleetStreamOk ? 60 : this.pollInterval;
+      const effectiveInterval = this.fleetStreamOk ? this.sseRestRefreshSec : this.pollInterval;
       this.secondsRemaining--;
       if (this.secondsRemaining <= 0) {
         this.secondsRemaining = effectiveInterval;
