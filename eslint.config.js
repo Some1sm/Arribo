@@ -60,7 +60,12 @@ module.exports = [
         // order is preserved (app.js defines MATARO_ZONES, map.js defines
         // TransitMap via an explicit window assignment).
         MATARO_ZONES: 'readonly',
-        TransitMap: 'readonly'
+        TransitMap: 'readonly',
+        // map.js also owns these two; networkMap.js subclasses TransitMap and
+        // reuses its snapping helper and bus-icon markup rather than forking
+        // them, so it reads them from the same shared lexical scope.
+        snapStopToPolyline: 'readonly',
+        CANONICAL_BUS_ICON_INNER_SVG: 'readonly'
       }
     },
     rules: correctness

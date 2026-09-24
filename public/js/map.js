@@ -381,19 +381,21 @@ class TransitMap {
   }
 
   // Create directional arrows along a polyline
-  createDirectionalArrows(polylineCoords, color) {
+  createDirectionalArrows(polylineCoords, color, spacingM = 800) {
     if (!polylineCoords || polylineCoords.length < 2) return [];
     const arrows = [];
     let accumulated = 0;
-    
+
     for (let i = 0; i < polylineCoords.length - 1; i++) {
       const p1 = polylineCoords[i];
       const p2 = polylineCoords[i + 1];
       const d = this.calculateDistanceMeters(p1[0], p1[1], p2[0], p2[1]);
       accumulated += d;
 
-      // Place an arrow roughly every 800 meters along the route
-      if (accumulated >= 800) {
+      // Place an arrow roughly every `spacingM` meters along the route. The
+      // single-line map uses the 800 m default; the all-lines network map widens
+      // it so eight routes at once do not bury the map in arrow DOM nodes.
+      if (accumulated >= spacingM) {
         accumulated = 0;
         const midLat = (p1[0] + p2[0]) / 2;
         const midLon = (p1[1] + p2[1]) / 2;
@@ -1248,6 +1250,290 @@ class TransitMap {
     }
   }
 
+  /**
+   * Builds the bus popup card shared by the single-line map and the all-lines
+   * network map, so both render the exact same telemetry-honest card instead of
+   * two templates that can drift apart.
+   *
+   * ctx: { isGhost, isEst, isSecDir, busColor, snapped, bearingAngle, lineCode, showLineLink }
+   *   isSecDir marks a bus running the return direction (its popup says
+   *   "Sentit contrari" rather than claiming a destination).
+   *   showLineLink appends an "Obre la línia L<n>" button, handled by event
+   *   delegation in each map's own `popupopen` listener.
+   */
+  buildBusPopupHtml(bus, ctx = {}) {
+    const isGhost = Boolean(ctx.isGhost);
+    const isEst = Boolean(ctx.isEst);
+    const isSecDir = Boolean(ctx.isSecDir);
+    const busColor = ctx.busColor;
+    const snapped = ctx.snapped || { lat: Number(bus.lat), lon: Number(bus.lon) };
+    const bearingAngle = Math.round(Number(ctx.bearingAngle) || 0);
+
+      const compassLabel = bus.compass?.label || 'N/A';
+      const coordsText = `${snapped.lat.toFixed(5)}°, ${snapped.lon.toFixed(5)}°`;
+
+      const lineBadge = bus.lineCode || bus.lineId || ctx.lineCode || '';
+      const fromStop = bus.fromStop ? escHtml(bus.fromStop) : '';
+    const toStop = bus.toStop ? escHtml(bus.toStop) : (bus.destination ? escHtml(bus.destination) : '');
+    const progressNum = Math.max(0, Math.min(100, Math.round(Number(bus.totalProgress) || 0)));
+    // Speed telemetry honesty: only print a km/h figure when the field is an
+    // actual finite measurement. Synthetic/estimated vehicles have no observed
+    // speed -> show "—" flagged as estimated; a real vehicle with no speed ->
+    // show unknown. Never invent a range.
+    // NOTE: mataroSiriClient.js:319 still fabricates `speedKmh: 25` when the
+    // upstream <Velocity> is missing/unparseable, so a reported 25 is not yet
+    // distinguishable from a real reading. That is the remaining source-side fix.
+    const hasMeasuredSpeed = bus.speedKmh !== undefined && bus.speedKmh !== null && Number.isFinite(Number(bus.speedKmh));
+    let speedValue;
+    if (isGhost) {
+      speedValue = '— (Estimat)';
+    } else if (isEst && !hasMeasuredSpeed) {
+      speedValue = '— (Estimat)';
+    } else if (hasMeasuredSpeed) {
+      speedValue = `${Math.round(Number(bus.speedKmh))} km/h`;
+    } else if (bus.isTerminalLayover) {
+      speedValue = '0 km/h (Aturat)';
+    } else {
+      speedValue = '— (Sense dada)';
+    }
+
+    let delayClass = 'on-time';
+    let delayBadgeText = bus.delayFormatted || 'Puntual';
+    const dMins = Number(bus.delayMins !== undefined ? bus.delayMins : (bus.delayMinutes !== undefined ? bus.delayMinutes : 0));
+
+    if (isGhost) {
+      delayClass = 'ghost';
+      delayBadgeText = '⚡ Sense GPS (Horari)';
+    } else if (bus.isTerminalLayover || bus.delayStatus === 'regulating') {
+      delayClass = 'layover';
+      delayBadgeText = 'Regulant';
+    } else if (bus.delayStatus === 'delayed' || dMins >= 2) {
+      delayClass = dMins >= 5 ? 'critical' : 'delayed';
+      delayBadgeText = `+${dMins} min retard`;
+    } else if (bus.delayStatus === 'early' || dMins <= -1) {
+      delayClass = 'early';
+      delayBadgeText = `${dMins} min avançat`;
+    } else if (String(delayBadgeText).toLowerCase().includes('puntual')) {
+      delayClass = 'on-time';
+      delayBadgeText = 'Puntual';
+    }
+
+    const hasChips = Boolean(bus.isAccessible || bus.isElectric || bus.isHybrid || bus.propulsion || bus.modelName || bus.tripStartTime);
+
+    const popupHtml = bus.isTerminalLayover ? `
+      <div class="map-popup-card">
+        <div class="map-popup-header">
+          <div class="map-popup-title-group">
+            <div class="map-popup-bus-icon ${isGhost ? 'ghost' : 'layover'}">
+              <span>${isGhost ? '⚡' : '🅿️'}</span>
+            </div>
+            <div class="map-popup-title-text">
+              <div class="map-popup-title">
+                ${lineBadge ? `<span class="map-popup-line-pill" style="background:${busColor || '#3b82f6'};">${escHtml(lineBadge)}</span>` : ''}
+                <span class="map-popup-bus-id">Bus ${bus.vehicleId ? `#${escHtml(bus.vehicleId)}` : ''}</span>
+              </div>
+              <div class="map-popup-subtitle" title="${isGhost ? 'Capçalera / Regulació (Sense GPS)' : 'Capçalera / Regulació'}">${isGhost ? 'Capçalera / Regulació (Sense GPS)' : 'Capçalera / Regulació'}</div>
+            </div>
+          </div>
+          <div class="map-popup-header-status">
+            <span class="map-popup-status-badge ${isGhost ? 'ghost' : 'layover'}">
+              <span class="status-pulse-dot"></span>
+              <span>${isGhost ? '⚡ Sense GPS' : 'Aturat'}</span>
+            </span>
+          </div>
+        </div>
+
+        ${isGhost ? `
+        <div class="map-popup-ghost-notice">
+          <span class="ghost-icon">⚡</span>
+          <span><strong>Vehicle estimat a capçalera (sense GPS):</strong> Aquest autobús està programat en regulació a la capçalera${bus.departureTime ? ` (propera sortida <strong>${escHtml(bus.departureTime)}</strong>)` : ''}, però no transmet senyal GPS. La seva posició al mapa s'estima segons l'horari oficial.</span>
+        </div>` : ''}
+
+        <div class="map-popup-route-ribbon">
+          <div class="map-popup-route-stop from">
+            <span class="map-popup-stop-dot"></span>
+            <span class="map-popup-stop-name">${((bus.totalProgress >= 90 && bus.toStop) ? toStop : fromStop) || 'Capçalera de Línia'}</span>
+          </div>
+          <div class="map-popup-route-badge-layover">${bus.departureTime ? `Sortida: ${escHtml(bus.departureTime)}` : 'Pausa de servei'}</div>
+        </div>
+
+        <div class="map-popup-metrics-grid">
+          <div class="map-popup-metric-tile" title="Velocitat: 0 km/h">
+            <div class="map-popup-metric-header">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              <span>Velocitat</span>
+            </div>
+            <div class="map-popup-metric-val"><span>0 km/h</span></div>
+          </div>
+          <div class="map-popup-metric-tile" title="Estat: Regulant horari">
+            <div class="map-popup-metric-header">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              <span>Estat</span>
+            </div>
+            <div class="map-popup-metric-val layover"><span>Regulant horari</span></div>
+          </div>
+        </div>
+
+        <div class="map-popup-coords-footer">
+          <div class="coords-item">
+            <span class="radar-dot"></span>
+            <span>${coordsText}</span>
+          </div>
+          <span class="source-tag">Capçalera</span>
+        </div>
+
+        <button type="button" class="map-popup-btn-share" data-share-vehicle="${escHtml(bus.vehicleId)}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle>
+            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+          </svg>
+          <span>Compartir seguiment d'aquest bus</span>
+        </button>
+      </div>
+    ` : `
+      <div class="map-popup-card">
+        <div class="map-popup-header">
+          <div class="map-popup-title-group">
+            <div class="map-popup-bus-icon ${isGhost ? 'ghost' : ''}" style="border-color:${isGhost ? 'rgba(245, 158, 11, 0.5)' : (busColor ? busColor + '66' : 'rgba(14, 165, 233, 0.3)')}; color:${isGhost ? '#fbbf24' : (busColor || '#38bdf8')};">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M19 17h2l.64-2.54a6 6 0 0 0 .36-2V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v6.46a6 6 0 0 0 .36 2L3 17h2"/>
+                <path d="M7 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2"/>
+                <path d="M14 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2"/>
+                <circle cx="6.5" cy="12.5" r="1.5"/>
+                <circle cx="17.5" cy="12.5" r="1.5"/>
+                <line x1="2" y1="9" x2="22" y2="9"/>
+              </svg>
+            </div>
+            <div class="map-popup-title-text">
+              <div class="map-popup-title">
+                ${lineBadge ? `<span class="map-popup-line-pill" style="background:${busColor || 'var(--c10-primary)'};">${escHtml(lineBadge)}</span>` : ''}
+                <span class="map-popup-bus-id">Bus ${bus.vehicleId ? `#${escHtml(bus.vehicleId)}` : ''}</span>
+              </div>
+              <div class="map-popup-subtitle" title="${bus.destination ? escHtml(bus.destination) : ''}">
+                ${isGhost ? 'Horari Oficial (Sense GPS)' : (isSecDir ? 'Sentit contrari' : (bus.destination ? `Dest: ${escHtml(bus.destination)}` : 'En servei'))}
+              </div>
+            </div>
+          </div>
+
+          <div class="map-popup-header-status">
+            <span class="map-popup-status-badge ${isGhost ? 'ghost' : (isEst ? 'estimated' : 'live')}">
+              <span class="status-pulse-dot"></span>
+              <span>${isGhost ? '⚡ Sense GPS' : (isEst ? 'Estimació' : 'En directe')}</span>
+            </span>
+          </div>
+        </div>
+
+        ${isGhost ? `
+        <div class="map-popup-ghost-notice">
+          <span class="ghost-icon">⚡</span>
+          <span><strong>Vehicle estimat segons horari oficial (sense GPS):</strong> Aquest autobús està programat en servei actiu${bus.departureTime ? ` (sortida <strong>${escHtml(bus.departureTime)}</strong>)` : ''}, però no transmet dades GPS en directe a la xarxa SAE. La seva posició al mapa es calcula teòricament segons la sortida oficial.</span>
+        </div>` : ''}
+
+        ${(fromStop && toStop) ? `
+        <div class="map-popup-route-ribbon">
+          <div class="map-popup-route-stop from">
+            <span class="map-popup-stop-dot"></span>
+            <span class="map-popup-stop-name" title="${fromStop}">${fromStop}</span>
+          </div>
+          <div class="map-popup-route-connector">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+          </div>
+          <div class="map-popup-route-stop to">
+            <span class="map-popup-stop-dot dest" style="background:${busColor || 'var(--c10-primary-light)'}; box-shadow:0 0 6px ${busColor || 'var(--c10-primary-light)'};"></span>
+            <span class="map-popup-stop-name" title="${toStop}">${toStop}</span>
+          </div>
+        </div>` : (toStop || fromStop ? `
+        <div class="map-popup-route-ribbon single">
+          <div class="map-popup-route-stop from">
+            <span class="map-popup-stop-dot dest" style="background:${busColor || 'var(--c10-primary-light)'};"></span>
+            <span class="map-popup-stop-name">${toStop || fromStop}</span>
+          </div>
+        </div>` : '')}
+
+        <div class="map-popup-metrics-grid">
+          <div class="map-popup-metric-tile" title="Velocitat: ${speedValue}">
+            <div class="map-popup-metric-header">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              <span>Velocitat</span>
+            </div>
+            <div class="map-popup-metric-val"><span>${speedValue}</span></div>
+          </div>
+
+          <div class="map-popup-metric-tile" title="Estat: ${escHtml(delayBadgeText)}">
+            <div class="map-popup-metric-header">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              <span>Estat</span>
+            </div>
+            <div class="map-popup-metric-val ${delayClass}"><span>${escHtml(delayBadgeText)}</span></div>
+          </div>
+
+          <div class="map-popup-metric-tile" title="Rumb: ${escHtml(compassLabel)} (${bearingAngle}°)">
+            <div class="map-popup-metric-header">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 19 21 12 17 5 21 12 2"/></svg>
+              <span>Rumb</span>
+            </div>
+            <div class="map-popup-metric-val map-popup-compass-val">
+              <svg class="map-popup-compass-arrow" style="transform: rotate(${bearingAngle}deg);" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="12 2 19 21 12 17 5 21 12 2"/>
+              </svg>
+              <span class="map-popup-compass-text">${escHtml(compassLabel)} <span class="map-popup-bearing-deg">(${bearingAngle}°)</span></span>
+            </div>
+          </div>
+
+          <div class="map-popup-metric-tile" title="Progrés del recorregut: ${progressNum}%">
+            <div class="map-popup-metric-header">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+              <span>Progrés</span>
+            </div>
+            <div class="map-popup-metric-val"><span>${progressNum}%</span></div>
+            <div class="map-popup-progress-track">
+              <div class="map-popup-progress-fill" style="width: ${progressNum}%;"></div>
+            </div>
+          </div>
+        </div>
+
+        ${(hasChips || isGhost) ? `
+        <div class="map-popup-fleet-chips">
+          ${isGhost ? '<span class="map-popup-chip ghost" title="Vehicle sense telemetria GPS"><span class="chip-icon">⚡</span> Sense senyal GPS</span>' : ''}
+          ${bus.isAccessible ? '<span class="map-popup-chip pmr" title="Vehicle Adaptat PMR"><span class="chip-icon">♿</span> Adaptat PMR</span>' : ''}
+          ${bus.isElectric 
+            ? '<span class="map-popup-chip electric"><span class="chip-icon">⚡</span> 100% Elèctric</span>' 
+            : (bus.isHybrid 
+              ? '<span class="map-popup-chip hybrid"><span class="chip-icon">🌱</span> Híbrid Eco</span>' 
+              : (bus.propulsion ? `<span class="map-popup-chip propulsion"><span class="chip-icon">${CANONICAL_BUS_ICON_INNER_SVG}</span> ${escHtml(bus.propulsion)}</span>` : ''))}
+          ${bus.modelName ? `<span class="map-popup-chip model" title="${escHtml(bus.modelName)}"><span class="chip-icon">🚍</span> ${escHtml(bus.modelName)}</span>` : ''}
+          ${bus.tripStartTime || bus.departureTime ? `<span class="map-popup-chip start-time"><span class="chip-icon">🕐</span> Sortida ${escHtml(bus.tripStartTime || bus.departureTime)}</span>` : ''}
+        </div>` : ''}
+
+        <div class="map-popup-coords-footer">
+          <div class="coords-item">
+            <span class="radar-dot ${isGhost ? 'ghost' : (isEst ? 'estimated' : '')}"></span>
+            <span>${coordsText}</span>
+          </div>
+          <span class="source-tag">${isGhost ? '⚡ Horari Oficial (Sense GPS)' : (isEst ? 'Estimació Dead-Reckoning' : 'GPS Directe (SIRI)')}</span>
+        </div>
+
+        <button type="button" class="map-popup-btn-share" data-share-vehicle="${escHtml(bus.vehicleId)}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle>
+            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+          </svg>
+          <span>Compartir seguiment d'aquest bus</span>
+        </button>
+
+        ${ctx.showLineLink && lineBadge ? `
+        <button type="button" class="map-popup-btn-share" data-open-line="${escHtml(lineBadge)}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="3 11 22 2 13 21 11 13 3 11"></polygon>
+          </svg>
+          <span>Obre la línia ${escHtml(lineBadge)}</span>
+        </button>` : ''}
+      </div>
+    `;
+
+    return popupHtml;
+  }
+
   // Update active bus markers and attach road subpaths
   updateBusMarkers(activeBuses, lineColor = '#009485', secondaryColor = '#38bdf8', selectedVehicleId = null, onBusClick = null, lineId = null) {
     if (!this.map || this.isItineraryMode) {
@@ -1381,259 +1667,16 @@ class TransitMap {
       const reportedBearing = (bus.bearing !== undefined && bus.bearing !== null && Number.isFinite(Number(bus.bearing))) ? Number(bus.bearing) : null;
       const roadBearing = (snapped.bearing !== undefined && snapped.bearing !== null && Number.isFinite(Number(snapped.bearing))) ? Number(snapped.bearing) : null;
       const bearingAngle = Math.round(reportedBearing !== null ? reportedBearing : (roadBearing !== null ? roadBearing : 0));
-      const compassLabel = bus.compass?.label || 'N/A';
-      const coordsText = `${snapped.lat.toFixed(5)}°, ${snapped.lon.toFixed(5)}°`;
-
-      const lineBadge = bus.lineCode || bus.lineId || this.currentLineId || '';
-      const fromStop = bus.fromStop ? escHtml(bus.fromStop) : '';
-      const toStop = bus.toStop ? escHtml(bus.toStop) : (bus.destination ? escHtml(bus.destination) : '');
-      const progressNum = Math.max(0, Math.min(100, Math.round(Number(bus.totalProgress) || 0)));
-      // Speed telemetry honesty: only print a km/h figure when the field is an
-      // actual finite measurement. Synthetic/estimated vehicles have no observed
-      // speed -> show "—" flagged as estimated; a real vehicle with no speed ->
-      // show unknown. Never invent a range.
-      // NOTE: mataroSiriClient.js:319 still fabricates `speedKmh: 25` when the
-      // upstream <Velocity> is missing/unparseable, so a reported 25 is not yet
-      // distinguishable from a real reading. That is the remaining source-side fix.
-      const hasMeasuredSpeed = bus.speedKmh !== undefined && bus.speedKmh !== null && Number.isFinite(Number(bus.speedKmh));
-      let speedValue;
-      if (isGhost) {
-        speedValue = '— (Estimat)';
-      } else if (isEst && !hasMeasuredSpeed) {
-        speedValue = '— (Estimat)';
-      } else if (hasMeasuredSpeed) {
-        speedValue = `${Math.round(Number(bus.speedKmh))} km/h`;
-      } else if (bus.isTerminalLayover) {
-        speedValue = '0 km/h (Aturat)';
-      } else {
-        speedValue = '— (Sense dada)';
-      }
-
-      let delayClass = 'on-time';
-      let delayBadgeText = bus.delayFormatted || 'Puntual';
-      const dMins = Number(bus.delayMins !== undefined ? bus.delayMins : (bus.delayMinutes !== undefined ? bus.delayMinutes : 0));
-
-      if (isGhost) {
-        delayClass = 'ghost';
-        delayBadgeText = '⚡ Sense GPS (Horari)';
-      } else if (bus.isTerminalLayover || bus.delayStatus === 'regulating') {
-        delayClass = 'layover';
-        delayBadgeText = 'Regulant';
-      } else if (bus.delayStatus === 'delayed' || dMins >= 2) {
-        delayClass = dMins >= 5 ? 'critical' : 'delayed';
-        delayBadgeText = `+${dMins} min retard`;
-      } else if (bus.delayStatus === 'early' || dMins <= -1) {
-        delayClass = 'early';
-        delayBadgeText = `${dMins} min avançat`;
-      } else if (String(delayBadgeText).toLowerCase().includes('puntual')) {
-        delayClass = 'on-time';
-        delayBadgeText = 'Puntual';
-      }
-
-      const hasChips = Boolean(bus.isAccessible || bus.isElectric || bus.isHybrid || bus.propulsion || bus.modelName || bus.tripStartTime);
-
-      const popupHtml = bus.isTerminalLayover ? `
-        <div class="map-popup-card">
-          <div class="map-popup-header">
-            <div class="map-popup-title-group">
-              <div class="map-popup-bus-icon ${isGhost ? 'ghost' : 'layover'}">
-                <span>${isGhost ? '⚡' : '🅿️'}</span>
-              </div>
-              <div class="map-popup-title-text">
-                <div class="map-popup-title">
-                  ${lineBadge ? `<span class="map-popup-line-pill" style="background:${busColor || '#3b82f6'};">${escHtml(lineBadge)}</span>` : ''}
-                  <span class="map-popup-bus-id">Bus ${bus.vehicleId ? `#${escHtml(bus.vehicleId)}` : ''}</span>
-                </div>
-                <div class="map-popup-subtitle" title="${isGhost ? 'Capçalera / Regulació (Sense GPS)' : 'Capçalera / Regulació'}">${isGhost ? 'Capçalera / Regulació (Sense GPS)' : 'Capçalera / Regulació'}</div>
-              </div>
-            </div>
-            <div class="map-popup-header-status">
-              <span class="map-popup-status-badge ${isGhost ? 'ghost' : 'layover'}">
-                <span class="status-pulse-dot"></span>
-                <span>${isGhost ? '⚡ Sense GPS' : 'Aturat'}</span>
-              </span>
-            </div>
-          </div>
-
-          ${isGhost ? `
-          <div class="map-popup-ghost-notice">
-            <span class="ghost-icon">⚡</span>
-            <span><strong>Vehicle estimat a capçalera (sense GPS):</strong> Aquest autobús està programat en regulació a la capçalera${bus.departureTime ? ` (propera sortida <strong>${escHtml(bus.departureTime)}</strong>)` : ''}, però no transmet senyal GPS. La seva posició al mapa s'estima segons l'horari oficial.</span>
-          </div>` : ''}
-
-          <div class="map-popup-route-ribbon">
-            <div class="map-popup-route-stop from">
-              <span class="map-popup-stop-dot"></span>
-              <span class="map-popup-stop-name">${((bus.totalProgress >= 90 && bus.toStop) ? toStop : fromStop) || 'Capçalera de Línia'}</span>
-            </div>
-            <div class="map-popup-route-badge-layover">${bus.departureTime ? `Sortida: ${escHtml(bus.departureTime)}` : 'Pausa de servei'}</div>
-          </div>
-
-          <div class="map-popup-metrics-grid">
-            <div class="map-popup-metric-tile" title="Velocitat: 0 km/h">
-              <div class="map-popup-metric-header">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                <span>Velocitat</span>
-              </div>
-              <div class="map-popup-metric-val"><span>0 km/h</span></div>
-            </div>
-            <div class="map-popup-metric-tile" title="Estat: Regulant horari">
-              <div class="map-popup-metric-header">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                <span>Estat</span>
-              </div>
-              <div class="map-popup-metric-val layover"><span>Regulant horari</span></div>
-            </div>
-          </div>
-
-          <div class="map-popup-coords-footer">
-            <div class="coords-item">
-              <span class="radar-dot"></span>
-              <span>${coordsText}</span>
-            </div>
-            <span class="source-tag">Capçalera</span>
-          </div>
-
-          <button type="button" class="map-popup-btn-share" data-share-vehicle="${escHtml(bus.vehicleId)}">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle>
-              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
-            </svg>
-            <span>Compartir seguiment d'aquest bus</span>
-          </button>
-        </div>
-      ` : `
-        <div class="map-popup-card">
-          <div class="map-popup-header">
-            <div class="map-popup-title-group">
-              <div class="map-popup-bus-icon ${isGhost ? 'ghost' : ''}" style="border-color:${isGhost ? 'rgba(245, 158, 11, 0.5)' : (busColor ? busColor + '66' : 'rgba(14, 165, 233, 0.3)')}; color:${isGhost ? '#fbbf24' : (busColor || '#38bdf8')};">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M19 17h2l.64-2.54a6 6 0 0 0 .36-2V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v6.46a6 6 0 0 0 .36 2L3 17h2"/>
-                  <path d="M7 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2"/>
-                  <path d="M14 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2"/>
-                  <circle cx="6.5" cy="12.5" r="1.5"/>
-                  <circle cx="17.5" cy="12.5" r="1.5"/>
-                  <line x1="2" y1="9" x2="22" y2="9"/>
-                </svg>
-              </div>
-              <div class="map-popup-title-text">
-                <div class="map-popup-title">
-                  ${lineBadge ? `<span class="map-popup-line-pill" style="background:${busColor || 'var(--c10-primary)'};">${escHtml(lineBadge)}</span>` : ''}
-                  <span class="map-popup-bus-id">Bus ${bus.vehicleId ? `#${escHtml(bus.vehicleId)}` : ''}</span>
-                </div>
-                <div class="map-popup-subtitle" title="${bus.destination ? escHtml(bus.destination) : ''}">
-                  ${isGhost ? 'Horari Oficial (Sense GPS)' : (isSecDir ? 'Sentit contrari' : (bus.destination ? `Dest: ${escHtml(bus.destination)}` : 'En servei'))}
-                </div>
-              </div>
-            </div>
-
-            <div class="map-popup-header-status">
-              <span class="map-popup-status-badge ${isGhost ? 'ghost' : (isEst ? 'estimated' : 'live')}">
-                <span class="status-pulse-dot"></span>
-                <span>${isGhost ? '⚡ Sense GPS' : (isEst ? 'Estimació' : 'En directe')}</span>
-              </span>
-            </div>
-          </div>
-
-          ${isGhost ? `
-          <div class="map-popup-ghost-notice">
-            <span class="ghost-icon">⚡</span>
-            <span><strong>Vehicle estimat segons horari oficial (sense GPS):</strong> Aquest autobús està programat en servei actiu${bus.departureTime ? ` (sortida <strong>${escHtml(bus.departureTime)}</strong>)` : ''}, però no transmet dades GPS en directe a la xarxa SAE. La seva posició al mapa es calcula teòricament segons la sortida oficial.</span>
-          </div>` : ''}
-
-          ${(fromStop && toStop) ? `
-          <div class="map-popup-route-ribbon">
-            <div class="map-popup-route-stop from">
-              <span class="map-popup-stop-dot"></span>
-              <span class="map-popup-stop-name" title="${fromStop}">${fromStop}</span>
-            </div>
-            <div class="map-popup-route-connector">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-            </div>
-            <div class="map-popup-route-stop to">
-              <span class="map-popup-stop-dot dest" style="background:${busColor || 'var(--c10-primary-light)'}; box-shadow:0 0 6px ${busColor || 'var(--c10-primary-light)'};"></span>
-              <span class="map-popup-stop-name" title="${toStop}">${toStop}</span>
-            </div>
-          </div>` : (toStop || fromStop ? `
-          <div class="map-popup-route-ribbon single">
-            <div class="map-popup-route-stop from">
-              <span class="map-popup-stop-dot dest" style="background:${busColor || 'var(--c10-primary-light)'};"></span>
-              <span class="map-popup-stop-name">${toStop || fromStop}</span>
-            </div>
-          </div>` : '')}
-
-          <div class="map-popup-metrics-grid">
-            <div class="map-popup-metric-tile" title="Velocitat: ${speedValue}">
-              <div class="map-popup-metric-header">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                <span>Velocitat</span>
-              </div>
-              <div class="map-popup-metric-val"><span>${speedValue}</span></div>
-            </div>
-
-            <div class="map-popup-metric-tile" title="Estat: ${escHtml(delayBadgeText)}">
-              <div class="map-popup-metric-header">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                <span>Estat</span>
-              </div>
-              <div class="map-popup-metric-val ${delayClass}"><span>${escHtml(delayBadgeText)}</span></div>
-            </div>
-
-            <div class="map-popup-metric-tile" title="Rumb: ${escHtml(compassLabel)} (${bearingAngle}°)">
-              <div class="map-popup-metric-header">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 19 21 12 17 5 21 12 2"/></svg>
-                <span>Rumb</span>
-              </div>
-              <div class="map-popup-metric-val map-popup-compass-val">
-                <svg class="map-popup-compass-arrow" style="transform: rotate(${bearingAngle}deg);" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                  <polygon points="12 2 19 21 12 17 5 21 12 2"/>
-                </svg>
-                <span class="map-popup-compass-text">${escHtml(compassLabel)} <span class="map-popup-bearing-deg">(${bearingAngle}°)</span></span>
-              </div>
-            </div>
-
-            <div class="map-popup-metric-tile" title="Progrés del recorregut: ${progressNum}%">
-              <div class="map-popup-metric-header">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-                <span>Progrés</span>
-              </div>
-              <div class="map-popup-metric-val"><span>${progressNum}%</span></div>
-              <div class="map-popup-progress-track">
-                <div class="map-popup-progress-fill" style="width: ${progressNum}%;"></div>
-              </div>
-            </div>
-          </div>
-
-          ${(hasChips || isGhost) ? `
-          <div class="map-popup-fleet-chips">
-            ${isGhost ? '<span class="map-popup-chip ghost" title="Vehicle sense telemetria GPS"><span class="chip-icon">⚡</span> Sense senyal GPS</span>' : ''}
-            ${bus.isAccessible ? '<span class="map-popup-chip pmr" title="Vehicle Adaptat PMR"><span class="chip-icon">♿</span> Adaptat PMR</span>' : ''}
-            ${bus.isElectric 
-              ? '<span class="map-popup-chip electric"><span class="chip-icon">⚡</span> 100% Elèctric</span>' 
-              : (bus.isHybrid 
-                ? '<span class="map-popup-chip hybrid"><span class="chip-icon">🌱</span> Híbrid Eco</span>' 
-                : (bus.propulsion ? `<span class="map-popup-chip propulsion"><span class="chip-icon">${CANONICAL_BUS_ICON_INNER_SVG}</span> ${escHtml(bus.propulsion)}</span>` : ''))}
-            ${bus.modelName ? `<span class="map-popup-chip model" title="${escHtml(bus.modelName)}"><span class="chip-icon">🚍</span> ${escHtml(bus.modelName)}</span>` : ''}
-            ${bus.tripStartTime || bus.departureTime ? `<span class="map-popup-chip start-time"><span class="chip-icon">🕐</span> Sortida ${escHtml(bus.tripStartTime || bus.departureTime)}</span>` : ''}
-          </div>` : ''}
-
-          <div class="map-popup-coords-footer">
-            <div class="coords-item">
-              <span class="radar-dot ${isGhost ? 'ghost' : (isEst ? 'estimated' : '')}"></span>
-              <span>${coordsText}</span>
-            </div>
-            <span class="source-tag">${isGhost ? '⚡ Horari Oficial (Sense GPS)' : (isEst ? 'Estimació Dead-Reckoning' : 'GPS Directe (SIRI)')}</span>
-          </div>
-
-          <button type="button" class="map-popup-btn-share" data-share-vehicle="${escHtml(bus.vehicleId)}">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle>
-              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
-            </svg>
-            <span>Compartir seguiment d'aquest bus</span>
-          </button>
-        </div>
-      `;
+      const popupHtml = this.buildBusPopupHtml(bus, {
+        isGhost,
+        isEst,
+        isSecDir,
+        busColor,
+        snapped,
+        bearingAngle,
+        lineCode: this.currentLineId,
+        showLineLink: false
+      });
 
       const pinBg = isGhost
         ? 'rgba(15, 23, 42, 0.88)'

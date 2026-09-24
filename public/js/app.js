@@ -66,6 +66,16 @@ class TransitApp {
     this.isTabVisible = typeof document !== 'undefined' ? !document.hidden : true;
     this.animFrameId = null;
 
+    // All-lines network map (landing screen). Built lazily the first time the
+    // section scrolls into view so landing-page startup cost is unchanged, and
+    // paused whenever the single-line view takes over.
+    this.networkMap = null;
+    this.networkMapObserver = null;
+    this.networkMapInView = false;
+    this.networkMapTimer = null;
+    this.networkMapSeq = 0;
+    this.networkRefreshSec = 30;
+
     // Trains UI display flag: trains remain fully operational in backend/tests, but hidden from the general transit UI
     this.showTrainsInUI = false;
 
@@ -208,6 +218,9 @@ class TransitApp {
     if (this.mapController) {
       this.mapController.setTheme(theme);
     }
+    if (this.networkMap) {
+      this.networkMap.setTheme(theme);
+    }
   }
 
   toggleTheme() {
@@ -239,6 +252,9 @@ class TransitApp {
       this.setupLandingControls();
       this.setupMapResizeControls();
       this.setupAudio();
+      // Observes the all-lines map section; builds the map only once it is
+      // actually scrolled into view.
+      this.setupNetworkMapObserver();
 
       // 4. Initial Route or Landing View Routing
       if (this.activeLineId) {
@@ -415,6 +431,8 @@ class TransitApp {
     }
 
     document.title = "Arribo! | Telemetria i Seguiment d'Autobusos en Temps Real";
+
+    this.resumeNetworkMap();
   }
 
   showActiveLineView() {
@@ -430,6 +448,10 @@ class TransitApp {
       activeLineView.classList.add('active');
       activeLineView.removeAttribute('style');
     }
+
+    // The landing map is now off-screen; stop its poll and drop it out of the
+    // animation loop so only the single-line map is doing per-frame work.
+    this.pauseNetworkMap();
 
     if (this.mapController) {
       this.mapController.invalidateSize();
@@ -6062,6 +6084,9 @@ class TransitApp {
         this.setupFleetStream();
         if (this.activeLineId) {
           this.refreshAllData(false);
+        } else if (this.networkMap && this.networkMapInView) {
+          this.refreshNetworkMap(false);
+          this.startNetworkMapTimer();
         }
       } else if (!this.isTabVisible) {
         // User switched to another of their 15 tabs: cancel RAF loop immediately to free up GPU & CPU RAM
@@ -6072,6 +6097,7 @@ class TransitApp {
         // Suspend the SSE stream while hidden: the browser reopens it on
         // return with a full fresh snapshot.
         this.closeFleetStream();
+        this.stopNetworkMapTimer();
       }
     });
   }
@@ -6082,9 +6108,14 @@ class TransitApp {
       this.animFrameId = null;
     }
 
+    // The network map animates on the landing page, where activeLineId is null,
+    // so it counts as live work for the deep-sleep guard.
+    const networkLive = () => Boolean(this.networkMap && this.networkMapInView);
+
     const step = () => {
-      // Deep Sleep: Stop 60fps loop if tab is hidden or user is on the Landing Page (no map buses active)
-      if (!this.isTabVisible || !this.activeLineId) {
+      // Deep Sleep: Stop 60fps loop if tab is hidden and neither map has buses
+      // to animate (landing page with the network map out of view, or no map).
+      if (!this.isTabVisible || (!this.activeLineId && !networkLive())) {
         this.animFrameId = null;
         return;
       }
@@ -6092,12 +6123,177 @@ class TransitApp {
       if (this.mapController) {
         this.mapController.stepBusAnimation(nowSec);
       }
+      if (networkLive()) {
+        // Same inherited glider maths the single-line map uses; it walks this
+        // map's own busMarkersMap, where each entry carries its own line's
+        // polyline in `targetPolyline`.
+        this.networkMap.stepBusAnimation(nowSec);
+      }
       this.animFrameId = requestAnimationFrame(step);
     };
 
-    if (this.isTabVisible && this.activeLineId) {
+    if (this.isTabVisible && (this.activeLineId || networkLive())) {
       this.animFrameId = requestAnimationFrame(step);
     }
+  }
+
+  // ==========================================
+  // 9c. ALL-LINES NETWORK MAP (LANDING SCREEN)
+  // ==========================================
+
+  /**
+   * Observes the network-map section and builds the map the first time it
+   * scrolls into view. Constructing a second Leaflet map during init() would
+   * add tile requests, marker DOM and a ResizeObserver to every landing-page
+   * load, most of which the visitor never scrolls far enough to see.
+   */
+  setupNetworkMapObserver() {
+    const section = document.getElementById('landing-network-map-section');
+    if (!section) return;
+
+    if (typeof IntersectionObserver === 'undefined') {
+      // No observer: build eagerly, but still only while the landing view is up.
+      this.networkMapInView = true;
+      this.ensureNetworkMap();
+      return;
+    }
+
+    this.networkMapObserver = new IntersectionObserver((entries) => {
+      const entry = entries[entries.length - 1];
+      if (!entry) return;
+      const inView = entry.isIntersecting;
+      if (inView === this.networkMapInView) return;
+      this.networkMapInView = inView;
+      if (inView) {
+        this.ensureNetworkMap();
+      } else {
+        // Off-screen: stop the poll, keep the built map so returning is instant.
+        this.stopNetworkMapTimer();
+      }
+    }, { rootMargin: '200px 0px' });
+    this.networkMapObserver.observe(section);
+  }
+
+  ensureNetworkMap() {
+    if (this.networkMap) return this.networkMap;
+    const container = document.getElementById('network-map-container');
+    if (!container || typeof window.NetworkMap !== 'function') return null;
+
+    this.networkMap = new window.NetworkMap('network-map-container');
+    // Colours come from the same catalog the single-line map and the landing
+    // line cards use, so a line can never be one colour here and another there.
+    this.networkMap.setLineCatalog(this.availableLines || []);
+    if (this.currentTheme) this.networkMap.setTheme(this.currentTheme);
+
+    this.refreshNetworkMap(true);
+    this.startNetworkMapTimer();
+    return this.networkMap;
+  }
+
+  /**
+   * Fetches all eight lines in parallel. Geometry is drawn once and then left
+   * alone; every later pass only refreshes each line's vehicles, which include
+   * the timetable ghosts the physical-only SSE stream cannot carry.
+   *
+   * allSettled, not all: one line failing must not blank the other seven.
+   */
+  async refreshNetworkMap(loadGeometry = false) {
+    if (!this.networkMap || !this.isTabVisible) return;
+    if (this._isRefreshingNetwork) return;
+    this._isRefreshingNetwork = true;
+
+    const seq = ++this.networkMapSeq;
+    const map = this.networkMap;
+    const lines = (this.availableLines || [])
+      .filter(l => /^L?[1-8]$/i.test(String(l.id || '')) || /^L[1-8]$/i.test(String(l.code || '')))
+      .map(l => String(l.code || l.id).replace(/^L/i, ''))
+      .filter((v, i, a) => a.indexOf(v) === i);
+
+    try {
+      const results = await Promise.allSettled(
+        lines.map(id => fetch(`/api/line/${id}?direction=both`)
+          .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+          .then(json => ({ id, data: json?.data }))
+          .catch(err => ({ id, error: err })))
+      );
+
+      // Stale-response guard: a slow refresh must not overwrite a newer one.
+      if (seq !== this.networkMapSeq || map !== this.networkMap) return;
+
+      let anyGeometry = false;
+      for (const result of results) {
+        if (result.status !== 'fulfilled' || result.value?.error || !result.value?.data) continue;
+        const { id, data } = result.value;
+        const code = String(data.code || id).toUpperCase();
+        if (loadGeometry) {
+          map.loadLineGeometry(code, data);
+          anyGeometry = true;
+        }
+        map.applyLineVehicles(code, data.activeBuses || []);
+      }
+
+      if (anyGeometry) map.fitToNetwork();
+      this.updateNetworkMapBadge();
+    } finally {
+      this._isRefreshingNetwork = false;
+    }
+  }
+
+  updateNetworkMapBadge() {
+    const badge = document.getElementById('network-map-fleet-badge');
+    if (!badge || !this.networkMap) return;
+    const { live, estimated, total } = this.networkMap.fleetCounts();
+    // Report the real split. Never clamp against a scheduled total: that
+    // "fix" is what made a 5-bus fleet read "6 en servei" (see AGENTS.md §3).
+    if (total === 0) {
+      badge.textContent = 'Sense autobusos ara';
+      return;
+    }
+    badge.textContent = estimated > 0
+      ? `${total} autobusos · ${live} GPS · ${estimated} estimats`
+      : `${total} autobusos · ${live} en GPS directe`;
+  }
+
+  startNetworkMapTimer() {
+    if (this.networkMapTimer) return;
+    this.networkMapTimer = setInterval(() => {
+      if (!this.isTabVisible || !this.networkMapInView || this.activeLineId) return;
+      this.refreshNetworkMap(false);
+    }, this.networkRefreshSec * 1000);
+  }
+
+  stopNetworkMapTimer() {
+    if (this.networkMapTimer) {
+      clearInterval(this.networkMapTimer);
+      this.networkMapTimer = null;
+    }
+  }
+
+  /** Called when the single-line view takes over the screen. */
+  pauseNetworkMap() {
+    this.stopNetworkMapTimer();
+    // Bump the sequence so an in-flight refresh cannot repaint behind the view.
+    this.networkMapSeq++;
+    this._isRefreshingNetwork = false;
+  }
+
+  /** Called when the landing view is shown again. */
+  resumeNetworkMap() {
+    if (!this.networkMap || !this.networkMapInView) return;
+    this.refreshNetworkMap(false);
+    this.startNetworkMapTimer();
+    this.startAnimationLoop();
+  }
+
+  /**
+   * Entry point for the network map's "Obre la línia L<n>" popup button.
+   * Strips the prefix exactly like jumpToIncidentStop does, so the URL hash
+   * comes out as #l3 and the single-line view opens through its normal path.
+   */
+  openLineFromNetwork(code) {
+    const cleanId = String(code || '').replace(/^L/i, '');
+    if (!cleanId) return;
+    this.switchLine(cleanId);
   }
 
   // ==========================================
@@ -6149,8 +6345,19 @@ class TransitApp {
   }
 
   applyFleetSnapshot(snapshot) {
+    if (!this.isTabVisible) return;
+
+    // The landing page has no activeLineId, but its network map still wants the
+    // live positions — and the stream is already open, so this costs no extra
+    // request. The stream is physical-only, so this is a top-up over the ghosts
+    // the network map's own per-line REST refresh already established.
+    if (this.networkMap && this.networkMapInView && !this.activeLineId) {
+      this.networkMap.applyVehicleSnapshot(snapshot.vehicles);
+      this.updateNetworkMapBadge();
+    }
+
     const lId = this.activeLineId;
-    if (!lId || !this.isTabVisible) return;
+    if (!lId) return;
 
     const dir = this.activeDirection;
     const matchesView = v =>
