@@ -9,12 +9,27 @@
 //
 // Nothing here re-implements drawing that map.js already owns.
 
+/**
+ * Canonical line key: always 'L<n>', from either shape.
+ *
+ * The two sources disagree. /api/line/L<n>?direction=both returns activeBuses
+ * carrying only a bare `lineId` ("2") and no `lineCode`, while the fleet stream
+ * returns `lineCode` ("L2"). Keying markers off the raw field therefore minted
+ * TWO different keys for one physical bus — "2|2686" from REST and "L2|2686"
+ * from SSE — which drew every bus twice, left the stale-marker purge comparing
+ * a key prefix that never matched, and made the line filter hide every bus.
+ * Normalising here is what makes both sources address the same marker.
+ */
+function canonicalLineCode(value) {
+  const m = /^L?(\d+)$/i.exec(String(value ?? '').trim());
+  return m ? `L${m[1]}` : '';
+}
+
 /** Matches TransitMap.busMarkerKey's identity, scoped by line so two lines can
  *  never collide on one map. */
 function networkBusMarkerKey(bus) {
   const id = String(bus.vehicleId || bus.tripId || '').trim();
-  const line = String(bus.lineCode || bus.lineId || '').toUpperCase();
-  return `${line}|${id}`;
+  return `${canonicalLineCode(bus.lineCode || bus.lineId)}|${id}`;
 }
 
 class NetworkMap extends TransitMap {
@@ -92,7 +107,7 @@ class NetworkMap extends TransitMap {
   setLineCatalog(lines) {
     if (!Array.isArray(lines) || lines.length === 0) return;
     this.lineCatalog = lines.map(l => ({
-      code: String(l.code || l.id || '').toUpperCase(),
+      code: canonicalLineCode(l.code || l.id) || String(l.code || l.id || '').toUpperCase(),
       name: l.name || '',
       color: l.color || '#009485'
     })).filter(l => l.code);
@@ -128,7 +143,8 @@ class NetworkMap extends TransitMap {
    */
   loadLineGeometry(lineCode, payload) {
     if (!this.map || !payload) return;
-    const code = String(lineCode).toUpperCase();
+    const code = canonicalLineCode(lineCode);
+    if (!code) return;
     const catalogEntry = this.lineCatalog.find(l => l.code === code);
     const color = payload.color || catalogEntry?.color || '#009485';
     const name = payload.name || catalogEntry?.name || '';
@@ -226,7 +242,7 @@ class NetworkMap extends TransitMap {
 
   isLineVisible(code) {
     if (this.lineFilter === 'all') return true;
-    return String(code || '').toUpperCase() === this.lineFilter;
+    return canonicalLineCode(code) === this.lineFilter;
   }
 
   /** Shows or hides every layer and bus marker that the filter excludes. */
@@ -288,21 +304,25 @@ class NetworkMap extends TransitMap {
    */
   applyLineVehicles(lineCode, buses) {
     if (!this.map) return;
-    const code = String(lineCode).toUpperCase();
+    const code = canonicalLineCode(lineCode);
+    if (!code) return;
     this.busesByLine.set(code, Array.isArray(buses) ? buses.slice() : []);
     this.redrawLineBuses(code);
   }
 
   /**
-   * SSE top-up. The fleet stream is physical-only (flightRecorder never ingests
-   * ghosts), so this merges fresh GPS/dead-reckoned positions over whatever the
-   * last per-line REST refresh established, and never removes a ghost.
+   * SSE top-up. The fleet stream is physical-only, so it can describe neither
+   * timetable ghosts nor dead-reckoned buses. Treating it as a REPLACEMENT
+   * wiped every estimated bus seconds after the per-line REST refresh delivered
+   * it, so amber pins flickered and vanished. Merge instead: incoming vehicles
+   * win on identity, and anything the stream cannot represent is carried over
+   * until the next REST refresh supersedes it.
    */
   applyVehicleSnapshot(vehicles) {
     if (!this.map || !Array.isArray(vehicles) || vehicles.length === 0) return;
     const byLine = new Map();
     for (const v of vehicles) {
-      const code = String(v?.lineCode || v?.lineId || '').toUpperCase();
+      const code = canonicalLineCode(v?.lineCode || v?.lineId);
       if (!code) continue;
       if (!byLine.has(code)) byLine.set(code, []);
       byLine.get(code).push(v);
@@ -310,9 +330,11 @@ class NetworkMap extends TransitMap {
     for (const [code, list] of byLine.entries()) {
       const previous = this.busesByLine.get(code) || [];
       const incomingKeys = new Set(list.map(networkBusMarkerKey));
-      // Carry over ghosts the physical-only stream cannot know about.
-      const carriedGhosts = previous.filter(b => isGhostBus(b) && !incomingKeys.has(networkBusMarkerKey(b)));
-      this.busesByLine.set(code, [...list, ...carriedGhosts]);
+      const carried = previous.filter(b =>
+        isStreamBlindBus(b) &&
+        !incomingKeys.has(networkBusMarkerKey(b)) &&
+        isCarriedEntryValid(b));
+      this.busesByLine.set(code, [...list, ...carried]);
       this.redrawLineBuses(code);
     }
   }
@@ -510,9 +532,37 @@ class NetworkMap extends TransitMap {
 
 // -------------------------------------------------------------- helpers
 
+/** Staleness backstop for entries carried across a physical-only SSE snapshot.
+ *  Comfortably longer than this map's 30 s REST cadence, so a carried entry
+ *  always gets a chance to be superseded by a real per-line refresh. */
+const CARRIED_ENTRY_TTL_MS = 150000;
+
 function isGhostBus(bus) {
   return Boolean(bus && (bus.isGhostVehicle || bus.isTheoretical ||
     (bus.vehicleId && String(bus.vehicleId).startsWith('EST_'))));
+}
+
+/**
+ * Buses the physical-only SSE stream cannot describe, so they must survive it:
+ * timetable ghosts, and dead-reckoned buses whose position is an extrapolation.
+ * Both are drawn distinctly and both exist only in the per-line payload.
+ */
+function isStreamBlindBus(bus) {
+  return isGhostBus(bus) || Boolean(bus && bus.isEstimated);
+}
+
+function carriedEntryAgeMs(bus) {
+  const raw = bus.lastUpdate ?? bus.lastSeen ?? bus.observedAt ?? bus.recordedAt ?? bus.timestamp;
+  if (raw === undefined || raw === null || raw === '') return NaN;
+  const t = typeof raw === 'number' ? raw : Date.parse(raw);
+  return Number.isFinite(t) ? t : NaN;
+}
+
+/** An unparseable stamp is kept rather than dropped, so one malformed field
+ *  cannot strobe an estimated bus off the map. */
+function isCarriedEntryValid(bus) {
+  const t = carriedEntryAgeMs(bus);
+  return !Number.isFinite(t) || (Date.now() - t) <= CARRIED_ENTRY_TTL_MS;
 }
 
 /** Coerces a route payload into [[lat, lon], ...], preserving zero coordinates. */
