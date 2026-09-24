@@ -6228,8 +6228,12 @@ class TransitApp {
         map.applyLineVehicles(code, data.activeBuses || []);
       }
 
-      if (anyGeometry) map.fitToNetwork();
+      // Badge first, re-frame second. fitToNetwork() is cosmetic, and when it
+      // threw, the badge write after it was skipped entirely — the count then
+      // kept the previous line until the next sweep, long after the map had
+      // already filtered.
       this.updateNetworkMapBadge();
+      if (anyGeometry) map.fitToNetwork();
     } finally {
       this._isRefreshingNetwork = false;
     }
@@ -6246,10 +6250,12 @@ class TransitApp {
     const map = this.networkMap;
     if (!map) return;
     map.setLineFilter(this.landingFilter || 'all');
+    // Write the badge BEFORE the cosmetic re-frame (see refreshNetworkMap), so a
+    // re-frame failure can never leave the badge naming the previous line.
+    this.updateNetworkMapBadge();
     // Re-frame on every change: picking L3 out of eight routes should show L3,
     // and "Totes les línies" should pull the whole network back into view.
     map.fitToNetwork();
-    this.updateNetworkMapBadge();
   }
 
   updateNetworkMapBadge() {

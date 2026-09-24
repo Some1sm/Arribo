@@ -51,7 +51,15 @@ class NetworkMap extends TransitMap {
 
     // Line geometry, stops and buses live in their own groups so a single line
     // can be re-rendered without touching the others.
-    this.routeLayer = L.layerGroup().addTo(this.map);
+    //
+    // routeLayer MUST be a featureGroup, not a layerGroup: fitToNetwork() calls
+    // getBounds() on it, and L.LayerGroup has no getBounds() — only
+    // L.FeatureGroup adds it. As a plain layerGroup, every fit threw a
+    // TypeError, and because fitToNetwork() is the statement right before
+    // updateNetworkMapBadge() in both app.js call sites, the throw silently ate
+    // the badge write: the map filtered instantly while the count kept the
+    // previous line until the next 30s REST sweep or 20s SSE frame.
+    this.routeLayer = L.featureGroup().addTo(this.map);
     this.stopLayer = L.layerGroup().addTo(this.map);
     this.busLayer = L.layerGroup().addTo(this.map);
 
@@ -165,7 +173,12 @@ class NetworkMap extends TransitMap {
   drawLineGeometry(code, color, primary, secondary, stops, secondaryStops) {
     // Each line owns its own pair of groups so the filter can drop a whole
     // line without touching the other seven.
-    const routes = L.layerGroup().addTo(this.routeLayer);
+    //
+    // `routes` is a featureGroup so routeLayer.getBounds() can recurse into it:
+    // FeatureGroup unions each child's getBounds(), and a child that is only a
+    // LayerGroup has no getBounds at all, so the outer group would silently
+    // report empty bounds and the map would never frame the network.
+    const routes = L.featureGroup().addTo(this.routeLayer);
     const stopsGroup = L.layerGroup().addTo(this.stopLayer);
 
     // Arrows are far denser than a single route needs; 2 km keeps eight routes
@@ -290,6 +303,11 @@ class NetworkMap extends TransitMap {
    */
   fitToNetwork() {
     if (!this.map) return;
+    // Framing the network is cosmetic. If the layer cannot report bounds, skip
+    // the re-frame instead of throwing: callers do real work immediately after
+    // this call (updating the fleet badge), and a cosmetic failure must not
+    // abort it.
+    if (typeof this.routeLayer?.getBounds !== 'function') return;
     const bounds = this.routeLayer.getBounds();
     if (!bounds || !bounds.isValid()) return;
     this.hasFittedNetworkBounds = true;
