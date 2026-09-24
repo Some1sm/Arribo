@@ -399,15 +399,22 @@ async function runTests() {
   // =========================================================================
   console.log('📌 Test 7: Stop 1015 (El Cargol) Official Timetable Calibration & Deduplication...');
   {
+    // Cumulative offsets are now median deltas between adjacent PUBLISHED
+    // columns on maresme.net, not locally calibrated steps. El Cargol is the
+    // one stop on L1 direction 12 where the two disagree: the calibrated grid
+    // put it at 1500s (Sunday) / 1620s (weekday), the published grid at 1440s /
+    // 1680s. The published value wins - it is the timetable riders are held to.
+    // Both remain monotonic against the preceding stop (1014 Santa Anna sits at
+    // 1320s Sunday, 1500s weekday), which is the invariant that actually
+    // matters: a bus cannot arrive at El Cargol before it left Santa Anna.
     const travelSecSun = mataroSchedules.getStopTravelTime('1', '12', '1015', 'sunday');
-    assert.strictEqual(travelSecSun, 1500, 'Stop 1015 (El Cargol) Sunday travelSec must be 1500s (25 min from Hospital)');
+    assert.strictEqual(travelSecSun, 1440, 'Stop 1015 (El Cargol) Sunday travelSec must be 1440s (24 min from Hospital, published)');
 
     // The weekday grid previously read 1188s here, which is impossible: the
     // stop before it (1014) sits at 1500s, so the bus cannot reach El Cargol
-    // five minutes BEFORE it left the stop before. 1188 was a corrupt value;
-    // the calibrated weekday step puts El Cargol at 1620s.
+    // five minutes BEFORE it left the stop before. 1188 was a corrupt value.
     const travelSecWk = mataroSchedules.getStopTravelTime('1', '12', '1015', 'weekday');
-    assert.strictEqual(travelSecWk, 1620, 'Stop 1015 (El Cargol) Weekday travelSec must be 1620s (27 min from Hospital)');
+    assert.strictEqual(travelSecWk, 1680, 'Stop 1015 (El Cargol) Weekday travelSec must be 1680s (28 min from Hospital, published)');
     assert(
       travelSecWk >= mataroSchedules.getStopTravelTime('1', '12', '1014', 'weekday'),
       'El Cargol must not precede the stop before it on the weekday grid'

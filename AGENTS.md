@@ -98,6 +98,21 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   coordinates and lat/lon plus latitude/longitude vehicle compatibility fields.
 - Reuse geoEngine, calendarEngine, timeEngine, delayEngine and scheduleSynthesizer.
   Missing cumulative offsets differ from zero; heuristic times must be labeled.
+- **A timetable grid is season-scoped and must be internally consistent.** The
+  operator publishes a different grid per season at maresme.net. The file that used
+  to ship held a *mixture* — L1/L2/L4/L6/L8 were winter outbound and summer
+  inbound — so a rider got correct times one way and wrong times back, and nothing
+  could detect it. `src/data/seasonCalendar.js` resolves the season (a live operator
+  notice outranks the static config in `SUMMER_WINDOWS`) and `mataroSchedules.js`
+  applies it **at the module boundary**, so call sites never pass a season. Do not
+  hand a caller a different season than the one it asked for: an unrecognised season
+  returns nothing rather than silently substituting. Outside the period the data
+  covers, report the grid as unverified — never assert it. `test/season_provenance_test.js`
+  is the standing guard; it fails on any line that is winter in one direction and
+  summer in the other.
+- Times come from maresme.net (the grid riders are held to); stop geometry, coordinates
+  and distances come from the Avanza scrape. `scripts/scrape_maresme_timetables.js --diff`
+  is the audit for grid provenance.
 - Never fall back to missed departures. Include access/transfer walks and waits.
 - Exclude EST_, isGhostVehicle and isTheoretical vehicles from flightRecorder.
   Freshness is subsystem-specific, not one universal 90-second cutoff. Estimated

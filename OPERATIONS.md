@@ -88,7 +88,10 @@ service-worker versions together when shell assets change.
 
 ## Health, logs and shutdown
 
-- `/api/health` remains HTTP-200 liveness and the Docker healthcheck target.
+- `/api/health` remains HTTP-200 liveness and the Docker healthcheck target. It also
+  reports `schedule`: the active timetable season, why it was chosen, and whether the
+  server considers the date covered. The read is in-memory and touches neither a provider
+  nor SQLite, so it does not weaken the probe contract.
 - `/api/ready` returns 503 before catalog/worker usability and while stopping,
   otherwise 200 with `ready` or `degraded` status. Fleet fetch age over 60 seconds
   (or unknown) marks degraded; an empty overnight fleet alone does not.
@@ -129,6 +132,29 @@ node scripts/history_backup.js backup data/transit_history.db /backups/history-2
 node scripts/history_backup.js verify /backups/history-2026-09-17.db
 node scripts/history_backup.js restore /backups/history-2026-09-17.db /restore-check/history.db
 ```
+
+## Seasonal timetable checks
+
+The grid in force changes with the season, and the summer grid is a real, different
+schedule — not a variant. Two things to know operationally:
+
+- **Confirm which grid is live** with `curl -s localhost:3000/api/health | jq .schedule`.
+  `season` is what is being served, `seasonSource` is why, and `seasonKnown: false`
+  means the date is outside the period the data covers and the grid is unverified.
+  The same values appear as a pill in the page header.
+- **Refresh the grids** with `node scripts/scrape_maresme_timetables.js`. Run it with
+  `--diff` first: it classifies every shipped grid as winter, summer, identical in both,
+  or neither, and writes nothing. A line reported as differing between its two
+  directions is the mixed-season defect that shipped before — stop and investigate
+  rather than committing the output.
+
+The season is not hard-coded to a calendar rule. A live operator notice naming
+`estiu`/`hivern` with a date window outranks the static `SUMMER_WINDOWS` config, so a
+published summer period is picked up from the aviso sync without a code change. Two
+overlapping notice windows resolve to winter marked `seasonKnown: false` rather than an
+arbitrary pick. The known summer window in config is 27 Jul – 23 Aug 2026, the only one
+the operator has published; **the 2026–2027 season boundary dates are not published**, so
+add them to `SUMMER_WINDOWS` when they are.
 
 ## Backfilling derived timetable times
 

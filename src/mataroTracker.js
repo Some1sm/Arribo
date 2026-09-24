@@ -7,6 +7,7 @@ const calendarEngine = require('./core/time/calendarEngine');
 const scheduleSynthesizer = require('./core/schedule/scheduleSynthesizer');
 const delayEngine = require('./core/schedule/delayEngine');
 const mataroSchedules = require('./data/mataroSchedules');
+const seasonCalendar = require('./data/seasonCalendar');
 const geoUtils = require('./geoUtils');
 const timeUtils = require('./timeUtils');
 const flightRecorder = require('./flightRecorder');
@@ -149,6 +150,7 @@ class MataroTracker extends BaseTracker {
             const hasExplicitLines = linesAffected.size > 0;
             const validity = this.parseAvisoValidity(title, plainText, new Date());
             const isExpired = Boolean(validity.isExpired);
+            this.registerSeasonNotice(title, plainText, validity);
 
             avisos.push({
               id: 'aviso_' + (idx + 1),
@@ -191,6 +193,7 @@ class MataroTracker extends BaseTracker {
             const title = a.title_ca || a.title_es || 'Avís Mataró Bus';
             const desc = a.text_ca || a.text_es || '';
             const validity = this.parseAvisoValidity(title, desc, new Date());
+            this.registerSeasonNotice(title, desc, validity);
             return {
               id: String(a.id),
               title,
@@ -212,6 +215,46 @@ class MataroTracker extends BaseTracker {
     } catch {}
 
     return this.avisosCache || [];
+  }
+
+  /**
+   * Feeds a seasonal-timetable notice to the season calendar.
+   *
+   * The operator announces the reduced summer grid as a notice carrying its own
+   * service window ("HORARIS ESTIU 2026 — Del 27 de juliol fins al 23
+   * d'agost"), which parseAvisoValidity already turns into a start/end pair.
+   * Registering it here means the loader does not depend on anyone maintaining
+   * a hardcoded switch date that the operator may move without telling us.
+   *
+   * Only an explicit seasonal word counts. A notice that merely mentions a date
+   * is a diversion or a cancellation, not a timetable change, and registering
+   * one as a season would swap the whole network's grid over a road closure.
+   *
+   * The window bounds are read back as HOST-LOCAL calendar parts on purpose:
+   * parseAvisoValidity built them from the operator's own wording ("27 de
+   * juliol") using local Date construction, so reading them back the same way
+   * round-trips the stated date exactly. The query side of the comparison is
+   * Europe/Madrid, which is a different question and is handled in
+   * seasonCalendar.
+   */
+  registerSeasonNotice(title, description, validity) {
+    const text = (title + ' ' + description).normalize('NFD')
+      .replace(/[̀-ͯ]/g, '').toLowerCase();
+    const isSummer = /\b(estiu|verano)\b/.test(text);
+    const isWinter = /\b(hivern|invierno)\b/.test(text);
+    // Both words, or neither: ambiguous, so register nothing.
+    if (isSummer === isWinter) return false;
+    if (!validity || !validity.startsAt || !validity.expiry) return false;
+
+    const d = validity.startsAt;
+    const e = validity.expiry;
+    const key = (x) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+    return seasonCalendar.registerWindow({
+      from: key(d),
+      to: key(e),
+      season: isSummer ? 'summer' : 'winter',
+      title: String(title || '').trim()
+    });
   }
 
   parseAvisoValidity(title = '', description = '', refDate = new Date()) {

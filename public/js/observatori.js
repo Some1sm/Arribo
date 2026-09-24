@@ -2579,4 +2579,6 @@ class ObservatoriApp {
 // Instantiate standalone Observatori application on DOM load
 window.addEventListener('DOMContentLoaded', () => {
   window.observatoriApp = new ObservatoriApp();
+  // Provenance only; never blocks or fails the page.
+  window.TransitUtils?.showSeasonPill();
 });

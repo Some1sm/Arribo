@@ -6,7 +6,87 @@
  * and helper query utilities for all 8 Mataró urban lines (Lines 1–8).
  */
 
-const rawSchedules = require('./mataro_schedules.json');
+const seasonCalendar = require('./seasonCalendar');
+
+/**
+ * The pre-season file. Kept as a fallback and as the source of stop geometry,
+ * but it is NOT what the app serves: it was found to hold a mixture of the
+ * winter and summer grids (on L1/L2/L4/L6/L8 direction 11 was winter while
+ * direction 12 was summer), so serving it produced correct times one way and
+ * wrong times back with nothing able to detect it.
+ */
+const legacySchedules = require('./mataro_schedules.json');
+
+/** Both seasonal grids, produced by scripts/scrape_maresme_timetables.js. */
+let seasonsFile = null;
+try {
+  seasonsFile = require('./mataro_schedules.seasons.json');
+} catch {
+  seasonsFile = null;
+}
+
+/**
+ * Resolves the grid in force right now, cached per (season, known, source).
+ *
+ * Resolution happens HERE, at the module boundary, rather than in each caller.
+ * That is deliberate: getDirectionSchedule and friends are called from ~40
+ * places in the tracker, planner and trip matcher, and threading a season
+ * through all of them would be both invasive and easy to get wrong at one call
+ * site. An optional `season` argument is still accepted for callers that
+ * genuinely need a specific one.
+ *
+ * A missing seasons file is not fatal — the legacy grid is served and the
+ * situation is reported through getScheduleValidity() rather than thrown, so a
+ * fresh clone still starts.
+ */
+let _activeCache = null;
+function activeGrid() {
+  const res = seasonCalendar.resolveSeason();
+  const key = `${res.season}|${res.known}|${res.source}`;
+  if (_activeCache && _activeCache.key === key) return _activeCache;
+
+  const chosen = seasonsFile && seasonsFile.seasons ? seasonsFile.seasons[res.season] : null;
+  _activeCache = {
+    key,
+    resolution: res,
+    data: chosen || legacySchedules,
+    usingSeasonsFile: Boolean(chosen),
+    meta: chosen ? (seasonsFile._meta || {}) : (legacySchedules._meta || {})
+  };
+  return _activeCache;
+}
+
+/** The timetable grid currently in force, as the legacy raw shape. */
+function rawSchedules() {
+  return activeGrid().data;
+}
+
+/**
+/**
+ * The grid for a named season. Returns null when that season is not available,
+ * rather than quietly substituting the active one: asking for summer and being
+ * handed winter is the bug this whole change exists to eliminate.
+ */
+function gridFor(season) {
+  const norm = normalizeSeason(season);
+  if (!norm) return null;
+  if (norm === activeGrid().resolution.season) return activeGrid().data;
+  const s = seasonsFile && seasonsFile.seasons ? seasonsFile.seasons[norm] : null;
+  return s || null;
+}
+
+/**
+ * Normalizes a caller-supplied season. Returns null for anything unrecognised
+ * rather than defaulting: a wrong-but-confident grid is the exact failure this
+ * module exists to prevent.
+ */
+function normalizeSeason(season) {
+  if (season === null || season === undefined || season === '') return activeGrid().resolution.season;
+  const s = String(season).toLowerCase().trim();
+  if (s === 'hivern' || s === 'invierno' || s === 'winter') return 'winter';
+  if (s === 'estiu' || s === 'verano' || s === 'summer') return 'summer';
+  return null;
+}
 
 /**
  * Normalizes line identifier (e.g. '1', 1, 'mataro_1', 'L1', 'Line 1') -> '1'..'8'
@@ -62,10 +142,12 @@ function toCatalanDayType(dayType) {
  * @param {string|number} lineId 
  * @returns {object|null}
  */
-function getLineSchedule(lineId) {
+function getLineSchedule(lineId, season) {
+  const grid = gridFor(season);
+  if (!grid) return null;
   const cleanId = normalizeLineId(lineId);
   if (!/^[1-8]$/.test(cleanId)) return null;
-  return rawSchedules[cleanId] || null;
+  return grid[cleanId] || null;
 }
 
 /**
@@ -111,27 +193,42 @@ function resolveDirectionKey(lineObj, direction) {
  * @param {string|number} direction
  * @returns {boolean}
  */
-function isDirectionUsable(lineId, direction) {
-  const lineObj = getLineSchedule(lineId);
+function isDirectionUsable(lineId, direction, season) {
+  const lineObj = getLineSchedule(lineId, season);
   const key = resolveDirectionKey(lineObj, direction);
   if (!key) return false;
   return !lineObj.directions[key]._invalid;
 }
 
 /**
- * Validity metadata for the loaded timetable.
+ * Validity metadata for the loaded timetable, including which seasonal grid is
+ * in force and why.
  *
  * `validUntil: null` means the scraper has not recorded one. That is reported
  * as unknown, never as "current" - the file previously carried no validity
  * information at all, so a stale timetable could not be detected.
  *
- * @returns {{validUntil: string|null, expired: boolean, known: boolean, source: string}}
+ * The season block is the important half: `seasonKnown: false` means we are
+ * serving a grid on a date we hold no evidence for, which the UI must say
+ * rather than present as authoritative.
+ *
+ * @returns {{validUntil: string|null, expired: boolean, known: boolean, source: string,
+ *   season: string, seasonSource: string, seasonKnown: boolean,
+ *   seasonsAvailable: string[], usingSeasonsFile: boolean}}
  */
 function getScheduleValidity() {
-  const meta = rawSchedules._meta || {};
+  const active = activeGrid();
+  const meta = active.meta || {};
   const validUntil = meta.validUntil || null;
+  const seasonBlock = {
+    season: active.resolution.season,
+    seasonSource: active.resolution.source,
+    seasonKnown: Boolean(active.resolution.known),
+    seasonsAvailable: seasonsFile && seasonsFile.seasons ? Object.keys(seasonsFile.seasons) : [],
+    usingSeasonsFile: active.usingSeasonsFile
+  };
   if (!validUntil) {
-    return { validUntil: null, expired: false, known: false, source: meta.source || '' };
+    return { validUntil: null, expired: false, known: false, source: meta.source || '', ...seasonBlock };
   }
   const expiry = Date.parse(`${validUntil}T23:59:59Z`);
   const known = Number.isFinite(expiry);
@@ -139,7 +236,8 @@ function getScheduleValidity() {
     validUntil,
     known,
     expired: known && Date.now() > expiry,
-    source: meta.source || ''
+    source: meta.source || '',
+    ...seasonBlock
   };
 }
 
@@ -168,8 +266,8 @@ function getScheduleValidity() {
  *   tripsCount: number
  * }|null}
  */
-function getDirectionSchedule(lineId, direction = '0', dayType = 'weekday') {
-  const lineObj = getLineSchedule(lineId);
+function getDirectionSchedule(lineId, direction = '0', dayType = 'weekday', season) {
+  const lineObj = getLineSchedule(lineId, season);
   if (!lineObj) return null;
 
   const dirKey = resolveDirectionKey(lineObj, direction);
@@ -231,8 +329,8 @@ function getDirectionSchedule(lineId, direction = '0', dayType = 'weekday') {
  * @param {string} [dayType='weekday']
  * @returns {number} Travel time in seconds (0 if origin or not found)
  */
-function getStopTravelTime(lineId, direction = '0', stopId, dayType = 'weekday') {
-  const dirSched = getDirectionSchedule(lineId, direction, dayType);
+function getStopTravelTime(lineId, direction = '0', stopId, dayType = 'weekday', season) {
+  const dirSched = getDirectionSchedule(lineId, direction, dayType, season);
   if (!dirSched || !dirSched.stopTravelSecMap) return 0;
   const sId = String(stopId);
   return dirSched.stopTravelSecMap[sId] || 0;
@@ -251,8 +349,8 @@ function getStopTravelTime(lineId, direction = '0', stopId, dayType = 'weekday')
  * @param {string} [dayType='weekday']
  * @returns {boolean}
  */
-function hasStopInSchedule(lineId, direction = '0', stopId, dayType = 'weekday') {
-  const dirSched = getDirectionSchedule(lineId, direction, dayType);
+function hasStopInSchedule(lineId, direction = '0', stopId, dayType = 'weekday', season) {
+  const dirSched = getDirectionSchedule(lineId, direction, dayType, season);
   if (!dirSched || !Array.isArray(dirSched.stops)) return false;
   const sId = String(stopId);
   return dirSched.stops.some(s => String(s.id) === sId);
@@ -272,12 +370,12 @@ function hasStopInSchedule(lineId, direction = '0', stopId, dayType = 'weekday')
  * @param {string} [dayType='weekday']
  * @returns {string[]} Array of passing times in 'HH:MM' format; empty if unresolvable
  */
-function getDeparturesForStop(lineId, direction = '0', stopId, dayType = 'weekday') {
-  const dirSched = getDirectionSchedule(lineId, direction, dayType);
+function getDeparturesForStop(lineId, direction = '0', stopId, dayType = 'weekday', season) {
+  const dirSched = getDirectionSchedule(lineId, direction, dayType, season);
   if (!dirSched || !Array.isArray(dirSched.departures)) return [];
-  if (!hasStopInSchedule(lineId, direction, stopId, dayType)) return [];
+  if (!hasStopInSchedule(lineId, direction, stopId, dayType, season)) return [];
 
-  const travelSec = getStopTravelTime(lineId, direction, stopId, dayType);
+  const travelSec = getStopTravelTime(lineId, direction, stopId, dayType, season);
   // 0 is legitimate here: the stop was just confirmed to be in this direction's
   // stop list, so this is the origin and its passing times are the departures.
   if (travelSec === 0) return dirSched.departures.slice();
@@ -297,11 +395,13 @@ function getDeparturesForStop(lineId, direction = '0', stopId, dayType = 'weekda
  * 
  * @returns {Array<object>}
  */
-function getAllLines() {
+function getAllLines(season) {
+  const grid = gridFor(season);
+  if (!grid) return [];
   // _meta is a top-level key in the data file, not a line.
-  return Object.keys(rawSchedules)
+  return Object.keys(grid)
     .filter(k => k !== '_meta')
-    .map(k => rawSchedules[k])
+    .map(k => grid[k])
     .map(l => ({
     id: l.lineId,
     code: l.code,
@@ -351,11 +451,11 @@ function timeStringToSec(timeStr) {
  * @param {number|null} [nowSec=null] Optional seconds of day to evaluate local service period
  * @returns {number}
  */
-function getScheduledFleetRequirement(lineId, dayType, nowSec = null) {
+function getScheduledFleetRequirement(lineId, dayType, nowSec = null, season) {
   const normLine = normalizeLineId(lineId);
   const normDay = normalizeDayType(dayType);
-  const s0 = getDirectionSchedule(normLine, '0', normDay);
-  const s1 = getDirectionSchedule(normLine, '1', normDay);
+  const s0 = getDirectionSchedule(normLine, '0', normDay, season);
+  const s1 = getDirectionSchedule(normLine, '1', normDay, season);
 
   if (!s0 || !s1 || !Array.isArray(s0.departures) || !Array.isArray(s1.departures)) return 1;
   if (s0.departures.length === 0 && s1.departures.length === 0) return 0;
@@ -407,8 +507,9 @@ function getScheduledFleetRequirement(lineId, dayType, nowSec = null) {
 }
 
 module.exports = {
-  rawSchedules,
   normalizeLineId,
+  normalizeSeason,
+  getActiveSeason,
   normalizeDayType,
   toCatalanDayType,
   getLineSchedule,
@@ -422,3 +523,21 @@ module.exports = {
   getAllLines,
   getScheduledFleetRequirement
 };
+
+/**
+ * The seasonal grid currently in force, with the reason it was chosen.
+ * @param {Date|number|string} [at=new Date()]
+ */
+function getActiveSeason(at) {
+  return at === undefined
+    ? { ...activeGrid().resolution, usingSeasonsFile: activeGrid().usingSeasonsFile }
+    : { ...seasonCalendar.resolveSeason(at), usingSeasonsFile: Boolean(gridFor(at)) };
+}
+
+// `rawSchedules` used to be a plain object. It is a getter now so that anything
+// still reading it sees the grid in force rather than whichever file happened to
+// be on disk at require time.
+Object.defineProperty(module.exports, 'rawSchedules', {
+  enumerable: true,
+  get: () => rawSchedules()
+});

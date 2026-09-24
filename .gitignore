@@ -29,3 +29,4 @@ tmp/
 # read it as authoritative.
 src/data/*.pre-migration.json
 src/data/*.pre-terminal-repair.json
+src/data/*.pre-season.json

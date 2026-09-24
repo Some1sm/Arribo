@@ -7560,4 +7560,6 @@ class TransitApp {
 // Instantiate global application
 window.addEventListener('DOMContentLoaded', () => {
   window.transitApp = new TransitApp();
+  // Provenance only; never blocks or fails the map.
+  window.TransitUtils?.showSeasonPill();
 });

@@ -182,3 +182,30 @@ node scripts/scrape_avanza_schedules.js
 
 This updates the network schedule cache in `src/data/mataro_schedules.json` and creates an archival snapshot in `data/cities/mataro/avanza_raw_timetables.json`.
 
+#### Seasonal timetables (maresme.net)
+
+The operator publishes a **genuinely different grid per season** at
+`https://maresme.net/matarobus/{hivern,estiu}/`, and that is the grid riders are held to. It is
+scraped separately:
+
+```bash
+node scripts/scrape_maresme_timetables.js            # write src/data/mataro_schedules.seasons.json
+node scripts/scrape_maresme_timetables.js --diff     # report per-grid season provenance, write nothing
+```
+
+The seasons file carries **both** grids; `src/data/seasonCalendar.js` picks the one in force and
+`src/data/mataroSchedules.js` serves it at require time, so no call site passes a season. Stop
+geometry still comes from the Avanza scrape — only times are taken from maresme.net, which makes
+cumulative offsets authoritative rather than locally calibrated.
+
+`--diff` is the audit tool: it classifies every shipped grid as winter, summer, identical in
+both, or neither. It is what surfaced the original defect — the previous
+`mataro_schedules.json` held a **mixture**, with L1/L2/L4/L6/L8 winter in one direction and
+summer in the other. `test/season_provenance_test.js` is the standing guard against that
+returning.
+
+The active season and its provenance are reported on `/api/health` (`schedule.season`,
+`schedule.seasonSource`, `schedule.seasonKnown`) and shown as a pill in the page header. A live
+operator notice naming `estiu`/`hivern` outranks the static config in `SUMMER_WINDOWS`; outside
+the period the data covers, the server reports the grid as **not** verified rather than asserting it.
+

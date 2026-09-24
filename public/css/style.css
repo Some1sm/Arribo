@@ -9664,6 +9664,34 @@ body.observatori-page-body {
   letter-spacing: 0.02em;
 }
 
+/* Season pill: which published timetable grid is loaded. Amber marks a grid the
+   server cannot vouch for (outside the period the data covers), so a guessed
+   grid is never presented with the same confidence as a verified one. */
+.season-pill {
+  cursor: help;
+  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(59, 130, 246, 0.28);
+  color: #60a5fa;
+}
+
+.season-pill.is-unverified {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.32);
+  color: #fbbf24;
+}
+
+:root[data-theme="light"] .season-pill {
+  background: rgba(37, 99, 235, 0.08);
+  border-color: rgba(37, 99, 235, 0.24);
+  color: #2563eb;
+}
+
+:root[data-theme="light"] .season-pill.is-unverified {
+  background: rgba(217, 119, 6, 0.10);
+  border-color: rgba(217, 119, 6, 0.28);
+  color: #b45309;
+}
+
 /* Nav Links */
 .header-nav-links {
   display: flex;

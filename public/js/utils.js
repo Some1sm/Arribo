@@ -42,6 +42,54 @@
     },
 
     /**
+     * Shows which published timetable grid is loaded, in the page header.
+     *
+     * The operator runs a genuinely different grid in summer. The file that
+     * used to ship here held a MIXTURE of the two — L1/L2/L4/L6/L8 were winter
+     * outbound and summer inbound — so a rider saw correct times one way and
+     * wrong times back, and nothing on screen said why. Putting the season in
+     * the header makes that class of mistake visible in the product rather than
+     * only in a server log.
+     *
+     * When the server cannot vouch for the date (`seasonKnown: false`) the pill
+     * is marked unverified rather than shown as authoritative: outside the
+     * period the data covers we are guessing, and saying so is the point.
+     *
+     * Best-effort by design. A failed fetch leaves the pill hidden; this is
+     * provenance, not something the page can fail to render without.
+     *
+     * @param {string} [id='header-season-pill'] element id of the pill
+     * @returns {Promise<{season:string, known:boolean}|null>}
+     */
+    async showSeasonPill(id = 'header-season-pill') {
+      const pill = document.getElementById(id);
+      if (!pill) return null;
+      try {
+        const res = await fetch('/api/health', { headers: { Accept: 'application/json' } });
+        if (!res.ok) return null;
+        const data = await res.json();
+        const schedule = data?.schedule;
+        if (!schedule?.season) return null;
+
+        const known = schedule.seasonKnown !== false;
+        const label = schedule.season === 'summer' ? 'Estiu' : 'Hivern';
+        pill.textContent = known ? label : `${label}?`;
+        pill.hidden = false;
+        // The tooltip carries the provenance: which grid, chosen how, and
+        // whether the server considers the date covered.
+        pill.title = [
+          `Horari en vigor: ${label}`,
+          `Font: ${schedule.seasonSource || 'desconeguda'}`,
+          known ? null : 'Fora del període cobert per les dades: horari no verificat'
+        ].filter(Boolean).join(' · ');
+        if (!known) pill.classList.add('is-unverified');
+        return { season: schedule.season, known };
+      } catch {
+        return null;
+      }
+    },
+
+    /**
      * Haversine distance formula between two GPS coordinate points in metres.
      * @param {number} lat1
      * @param {number} lon1

@@ -12,6 +12,7 @@ const workerBridge = require('./src/core/WorkerBridge');
 const calendarEngine = require('./src/core/time/calendarEngine');
 const delayEngine = require('./src/core/schedule/delayEngine');
 const mataroFleet = require('./src/data/mataroFleet');
+const mataroSchedules = require('./src/data/mataroSchedules');
 const streetGeocoder = require('./src/core/geo/streetGeocoder');
 
 // ==========================================
@@ -453,6 +454,26 @@ app.get('/api/health', (req, res) => {
       restarts: worker.restarts
     },
     reports,
+    // Which published timetable grid is loaded, and why. The file that used to
+    // ship here held a MIXTURE of the winter and summer grids, so a wrong
+    // season was invisible until a rider noticed the times. Reporting it makes
+    // that class of mistake visible in the product. Purely in-memory: this
+    // reads a JSON file already loaded, never a provider or SQLite.
+    schedule: (() => {
+      const v = mataroSchedules.getScheduleValidity();
+      return {
+        season: v.season,
+        seasonSource: v.seasonSource,
+        // false means we are outside the period the data covers. Callers must
+        // label the grid as unverified rather than present it as authoritative.
+        seasonKnown: v.seasonKnown,
+        seasonsAvailable: v.seasonsAvailable,
+        usingSeasonsFile: v.usingSeasonsFile,
+        validUntil: v.validUntil,
+        expired: v.expired,
+        source: v.source
+      };
+    })(),
     dataReady: worker.isHealthy && reports.every(report => report.fresh)
   });
 });

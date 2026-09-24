@@ -70,33 +70,52 @@ async function runMataroTimetableAccuracyTests() {
   // =========================================================================
   console.log('📌 [TIER 1: Feature Coverage] Validating Official Timetables for Lines 1–8...');
 
+  // Expected grid, per line, direction and day type.
+  //
+  // WHAT CHANGED AND WHY (2026-09-24)
+  // ---------------------------------
+  // These weekday figures are the WINTER grid, taken from
+  // https://maresme.net/matarobus/hivern/. The file previously shipped the
+  // SUMMER grid for seven directions - L1/L2/L4/L6/L8 direction 12 and both of
+  // L3 - while their counterpart direction held winter, so a rider got correct
+  // times one way and wrong times back. Winter is what is in force now: the
+  // operator's only summer notice covered 27 Jul - 23 Aug and has expired.
+  //
+  // Weekend figures are unchanged because the weekend grid is identical in both
+  // seasons; the operator's own notice says so ("Els caps de setmana, els
+  // horaris no canvien") and both published pages agree trip for trip.
+  //
+  // L3 Sunday/Saturday first-departure shifts are the opposite kind of fix:
+  // those grids were calibrated rather than published, and carried scattered
+  // +/-1-3 min drift (Sunday first 06:31 vs 06:21 published). They are now
+  // median deltas between adjacent published columns.
   const EXPECTED_LINE_MATRIX = {
     '1': {
       name: 'Circular',
       directions: {
         '11': { weekdayTrips: 76, satTrips: 37, sunTrips: 25, firstWk: '05:25', lastWk: '22:35', firstSat: '06:36', lastSat: '22:09', firstSun: '08:12', lastSun: '22:01' },
-        '12': { weekdayTrips: 67, satTrips: 37, sunTrips: 25, firstWk: '06:03', lastWk: '22:05', firstSat: '07:09', lastSat: '22:02', firstSun: '08:15', lastSun: '21:58' }
+        '12': { weekdayTrips: 74, satTrips: 37, sunTrips: 25, firstWk: '06:04', lastWk: '22:16', firstSat: '07:09', lastSat: '22:02', firstSun: '08:15', lastSun: '21:58' }
       }
     },
     '2': {
       name: 'Circular',
       directions: {
         '11': { weekdayTrips: 77, satTrips: 36, sunTrips: 26, firstWk: '05:25', lastWk: '22:19', firstSat: '06:56', lastSat: '22:13', firstSun: '07:55', lastSun: '22:00' },
-        '12': { weekdayTrips: 65, satTrips: 36, sunTrips: 26, firstWk: '05:28', lastWk: '22:24', firstSat: '06:26', lastSat: '22:08', firstSun: '07:59', lastSun: '22:00' }
+        '12': { weekdayTrips: 77, satTrips: 36, sunTrips: 26, firstWk: '05:29', lastWk: '22:30', firstSat: '06:26', lastSat: '22:08', firstSun: '07:59', lastSun: '22:00' }
       }
     },
     '3': {
       name: 'Camí de la Serra',
       directions: {
-        '11': { weekdayTrips: 50, satTrips: 35, sunTrips: 23, firstWk: '06:31', lastWk: '21:41', firstSat: '07:34', lastSat: '21:17', firstSun: '08:00', lastSun: '21:38' },
-        '12': { weekdayTrips: 48, satTrips: 36, sunTrips: 24, firstWk: '06:06', lastWk: '21:12', firstSat: '07:04', lastSat: '21:54', firstSun: '08:05', lastSun: '22:15' }
+        '11': { weekdayTrips: 50, satTrips: 35, sunTrips: 23, firstWk: '06:21', lastWk: '22:24', firstSat: '07:32', lastSat: '21:17', firstSun: '08:00', lastSun: '21:38' },
+        '12': { weekdayTrips: 51, satTrips: 36, sunTrips: 24, firstWk: '05:55', lastWk: '22:10', firstSat: '07:04', lastSat: '21:54', firstSun: '08:05', lastSun: '22:15' }
       }
     },
     '4': {
       name: 'Cirera',
       directions: {
         '11': { weekdayTrips: 26, satTrips: 13, sunTrips: 14, firstWk: '07:38', lastWk: '22:07', firstSat: '08:03', lastSat: '21:13', firstSun: '08:30', lastSun: '21:57' },
-        '12': { weekdayTrips: 13, satTrips: 14, sunTrips: 13, firstWk: '07:45', lastWk: '20:45', firstSat: '07:31', lastSat: '21:50', firstSun: '09:01', lastSun: '21:30' }
+        '12': { weekdayTrips: 27, satTrips: 14, sunTrips: 13, firstWk: '07:06', lastWk: '22:03', firstSat: '07:31', lastSat: '21:50', firstSun: '09:01', lastSun: '21:30' }
       }
     },
     '5': {
@@ -110,7 +129,7 @@ async function runMataroTimetableAccuracyTests() {
       name: 'Institut Català Salut',
       directions: {
         '11': { weekdayTrips: 64, satTrips: 26, sunTrips: 12, firstWk: '06:00', lastWk: '21:47', firstSat: '07:16', lastSat: '21:24', firstSun: '14:00', lastSun: '22:03' },
-        '12': { weekdayTrips: 40, satTrips: 26, sunTrips: 12, firstWk: '06:51', lastWk: '21:53', firstSat: '07:34', lastSat: '21:43', firstSun: '14:17', lastSun: '22:17' }
+        '12': { weekdayTrips: 65, satTrips: 26, sunTrips: 12, firstWk: '06:18', lastWk: '22:03', firstSat: '07:34', lastSat: '21:43', firstSun: '14:17', lastSun: '22:17' }
       }
     },
     '7': {
@@ -124,7 +143,7 @@ async function runMataroTimetableAccuracyTests() {
       name: 'Galícia',
       directions: {
         '11': { weekdayTrips: 43, satTrips: 14, sunTrips: 7, firstWk: '06:05', lastWk: '22:11', firstSat: '07:00', lastSat: '21:31', firstSun: '14:45', lastSun: '21:13' },
-        '12': { weekdayTrips: 27, satTrips: 14, sunTrips: 8, firstWk: '06:23', lastWk: '21:22', firstSat: '07:20', lastSat: '21:55', firstSun: '14:04', lastSun: '21:35' }
+        '12': { weekdayTrips: 41, satTrips: 14, sunTrips: 8, firstWk: '06:29', lastWk: '22:16', firstSat: '07:20', lastSat: '21:55', firstSun: '14:04', lastSun: '21:35' }
       }
     }
   };
@@ -206,13 +225,19 @@ async function runMataroTimetableAccuracyTests() {
     }
   }
 
-  assert.strictEqual(grandTotalWeekday, 835, 'Grand total weekday departures across all 8 Mataró lines must be 835');
+  // Weekday total is now 910, up from 835. The 835 was the sum of a file that
+  // held the SUMMER grid for seven directions and the winter grid for the
+  // other nine; summer runs fewer weekday trips, so a mixed total is smaller
+  // than either real season. 910 is the winter grid summed across all 8 lines
+  // (150+154+101+53+137+129+102+84). Saturday and Sunday are unchanged because
+  // the weekend grid is identical in both seasons.
+  assert.strictEqual(grandTotalWeekday, 910, 'Grand total weekday departures across all 8 Mataró lines must be 910 (winter grid)');
   assert.strictEqual(grandTotalSaturday, 499, 'Grand total Saturday departures must be 499');
   assert.strictEqual(grandTotalSunday, 344, 'Grand total Sunday departures must be 344');
   assert.strictEqual(nonUniformCount, 16, 'All 16 directional paths must exhibit non-uniform headways');
   totalAssertions += 4;
 
-  console.log(`  ✓ 1.1 All 8 lines and 16 directions verified: 835 weekday, 499 Saturday, 344 Sunday trips (1,678 total official daily trips).`);
+  console.log(`  ✓ 1.1 All 8 lines and 16 directions verified: 910 weekday, 499 Saturday, 344 Sunday trips (1,753 total official daily trips).`);
   console.log(`  ✓ 1.2 Non-uniform headway mathematical proof: 100% of routes show standard deviation > 0 (synthetic 30-min intervals eliminated).`);
   console.log(`  ✓ 1.3 Topographical run-time monotonicity verified across all stop sequences.`);
 
