@@ -42,6 +42,38 @@
     },
 
     /**
+     * Picks black or white text for a saturated line-colour chip.
+     *
+     * Line chips are white-on-brand by convention, but several Mataró line
+     * colours are far too light for that: L7 cyan measured 1.19:1, L5 green
+     * 1.64:1 and L6 amber 1.66:1 against #fff. The previous inline guard only
+     * special-cased two exact yellows, so every other pale line stayed
+     * illegible. This compares real WCAG relative luminance for both inks and
+     * returns whichever actually wins, so the chip stays brand-coloured while
+     * the label stays readable in either theme.
+     *
+     * Returns null for anything that is not a literal hex (getLineColor can
+     * return `var(--brand-primary)`), so callers can keep their own fallback
+     * rather than silently getting black on an unknown colour.
+     */
+    chipTextColor(bg) {
+      if (typeof bg !== 'string') return null;
+      const hex = bg.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+      if (!hex) return null;
+      let h = hex[1];
+      if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+      const channel = i => {
+        const v = parseInt(h.slice(i, i + 2), 16) / 255;
+        return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+      };
+      const lum = 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4);
+      // Contrast against white vs against black, same +0.05 floor as WCAG.
+      const onWhite = 1.05 / (lum + 0.05);
+      const onBlack = (lum + 0.05) / 0.05;
+      return onBlack >= onWhite ? '#000' : '#fff';
+    },
+
+    /**
      * Shows which published timetable grid is loaded, in the page header.
      *
      * The operator runs a genuinely different grid in summer. The file that

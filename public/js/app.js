@@ -2480,6 +2480,13 @@ class TransitApp {
     return match?.color || 'var(--brand-primary)';
   }
 
+  // Text ink for a line-colour chip. Luminance-aware, so pale lines (L5/L6/L7)
+  // get dark text instead of the 1.19-1.66:1 white they used to carry. Falls
+  // back to white when the colour is a var() we cannot measure.
+  chipInk(lineColour) {
+    return window.TransitUtils?.chipTextColor?.(lineColour) || '#fff';
+  }
+
   renderStopHeatmap(stops) {
     if (!stops.length) return '';
     if (!stops.every(stop => Array.isArray(stop.hourly))) return '<p>Detall horari pendent de la propera actualització.</p>';
@@ -7381,8 +7388,8 @@ class TransitApp {
       <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:1.1rem; margin-bottom:1.25rem;">
         <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.75rem;">
           <div>
-            <span style="font-size:0.75rem; font-weight:800; color:#38bdf8; text-transform:uppercase; letter-spacing:0.5px;">Observatori de Mobilitat • Anàlisi de Causes</span>
-            <h3 style="font-size:1.35rem; font-weight:800; color:#fff; margin:0.2rem 0;">Investigador d'Incidents Crítics & Top Retards</h3>
+            <span style="font-size:0.75rem; font-weight:800; color:var(--accent-scheduled); text-transform:uppercase; letter-spacing:0.5px;">Observatori de Mobilitat • Anàlisi de Causes</span>
+            <h3 style="font-size:1.35rem; font-weight:800; color:var(--text-primary); margin:0.2rem 0;">Investigador d'Incidents Crítics & Top Retards</h3>
             <p style="font-size:0.78rem; color:var(--text-muted); margin:0; max-width:680px;">
               Auditoria de retards extrems (&ge; 5 min) detectats per telemetria GPS. Permet investigar si els retards màxims (+25 min) corresponen a retencions de trànsit reals en moviment o a autobusos regulant a capçalera.
             </p>
@@ -7421,7 +7428,7 @@ class TransitApp {
       <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.75rem; margin-bottom:1.25rem;">
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
           <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">Retard Màxim Registrat</div>
-          <div style="font-size:1.6rem; font-weight:800; color:${Number.isFinite(Number(s.maxDelayMins)) && s.maxDelayMins !== null ? '#ef4444' : 'var(--text-muted)'}; margin-top:0.2rem;">${s.maxDelayMins === null || s.maxDelayMins === undefined || !Number.isFinite(Number(s.maxDelayMins)) ? '—' : `+${s.maxDelayMins} min`}</div>
+          <div style="font-size:1.6rem; font-weight:800; color:${Number.isFinite(Number(s.maxDelayMins)) && s.maxDelayMins !== null ? 'var(--accent-danger)' : 'var(--text-muted)'}; margin-top:0.2rem;">${s.maxDelayMins === null || s.maxDelayMins === undefined || !Number.isFinite(Number(s.maxDelayMins)) ? '—' : `+${s.maxDelayMins} min`}</div>
           <div style="font-size:0.72rem; color:var(--text-muted);">${(s.totalRecordedIncidents || 0).toLocaleString()} mostres amb retard &ge; 5m</div>
         </div>
 
@@ -7433,13 +7440,13 @@ class TransitApp {
 
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
           <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">Franja amb Més Retards</div>
-          <div style="font-size:1.15rem; font-weight:700; color:#f59e0b; margin-top:0.25rem;">⏰ ${s.worstHour || '--:00'}</div>
+          <div style="font-size:1.15rem; font-weight:700; color:var(--accent-warning); margin-top:0.25rem;">⏰ ${s.worstHour || '--:00'}</div>
           <div style="font-size:0.72rem; color:var(--text-muted);">${s.worstHourTag || 'Horari regular'}</div>
         </div>
 
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
           <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">Naturalesa de les Incidències</div>
-          <div style="font-size:1.05rem; font-weight:700; color:#38bdf8; margin-top:0.25rem;">${s.movingPct || 0}% Trànsit actiu</div>
+          <div style="font-size:1.05rem; font-weight:700; color:var(--accent-scheduled); margin-top:0.25rem;">${s.movingPct || 0}% Trànsit actiu</div>
           <div style="font-size:0.72rem; color:var(--text-muted);">${s.stationaryCount || 0} regulacions • ${s.maintenanceCount || 0} cotxeres / proves</div>
         </div>
       </div>
@@ -7482,7 +7489,7 @@ class TransitApp {
               <tbody>
                 ${topList.map((inc, i) => {
                   const lColor = getLineColor(inc.lineCode);
-                  const delayClass = inc.delayMins >= 20 ? '#ef4444' : (inc.delayMins >= 10 ? '#f59e0b' : '#38bdf8');
+                  const delayClass = inc.delayMins >= 20 ? 'var(--accent-danger)' : (inc.delayMins >= 10 ? 'var(--accent-warning)' : 'var(--accent-scheduled)');
                   const signalTooltip = inc.isRealTime
                     ? '🟢 Senyal GPS directe: Telemetria transmesa en temps real pel vehicle físic.'
                     : '⚡ Estimació per estima (dead-reckoning): Autobús físic amb GPS que ha perdut la cobertura temporalment (túnels, carrers estrets o caiguda de xarxa). La posició i el retard es calculen avançant la darrera velocitat i retard coneguts (màxim 90 segons). Mai s\'aplica a autobusos sense GPS.';
@@ -7492,12 +7499,12 @@ class TransitApp {
                       <td style="font-weight:800; color:${delayClass}; white-space:nowrap;">+${inc.delayMins} min</td>
                       <td>
                         <div style="display:inline-flex; align-items:center; gap:5px; flex-wrap:wrap;">
-                          <span style="background:${lColor}; color:#fff; padding:0.15rem 0.45rem; border-radius:5px; font-weight:800; font-size:0.75rem;">${this.esc(inc.lineCode)}</span>
+                          <span style="background:${lColor}; color:${this.chipInk(lColor)}; padding:0.15rem 0.45rem; border-radius:5px; font-weight:800; font-size:0.75rem;">${this.esc(inc.lineCode)}</span>
                           ${formatBusBadge(inc.vehicleId)}
                         </div>
                       </td>
                       <td style="font-weight:600; color:var(--text-primary);">
-                        <span style="color:#38bdf8; margin-right:4px;">📍</span>${this.esc(inc.stopName)}
+                        <span style="color:var(--accent-scheduled); margin-right:4px;">📍</span>${this.esc(inc.stopName)}
                       </td>
                       <td style="color:var(--text-secondary); white-space:nowrap; font-size:0.8rem;">
                         ${this.esc(inc.formattedDate || '')}
@@ -7507,7 +7514,7 @@ class TransitApp {
                         <span style="color:var(--text-muted); margin-left:3px;">${this.esc(inc.trafficTag || '')}</span>
                       </td>
                       <td style="text-align:center; white-space:nowrap;">
-                        <span style="background:${inc.isRealTime ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)'}; color:${inc.isRealTime ? '#10b981' : '#fbbf24'}; padding:0.15rem 0.45rem; border-radius:5px; font-size:0.7rem; font-weight:700; cursor:help; display:inline-flex; align-items:center; gap:2px;" title="${this.esc(signalTooltip)}">
+                        <span style="background:${inc.isRealTime ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)'}; color:${inc.isRealTime ? 'var(--accent-live)' : 'var(--accent-warning)'}; padding:0.15rem 0.45rem; border-radius:5px; font-size:0.7rem; font-weight:700; cursor:help; display:inline-flex; align-items:center; gap:2px;" title="${this.esc(signalTooltip)}">
                           ${inc.isRealTime ? '🟢 GPS' : '⚡ Estimat'}
                         </span>
                       </td>
@@ -7568,7 +7575,7 @@ class TransitApp {
                 <div class="trip-card">
                   <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
                     <div style="display:flex; align-items:center; gap:0.5rem;">
-                      <span style="background:${lColor}; color:#fff; padding:0.2rem 0.55rem; border-radius:6px; font-weight:800; font-size:0.8rem;">${this.esc(trip.lineCode)}</span>
+                      <span style="background:${lColor}; color:${this.chipInk(lColor)}; padding:0.2rem 0.55rem; border-radius:6px; font-weight:800; font-size:0.8rem;">${this.esc(trip.lineCode)}</span>
                       <strong style="color:var(--text-primary); font-size:0.9rem;">Expedició del ${this.esc(trip.startTime)}</strong>
                       ${formatBusBadge(trip.vehicleId)}
                       <span style="color:var(--text-muted); font-size:0.78rem;">(durada activa: ~${trip.durationMinutes || 1} min)</span>
@@ -7577,7 +7584,7 @@ class TransitApp {
                       <span class="${typeBadgeClass}" style="padding:0.2rem 0.5rem; border-radius:6px; font-size:0.74rem; font-weight:700;">
                         ${this.esc(trip.incidentTypeLabel)}
                       </span>
-                      <span style="background:rgba(239,68,68,0.15); color:#ef4444; padding:0.2rem 0.55rem; border-radius:6px; font-size:0.78rem; font-weight:800;">
+                      <span style="background:rgba(239,68,68,0.15); color:var(--accent-danger); padding:0.2rem 0.55rem; border-radius:6px; font-size:0.78rem; font-weight:800;">
                         Màx: +${trip.maxDelayMins} min
                       </span>
                     </div>
@@ -7660,20 +7667,29 @@ class TransitApp {
     const container = document.getElementById('journalism-termometre-container');
     if (!container || !t) return;
 
-    const gradeColor = (t.grade && t.grade.startsWith('A')) ? '#10b981' : ((t.grade && t.grade.startsWith('B')) ? '#38bdf8' : ((t.grade && t.grade.startsWith('C')) ? '#f59e0b' : '#ef4444'));
+    // Two forms of the same grade colour, deliberately. gradeColorCss drives
+    // the in-page badge and must follow the theme (the old hexes were 1.8-2.1:1
+    // on the light surface). gradeColor feeds the downloadable SVG further
+    // down, which is a standalone dark-navy image where CSS custom properties
+    // do not resolve — a var() there would paint as black/nothing.
+    const isGradeA = t.grade && t.grade.startsWith('A');
+    const isGradeB = t.grade && t.grade.startsWith('B');
+    const isGradeC = t.grade && t.grade.startsWith('C');
+    const gradeColorCss = isGradeA ? 'var(--accent-live)' : (isGradeB ? 'var(--accent-scheduled)' : (isGradeC ? 'var(--accent-warning)' : 'var(--accent-danger)'));
+    const gradeColor = isGradeA ? '#10b981' : (isGradeB ? '#38bdf8' : (isGradeC ? '#f59e0b' : '#ef4444'));
 
     container.innerHTML = `
       <div class="termometre-scorecard" id="termometre-card-root">
         <div class="termometre-header">
           <div>
-            <span style="font-size:0.75rem; font-weight:800; color:#38bdf8; text-transform:uppercase; letter-spacing:0.5px;">Observatori Cívic de Mobilitat</span>
-            <h3 style="font-size:1.35rem; font-weight:800; color:#fff; margin:0.2rem 0;">🌡️ El Termòmetre del Bus Mataró</h3>
+            <span style="font-size:0.75rem; font-weight:800; color:var(--accent-scheduled); text-transform:uppercase; letter-spacing:0.5px;">Observatori Cívic de Mobilitat</span>
+            <h3 style="font-size:1.35rem; font-weight:800; color:var(--text-primary); margin:0.2rem 0;">🌡️ El Termòmetre del Bus Mataró</h3>
             <span style="font-size:0.78rem; color:var(--text-muted);">Auditoria independent basada en mostres reals de telemetria GPS</span>
           </div>
-          <div class="termometre-grade-badge" style="border-color:${gradeColor}; background:rgba(16,185,129,0.12);">
+          <div class="termometre-grade-badge" style="border-color:${gradeColorCss}; background:rgba(16,185,129,0.12);">
             <div>
               <div style="font-size:0.65rem; font-weight:800; color:var(--text-muted); text-transform:uppercase;">Nota Global</div>
-              <div class="termometre-grade-letter" style="color:${gradeColor};">${this.esc(t.grade || 'A')}</div>
+              <div class="termometre-grade-letter" style="color:${gradeColorCss};">${this.esc(t.grade || 'A')}</div>
             </div>
           </div>
         </div>
@@ -7681,7 +7697,7 @@ class TransitApp {
         <div class="termometre-metrics-grid">
           <div class="termometre-metric-tile" style="border-left:3px solid #10b981;">
             <span class="termometre-metric-label">🏆 Línia Més Puntual</span>
-            <span class="termometre-metric-val" style="color:#10b981;">
+            <span class="termometre-metric-val" style="color:var(--accent-live);">
               ${this.esc(t.championLine?.code || 'L1')} (${t.championLine?.onTimePct || 95}% puntual)
             </span>
             <span style="font-size:0.72rem; color:var(--text-muted);">Retard mitjà: ${t.championLine?.avgDelay || 0.8} min</span>
@@ -7689,7 +7705,7 @@ class TransitApp {
 
           <div class="termometre-metric-tile" style="border-left:3px solid #ef4444;">
             <span class="termometre-metric-label">⚠️ Punt Negre / Retards</span>
-            <span class="termometre-metric-val" style="color:#ef4444; font-size:1rem;">
+            <span class="termometre-metric-val" style="color:var(--accent-danger); font-size:1rem;">
               ${this.esc(t.worstBottleneck?.stopName || 'Pl. Tereses')}
             </span>
             <span style="font-size:0.72rem; color:var(--text-muted);">${this.esc(t.worstBottleneck?.lineCode || '')} • +${t.worstBottleneck?.avgDelay || 3.2} min retard mitjà</span>
@@ -7697,7 +7713,7 @@ class TransitApp {
 
           <div class="termometre-metric-tile" style="border-left:3px solid #f59e0b;">
             <span class="termometre-metric-label">⏱️ Franja de Major Congestió</span>
-            <span class="termometre-metric-val" style="color:#f59e0b;">
+            <span class="termometre-metric-val" style="color:var(--accent-warning);">
               ${this.esc(t.peakHour || '08:00 - 09:00')}
             </span>
             <span style="font-size:0.72rem; color:var(--text-muted);">Punt màxim de retards a la xarxa</span>
@@ -7705,7 +7721,7 @@ class TransitApp {
 
           <div class="termometre-metric-tile" style="border-left:3px solid #38bdf8;">
             <span class="termometre-metric-label">🌐 Puntualitat Global</span>
-            <span class="termometre-metric-val" style="color:#38bdf8;">
+            <span class="termometre-metric-val" style="color:var(--accent-scheduled);">
               ${t.punctualityPct || 92}%
             </span>
             <span style="font-size:0.72rem; color:var(--text-muted);">${(t.totalTripsAnalyzed || 0).toLocaleString()} expedicions analitzades</span>

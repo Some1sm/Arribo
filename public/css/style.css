@@ -209,6 +209,11 @@
   --bg-main: #09090b;
   --bg-surface: #12131a;
   --bg-surface-elevated: #1e1f26;
+  /* OPAQUE, unlike the two overlays below: sticky cells paint over scrolled-under
+     rows, so a translucent tint would let that content bleed through. */
+  --bg-surface-hover: #1e293b;
+  --bg-hover: rgba(255, 255, 255, 0.03);
+  --bg-hover-strong: rgba(255, 255, 255, 0.06);
   --bg-surface-glass: rgba(18, 20, 29, 0.78);
   --bg-input: rgba(13, 14, 21, 0.85);
   --bg-card-gradient: linear-gradient(135deg, rgba(18, 20, 29, 0.85) 0%, rgba(13, 14, 21, 0.75) 100%);
@@ -296,6 +301,13 @@
   --bg-main: #f4f4f5;
   --bg-surface: #ffffff;
   --bg-surface-elevated: #f8fafc;
+  /* Opaque for the same reason as the dark twin. The blue-tinted grey mirrors the
+     dark theme's #1e293b so the hover reads the same weight in both themes. */
+  --bg-surface-hover: #e9edf3;
+  /* The dark theme's white overlays are invisible on a light surface — these are
+     the same two weights, tinted with ink instead. */
+  --bg-hover: rgba(9, 9, 11, 0.04);
+  --bg-hover-strong: rgba(9, 9, 11, 0.07);
   --bg-surface-glass: rgba(255, 255, 255, 0.9);
   --bg-input: #ffffff;
   --bg-card-gradient: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
@@ -7187,7 +7199,7 @@ body {
 }
 
 .observatori-table th:hover {
-  background: rgba(255, 255, 255, 0.06) !important;
+  background: var(--bg-hover-strong) !important;
   color: var(--text-primary) !important;
 }
 
@@ -7202,7 +7214,7 @@ body {
 }
 
 .observatori-table tbody tr:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--bg-hover);
 }
 
 /* Sticky first column */
@@ -7228,7 +7240,7 @@ body {
 }
 
 .observatori-table tbody tr:hover td.sticky-col {
-  background: #1e293b;
+  background: var(--bg-surface-hover);
 }
 
 /* Distinct separator shadow on the sticky column when scrolled */
@@ -7802,11 +7814,11 @@ body {
 }
 
 .peak-hour-stat .stat-val.warning {
-  color: #fbbf24;
+  color: var(--accent-warning);
 }
 
 .peak-hour-stat .stat-val.severe {
-  color: #ef4444;
+  color: var(--accent-danger);
 }
 
 .peak-hour-bottlenecks {
@@ -7855,7 +7867,7 @@ body {
 
 .bottleneck-item .bottleneck-delay {
   font-weight: 700;
-  color: #ef4444;
+  color: var(--accent-danger);
 }
 
 /* Colls d'Ampolla Table Badge */
@@ -7869,14 +7881,14 @@ body {
   border-radius: 6px;
   font-size: 0.75rem;
   font-weight: 700;
-  color: #fbbf24;
+  color: var(--accent-warning);
   white-space: nowrap;
 }
 
 .bottleneck-hour-badge.school-rush {
   background: rgba(239, 68, 68, 0.15);
   border-color: rgba(239, 68, 68, 0.35);
-  color: #f87171;
+  color: var(--accent-danger);
 }
 
 .bottleneck-hour-badge .badge-icon {

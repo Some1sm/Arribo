@@ -617,19 +617,19 @@ class ObservatoriApp {
 
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:1rem;">
           <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Puntualitat Global</div>
-          <div style="font-size:1.75rem; font-weight:700; color:${s.networkPunctualityPct === null || s.networkPunctualityPct === undefined ? 'var(--text-muted)' : (s.networkPunctualityPct >= 85 ? '#10b981' : '#f59e0b')}; margin-top:0.25rem;">${s.networkPunctualityPct === null || s.networkPunctualityPct === undefined ? '—' : `${s.networkPunctualityPct}%`}</div>
+          <div style="font-size:1.75rem; font-weight:700; color:${s.networkPunctualityPct === null || s.networkPunctualityPct === undefined ? 'var(--text-muted)' : (s.networkPunctualityPct >= 85 ? 'var(--accent-live)' : 'var(--accent-warning)')}; margin-top:0.25rem;">${s.networkPunctualityPct === null || s.networkPunctualityPct === undefined ? '—' : `${s.networkPunctualityPct}%`}</div>
           <div style="font-size:0.72rem; color:var(--text-muted);">${s.networkPunctualityPct === null || s.networkPunctualityPct === undefined ? 'Sense mostres: la puntualitat no es mesura' : 'Mostres en &le; 3 min de marge'}</div>
         </div>
 
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:1rem;">
           <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Retard Mitjà Xarxa</div>
-          <div style="font-size:1.75rem; font-weight:700; color:#38bdf8; margin-top:0.25rem;">${s.networkAvgDelay === null || s.networkAvgDelay === undefined ? '—' : `${Number(s.networkAvgDelay) > 0 ? '+' : ''}${s.networkAvgDelay} min`}</div>
+          <div style="font-size:1.75rem; font-weight:700; color:var(--accent-scheduled); margin-top:0.25rem;">${s.networkAvgDelay === null || s.networkAvgDelay === undefined ? '—' : `${Number(s.networkAvgDelay) > 0 ? '+' : ''}${s.networkAvgDelay} min`}</div>
           <div style="font-size:0.72rem; color:var(--text-muted);">Mitjana de totes les mostres del període</div>
         </div>
 
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:1rem;">
           <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Retard Màxim Registrat</div>
-          <div style="font-size:1.75rem; font-weight:700; color:#ef4444; margin-top:0.25rem;">${s.networkMaxDelay === null || s.networkMaxDelay === undefined ? '—' : `${Number(s.networkMaxDelay) > 0 ? '+' : ''}${s.networkMaxDelay} min`}</div>
+          <div style="font-size:1.75rem; font-weight:700; color:var(--accent-danger); margin-top:0.25rem;">${s.networkMaxDelay === null || s.networkMaxDelay === undefined ? '—' : `${Number(s.networkMaxDelay) > 0 ? '+' : ''}${s.networkMaxDelay} min`}</div>
           <div style="font-size:0.72rem; color:var(--text-muted);">${s.networkMaxDelay === null || s.networkMaxDelay === undefined ? 'Sense mostres: no hi ha màxim' : 'Afectació puntual extrema'}</div>
         </div>
       </div>
@@ -640,7 +640,7 @@ class ObservatoriApp {
         if (!sb || !sb.totalSamples || !(sb.nonRealtimeSamples > 0)) return '';
         return `
         <div style="background:rgba(56,189,248,0.06); border:1px solid rgba(56,189,248,0.22); border-radius:10px; padding:0.7rem 0.95rem; margin-bottom:1.25rem; font-size:0.76rem; color:var(--text-secondary); line-height:1.5;">
-          <strong style="color:#38bdf8;">Mostres, no viatges.</strong>
+          <strong style="color:var(--accent-scheduled);">Mostres, no viatges.</strong>
           Aquests KPIs es calculen sobre <strong>${sb.totalSamples.toLocaleString()} mostres individuals</strong> (un registre per senyal de vehicle, no pas viatges).
           D'aquestes, <strong>${sb.nonRealtimeSamples.toLocaleString()} (${sb.nonRealtimePct}%)</strong> són posicions extrapolades
           (dead-reckoning, <code>is_realtime = 0</code>) i no GPS fresc: s'hi inclouen perquè el retard registrat és real,
@@ -804,14 +804,14 @@ class ObservatoriApp {
                         <span class="observatori-line-name" title="${this.esc(l.name)}">${this.esc(l.name)}</span>
                       </div>
                     </td>
-                    <td style="font-weight:700; color:${Number(l.avgDelay) > 0 ? '#ef4444' : '#10b981'}; white-space:nowrap;">
+                    <td style="font-weight:700; color:${Number(l.avgDelay) > 0 ? 'var(--accent-danger)' : 'var(--accent-live)'}; white-space:nowrap;">
                       ${avgStr}
                     </td>
                     <td style="white-space:nowrap;">
                       <div style="display:flex; align-items:center; gap:0.4rem;">
-                        <span style="font-weight:600; color:${onTime >= 85 ? '#10b981' : '#f59e0b'}; min-width:34px;">${onTime}%</span>
+                        <span style="font-weight:600; color:${onTime >= 85 ? 'var(--accent-live)' : 'var(--accent-warning)'}; min-width:34px;">${onTime}%</span>
                         <div style="flex:1; max-width:60px; height:5px; background:var(--bg-main); border-radius:3px; overflow:hidden;">
-                          <div style="width:${onTime}%; height:100%; background:${onTime >= 85 ? '#10b981' : '#f59e0b'};"></div>
+                          <div style="width:${onTime}%; height:100%; background:${onTime >= 85 ? 'var(--accent-live)' : 'var(--accent-warning)'};"></div>
                         </div>
                       </div>
                     </td>
@@ -819,7 +819,7 @@ class ObservatoriApp {
                     <td class="observatori-col-desktop" style="color:var(--text-muted);">${(l.sampleCount || 0).toLocaleString()}</td>
                     <td class="observatori-col-desktop" style="color:var(--text-muted); font-size:0.75rem;">
                       ${this.esc(l.agency || 'Mataró Bus')}
-                      ${isL95 ? '<span style="color:#38bdf8; font-size:0.7rem; display:block;">ℹ️ L95 exprés: trànsit C-31/C-32</span>' : ''}
+                      ${isL95 ? '<span style="color:var(--accent-scheduled); font-size:0.7rem; display:block;">ℹ️ L95 exprés: trànsit C-31/C-32</span>' : ''}
                     </td>
                   </tr>
                 `;}).join('')}
@@ -878,10 +878,9 @@ class ObservatoriApp {
           const sAvgStr = sAvg > 0 ? `+${st.avgDelay} min` : (sAvg < 0 ? `${st.avgDelay} min` : '0.0 min');
           const sMaxStr = Number(st.maxDelay) > 0 ? `+${st.maxDelay} min` : `${st.maxDelay || 0} min`;
           const lColor = this.getLineColor(st.lineCode);
-          const isLight = lColor === '#ffcc00' || lColor === '#febf01';
-          const badgeTextColor = isLight ? '#000' : '#fff';
+          const badgeTextColor = this.chipInk(lColor);
           const isSevereStop = sAvg >= 1.5 || (st.severeLatePct || 0) >= 20;
-          const avgDelayColor = sAvg >= 1.5 ? '#ef4444' : (sAvg >= 0.8 ? '#f59e0b' : '#10b981');
+          const avgDelayColor = sAvg >= 1.5 ? 'var(--accent-danger)' : (sAvg >= 0.8 ? 'var(--accent-warning)' : 'var(--accent-live)');
           return `
           <tr>
             <td class="sticky-col" style="font-weight:600; color:var(--text-primary);">
@@ -898,8 +897,8 @@ class ObservatoriApp {
             <td style="font-weight:700; color:${avgDelayColor}; white-space:nowrap;">${sAvgStr}</td>
             <td style="white-space:nowrap; text-align:center;">
               ${st.severeLatePct > 0 ? `
-                <span style="background:${st.severeLatePct >= 30 ? 'rgba(239,68,68,0.2)' : (st.severeLatePct >= 20 ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.06)')}; color:${st.severeLatePct >= 30 ? '#f87171' : (st.severeLatePct >= 20 ? '#fbbf24' : 'var(--text-muted)')}; padding:0.15rem 0.45rem; border-radius:6px; font-weight:600;">${st.severeLatePct}%</span>
-              ` : '<span style="color:#10b981; font-weight:600; font-size:0.75rem;">0%</span>'}
+                <span style="background:${st.severeLatePct >= 30 ? 'rgba(239,68,68,0.2)' : (st.severeLatePct >= 20 ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.06)')}; color:${st.severeLatePct >= 30 ? 'var(--accent-danger)' : (st.severeLatePct >= 20 ? 'var(--accent-warning)' : 'var(--text-muted)')}; padding:0.15rem 0.45rem; border-radius:6px; font-weight:600;">${st.severeLatePct}%</span>
+              ` : '<span style="color:var(--accent-live); font-weight:600; font-size:0.75rem;">0%</span>'}
             </td>
             <td style="white-space:nowrap;">
               ${st.criticalHour && st.criticalHour !== '--' && Number(st.criticalHourAvgDelay) >= 1.5 ? `
@@ -907,7 +906,7 @@ class ObservatoriApp {
                   <span class="badge-time">${this.esc(st.criticalHour)}</span>
                   <span class="badge-delay">(+${st.criticalHourAvgDelay}m)</span>
                 </div>
-              ` : (isSevereStop ? '<span style="color:var(--text-muted); font-size:0.75rem;">Uniforme</span>' : '<span style="color:#10b981; font-size:0.75rem; font-weight:600;">✓ Puntual</span>')}
+              ` : (isSevereStop ? '<span style="color:var(--text-muted); font-size:0.75rem;">Uniforme</span>' : '<span style="color:var(--accent-live); font-size:0.75rem; font-weight:600;">✓ Puntual</span>')}
             </td>
             <td class="observatori-col-desktop" style="color:var(--text-muted); white-space:nowrap;">${sMaxStr}</td>
           </tr>
@@ -936,8 +935,7 @@ class ObservatoriApp {
           tableBodyHtml = sortedLineCodes.map(lineCode => {
             const lineStops = lineGroups.get(lineCode);
             const lColor = this.getLineColor(lineCode);
-            const isLight = lColor === '#ffcc00' || lColor === '#febf01';
-            const badgeTextColor = isLight ? '#000' : '#fff';
+            const badgeTextColor = this.chipInk(lColor);
             const lineMatch = (this.availableLines || []).find(l => String(l.code || l.id).toUpperCase() === String(lineCode).toUpperCase());
             const lineTitle = lineMatch?.name || `Línia ${lineCode}`;
             const lineAvg = (lineStops.reduce((sum, s) => sum + (Number(s.avgDelay) || 0), 0) / lineStops.length).toFixed(1);
@@ -953,7 +951,7 @@ class ObservatoriApp {
                       <span style="font-size:0.72rem; color:var(--text-muted); font-weight:500;">(${lineStops.length} ${lineStops.length === 1 ? 'parada' : 'parades'})</span>
                     </div>
                     <div class="observatori-group-header-right">
-                      <span>Retard mitjà: <strong style="color:${Number(lineAvg) >= 3 ? '#ef4444' : '#f59e0b'};">+${lineAvg} min</strong></span>
+                      <span>Retard mitjà: <strong style="color:${Number(lineAvg) >= 3 ? 'var(--accent-danger)' : 'var(--accent-warning)'};">+${lineAvg} min</strong></span>
                       <span style="border-left:1px solid var(--border-subtle); padding-left:0.6rem;">Parada més lenta: <strong style="color:var(--brand-primary);">#${slowestStop.overallRank}</strong> (${this.esc(slowestStop.stopName)})</span>
                     </div>
                   </div>
@@ -1062,8 +1060,8 @@ class ObservatoriApp {
                   <td class="sticky-col" style="font-weight:700; color:var(--text-primary);">${this.esc(a.agency)}</td>
                   <td class="observatori-col-desktop" style="color:var(--text-muted); text-align:center;">${a.linesCount || 0}</td>
                   <td class="observatori-col-desktop" style="color:var(--text-muted);">${(a.totalSamples || 0).toLocaleString()}</td>
-                  <td style="font-weight:700; color:${Number(a.avgDelay) > 0 ? '#ef4444' : '#10b981'}; white-space:nowrap;">${aAvg}</td>
-                  <td style="font-weight:700; color:${a.onTimePct >= 85 ? '#10b981' : '#f59e0b'}; white-space:nowrap;">${a.onTimePct || 100}%</td>
+                  <td style="font-weight:700; color:${Number(a.avgDelay) > 0 ? 'var(--accent-danger)' : 'var(--accent-live)'}; white-space:nowrap;">${aAvg}</td>
+                  <td style="font-weight:700; color:${a.onTimePct >= 85 ? 'var(--accent-live)' : 'var(--accent-warning)'}; white-space:nowrap;">${a.onTimePct || 100}%</td>
                 </tr>
               `;}).join('')}
             </tbody>
@@ -1077,7 +1075,7 @@ class ObservatoriApp {
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:1.1rem; margin-top:1.5rem;">
           <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.75rem;">
             <div>
-              <div style="font-size:0.75rem; font-weight:700; color:#38bdf8; text-transform:uppercase;">Integritat de la Xarxa i Canvis Operatius</div>
+              <div style="font-size:0.75rem; font-weight:700; color:var(--accent-scheduled); text-transform:uppercase;">Integritat de la Xarxa i Canvis Operatius</div>
               <div style="font-size:0.95rem; font-weight:700; color:var(--text-primary); margin-top:0.2rem;">Traçabilitat d'Horaris i Traçats Oficials</div>
             </div>
             <div style="font-size:0.74rem; color:var(--text-muted);">
@@ -1089,7 +1087,7 @@ class ObservatoriApp {
               <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:8px; padding:0.65rem 0.85rem;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                   <strong style="font-size:0.82rem; color:var(--text-primary);">${this.esc(snap.provider)}</strong>
-                  <span style="font-size:0.7rem; background:rgba(16,185,129,0.15); color:#10b981; padding:1px 6px; border-radius:4px; font-weight:700;">Auditat</span>
+                  <span style="font-size:0.7rem; background:rgba(16,185,129,0.15); color:var(--accent-live); padding:1px 6px; border-radius:4px; font-weight:700;">Auditat</span>
                 </div>
                 <div style="font-size:0.72rem; color:var(--text-muted); margin-top:0.3rem;">
                   ${snap.summary.totalRoutes} línies • ${snap.summary.totalStops} parades troncals
@@ -1119,6 +1117,13 @@ class ObservatoriApp {
   getLineColor(code) {
     const match = (this.availableLines || []).find(l => String(l.code || l.id).toUpperCase() === String(code).toUpperCase());
     return match?.color || 'var(--brand-primary)';
+  }
+
+  // Text ink for a line-colour chip. Luminance-aware, so pale lines (L5/L6/L7)
+  // get dark text instead of the 1.19-1.66:1 white they used to carry. Falls
+  // back to white when the colour is a var() we cannot measure.
+  chipInk(lineColour) {
+    return window.TransitUtils?.chipTextColor?.(lineColour) || '#fff';
   }
 
   renderStopHeatmap(stops) {
@@ -1235,7 +1240,7 @@ class ObservatoriApp {
                 <tr class="${isSelected ? 'drilldown-selected-row' : ''}" data-select-drilldown-hour="${bHour}" role="button" tabindex="0" title="Clica per seleccionar les ${b.hour}:00h">
                   <th scope="row" style="font-weight:700;">${b.hour}:00 ${isSelected ? '•' : ''}</th>
                   <td>${b.sampleCount}${b.sampleCount > 0 && b.sampleCount < 5 ? ' *' : ''}</td>
-                  <td style="font-weight:${isSelected ? '800' : '600'}; color:${b.avgDelay >= 5 ? '#ef4444' : b.avgDelay >= 3 ? '#f59e0b' : 'var(--text-primary)'};">
+                  <td style="font-weight:${isSelected ? '800' : '600'}; color:${b.avgDelay >= 5 ? 'var(--accent-danger)' : b.avgDelay >= 3 ? 'var(--accent-warning)' : 'var(--text-primary)'};">
                     ${b.avgDelay !== null ? `+${b.avgDelay} min` : '—'}
                   </td>
                   <td>${b.maxDelay !== null ? `+${b.maxDelay} min` : '—'}</td>
@@ -1305,12 +1310,12 @@ class ObservatoriApp {
                   <td style="font-weight:700; color:var(--text-muted); text-align:center;">${idx + 1}</td>
                   <td style="font-weight:600; color:var(--text-primary);">
                     <div style="display:flex; align-items:center; gap:0.4rem;">
-                      <span style="background:${lColor}; color:#fff; padding:0.1rem 0.35rem; border-radius:4px; font-size:0.7rem; font-weight:800;">${this.esc(s.lineCode)}</span>
+                      <span style="background:${lColor}; color:${this.chipInk(lColor)}; padding:0.1rem 0.35rem; border-radius:4px; font-size:0.7rem; font-weight:800;">${this.esc(s.lineCode)}</span>
                       <span>${this.esc(s.stopName)}</span>
                     </div>
                   </td>
                   <td>${b.sampleCount}${b.sampleCount > 0 && b.sampleCount < 5 ? ' *' : ''}</td>
-                  <td style="font-weight:700; color:${b.avgDelay >= 5 ? '#ef4444' : b.avgDelay >= 3 ? '#f59e0b' : 'var(--text-primary)'};">
+                  <td style="font-weight:700; color:${b.avgDelay >= 5 ? 'var(--accent-danger)' : b.avgDelay >= 3 ? 'var(--accent-warning)' : 'var(--text-primary)'};">
                     ${b.avgDelay !== null ? `+${b.avgDelay} min` : '—'}
                   </td>
                   <td>${b.maxDelay !== null ? `+${b.maxDelay} min` : '—'}</td>
@@ -1438,7 +1443,16 @@ class ObservatoriApp {
       return;
     }
 
-    const gradeColor = (t.grade && t.grade.startsWith('A')) ? '#10b981' : ((t.grade && t.grade.startsWith('B')) ? '#38bdf8' : ((t.grade && t.grade.startsWith('C')) ? '#f59e0b' : '#ef4444'));
+    // Two forms of the same grade colour, deliberately. gradeColorCss drives
+    // the in-page badge and must follow the theme (the old hexes were 1.8-2.1:1
+    // on the light surface). gradeColorSvg feeds the downloadable SVG further
+    // down, which is a standalone dark-navy image where CSS custom properties
+    // do not resolve — a var() there would paint as black/nothing.
+    const isGradeA = t.grade && t.grade.startsWith('A');
+    const isGradeB = t.grade && t.grade.startsWith('B');
+    const isGradeC = t.grade && t.grade.startsWith('C');
+    const gradeColorCss = isGradeA ? 'var(--accent-live)' : (isGradeB ? 'var(--accent-scheduled)' : (isGradeC ? 'var(--accent-warning)' : 'var(--accent-danger)'));
+    const gradeColor = isGradeA ? '#10b981' : (isGradeB ? '#38bdf8' : (isGradeC ? '#f59e0b' : '#ef4444'));
     // A missing sub-value stays missing. Each `—` below means "not measured",
     // which is different from a measured 0.
     const pct = (v) => (v === null || v === undefined ? '—' : `${v}%`);
@@ -1450,46 +1464,46 @@ class ObservatoriApp {
       <div class="termometre-scorecard" id="termometre-card-root">
         <div class="termometre-header">
           <div>
-            <span style="font-size:0.75rem; font-weight:800; color:#38bdf8; text-transform:uppercase; letter-spacing:0.5px;">Observatori Cívic de Mobilitat</span>
-            <h3 style="font-size:1.35rem; font-weight:800; color:#fff; margin:0.2rem 0;">El Termòmetre del Bus Mataró</h3>
+            <span style="font-size:0.75rem; font-weight:800; color:var(--accent-scheduled); text-transform:uppercase; letter-spacing:0.5px;">Observatori Cívic de Mobilitat</span>
+            <h3 style="font-size:1.35rem; font-weight:800; color:var(--text-primary); margin:0.2rem 0;">El Termòmetre del Bus Mataró</h3>
             <span style="font-size:0.78rem; color:var(--text-muted);">Auditoria independent basada en mostres reals de telemetria GPS</span>
           </div>
-          <div class="termometre-grade-badge" style="border-color:${gradeColor}; background:rgba(16,185,129,0.12);">
+          <div class="termometre-grade-badge" style="border-color:${gradeColorCss}; background:rgba(16,185,129,0.12);">
             <div>
               <div style="font-size:0.65rem; font-weight:800; color:var(--text-muted); text-transform:uppercase;">Nota Global</div>
-              <div class="termometre-grade-letter" style="color:${gradeColor};">${this.esc(t.grade)}</div>
+              <div class="termometre-grade-letter" style="color:${gradeColorCss};">${this.esc(t.grade)}</div>
             </div>
           </div>
         </div>
 
         <div class="termometre-metrics-grid">
-          <div class="termometre-metric-tile" style="border-left:3px solid #10b981;">
+          <div class="termometre-metric-tile" style="border-left:3px solid var(--accent-live);">
             <span class="termometre-metric-label">Línia Més Puntual</span>
-            <span class="termometre-metric-val" style="color:#10b981;">
+            <span class="termometre-metric-val" style="color:var(--accent-live);">
               ${t.championLine ? this.esc(t.championLine.code) : '—'} (${championPct} puntual)
             </span>
             <span style="font-size:0.72rem; color:var(--text-muted);">Retard mitjà: ${t.championLine ? mins(t.championLine.avgDelay) : '—'}</span>
           </div>
 
-          <div class="termometre-metric-tile" style="border-left:3px solid #ef4444;">
+          <div class="termometre-metric-tile" style="border-left:3px solid var(--accent-danger);">
             <span class="termometre-metric-label">Punt Negre / Retards</span>
-            <span class="termometre-metric-val" style="color:#ef4444; font-size:1rem;">
+            <span class="termometre-metric-val" style="color:var(--accent-danger); font-size:1rem;">
               ${t.worstBottleneck ? this.esc(t.worstBottleneck.stopName) : '—'}
             </span>
             <span style="font-size:0.72rem; color:var(--text-muted);">${t.worstBottleneck ? this.esc(t.worstBottleneck.lineCode || '') : ''} • ${t.worstBottleneck ? mins(t.worstBottleneck.avgDelay) : '—'} retard mitjà</span>
           </div>
 
-          <div class="termometre-metric-tile" style="border-left:3px solid #f59e0b;">
+          <div class="termometre-metric-tile" style="border-left:3px solid var(--accent-warning);">
             <span class="termometre-metric-label">Franja de Major Congestió</span>
-            <span class="termometre-metric-val" style="color:#f59e0b;">
+            <span class="termometre-metric-val" style="color:var(--accent-warning);">
               ${t.peakHour ? this.esc(t.peakHour) : '—'}
             </span>
             <span style="font-size:0.72rem; color:var(--text-muted);">${t.peakHour ? mins(t.peakHourDelay) : '—'} de retard mitjà a la xarxa</span>
           </div>
 
-          <div class="termometre-metric-tile" style="border-left:3px solid #38bdf8;">
+          <div class="termometre-metric-tile" style="border-left:3px solid var(--accent-scheduled);">
             <span class="termometre-metric-label">Puntualitat Global</span>
-            <span class="termometre-metric-val" style="color:#38bdf8;">
+            <span class="termometre-metric-val" style="color:var(--accent-scheduled);">
               ${pct(t.punctualityPct)}
             </span>
             <span style="font-size:0.72rem; color:var(--text-muted);">${(t.totalTripsAnalyzed || 0).toLocaleString()} mostres analitzades</span>
@@ -1589,8 +1603,8 @@ class ObservatoriApp {
       <div class="termometre-scorecard" id="termometre-card-root">
         <div class="termometre-header">
           <div>
-            <span style="font-size:0.75rem; font-weight:800; color:#38bdf8; text-transform:uppercase; letter-spacing:0.5px;">Observatori Cívic de Mobilitat</span>
-            <h3 style="font-size:1.35rem; font-weight:800; color:#fff; margin:0.2rem 0;">El Termòmetre del Bus Mataró</h3>
+            <span style="font-size:0.75rem; font-weight:800; color:var(--accent-scheduled); text-transform:uppercase; letter-spacing:0.5px;">Observatori Cívic de Mobilitat</span>
+            <h3 style="font-size:1.35rem; font-weight:800; color:var(--text-primary); margin:0.2rem 0;">El Termòmetre del Bus Mataró</h3>
             <span style="font-size:0.78rem; color:var(--text-muted);">Dades de les darreres ${hours} hores</span>
           </div>
           <div class="termometre-grade-badge" style="border-color:var(--border-subtle); background:rgba(148,163,184,0.08);">
@@ -1602,7 +1616,7 @@ class ObservatoriApp {
         </div>
 
         <div style="margin:1.25rem 0; padding:1rem 1.1rem; background:rgba(251,191,36,0.07); border:1px solid rgba(251,191,36,0.25); border-radius:10px; font-size:0.82rem; line-height:1.5; color:var(--text-secondary);">
-          <strong style="color:#f59e0b;">Sense dades per puntuar.</strong>
+          <strong style="color:var(--accent-warning);">Sense dades per puntuar.</strong>
           No hi ha cap mostra de retard registrada en aquesta finestra temporal, així que no hi ha nota global,
           ni línia més puntual, ni punt negre, ni hora punta. Aquest Termòmetre no es publica ni s'exporta
           fins que hi hagi mostres reals: sense mostres, la puntualitat no es mesura.
@@ -1725,40 +1739,43 @@ class ObservatoriApp {
       const res = await fetch(`/api/analytics/incidents/inspect?${params}`);
       const data = await res.json();
       if (!data || data.found === false) {
-        content.innerHTML = `<span style="color:#fb7185;">No es poden carregar mostres en aquesta finestra. ${data?.error || ''}</span>`;
+        content.innerHTML = `<span style="color:var(--accent-danger);">No es poden carregar mostres en aquesta finestra. ${data?.error || ''}</span>`;
         summary.innerHTML = `<p style="color:var(--text-muted); font-size:0.82rem;">Cap mostra amb retard ≥5 minuts en els darrers 60 minuts per ${this.esc(lineCode)} @ ${this.esc(stopName)}.</p>`;
         return;
       }
       const ep = data.episode || {};
       const ev = ep.evidence || {};
-      const verdictColors = { corroborated: '#34d399', derived_only: '#a78bfa', poll_inflated: '#f59e0b', unverifiable: '#fb7185', telemetry_anomaly: '#94a3b8' };
-      const verdictLabel = verdictColors[ep.verdict] || '#fff';
+      // Token values, not hexes: this paints text in a table cell, and the
+      // hardcoded dark-palette values were 1.8-2.6:1 on the light surface.
+      const verdictColors = { corroborated: 'var(--accent-live)', derived_only: 'var(--accent-regulating)', poll_inflated: 'var(--accent-warning)', unverifiable: 'var(--accent-danger)', telemetry_anomaly: 'var(--text-muted)' };
+      // The fallback was '#fff', i.e. white text on a light table in light mode.
+      const verdictLabel = verdictColors[ep.verdict] || 'var(--text-primary)';
       const vehicleBadge = ep.distinctVehicles.length
         ? ep.distinctVehicles.map(v => `<span style="background:rgba(255,255,255,0.08); padding:2px 6px; border-radius:4px; font-size:0.74rem;">${this.esc(v)}</span>`).join(' ')
         : ev.vehicleIdGapExplained
-          ? '<span style="color:#fb7185;">cap vehicle_id — <span style="opacity:0.8;">aquestes files són anteriors a la columna</span></span>'
-          : '<span style="color:#fb7185;">cap vehicle_id registrat</span>';
+          ? '<span style="color:var(--accent-danger);">cap vehicle_id — <span style="opacity:0.8;">aquestes files són anteriors a la columna</span></span>'
+          : '<span style="color:var(--accent-danger);">cap vehicle_id registrat</span>';
       // Two buses in one episode used to be silently merged and shown as a
       // normal multi-badge list. It now only happens when no id was stored on
       // the opening row, and it has to be called out rather than left to look
       // like one trip.
       const ambiguousNote = ep.vehicleAmbiguous
-        ? '<tr><td style="color:var(--text-muted); padding:3px 0;">Identitat</td><td style="color:#f59e0b;"><strong>Episodi ambigu</strong> — les mostres no tenen vehicle_id i no es poden atribuir a un únic autobús</td></tr>'
+        ? '<tr><td style="color:var(--text-muted); padding:3px 0;">Identitat</td><td style="color:var(--accent-warning);"><strong>Episodi ambigu</strong> — les mostres no tenen vehicle_id i no es poden atribuir a un únic autobús</td></tr>'
         : '';
       // Three distinct time provenances, never two: a real upstream observation,
       // a live derivation from the static timetable, and an offline backfilled
       // approximation. The server classifies every row (timesProvenance) so the
       // UI never re-derives the rule with a string comparison.
       const timesBadge = ev.rowsWithObservedTimes > 0
-        ? `<span style="color:#34d399;">${ev.rowsWithObservedTimes} mostres amb horari observat pel feed</span>`
+        ? `<span style="color:var(--accent-live);">${ev.rowsWithObservedTimes} mostres amb horari observat pel feed</span>`
           + (ev.rowsWithDerivedTimes > 0 ? ` <span style="color:var(--text-muted);">+ ${ev.rowsWithDerivedTimes} derivades</span>` : '')
           + (ev.rowsWithBackfilledTimes > 0 ? ` <span style="color:var(--text-muted);">+ ${ev.rowsWithBackfilledTimes} reomplenes</span>` : '')
         : ev.rowsWithBackfilledTimes > 0
-          ? `<span style="color:#fbbf24;">${ev.rowsWithBackfilledTimes} mostres amb horari <strong>aproximat offline</strong> (no observat)</span>`
+          ? `<span style="color:var(--accent-warning);">${ev.rowsWithBackfilledTimes} mostres amb horari <strong>aproximat offline</strong> (no observat)</span>`
           : ev.rowsWithDerivedTimes > 0
-            ? `<span style="color:#a78bfa;">${ev.rowsWithDerivedTimes} mostres amb horari <strong>derivat</strong> del horari teòric</span>`
-            : '<span style="color:#fb7185;">cap mostra amb horari teòric ni real</span>';
-      const snapshotBadge = ev.snapshotTrailPoints >= 2 ? `<span style="color:#34d399;">${ev.snapshotTrailPoints} punts GPS</span>` : '<span style="color:#fb7185;">cap traçal GPS proper</span>';
+            ? `<span style="color:var(--accent-regulating);">${ev.rowsWithDerivedTimes} mostres amb horari <strong>derivat</strong> del horari teòric</span>`
+            : '<span style="color:var(--accent-danger);">cap mostra amb horari teòric ni real</span>';
+      const snapshotBadge = ev.snapshotTrailPoints >= 2 ? `<span style="color:var(--accent-live);">${ev.snapshotTrailPoints} punts GPS</span>` : '<span style="color:var(--accent-danger);">cap traçal GPS proper</span>';
       summary.innerHTML = `
         <table style="width:100%; border-collapse:collapse; font-size:0.82rem;">
           <tr><td style="color:var(--text-muted); padding:3px 0;">Veïnatge</td><td style="color:${verdictLabel}; font-weight:600;">${this.esc(ep.verdictLabel)}</td></tr>
@@ -1766,25 +1783,25 @@ class ObservatoriApp {
           ${ambiguousNote}
           <tr><td style="color:var(--text-muted); padding:3px 0;">Horaris</td><td style="color:var(--text-secondary);">${timesBadge}</td></tr>
           <tr><td style="color:var(--text-muted); padding:3px 0;">Traçal</td><td style="color:var(--text-secondary);">${snapshotBadge}</td></tr>
-          <tr><td style="color:var(--text-muted); padding:3px 0;">Linies retirades</td><td style="color:${data.dataQuality?.retiredScopeLinesPresent ? '#fb7185' : '#34d399'};">${data.dataQuality?.retiredScopeLinesPresent ? 'Sí — hi ha dades de línies extintes' : 'No'}</td></tr>
+          <tr><td style="color:var(--text-muted); padding:3px 0;">Linies retirades</td><td style="color:${data.dataQuality?.retiredScopeLinesPresent ? 'var(--accent-danger)' : 'var(--accent-live)'};">${data.dataQuality?.retiredScopeLinesPresent ? 'Sí — hi ha dades de línies extintes' : 'No'}</td></tr>
           <tr><td style="color:var(--text-muted); padding:3px 0;">Proveniència horària</td><td style="color:var(--text-secondary);">${this._timesProvenanceLabel(ep.timesProvenance || ev.timesProvenance)}</td></tr>
           <tr><td style="color:var(--text-muted); padding:3px 0;">Total mostres raw</td><td style="color:var(--text-secondary);">${data.dataQuality?.totalRawRows || 0} → ${data.dataQuality?.episodesInWindow || 0} episodis</td></tr>
         </table>
-        ${ep.timetableCheck?.backfilledFromTimetable ? '<p style="color:#fbbf24; font-size:0.78rem; margin:8px 0 0;">L\'horari teòric i real d\'aquestes mostres s\'ha <strong>aproximat offline</strong> (scripts/backfill_delay_times.js) a partir del quadre horari estàtic, endevinant el sentit de circulació. No és una observació del feed ni una derivació en viu, i per tant <strong>no corrobora</strong> el retard: només hi serveix de contextualització.</p>' : ''}
-        ${ep.timetableCheck?.derivedFromTimetable && !ep.timetableCheck?.backfilledFromTimetable ? '<p style="color:#a78bfa; font-size:0.78rem; margin:8px 0 0;">L\'horari teòric i real d\'aquestes mostres s\'ha <strong>derivat</strong> del quadre horari estàtic: el feed upstream només dona el retard, mai l\'hora amb què es compara. Serveix per contextualitzar, però no és una observació independent.</p>' : ''}
+        ${ep.timetableCheck?.backfilledFromTimetable ? '<p style="color:var(--accent-warning); font-size:0.78rem; margin:8px 0 0;">L\'horari teòric i real d\'aquestes mostres s\'ha <strong>aproximat offline</strong> (scripts/backfill_delay_times.js) a partir del quadre horari estàtic, endevinant el sentit de circulació. No és una observació del feed ni una derivació en viu, i per tant <strong>no corrobora</strong> el retard: només hi serveix de contextualització.</p>' : ''}
+        ${ep.timetableCheck?.derivedFromTimetable && !ep.timetableCheck?.backfilledFromTimetable ? '<p style="color:var(--accent-regulating); font-size:0.78rem; margin:8px 0 0;">L\'horari teòric i real d\'aquestes mostres s\'ha <strong>derivat</strong> del quadre horari estàtic: el feed upstream només dona el retard, mai l\'hora amb què es compara. Serveix per contextualitzar, però no és una observació independent.</p>' : ''}
         ${ev.vehicleIdNote ? `<p style="color:var(--text-muted); font-size:0.78rem; margin:6px 0 0;">${this.esc(ev.vehicleIdNote)}</p>` : ''}
       `;
       const rawHtml = (ep.rawRows || []).map(r => {
-        const vB = r.vehicleId ? this.esc(r.vehicleId) : '<span style="color:#fb7185;">—</span>';
+        const vB = r.vehicleId ? this.esc(r.vehicleId) : '<span style="color:var(--accent-danger);">—</span>';
         // Colour comes from the server-side classification (timesProvenance),
         // never from a local string comparison on times_source.
         const tB = !r.hasTimes
-          ? '<span style="color:#fb7185;">no</span>'
+          ? '<span style="color:var(--accent-danger);">no</span>'
           : r.timesProvenance === 'derived_timetable_backfill'
-            ? `<span style="color:#fbbf24;" title="Aproximació offline del quadre horari (sentit endevinat)">${this.esc((r.scheduledTime || '').slice(0, 5))}→${this.esc((r.actualTime || '').slice(0, 5))} reomplert</span>`
+            ? `<span style="color:var(--accent-warning);" title="Aproximació offline del quadre horari (sentit endevinat)">${this.esc((r.scheduledTime || '').slice(0, 5))}→${this.esc((r.actualTime || '').slice(0, 5))} reomplert</span>`
             : r.timesProvenance === 'derived_timetable'
-              ? `<span style="color:#a78bfa;" title="Derivat en viu del quadre horari estàtic">${this.esc((r.scheduledTime || '').slice(0, 5))}→${this.esc((r.actualTime || '').slice(0, 5))} derivat</span>`
-              : `<span style="color:#34d399;" title="Hora reportada pel feed upstream">${this.esc((r.scheduledTime || '').slice(0, 5))}→${this.esc((r.actualTime || '').slice(0, 5))}</span>`;
+              ? `<span style="color:var(--accent-regulating);" title="Derivat en viu del quadre horari estàtic">${this.esc((r.scheduledTime || '').slice(0, 5))}→${this.esc((r.actualTime || '').slice(0, 5))} derivat</span>`
+              : `<span style="color:var(--accent-live);" title="Hora reportada pel feed upstream">${this.esc((r.scheduledTime || '').slice(0, 5))}→${this.esc((r.actualTime || '').slice(0, 5))}</span>`;
         // A real table row, not a flex div. The old markup was
         // justify-content:space-between over six inline spans, so every column
         // shifted with the length of the cell before it and there was no header
@@ -1802,11 +1819,11 @@ class ObservatoriApp {
       const tripLink = this._matchIncidentTrip(ep);
       content.innerHTML = `
         <div style="margin-bottom:0.6rem;">
-          <strong style="color:#fff;">Pics d'aquest episodi:</strong>
-          <span style="color:#fff; font-weight:800;"> ${ep.peakDelayMins} min</span>
+          <strong style="color:var(--text-primary);">Pics d'aquest episodi:</strong>
+          <span style="color:var(--text-primary); font-weight:800;"> ${ep.peakDelayMins} min</span>
           <span style="color:var(--text-muted); font-size:0.78rem;"> (${this.esc(ep.start)} → ${this.esc(ep.end)}, ${ep.durationMinutes.toFixed(1)} min)</span>
         </div>
-        <div style="margin-bottom:0.6rem; font-size:0.78rem; color:#fbbf24;">
+        <div style="margin-bottom:0.6rem; font-size:0.78rem; color:var(--accent-warning);">
           ⚠️ Aquest episodi agrupa ${ep.rowCount} mostres brutes de registre cada 20 s. El nombre d'"incidents" que apareix al rànquing és el compte de mostres, no de viatges.
         </div>
         ${tripLink}
@@ -1827,7 +1844,7 @@ class ObservatoriApp {
         </div>
       `;
     } catch (e) {
-      content.innerHTML = `<span style="color:#ef4444;">Error carregant la investigació: ${this.esc(e.message)}</span>`;
+      content.innerHTML = `<span style="color:var(--accent-danger);">Error carregant la investigació: ${this.esc(e.message)}</span>`;
     }
   }
 
@@ -1897,9 +1914,9 @@ class ObservatoriApp {
   /** Human label for the server-side times_provenance classification. */
   _timesProvenanceLabel(provenance) {
     switch (provenance) {
-      case 'observed': return '<span style="color:#34d399;">Horari observat pel feed upstream</span>';
-      case 'derived_timetable': return '<span style="color:#a78bfa;">Derivat del quadre horari (en viu)</span>';
-      case 'derived_timetable_backfill': return '<span style="color:#fbbf24;">Aproximació offline del quadre horari</span>';
+      case 'observed': return '<span style="color:var(--accent-live);">Horari observat pel feed upstream</span>';
+      case 'derived_timetable': return '<span style="color:var(--accent-regulating);">Derivat del quadre horari (en viu)</span>';
+      case 'derived_timetable_backfill': return '<span style="color:var(--accent-warning);">Aproximació offline del quadre horari</span>';
       case 'mixed': return '<span style="color:var(--text-secondary);">Mixta (consulta les mostres individuals)</span>';
       default: return '<span style="color:var(--text-muted);">Cap horari disponible</span>';
     }
@@ -1912,7 +1929,7 @@ class ObservatoriApp {
       <div style="background:rgba(251,191,36,0.07); border:1px solid rgba(251,191,36,0.25); border-radius:12px; padding:0.85rem 1rem; margin-bottom:1.25rem;">
         <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.75rem; flex-wrap:wrap;">
           <div>
-            <div style="font-size:0.78rem; font-weight:800; color:#f59e0b;">Què compten exactament aquestes xifres</div>
+            <div style="font-size:0.78rem; font-weight:800; color:var(--accent-warning);">Què compten exactament aquestes xifres</div>
             <div style="font-size:0.76rem; color:var(--text-secondary); margin-top:0.2rem; line-height:1.5;">
               Els KPIs (${this._fmtCount(s.rawSamplesOverThreshold ?? s.totalRecordedIncidents)} mostres, ${this._fmtCount(s.worstStopCount)} a ${this.esc(s.worstStop || 'cap parada')}) són
               <strong>mostres raw</strong>: un mateix autobús hi apareix cada 20 s. Les taules de dalt, en canvi, mostren
@@ -2026,8 +2043,8 @@ class ObservatoriApp {
       <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:1.1rem; margin-bottom:1.25rem;">
         <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.75rem;">
           <div>
-            <span style="font-size:0.75rem; font-weight:800; color:#38bdf8; text-transform:uppercase; letter-spacing:0.5px;">Observatori de Mobilitat • Anàlisi de Causes</span>
-            <h3 style="font-size:1.35rem; font-weight:800; color:#fff; margin:0.2rem 0;">Investigador d'Incidents de Trànsit &amp; Auditoria de Telemetria</h3>
+            <span style="font-size:0.75rem; font-weight:800; color:var(--accent-scheduled); text-transform:uppercase; letter-spacing:0.5px;">Observatori de Mobilitat • Anàlisi de Causes</span>
+            <h3 style="font-size:1.35rem; font-weight:800; color:var(--text-primary); margin:0.2rem 0;">Investigador d'Incidents de Trànsit &amp; Auditoria de Telemetria</h3>
             <p style="font-size:0.78rem; color:var(--text-muted); margin:0; max-width:740px; line-height:1.45;">
               Auditoria de retards per telemetria GPS. Els retards de servei comercial (${s.minDelayThreshold || 5}–24 min) es presenten al rànquing de trànsit regular. Els desfasaments extrems (&ge; 25 min) es classifiquen en una taula separada com a horaris no normals pendents d'investigació per resoldre la seva causa real.
             </p>
@@ -2066,10 +2083,10 @@ class ObservatoriApp {
       <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.75rem; margin-bottom:1.25rem;">
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
           <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">Retard Màxim de Servei</div>
-          <div style="font-size:1.6rem; font-weight:800; color:${trueMaxDelay === null ? 'var(--text-muted)' : '#ef4444'}; margin-top:0.2rem;">${maxDelayValue}</div>
+          <div style="font-size:1.6rem; font-weight:800; color:${trueMaxDelay === null ? 'var(--text-muted)' : 'var(--accent-danger)'}; margin-top:0.2rem;">${maxDelayValue}</div>
           <div style="font-size:0.72rem; color:var(--text-muted);">${this._fmtCount(s.rawSamplesOverThreshold ?? s.totalRecordedIncidents)} mostres raw &ge; ${s.minDelayThreshold || 5}m • ${topList.length} episodis al rànquing</div>
           ${maxFromInvestigation ? `
-            <div style="font-size:0.72rem; color:#fb7185; margin-top:0.2rem; line-height:1.4;">
+            <div style="font-size:0.72rem; color:var(--accent-danger); margin-top:0.2rem; line-height:1.4;">
               Aquest màxim prové de la taula «Horaris No Habituals» (&ge; 25 min). En aquesta finestra no hi ha cap retard de servei comercial (${s.minDelayThreshold || 5}–24 min), de manera que el màxim comercial no està mesurat.
             </div>
           ` : `
@@ -2085,13 +2102,13 @@ class ObservatoriApp {
 
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
           <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">Franja amb Més Retards</div>
-          <div style="font-size:1.15rem; font-weight:700; color:#f59e0b; margin-top:0.25rem;">${s.worstHour || '--:00'}</div>
+          <div style="font-size:1.15rem; font-weight:700; color:var(--accent-warning); margin-top:0.25rem;">${s.worstHour || '--:00'}</div>
           <div style="font-size:0.72rem; color:var(--text-muted);">${s.worstHourTag || 'Horari regular'}</div>
         </div>
 
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
           <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">Horaris No Habituals</div>
-          <div style="font-size:1.15rem; font-weight:700; color:#fb7185; margin-top:0.25rem;">${investigationList.length} en investigació</div>
+          <div style="font-size:1.15rem; font-weight:700; color:var(--accent-danger); margin-top:0.25rem;">${investigationList.length} en investigació</div>
           <div style="font-size:0.72rem; color:var(--text-muted);">${anomaliesList.length} anomalies de cotxeres/SAE</div>
         </div>
       </div>
@@ -2117,7 +2134,7 @@ class ObservatoriApp {
             <span>Mostrant incidents de servei comercial (${s.minDelayThreshold || 5}–24 min). S'agrupen els senyals cada 20 s del mateix viatge i parada per evitar duplicats.</span>
           </div>
           ${investigationList.length > 0 ? `
-            <div style="font-size:0.75rem; color:#fb7185; font-weight:700;">
+            <div style="font-size:0.75rem; color:var(--accent-danger); font-weight:700;">
               ${investigationList.length} expedicions amb retard extrem (&ge; 25 m) mogudes a la taula inferior d'investigació.
             </div>
           ` : ''}
@@ -2145,7 +2162,7 @@ class ObservatoriApp {
               <tbody>
                 ${topList.map((inc, i) => {
                   const lColor = getLineColor(inc.lineCode);
-                  const delayClass = inc.delayMins >= 20 ? '#ef4444' : (inc.delayMins >= 10 ? '#f59e0b' : '#38bdf8');
+                  const delayClass = inc.delayMins >= 20 ? 'var(--accent-danger)' : (inc.delayMins >= 10 ? 'var(--accent-warning)' : 'var(--accent-scheduled)');
                   const signalTooltip = inc.isRealTime
                     ? 'Senyal GPS directe: Telemetria transmesa en temps real pel vehicle físic.'
                     : 'Estimació per estima (dead-reckoning): Autobús físic amb GPS que ha perdut la cobertura temporalment (túnels, carrers estrets o caiguda de xarxa). La posició i el retard es calculen avançant la darrera velocitat i retard coneguts (màxim 90 segons). Mai s\'aplica a autobusos sense GPS.';
@@ -2155,7 +2172,7 @@ class ObservatoriApp {
                       <td style="font-weight:800; color:${delayClass}; white-space:nowrap;">+${inc.delayMins} min</td>
                       <td>
                         <div style="display:inline-flex; align-items:center; gap:5px; flex-wrap:wrap;">
-                          <span style="background:${lColor}; color:#fff; padding:0.15rem 0.45rem; border-radius:5px; font-weight:800; font-size:0.75rem;">${this.esc(inc.lineCode)}</span>
+                          <span style="background:${lColor}; color:${this.chipInk(lColor)}; padding:0.15rem 0.45rem; border-radius:5px; font-weight:800; font-size:0.75rem;">${this.esc(inc.lineCode)}</span>
                           ${formatBusBadge(inc.vehicleId)}
                         </div>
                       </td>
@@ -2199,7 +2216,7 @@ class ObservatoriApp {
         <div id="incident-drilldown-panel" style="margin-top:2rem; padding:1.5rem; background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; display:none;">
           <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; flex-wrap:wrap;">
             <div style="flex:1; min-width:280px;">
-              <h3 style="margin:0 0 0.5rem 0; font-size:1.2rem; color:#fff;">Investigació del retard</h3>
+              <h3 style="margin:0 0 0.5rem 0; font-size:1.2rem; color:var(--text-primary);">Investigació del retard</h3>
               <div id="drilldown-content" style="color:var(--text-secondary); line-height:1.5; font-size:0.84rem;">Selecciona un retard de la taula per a investigar-lo.</div>
             </div>
             <div style="flex:0 0 260px;">
@@ -2213,10 +2230,10 @@ class ObservatoriApp {
         <div style="margin-top:2.5rem; border-top:2px solid rgba(244, 63, 94, 0.35); padding-top:1.5rem;" id="section-investigation-incidents">
           <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.75rem; margin-bottom:0.85rem;">
             <div>
-              <div style="display:inline-flex; align-items:center; gap:6px; background:rgba(244, 63, 94, 0.15); color:#fb7185; padding:3px 8px; border-radius:6px; font-size:0.72rem; font-weight:800; text-transform:uppercase; letter-spacing:0.4px;">
+              <div style="display:inline-flex; align-items:center; gap:6px; background:rgba(244, 63, 94, 0.15); color:var(--accent-danger); padding:3px 8px; border-radius:6px; font-size:0.72rem; font-weight:800; text-transform:uppercase; letter-spacing:0.4px;">
                 <span>Pendent d'Investigació • Horaris No Habituals (&ge; 25 min)</span>
               </div>
-              <h4 style="font-size:1.15rem; font-weight:800; color:#fff; margin:0.35rem 0 0.2rem 0;">
+              <h4 style="font-size:1.15rem; font-weight:800; color:var(--text-primary); margin:0.35rem 0 0.2rem 0;">
                 Horaris No Habituals &amp; Desfasaments Extrems (&ge; 25 min) (${investigationList.length})
               </h4>
               <p style="font-size:0.78rem; color:var(--text-muted); margin:0; max-width:760px; line-height:1.45;">
@@ -2259,10 +2276,10 @@ class ObservatoriApp {
                     return `
                       <tr>
                         <td style="font-weight:700; color:var(--text-muted); text-align:center;">${inc.rank || (i + 1)}</td>
-                        <td style="font-weight:800; color:#fb7185; white-space:nowrap;">+${inc.delayMins} min</td>
+                        <td style="font-weight:800; color:var(--accent-danger); white-space:nowrap;">+${inc.delayMins} min</td>
                         <td>
                           <div style="display:inline-flex; align-items:center; gap:5px; flex-wrap:wrap;">
-                            <span style="background:${lColor}; color:#fff; padding:0.15rem 0.45rem; border-radius:5px; font-weight:800; font-size:0.75rem;">${this.esc(inc.lineCode)}</span>
+                            <span style="background:${lColor}; color:${this.chipInk(lColor)}; padding:0.15rem 0.45rem; border-radius:5px; font-weight:800; font-size:0.75rem;">${this.esc(inc.lineCode)}</span>
                             ${formatBusBadge(inc.vehicleId)}
                           </div>
                         </td>
@@ -2273,7 +2290,7 @@ class ObservatoriApp {
                           ${this.esc(inc.formattedDate || '')}
                         </td>
                         <td style="white-space:nowrap; font-size:0.78rem;">
-                          <span style="background:rgba(244,63,94,0.15); color:#fb7185; padding:0.2rem 0.5rem; border-radius:6px; font-weight:700; font-size:0.72rem; display:inline-flex; align-items:center; gap:4px;">
+                          <span style="background:rgba(244,63,94,0.15); color:var(--accent-danger); padding:0.2rem 0.5rem; border-radius:6px; font-weight:700; font-size:0.72rem; display:inline-flex; align-items:center; gap:4px;">
                             Pendent d'investigació
                           </span>
                         </td>
@@ -2302,10 +2319,10 @@ class ObservatoriApp {
         <div style="margin-top:2.5rem; border-top:2px dashed var(--border-subtle); padding-top:1.5rem;">
           <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.75rem; margin-bottom:0.85rem;">
             <div>
-              <div style="display:inline-flex; align-items:center; gap:6px; background:rgba(245, 158, 11, 0.15); color:#f59e0b; padding:3px 8px; border-radius:6px; font-size:0.72rem; font-weight:800; text-transform:uppercase; letter-spacing:0.4px;">
+              <div style="display:inline-flex; align-items:center; gap:6px; background:rgba(245, 158, 11, 0.15); color:var(--accent-warning); padding:3px 8px; border-radius:6px; font-size:0.72rem; font-weight:800; text-transform:uppercase; letter-spacing:0.4px;">
                 <span>Auditoria Operador &amp; Ajuntament</span>
               </div>
-              <h4 style="font-size:1.15rem; font-weight:800; color:#fff; margin:0.35rem 0 0.2rem 0;">
+              <h4 style="font-size:1.15rem; font-weight:800; color:var(--text-primary); margin:0.35rem 0 0.2rem 0;">
                 Anomalies de Telemetria SAE &amp; Sortida de Cotxeres (${anomaliesList.length})
               </h4>
               <p style="font-size:0.78rem; color:var(--text-muted); margin:0; max-width:740px; line-height:1.45;">
@@ -2345,17 +2362,17 @@ class ObservatoriApp {
                     const isStartup = inc.anomalyType === 'startup_sae';
                     const isMaintenance = inc.anomalyType === 'maintenance' || !isStartup;
                     const badgeBg = isStartup ? 'rgba(245, 158, 11, 0.15)' : 'rgba(147, 51, 234, 0.15)';
-                    const badgeColor = isStartup ? '#f59e0b' : '#c084fc';
+                    const badgeColor = isStartup ? 'var(--accent-warning)' : 'var(--accent-regulating)';
                     const signalTooltip = inc.isRealTime
                       ? 'Senyal GPS directe transmès pel vehicle físic.'
                       : 'Estimació per estima (dead-reckoning) per pèrdua temporal de senyal.';
                     return `
                       <tr>
                         <td style="font-weight:700; color:var(--text-muted); text-align:center;">${inc.rank || (i + 1)}</td>
-                        <td style="font-weight:800; color:#f59e0b; white-space:nowrap;">+${inc.delayMins} min</td>
+                        <td style="font-weight:800; color:var(--accent-warning); white-space:nowrap;">+${inc.delayMins} min</td>
                         <td>
                           <div style="display:inline-flex; align-items:center; gap:5px; flex-wrap:wrap;">
-                            <span style="background:${lColor}; color:#fff; padding:0.15rem 0.45rem; border-radius:5px; font-weight:800; font-size:0.75rem;">${this.esc(inc.lineCode)}</span>
+                            <span style="background:${lColor}; color:${this.chipInk(lColor)}; padding:0.15rem 0.45rem; border-radius:5px; font-weight:800; font-size:0.75rem;">${this.esc(inc.lineCode)}</span>
                             ${formatBusBadge(inc.vehicleId)}
                           </div>
                         </td>
@@ -2403,10 +2420,10 @@ class ObservatoriApp {
         <div style="margin-bottom:1.5rem;">
           <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.75rem; margin-bottom:0.85rem;">
             <div>
-              <div style="display:inline-flex; align-items:center; gap:6px; background:rgba(244, 63, 94, 0.15); color:#fb7185; padding:3px 8px; border-radius:6px; font-size:0.72rem; font-weight:800; text-transform:uppercase; letter-spacing:0.4px;">
+              <div style="display:inline-flex; align-items:center; gap:6px; background:rgba(244, 63, 94, 0.15); color:var(--accent-danger); padding:3px 8px; border-radius:6px; font-size:0.72rem; font-weight:800; text-transform:uppercase; letter-spacing:0.4px;">
                 <span>Pendent d'Investigació • Horaris No Habituals (&ge; 25 min)</span>
               </div>
-              <h4 style="font-size:1.25rem; font-weight:800; color:#fff; margin:0.35rem 0 0.2rem 0;">
+              <h4 style="font-size:1.25rem; font-weight:800; color:var(--text-primary); margin:0.35rem 0 0.2rem 0;">
                 Horaris No Habituals &amp; Desfasaments Extrems (&ge; 25 min) (${investigationList.length})
               </h4>
               <p style="font-size:0.8rem; color:var(--text-muted); margin:0; max-width:760px; line-height:1.45;">
@@ -2449,10 +2466,10 @@ class ObservatoriApp {
                     return `
                       <tr>
                         <td style="font-weight:700; color:var(--text-muted); text-align:center;">${inc.rank || (i + 1)}</td>
-                        <td style="font-weight:800; color:#fb7185; white-space:nowrap;">+${inc.delayMins} min</td>
+                        <td style="font-weight:800; color:var(--accent-danger); white-space:nowrap;">+${inc.delayMins} min</td>
                         <td>
                           <div style="display:inline-flex; align-items:center; gap:5px; flex-wrap:wrap;">
-                            <span style="background:${lColor}; color:#fff; padding:0.15rem 0.45rem; border-radius:5px; font-weight:800; font-size:0.75rem;">${this.esc(inc.lineCode)}</span>
+                            <span style="background:${lColor}; color:${this.chipInk(lColor)}; padding:0.15rem 0.45rem; border-radius:5px; font-weight:800; font-size:0.75rem;">${this.esc(inc.lineCode)}</span>
                             ${formatBusBadge(inc.vehicleId)}
                           </div>
                         </td>
@@ -2463,7 +2480,7 @@ class ObservatoriApp {
                           ${this.esc(inc.formattedDate || '')}
                         </td>
                         <td style="white-space:nowrap; font-size:0.78rem;">
-                          <span style="background:rgba(244,63,94,0.15); color:#fb7185; padding:0.2rem 0.5rem; border-radius:6px; font-weight:700; font-size:0.72rem; display:inline-flex; align-items:center; gap:4px;">
+                          <span style="background:rgba(244,63,94,0.15); color:var(--accent-danger); padding:0.2rem 0.5rem; border-radius:6px; font-weight:700; font-size:0.72rem; display:inline-flex; align-items:center; gap:4px;">
                             Pendent d'investigació
                           </span>
                         </td>
@@ -2531,7 +2548,7 @@ class ObservatoriApp {
                 <div class="trip-card">
                   <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
                     <div style="display:flex; align-items:center; gap:0.5rem;">
-                      <span style="background:${lColor}; color:#fff; padding:0.2rem 0.55rem; border-radius:6px; font-weight:800; font-size:0.8rem;">${this.esc(trip.lineCode)}</span>
+                      <span style="background:${lColor}; color:${this.chipInk(lColor)}; padding:0.2rem 0.55rem; border-radius:6px; font-weight:800; font-size:0.8rem;">${this.esc(trip.lineCode)}</span>
                       <strong style="color:var(--text-primary); font-size:0.9rem;">Expedició del ${this.esc(trip.startTime)}</strong>
                       ${formatBusBadge(trip.vehicleId)}
                       <span style="color:var(--text-muted); font-size:0.78rem;">(durada activa: ~${trip.durationMinutes || 1} min)</span>
@@ -2540,7 +2557,7 @@ class ObservatoriApp {
                       <span class="${typeBadgeClass}" style="padding:0.2rem 0.5rem; border-radius:6px; font-size:0.74rem; font-weight:700;">
                         ${this.esc(trip.incidentTypeLabel)}
                       </span>
-                      <span style="background:rgba(239,68,68,0.15); color:#ef4444; padding:0.2rem 0.55rem; border-radius:6px; font-size:0.78rem; font-weight:800;">
+                      <span style="background:rgba(239,68,68,0.15); color:var(--accent-danger); padding:0.2rem 0.55rem; border-radius:6px; font-size:0.78rem; font-weight:800;">
                         Màx: +${trip.maxDelayMins} min
                       </span>
                     </div>
