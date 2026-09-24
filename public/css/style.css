@@ -5456,6 +5456,13 @@ body {
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
 }
 
+/* A legend entry for a line the filter has hidden. Kept visible rather than
+   removed so the legend still lists the whole network, and still a valid click
+   target for the eye to match against the filter tabs. */
+.network-map-legend-item.is-dimmed {
+  opacity: 0.32;
+}
+
 /* Favorite Stops Hub Grid */
 .landing-favorites-section,
 .landing-nearby-section {

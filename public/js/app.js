@@ -790,6 +790,10 @@ class TransitApp {
         filterTabs.forEach(t => t.classList.remove('active'));
         tab.classList.add('active');
         this.landingFilter = tab.getAttribute('data-filter') || 'all';
+        // The tabs filter the network map, not the line cards: the grid under
+        // "Mataró Bus Urbà" is the full catalogue and stays complete so every
+        // line remains one click away.
+        this.applyLandingFilterToNetworkMap();
         this.renderLandingLines();
       });
     });
@@ -943,14 +947,11 @@ class TransitApp {
     if (!container) return;
 
     const q = (this.landingSearch || '').trim().toLowerCase();
-    const activeFilter = this.landingFilter || 'all';
 
+    // NOTE: the L1…L8 filter tabs deliberately do NOT narrow this list. They
+    // drive the network map (applyLandingFilterToNetworkMap); the card grid is
+    // the full catalogue and always shows every line.
     const filterFn = (l) => {
-      if (activeFilter !== 'all') {
-        const matchId = String(l.id).toLowerCase() === activeFilter.toLowerCase() ||
-                        String(l.code).toLowerCase() === `l${activeFilter}`.toLowerCase();
-        if (!matchId) return false;
-      }
       if (!q) return true;
       const code = (l.code || String(l.id)).toLowerCase();
       const name = (l.name || '').toLowerCase();
@@ -965,13 +966,6 @@ class TransitApp {
       stopsToRender = this.landingSearchResults.filter(r => !r.isLine && (r.type === 'stop' || r.stopId));
       if (!this.showTrainsInUI) {
         stopsToRender = stopsToRender.filter(r => !r.isTrain && !r.lineCode?.startsWith('R') && !r.agency?.toLowerCase().includes('rodalies') && !r.agency?.toLowerCase().includes('renfe'));
-      }
-      if (activeFilter !== 'all') {
-        stopsToRender = stopsToRender.filter(s => {
-          const lId = String(s.lineId || '').toLowerCase();
-          const lCode = String(s.lineCode || '').toLowerCase();
-          return lId === activeFilter.toLowerCase() || lCode === `l${activeFilter}`.toLowerCase();
-        });
       }
     }
 
@@ -6183,6 +6177,8 @@ class TransitApp {
     // Colours come from the same catalog the single-line map and the landing
     // line cards use, so a line can never be one colour here and another there.
     this.networkMap.setLineCatalog(this.availableLines || []);
+    // Honour a filter the visitor picked before scrolling the map into view.
+    this.networkMap.setLineFilter(this.landingFilter || 'all');
     if (this.currentTheme) this.networkMap.setTheme(this.currentTheme);
 
     this.refreshNetworkMap(true);
@@ -6239,19 +6235,41 @@ class TransitApp {
     }
   }
 
+  /**
+   * Routes the landing filter tabs to the network map.
+   *
+   * Safe to call before the map exists (the filter tabs sit above it in the
+   * page): the map is built lazily on scroll, so an early click is applied when
+   * ensureNetworkMap() runs rather than being dropped.
+   */
+  applyLandingFilterToNetworkMap() {
+    const map = this.networkMap;
+    if (!map) return;
+    map.setLineFilter(this.landingFilter || 'all');
+    // Re-frame on every change: picking L3 out of eight routes should show L3,
+    // and "Totes les línies" should pull the whole network back into view.
+    map.fitToNetwork();
+    this.updateNetworkMapBadge();
+  }
+
   updateNetworkMapBadge() {
     const badge = document.getElementById('network-map-fleet-badge');
     if (!badge || !this.networkMap) return;
     const { live, estimated, total } = this.networkMap.fleetCounts();
+    // Name the line when a filter is on, so the count is unambiguously scoped
+    // to what is drawn rather than looking like the whole fleet.
+    const scope = this.networkMap.lineFilter && this.networkMap.lineFilter !== 'all'
+      ? `${this.networkMap.lineFilter} · `
+      : '';
     // Report the real split. Never clamp against a scheduled total: that
     // "fix" is what made a 5-bus fleet read "6 en servei" (see AGENTS.md §3).
     if (total === 0) {
-      badge.textContent = 'Sense autobusos ara';
+      badge.textContent = `${scope}Sense autobusos ara`;
       return;
     }
-    badge.textContent = estimated > 0
+    badge.textContent = scope + (estimated > 0
       ? `${total} autobusos · ${live} GPS · ${estimated} estimats`
-      : `${total} autobusos · ${live} en GPS directe`;
+      : `${total} autobusos · ${live} en GPS directe`);
   }
 
   startNetworkMapTimer() {

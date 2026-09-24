@@ -41,8 +41,12 @@ class NetworkMap extends TransitMap {
     this.busLayer = L.layerGroup().addTo(this.map);
 
     this.lineGeometries = new Map();   // code -> { color, name, primary, secondary }
+    // Per-line layer groups, so filtering one line out is a remove() on two
+    // groups rather than a rebuild of the whole map.
+    this.lineLayers = new Map();       // code -> { routes, stops, arrows }
     this.lineCatalog = [];
     this.busesByLine = new Map();      // code -> Map(markerKey -> bus)
+    this.lineFilter = 'all';
     // createDirectionalArrows() pushes into this; TransitMap only initialises it
     // inside renderStops(), which this map never calls.
     this.directionalArrowMarkers = [];
@@ -103,7 +107,9 @@ class NetworkMap extends TransitMap {
     host.textContent = '';
     for (const line of this.lineCatalog) {
       const pill = document.createElement('span');
-      pill.className = 'network-map-legend-item';
+      // Dimmed entries are the ones currently filtered out, so the legend
+      // reports what is hidden as well as what is drawn.
+      pill.className = `network-map-legend-item${this.isLineVisible(line.code) ? '' : ' is-dimmed'}`;
       const dot = document.createElement('span');
       dot.className = 'network-map-legend-dot';
       dot.style.background = line.color;
@@ -135,15 +141,27 @@ class NetworkMap extends TransitMap {
     if (alreadyDrawn) return;
 
     this.drawLineGeometry(code, color, primary, secondary, payload.stops, payload.secondaryStops);
+    // A line can finish loading after the visitor has already filtered down to
+    // another one; it must not reappear just because its data arrived late.
+    this.applyLineVisibility();
   }
 
   drawLineGeometry(code, color, primary, secondary, stops, secondaryStops) {
+    // Each line owns its own pair of groups so the filter can drop a whole
+    // line without touching the other seven.
+    const routes = L.layerGroup().addTo(this.routeLayer);
+    const stopsGroup = L.layerGroup().addTo(this.stopLayer);
+
     // Arrows are far denser than a single route needs; 2 km keeps eight routes
-    // legible instead of burying the map in arrow nodes.
+    // legible instead of burying the map in arrow nodes. createDirectionalArrows
+    // adds them straight to the map, so this records them for the filter to
+    // add/remove alongside the rest of their line.
+    const arrows = [];
     for (const coords of [primary, secondary]) {
       if (!coords || coords.length < 2) continue;
-      this.directionalArrowMarkers.push(...this.createDirectionalArrows(coords, color, 2000));
+      arrows.push(...this.createDirectionalArrows(coords, color, 2000));
     }
+    this.directionalArrowMarkers.push(...arrows);
 
     // Same styling as TransitMap.renderStops: solid outbound leg, dashed
     // return leg. The return leg keeps the LINE's own colour here (not the
@@ -151,12 +169,12 @@ class NetworkMap extends TransitMap {
     if (primary && primary.length > 1) {
       L.polyline(primary, {
         color, weight: 4.5, opacity: 0.9, lineCap: 'round', lineJoin: 'round'
-      }).addTo(this.routeLayer);
+      }).addTo(routes);
     }
     if (secondary && secondary.length > 1) {
       L.polyline(secondary, {
         color, weight: 4, opacity: 0.85, dashArray: '8, 8', lineCap: 'round', lineJoin: 'round'
-      }).addTo(this.routeLayer);
+      }).addTo(routes);
     }
 
     // Stops as small dots in the line colour, snapped onto their own polyline.
@@ -179,17 +197,80 @@ class NetworkMap extends TransitMap {
           fillColor: color,
           fillOpacity: 0.55,
           interactive: false
-        }).addTo(this.stopLayer);
+        }).addTo(stopsGroup);
       }
     };
     addStops(stops, primary);
     addStops(secondaryStops, secondary);
+
+    this.lineLayers.set(code, { routes, stops: stopsGroup, arrows });
+  }
+
+  // ----------------------------------------------------------------- filter
+
+  /**
+   * Filters the map to a single line. `filter` is the landing filter-tab value:
+   * 'all' or a bare line number ('1'…'8'); a full code ('L3') also works.
+   * The map is never torn down — buses, geometry and popup state all survive,
+   * so switching back is instant and no refetch is needed.
+   */
+  setLineFilter(filter) {
+    const raw = String(filter ?? 'all').trim();
+    // Only 'all' and a real Mataró line code are honoured. An unrecognised
+    // value falls back to showing everything, because a blank map with no
+    // visible cause is a worse failure than ignoring a bad value.
+    this.lineFilter = /^L?[1-8]$/i.test(raw) ? `L${raw.replace(/^L/i, '')}` : 'all';
+    this.applyLineVisibility();
+    this.renderLegend();
+  }
+
+  isLineVisible(code) {
+    if (this.lineFilter === 'all') return true;
+    return String(code || '').toUpperCase() === this.lineFilter;
+  }
+
+  /** Shows or hides every layer and bus marker that the filter excludes. */
+  applyLineVisibility() {
+    if (!this.map) return;
+
+    for (const [code, layers] of this.lineLayers.entries()) {
+      const visible = this.isLineVisible(code);
+      if (visible) {
+        this.routeLayer.addLayer(layers.routes);
+        this.stopLayer.addLayer(layers.stops);
+        for (const arrow of layers.arrows) {
+          if (!this.map.hasLayer(arrow)) this.map.addLayer(arrow);
+        }
+      } else {
+        // addLayer/removeLayer on the PARENT, not group.remove(): Leaflet's
+        // group.remove() detaches from the map but leaves the group listed in
+        // its parent, so routeLayer.getBounds() would still include the hidden
+        // line and the map would frame buses the visitor cannot see.
+        this.routeLayer.removeLayer(layers.routes);
+        this.stopLayer.removeLayer(layers.stops);
+        for (const arrow of layers.arrows) {
+          if (this.map.hasLayer(arrow)) this.map.removeLayer(arrow);
+        }
+      }
+    }
+
+    // Bus markers are added/removed individually: they already live in one
+    // shared group, and a bus that is filtered out must not stay clickable.
+    for (const [key, obj] of this.busMarkersMap.entries()) {
+      const code = String(key).split('|')[0];
+      const visible = this.isLineVisible(code);
+      const attached = this.busLayer.hasLayer(obj.marker);
+      if (visible && !attached) this.busLayer.addLayer(obj.marker);
+      else if (!visible && attached) this.busLayer.removeLayer(obj.marker);
+    }
   }
 
   /**
-   * Frames the whole network. Called once by the app after the first full load
-   * of all eight lines — fitting while lines are still arriving would frame
-   * whichever line happened to land first.
+   * Frames whatever is currently visible. Called once by the app after the first
+   * full load of all eight lines — fitting while lines are still arriving would
+   * frame whichever line happened to land first. routeLayer only reports the
+   * bounds of groups still attached to it, so a filtered map frames the lines
+   * actually on screen.
    */
   fitToNetwork() {
     if (!this.map) return;
@@ -345,7 +426,11 @@ class NetworkMap extends TransitMap {
           iconAnchor: [22, 22]
         }),
         zIndexOffset: isGhost ? 1500 : 2000
-      }).addTo(this.busLayer);
+      });
+      // A filtered-out line keeps its buses in busMarkersMap — they are still
+      // animating and must be there when the filter comes back — but they are
+      // not attached to the map, so they are neither visible nor clickable.
+      if (this.isLineVisible(code)) marker.addTo(this.busLayer);
 
       marker.bindPopup(popupHtml, {
         className: 'arribo-bus-popup',
@@ -389,11 +474,16 @@ class NetworkMap extends TransitMap {
     }
   }
 
-  /** Live/estimated split across every line, for the header badge. */
+  /**
+   * Live/estimated split for the header badge. Counts only the lines currently
+   * on screen, so the badge never claims buses the visitor cannot see. This is
+   * a visibility count, not a clamp: the totals still come from the real fleet.
+   */
   fleetCounts() {
     let live = 0;
     let estimated = 0;
-    for (const buses of this.busesByLine.values()) {
+    for (const [code, buses] of this.busesByLine.entries()) {
+      if (!this.isLineVisible(code)) continue;
       for (const b of buses) {
         if (isGhostBus(b) || b.isEstimated) estimated++;
         else live++;
@@ -413,6 +503,7 @@ class NetworkMap extends TransitMap {
     }
     this.busMarkersMap.clear();
     this.lineGeometries.clear();
+    this.lineLayers.clear();
     this.busesByLine.clear();
   }
 }
