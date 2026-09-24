@@ -163,6 +163,21 @@ back to the built-in Avanza well-known defaults when unset. Documentation
 redaction does not revoke secrets, erase history or remove legacy source defaults.
 Historical exposure needs operator review; do not rotate accounts incidentally.
 
+- **Never disable TLS certificate verification to work around an upstream
+  misconfiguration.** `mataro.avanzagrupo.com` serves its leaf without the
+  Sectigo intermediate that signed it, which used to be answered with
+  `rejectUnauthorized: false` and `NODE_TLS_REJECT_UNAUTHORIZED=0`. Those notices
+  feed line detours and `seasonCalendar.registerWindow`, and the scraped
+  response is the source of the published timetable, so an unverified response
+  is an integrity hole, not an inconvenience. The chain is genuine — it is just
+  incomplete — so the missing certificates are vendored in `src/data/certs/`
+  and applied to that host alone via `src/core/http/verifiedTls.js`. Adding a
+  broken host to `CHAIN_REPAIR_HOSTS` is the fix; relaxing verification is not,
+  and `test/portal_tls_verification_test.js` fails if a blanket bypass returns.
+  That sweep strips comments with a **string-aware** helper: the Accept header
+  contains `*/*;q=0.8`, and a naive regex reads that as a comment opener and
+  skips real code while reporting success.
+
 ## 5. Validation and delivery
 
 ```bash

@@ -156,6 +156,60 @@ arbitrary pick. The known summer window in config is 27 Jul – 23 Aug 2026, the
 the operator has published; **the 2026–2027 season boundary dates are not published**, so
 add them to `SUMMER_WINDOWS` when they are.
 
+## Certificate chain rotations
+
+`mataro.avanzagrupo.com` serves its leaf certificate **without** the Sectigo
+intermediate that signed it, so Node cannot build the chain and rejects the
+connection. The chain itself is valid — the leaf's AIA extension points at the
+missing certificate — so the intermediate and its root are vendored in
+`src/data/certs/` and applied to that host only by
+`src/core/http/verifiedTls.js`. Verification stays on for every request.
+
+Both HTTPS callers go through a plain `https.request` carrying that agent:
+the tracker directly, and `scripts/scrape_avanza_schedules.js` via its own
+`httpsFetch` wrapper. Global `fetch` is deliberately **not** used, because
+undici cannot accept a per-request `https.Agent`. Setting
+`NODE_EXTRA_CA_CERTS` inside the script is not a workaround either — Node
+reads that variable once at process startup, so assigning it from within a
+running script is already too late and the connection fails exactly as before.
+
+**Do not respond to a chain error by disabling verification.**
+`NODE_TLS_REJECT_UNAUTHORIZED=0` and `rejectUnauthorized: false` authenticate
+nothing, and the affected responses are operator notices (which drive line
+detours and the season calendar) and scraped timetables. A stale notice is a
+better failure than a forged one.
+
+### Symptoms
+
+| Log / test output | Meaning |
+| --- | --- |
+| `UNABLE_TO_VERIFY_LEAF_SIGNATURE` | The portal is serving a leaf with no intermediate again. Re-vendor the chain. |
+| `UNABLE_TO_GET_ISSUER_CERT_LOCALLY` | Sectigo rotated to a new CA. The vendored root no longer signs the leaf. |
+| `CERT_HAS_EXPIRED` | A vendored certificate reached its expiry. |
+
+`describeChainFailure()` in `src/core/http/verifiedTls.js` names the cause in
+the tracker log, and a failed avisos fetch falls back to the last known
+notices rather than serving nothing.
+
+### Re-vendoring
+
+1. Read the leaf's current AIA pointer to learn which intermediate is expected:
+   ```bash
+   node -e "const tls=require('tls');const s=tls.connect({host:'mataro.avanzagrupo.com',port:443,servername:'mataro.avanzagrupo.com',rejectUnauthorized:false},()=>{console.log(s.getPeerCertificate().infoAccess);s.end();});"
+   ```
+   Prints the `CA Issuers - URI` for the intermediate. Repeat the same command
+   against the downloaded intermediate to find its root.
+2. Download the intermediate from its AIA URL, then the root from the
+   intermediate's own AIA URL. Both are DER, not PEM — convert before saving.
+3. Replace `src/data/certs/sectigo-ov-r36-intermediate.pem` and
+   `src/data/certs/sectigo-root-r46.pem` (rename if the CA changed), and
+   regenerate `avanza-portal-chain.pem` (intermediate **and** root, one file).
+4. Update the two pinned SHA-256 fingerprints in
+   `test/portal_tls_verification_test.js`.
+5. `npm test`. The suite re-verifies both signatures, both fingerprints, the
+   expiry dates, and that the live portal still authorizes — an unrotated
+   vendored cert fails loudly here rather than in production.
+
 ## Backfilling derived timetable times
 
 Live ingestion derives `scheduled_time` / `actual_time` for each new delay row from

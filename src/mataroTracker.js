@@ -14,6 +14,7 @@ const flightRecorder = require('./flightRecorder');
 const BaseTracker = require('./core/BaseTracker');
 const transitRouter = require('./core/schedule/transitRouter');
 const mataroFleet = require('./data/mataroFleet');
+const verifiedTls = require('./core/http/verifiedTls');
 
 /**
  * Resolve the timetable bucket for a moment. August weekdays run the reduced
@@ -88,16 +89,23 @@ class MataroTracker extends BaseTracker {
       return this.avisosCache;
     }
 
+    const AVISOS_URL = 'https://mataro.avanzagrupo.com/ca/avisos';
+
     const fetchOnline = () => new Promise((resolve) => {
       const https = require('https');
-      const req = https.get('https://mataro.avanzagrupo.com/ca/avisos', {
+      const req = https.get(AVISOS_URL, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           'Cookie': 'GUEST_LANGUAGE_ID=ca_ES'
         },
         timeout: 6000,
-        rejectUnauthorized: false
+        // The portal serves its leaf without the Sectigo intermediate that
+        // signed it, so Node cannot verify the chain. We supply the missing
+        // certificates for this host instead of switching verification off:
+        // these notices drive line detours and the season calendar, so an
+        // unauthenticated response would let a third party publish them.
+        agent: verifiedTls.agentFor('mataro.avanzagrupo.com')
       }, (res) => {
         let data = '';
         res.on('data', chunk => data += chunk);
@@ -170,7 +178,15 @@ class MataroTracker extends BaseTracker {
           resolve(avisos);
         });
       });
-      req.on('error', () => resolve(null));
+      // A TLS failure here means the portal's certificate chain no longer
+      // matches what src/data/certs/ holds — most likely an upstream rotation.
+      // Falling back to the cached notices is the right behaviour, but staying
+      // silent about it would leave a stale board looking healthy, so name the
+      // cause once per failure rather than swallowing it.
+      req.on('error', (err) => {
+        console.warn(`[MataroTracker] Avisos fetch failed — ${verifiedTls.describeChainFailure(err)}`);
+        resolve(null);
+      });
       req.on('timeout', () => { req.destroy(); resolve(null); });
     });
 

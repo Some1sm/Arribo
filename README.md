@@ -170,7 +170,7 @@ Other open-source tools and community transit projects can query these endpoints
 
 - **Session Cookies:** Send an initial `GET https://mataro.avanzagrupo.com/detalle-linea?idBusLine=1` to receive session cookies (`JSESSIONID`, `COOKIE_SUPPORT`), and supply them in the `Cookie` header on subsequent POSTs.
 - **Headers:** Include `'X-Requested-With': 'XMLHttpRequest'` and `'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'`.
-- **TLS Certificate Chain:** The upstream server certificate may lack intermediate certificates on standard Node trust stores; set `NODE_TLS_REJECT_UNAUTHORIZED=0` or supply intermediate CAs.
+- **TLS Certificate Chain:** `mataro.avanzagrupo.com` serves its leaf certificate without the Sectigo intermediate that signed it, so Node cannot verify the chain and fails with `UNABLE_TO_VERIFY_LEAF_SIGNATURE`. This is repaired, not bypassed: the intermediate and its root are vendored in `src/data/certs/` and supplied for that host only, so verification stays on. **Do not set `NODE_TLS_REJECT_UNAUTHORIZED=0` or `rejectUnauthorized: false`** — these notices and timetables would then be unauthenticated. See [OPERATIONS.md](OPERATIONS.md#certificate-chain-rotations) and `test/portal_tls_verification_test.js`.
 
 ### Automated Scraper Script
 

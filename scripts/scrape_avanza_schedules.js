@@ -15,10 +15,75 @@
  * - Calibrated day-specific travel times (dayStopTravelSec, dayTravelSec) in mataro_schedules.json
  */
 
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-
 const fs = require('node:fs');
 const path = require('node:path');
+const https = require('node:https');
+const verifiedTls = require('../src/core/http/verifiedTls');
+
+// mataro.avanzagrupo.com serves its leaf certificate without the Sectigo
+// intermediate that signed it, so Node cannot build the chain and fails with
+// UNABLE_TO_VERIFY_LEAF_SIGNATURE. The previous workaround here was
+// NODE_TLS_REJECT_UNAUTHORIZED=0, which turns off certificate checking for
+// every request this process makes — the scraped response becomes the source
+// of the published timetable, so an unverified one is not acceptable.
+//
+// The chain is genuine, just incomplete, so the missing intermediate and its
+// root are vendored in src/data/certs/ and supplied for this host alone. See
+// src/core/http/verifiedTls.js for the full chain and the rationale.
+//
+// This is a plain https.request rather than global fetch, because fetch runs on
+// undici, which cannot be given a per-request https.Agent. Assigning
+// NODE_EXTRA_CA_CERTS here would not work either: Node reads that variable once
+// at process startup, so setting it from inside the script is already too late.
+
+/**
+ * Minimal fetch-shaped wrapper over https.request, using the chain-repairing
+ * agent. Returns just what this scraper needs: status, ok, and set-cookie.
+ *
+ * @param {string} url
+ * @param {{method?: string, headers?: object, body?: string, redirects?: number}} options
+ * @returns {Promise<{ok: boolean, status: number, statusText: string, setCookie: string|null, text: () => Promise<string>}>}
+ */
+function httpsFetch(url, options = {}) {
+  const target = new URL(url);
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: target.hostname,
+      path: target.pathname + target.search,
+      method: options.method || 'GET',
+      headers: options.headers || {},
+      agent: verifiedTls.agentFor(target.hostname),
+      timeout: options.timeout || 30000
+    }, (res) => {
+      // The portal answers 3xx when a session cookie is stale; follow a few
+      // hops so a re-init works the same way global fetch did.
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && (options.redirects || 0) < 5) {
+        res.resume();
+        const next = new URL(res.headers.location, url).toString();
+        httpsFetch(next, { ...options, redirects: (options.redirects || 0) + 1 }).then(resolve, reject);
+        return;
+      }
+      let data = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        resolve({
+          ok: res.statusCode >= 200 && res.statusCode < 300,
+          status: res.statusCode,
+          statusText: res.statusMessage || '',
+          setCookie: res.headers['set-cookie'] || null,
+          text: async () => data
+        });
+      });
+    });
+    req.on('timeout', () => { req.destroy(new Error('Request timed out')); });
+    req.on('error', (err) => {
+      reject(new Error(`${verifiedTls.describeChainFailure(err)} (${err.code || ''})`));
+    });
+    if (options.body) req.write(options.body);
+    req.end();
+  });
+}
 
 const BASE_URL = 'https://mataro.avanzagrupo.com';
 const PORTLET_LINEA = 'adoLinea_routes_AdoLineaRoutesPortlet_INSTANCE_9eVaGQ76b4lw';
@@ -38,12 +103,13 @@ async function delay(ms) {
 
 async function initSession() {
   console.log('🔄 Initializing session with Avanza portal...');
-  const res = await fetch(`${BASE_URL}/detalle-linea?idBusLine=1`, {
+  const res = await httpsFetch(`${BASE_URL}/detalle-linea?idBusLine=1`, {
     headers: { 'User-Agent': USER_AGENT }
   });
-  const setCookie = res.headers.get('set-cookie');
+  const setCookie = res.setCookie;
   if (setCookie) {
-    sessionCookies = setCookie.split(',').map(c => c.split(';')[0].trim()).join('; ');
+    sessionCookies = (Array.isArray(setCookie) ? setCookie.join(',') : setCookie)
+      .split(',').map(c => c.split(';')[0].trim()).join('; ');
   }
   console.log('✅ Session initialized.');
 }
@@ -51,7 +117,7 @@ async function initSession() {
 async function postWithRetry(url, params, retries = 3) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      const res = await fetch(url, {
+      const res = await httpsFetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
@@ -67,8 +133,7 @@ async function postWithRetry(url, params, retries = 3) {
         throw new Error(`HTTP ${res.status} ${res.statusText}`);
       }
 
-      const json = await res.json();
-      return json;
+      return JSON.parse(await res.text());
     } catch (err) {
       if (attempt === retries) {
         console.warn(`⚠️ Request failed after ${retries} attempts: ${err.message}`);
