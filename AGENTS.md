@@ -199,7 +199,13 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   difference, so a bus running outside that window leaves its trip looking
   unpaired while a real bus is plainly out there. The anti-bunching guards
   (18% progress and 700 m same-direction, 250 m cross-direction) are separate and
-  deliberate. See `test/fleet_direction_balance_test.js`.
+  deliberate. See `test/fleet_direction_balance_test.js` for L1, and
+  `test/fleet_all_lines_test.js` for the whole network. All eight lines are
+  asymmetric and all eight were losing buses; L2, L3 and L5 are asymmetric the
+  *other* way round, so a fix verified only on L1 can still be wrong. Do not
+  derive a per-direction budget by division, and note that a count-based test
+  cannot cover L4/L6/L7 — their shortfalls are entangled with the anti-bunching
+  guard, so the arithmetic is pinned structurally there instead.
 - **A vehicle the operator never identified is not a real bus.**
   `mataroSiriClient` emits `vehicleRef || 'Bus'`, so any activity with no
   `<VehicleRef>` arrives literally identified `"Bus"`. The only guard was

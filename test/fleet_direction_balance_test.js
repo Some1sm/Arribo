@@ -248,6 +248,22 @@ async function run() {
     }
 
     // End to end: seed the SIRI cache so getLineDetails consumes it for real.
+    // The clock is FROZEN here, and it has to be. These buses are seeded at
+    // 30/70/50% and carry speedKmh: 20, so the tracker dead-reckons them
+    // forward from the seeded position as the cache ages; left on the real
+    // clock they land somewhere different on every run, and at roughly 30 of
+    // 102 instants through the service day one of them drifts close enough to
+    // a ghost for the anti-bunching guard to suppress it legitimately. The
+    // equality below then fails on the wall clock while production is correct.
+    // A frozen instant is the fixture fix; the assertion itself is right — a
+    // dropped phantom must not shrink the payload below the scheduled fleet.
+    const realDate = global.Date;
+    const frozen = new realDate('2026-09-24T10:25:00+02:00').getTime();
+    class FrozenDate extends realDate {
+      constructor(...args) { if (!args.length) super(frozen); else super(...args); }
+      static now() { return frozen; }
+    }
+    global.Date = FrozenDate;
     const coordAt = (p, dir = 0) => {
       const c = routes1[dir].coords[Math.floor((routes1[dir].coords.length - 1) * p)];
       return { lat: parseFloat(c.Latitude), lon: parseFloat(c.Longitude) };
@@ -276,6 +292,7 @@ async function run() {
     } finally {
       siriClient.cache.delete('veh_1');
       mataroTracker.invalidateLineDetailsCache();
+      global.Date = realDate;
     }
 
     // And the stitcher must still do its job: an anonymous report that CAN be
