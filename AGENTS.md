@@ -125,6 +125,19 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   they yield to a published trip. Getting this wrong is silent and looks like a
   timetable error, which is how a rider reported a missing 11:03 that was in the
   data all along. See `test/stop_departures_dedup_test.js`.
+- **A stop board never lists a bus that has already served that stop.** "Has this bus
+  passed?" must be decided by *signed progress along the route* — metres from the start
+  of the direction, positive while the stop is still ahead. It must NOT be decided by the
+  bus's nearest-stop index: the nearest stop is the one a bus is approaching OR the one it
+  just left, so that index cannot tell the two apart. In the window where a bus has just
+  left stop N while N is still its closest stop, a nearest-index test admits it, and if the
+  remaining distance is then measured with the unsigned `calculatePolylineDistanceBetween`
+  the result is a confident positive ETA for a stop already served. A rider saw one bus
+  listed 2 min out at Pl. Fiveller while the same bus was arriving at La Coma, the very
+  next stop along the road. Keep a small tolerance (`PASSED_STOP_TOLERANCE_M`, 30 m —
+  polyline snapping errs under 10 m) so a bus standing AT a stop still reads as imminent
+  rather than vanishing. The old index test also dropped buses that were legitimately
+  still approaching. See `test/stop_passed_estimation_test.js`.
 - Never fall back to missed departures. Include access/transfer walks and waits.
 - Exclude EST_, isGhostVehicle and isTheoretical vehicles from flightRecorder.
   Freshness is subsystem-specific, not one universal 90-second cutoff. Estimated

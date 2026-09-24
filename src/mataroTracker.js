@@ -2183,6 +2183,12 @@ class MataroTracker extends BaseTracker {
     return deps && Array.isArray(deps.departures) ? deps.departures : [];
   }
 
+  // A bus within this many metres BEYOND a stop has served it, and must not be
+  // offered as still approaching. Snapping a position to the route polyline
+  // errs by under 10m, so the tolerance keeps a bus standing AT the stop
+  // reading as imminent rather than flipping to "already gone".
+  static PASSED_STOP_TOLERANCE_M = 30;
+
   // Estimate arrival ETA to stopId from active live vehicles along the route
   async estimateArrivalsForStop(stopId, lineId = '', existingArrivals = [], options = {}) {
     const sId = this.normalizeStopId(stopId);
@@ -2289,6 +2295,28 @@ class MataroTracker extends BaseTracker {
         const targetStopObj = routeStops[targetStopIdx];
         const routePolyCoords = (route.coords || []).map(c => ({ lat: parseFloat(c.Latitude), lon: parseFloat(c.Longitude) }));
 
+        const targetLat = targetStopObj.latitude !== undefined ? parseFloat(targetStopObj.latitude) : targetStopObj.lat;
+        const targetLon = targetStopObj.longitude !== undefined ? parseFloat(targetStopObj.longitude) : targetStopObj.lon;
+
+        // Along-route progress, in metres from the start of this direction, is
+        // what decides whether a bus has already served this stop. Stop indices
+        // cannot: the NEAREST stop is the one a bus is approaching OR the one it
+        // just left, so a nearest-stop index cannot tell those apart. A rider saw
+        // one bus listed 2 min out at Pl. Fiveller while the same bus was
+        // arriving at La Coma, the very next stop along the road.
+        const hasRouteGeometry = routePolyCoords.length >= 2;
+        const routeStart = hasRouteGeometry ? routePolyCoords[0] : null;
+        const targetStopAlong = hasRouteGeometry
+          ? geoEngine.calculatePolylineDistanceBetween(
+            routePolyCoords, routeStart.lat, routeStart.lon,
+            Number.isFinite(parseFloat(targetLat)) ? parseFloat(targetLat) : routeStart.lat,
+            Number.isFinite(parseFloat(targetLon)) ? parseFloat(targetLon) : routeStart.lon
+          )
+          : null;
+        const alongRouteOf = (lat, lon) => geoEngine.calculatePolylineDistanceBetween(
+          routePolyCoords, routeStart.lat, routeStart.lon, lat, lon
+        );
+
         // Check each live vehicle on the line
         liveVehicles.forEach(veh => {
           if (existingVehicleIds.has(veh.vehicleId)) return; // Already reported by SIRI
@@ -2314,17 +2342,39 @@ class MataroTracker extends BaseTracker {
           const snapped = geoEngine.snapPointToPolyline(effectiveLat, effectiveLon, routePolyCoords);
           const vehNearestStop = this.findNearestSegment(snapped.lat, snapped.lon, routeStops, routePolyCoords);
           const vehStopIdx = Math.max(0, (vehNearestStop.fromSeq || 1) - 1);
-          const isUpstreamDirect = (vehStopIdx <= targetStopIdx);
+
+          // Signed remaining distance: positive while the stop is still ahead of
+          // the bus, negative once the bus is beyond it. The old nearest-stop
+          // test let a bus that had just left the stop through, and the distance
+          // to the stop was then measured BACKWARDS, producing a confident
+          // positive ETA at a stop already served.
+          let remainingMeters;
+          let remainingStops;
+          if (hasRouteGeometry) {
+            const busAlong = alongRouteOf(snapped.lat, snapped.lon);
+            remainingMeters = targetStopAlong - busAlong;
+            remainingStops = Math.max(0, targetStopIdx - vehStopIdx);
+          } else {
+            // No usable geometry for this direction: keep the previous
+            // nearest-stop behaviour rather than dropping every estimate.
+            remainingStops = Math.max(0, targetStopIdx - vehStopIdx);
+            remainingMeters = (vehStopIdx <= targetStopIdx)
+              ? geoEngine.calculatePolylineDistanceBetween(
+                routePolyCoords, snapped.lat, snapped.lon,
+                Number.isFinite(targetLat) ? targetLat : effectiveLat,
+                Number.isFinite(targetLon) ? targetLon : effectiveLon
+              )
+              : 0;
+          }
+
+          const isUpstreamDirect = hasRouteGeometry
+            ? remainingMeters > -MataroTracker.PASSED_STOP_TOLERANCE_M
+            : vehStopIdx <= targetStopIdx;
 
           if (!isUpstreamDirect) return; // Bus has passed this stop on this run; do not fabricate synthetic multi-hop loops!
 
-          const targetLat = targetStopObj.latitude !== undefined ? parseFloat(targetStopObj.latitude) : targetStopObj.lat;
-          const targetLon = targetStopObj.longitude !== undefined ? parseFloat(targetStopObj.longitude) : targetStopObj.lon;
-
-          const remainingStops = targetStopIdx - vehStopIdx;
-          const remainingMeters = geoEngine.calculatePolylineDistanceBetween(routePolyCoords, snapped.lat, snapped.lon, targetLat || effectiveLat, targetLon || effectiveLon);
           const speedMps = Math.max(4.5, (veh.speedKmh || 22) / 3.6);
-          let transitTravelSec = Math.round(remainingMeters / speedMps) + (remainingStops * 25);
+          let transitTravelSec = Math.round(Math.max(0, remainingMeters) / speedMps) + (remainingStops * 25);
 
           // If vehicle is parked/regulating at origin terminal:
           if (vehStopIdx === 0 && (veh.speedKmh === 0 || veh.speedKmh <= 5 || veh.isTerminalLayover)) {
