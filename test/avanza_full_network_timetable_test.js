@@ -93,14 +93,24 @@ console.log('📌 Test 3: Fleet Requirement Invariants Preserved...');
   const l1SatNoon = mataroSchedules.getScheduledFleetRequirement('1', 'saturday', 47164); // 13:06
   const l1Night = mataroSchedules.getScheduledFleetRequirement('1', 'weekday', 10800); // 03:00
   
-  assert.strictEqual(l1Weekday, 5, 'Line 1 weekday peak dynamically calculated as 5 vehicles');
+  // L1 runs 29 min one way and 40 min the other, so a bus is committed for
+  // 30-41 minutes against a 13-minute headway. Peak concurrency at 16:30 is
+  // therefore ceil(41/13) = 4 per direction pair... concretely measured: at
+  // 16:33 six trips are in the air at once. The old expectation of 5 came from
+  // a run time of 30 min for the dir-11 loop, which was a corrupt terminal
+  // offset (the last stop's slot held a direction total, not a cumulative
+  // offset). With the terminus repaired to 2400s the honest count is 6.
+  assert.strictEqual(l1Weekday, 6, 'Line 1 weekday peak dynamically calculated as 6 vehicles');
   assert.strictEqual(l1SatNoon, 3, 'Line 1 Saturday dynamically calculated as 3 vehicles');
   assert.strictEqual(l1Night, 0, 'Line 1 off-hours dynamically calculated as 0 vehicles');
 
   const l8SunMorning = mataroSchedules.getScheduledFleetRequirement('8', 'sunday', 36000); // 10:00
   const l8SunAfternoon = mataroSchedules.getScheduledFleetRequirement('8', 'sunday', 61200); // 17:00
   assert.strictEqual(l8SunMorning, 0, 'Line 8 Sunday morning dynamically calculated as 0 vehicles');
-  assert.strictEqual(l8SunAfternoon, 1, 'Line 8 Sunday afternoon dynamically calculated as 1 vehicle');
+  // L8 is afternoon-only on Sunday. At 17:57 the dir-11 run that left at 17:16
+  // is still in the air (17:16 + 41 min = 17:58) when the dir-12 bus leaves, so
+  // two buses are genuinely committed. Same terminal-offset cause as L1.
+  assert.strictEqual(l8SunAfternoon, 2, 'Line 8 Sunday afternoon dynamically calculated as 2 vehicles');
 }
 console.log('  ✓ Test 3 Passed: Dynamic fleet requirement calculations intact.\n');
 

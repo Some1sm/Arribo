@@ -275,17 +275,49 @@ async function runMataroTimetableAccuracyTests() {
   totalAssertions += 6;
 
   // 2.4 Intermediate Stop Travel Time Calculation with Real Topography
+  //
+  // Hospital (1001) is the terminus of L1 dir 11, whose stop 1002 sits 2280s
+  // from the origin. The terminus must therefore be at or after that, never
+  // before it. The old fixture asserted ~1800s, which came from a direction
+  // total that had been written into the terminal's cumulative-offset slot -
+  // it placed the last stop 8 minutes before the second-to-last one.
   const l1HospitalTravelSec = mataroSchedules.getStopTravelTime('1', '11', '1001');
-  assert(l1HospitalTravelSec > 1500 && l1HospitalTravelSec < 2000, `L1 Hospital travel sec should be ~1800s (got: ${l1HospitalTravelSec})`);
+  const l1BeforeTerminalSec = mataroSchedules.getStopTravelTime('1', '11', '1002');
+  assert(
+    l1HospitalTravelSec >= l1BeforeTerminalSec,
+    `L1 Hospital (${l1HospitalTravelSec}s) must not precede the stop before it (${l1BeforeTerminalSec}s)`
+  );
+  assert(l1HospitalTravelSec > 2280 && l1HospitalTravelSec < 3000, `L1 Hospital travel sec should be ~2400s (got: ${l1HospitalTravelSec})`);
 
   const l1OriginTravelSec = mataroSchedules.getStopTravelTime('1', '11', '1016');
   assert.strictEqual(l1OriginTravelSec, 0, 'Origin stop travelSec must be 0');
 
   const l1HospitalPassingDeps = mataroSchedules.getDeparturesForStop('1', '11', '1001', 'weekday');
   assert.strictEqual(l1HospitalPassingDeps.length, 76);
-  // Origin 05:25 + 1811s (30m 11s) -> 05:55
-  assert.strictEqual(l1HospitalPassingDeps[0], '05:55');
-  assert.strictEqual(l1HospitalPassingDeps[l1HospitalPassingDeps.length - 1], '23:05');
+  // Origin 05:25 + 2400s (40m 00s) -> 06:05
+  assert.strictEqual(l1HospitalPassingDeps[0], '06:05');
+  assert.strictEqual(l1HospitalPassingDeps[l1HospitalPassingDeps.length - 1], '23:15');
+
+  // The real invariant, asserted across every direction and day grid: cumulative
+  // offsets start at 0 and never decrease along the stop list. A tie is fine -
+  // two stops can be served in the same minute - but a decrease is impossible.
+  for (const lineId of ['1', '2', '3', '4', '5', '6', '7', '8']) {
+    const line = mataroSchedules.getLineSchedule(lineId);
+    for (const dirKey of line.directionIndexOrder || Object.keys(line.directions)) {
+      if (line.directions[dirKey]._invalid) continue;
+      for (const dayType of ['weekday', 'saturday', 'sunday']) {
+        const dir = mataroSchedules.getDirectionSchedule(lineId, dirKey, dayType);
+        if (!dir) continue;
+        let previous = 0;
+        for (const stop of dir.stops) {
+          const value = dir.stopTravelSecMap[String(stop.id)];
+          assert(Number.isFinite(value), `L${lineId} dir ${dirKey} ${dayType}: stop ${stop.id} has no cumulative offset`);
+          assert(value >= previous, `L${lineId} dir ${dirKey} ${dayType}: offset decreases at stop ${stop.id} (${value}s < ${previous}s)`);
+          previous = value;
+        }
+      }
+    }
+  }
   totalAssertions += 5;
 
   // 2.5 Corrupted / Falsy / Fallback Inputs in Schedule Synthesizer

@@ -25,10 +25,18 @@ function expect(condition, message) {
   }
 }
 
-// A fixed departure keeps the ranking deterministic. Without it the suite
-// would only catch the arrival-time regression at certain hours of the day,
-// which is exactly the bug being pinned here.
-const AT = { departureTime: '08:15' };
+// A fixed departure keeps the ranking deterministic. The DATE is pinned as well
+// as the time: without it the suite silently plans on whatever weekday it is
+// run, so the same code could pass on a Tuesday and fail on a Sunday purely
+// because a different timetable grid was used.
+//
+// 11:45 is chosen deliberately. At this departure an L8+L2 transfer does arrive
+// two minutes earlier than the direct L8, and the direct must still win - that
+// is the complexity penalty under actual test, rather than a case where no
+// transfer competes at all. (The previous 08:15 anchor no longer exercises it:
+// with the terminal offsets corrected, the L1+L5 transfer there is genuinely
+// 12 minutes faster, so ranking it first is right.)
+const AT = { departureDate: '2026-09-24', departureTime: '11:45' };
 const opts = preference => ({ ...AT, preference });
 
 async function run() {

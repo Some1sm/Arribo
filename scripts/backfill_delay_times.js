@@ -38,7 +38,10 @@ const BATCH = 500;
 function bestMatchAnyDirection(lineId, stopName, delayMins, at) {
   const dirSched = mataroSchedules.getLineSchedule(lineId);
   if (!dirSched) return null;
-  const dirIds = Object.keys(dirSched.directionIndices || {});
+  // Enumerate via directionIndexOrder so the legacy 0/1 indices match the rest
+  // of the app, and skip directions the data build marked as known-bad.
+  const dirIds = (dirSched.directionIndexOrder || Object.keys(dirSched.directions || {}))
+    .filter(k => mataroSchedules.isDirectionUsable(lineId, k));
   if (!dirIds.length) return null;
   let best = null;
   for (const dirId of dirIds) {

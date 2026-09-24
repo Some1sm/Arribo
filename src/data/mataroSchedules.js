@@ -64,7 +64,83 @@ function toCatalanDayType(dayType) {
  */
 function getLineSchedule(lineId) {
   const cleanId = normalizeLineId(lineId);
+  if (!/^[1-8]$/.test(cleanId)) return null;
   return rawSchedules[cleanId] || null;
+}
+
+/**
+ * Resolves a caller-supplied direction onto a key of lineObj.directions.
+ *
+ * Callers use two forms in the wild: the legacy numeric index ('0'/'1', the
+ * position of the direction in the route array) and the Avanza path id
+ * ('11'/'12'/'21'). Both are accepted. `directionIndexOrder` in the data file
+ * maps the index form onto a `directions` key.
+ *
+ * Returns null for anything unrecognised. A wrong-but-confident timetable is
+ * worse than no timetable, so this deliberately has no default fallback: the
+ * file previously carried a second, stale copy of every direction and this
+ * function silently substituted one for the other, which is how uncalibrated
+ * cumulative offsets reached production.
+ *
+ * @param {object} lineObj
+ * @param {string|number} direction
+ * @returns {string|null} A key of lineObj.directions, or null.
+ */
+function resolveDirectionKey(lineObj, direction) {
+  if (!lineObj || !lineObj.directions) return null;
+  const dirKeys = Object.keys(lineObj.directions);
+  const key = String(direction === null || direction === undefined ? '' : direction).trim();
+  if (!key) return null;
+
+  const order = lineObj.directionIndexOrder || dirKeys;
+
+  // Legacy index form: '0' / '1'.
+  if (/^\d+$/.test(key) && order[Number(key)] !== undefined) return order[Number(key)];
+
+  // Direct path-id form: '11' / '12' / '21'.
+  if (lineObj.directions[key]) return key;
+
+  // A path id arriving in another numeric shape, e.g. 11 as a number.
+  return dirKeys.find(dk => String(lineObj.directions[dk].pathId) === key) || null;
+}
+
+/**
+ * Whether a direction is present, resolvable and not marked as known-bad.
+ *
+ * @param {string|number} lineId
+ * @param {string|number} direction
+ * @returns {boolean}
+ */
+function isDirectionUsable(lineId, direction) {
+  const lineObj = getLineSchedule(lineId);
+  const key = resolveDirectionKey(lineObj, direction);
+  if (!key) return false;
+  return !lineObj.directions[key]._invalid;
+}
+
+/**
+ * Validity metadata for the loaded timetable.
+ *
+ * `validUntil: null` means the scraper has not recorded one. That is reported
+ * as unknown, never as "current" - the file previously carried no validity
+ * information at all, so a stale timetable could not be detected.
+ *
+ * @returns {{validUntil: string|null, expired: boolean, known: boolean, source: string}}
+ */
+function getScheduleValidity() {
+  const meta = rawSchedules._meta || {};
+  const validUntil = meta.validUntil || null;
+  if (!validUntil) {
+    return { validUntil: null, expired: false, known: false, source: meta.source || '' };
+  }
+  const expiry = Date.parse(`${validUntil}T23:59:59Z`);
+  const known = Number.isFinite(expiry);
+  return {
+    validUntil,
+    known,
+    expired: known && Date.now() > expiry,
+    source: meta.source || ''
+  };
 }
 
 /**
@@ -96,15 +172,16 @@ function getDirectionSchedule(lineId, direction = '0', dayType = 'weekday') {
   const lineObj = getLineSchedule(lineId);
   if (!lineObj) return null;
 
-  const dirKey = String(direction !== null && direction !== undefined ? direction : '0').trim();
-  let dirObj = lineObj.directionIndices[dirKey] || lineObj.directions[dirKey];
-
-  if (!dirObj) {
-    // Default to index 0 or first available direction
-    dirObj = lineObj.directionIndices['0'] || Object.values(lineObj.directions)[0];
-  }
-
+  const dirKey = resolveDirectionKey(lineObj, direction);
+  if (!dirKey) return null;
+  const dirObj = lineObj.directions[dirKey];
   if (!dirObj) return null;
+
+  // Directions flagged by the data build as known-bad are refused outright.
+  // Serving a corrupt timetable is worse than serving none: the caller labels
+  // what it gets as authoritative, so a wrong-but-confident answer here becomes
+  // a wrong arrival time on the board.
+  if (dirObj._invalid) return null;
 
   const normDay = normalizeDayType(dayType);
   const catDay = toCatalanDayType(dayType);
@@ -128,6 +205,12 @@ function getDirectionSchedule(lineId, direction = '0', dayType = 'weekday') {
     departures: departures,
     stops: dirObj.stops || [],
     stopTravelSecMap: stopTravelSecMap,
+    // Stops whose cumulative offset is a repaired estimate rather than a
+    // calibrated value. Every direction's terminus is in here: the data build
+    // wrote a direction total into the terminal's offset slot, so the true
+    // terminal offset was never known. A leg touching one of these must be
+    // reported as an estimate, not as a timetable time.
+    estimatedStopIds: Array.isArray(dirObj._estimatedStops) ? dirObj._estimatedStops.slice() : [],
     totalTravelSec: totalTravelSec,
     totalTravelMinutes: totalTravelMinutes,
     totalDistanceMeters: dirObj.totalDistanceMeters || 0,
@@ -156,20 +239,47 @@ function getStopTravelTime(lineId, direction = '0', stopId, dayType = 'weekday')
 }
 
 /**
+ * Whether a stop is part of this direction's stop list.
+ *
+ * Needed to tell a legitimate cumulative travel time of 0 (the origin) apart
+ * from "this stop is not in this timetable". getStopTravelTime returns 0 for
+ * both, which previously made an unknown stop id resolve to the origin board.
+ *
+ * @param {string|number} lineId
+ * @param {string|number} [direction='0']
+ * @param {string|number} stopId
+ * @param {string} [dayType='weekday']
+ * @returns {boolean}
+ */
+function hasStopInSchedule(lineId, direction = '0', stopId, dayType = 'weekday') {
+  const dirSched = getDirectionSchedule(lineId, direction, dayType);
+  if (!dirSched || !Array.isArray(dirSched.stops)) return false;
+  const sId = String(stopId);
+  return dirSched.stops.some(s => String(s.id) === sId);
+}
+
+/**
  * Computes passing timetable departure times at a specific stop by adding stop travel time
  * to origin departures.
- * 
- * @param {string|number} lineId 
- * @param {string|number} [direction='0'] 
- * @param {string|number} stopId 
- * @param {string} [dayType='weekday'] 
- * @returns {string[]} Array of passing times in 'HH:MM' format
+ *
+ * Returns an empty array when the stop is not part of this direction. A missing
+ * stop is a missing value, not the origin: returning the origin departures made
+ * an unknown stop look like a bus standing at the terminus.
+ *
+ * @param {string|number} lineId
+ * @param {string|number} [direction='0']
+ * @param {string|number} stopId
+ * @param {string} [dayType='weekday']
+ * @returns {string[]} Array of passing times in 'HH:MM' format; empty if unresolvable
  */
 function getDeparturesForStop(lineId, direction = '0', stopId, dayType = 'weekday') {
   const dirSched = getDirectionSchedule(lineId, direction, dayType);
   if (!dirSched || !Array.isArray(dirSched.departures)) return [];
+  if (!hasStopInSchedule(lineId, direction, stopId, dayType)) return [];
 
   const travelSec = getStopTravelTime(lineId, direction, stopId, dayType);
+  // 0 is legitimate here: the stop was just confirmed to be in this direction's
+  // stop list, so this is the origin and its passing times are the departures.
   if (travelSec === 0) return dirSched.departures.slice();
 
   return dirSched.departures.map(originTime => {
@@ -188,24 +298,31 @@ function getDeparturesForStop(lineId, direction = '0', stopId, dayType = 'weekda
  * @returns {Array<object>}
  */
 function getAllLines() {
-  return Object.values(rawSchedules).map(l => ({
+  // _meta is a top-level key in the data file, not a line.
+  return Object.keys(rawSchedules)
+    .filter(k => k !== '_meta')
+    .map(k => rawSchedules[k])
+    .map(l => ({
     id: l.lineId,
     code: l.code,
     name: l.lineName,
     color: l.color,
     agency: l.agency,
     operator: l.operator,
-    directions: Object.values(l.directionIndices).map(d => ({
-      dirId: d.dirId,
-      pathId: d.pathId,
-      name: d.directionName,
-      stopsCount: d.stopsCount,
-      distanceKm: d.totalDistanceKm,
-      travelMinutes: d.totalTravelMinutes,
-      weekdayTrips: d.scheduleStats?.weekday?.count || 0,
-      saturdayTrips: d.scheduleStats?.saturday?.count || 0,
-      sundayTrips: d.scheduleStats?.sunday?.count || 0
-    }))
+    directions: (l.directionIndexOrder || Object.keys(l.directions || {}))
+      .map(k => l.directions[k])
+      .filter(d => d && !d._invalid)
+      .map(d => ({
+        dirId: d.dirId,
+        pathId: d.pathId,
+        name: d.directionName,
+        stopsCount: d.stopsCount,
+        distanceKm: d.totalDistanceKm,
+        travelMinutes: d.totalTravelMinutes,
+        weekdayTrips: d.scheduleStats?.weekday?.count || 0,
+        saturdayTrips: d.scheduleStats?.saturday?.count || 0,
+        sundayTrips: d.scheduleStats?.sunday?.count || 0
+      }))
   }));
 }
 
@@ -295,7 +412,11 @@ module.exports = {
   normalizeDayType,
   toCatalanDayType,
   getLineSchedule,
+  resolveDirectionKey,
+  isDirectionUsable,
+  getScheduleValidity,
   getDirectionSchedule,
+  hasStopInSchedule,
   getStopTravelTime,
   getDeparturesForStop,
   getAllLines,

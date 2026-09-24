@@ -402,8 +402,16 @@ async function runTests() {
     const travelSecSun = mataroSchedules.getStopTravelTime('1', '12', '1015', 'sunday');
     assert.strictEqual(travelSecSun, 1500, 'Stop 1015 (El Cargol) Sunday travelSec must be 1500s (25 min from Hospital)');
 
+    // The weekday grid previously read 1188s here, which is impossible: the
+    // stop before it (1014) sits at 1500s, so the bus cannot reach El Cargol
+    // five minutes BEFORE it left the stop before. 1188 was a corrupt value;
+    // the calibrated weekday step puts El Cargol at 1620s.
     const travelSecWk = mataroSchedules.getStopTravelTime('1', '12', '1015', 'weekday');
-    assert.strictEqual(travelSecWk, 1188, 'Stop 1015 (El Cargol) Weekday travelSec must be 1188s (19.8 min from Hospital)');
+    assert.strictEqual(travelSecWk, 1620, 'Stop 1015 (El Cargol) Weekday travelSec must be 1620s (27 min from Hospital)');
+    assert(
+      travelSecWk >= mataroSchedules.getStopTravelTime('1', '12', '1014', 'weekday'),
+      'El Cargol must not precede the stop before it on the weekday grid'
+    );
 
     // 13:53 Hospital departure + 1500s -> 14:18:00
     const targetDate = new Date('2026-09-20T14:09:00+02:00'); // Sunday at 14:09

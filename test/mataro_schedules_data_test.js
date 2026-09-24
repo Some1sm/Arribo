@@ -15,7 +15,10 @@ console.log('🧪 Running Mataró Bus Authoritative Schedules (M1) Test Suite...
 
 // 1. Root Keys & Basic Schema
 console.log('1. Testing root keys and schema structure...');
-const lineKeys = Object.keys(rawSchedules);
+// `_meta` is a sibling of the lines, not a line: it carries the timetable's
+// source and validity window so a stale build can be detected. The count of
+// real urban lines is still asserted exactly.
+const lineKeys = Object.keys(rawSchedules).filter(k => k !== '_meta');
 assert.strictEqual(lineKeys.length, 8, 'Expected exactly 8 Mataró urban lines');
 assert.deepStrictEqual(lineKeys.sort(), ['1', '2', '3', '4', '5', '6', '7', '8']);
 console.log('  ✓ 8 lines present: 1, 2, 3, 4, 5, 6, 7, 8');
@@ -168,8 +171,8 @@ assert.strictEqual(l1OriginTravel, 0);
 // 4.4 getDeparturesForStop
 const l1HospitalDeps = mataroSchedulesHelper.getDeparturesForStop('1', '11', '1001', 'weekday');
 assert.strictEqual(l1HospitalDeps.length, 76);
-// Origin departs 05:25 + 1811s (30m 11s) -> 05:55
-assert.strictEqual(l1HospitalDeps[0], '05:55');
+// Origin departs 05:25 + 2400s (40m 00s) -> 06:05
+assert.strictEqual(l1HospitalDeps[0], '06:05');
 
 // 4.5 getAllLines
 const allLines = mataroSchedulesHelper.getAllLines();

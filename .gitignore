@@ -22,3 +22,10 @@ data/cache/
 data/reports/
 data/snapshots/
 data/test_scratch/
+tmp/
+# One-off timetable migration snapshots. These are the "before" copies kept
+# while a data repair is being validated; they are never a build input, and
+# committing a second 235 KB near-duplicate of the timetable invites someone to
+# read it as authoritative.
+src/data/*.pre-migration.json
+src/data/*.pre-terminal-repair.json

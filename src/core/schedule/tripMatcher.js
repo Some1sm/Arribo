@@ -17,20 +17,33 @@
 const mataroSchedules = require('../../data/mataroSchedules');
 const calendarEngine = require('../time/calendarEngine');
 const timeEngine = require('../time/timeEngine');
+const holidayCalendar = require('../time/holidayCalendar');
 
 /**
- * How far the recovered trip may sit from the vehicle's observed position
- * before we refuse to call it a match. The SIRI delay is measured against the
- * operator's own schedule, which drifts from ours by a few minutes, but a bus
- * cannot be 40 minutes from any departure on the line and still be on it.
+ * Absolute ceiling on how far the recovered trip may sit from the vehicle's
+ * observed position before we refuse to call it a match. The SIRI delay is
+ * measured against the operator's own schedule, which drifts from ours by a few
+ * minutes.
  */
 const MAX_RESIDUAL_MINUTES = 30;
 
-/** Strip accents and punctuation so "Pl. de Catalunya" matches "Pl Catalunya". */
+/**
+ * Floor added to half the local headway when deriving the effective tolerance.
+ * A dense line (13 min headway) needs a much tighter bound than a sparse one
+ * (65 min), otherwise the fixed 30-minute ceiling can never refuse while
+ * service is running and a detour is recorded as a confident match.
+ */
+const HEADWAY_TOLERANCE_FLOOR_MINUTES = 5;
+
+/** Strip accents, punctuation and the " - 1234" stop-id suffix. */
 function normalizeStopName(name) {
   return String(name || '')
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
+    // Route-derived names carry a trailing " - <stopId>" that schedule names do
+    // not ("Cirera - 1003" vs "Cirera"). Strip it before anything else so the
+    // two halves of the lookup are comparable at all.
+    .replace(/\s*-\s*\d{3,5}\s*$/, '')
     .replace(/[.,;:'"()·-]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
@@ -52,33 +65,64 @@ function circularDiffSec(a, b) {
 /**
  * Which timetable bucket a moment falls in. August weekdays run the reduced
  * "Dissabtes" timetable, so they must not be treated as ordinary weekdays.
+ * Public holidays run the reduced "Diumenges i Festius" timetable.
  */
 function resolveDayType(at) {
   const c = calendarEngine.getDateComponents(at, 'Europe/Madrid');
   let dayType = 'weekday';
   if (c.isSunday) dayType = 'sunday';
   else if (c.isSaturday || (c.isWeekday && c.isAugust)) dayType = 'saturday';
-  return { dayType, components: c };
+  else if (holidayCalendar.isHoliday(at)) dayType = 'sunday';
+  return { dayType, components: c, isHoliday: dayType === 'sunday' && !c.isSunday };
 }
 
-/** Locate the stop this vehicle is heading to, by sequence number then by name. */
+/**
+ * Median gap between consecutive departures at a stop, in minutes. Used to
+ * scale the match tolerance to how dense the service actually is.
+ */
+function medianHeadwayMinutes(passingTimes) {
+  const secs = passingTimes
+    .map(t => timeEngine.timeStringToSeconds(t))
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b);
+  if (secs.length < 2) return null;
+  const gaps = [];
+  for (let i = 1; i < secs.length; i++) gaps.push((secs[i] - secs[i - 1]) / 60);
+  gaps.sort((a, b) => a - b);
+  const mid = Math.floor(gaps.length / 2);
+  const median = gaps.length % 2 ? gaps[mid] : (gaps[mid - 1] + gaps[mid]) / 2;
+  return median > 0 ? median : null;
+}
+
+/**
+ * Locate the stop this vehicle is heading to, by sequence number then by name.
+ *
+ * A name that matches more than one stop in the same direction is AMBIGUOUS and
+ * is refused rather than resolved to the first hit. L3 has two "TecnoCampus"
+ * stops six minutes apart; picking the first would return a confident time six
+ * minutes wrong, which is well inside the residual tolerance and so would never
+ * be caught downstream.
+ *
+ * @returns {{stop: object|null, ambiguous: boolean}}
+ */
 function resolveStop(dirSched, toSeq, stopName) {
   const stops = Array.isArray(dirSched.stops) ? dirSched.stops : [];
   if (toSeq !== undefined && toSeq !== null && toSeq !== '') {
     const wanted = Number(toSeq);
     if (Number.isFinite(wanted)) {
       const bySeq = stops.find(s => Number(s.seq) === wanted);
-      if (bySeq) return bySeq;
+      if (bySeq) return { stop: bySeq, ambiguous: false };
     }
   }
   if (stopName) {
     const wantedName = normalizeStopName(stopName);
     if (wantedName) {
-      const byName = stops.find(s => normalizeStopName(s.name) === wantedName);
-      if (byName) return byName;
+      const matches = stops.filter(s => normalizeStopName(s.name) === wantedName);
+      if (matches.length === 1) return { stop: matches[0], ambiguous: false };
+      if (matches.length > 1) return { stop: null, ambiguous: true };
     }
   }
-  return null;
+  return { stop: null, ambiguous: false };
 }
 
 /**
@@ -117,16 +161,17 @@ function matchTrip({ lineId, direction, toSeq, stopName, delayMins, at = Date.no
     return empty('no observation timestamp');
   }
 
-  const { dayType, components } = resolveDayType(at);
+  const { dayType, components, isHoliday } = resolveDayType(at);
   const dirSched = mataroSchedules.getDirectionSchedule(lineId, direction, dayType);
-  if (!dirSched) return empty('no direction schedule', { dayType });
+  if (!dirSched) return empty('no direction schedule', { dayType, isHoliday });
 
-  const stop = resolveStop(dirSched, toSeq, stopName);
-  if (!stop) return empty('next stop not found in schedule', { dayType });
+  const { stop, ambiguous } = resolveStop(dirSched, toSeq, stopName);
+  if (ambiguous) return empty('ambiguous stop name in schedule', { dayType, isHoliday });
+  if (!stop) return empty('next stop not found in schedule', { dayType, isHoliday });
 
   const passingTimes = mataroSchedules.getDeparturesForStop(lineId, direction, stop.id, dayType);
   if (!Array.isArray(passingTimes) || passingTimes.length === 0) {
-    return empty('no scheduled departures for this stop', { dayType, stopId: String(stop.id), stopSeq: stop.seq });
+    return empty('no scheduled departures for this stop', { dayType, isHoliday, stopId: String(stop.id), stopSeq: stop.seq });
   }
 
   // The vehicle should be arriving around now; step back its delay to land on
@@ -142,15 +187,27 @@ function matchTrip({ lineId, direction, toSeq, stopName, delayMins, at = Date.no
     const diff = circularDiffSec(targetSec, sec);
     if (!best || Math.abs(diff) < Math.abs(best.diff)) best = { time: t, diff };
   }
-  if (!best) return empty('no parseable scheduled departures', { dayType, stopId: String(stop.id), stopSeq: stop.seq });
+  if (!best) return empty('no parseable scheduled departures', { dayType, isHoliday, stopId: String(stop.id), stopSeq: stop.seq });
 
   const residualMinutes = Math.round(best.diff / 60);
-  if (Math.abs(residualMinutes) > MAX_RESIDUAL_MINUTES) {
+
+  // Scale the tolerance to the service density. On a 13-minute line a 30-minute
+  // ceiling is unreachable and every observation matches something; on a
+  // 65-minute line a tight ceiling would refuse legitimate matches. Half the
+  // local headway (plus a small floor for schedule drift) is the honest bound.
+  const headway = medianHeadwayMinutes(passingTimes);
+  const effectiveTolerance = headway
+    ? Math.min(MAX_RESIDUAL_MINUTES, headway / 2 + HEADWAY_TOLERANCE_FLOOR_MINUTES)
+    : MAX_RESIDUAL_MINUTES;
+
+  if (Math.abs(residualMinutes) > effectiveTolerance) {
     return empty('no departure close enough to trust', {
       dayType,
+      isHoliday,
       stopId: String(stop.id),
       stopSeq: stop.seq,
       residualMinutes,
+      toleranceMinutes: effectiveTolerance,
       candidateCount: passingTimes.length
     });
   }
@@ -163,12 +220,23 @@ function matchTrip({ lineId, direction, toSeq, stopName, delayMins, at = Date.no
     scheduledTime: timeEngine.secondsToTimeString(((schedSec % 86400) + 86400) % 86400),
     actualTime: timeEngine.secondsToTimeString(((actualSec % 86400) + 86400) % 86400),
     dayType,
+    isHoliday,
     direction: String(dirSched.dirId || direction || ''),
     stopId: String(stop.id),
     stopSeq: stop.seq,
     residualMinutes,
+    toleranceMinutes: effectiveTolerance,
+    headwayMinutes: headway,
     candidateCount: passingTimes.length
   };
 }
 
-module.exports = { matchTrip, resolveDayType, normalizeStopName, circularDiffSec, MAX_RESIDUAL_MINUTES };
+module.exports = {
+  matchTrip,
+  resolveDayType,
+  normalizeStopName,
+  circularDiffSec,
+  medianHeadwayMinutes,
+  MAX_RESIDUAL_MINUTES,
+  HEADWAY_TOLERANCE_FLOOR_MINUTES
+};

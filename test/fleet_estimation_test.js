@@ -166,7 +166,12 @@ async function runFleetEstimationTests() {
   assert.strictEqual(synthResult6.fleetStatus.estimatedVehicles, 0, 'Estimated vehicles must be 0');
   // Test 7: Saturday Line 1 Terminal Layover & Missing GPS Regulation Vehicle Synthesis
   console.log('📌 Test 7: Saturday Line 1 Terminal Layover & Missing GPS Regulation Vehicle Synthesis...');
-  const saturday1243 = new Date('2026-09-12T10:43:00Z'); // 12:43 CEST (Saturday)
+  // 11:30 CEST (Saturday). This used to be 12:43, when the uncovered trip was
+  // the dir-1 layover. The Saturday run time for L1 is 37 minutes; the data
+  // build previously recorded 14, which made a different set of trips look
+  // "in transit" and changed which trip had no vehicle. 11:30 exercises the
+  // terminal-layover path explicitly.
+  const saturday1130 = new Date('2026-09-12T09:30:00Z'); // 11:30 CEST (Saturday)
   const routes1_7 = mataroTracker.routesData['1'] || [];
   const allDirs1_7 = [
     { dirId: '0', stops: routes1_7[0]?.stops || [] },
@@ -207,17 +212,18 @@ async function runFleetEstimationTests() {
     routes1_7,
     allDirs1_7,
     mockLiveBusesL1,
-    saturday1243,
+    saturday1130,
     mockLiveBusesL1
   );
 
-  assert.strictEqual(synthResult7Both.fleetStatus.scheduledVehicles, 3, 'Line 1 Saturday at 12:43 must have 3 scheduled vehicles (2 in transit + 1 in layover)');
+  assert.strictEqual(synthResult7Both.fleetStatus.scheduledVehicles, 3, 'Line 1 Saturday at 11:30 must have 3 scheduled vehicles (2 in transit + 1 in layover)');
   assert.strictEqual(synthResult7Both.fleetStatus.liveGpsVehicles, 2, 'Must count 2 live GPS vehicles');
   assert.strictEqual(synthResult7Both.fleetStatus.estimatedVehicles, 1, 'Must synthesize 1 missing estimated vehicle');
   assert.strictEqual(synthResult7Both.syntheticBuses.length, 1, 'Must produce exactly 1 synthetic bus');
 
   const layoverBus = synthResult7Both.syntheticBuses[0];
-  assert.strictEqual(layoverBus.vehicleId, 'EST_1_1252', 'Synthesized bus must be EST_1_1252 for the 12:52 departure');
+  // Ghost ids include the direction (D8): EST_<line>_<dir>_<depHHMM>.
+  assert.strictEqual(layoverBus.vehicleId, 'EST_1_1_1134', 'Synthesized bus must be EST_1_1_1134 for the 11:34 dir-1 departure');
   assert.strictEqual(layoverBus.direction, '1', 'Layover bus must be on Direction 1 (Rodalies -> Hospital)');
   assert.strictEqual(layoverBus.isTerminalLayover, true, 'Must have isTerminalLayover = true');
   assert.strictEqual(layoverBus.speedKmh, 0, 'Layover vehicle speed must be 0 km/h');
@@ -226,7 +232,7 @@ async function runFleetEstimationTests() {
   assert.strictEqual(layoverBus.isRealTime, false, 'Must not be marked as real-time');
   assert.ok(layoverBus.lat >= 41.530 && layoverBus.lat <= 41.536, `Layover bus must be positioned at Estació Rodalies (lat: ${layoverBus.lat})`);
   assert.ok(layoverBus.lon >= 2.440 && layoverBus.lon <= 2.450, `Layover bus must be positioned at Estació Rodalies (lon: ${layoverBus.lon})`);
-  assert.strictEqual(layoverBus.departureTime, '12:52', 'Departure time must be 12:52');
+  assert.strictEqual(layoverBus.departureTime, '11:34', 'Departure time must be 11:34');
 
   // Test with '1' direction specifically (as viewed when user inspects Sentit 2)
   const synthResult7Dir1 = mataroTracker.synthesizeMissingScheduledBuses(
@@ -235,12 +241,12 @@ async function runFleetEstimationTests() {
     routes1_7,
     allDirs1_7,
     [mockLiveBusesL1[1]], // only live bus on dir 1
-    saturday1243,
+    saturday1130,
     mockLiveBusesL1
   );
 
-  assert.strictEqual(synthResult7Dir1.syntheticBuses.length, 1, 'Direction 1 must synthesize the 12:52 layover bus');
-  assert.strictEqual(synthResult7Dir1.syntheticBuses[0].vehicleId, 'EST_1_1252', 'Direction 1 must synthesize EST_1_1252');
+  assert.strictEqual(synthResult7Dir1.syntheticBuses.length, 1, 'Direction 1 must synthesize the 11:34 layover bus');
+  assert.strictEqual(synthResult7Dir1.syntheticBuses[0].vehicleId, 'EST_1_1_1134', 'Direction 1 must synthesize EST_1_1_1134');
 
   // Test transition post-departure at 12:54 (2 min in transit along Direction 1)
   const saturday1254 = new Date('2026-09-12T10:54:00Z');
@@ -286,7 +292,9 @@ async function runFleetEstimationTests() {
   assert.strictEqual(transitBus.isTerminalLayover, false, 'At 12:54 vehicle is now in transit');
   assert.strictEqual(transitBus.speedKmh, 20, 'In-transit vehicle speed is 20 km/h');
   assert.ok(transitBus.totalProgress > 0, 'In-transit vehicle progress must be > 0');
-  assert.ok(transitBus.toStop.includes('1019') || transitBus.toStop.includes('President Macià'), 'Next stop must be President Macià (Stop 1019)');
+  // The 12:52 dir-1 trip is 2 minutes into a 37-minute run, so it has cleared
+  // the first stops. Its next stop is Pl. Doctor Fleming, not President Macià.
+  assert.ok(transitBus.toStop.includes('1018') || transitBus.toStop.includes('Pl. Doctor Fleming'), `Next stop must be Pl. Doctor Fleming (Stop 1018), got: ${transitBus.toStop}`);
 
   console.log('  ✓ Test 7 Passed: Terminal layover regulation and post-departure transition fully verified.\n');
 
@@ -310,20 +318,25 @@ async function runFleetEstimationTests() {
   // Test 9: Dynamic Timetable-Derived Fleet Requirement Computation (Zero Hardcoded Fleet)
   console.log('📌 Test 9: Dynamic Schedule Fleet Computation (Zero Hardcoding)...');
   
-  // Line 1: 5 on weekday peak, 3 on Saturday, 0 off-hours (03:00)
+  // Line 1: 6 on weekday peak, 3 on Saturday, 0 off-hours (03:00)
+  // The weekday figure follows from the timetable itself: a 13-minute headway
+  // with a 71-minute round trip (29 min one way + 40 min the other + turnarounds)
+  // needs 6 buses in service at once. It previously computed 5 because the
+  // dir-11 run time was recorded as 30 minutes instead of 40.
   const l1Weekday = mataroSchedules.getScheduledFleetRequirement('1', 'weekday', 59400); // 16:30
   const l1SatNoon = mataroSchedules.getScheduledFleetRequirement('1', 'saturday', 47164); // 13:06
   const l1Night = mataroSchedules.getScheduledFleetRequirement('1', 'weekday', 10800); // 03:00
-  
-  assert.strictEqual(l1Weekday, 5, 'Line 1 weekday peak dynamically calculated as 5 vehicles');
+
+  assert.strictEqual(l1Weekday, 6, 'Line 1 weekday peak dynamically calculated as 6 vehicles');
   assert.strictEqual(l1SatNoon, 3, 'Line 1 Saturday dynamically calculated as 3 vehicles');
   assert.strictEqual(l1Night, 0, 'Line 1 off-hours dynamically calculated as 0 vehicles');
 
-  // Line 8: 0 on Sunday morning (no service), 1 on Sunday afternoon (operating)
+  // Line 8: 0 on Sunday morning (no service), 2 on Sunday afternoon (operating)
+  // Sunday service is sparse but each run is ~40 minutes, so two trips overlap.
   const l8SunMorning = mataroSchedules.getScheduledFleetRequirement('8', 'sunday', 36000); // 10:00
   const l8SunAfternoon = mataroSchedules.getScheduledFleetRequirement('8', 'sunday', 61200); // 17:00
   assert.strictEqual(l8SunMorning, 0, 'Line 8 Sunday morning dynamically calculated as 0 vehicles');
-  assert.strictEqual(l8SunAfternoon, 1, 'Line 8 Sunday afternoon dynamically calculated as 1 vehicle');
+  assert.strictEqual(l8SunAfternoon, 2, 'Line 8 Sunday afternoon dynamically calculated as 2 vehicles');
 
   console.log('  ✓ Test 9 Passed: Dynamic fleet requirement accurately computed from timetable cycle/headway (0 hardcoding).\n');
 
@@ -390,7 +403,11 @@ async function runFleetEstimationTests() {
       assert.strictEqual(String(b.direction), '1', `Bus ${b.vehicleId} on Dir 1 must have direction='1'`);
     });
 
-    // 3. Ground truth consistency: estimated bus is on Dir 0 (Hospital 13:34) and NEVER jumps to Dir 1
+    // 3. Ground truth consistency: estimated bus is on Dir 0 (Hospital 13:08) and NEVER jumps to Dir 1
+    // The 13:08 trip is the one still running at 13:30: a dir-0 Saturday run takes
+    // 31 minutes, so it is not due back until 13:39. It previously named 13:34
+    // because the run time was recorded as 14 minutes, which had already retired
+    // the 13:08 trip by 13:30.
     const dir0Estimated = dir0Buses.filter(b => b.isEstimated);
     const dir1Estimated = dir1Buses.filter(b => b.isEstimated);
     const bothEstimated = bothBuses.filter(b => b.isEstimated);
@@ -398,7 +415,7 @@ async function runFleetEstimationTests() {
     assert.strictEqual(bothEstimated.length, 1, 'Exactly 1 estimated bus exists on the line at 13:30');
     assert.strictEqual(dir0Estimated.length, 1, 'Estimated bus must be on Direction 0');
     assert.strictEqual(dir1Estimated.length, 0, 'Direction 1 must NOT synthesize phantom estimated bus');
-    assert.strictEqual(dir0Estimated[0].vehicleId, 'EST_1_1334', 'Estimated bus on Dir 0 must be EST_1_1334');
+    assert.strictEqual(dir0Estimated[0].vehicleId, 'EST_1_0_1308', 'Estimated bus on Dir 0 must be EST_1_0_1308');
 
     console.log('  -> Both directions fleet:', bothBuses.map(b => `${b.vehicleId} (dir ${b.direction}, est: ${b.isEstimated})`).join(', '));
     console.log('  -> Dir 0 fleet:', dir0Buses.map(b => `${b.vehicleId} (dir ${b.direction})`).join(', '));
@@ -560,16 +577,29 @@ async function runFleetEstimationTests() {
   }
   console.log('  ✓ Test 14 Passed: Line 1 Sunday schedule requirement accurately evaluated as exactly 2 buses at all operational hours.\n');
 
-  // Test 15: Line 7 Weekend Exact 1-Bus Schedule Invariant & Zero Phantom Synthesis
-  console.log('📌 Test 15: Line 7 Weekend Exact 1-Bus Schedule Invariant & Zero Phantom Synthesis...');
+  // Test 15: Line 7 Weekend Exact 2-Bus Schedule Invariant & Zero Phantom Synthesis
+  console.log('📌 Test 15: Line 7 Weekend Exact 2-Bus Schedule Invariant & Zero Phantom Synthesis...');
+  // L7 is a short circular route: 9 min one way (dir 12) and 7 min the other
+  // (dir 11), plus the 60s terminal turnaround, so each bus is occupied for
+  // ~8-10 minutes. The weekend timetable alternates directions every ~9-10
+  // minutes, which is faster than one bus can clear the route - the two
+  // directions therefore genuinely overlap and two buses are required.
+  //
+  // This used to assert 1, and it passed at HEAD only because direction '0'
+  // failed to resolve and getScheduledFleetRequirement fell back to a
+  // top-level scalar (442s) that belonged to a different line. With direction
+  // resolution fixed the real 540s is used and the honest answer is 2.
+  // Confirmed by hand from the timetable: at 13:07 Sunday, dir 12's 12:58
+  // departure is still in the air (12:58 + 540s + 60s = 13:08) when dir 11's
+  // 13:07 departure leaves.
   const l7WeekendTimes = ['09:00', '11:00', '13:00', '15:00', '17:00', '18:17', '19:00', '20:00'];
   for (const tStr of l7WeekendTimes) {
     const parts = tStr.split(':');
     const sec = parseInt(parts[0], 10) * 3600 + parseInt(parts[1], 10) * 60;
     const reqSun = mataroSchedules.getScheduledFleetRequirement('7', 'sunday', sec);
-    assert.strictEqual(reqSun, 1, `Line 7 on Sunday at ${tStr} MUST require exactly 1 bus (was ${reqSun})`);
+    assert.strictEqual(reqSun, 2, `Line 7 on Sunday at ${tStr} MUST require exactly 2 buses (was ${reqSun})`);
     const reqSat = mataroSchedules.getScheduledFleetRequirement('7', 'saturday', sec);
-    assert.strictEqual(reqSat, 1, `Line 7 on Saturday at ${tStr} MUST require exactly 1 bus (was ${reqSat})`);
+    assert.strictEqual(reqSat, 2, `Line 7 on Saturday at ${tStr} MUST require exactly 2 buses (was ${reqSat})`);
   }
   // Weekday peak check (requires 2 buses)
   const l7WeekdayPeak = mataroSchedules.getScheduledFleetRequirement('7', 'weekday', 18 * 3600 + 17 * 60);
@@ -604,7 +634,13 @@ async function runFleetEstimationTests() {
   assert.strictEqual(synthL7.fleetStatus.estimatedVehicles, 0, 'Estimated ghost vehicles must be 0 (no duplicate on weekend)');
   assert.strictEqual(synthL7.syntheticBuses.length, 0, 'Must synthesize 0 synthetic buses for Line 7 Sunday');
   assert.strictEqual(synthL7.fleetStatus.fleetCoveragePct, 100, 'Fleet coverage must be 100%');
-  console.log('  ✓ Test 15 Passed: Line 7 weekend schedule requirement evaluated as exactly 1 bus with 0 phantom synthesis.\n');
+  // Note the deliberate asymmetry with the assertions above: the requirement is
+  // the peak concurrency over the NEXT HOUR (2), while the synthesizer counts
+  // the trips in the air at this instant (1, dir 12's 18:17 departure - dir 11's
+  // 18:05 run finished at 18:13 and 18:26 has not left). Both are right; they
+  // answer different questions, and conflating them is how a single observed
+  // bus gets mistaken for phantom coverage.
+  console.log('  ✓ Test 15 Passed: Line 7 weekend has 1 trip in the air at 18:17 against a 2-bus hourly requirement, with 0 phantom synthesis.\n');
 
   console.log('=========================================================================');
   console.log('🎉 ALL SCHEDULED FLEET ESTIMATION TESTS PASSED SUCCESSFULLY! 🎉');

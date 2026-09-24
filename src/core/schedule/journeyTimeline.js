@@ -1,6 +1,7 @@
 const calendar = require('../time/calendarEngine');
 const time = require('../time/timeEngine');
 const schedules = require('../../data/mataroSchedules');
+const tripMatcher = require('./tripMatcher');
 const walking = require('../geo/pedestrianRouter');
 const originInstants = new Map();
 const datedBoards = new Map();
@@ -36,6 +37,19 @@ async function evaluate(candidates, tracker, options = {}) {
   const scheduleBoards = new Map();
   const startDay = calendar.getDateComponents(start);
   const serviceDays = [-1, 0, 1].map(offset => calendar.getDateComponents(new Date(Date.UTC(startDay.year, startDay.month - 1, startDay.day + offset, 12))));
+  // The timetable bucket is a property of the SERVICE date, not of the instant a
+  // trip happens to pass a stop: a 23:50 trip on a Friday is a Friday trip even
+  // though it alights just after midnight on Saturday. Resolving it from the
+  // service date (rather than from each departure's `at`) is what keeps a
+  // late-night leg from silently borrowing Saturday's or Sunday's offsets.
+  //
+  // resolveDayType is shared with the ingestion matcher so the planner and the
+  // Observatori can never disagree about which grid a date runs on - including
+  // the August reduction and public holidays, which are not Saturday or Sunday.
+  const dayTypeByDate = new Map(serviceDays.map(day => [
+    day.dateStr,
+    tripMatcher.resolveDayType(Date.UTC(day.year, day.month - 1, day.day, 12)).dayType
+  ]));
   const configs = new Map();
   for (const itin of candidates) {
     let walkMeters = 0;
@@ -56,14 +70,13 @@ async function evaluate(candidates, tracker, options = {}) {
       const ready = cursor + (index ? 120000 : 60000);
       const key = `${leg.lineId}/${leg.direction}/${leg.fromStop.id}`;
       let departures = [];
+      // Direction identity (dirId/pathId) is day-independent, so this config is
+      // safe to cache without a date. Cumulative offsets are NOT day-independent
+      // - the ride duration is resolved below, from the chosen departure's own
+      // service day, so a Sunday departure is not given a weekday ride time.
       const configKey = `${leg.lineId}/${leg.direction}`;
       if (!configs.has(configKey)) configs.set(configKey, schedules.getDirectionSchedule(leg.lineId, leg.direction));
       const cfg = configs.get(configKey);
-      const offsets = cfg?.stopTravelSecMap || {};
-      const fromOffset = offsets[leg.fromStop.id];
-      const toOffset = offsets[leg.toStop.id];
-      const exact = Number.isFinite(fromOffset) && Number.isFinite(toOffset) && toOffset > fromOffset;
-      const duration = exact ? toOffset - fromOffset : Math.max(180, (leg.durationMinutes || 3) * 60);
       if (live && tracker?.getStopDepartures) {
         if (!boards.has(key)) boards.set(key, Promise.resolve().then(() => tracker.getStopDepartures(leg.fromStop.id, leg.lineId, leg.direction)).catch(() => null));
         const board = await boards.get(key);
@@ -81,7 +94,8 @@ async function evaluate(candidates, tracker, options = {}) {
         } else {
         const scheduled = [];
         for (const day of serviceDays) {
-        const schedule = schedules.getDirectionSchedule(leg.lineId, leg.direction, day.isSunday ? 'sunday' : day.isSaturday ? 'saturday' : 'weekday');
+        const dayType = dayTypeByDate.get(day.dateStr);
+        const schedule = schedules.getDirectionSchedule(leg.lineId, leg.direction, dayType);
         if (!Number.isFinite(schedule?.stopTravelSecMap?.[leg.fromStop.id])) continue;
         for (const clock of schedule.departures || []) {
           const seconds = time.timeStringToSeconds(clock);
@@ -91,7 +105,9 @@ async function evaluate(candidates, tracker, options = {}) {
           while (originInstants.size > 8192) originInstants.delete(originInstants.keys().next().value);
           const at = originInstants.get(originKey) + schedule.stopTravelSecMap[leg.fromStop.id] * 1000;
           // A live board takes precedence for matching scheduled departures.
-          scheduled.push({ at, live: false });
+          // dayType travels with the departure so the ride duration below is
+          // resolved from the same timetable this instant was drawn from.
+          scheduled.push({ at, live: false, dayType });
         }
       }
         scheduleBoards.set(key, scheduled);
@@ -103,6 +119,36 @@ async function evaluate(candidates, tracker, options = {}) {
       departures.push(...scheduled.filter(dep => !departures.some(observation => Math.abs(observation.at - dep.at) < 60000)));
       const departure = departures.filter(dep => Number.isFinite(dep.at) && dep.at >= ready && dep.at <= horizon).sort((a, b) => a.at - b.at)[0];
       if (!departure) { feasible = false; break; }
+      // Ride duration comes from the timetable of the day this bus departs on.
+      // Weekday offsets applied to a Sunday or holiday departure understate the
+      // ride by several minutes, and the leg would still be labelled
+      // timingSource:'timetable' - a confident wrong answer, which is exactly
+      // what a planner cannot show.
+      //
+      // A scheduled departure carries its service date. A live departure is an
+      // observation, so its day is read off the instant itself: the observed
+      // Madrid date is the best available signal, and it correctly picks up
+      // August and public holidays where a hardcoded weekday grid would not.
+      const depDayType = departure.dayType || tripMatcher.resolveDayType(departure.at).dayType;
+      const dayCfg = schedules.getDirectionSchedule(leg.lineId, leg.direction, depDayType);
+      const dayOffsets = dayCfg?.stopTravelSecMap;
+      const fromOffset = dayOffsets?.[leg.fromStop.id];
+      const toOffset = dayOffsets?.[leg.toStop.id];
+      // A stop whose offset was repaired rather than calibrated is an estimate.
+      // Almost every direction's terminus is one.
+      //
+      // The estimate is still the best number available, so it is USED for the
+      // arrival time - discarding a calibrated offset for the neighbouring stop
+      // and substituting the router's guess would make the answer worse, not
+      // more honest. What the estimate must not do is make the leg look
+      // authoritative, so it caps how the leg is LABELLED, separately from what
+      // value it is computed from.
+      const estimated = dayCfg?.estimatedStopIds || [];
+      const touchesEstimate = estimated.includes(String(leg.fromStop.id))
+        || estimated.includes(String(leg.toStop.id));
+      const hasOffsets = Number.isFinite(fromOffset) && Number.isFinite(toOffset) && toOffset > fromOffset;
+      const exact = hasOffsets && !touchesEstimate;
+      const duration = hasOffsets ? toOffset - fromOffset : Math.max(180, (leg.durationMinutes || 3) * 60);
       const wait = (departure.at - cursor) / 1000;
       waitSeconds += wait;
       rideSeconds += duration;
