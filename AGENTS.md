@@ -221,6 +221,23 @@ setup and contracts; verify disagreements against source, not fixed source-line 
 - Exclude EST_, isGhostVehicle and isTheoretical vehicles from flightRecorder.
   Freshness is subsystem-specific, not one universal 90-second cutoff. Estimated
   markers do not prove observed GPS.
+- **A dead-reckoned bus is a real bus with an inferred position, and it must be
+  counted as one.** It carries `isPhysicalVehicle() === true` (it is a real,
+  identified bus, so it keeps its fleet slot and no ghost is drawn for its trip)
+  **and** `isEstimated === true` (the 45-second freshness test in
+  `processBusesWithDeadReckoning` marks a stale fix). So the two `fleetStatus`
+  counters cannot be derived by exclusion —
+  `liveGpsVehicles = physical && !isEstimated` drops it, and counting only
+  `allSyntheticBuses` drops it too, leaving it in **neither** bucket and making
+  `liveGpsVehicles + estimatedVehicles` miss the fleet by one per dead-reckoned
+  bus. Split physical vehicles explicitly; `estimatedVehicles` is ghosts **plus**
+  dead-reckoned, with `deadReckonedVehicles` reported separately.
+  `fleetCoveragePct` is deliberately NOT changed: it answers "how much of the
+  fleet is reporting GPS", so a bus losing its fix must lower it, and counting
+  an inferred position as coverage would make the number mean less.
+  Never let a display total paper over this with `Math.max(live + est, scheduled)`
+  — that exact clamp is what made a 5-bus fleet read "6 en servei" until 0a23eee
+  removed it. Report the count. See `test/fleet_status_accounting_test.js`.
 - Preserve visibility deep sleep, bounded caches, Leaflet canvas, event delegation,
   async state guards and full scrollable departure boards.
 - Preserve unbuffered SSE and close its clients/timers on shutdown. Dynamic arrivals,

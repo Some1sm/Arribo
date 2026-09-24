@@ -1496,6 +1496,7 @@ class MataroTracker extends BaseTracker {
         scheduledVehicles: 0,
         liveGpsVehicles: 0,
         estimatedVehicles: 0,
+        deadReckonedVehicles: 0,
         fleetCoveragePct: 100
       } : fleetStatus,
       isRealTime: hasLiveGps,
@@ -1903,8 +1904,17 @@ class MataroTracker extends BaseTracker {
     const lineMaxFleet = mataroSchedules.getScheduledFleetRequirement(lId, dayType, nowSec);
     totalScheduledForWholeLine = Math.min(totalScheduledForWholeLine, lineMaxFleet);
 
-    const totalLiveOnWholeLine = allKnownBuses.filter(b => !b.isEstimated && this.isPhysicalVehicle(b)).length;
-    const totalPhysicalOnWholeLine = allKnownBuses.filter(b => this.isPhysicalVehicle(b)).length;
+    // A DEAD-RECKONED bus is a real, identified vehicle whose fix has gone
+    // stale, so `isEstimated` is true on it (see the 45 s freshness test in
+    // processBusesWithDeadReckoning) while isPhysicalVehicle is also true. That
+    // put it in NEITHER reported bucket: it failed the !isEstimated test below,
+    // and it is not a timetable ghost so allSyntheticBuses never saw it. The
+    // two fleetStatus counters then stopped summing to the fleet, by exactly one
+    // per dead-reckoned bus. Split physical vehicles explicitly instead of
+    // inferring them by exclusion.
+    const totalLiveOnWholeLine = allKnownBuses.filter(b => this.isPhysicalVehicle(b) && !b.isEstimated).length;
+    const totalDeadReckonedOnWholeLine = allKnownBuses.filter(b => this.isPhysicalVehicle(b) && b.isEstimated).length;
+    const totalPhysicalOnWholeLine = totalLiveOnWholeLine + totalDeadReckonedOnWholeLine;
     // Whole-line cap: strictly capped by physical line fleet minus all active physical vehicles (live GPS or dead-reckoned)
     const maxSyntheticForLine = Math.max(0, totalScheduledForWholeLine - totalPhysicalOnWholeLine);
 
@@ -2234,7 +2244,12 @@ class MataroTracker extends BaseTracker {
       fleetStatus = {
         scheduledVehicles: effScheduled,
         liveGpsVehicles: totalLiveOnWholeLine,
-        estimatedVehicles: allSyntheticBuses.length,
+        // Dead-reckoned buses count here, alongside timetable ghosts. Both are
+        // positions this platform inferred rather than observed, which is what
+        // the rider-facing "estimated" bucket means, and it is what makes
+        // liveGpsVehicles + estimatedVehicles equal the fleet actually returned.
+        estimatedVehicles: allSyntheticBuses.length + totalDeadReckonedOnWholeLine,
+        deadReckonedVehicles: totalDeadReckonedOnWholeLine,
         fleetCoveragePct: effScheduled > 0
           ? Math.min(100, Math.round((totalLiveOnWholeLine / effScheduled) * 100))
           : 100
@@ -2242,12 +2257,15 @@ class MataroTracker extends BaseTracker {
     } else {
       const dirKey = String(dirIdx);
       const activeTripsForDir = allLineActiveTripsByDir[dirKey] || [];
-      const liveBusesOnDir = allKnownBuses.filter(b => String(b.direction) === dirKey && !b.isEstimated && this.isPhysicalVehicle(b));
+      const physicalOnDir = allKnownBuses.filter(b => String(b.direction) === dirKey && this.isPhysicalVehicle(b));
+      const liveBusesOnDir = physicalOnDir.filter(b => !b.isEstimated);
+      const deadReckonedOnDir = physicalOnDir.length - liveBusesOnDir.length;
       const effScheduled = activeTripsForDir.length;
       fleetStatus = {
         scheduledVehicles: effScheduled,
         liveGpsVehicles: liveBusesOnDir.length,
-        estimatedVehicles: syntheticBuses.length,
+        estimatedVehicles: syntheticBuses.length + deadReckonedOnDir,
+        deadReckonedVehicles: deadReckonedOnDir,
         fleetCoveragePct: effScheduled > 0
           ? Math.min(100, Math.round((liveBusesOnDir.length / effScheduled) * 100))
           : 100
