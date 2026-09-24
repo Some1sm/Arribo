@@ -417,6 +417,126 @@ async function run() {
   }
   console.log('');
 
+  // ── 9. Hysteresis: a ghost already drawn survives a blocker drifting in ──
+  // Ghosts are recomputed from scratch every poll against wherever the real
+  // buses are NOW, so without hysteresis a bus that drifts near a ghost deletes
+  // a scheduled bus from the count and puts it back again, and the rider
+  // watches the estimate total flicker. A ghost already on the map is now held
+  // until its blocker moves clear of the WIDER release radius.
+  //
+  // This is a real measured case, not a constructed one: L1 at 07:40, where
+  // EST_1_1_0701 sits at p97 and bus L1_1_3 sits at p3. On this loop those are
+  // the same place — the route folds back on itself, which is the same folding
+  // that made the old progress clause useless.
+  console.log('📌 Test 9: a ghost already drawn is held when a blocker drifts into range...');
+  {
+    const memory = mataroTracker.ghostHysteresisMemory;
+    const routes = mataroTracker.routesData['1'];
+    const lid = '1';
+    const nowSec = 7 * 3600 + 40 * 60;
+    const at = new Date(Date.UTC(2026, 8, 24, 5, 40, 0)); // 07:40 Madrid
+
+    // Materialise the live fleet the same way the sweep does: the timetable's
+    // trips, of which a fixed 60% report GPS and the rest need estimating.
+    const tripsFor = (dir) => {
+      const s = mataroSchedules.getDirectionSchedule(lid, dir, 'weekday');
+      return s.departures
+        .map((x) => timeEngine.timeStringToSeconds(x))
+        .filter((d) => nowSec >= d && nowSec < d + s.totalTravelSec)
+        .map((d) => ({ progress: Math.min(0.97, (nowSec - d) / s.totalTravelSec) }));
+    };
+    const feeders = [];
+    for (const dir of ['0', '1']) {
+      const coords = routes[dir].coords;
+      tripsFor(dir).forEach((x, i) => {
+        if (i % 5 < 2) return;
+        const c = coords[Math.floor((coords.length - 1) * x.progress)];
+        feeders.push(live(`L1_${dir}_${i}`, dir, parseFloat(c.Latitude), parseFloat(c.Longitude),
+          Math.round(x.progress * 100)));
+      });
+    }
+    assert.ok(feeders.length > 0, 'CONTROL FAILED: the fixture produced no live buses');
+
+    // CONTROL: with no memory, the guard really does suppress EST_1_1_0701.
+    // Without this the assertions below would pass on a fixture where the
+    // hysteresis is not what is holding the ghost.
+    memory.clear();
+    const cold = mataroTracker.synthesizeMissingScheduledBuses(
+      lid, 'both', routes, dirTemplate, feeders, at, feeders
+    );
+    assert.ok(
+      !cold.syntheticBuses.some((b) => b.vehicleId === 'EST_1_1_0701'),
+      'CONTROL FAILED: EST_1_1_0701 is not actually suppressed by the guard at this instant, ' +
+      'so this test is no longer measuring hysteresis'
+    );
+    console.log(`  ✓ CONTROL: cold, the guard suppresses it (${cold.syntheticBuses.length} ghosts)`);
+
+    // Warm: a previous poll drew it, so it is held.
+    memory.clear();
+    mataroTracker.synthesizeMissingScheduledBuses(lid, 'both', routes, dirTemplate, [], at);
+    const warm = mataroTracker.synthesizeMissingScheduledBuses(
+      lid, 'both', routes, dirTemplate, feeders, at, feeders
+    );
+    assert.ok(
+      warm.syntheticBuses.some((b) => b.vehicleId === 'EST_1_1_0701'),
+      'a ghost that was on the map a moment ago must not vanish because a bus drifted beside it — ' +
+      'that is the flicker this removes'
+    );
+    assert.strictEqual(
+      warm.syntheticBuses.length, cold.syntheticBuses.length + 1,
+      'hysteresis should recover exactly the one suppressed ghost here, not an arbitrary number'
+    );
+    console.log(`  ✓ warm, it is held (${warm.syntheticBuses.length} ghosts) — the bus is still on the map`);
+
+    // It must EXPIRE. A memory entry older than the TTL cannot hold anything,
+    // or a ghost could be pinned to the map indefinitely by a bus that parks.
+    const stale = Date.now() - 10 * 60 * 1000;
+    for (const [k] of memory) memory.set(k, stale);
+    const expired = mataroTracker.synthesizeMissingScheduledBuses(
+      lid, 'both', routes, dirTemplate, feeders, at, feeders
+    );
+    assert.ok(
+      !expired.syntheticBuses.some((b) => b.vehicleId === 'EST_1_1_0701'),
+      'a ghost must not be held by an expired memory entry — the TTL is the bound on staleness'
+    );
+    console.log('  ✓ and it releases once the memory entry ages past the TTL');
+    memory.clear();
+  }
+
+  // ── 10. Hysteresis must NEVER resurrect a ghost a real bus now serves ───
+  // The dangerous failure mode: memory says "we drew this", so the guard holds
+  // it — but a real bus has since arrived and PAIRED with that very trip. Then
+  // the map would show a ghost for a bus standing right there with GPS. Pairing
+  // runs before the guard and a paired trip is not a candidate, so this must
+  // hold; assert it rather than reason about it.
+  console.log('📌 Test 10: hysteresis never resurrects a ghost a real bus now serves...');
+  {
+    const memory = mataroTracker.ghostHysteresisMemory;
+    const routes = mataroTracker.routesData['1'];
+    const at = new Date(Date.UTC(2026, 8, 24, 5, 40, 0));
+
+    memory.clear();
+    const primed = mataroTracker.synthesizeMissingScheduledBuses(
+      '1', 'both', routes, dirTemplate, [], at
+    );
+    const target = primed.syntheticBuses.find((b) => b.vehicleId === 'EST_1_1_0701');
+    assert.ok(target, 'CONTROL FAILED: expected EST_1_1_0701 to be drawn when nothing is in the way');
+
+    // A real bus arrives exactly where that ghost is, same direction. Pairing
+    // claims the 07:01 trip with it, so the trip stops being a candidate and the
+    // remembered draw must not put the ghost back.
+    const onTop = live('2695', '1', target.lat, target.lon, target.totalProgress);
+    const second = mataroTracker.synthesizeMissingScheduledBuses(
+      '1', 'both', routes, dirTemplate, [onTop], at, [onTop]
+    );
+    assert.ok(
+      !second.syntheticBuses.some((b) => b.vehicleId === 'EST_1_1_0701'),
+      'a real bus claimed this trip; the ghost it serves must not be resurrected from memory'
+    );
+    console.log('  ✓ a real bus claiming the trip is never shadowed by a remembered ghost');
+    memory.clear();
+  }
+
   console.log('=========================================================================');
   console.log('🎉 ALL FLEET DIRECTION-BALANCE TESTS PASSED');
   console.log('=========================================================================');

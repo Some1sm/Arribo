@@ -231,6 +231,26 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   every one of them a genuine sub-100 m overlap. `fleet_direction_balance_test.js`
   tests 7 and 8 pin both halves — a bus 450 m away must not hide a ghost, and a
   ghost on a real bus's exact position must still be refused.
+- **Hysteresis sticks the suppression; it never resurrects a served trip.**
+  Ghosts are recomputed from scratch each poll against wherever the real buses
+  are *now*, so a bus drifting beside a ghost used to delete a scheduled bus from
+  the count and put it back, and the rider watched the estimate total flicker for
+  no reason. `ghostHysteresisMemory` records each ghost that was actually drawn,
+  keyed on line + direction + **scheduled departure** — not position, since a
+  ghost moves along its route and a position key would never match. A drawn
+  ghost is held while its blocker sits inside the wider release radius
+  (350 m same-direction, 600 m cross), and the entry expires after
+  `GHOST_HYSTERESIS_TTL_MS` so a bus that parks beside a ghost cannot pin it to
+  the map. The map is bounded at 256 entries and pruned by age on every write;
+  age alone is not a bound, because entries are only ever *read* when the guard
+  fires. This holds the suppression ONLY: pairing runs before the guard and a
+  paired trip is never a candidate, so a ghost can never be resurrected over a
+  real bus that has since claimed its trip. Tests 9 and 10 pin both halves.
+  **Know what this does not fix:** the fleet total still moves as the timetable
+  advances and the operator's feed changes, which is correct — a bus appearing
+  converts a ghost to a GPS bus and vice versa. Hysteresis only stops the
+  co-location guard from flickering a bus that is genuinely still unserved.
+  Measured over the 8-line sweep it recovers 6 further ghosts (1085 → 1091).
 - **A vehicle the operator never identified is not a real bus.**
   `mataroSiriClient` emits `vehicleRef || 'Bus'`, so any activity with no
   `<VehicleRef>` arrives literally identified `"Bus"`. The only guard was

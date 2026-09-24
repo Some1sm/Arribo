@@ -42,6 +42,11 @@ class MataroTracker extends BaseTracker {
     this.allStopsMap = new Map();
     this.staticLineCache = new Map(); // Pre-compiled static line routes, polylines & stops
     this.vehicleHistory = new Map(); // Vehicle tracking history with 10-minute retention
+    // Ghost suppression memory, for the co-location guard's hysteresis. Maps a
+    // ghost's identity to the last instant it was actually drawn, so a bus
+    // that drifts briefly close to a ghost cannot make it blink out of the
+    // fleet count. Bounded by GHOST_HYSTERESIS_TTL_MS and pruned on every pass.
+    this.ghostHysteresisMemory = new Map();
     this.stopDeparturesMemoryCache = new Map(); // In-memory pre-computed stop departures cache
     this.stopCacheTtlMs = 35000; // 35-second TTL (sub-millisecond instant serving)
     this.avisosCache = null;
@@ -2174,27 +2179,40 @@ class MataroTracker extends BaseTracker {
         // GPS, a dashed amber one where we do not. Hiding a bus half a kilometre
         // away to keep a count tidy is the opposite of the point.
         const allCurrentBuses = [...allKnownBuses, ...allSyntheticBuses];
-        let bunched = false;
 
+        // Nearest blocker of each kind, not just "some blocker exists": the
+        // hysteresis decision below needs to know how CLOSE it is, because a
+        // ghost is only held while its blocker sits between the overlap radius
+        // and the wider release radius.
+        let nearestSameDir = Infinity;
+        let nearestCrossDir = Infinity;
         for (const existing of allCurrentBuses) {
           const exLat = existing.lat || existing.latitude;
           const exLon = existing.lon || existing.longitude;
           if (!exLat || !exLon) continue;
 
           const dist = geoEngine.calculateDistanceMeters(lat, lon, exLat, exLon);
-          const isSameDirection = String(existing.direction) === String(dirKey);
-
-          // Opposite-direction buses legitimately share a terminal and the
-          // street either side of it, so they keep a wider co-location radius
-          // than same-direction ones.
-          if (dist < (isSameDirection ? MataroTracker.GHOST_OVERLAP_M_SAME_DIR : MataroTracker.GHOST_OVERLAP_M_CROSS_DIR)) {
-            bunched = true;
-            break;
+          if (String(existing.direction) === String(dirKey)) {
+            if (dist < nearestSameDir) nearestSameDir = dist;
+          } else if (dist < nearestCrossDir) {
+            nearestCrossDir = dist;
           }
         }
 
-        if (bunched) {
-          continue;
+        // Opposite-direction buses legitimately share a terminal and the
+        // street either side of it, so they keep a wider co-location radius
+        // than same-direction ones.
+        const overlaps = nearestSameDir < MataroTracker.GHOST_OVERLAP_M_SAME_DIR ||
+          nearestCrossDir < MataroTracker.GHOST_OVERLAP_M_CROSS_DIR;
+        if (overlaps) {
+          // It overlaps something. Hold it only if we drew it very recently AND
+          // that blocker has not yet moved clear of the release radius — i.e.
+          // this is a bus briefly sitting near the ghost, not a persistent
+          // clash. Anything else is dropped as before.
+          const held = this.wasGhostDrawnRecently(`${lId}|${dirKey}|${trip.depTime}`) &&
+            (nearestSameDir < MataroTracker.GHOST_RELEASE_M_SAME_DIR ||
+              nearestCrossDir < MataroTracker.GHOST_RELEASE_M_CROSS_DIR);
+          if (!held) continue;
         }
       }
 
@@ -2203,6 +2221,12 @@ class MataroTracker extends BaseTracker {
       // get distinct vehicleIds (isBusSelected keys on vehicleId, so a shared
       // id would make the two ghosts indistinguishable). Matches tripId below.
       const vId = `EST_${lId}_${dirKey}_${depTimeClean}`;
+
+      // Reaching here means the ghost is actually being drawn, so record it:
+      // this is the fact the next poll's hysteresis reasons about. Keyed on the
+      // same identity as vId, minus the EST_ prefix, so it is stable for the
+      // whole trip even as the ghost's position moves along the route.
+      this.markGhostDrawn(`${lId}|${dirKey}|${trip.depTime}`);
 
       allSyntheticBuses.push({
         tripId: `mataro_ghost_${lId}_${dirKey}_${depTimeClean}`,
@@ -2307,6 +2331,47 @@ class MataroTracker extends BaseTracker {
   // reading as imminent rather than flipping to "already gone".
   static PASSED_STOP_TOLERANCE_M = 30;
 
+  /**
+   * Was this exact ghost drawn within the hysteresis window?
+   *
+   * Deliberately keyed on line + direction + scheduled departure, not on the
+   * ghost's position: a ghost moves along its route as the timetable runs, so a
+   * position key would never match and the hysteresis would be dead code. The
+   * departure time is the ghost's identity — it is what the vehicleId is built
+   * from — and it is stable for the whole life of the trip.
+   */
+  wasGhostDrawnRecently(ghostKey) {
+    this.pruneGhostHysteresis();
+    return this.ghostHysteresisMemory.has(ghostKey);
+  }
+
+  /** Record that a ghost was actually drawn, so the next pass can hold it. */
+  markGhostDrawn(ghostKey) {
+    this.ghostHysteresisMemory.set(ghostKey, Date.now());
+    this.pruneGhostHysteresis();
+  }
+
+  /**
+   * Drop entries older than the TTL, then enforce a hard cap by evicting the
+   * oldest survivors.
+   *
+   * Both halves are needed. Age alone leaves the map unbounded in the worst
+   * case: entries are only ever READ when the guard fires, so a run in which no
+   * ghost ever overlaps would never prune at all. And evicting only the oldest
+   * half-age is not a bound either — a burst of trips inside one window leaves
+   * every entry young, and the map would grow past the cap regardless.
+   */
+  pruneGhostHysteresis() {
+    const now = Date.now();
+    const cutoff = now - MataroTracker.GHOST_HYSTERESIS_TTL_MS;
+    for (const [k, ts] of this.ghostHysteresisMemory) {
+      if (ts < cutoff) this.ghostHysteresisMemory.delete(k);
+    }
+    if (this.ghostHysteresisMemory.size <= 256) return;
+    const byAge = [...this.ghostHysteresisMemory.entries()].sort((a, b) => a[1] - b[1]);
+    for (let i = 0; i < byAge.length - 256; i++) this.ghostHysteresisMemory.delete(byAge[i][0]);
+  }
+
   // How close a timetable ghost may sit to a bus already on the map before it
   // is suppressed as a duplicate. This is a CO-LOCATION radius, not a headway:
   // inside it the two markers land on the same pixel, so drawing both would
@@ -2319,6 +2384,22 @@ class MataroTracker extends BaseTracker {
   // they legitimately share a terminal and the street either side of it.
   static GHOST_OVERLAP_M_SAME_DIR = 100;
   static GHOST_OVERLAP_M_CROSS_DIR = 250;
+
+  // Hysteresis on that guard. A ghost already on the map is only dropped once
+  // its blocker has moved WELL clear, not the instant it crosses the overlap
+  // radius — otherwise a bus that slows at a stop for twenty seconds deletes a
+  // scheduled bus from the count and puts it back again, and the rider watches
+  // the estimate total flicker. Release radii are wider than the overlap radii
+  // for exactly that reason, and the TTL bounds how long a ghost can outlive
+  // its blocker even if a bus parks beside it.
+  //
+  // This sticks the SUPPRESSION only. It never resurrects a ghost whose trip a
+  // real bus has since claimed: pairing runs before the guard, and a paired
+  // trip never reaches it. A ghost is held only while it is still genuinely
+  // unserved and merely co-located with something.
+  static GHOST_RELEASE_M_SAME_DIR = 350;
+  static GHOST_RELEASE_M_CROSS_DIR = 600;
+  static GHOST_HYSTERESIS_TTL_MS = 300000;
 
   // Estimate arrival ETA to stopId from active live vehicles along the route
   async estimateArrivalsForStop(stopId, lineId = '', existingArrivals = [], options = {}) {
