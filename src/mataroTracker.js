@@ -2146,9 +2146,33 @@ class MataroTracker extends BaseTracker {
         fromSeq = segInfo.fromSeq;
         toSeq = segInfo.toSeq;
 
-        // Anti-bunching and spatial headway guard:
-        // Same-direction buses must have at least 18% route progress separation and >= 700m distance.
-        // Opposite-direction buses must not be placed right on top of each other (< 250m).
+        // Co-location guard: refuse a ghost only where it would be genuinely
+        // indistinguishable from a bus already on the map — two markers on one
+        // pixel, which reads as a mis-paired bus drawn twice.
+        //
+        // This used to be an ANTI-BUNCHING guard at service-headway scale: 18%
+        // route progress OR 700 m same-direction, 250 m cross-direction. Both
+        // were wrong for the job, and measurably so.
+        //
+        // Progress is not a distance. These routes fold back on themselves, so
+        // the same route progress names wildly different places: on L1 dir0,
+        // p20% and p55% are 35% of the route apart and 81 m apart in space. The
+        // progress clause therefore fired on buses nowhere near each other and,
+        // as a side effect, could not even be trusted to catch the overlaps it
+        // was written for. Measured on L1: it suppressed a ghost for the 14:57
+        // trip because bus 2679 sat at p50 while the ghost wanted p65.7 — 458 m
+        // apart in space, 15.7% apart in progress, suppressed by the 0.18 rule.
+        // That ghost was a REAL missing bus, not a duplicate of 2679: 2679
+        // paired with the 15:11 trip, which is genuinely nearer to it (0.126
+        // versus 0.224), and one bus can only serve one trip. The 700 m
+        // distance clause then fired on the same pair anyway, so BOTH had to go
+        // for that bus to be shown.
+        //
+        // A distance test is the only honest version of this. Everything beyond
+        // true co-location is a real bus that the timetable says is running, and
+        // this project's purpose is to show it: a solid marker where we have
+        // GPS, a dashed amber one where we do not. Hiding a bus half a kilometre
+        // away to keep a count tidy is the opposite of the point.
         const allCurrentBuses = [...allKnownBuses, ...allSyntheticBuses];
         let bunched = false;
 
@@ -2160,23 +2184,12 @@ class MataroTracker extends BaseTracker {
           const dist = geoEngine.calculateDistanceMeters(lat, lon, exLat, exLon);
           const isSameDirection = String(existing.direction) === String(dirKey);
 
-          if (isSameDirection) {
-            if (existing.totalProgress !== undefined) {
-              const progDiff = Math.abs(trip.progress - (existing.totalProgress / 100));
-              if (progDiff < 0.18) {
-                bunched = true;
-                break;
-              }
-            }
-            if (dist < 700) {
-              bunched = true;
-              break;
-            }
-          } else {
-            if (dist < 250) {
-              bunched = true;
-              break;
-            }
+          // Opposite-direction buses legitimately share a terminal and the
+          // street either side of it, so they keep a wider co-location radius
+          // than same-direction ones.
+          if (dist < (isSameDirection ? MataroTracker.GHOST_OVERLAP_M_SAME_DIR : MataroTracker.GHOST_OVERLAP_M_CROSS_DIR)) {
+            bunched = true;
+            break;
           }
         }
 
@@ -2293,6 +2306,19 @@ class MataroTracker extends BaseTracker {
   // errs by under 10m, so the tolerance keeps a bus standing AT the stop
   // reading as imminent rather than flipping to "already gone".
   static PASSED_STOP_TOLERANCE_M = 30;
+
+  // How close a timetable ghost may sit to a bus already on the map before it
+  // is suppressed as a duplicate. This is a CO-LOCATION radius, not a headway:
+  // inside it the two markers land on the same pixel, so drawing both would
+  // read as one mis-paired bus drawn twice. Outside it they are two visibly
+  // separate vehicles and both belong on the map.
+  //
+  // Replaces a guard that suppressed at 700 m and at 18% route progress, which
+  // deleted real buses — see the co-location guard in synthesizeMissingScheduledBuses
+  // for the measurements. Opposite-direction buses get a wider radius because
+  // they legitimately share a terminal and the street either side of it.
+  static GHOST_OVERLAP_M_SAME_DIR = 100;
+  static GHOST_OVERLAP_M_CROSS_DIR = 250;
 
   // Estimate arrival ETA to stopId from active live vehicles along the route
   async estimateArrivalsForStop(stopId, lineId = '', existingArrivals = [], options = {}) {

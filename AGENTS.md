@@ -197,15 +197,40 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   physical buses on it that no trip could claim. That subtraction is the reason
   a real bus is not given a phantom underneath: pairing tolerates 0.40 progress
   difference, so a bus running outside that window leaves its trip looking
-  unpaired while a real bus is plainly out there. The anti-bunching guards
-  (18% progress and 700 m same-direction, 250 m cross-direction) are separate and
-  deliberate. See `test/fleet_direction_balance_test.js` for L1, and
+  unpaired while a real bus is plainly out there. The co-location guard in
+  `synthesizeMissingScheduledBuses` is separate and deliberate, but it guards
+  CO-LOCATION only: 100 m same-direction, 250 m cross-direction, both named
+  constants. It once ran at service-headway scale instead (18% route progress OR
+  700 m), which is a different question and the wrong one — see the next
+  invariant. See `test/fleet_direction_balance_test.js` for L1, and
   `test/fleet_all_lines_test.js` for the whole network. All eight lines are
   asymmetric and all eight were losing buses; L2, L3 and L5 are asymmetric the
   *other* way round, so a fix verified only on L1 can still be wrong. Do not
   derive a per-direction budget by division, and note that a count-based test
-  cannot cover L4/L6/L7 — their shortfalls are entangled with the anti-bunching
+  cannot cover L4/L6/L7 — their shortfalls are entangled with the co-location
   guard, so the arithmetic is pinned structurally there instead.
+- **Route progress is not distance, and a bus nearby is not a bus on top of the
+  ghost.** The co-location guard once refused a ghost when it was within 18% of
+  another bus's route progress OR 700 m away. Both thresholds are headway
+  measures being used to answer a co-location question, and they deleted real
+  buses. Progress is not a distance proxy on these routes because they fold back
+  on themselves: on L1 dir0, p20% and p55% are 35% of the route apart and 81 m
+  apart in space. Measured on L1, the guard hid the 14:57 dir1 trip because bus
+  2679 sat at p50 while the ghost wanted p65.7 — 458 m apart, suppressed by both
+  clauses. That ghost was a genuinely missing bus, not a duplicate: 2679 paired
+  with the 15:11 trip, which is genuinely nearer to it (0.126 versus 0.224), and
+  one bus can only serve one trip. **Pairing already decides which bus serves
+  which trip; the guard must not override that decision in the one case where a
+  second bus most needs to be shown.** The only legitimate suppression is a ghost
+  that would land on a bus already drawn, because two markers on one pixel read
+  as a mis-paired bus drawn twice. Beyond true co-location, a solid marker where
+  we have GPS and a dashed amber one where we do not is the product working, not
+  a rendering fault — never hide a bus the timetable says is running to tidy a
+  count. Measured over a 42-instant, 8-line sweep with 60% GPS coverage: the old
+  guard left 34 scheduled buses undrawn (L2 alone, 16); at 100 m it leaves 15,
+  every one of them a genuine sub-100 m overlap. `fleet_direction_balance_test.js`
+  tests 7 and 8 pin both halves — a bus 450 m away must not hide a ghost, and a
+  ghost on a real bus's exact position must still be refused.
 - **A vehicle the operator never identified is not a real bus.**
   `mataroSiriClient` emits `vehicleRef || 'Bus'`, so any activity with no
   `<VehicleRef>` arrives literally identified `"Bus"`. The only guard was

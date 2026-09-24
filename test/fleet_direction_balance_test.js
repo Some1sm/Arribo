@@ -33,10 +33,13 @@
 'use strict';
 
 const assert = require('node:assert');
+const fs = require('node:fs');
+const path = require('node:path');
 const mataroTracker = require('../src/mataroTracker');
 const mataroSchedules = require('../src/data/mataroSchedules');
 const siriClient = require('../src/mataroSiriClient');
 const timeEngine = require('../src/core/time/timeEngine');
+const geoEngine = require('../src/core/geo/geoEngine');
 
 // Europe/Madrid is UTC+2 in September, so a local wall-clock time maps to
 // Date.UTC at h-2. Frozen: these are schedule-sensitive instants.
@@ -321,6 +324,98 @@ async function run() {
     }
     console.log('');
   }
+
+  // ── 7. A bus NEARBY is not a bus ON TOP OF the ghost ────────────────────
+  // The guard used to be an anti-BUNCHING test at service-headway scale: 18%
+  // route progress OR 700 m same-direction. Those are headway numbers being
+  // used to answer a co-location question, and they deleted real buses. The
+  // reported case: L1 dir1, bus 2679 at p50 and the 14:57 trip's ghost at p65.7
+  // — 458 m apart in space, 15.7% apart in progress, suppressed by the progress
+  // clause and then by the distance clause as well.
+  //
+  // That ghost was a genuinely missing bus, not a duplicate of 2679. 2679
+  // paired with the 15:11 trip, which is genuinely nearer to it (0.126 versus
+  // 0.224), and one bus can only serve one trip. So the guard was not
+  // preventing a double-draw pairing would have caused — it was overriding a
+  // pairing decision in exactly the case where a second bus most needs showing.
+  console.log('📌 Test 7: a bus 450 m away must NOT hide a bus the timetable says is running...');
+  {
+    const base = mataroTracker.synthesizeMissingScheduledBuses(
+      '1', 'both', routes1, dirTemplate, [], madridInstant(13, 25)
+    );
+    const target = base.syntheticBuses.find((b) => b.direction === '1');
+    assert.ok(target, 'expected a dir1 ghost to work with');
+
+    // Walk along the route until we are ~450 m from where the ghost would land.
+    // Progress is not distance on these folded loops, so step the polyline and
+    // measure rather than assuming a progress delta means a distance delta.
+    const routeCoords = routes1[1].coords;
+    let frac = 0, placed = null;
+    for (frac = 0.02; frac < 0.98; frac += 0.01) {
+      const c = routeCoords[Math.floor((routeCoords.length - 1) * frac)];
+      const d = geoEngine.calculateDistanceMeters(
+        parseFloat(c.Latitude), parseFloat(c.Longitude), target.lat, target.lon
+      );
+      if (d > 430 && d < 520) { placed = { c, d: Math.round(d) }; break; }
+    }
+    assert.ok(placed, 'CONTROL FAILED: could not find a route point ~450 m from the ghost');
+
+    const neighbour = live('2699', '1', parseFloat(placed.c.Latitude), parseFloat(placed.c.Longitude),
+      Math.round(frac * 100));
+    const r = mataroTracker.synthesizeMissingScheduledBuses(
+      '1', 'both', routes1, dirTemplate, [neighbour], madridInstant(13, 25), [neighbour]
+    );
+
+    assert.ok(
+      r.syntheticBuses.some((b) => b.vehicleId === target.vehicleId),
+      `a real bus ${placed.d} m away must not hide a scheduled bus — that is a co-location ` +
+      'threshold, not a headway one. A bus this far off is a separate vehicle on the map.'
+    );
+    console.log(`  ✓ a bus ${placed.d} m away leaves the ghost visible`);
+
+    // ...and the co-location case it DOES exist for must still be refused.
+    const onTop = live('2698', '1', target.lat, target.lon, target.totalProgress);
+    const r2 = mataroTracker.synthesizeMissingScheduledBuses(
+      '1', 'both', routes1, dirTemplate, [onTop], madridInstant(13, 25), [onTop]
+    );
+    assert.ok(
+      !r2.syntheticBuses.some((b) => b.vehicleId === target.vehicleId),
+      'a ghost landing on a real bus must still be refused — two markers on one pixel read as a duplicate'
+    );
+    console.log('  ✓ a ghost on the exact position of a real bus is still refused');
+  }
+
+  // ── 8. The progress clause must not come back ───────────────────────────
+  // It is the specific defect, and it is invisible in a count test: on a folded
+  // loop it fires on buses hundreds of metres apart. Pin the shape, the way
+  // test 3 in fleet_all_lines_test.js pins the even-split arithmetic, and strip
+  // comments first so a comment quoting the old thresholds cannot fail this.
+  console.log('📌 Test 8: no route-progress headway test survives in the co-location guard...');
+  {
+    const { stripComments } = require('./helpers/strip_comments.cjs');
+    const code = stripComments(
+      fs.readFileSync(path.join(__dirname, '..', 'src', 'mataroTracker.js'), 'utf8')
+    );
+    // Anchor on executable code, not on the comment that explains it: the
+    // stripper has by definition already deleted every comment by this point,
+    // so searching for prose here would find nothing even when the guard is
+    // present and correct.
+    const start = code.indexOf('const allCurrentBuses = [...allKnownBuses, ...allSyntheticBuses]');
+    const end = code.indexOf('const depTimeClean', start);
+    assert.ok(start !== -1 && end > start, 'CONTROL FAILED: the co-location guard block was not found');
+    const guard = code.slice(start, end);
+    assert.ok(
+      !/totalProgress\s*\/\s*100/.test(guard),
+      'the guard tests route progress again. Progress is not distance on a self-folding route: ' +
+      'on L1 dir0, p20% and p55% are 35% of the route apart and 81 m apart in space.'
+    );
+    assert.ok(
+      /GHOST_OVERLAP_M_SAME_DIR/.test(guard) && /GHOST_OVERLAP_M_CROSS_DIR/.test(guard),
+      'CONTROL FAILED: the guard no longer names the co-location constants; re-derive this check'
+    );
+    console.log('  ✓ the guard measures distance only, through named constants');
+  }
+  console.log('');
 
   console.log('=========================================================================');
   console.log('🎉 ALL FLEET DIRECTION-BALANCE TESTS PASSED');
