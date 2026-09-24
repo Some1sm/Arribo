@@ -113,6 +113,18 @@ setup and contracts; verify disagreements against source, not fixed source-line 
 - Times come from maresme.net (the grid riders are held to); stop geometry, coordinates
   and distances come from the Avanza scrape. `scripts/scrape_maresme_timetables.js --diff`
   is the audit for grid provenance.
+- **A live bus may hide its own trip on the board, never a neighbour's.**
+  `compileStopDepartures` merges real vehicles into the published grid, and that
+  merge is a deletion mechanism, so its scope must stay tight. When a bus names
+  the trip it is running (an aimed/scheduled time from SIRI) that identification
+  is authoritative and raw proximity to the observed time must NOT also be
+  consulted — otherwise a bus merely running early absorbs the departure beside
+  it, since the 8-minute duplicate window is easily that wide. Synthetic `EST_`
+  runs must not delete published departures at all: their time at a stop is
+  interpolated from position, never observed. They may fill an empty board, but
+  they yield to a published trip. Getting this wrong is silent and looks like a
+  timetable error, which is how a rider reported a missing 11:03 that was in the
+  data all along. See `test/stop_departures_dedup_test.js`.
 - Never fall back to missed departures. Include access/transfer walks and waits.
 - Exclude EST_, isGhostVehicle and isTheoretical vehicles from flightRecorder.
   Freshness is subsystem-specific, not one universal 90-second cutoff. Estimated

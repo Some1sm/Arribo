@@ -340,6 +340,25 @@ function generateMorningFirstService(baseDepartureTimes = [], stopTravelSec = 0,
  * @param {number} [options.maxMinutesAway=1440] - Max minutes away for scheduled items
  * @returns {Array<object>} Standardized departure list matching interface contract
  */
+/**
+ * Is this a synthetic (theoretical) vehicle rather than a real bus?
+ *
+ * The tracker invents EST_ runs from timetable geometry so a board is not
+ * empty before the first bus. Their position — and therefore their time at any
+ * given stop — is derived, not observed. That is fine for showing "something is
+ * coming" and unacceptable for deciding that a real published trip is already
+ * covered, which is the distinction the flight recorder draws for the same runs.
+ *
+ * @param {object} d a live departure, pre- or post-standardization
+ * @returns {boolean}
+ */
+function isSyntheticDeparture(d) {
+  if (!d) return false;
+  if (d.isTheoretical === true || d.isGhostVehicle === true) return true;
+  const id = d.vehicleId ? String(d.vehicleId).trim() : '';
+  return id.startsWith('EST_');
+}
+
 function compileStopDepartures(options = {}) {
   const timezone = options.timezone || 'Europe/Madrid';
   const targetDate = options.dateObj ? new Date(options.dateObj) :
@@ -374,6 +393,10 @@ function compileStopDepartures(options = {}) {
     std.isRealTime = !isEst;
     std.isRealtime = !isEst;
     std.isEstimated = isEst;
+    // Carried on the departure itself rather than a parallel array: the
+    // minutes-of-day arrays below only get an entry when the time parsed, so a
+    // parallel index can drift out of step with this list.
+    std._isSynthetic = isSyntheticDeparture(raw);
     std.isToday = true;
     std.time = std.departureTime;
     std.badgeText = raw.delayBadgeText || (isEst ? '⚡ En ruta' : std.delayBadgeText);
@@ -424,36 +447,38 @@ function compileStopDepartures(options = {}) {
   // Helper to check whether a scheduled trip is already operated by an active live bus
   function isDuplicateWithLive(scheduledMinOfDay) {
     for (let i = 0; i < liveMinutesOfDay.length; i++) {
+      // A synthetic vehicle's time at a stop is interpolated from its position,
+      // never observed. It may enrich the board, but it must not delete a
+      // published departure: doing so hid real trips from riders. (These are the
+      // same EST_ runs the flight recorder already excludes.)
+      if (liveDepartures[i]?._isSynthetic) continue;
+
       const liveMin = liveMinutesOfDay[i];
+      // The minutes-of-day arrays only gain an entry when a time parsed, so a
+      // departure with no usable time has no slot here. It cannot match anything.
+      if (liveMin === undefined) continue;
+
       const liveAimedMin = liveAimedMinutesOfDay[i];
-      const liveDep = liveDepartures[i];
       const hasExplicitAimed = liveHasExplicitAimed[i];
 
-      // 1. If live departure has an explicit aimed/scheduled time or aimedIso
+      // When the bus tells us WHICH scheduled trip it is running (an aimed or
+      // scheduled time from SIRI), that identification is authoritative. Falling
+      // through to raw proximity afterwards meant a bus merely running early or
+      // late absorbed its NEIGHBOUR's trip: at Roca Blanca a bus scheduled for
+      // 11:16 but observed at 11:11 was swallowing the real 11:03 departure,
+      // because 11:11 - 11:03 is exactly the 8-minute duplicate window.
       if (hasExplicitAimed && liveAimedMin !== null) {
         let diffAimed = Math.abs(liveAimedMin - scheduledMinOfDay);
         if (diffAimed > 720) diffAimed = 1440 - diffAimed;
-        if (diffAimed <= duplicateWindowMinutes) {
-          return true;
-        }
+        if (diffAimed <= duplicateWindowMinutes) return true;
+        continue;
       }
 
-      // 2. Proximity to live arrival time (within duplicateWindowMinutes)
+      // No trip identity available, so the observed departure time is all we
+      // have. This is the only case where raw timing proximity is meaningful.
       let diffLive = Math.abs(liveMin - scheduledMinOfDay);
       if (diffLive > 720) diffLive = 1440 - diffLive;
-      if (diffLive <= duplicateWindowMinutes) {
-        return true;
-      }
-
-      // 3. Delayed in-flight trip match if liveDep has delayMins and explicit aimed time
-      const delay = liveDep?.delayMins || 0;
-      if (delay !== 0 && hasExplicitAimed && liveAimedMin !== null) {
-        let diffDelayed = Math.abs(liveAimedMin - scheduledMinOfDay);
-        if (diffDelayed > 720) diffDelayed = 1440 - diffDelayed;
-        if (diffDelayed <= duplicateWindowMinutes) {
-          return true;
-        }
-      }
+      if (diffLive <= duplicateWindowMinutes) return true;
     }
     return false;
   }
@@ -532,7 +557,21 @@ function compileStopDepartures(options = {}) {
   }
 
   // 3. Merge today's live and scheduled departures
-  const combinedToday = [...liveDepartures, ...scheduledTodayDepartures];
+  // A synthetic vehicle is a placeholder so a board is never empty before the
+  // first real bus. Once a published trip is on the board it is redundant: the
+  // real time is the one riders are held to, and showing the derived estimate
+  // beside it only invites the reader to wonder which of the two is real. Yield
+  // to the published trip — but keep the synthetic run when nothing published
+  // is near it, which is exactly when it carries information.
+  const keptLive = liveDepartures.filter(d => {
+    if (!d._isSynthetic) return true;
+    return !scheduledTodayDepartures.some(s => {
+      const diff = Math.abs((Number(d.minutesAway) || 0) - (Number(s.minutesAway) || 0));
+      return diff <= duplicateWindowMinutes;
+    });
+  });
+
+  const combinedToday = [...keptLive, ...scheduledTodayDepartures];
   combinedToday.sort((a, b) => (Number(a.minutesAway) || 0) - (Number(b.minutesAway) || 0));
 
   if (combinedToday.length > 0 && liveDepartures.length === 0) {
