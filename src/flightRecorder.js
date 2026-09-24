@@ -83,6 +83,16 @@ class FlightRecorder {
     const lineCode = String(snap.lineCode || '').toUpperCase();
     const now = Date.now();
 
+    // A snapshot is FRESH EVIDENCE only when it is not itself a derived
+    // (dead-reckoned / schedule-estimated / stale-replayed) emission. A derived
+    // emission is a re-ingest of our own previous output and must NOT advance
+    // the observation clock, otherwise a bus that lost telemetry would be
+    // re-minted from this recorder every poll and never go stale (D1).
+    const isFreshEvidence = !snap.isEstimated && !snap.isDeadReckoned;
+    // The real observation time of the underlying feed, when known. Falls back
+    // to the ingest moment for a genuinely fresh fix (it was just seen now).
+    const snapObservedAt = Number(snap.observedAt);
+
     let v = this.vehicles.get(vId);
     if (!v) {
       v = {
@@ -94,25 +104,35 @@ class FlightRecorder {
         plateNumber: snap.plateNumber || '',
         lat: Number(snap.lat),
         lon: Number(snap.lon),
-        speedKmh: Number(snap.speedKmh || 0),
+        // Nullable: missing speed/delay stay UNKNOWN (null) instead of being
+        // coerced to a measured 0/25. hasSpeed/hasDelay let consumers tell
+        // "no data" apart from a genuine 0 (a stopped bus / punctual run).
+        speedKmh: Number.isFinite(Number(snap.speedKmh)) ? Number(snap.speedKmh) : null,
+        hasSpeed: snap.hasSpeed !== undefined ? Boolean(snap.hasSpeed) : Number.isFinite(Number(snap.speedKmh)),
         bearing: Number(snap.bearing || 0),
-        delayMins: Number(snap.delayMins || 0),
+        delayMins: Number.isFinite(Number(snap.delayMins)) ? Number(snap.delayMins) : null,
+        hasDelay: snap.hasDelay !== undefined ? Boolean(snap.hasDelay) : Number.isFinite(Number(snap.delayMins)),
         destination: snap.destination || '',
         isRealTime: snap.isRealTime !== false,
         // Schedule-estimated buses (no real GPS) must not be dead-reckoned:
         // their position is already recomputed from the timetable every poll,
         // and extrapolation would drag them off the drawn route.
         isEstimated: Boolean(snap.isEstimated || snap.isDeadReckoned),
-        // Per-operator re-ingestion budget (ms). Operators whose full fleet
-        // sweep takes longer than maxExtrapolationMs (e.g. AMB: 7 ticks × 12s
-        // = ~84s) declare a larger serviceability window so one flaky upstream
-        // tick cannot flicker healthy buses off public APIs. Always capped by
-        // staleEvictionCeilingMs in _isServiceable().
+        // Per-operator re-ingestion budget (ms). Retained for the (currently
+        // single-operator) configuration; the serviceability gate uses the
+        // strict 90s observation window, so this cannot raise it.
         serviceableMs: Number.isFinite(Number(snap.serviceableMs)) && Number(snap.serviceableMs) > 0
           ? Number(snap.serviceableMs)
           : undefined,
         status: 'active',
+        // Ingest clock: when we last received ANY payload for this vehicle.
         lastSeen: now,
+        // Observation clock: when the vehicle was last ACTUALLY OBSERVED by the
+        // upstream feed. Only fresh evidence moves this; derived re-ingests keep
+        // it so real observation age keeps growing (D1/D2). Feeds the
+        // serviceability gate and the worker's lastObservationAt.
+        observedAt: Number.isFinite(snapObservedAt) && snapObservedAt > 0 ? snapObservedAt : now,
+        extrapolatedMs: 0,
         lastPersistedAt: 0,
         history: [],
         isTerminalLayover: Boolean(snap.isTerminalLayover),
@@ -127,9 +147,11 @@ class FlightRecorder {
     } else {
       v.lat = Number(snap.lat);
       v.lon = Number(snap.lon);
-      v.speedKmh = Number(snap.speedKmh || 0);
+      v.speedKmh = Number.isFinite(Number(snap.speedKmh)) ? Number(snap.speedKmh) : null;
+      if (snap.hasSpeed !== undefined) v.hasSpeed = Boolean(snap.hasSpeed);
       v.bearing = Number(snap.bearing || 0);
-      v.delayMins = Number(snap.delayMins || 0);
+      v.delayMins = Number.isFinite(Number(snap.delayMins)) ? Number(snap.delayMins) : null;
+      if (snap.hasDelay !== undefined) v.hasDelay = Boolean(snap.hasDelay);
       if (snap.destination) v.destination = snap.destination;
       if (snap.direction !== undefined) v.direction = String(snap.direction);
       v.isRealTime = snap.isRealTime !== false;
@@ -139,9 +161,15 @@ class FlightRecorder {
           ? Number(snap.serviceableMs) : undefined;
       }
       v.status = 'active';
-      // Fresh real GPS fix resets the dead-reckoning budget so vehicles that
-      // regain telemetry can extrapolate again during the next cellular shadow.
-      v.extrapolatedMs = 0;
+      if (isFreshEvidence) {
+        // A fresh real fix resets the dead-reckoning budget so vehicles that
+        // regain telemetry can extrapolate again during the next cellular shadow.
+        v.extrapolatedMs = 0;
+        // Only fresh evidence advances the observation clock (D1). A derived
+        // re-ingest of our own output leaves observedAt untouched.
+        v.observedAt = Number.isFinite(snapObservedAt) && snapObservedAt > 0 ? snapObservedAt : now;
+      }
+      // Ingest clock always advances (any payload counts as an ingest).
       v.lastSeen = now;
       if (lineCode) v.lineCode = lineCode;
       v.isTerminalLayover = Boolean(snap.isTerminalLayover);
@@ -195,14 +223,19 @@ class FlightRecorder {
 
   extrapolateStaleVehicles() {
     const now = Date.now();
-    const expirationThresholdMs = this.maxExtrapolationMs; // 90s without GPS = expired (§7.6)
-    const extrapolateThresholdMs = 15 * 1000;              // >15s without GPS = dead reckon
+    const expirationThresholdMs = this.maxExtrapolationMs; // 90s without a real observation = expired (§7.6)
+    const extrapolateThresholdMs = 15 * 1000;              // >15s without a real observation = dead reckon
 
     for (const [vId, v] of this.vehicles.entries()) {
-      const elapsed = now - v.lastSeen;
+      // Age is measured on the OBSERVATION clock (observedAt), NOT the ingest
+      // clock (lastSeen). A derived re-ingest of our own output refreshes
+      // lastSeen but must not make a bus look freshly observed, otherwise the
+      // tracker re-mint loop would keep it alive forever (D1).
+      const observedAt = Number.isFinite(Number(v.observedAt)) ? Number(v.observedAt) : Number(v.lastSeen);
+      const observationAge = Number.isFinite(observedAt) ? now - observedAt : Infinity;
 
-      if (elapsed > expirationThresholdMs) {
-        // Vehicle finished run or parked
+      if (observationAge > expirationThresholdMs) {
+        // Vehicle finished run or parked (or lost real telemetry for >90s).
         this.vehicles.delete(vId);
         if (v.lineCode && this.lineIndex.has(v.lineCode)) {
           this.lineIndex.get(v.lineCode).delete(vId);
@@ -210,9 +243,17 @@ class FlightRecorder {
         continue;
       }
 
-      if (elapsed > extrapolateThresholdMs && v.speedKmh > 5 && v.bearing !== undefined && !v.isEstimated) {
-        // Bound total dead-reckoning to maxExtrapolationMs so vehicles never drift
-        // arbitrarily far from their last real GPS fix during long cellular shadows.
+      // Dead-reckon using a REAL speed measurement and a known bearing. An
+      // unknown speed is not projected (we cannot honestly move a bus whose
+      // speed we do not have). The cumulative budget below lets the projection
+      // ACCUMULATE across ticks (D6) rather than firing once, while remaining
+      // bounded by maxExtrapolationMs total.
+      const canProject = Number.isFinite(v.speedKmh) && v.speedKmh > 5 && v.bearing !== undefined && v.bearing !== null;
+      if (observationAge > extrapolateThresholdMs && canProject) {
+        // Bound TOTAL dead-reckoning to maxExtrapolationMs so vehicles never
+        // drift arbitrarily far from their last real GPS fix. extrapolatedMs is
+        // the accumulated projection; it is reset only by a fresh real fix
+        // (see ingestVehicle), so a derived re-ingest cannot extend the budget.
         const projectedMs = (v.extrapolatedMs || 0);
         if (projectedMs >= this.maxExtrapolationMs) {
           continue;
@@ -221,9 +262,11 @@ class FlightRecorder {
         v.status = 'extrapolated';
         v.isEstimated = true;
         v.isRealTime = false;
-        v.extrapolatedMs = Math.min(this.maxExtrapolationMs, projectedMs + 5000);
+        const stepMs = 5000;
+        const stepCap = this.maxExtrapolationMs - projectedMs; // never exceed the total budget
+        v.extrapolatedMs = Math.min(this.maxExtrapolationMs, projectedMs + stepMs);
         const speedMps = (v.speedKmh * 1000) / 3600;
-        const distMeters = speedMps * 5; // 5-second interval distance
+        const distMeters = speedMps * (Math.min(stepMs, stepCap) / 1000); // 5-second interval distance
         const rad = (v.bearing * Math.PI) / 180;
         const dLat = (distMeters * Math.cos(rad)) / 111320;
         const dLon = (distMeters * Math.sin(rad)) / (111320 * Math.cos((v.lat * Math.PI) / 180));
@@ -235,26 +278,31 @@ class FlightRecorder {
   }
 
   /**
-   * Serviceability gate: a vehicle whose last GPS/schedule fix is older than
+   * Serviceability gate: a vehicle whose last REAL observation is older than
    * maxExtrapolationMs (§7.6, 90s) must never reach API consumers. This guards
    * the MAIN process, where auto-extrapolation is disabled (server.js) and a
    * worker stall/restart gap could otherwise freeze night-service ghosts
    * (e.g. an N80 bus from 05:00 still served at 15:50). Healthy vehicles are
-   * re-ingested every ~25s batch cycle, so they always stay well inside the
-   * window; only genuinely dead entries fall out.
+   * re-observed every ~20s poll, so they always stay well inside the window;
+   * only genuinely dead entries fall out.
+   *
+   * The gate reads the OBSERVATION clock (observedAt), not the ingest clock
+   * (lastSeen). The tracker re-mints a bus from this recorder's own previous
+   * output when SIRI returns nothing, and the daemon re-ingests that clone on
+   * every poll; keying on lastSeen would let those derived emissions refresh
+   * the clock and keep a telemetry-less bus on the map all service day (D1).
    */
   _isServiceable(v) {
     if (!v) return false;
-    const lastSeen = Number(v.lastSeen);
-    if (!Number.isFinite(lastSeen)) return false;
-    // Cadence-aware threshold: default to the §7.6 90s window, but honour a
-    // declared per-vehicle serviceableMs for slow-sweep operators. Never exceed
-    // the hard eviction ceiling so stale ghosts always die within 5 minutes.
-    const threshold = Math.min(
-      Math.max(this.maxExtrapolationMs, Number(v.serviceableMs) || 0),
-      this.staleEvictionCeilingMs
-    );
-    return (Date.now() - lastSeen) <= threshold;
+    // Fall back to lastSeen only when no observation clock was recorded (e.g.
+    // a state built before this change); a fresh real fix always has one.
+    const observedAt = Number.isFinite(Number(v.observedAt)) ? Number(v.observedAt) : Number(v.lastSeen);
+    if (!Number.isFinite(observedAt)) return false;
+    // Strict §7.6 window. staleEvictionCeilingMs is the same 90s cap; the old
+    // per-vehicle serviceableMs "raise" was dead arithmetic (min capped it
+    // back to the floor) and is gone, along with its incorrect "5 minutes" note.
+    const threshold = Math.min(this.maxExtrapolationMs, this.staleEvictionCeilingMs);
+    return (Date.now() - observedAt) <= threshold;
   }
 
   getLineVehicles(lineCode) {
@@ -354,9 +402,12 @@ class FlightRecorder {
         plateNumber: v.plateNumber || '',
         lat: Number(v.lat),
         lon: Number(v.lon),
-        speedKmh: Number(v.speedKmh || 0),
+        // Preserve unknown speed/delay as null (unknown), never coerce to 0.
+        speedKmh: Number.isFinite(Number(v.speedKmh)) ? Number(v.speedKmh) : null,
+        hasSpeed: v.hasSpeed !== undefined ? Boolean(v.hasSpeed) : Number.isFinite(Number(v.speedKmh)),
         bearing: Number(v.bearing || 0),
-        delayMins: Number(v.delayMins || 0),
+        delayMins: Number.isFinite(Number(v.delayMins)) ? Number(v.delayMins) : null,
+        hasDelay: v.hasDelay !== undefined ? Boolean(v.hasDelay) : Number.isFinite(Number(v.delayMins)),
         destination: v.destination || '',
         isRealTime: v.isRealTime !== false,
         // Preserve the honest "estimated" label across IPC: schedule-synthesized
@@ -365,7 +416,11 @@ class FlightRecorder {
         isEstimated: Boolean(v.isEstimated || v.isDeadReckoned),
         serviceableMs: Number(v.serviceableMs) > 0 ? Number(v.serviceableMs) : undefined,
         status: v.status || 'active',
+        // Ingest clock (advances on any payload) and observation clock (advances
+        // only on real evidence). Both must cross IPC so the main process's
+        // serviceability gate sees the true observation age (D1/D2).
         lastSeen: v.lastSeen || now,
+        observedAt: Number.isFinite(Number(v.observedAt)) ? Number(v.observedAt) : (v.lastSeen || now),
         lastPersistedAt: v.lastPersistedAt || 0,
         extrapolatedMs: v.extrapolatedMs || (existing ? existing.extrapolatedMs : 0),
         history: history,

@@ -116,6 +116,45 @@ class IngestionDaemon {
               if (b.isGhostVehicle || (b.vehicleId && String(b.vehicleId).startsWith('EST_'))) {
                 return;
               }
+
+              // Resolve the real observation time of this bus, or null. This is
+              // the per-vehicle timestamp that was previously dropped entirely,
+              // which left observationAgeMs permanently null. A derived
+              // (dead-reckoned / estimated) emission carries the last REAL
+              // observation, never the moment we re-emitted our own guess, so
+              // the flight recorder can tell fresh evidence from a re-ingest.
+              const isDerived = Boolean(b.isEstimated) || b.isRealTime === false;
+              const resolveObservedAt = (bus) => {
+                const cand = Number(bus.observedAt);
+                if (Number.isFinite(cand) && cand > 0) return cand;
+                const fresh = bus.freshness && Number(bus.freshness.observedAt);
+                if (Number.isFinite(fresh) && fresh > 0) return fresh;
+                // A derived emission has no independent observation stamp: its
+                // timestamp/recordedAt are the re-emit moment, not a new
+                // measurement. Do NOT let those fake a fresh observation here.
+                if (isDerived) return null;
+                if (Number.isFinite(Number(bus.timestamp)) && Number(bus.timestamp) > 0) return Number(bus.timestamp);
+                const rec = bus.recordedAt ? Date.parse(bus.recordedAt) : NaN;
+                if (Number.isFinite(rec) && rec > 0) return rec;
+                return null;
+              };
+              const observedAt = resolveObservedAt(b);
+
+              // Speed: a missing measurement stays UNKNOWN (null), not 25. A real
+              // measured 0 (bus stopped) stays 0 and stays distinguishable.
+              const hasSpeed = b.hasSpeed !== undefined
+                ? Boolean(b.hasSpeed)
+                : Number.isFinite(b.speedKmh);
+              const speedKmh = hasSpeed ? Number(b.speedKmh) : null;
+
+              // Delay: "not reported by the feed" stays UNKNOWN (null) and is
+              // flagged, so it is neither counted as punctual nor advertised live
+              // as if authoritative. A measured 0 stays 0.
+              const hasDelay = b.hasDelay !== undefined
+                ? Boolean(b.hasDelay)
+                : Number.isFinite(b.delayMins);
+              const delayMins = hasDelay ? Number(b.delayMins) : null;
+
               flightRecorder.ingestVehicle({
                 vehicleId: b.vehicleId || `mataro_${lId}_${b.plateNumber || 'bus'}`,
                 lineId: lId,
@@ -127,12 +166,18 @@ class IngestionDaemon {
                 lon: b.lon,
                 latitude: b.lat,
                 longitude: b.lon,
-                speedKmh: Number.isFinite(b.speedKmh) ? b.speedKmh : 25,
+                speedKmh,
+                hasSpeed,
                 bearing: b.bearing || 0,
-                delayMins: b.delayMins || 0,
+                delayMins,
+                hasDelay,
                 destination: b.destination || '',
                 isRealTime: !b.isEstimated,
                 isEstimated: Boolean(b.isEstimated),
+                // The real upstream observation time (null when unknown — never
+                // faked to now). flightRecorder only advances its observation
+                // clock on fresh (non-derived) evidence.
+                observedAt,
                 serviceableMs: 90 * 1000,
                 isTerminalLayover: Boolean(b.isTerminalLayover),
                 fromStop: b.fromStop !== undefined ? b.fromStop : undefined,
@@ -148,9 +193,19 @@ class IngestionDaemon {
               const madridTimeStr = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date());
               const [mH, mM] = madridTimeStr.split(':').map(Number);
               const isDepotHours = mH < 5 || (mH === 5 && mM < 20) || mH >= 23;
-              const speed = Number.isFinite(b.speedKmh) ? b.speedKmh : 25;
-              const isLayover = b.isTerminalLayover || isDepotHours || (speed <= 3 && (b.delayMins > 10 || b.delayMins < -5));
-              if (b.delayMins !== undefined && !isLayover && b.delayMins >= -15 && b.delayMins <= 300) {
+              // An unknown speed is not a confirmed measurement, so a
+              // speed-based parked check must NOT be taken on it (the
+              // per-vehicle terminal gate in the tracker already handles the
+              // position-based part). Only a real speed drives this branch.
+              const speed = hasSpeed ? speedKmh : null;
+              const isLayover = b.isTerminalLayover || isDepotHours ||
+                (speed !== null && speed <= 3 && (delayMins !== null && (delayMins > 10 || delayMins < -5)));
+              // Consistency (D4): a value Observatori would refuse to store
+              // (unknown, or outside the plausible range) must not be advertised
+              // as an authoritative live delay either, so the same bus cannot
+              // read "+400 min" on the map while Observatori records nothing.
+              const isPlausibleDelay = hasDelay && delayMins >= -15 && delayMins <= 300;
+              if (isPlausibleDelay && !isLayover) {
                 const vehId = b.vehicleId || (b.plateNumber ? `mataro_${lId}_${b.plateNumber}` : `mataro_${lId}_bus`);
                 // Recover the scheduled/actual passing time from the static
                 // timetable. The feed reports a delay but never the time it is
@@ -161,8 +216,8 @@ class IngestionDaemon {
                   direction: b.direction,
                   toSeq: b.toSeq,
                   stopName: b.toStop,
-                  delayMins: b.delayMins,
-                  at: b.timestamp || Date.now()
+                  delayMins,
+                  at: observedAt || Date.now()
                 });
                 historyDb.recordDelayLog({
                   vehicleId: vehId,
@@ -174,7 +229,7 @@ class IngestionDaemon {
                   // numeric schedule id is only needed for the join above.
                   stopId: b.toStop || 'Parada',
                   stopName: b.toStop || 'Parada',
-                  delayMins: b.delayMins,
+                  delayMins,
                   scheduledTime: trip.matched ? trip.scheduledTime : '',
                   actualTime: trip.matched ? trip.actualTime : '',
                   direction: b.direction !== undefined ? String(b.direction) : '',

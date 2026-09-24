@@ -570,7 +570,13 @@ app.get('/api/line/:lineId/vehicles', async (req, res) => {
       details = await tracker.getLineDetails(targetLine, direction);
       vehicles = (details?.activeBuses || []).map(standardizeVehicle);
     } else {
-      vehicles = vehicles.map(standardizeVehicle);
+      // flightRecorder filters by line + serviceability only, so the direction
+      // query must be applied here too. A vehicle with no direction is kept:
+      // we cannot prove it travels the other way.
+      const wantedDir = String(direction);
+      vehicles = vehicles
+        .map(standardizeVehicle)
+        .filter(v => v.direction === undefined || v.direction === null || String(v.direction) === wantedDir);
     }
 
     res.json({
@@ -840,7 +846,10 @@ app.get('/api/disruptions', async (req, res) => {
 
 // All Active Vehicles across Mataró Bus
 app.get('/api/vehicles', (req, res) => {
-  const lineFilter = req.query.line ? String(req.query.line).toUpperCase() : null;
+  // Accept both `1` and `L1` (any case) like the rest of the API: vehicles store
+  // lineCode as `L<n>`, so normalize the filter to the same canonical form.
+  const rawLine = req.query.line !== undefined ? String(req.query.line).trim() : '';
+  const lineFilter = rawLine ? `L${rawLine.replace(/^l/i, '')}` : null;
   let vehicles = flightRecorder.getAllVehicles();
   if (lineFilter) {
     vehicles = vehicles.filter(v => String(v.lineCode || '').toUpperCase() === lineFilter);

@@ -153,7 +153,13 @@ function handleMasterMessage(message) {
         activeVehicles: flightRecorder.getAllVehicles().length,
         upstream: mataroSiriClient.getUpstreamStatus(),
         noticesUpdatedAt: ingestionDaemon.noticesUpdatedAt || null,
-        lastObservationAt: Math.max(0, ...flightRecorder.getAllVehicles().map(vehicle => Number(vehicle.timestamp) || Date.parse(vehicle.recordedAt) || 0)) || null
+        // Freshest REAL observation across the fleet. Reads the flight
+        // recorder's observedAt clock (threaded from the SIRI RecordedAtTime
+        // through the tracker and daemon). Falls back to the legacy
+        // timestamp/recordedAt fields only if observedAt is somehow absent.
+        // An empty fleet yields null (unknown), never 0.
+        lastObservationAt: Math.max(0, ...flightRecorder.getAllVehicles().map(vehicle =>
+          Number(vehicle.observedAt) || Number(vehicle.timestamp) || Date.parse(vehicle.recordedAt) || 0)) || null
       });
       break;
 

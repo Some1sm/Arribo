@@ -14,6 +14,23 @@ const BaseTracker = require('./core/BaseTracker');
 const transitRouter = require('./core/schedule/transitRouter');
 const mataroFleet = require('./data/mataroFleet');
 
+/**
+ * Resolve the timetable bucket for a moment. August weekdays run the reduced
+ * summer "Dissabtes" timetable, so they must NOT be treated as ordinary
+ * weekdays. This is the same rule tripMatcher.resolveDayType() applies (and
+ * that test/trip_matcher_test.js asserts): the tracker's ghost synthesizer and
+ * the trip matcher must agree on the bucket or a physical bus is looked up in
+ * a different trip list than the one it was synthesized from.
+ * All date math stays in calendarEngine (Europe/Madrid).
+ */
+function resolveDayType(dateObj, timeZone) {
+  const c = calendarEngine.getDateComponents(dateObj, timeZone);
+  let dayType = 'weekday';
+  if (c.isSunday) dayType = 'sunday';
+  else if (c.isSaturday || (c.isWeekday && c.isAugust)) dayType = 'saturday';
+  return dayType;
+}
+
 class MataroTracker extends BaseTracker {
   constructor() {
     super();
@@ -725,6 +742,10 @@ class MataroTracker extends BaseTracker {
     const lId = this.normalizeLineId(v.lineId || v.lineCode);
     if (!lId) return;
 
+    const speedNum = Number(v.speedKmh);
+    const delayNum = Number(v.delayMins);
+    const observedAtNum = Number(v.observedAt);
+
     this.vehicleHistory.set(vId, {
       vehicleId: vId,
       lineId: lId,
@@ -732,9 +753,18 @@ class MataroTracker extends BaseTracker {
       lat: Number(v.lat || v.latitude),
       lon: Number(v.lon || v.longitude),
       bearing: Number(v.bearing || 0),
-      speedKmh: Number(v.speedKmh || 25),
-      delayMins: Number(v.delayMins || 0),
+      // Missing speed/delay stay UNKNOWN (null) — never fabricated to 25/0.
+      speedKmh: Number.isFinite(speedNum) ? speedNum : null,
+      hasSpeed: v.hasSpeed !== undefined ? Boolean(v.hasSpeed) : Number.isFinite(speedNum),
+      delayMins: Number.isFinite(delayNum) ? delayNum : null,
+      hasDelay: v.hasDelay !== undefined ? Boolean(v.hasDelay) : Number.isFinite(delayNum),
+      // Ingest clock.
       lastSeen: Number(v.lastSeen || v.timestamp || now),
+      // Observation clock: the last REAL upstream fix, distinct from lastSeen
+      // (which any derived re-emission would refresh). Null when unknown.
+      observedAt: Number.isFinite(observedAtNum) && observedAtNum > 0
+        ? observedAtNum
+        : (v.freshness && Number(v.freshness.observedAt)) || null,
       directionName: v.directionName || '',
       origin: v.origin || '',
       destination: v.destination || '',
@@ -1159,7 +1189,7 @@ class MataroTracker extends BaseTracker {
 
     // Operational Hours Gate: Compute line scheduled fleet requirement dynamically from timetable
     const targetDateComp = calendarEngine.getDateComponents(targetDate, this.agencyTimezone);
-    const targetDayType = targetDateComp.isSunday ? 'sunday' : (targetDateComp.isSaturday ? 'saturday' : 'weekday');
+    const targetDayType = resolveDayType(targetDate, this.agencyTimezone);
     const targetDateSec = (targetDateComp.hour || 0) * 3600 + (targetDateComp.minute || 0) * 60 + (targetDateComp.second || 0);
     const lineMaxFleet = mataroSchedules.getScheduledFleetRequirement(lId, targetDayType, targetDateSec);
 
@@ -1185,6 +1215,11 @@ class MataroTracker extends BaseTracker {
         const histVehs = [];
         for (const [, hist] of this.vehicleHistory.entries()) {
           if (String(hist.lineId) === String(lId) && (now - hist.lastSeen) <= 90000) {
+            // This is a re-emission of our OWN previous output. It is flagged
+            // estimated and carries the real underlying fix time (observedAt)
+            // rather than the re-emit moment, so it can never be mistaken for a
+            // fresh observation further down the pipeline (D1).
+            const histObservedAt = Number(hist.observedAt) || null;
             histVehs.push({
               vehicleId: hist.vehicleId,
               lineId: hist.lineId,
@@ -1195,10 +1230,14 @@ class MataroTracker extends BaseTracker {
               lat: hist.lat,
               lon: hist.lon,
               bearing: hist.bearing,
-              speedKmh: hist.speedKmh,
-              delayMins: hist.delayMins,
+              speedKmh: Number.isFinite(hist.speedKmh) ? hist.speedKmh : null,
+              hasSpeed: hist.hasSpeed !== undefined ? Boolean(hist.hasSpeed) : Number.isFinite(hist.speedKmh),
+              delayMins: Number.isFinite(hist.delayMins) ? hist.delayMins : null,
+              hasDelay: hist.hasDelay !== undefined ? Boolean(hist.hasDelay) : Number.isFinite(hist.delayMins),
               isEstimated: true,
               isRealTime: false,
+              observedAt: histObservedAt,
+              freshness: { source: 'position', fetchedAt: now, observedAt: histObservedAt },
               timestamp: hist.lastSeen
             });
           }
@@ -1375,7 +1414,13 @@ class MataroTracker extends BaseTracker {
       const roadLon = Math.round(snapped.lon * 1000000) / 1000000;
       const roadBearing = snapped.bearing || b.bearing || 0;
 
-      // Record to vehicle history
+      // Speed: a missing measurement stays UNKNOWN (null). A measured 0 (bus
+      // genuinely stopped) stays 0 and remains distinguishable from "no data".
+      const speedNum = Number(b.speedKmh);
+      const hasSpeed = b.hasSpeed !== undefined ? Boolean(b.hasSpeed) : Number.isFinite(speedNum);
+      const speedKmh = hasSpeed && Number.isFinite(speedNum) ? speedNum : null;
+
+      // Record to vehicle history (drives the dead-reckoning fallback below).
       this.vehicleHistory.set(String(b.vehicleId), {
         vehicleId: b.vehicleId,
         lineId: b.lineId,
@@ -1383,9 +1428,13 @@ class MataroTracker extends BaseTracker {
         lat: roadLat,
         lon: roadLon,
         bearing: roadBearing,
-        speedKmh: b.speedKmh,
-        delayMins: b.delayMins,
+        speedKmh,
+        hasSpeed,
+        delayMins: b.delayMins !== undefined && Number.isFinite(Number(b.delayMins)) ? Number(b.delayMins) : null,
         lastSeen: now,
+        // Observation clock: the real fix time, when the feed supplied one.
+        // Null when unknown — never the re-emit moment.
+        observedAt: (b.freshness && Number(b.freshness.observedAt)) || Number(b.observedAt) || null,
         directionName: b.directionName,
         origin: b.origin,
         destination: b.destination
@@ -1394,20 +1443,35 @@ class MataroTracker extends BaseTracker {
       // Calculate progress and segment along stops
       const segInfo = this.findNearestSegment(roadLat, roadLon, stops, polyCoords);
 
-      // Sanity check for terminal layovers / ghost buses (e.g. parked with velocity 0 at terminus)
-      const isTerminal = (b.speedKmh <= 3 || b.speedKmh === undefined) &&
+      // Sanity check for terminal layovers / ghost buses (e.g. parked at terminus).
+      // Keyed on a REAL speed measurement: an unknown speed is not a confirmed
+      // measurement, so it is treated as "not confirmed moving" here rather
+      // than silently defaulting to a fabricated 25 km/h (D3).
+      const isTerminal = (hasSpeed ? speedKmh <= 3 : true) &&
         ((segInfo.totalProgress > 92 && segInfo.distanceToNextMeters <= 50) || segInfo.totalProgress < 8);
       // GPS Freshness Invariant: A vehicle is ONLY live GPS if its fix was observed within the last 45 seconds (§7.6)
       const busAgeSec = Math.max(0, (now - (b.timestamp || b.lastSeen || now)) / 1000);
       const isStaleFix = busAgeSec > 45;
       const isEst = Boolean(b.isEstimated) || isStaleFix;
-      const isGhostDelay = !isEst && isTerminal && b.delayMins > 10;
-      const cleanDelayMins = isGhostDelay ? 0 : Math.max(-15, b.delayMins || 0);
-      const cleanDelayFormatted = isEst
-        ? '⚡ Estimació en circuit'
-        : (isGhostDelay 
-            ? 'Regulant a capçalera' 
-            : (cleanDelayMins > 0 ? `+${cleanDelayMins} min retard` : (cleanDelayMins < 0 ? `${cleanDelayMins} min avançat` : 'Puntual')));
+      // Delay: "not reported by the feed" stays UNKNOWN (null) and is flagged,
+      // so it is never coerced to a measured 0 (which would read as punctual).
+      const hasDelay = b.hasDelay !== undefined
+        ? Boolean(b.hasDelay)
+        : Number.isFinite(Number(b.delayMins));
+      const rawDelayMins = hasDelay ? Number(b.delayMins) : null;
+      const isGhostDelay = !isEst && isTerminal && rawDelayMins !== null && rawDelayMins > 10;
+      // A reported delay is clamped to a plausible band; an unreported one is
+      // NOT invented (stays null and is advertised as unknown).
+      const cleanDelayMins = isGhostDelay
+        ? 0
+        : (rawDelayMins === null ? null : Math.max(-15, Math.min(300, rawDelayMins)));
+      const cleanDelayFormatted = !hasDelay || cleanDelayMins === null
+        ? 'Sense dades de retard'
+        : (isEst
+            ? '⚡ Estimació en circuit'
+            : (isGhostDelay
+                ? 'Regulant a capçalera'
+                : (cleanDelayMins > 0 ? `+${cleanDelayMins} min retard` : (cleanDelayMins < 0 ? `${cleanDelayMins} min avançat` : 'Puntual'))));
       const statusText = isEst
         ? (isStaleFix ? `⚡ Estimació (${Math.round(busAgeSec)}s sense GPS)` : '⚡ Estimació per pèrdua temporal de senyal')
         : (isGhostDelay ? '⏱️ Regulant a capçalera' : '🟢 Senyal GPS Actiu');
@@ -1425,13 +1489,18 @@ class MataroTracker extends BaseTracker {
         longitude: roadLon,
         bearing: roadBearing,
         compass: geoUtils.bearingToCompassName(roadBearing),
-        speedKmh: b.speedKmh,
+        speedKmh,
+        hasSpeed,
         delayMins: cleanDelayMins,
+        hasDelay: hasDelay && cleanDelayMins !== null,
         delayFormatted: cleanDelayFormatted,
         delayBadgeText: isEst ? '⚡ En ruta (Estimat)' : cleanDelayFormatted,
         isEstimated: isEst,
         isRealTime: !isEst,
         freshness: b.freshness || (isEst ? { source: 'position', fetchedAt: now, observedAt: null } : undefined),
+        // Real observation time, threaded so the daemon/recorder can keep a
+        // distinct observation clock (D2). Null when unknown.
+        observedAt: (b.freshness && Number(b.freshness.observedAt)) || Number(b.observedAt) || null,
         recordedAt: b.recordedAt || new Date().toISOString(),
         timestamp: b.timestamp || now,
         origin: b.origin || '',
@@ -1470,8 +1539,12 @@ class MataroTracker extends BaseTracker {
 
       // If vehicle is live on ANY direction of this line, do not dead-reckon it
       const isCurrentlyActive = (allLineLiveVehicles || liveBuses).some(b => String(b.vehicleId) === String(vId));
-      if (!isCurrentlyActive && elapsedSec >= 1 && elapsedSec <= 90) {
-        const estPos = geoEngine.extrapolatePolylinePosition(hist, elapsedSec, hist.speedKmh || 30, polyCoords);
+      // Only project a position when we have a REAL speed measurement. An
+      // unknown speed is not a confirmed measurement, so we do not invent a
+      // motion vector for it (D3).
+      const histHasSpeed = Number.isFinite(hist.speedKmh);
+      if (!isCurrentlyActive && histHasSpeed && elapsedSec >= 1 && elapsedSec <= 90) {
+        const estPos = geoEngine.extrapolatePolylinePosition(hist, elapsedSec, hist.speedKmh, polyCoords);
         if (estPos) {
           // Anti-bunching & duplicate guard: Never dead-reckon if an active physical bus on this direction is within 600m
           const isBunchedWithPhysical = (allLineLiveVehicles || liveBuses).some(b => {
@@ -1488,6 +1561,11 @@ class MataroTracker extends BaseTracker {
           const elapsedMin = Math.floor(elapsedSec / 60);
           const elapsedText = elapsedMin > 0 ? `${elapsedMin} min` : `${Math.round(elapsedSec)}s`;
 
+          // Carry the real underlying fix time (never the re-emit moment) so a
+          // re-ingest of this estimate cannot refresh the observation clock (D1).
+          const histObservedAt = Number(hist.observedAt) || null;
+          const histHasDelay = Number.isFinite(hist.delayMins);
+
           result.push({
             tripId: `mataro_${vId}`,
             vehicleId: vId,
@@ -1500,12 +1578,16 @@ class MataroTracker extends BaseTracker {
             longitude: estPos.lon,
             bearing: estPos.bearing,
             compass: geoUtils.bearingToCompassName(estPos.bearing),
-            speedKmh: Math.max(15, Math.min(45, hist.speedKmh || 30)),
-            delayMins: hist.delayMins || 0,
-            delayFormatted: hist.delayMins > 0 ? `+${hist.delayMins} min retard` : 'Puntual',
+            speedKmh: Math.max(15, Math.min(45, hist.speedKmh)),
+            hasSpeed: true,
+            delayMins: histHasDelay ? hist.delayMins : null,
+            hasDelay: histHasDelay,
+            delayFormatted: histHasDelay ? (hist.delayMins > 0 ? `+${hist.delayMins} min retard` : 'Puntual') : 'Sense dades de retard',
             isEstimated: true,
             isRealTime: false,
-            recordedAt: new Date(hist.lastSeen).toISOString(),
+            observedAt: histObservedAt,
+            freshness: { source: 'position', fetchedAt: now, observedAt: histObservedAt },
+            recordedAt: new Date(histObservedAt || hist.lastSeen).toISOString(),
             timestamp: hist.lastSeen,
             origin: hist.origin || '',
             destination: hist.destination || '',
@@ -1595,7 +1677,7 @@ class MataroTracker extends BaseTracker {
   synthesizeMissingScheduledBuses(lId, direction, routes, allDirections, existingBuses = [], dateObj = new Date(), allLineLiveVehicles = []) {
     const isBoth = direction === 'both';
     const dateComp = calendarEngine.getDateComponents(dateObj, this.agencyTimezone);
-    const dayType = dateComp.isSunday ? 'sunday' : (dateComp.isSaturday ? 'saturday' : 'weekday');
+    const dayType = resolveDayType(dateObj, this.agencyTimezone);
     const nowSec = (dateComp.hour || 0) * 3600 + (dateComp.minute || 0) * 60 + (dateComp.second || 0);
     const nowMs = dateObj.getTime();
 
@@ -1948,7 +2030,10 @@ class MataroTracker extends BaseTracker {
       }
 
       const depTimeClean = trip.depTime.replace(':', '');
-      const vId = `EST_${lId}_${depTimeClean}`;
+      // Include the direction so two opposite runs sharing a departure minute
+      // get distinct vehicleIds (isBusSelected keys on vehicleId, so a shared
+      // id would make the two ghosts indistinguishable). Matches tripId below.
+      const vId = `EST_${lId}_${dirKey}_${depTimeClean}`;
 
       allSyntheticBuses.push({
         tripId: `mataro_ghost_${lId}_${dirKey}_${depTimeClean}`,
@@ -2067,8 +2152,7 @@ class MataroTracker extends BaseTracker {
     const now = targetDate.getTime();
     const netNow = timeEngine.getNetworkTime(this.agencyTimezone, targetDate);
     const currentSec = netNow.hour * 3600 + netNow.minute * 60 + netNow.second;
-    const dateComp = calendarEngine.getDateComponents(targetDate, this.agencyTimezone);
-    const dayType = dateComp.isSunday ? 'sunday' : (dateComp.isSaturday ? 'saturday' : 'weekday');
+    const dayType = resolveDayType(targetDate, this.agencyTimezone);
 
     for (const lId of targetLineIds) {
       const routes = this.routesData[lId] || [];
@@ -2343,12 +2427,10 @@ class MataroTracker extends BaseTracker {
       (options.targetDate ? new Date(options.targetDate) :
       (options.referenceDate ? new Date(options.referenceDate) : new Date()));
 
-    const dateCompToday = calendarEngine.getDateComponents(targetDate, this.agencyTimezone);
-    const dayTypeToday = dateCompToday.isSunday ? 'sunday' : (dateCompToday.isSaturday ? 'saturday' : 'weekday');
+    const dayTypeToday = resolveDayType(targetDate, this.agencyTimezone);
 
     const tomorrow = new Date(targetDate.getTime() + 24 * 3600 * 1000);
-    const dateCompTomorrow = calendarEngine.getDateComponents(tomorrow, this.agencyTimezone);
-    const dayTypeTomorrow = dateCompTomorrow.isSunday ? 'sunday' : (dateCompTomorrow.isSaturday ? 'saturday' : 'weekday');
+    const dayTypeTomorrow = resolveDayType(tomorrow, this.agencyTimezone);
 
     const filteredDepartures = [];
 
@@ -2388,8 +2470,35 @@ class MataroTracker extends BaseTracker {
 
           if (dirSched && Array.isArray(dirSched.departures)) {
             const arrSec = timeEngine.timeStringToSeconds(arrTime);
-            // Search for outbound scheduled trip associated with this turnaround (check up to 5 min before arrival or anywhere after)
-            const foundTrip = dirSched.departures.find(t => timeEngine.timeStringToSeconds(t) >= arrSec - 300);
+            // Bound the forward search to a plausible headway for THIS line and
+            // direction (D9). An unbounded `.find(t => t >= arrSec - 300)` would
+            // attach a very late arrival to a distant NEXT departure (e.g. a bus
+            // 35 min late binding to the run after next) and then, because
+            // arrSec <= schedSec for that distant trip, report delayMins = 0
+            // ("Regulació / Puntual") for the wrong trip. We derive the headway
+            // from the real departure list: the turnaround can legitimately be
+            // the next scheduled run, which is at most one headway away.
+            const departures = dirSched.departures
+              .map(t => timeEngine.timeStringToSeconds(t))
+              .filter(s => Number.isFinite(s))
+              .sort((a, b) => a - b);
+            let headwaySec = 0;
+            for (let i = 1; i < departures.length; i++) {
+              headwaySec = Math.max(headwaySec, departures[i] - departures[i - 1]);
+            }
+            // Fall back to a conservative bound if the schedule is degenerate.
+            if (!(headwaySec > 0)) headwaySec = 30 * 60;
+            // The matched turnaround may sit up to 5 min before the arrival, so
+            // allow the headway plus that lookback as the search window.
+            const maxForwardSec = headwaySec + 300;
+            const candidate = dirSched.departures.find(t => {
+              const sec = timeEngine.timeStringToSeconds(t);
+              if (!Number.isFinite(sec) || sec < arrSec - 300) return false;
+              // Reject a distant departure: a turnaround is either within the
+              // lookback before the arrival or the next run within one headway.
+              return (sec - arrSec) <= maxForwardSec;
+            });
+            const foundTrip = candidate;
             if (foundTrip) {
               scheduledDepTime = foundTrip;
               const schedSec = timeEngine.timeStringToSeconds(scheduledDepTime);
@@ -3005,8 +3114,7 @@ class MataroTracker extends BaseTracker {
 
     const now = options.dateObj ? new Date(options.dateObj) : (options.targetDate ? new Date(options.targetDate) : new Date());
     const tomorrow = new Date(now.getTime() + 24 * 3600 * 1000);
-    const dateCompTomorrow = calendarEngine.getDateComponents(tomorrow, this.agencyTimezone);
-    const dayTypeTomorrow = dateCompTomorrow.isSunday ? 'sunday' : (dateCompTomorrow.isSaturday ? 'saturday' : 'weekday');
+    const dayTypeTomorrow = resolveDayType(tomorrow, this.agencyTimezone);
 
     const dirSchedTomorrow = mataroSchedules.getDirectionSchedule(lId, selectedRoute?.id || String(dirIdx), dayTypeTomorrow);
     const stopTravelSec = mataroSchedules.getStopTravelTime(lId, selectedRoute?.id || String(dirIdx), sId, dayTypeTomorrow);

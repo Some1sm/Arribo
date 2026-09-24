@@ -143,9 +143,11 @@ class MataroSiriClient {
     });
   }
 
-  // Parse ISO 8601 duration e.g. "PT2M", "-PT5M", "PT30S"
+  // Parse ISO 8601 duration e.g. "PT2M", "-PT5M", "PT30S".
+  // Returns NaN (unknown) for an absent or non-matching string so callers can
+  // tell "the feed omitted <Delay>" apart from a genuine "PT0M" measurement.
   parseDurationMinutes(durStr) {
-    if (!durStr) return 0;
+    if (!durStr) return NaN;
     let sign = 1;
     let str = durStr;
     if (str.startsWith('-')) {
@@ -153,7 +155,7 @@ class MataroSiriClient {
       str = str.substring(1);
     }
     const matchMin = str.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
-    if (!matchMin) return 0;
+    if (!matchMin) return NaN;
     const hours = parseInt(matchMin[1] || '0', 10);
     const mins = parseInt(matchMin[2] || '0', 10);
     const secs = parseInt(matchMin[3] || '0', 10);
@@ -298,9 +300,18 @@ class MataroSiriClient {
           const dest = this.extractTag(itemXml, 'DestinationName') || '';
           const vehicleRef = this.extractTag(itemXml, 'VehicleRef') || 'Bus';
           const bearing = parseInt(this.extractTag(itemXml, 'Bearing') || '0', 10);
-          const velocity = parseFloat(this.extractTag(itemXml, 'Velocity') || '0');
-          const delayStr = this.extractTag(itemXml, 'Delay') || 'PT0M';
-          const delayMins = this.parseDurationMinutes(delayStr);
+          const velocityRaw = this.extractTag(itemXml, 'Velocity');
+          const velocity = velocityRaw === null ? NaN : parseFloat(velocityRaw);
+          // Missing/absent/unparseable <Velocity> is UNKNOWN, not 25 km/h. A
+          // real <Velocity>0</Velocity> (bus genuinely stopped) is a measurement
+          // and must stay distinguishable from "no data".
+          const hasSpeed = Number.isFinite(velocity) && velocity >= 0;
+          const speedKmh = hasSpeed ? Math.round(velocity * 3.6) : null;
+          // Missing <Delay> is UNKNOWN ("not reported"), NOT a measured 0. Only
+          // a present, parseable duration becomes a delayMins measurement.
+          const delayRaw = this.extractTag(itemXml, 'Delay');
+          const delayMins = delayRaw === null ? null : this.parseDurationMinutes(delayRaw);
+          const hasDelay = Number.isFinite(delayMins);
           const recordedAtRaw = this.extractTag(itemXml, 'RecordedAtTime');
           const recordedAt = recordedAtRaw || ts;
           const observedAt = this.observationTimestamp(recordedAtRaw);
@@ -316,9 +327,13 @@ class MataroSiriClient {
               lat: Math.round(lat * 1000000) / 1000000,
               lon: Math.round(lon * 1000000) / 1000000,
               bearing: (bearing + 360) % 360,
-              speedKmh: Number.isFinite(velocity) && velocity >= 0 ? Math.round(velocity * 3.6) : 25,
-              delayMins,
-              delayFormatted: delayMins > 0 ? `+${delayMins} min retard` : (delayMins < 0 ? `${delayMins} min avançat` : 'Puntual'),
+              speedKmh,
+              hasSpeed,
+              delayMins: hasDelay ? delayMins : null,
+              hasDelay,
+              delayFormatted: !hasDelay
+                ? 'Sense dades de retard'
+                : (delayMins > 0 ? `+${delayMins} min retard` : (delayMins < 0 ? `${delayMins} min avançat` : 'Puntual')),
               recordedAt,
               isEstimated: false,
               freshness: {

@@ -127,20 +127,29 @@ async function runChallengerTestSuite() {
   // =========================================================================
   console.log('\n📌 [SUITE 2] Testing TrackerRegistry (High-Volume Resolution & 4-Tier Deduplication)...');
 
-  // 2.1 Multi-Operator Line Resolution Throughput (2,000+ calls across multi-agency lines)
+  // 2.1 Multi-Operator Line Resolution Throughput (5,000+ calls across polymorphic ids)
+  // Mataró is the only registered provider (CLAUDE.md: "Only Mataró is
+  // registered... there is nothing to re-enable"), so the polymorphism worth
+  // measuring is the range of id SHAPES that normalize onto L1-L8 - numeric,
+  // 'L'-prefixed, 'mataro_'-prefixed, 'line-'/'linia-'-prefixed, and mixed
+  // case. The retired Catalonia-wide ids this list used to carry (c10, n82,
+  // b25, r1, e13, ...) were removed with their providers; see 2.2, which now
+  // pins that they are refused rather than silently resolved.
   const testLines = [
-    'c10', 'C-10', 'gen_0498', '02498', 'LINE-C10',
-    '1', 'L1', '8', 'L8', 'mataro_2',
-    'e11.1', 'E11.1', 'e11.2', 'c-20', 'n80',
-    'r1', 'R1', 'r8', 'rg1', 'rt1', 'rodalies_r3',
-    'b25', 'B25', 'm27', 'l70', 'n12', 'pr1',
-    'n82', 'N82', 'e13', '302',
-    'cat_gen_0496', 'moute_generic_999'
+    '1', 'l1', 'L1', 'mataro_1', 'mataro1', 'line-1', 'linia-1', 'LINE-1',
+    '2', 'l2', 'L2', 'mataro_2', 'mataro2', 'line-2', 'linia-2', 'LINE-2',
+    '3', 'l3', 'L3', 'mataro_3', 'mataro3', 'line-3', 'linia-3', 'LINE-3',
+    '4', 'l4', 'L4', 'mataro_4', 'mataro4', 'line-4', 'linia-4', 'LINE-4',
+    '5', 'l5', 'L5', 'mataro_5', 'mataro5', 'line-5', 'linia-5', 'LINE-5',
+    '6', 'l6', 'L6', 'mataro_6', 'mataro6', 'line-6', 'linia-6', 'LINE-6',
+    '7', 'l7', 'L7', 'mataro_7', 'mataro7', 'line-7', 'linia-7', 'LINE-7',
+    '8', 'l8', 'L8', 'mataro_8', 'mataro8', 'line-8', 'linia-8', 'LINE-8',
+    1, 5, 8
   ];
 
   // Warm-up to trigger lazy loading of JSON caches
-  trackerRegistry.getTrackerForLine('c10');
-  trackerRegistry.getTrackerForLine('cat_gen_0496');
+  trackerRegistry.getTrackerForLine('1');
+  trackerRegistry.getTrackerForLine('L8');
 
   const startResTime = performance.now();
   const iterations = 5000;
@@ -156,12 +165,23 @@ async function runChallengerTestSuite() {
   console.log(`  ✓ 2.1 5,000 polymorphic line resolutions executed in ${durationResMs.toFixed(2)}ms (~${opsPerSec} ops/sec)`);
 
   // 2.2 Unresolvable Line Handling
-  assert.doesNotThrow(() => {
-    const fallbackRes = trackerRegistry.getTrackerForLine('unknown_line_xyz_123');
-    assert.strictEqual(fallbackRes.type, 'mataro');
-  });
-  totalTestsRun++;
-  console.log('  ✓ 2.2 Unrecognized lines cleanly route to Mataró Bus fallback');
+  // A line that is not Mataró must NOT be handed back a Mataró tracker. The old
+  // behaviour resolved anything at all to Mataró, which meant a request for the
+  // retired C-10 returned L-routes geometry under a C-10 label. Resolution now
+  // refuses and the HTTP layer turns that into a 404.
+  const retiredAndUnknown = [
+    'unknown_line_xyz_123', 'c10', 'C-10', 'LINE-C10', 'cat_gen_0496',
+    'moute_generic_999', 'e13', 'n82', 'b25', 'r1', 'n80', '9', 'L9', 'mataro_9'
+  ];
+  for (const badLine of retiredAndUnknown) {
+    assert.throws(
+      () => trackerRegistry.getTrackerForLine(badLine),
+      /No transit tracker registered for line/,
+      `Line '${badLine}' must be refused, not resolved to a Mataró tracker`
+    );
+  }
+  totalTestsRun += 2;
+  console.log(`  ✓ 2.2 ${retiredAndUnknown.length} unresolvable ids refused instead of silently falling back to Mataró`);
 
   // 2.3 4-Tier Deduplication across 1,200+ Lines in Custom Registry Instance
   const CustomTrackerRegistryClass = trackerRegistry.TrackerRegistry;

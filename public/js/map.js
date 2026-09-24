@@ -1184,6 +1184,20 @@ class TransitMap {
     this._hasFittedInitialBounds = false;
   }
 
+  // Stable identity for a vehicle marker across the REST and SSE sources.
+  // REST vehicles carry both `tripId: 'mataro_<id>'` and `vehicleId`, while SSE
+  // vehicles carry only `vehicleId`; keying on tripId made the marker identity
+  // flip between sources and forced a destroy/recreate (popup close + LERP
+  // teleport) on every REST/SSE alternation. Prefer a real vehicleId; fall
+  // back to tripId only for theoretical EST_ vehicles which have no real id.
+  busMarkerKey(bus) {
+    const vehId = String(bus?.vehicleId || '').trim();
+    if (vehId && !vehId.startsWith('EST_')) return vehId;
+    const tripId = String(bus?.tripId || '').trim();
+    if (tripId) return tripId;
+    return vehId || `${bus?.lat}_${bus?.lon}`;
+  }
+
   isBusSelected(bus, selectedId = this.selectedVehicleId) {
     if (!selectedId || !bus) return false;
     const s = String(selectedId).trim();
@@ -1261,7 +1275,7 @@ class TransitMap {
     }
 
     const now = Date.now();
-    const currentTripIds = new Set(activeBuses.map(b => String(b.tripId || b.vehicleId || `${b.lat}_${b.lon}`)));
+    const currentTripIds = new Set(activeBuses.map(b => this.busMarkerKey(b)));
     const activePhysicalVehIds = new Set(activeBuses.map(b => String(b.vehicleId || '').trim()).filter(Boolean));
     const activeDirsWithLiveGps = new Set(activeBuses.filter(b => !b.isEstimated).map(b => String(b.direction)));
 
@@ -1271,7 +1285,6 @@ class TransitMap {
       if (!currentTripIds.has(tId)) {
         const elapsedSec = (now - (obj.lastUpdated || now)) / 1000;
         const objVehId = String(obj.busData?.vehicleId || '').trim();
-        const isGhost = Boolean(obj.busData?.isGhostVehicle || (objVehId && objVehId.startsWith('EST_')));
 
         // Invariant 1: If a physical vehicleId is already present in current incoming activeBuses under any key,
         // purge this stale entry immediately if its key differs, so we NEVER display duplicate markers for the same bus!
@@ -1293,7 +1306,16 @@ class TransitMap {
         // Invariant 3: If a live GPS bus is active on this direction and this was an estimated marker, purge it!
         const isDirectionCovered = Boolean(obj.busData?.isEstimated && obj.busData?.direction !== undefined && activeDirsWithLiveGps.has(String(obj.busData.direction)));
 
-        if (elapsedSec > 90 || isGhost || isVehHandledByActiveKey || isNearLiveBus || isDirectionCovered) {
+        // A ghost/theoretical marker is merged back into `activeBuses` at the
+        // app layer (see applyFleetSnapshot), so it normally stays in
+        // currentTripIds and never reaches here. It only falls through when the
+        // REST timetable genuinely stops listing it, so it must NOT be purged
+        // merely for being absent from an SSE frame (which is physical-only).
+        // Give ghosts the same 90s hold buffer as every other marker: genuine
+        // expiry is caught by `elapsedSec > 90`, and the live-recovery purges
+        // (isVehHandledByActiveKey / isNearLiveBus / isDirectionCovered) still
+        // fire immediately when a real bus takes over.
+        if (elapsedSec > 90 || isVehHandledByActiveKey || isNearLiveBus || isDirectionCovered) {
           this.map.removeLayer(obj.marker);
           this.busMarkersMap.delete(tId);
         } else {
@@ -1351,20 +1373,41 @@ class TransitMap {
 
       const isGhost = Boolean(bus.isGhostVehicle || (bus.vehicleId && String(bus.vehicleId).startsWith('EST_')) || bus.isTheoretical);
       const isEst = Boolean(bus.isEstimated);
-      const bearingAngle = Math.round(snapped.bearing || bus.bearing || 0);
+      // Heading: prefer the vehicle's own reported bearing; fall back to the
+      // client-side snapped road bearing only when the vehicle reports none.
+      // Explicit null/NaN checks (not `||`) so a legitimate due-north 0° is kept
+      // rather than silently discarded. The payload carries a single `bearing`
+      // (the tracker's own choice); the road bearing is the renderer's snap.
+      const reportedBearing = (bus.bearing !== undefined && bus.bearing !== null && Number.isFinite(Number(bus.bearing))) ? Number(bus.bearing) : null;
+      const roadBearing = (snapped.bearing !== undefined && snapped.bearing !== null && Number.isFinite(Number(snapped.bearing))) ? Number(snapped.bearing) : null;
+      const bearingAngle = Math.round(reportedBearing !== null ? reportedBearing : (roadBearing !== null ? roadBearing : 0));
       const compassLabel = bus.compass?.label || 'N/A';
-      const speedText = bus.speedKmh ? `${bus.speedKmh} km/h` : (bus.isTerminalLayover ? '0 km/h (Aturat)' : (isGhost ? '~20 km/h (Estimat)' : '30-40 km/h'));
       const coordsText = `${snapped.lat.toFixed(5)}°, ${snapped.lon.toFixed(5)}°`;
 
       const lineBadge = bus.lineCode || bus.lineId || this.currentLineId || '';
       const fromStop = bus.fromStop ? escHtml(bus.fromStop) : '';
       const toStop = bus.toStop ? escHtml(bus.toStop) : (bus.destination ? escHtml(bus.destination) : '');
       const progressNum = Math.max(0, Math.min(100, Math.round(Number(bus.totalProgress) || 0)));
-      const speedValue = isGhost
-        ? '~20 km/h (Estimat)'
-        : ((bus.speedKmh !== undefined && bus.speedKmh !== null && !isNaN(bus.speedKmh)) 
-            ? `${Math.round(bus.speedKmh)} km/h`
-            : (bus.isTerminalLayover ? '0 km/h' : (speedText || '30-40 km/h')));
+      // Speed telemetry honesty: only print a km/h figure when the field is an
+      // actual finite measurement. Synthetic/estimated vehicles have no observed
+      // speed -> show "—" flagged as estimated; a real vehicle with no speed ->
+      // show unknown. Never invent a range.
+      // NOTE: mataroSiriClient.js:319 still fabricates `speedKmh: 25` when the
+      // upstream <Velocity> is missing/unparseable, so a reported 25 is not yet
+      // distinguishable from a real reading. That is the remaining source-side fix.
+      const hasMeasuredSpeed = bus.speedKmh !== undefined && bus.speedKmh !== null && Number.isFinite(Number(bus.speedKmh));
+      let speedValue;
+      if (isGhost) {
+        speedValue = '— (Estimat)';
+      } else if (isEst && !hasMeasuredSpeed) {
+        speedValue = '— (Estimat)';
+      } else if (hasMeasuredSpeed) {
+        speedValue = `${Math.round(Number(bus.speedKmh))} km/h`;
+      } else if (bus.isTerminalLayover) {
+        speedValue = '0 km/h (Aturat)';
+      } else {
+        speedValue = '— (Sense dada)';
+      }
 
       let delayClass = 'on-time';
       let delayBadgeText = bus.delayFormatted || 'Puntual';
@@ -1600,7 +1643,7 @@ class TransitMap {
                 ? 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)'
                 : (busColor || 'linear-gradient(135deg, #10b981 0%, #059669 100%)')));
 
-      const markerKey = String(bus.tripId || bus.vehicleId || `${bus.lat}_${bus.lon}`);
+      const markerKey = this.busMarkerKey(bus);
 
       // Invariant: Enforce physical vehicle uniqueness across markers
       if (bus.vehicleId && !String(bus.vehicleId).startsWith('EST_')) {
@@ -1631,6 +1674,7 @@ class TransitMap {
         obj.targetLat = snapped.lat;
         obj.targetLon = snapped.lon;
         obj.targetBearing = bearingAngle;
+        obj.reportedBearing = reportedBearing;
         obj.subpath = subpath;
         obj.targetPolyline = targetPolyline;
         obj.lastUpdated = now;
@@ -1723,6 +1767,7 @@ class TransitMap {
           targetLat: snapped.lat,
           targetLon: snapped.lon,
           targetBearing: bearingAngle,
+          reportedBearing: reportedBearing,
           currentBearing: bearingAngle,
           isFacingWest: isHeadingWest,
           lastUpdated: now,
@@ -1779,8 +1824,14 @@ class TransitMap {
           const snappedStep = this.snapToPolyline(smoothLat, smoothLon, obj.targetPolyline);
           if (snappedStep && snappedStep.distanceMeters < 40) {
             obj.marker.setLatLng([snappedStep.lat, snappedStep.lon]);
-            if (snappedStep.bearing !== undefined && Number.isFinite(snappedStep.bearing)) {
-              obj.targetBearing = snappedStep.bearing;
+            // Road-following may only steer the heading when the vehicle reports
+            // none of its own; otherwise the cone/icon flip follows the vehicle's
+            // reported bearing (two buses on one bidirectional segment must not
+            // share a heading).
+            if (obj.reportedBearing === null || obj.reportedBearing === undefined) {
+              if (snappedStep.bearing !== undefined && Number.isFinite(snappedStep.bearing)) {
+                obj.targetBearing = snappedStep.bearing;
+              }
             }
           } else {
             obj.marker.setLatLng([smoothLat, smoothLon]);

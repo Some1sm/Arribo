@@ -93,7 +93,10 @@ class TrackerRegistry {
       throw new Error(`No transit tracker registered for line '${lineId}'.`);
     }
 
-    const resolvedId = /^[1-8]$/.test(mataroId) ? mataroId : '1';
+    if (!/^[1-8]$/.test(mataroId)) {
+      throw new Error(`No transit tracker registered for line '${lineId}'.`);
+    }
+    const resolvedId = mataroId;
     const lineConfig = mataroEntry.tracker.resolveLineConfig ? mataroEntry.tracker.resolveLineConfig(resolvedId) : null;
 
     return {

@@ -28,11 +28,14 @@ async function runTests() {
     console.log(`✅ Flight Recorder vehicle ingested (${fleet.length} active vehicles in memory)`);
 
     // Test 2: Ingest sample arrival delay logs
+    // Recorded on Mataró lines: the journalism report aggregates the Mataró
+    // L1–L8 network, so retired-scope rows (the old C-10 / E13 fixture) are
+    // correctly excluded and could not be asserted on here.
     console.log('Test 2: Historical delay log recording');
     historyDb.recordDelayLog({
-      lineId: 'c10',
-      lineCode: 'C-10',
-      agency: 'Moventis / Casas',
+      lineId: '1',
+      lineCode: 'L1',
+      agency: 'Mataró Bus (Avanza)',
       stopId: 'stop_1001',
       stopName: 'Pl. Tetuan',
       delayMins: 4,
@@ -42,9 +45,9 @@ async function runTests() {
     });
 
     historyDb.recordDelayLog({
-      lineId: 'e13',
-      lineCode: 'E13',
-      agency: 'Sagalés',
+      lineId: '3',
+      lineCode: 'L3',
+      agency: 'Mataró Bus (Avanza)',
       stopId: 'stop_2001',
       stopName: 'Granollers Centre',
       delayMins: 12,
@@ -53,14 +56,18 @@ async function runTests() {
       isRealTime: true
     });
 
-    const stats = historyDb.getLineDelayStats('C-10', 24);
-    assert(stats.totalSamples >= 1, 'C-10 stats should have at least 1 sample');
-    console.log(`✅ Historical delay stats verified for C-10 (Avg delay: +${stats.avgDelayMins} min)`);
+    const stats = historyDb.getLineDelayStats('L1', 24);
+    assert(stats.totalSamples >= 1, 'L1 stats should have at least 1 sample');
+    console.log(`✅ Historical delay stats verified for L1 (Avg delay: +${stats.avgDelayMins} min)`);
 
     // Test 3: Dead-reckoning extrapolation
     console.log('Test 3: Dead-reckoning extrapolator');
     const bus = flightRecorder.vehicles.get('test_bus_101');
-    bus.lastSeen = Date.now() - 25000; // Pretend 25s elapsed without GPS ping
+    // Staleness is measured on the OBSERVATION clock (observedAt), not the
+    // ingest clock (lastSeen): a derived re-ingest refreshes lastSeen but must
+    // not make a bus look freshly observed (D1). Backdate both for realism.
+    bus.observedAt = Date.now() - 25000; // 25s without a real GPS observation
+    bus.lastSeen = Date.now() - 25000;
     flightRecorder.extrapolateStaleVehicles();
     assert.strictEqual(bus.status, 'extrapolated', 'Bus should be marked as extrapolated');
     console.log(`✅ Dead-reckoning projection verified (Status: ${bus.status}, New Lat: ${bus.lat.toFixed(5)})`);
@@ -89,7 +96,7 @@ async function runTests() {
     console.log('Test 7: Endpoint GET /api/analytics/export/csv');
     const csvText = await fetch('http://localhost:3098/api/analytics/export/csv?hours=48').then(r => r.text());
     assert(csvText.includes('Data i Hora,Linia,Operador,Parada,Retard'), 'CSV should have standard headers');
-    assert(csvText.includes('C-10') || csvText.includes('E13'), 'CSV should contain recorded line delay samples');
+    assert(csvText.includes('L1') || csvText.includes('L3'), 'CSV should contain recorded line delay samples');
     console.log(`✅ CSV Data Export passed (${csvText.split('\n').length} CSV rows generated)`);
 
     console.log('\n🎉 ALL FLIGHT RECORDER & JOURNALISM SERVER TESTS PASSED SUCCESSFULLY! 🎉\n');
