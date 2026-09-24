@@ -138,6 +138,49 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   polyline snapping errs under 10 m) so a bus standing AT a stop still reads as imminent
   rather than vanishing. The old index test also dropped buses that were legitimately
   still approaching. See `test/stop_passed_estimation_test.js`.
+- **A forensic episode is one bus, and its identity must be carried end to end.**
+  `inspectDelayIncident` groups raw `delay_logs` samples into episodes using the
+  5-minute `EPISODE_GAP_MS` boundary, so the grouping key must include the vehicle
+  — keying on the time gap alone merges any two buses that logged the same stop
+  within five minutes, and an operator who clicked Investigar on one bus's delay
+  was handed a second bus's rows under the same "Vehicles" heading. The key
+  mirrors the ranking table's dedup key (`line+vehicle`, falling back to
+  `line+stop` only when the id was never stored). The vehicle id must then travel
+  from the button (`data-investigate-vehicle`) through `/api/analytics/incidents/inspect?vehicle=`
+  into the episode *picker* too: the first episode whose window merely contains
+  the clicked instant can belong to a neighbour. Measured on real data, the
+  time-only rule reduced 744 rows to 2 "episodes", both multi-bus. An episode
+  with no stored id on its opening row but ids on later rows is genuinely
+  ambiguous and must say so (`vehicleAmbiguous`) rather than look like one trip.
+  See `test/incident_drilldown_single_bus_test.js`.
+- **The episode KPI and the episode table must count the same way.**
+  `_delayDataQuality.distinctEpisodes` is displayed beside the drill-down, so it
+  partitions on the same `episodeKey()` (line+vehicle, id-less falling back to
+  line+stop) and the same `EPISODE_GAP_MS`. It previously partitioned by
+  `(line_code, stop_name)`, which is wrong in the *opposite* direction from the
+  drill-down's bug: splitting by stop gives every stop its own episode-start, so
+  one bus passing four stops counted as four. On real data it reported 148
+  episodes where the true per-vehicle figure is 52. Both implementations were
+  measured at parity (52 = 52) before the check was written down.
+- **A column-aligned UI comes from table structure, not from `table-layout`.**
+  The Investigar panel's samples were one `<div>` per row with
+  `display:flex; justify-content:space-between` around six inline `<span>`s, so
+  each column's x-position was decided by the text before it — the "cells move
+  depending on text length" report. A real `<table>` shares one column width
+  across every row, which is what fixes it. Measured in headless Chrome:
+  `table-layout: auto` still gave 0px drift, and `fixed` is kept only to stop a
+  long value widening the table past its container. The regression that *does*
+  break alignment is taking cells out of table layout (`display:block` on `td`),
+  which measured as a 0px column offset. `scripts/investigate_table_cdp_check.js`
+  renders the real renderer with adversarial text lengths and asserts measured
+  x-positions; `test/investigate_table_ui_test.js` guards markup and stylesheet.
+  Do not assert a fix works by scanning source for a string a COMMENT may quote —
+  that trap has already bitten this repo once here, and in the TLS sweep.
+- **Never match on a localized display string.** `startTime` is an en-GB
+  `toLocaleString` value and `Date.parse('24/09/2026, 12:05:00')` is `NaN`, so
+  matching a trajectory card to an incident window on it silently matches
+  nothing. Compare the numeric `startTs`/`endTs` twins the server sends for
+  exactly this reason. When a match cannot be made safely, render no link.
 - Never fall back to missed departures. Include access/transfer walks and waits.
 - Exclude EST_, isGhostVehicle and isTheoretical vehicles from flightRecorder.
   Freshness is subsystem-specific, not one universal 90-second cutoff. Estimated

@@ -9321,6 +9321,159 @@ body {
   border-color: rgba(56, 189, 248, 0.4);
 }
 
+/* ── Incident drill-down: raw sample table ────────────────────────────
+   This replaced a flex row of six inline spans with justify-content:
+   space-between, so each column drifted with the width of the cell before
+   it and nothing was labelled. It is a real <table> with a fixed layout and
+   a sticky header, inside a horizontal scroll container so the columns
+   cannot squeeze on a narrow screen. */
+.drilldown-table-scroll {
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-surface);
+}
+
+.drilldown-samples-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  /* Measured in Chrome: what keeps the columns aligned is the TABLE itself --
+     one shared column width for every row. Each row used to be its own flex
+     container with justify-content:space-between, so every column's position
+     was decided by the text before it. table-layout: fixed is still worth
+     having, but for a different reason: it stops a long unbroken value from
+     widening the table past its container, and it makes the percentage widths
+     below authoritative. It is NOT what fixes the drift -- a table with
+     table-layout: auto measured 0px drift too, because the columns are shared
+     either way. What breaks it is taking the cells out of table layout (e.g.
+     display:block on td), which also measured as a failure. */
+  table-layout: fixed;
+  font-size: 0.78rem;
+}
+
+.drilldown-samples-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-elevated, #1a2337);
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--border-subtle);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.drilldown-samples-table tbody td {
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  vertical-align: top;
+  /* Long stop names wrap inside their own cell instead of widening it. */
+  overflow-wrap: anywhere;
+}
+
+.drilldown-samples-table tbody tr:hover td {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* Column widths are percentages of a fixed layout, so they hold at any
+   container width instead of being computed per row. */
+.drilldown-cell-time  { width: 16%; white-space: nowrap; color: var(--text-secondary); }
+.drilldown-cell-delay { width: 11%; white-space: nowrap; }
+.drilldown-cell-stop  { width: 26%; }
+.drilldown-cell-veh   { width: 10%; white-space: nowrap; }
+.drilldown-cell-times { width: 25%; white-space: nowrap; }
+.drilldown-cell-src   { width: 12%; white-space: nowrap; color: var(--text-muted); }
+
+.drilldown-samples-table thead th:nth-child(1) { width: 16%; }
+.drilldown-samples-table thead th:nth-child(2) { width: 11%; }
+.drilldown-samples-table thead th:nth-child(3) { width: 26%; }
+.drilldown-samples-table thead th:nth-child(4) { width: 10%; }
+.drilldown-samples-table thead th:nth-child(5) { width: 25%; }
+.drilldown-samples-table thead th:nth-child(6) { width: 12%; }
+
+.drilldown-delay {
+  font-weight: 700;
+}
+.drilldown-delay.is-high { color: #ef4444; }
+.drilldown-delay.is-mid  { color: #f59e0b; }
+
+/* ── Drill-down → Expedicions & Trajectòries cross-link ─────────────── */
+.drilldown-trip-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--brand-primary, #38bdf8);
+  border-radius: 8px;
+  padding: 0.7rem 0.85rem;
+  margin-bottom: 0.8rem;
+}
+
+.drilldown-trip-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.drilldown-trip-label {
+  font-weight: 700;
+  color: var(--text-primary);
+  font-size: 0.8rem;
+}
+
+.drilldown-trip-meta {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.drilldown-trip-flow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  background: var(--bg-elevated);
+  padding: 0.5rem 0.65rem;
+  border-radius: 6px;
+  font-size: 0.74rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.55rem;
+}
+
+.drilldown-trip-stop {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 0.15rem 0.45rem;
+  border-radius: 5px;
+}
+
+.drilldown-trip-stop.is-recovered {
+  opacity: 0.7;
+}
+
+.drilldown-trip-delay {
+  font-weight: 700;
+  font-size: 0.7rem;
+}
+.drilldown-trip-delay.is-high { color: #ef4444; }
+.drilldown-trip-delay.is-mid  { color: #f59e0b; }
+.drilldown-trip-delay.is-recovered { color: #34d399; }
+
+.drilldown-trip-arrow {
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
 .trip-trajectory-flow {
   display: flex;
   align-items: center;

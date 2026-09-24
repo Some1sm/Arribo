@@ -275,8 +275,9 @@ class ObservatoriApp {
         e.preventDefault();
         const line = investigateBtn.dataset.investigateLine;
         const stop = investigateBtn.dataset.investigateStop;
+        const vehicle = investigateBtn.dataset.investigateVehicle || '';
         const at = investigateBtn.dataset.investigateAt ? Number(investigateBtn.dataset.investigateAt) : undefined;
-        this.openIncidentDrilldown(line, stop, at);
+        this.openIncidentDrilldown(line, stop, at, vehicle);
         return;
       }
 
@@ -1705,7 +1706,7 @@ class ObservatoriApp {
     }
   }
 
-  async openIncidentDrilldown(lineCode, stopName, at) {
+  async openIncidentDrilldown(lineCode, stopName, at, vehicleId = '') {
     const panel = document.getElementById('incident-drilldown-panel');
     const content = document.getElementById('drilldown-content');
     const summary = document.getElementById('drilldown-summary');
@@ -1717,6 +1718,10 @@ class ObservatoriApp {
     try {
       const params = new URLSearchParams({ line: lineCode, stop: stopName });
       if (at > 0) params.set('at', String(at));
+      // The vehicle is what makes the episode a single bus. Sending it is what
+      // stops the drill-down from resolving to a neighbour that touched the
+      // same stop inside the window.
+      if (vehicleId) params.set('vehicle', vehicleId);
       const res = await fetch(`/api/analytics/incidents/inspect?${params}`);
       const data = await res.json();
       if (!data || data.found === false) {
@@ -1733,6 +1738,13 @@ class ObservatoriApp {
         : ev.vehicleIdGapExplained
           ? '<span style="color:#fb7185;">cap vehicle_id — <span style="opacity:0.8;">aquestes files són anteriors a la columna</span></span>'
           : '<span style="color:#fb7185;">cap vehicle_id registrat</span>';
+      // Two buses in one episode used to be silently merged and shown as a
+      // normal multi-badge list. It now only happens when no id was stored on
+      // the opening row, and it has to be called out rather than left to look
+      // like one trip.
+      const ambiguousNote = ep.vehicleAmbiguous
+        ? '<tr><td style="color:var(--text-muted); padding:3px 0;">Identitat</td><td style="color:#f59e0b;"><strong>Episodi ambigu</strong> — les mostres no tenen vehicle_id i no es poden atribuir a un únic autobús</td></tr>'
+        : '';
       // Three distinct time provenances, never two: a real upstream observation,
       // a live derivation from the static timetable, and an offline backfilled
       // approximation. The server classifies every row (timesProvenance) so the
@@ -1751,6 +1763,7 @@ class ObservatoriApp {
         <table style="width:100%; border-collapse:collapse; font-size:0.82rem;">
           <tr><td style="color:var(--text-muted); padding:3px 0;">Veïnatge</td><td style="color:${verdictLabel}; font-weight:600;">${this.esc(ep.verdictLabel)}</td></tr>
           <tr><td style="color:var(--text-muted); padding:3px 0;">Vehicles</td><td style="color:var(--text-secondary);">${vehicleBadge}</td></tr>
+          ${ambiguousNote}
           <tr><td style="color:var(--text-muted); padding:3px 0;">Horaris</td><td style="color:var(--text-secondary);">${timesBadge}</td></tr>
           <tr><td style="color:var(--text-muted); padding:3px 0;">Traçal</td><td style="color:var(--text-secondary);">${snapshotBadge}</td></tr>
           <tr><td style="color:var(--text-muted); padding:3px 0;">Linies retirades</td><td style="color:${data.dataQuality?.retiredScopeLinesPresent ? '#fb7185' : '#34d399'};">${data.dataQuality?.retiredScopeLinesPresent ? 'Sí — hi ha dades de línies extintes' : 'No'}</td></tr>
@@ -1772,13 +1785,21 @@ class ObservatoriApp {
             : r.timesProvenance === 'derived_timetable'
               ? `<span style="color:#a78bfa;" title="Derivat en viu del quadre horari estàtic">${this.esc((r.scheduledTime || '').slice(0, 5))}→${this.esc((r.actualTime || '').slice(0, 5))} derivat</span>`
               : `<span style="color:#34d399;" title="Hora reportada pel feed upstream">${this.esc((r.scheduledTime || '').slice(0, 5))}→${this.esc((r.actualTime || '').slice(0, 5))}</span>`;
-        return `<div style="padding:4px 0; border-bottom:1px solid var(--border-subtle); font-size:0.78rem; display:flex; justify-content:space-between; gap:0.5rem; flex-wrap:wrap;">
-          <span style="color:var(--text-secondary);">${this.esc(r.formattedDate)}</span>
-          <span style="color:${r.delayMins >= 20 ? '#ef4444' : '#f59e0b'}; font-weight:700;">+${r.delayMins} min</span>
-          <span style="color:var(--text-muted);">${r.stopName}</span>
-          <span>${vB}</span> <span>${tB}</span> <span>${r.isRealTime ? 'GPS' : 'estim'}</span>
-        </div>`;
+        // A real table row, not a flex div. The old markup was
+        // justify-content:space-between over six inline spans, so every column
+        // shifted with the length of the cell before it and there was no header
+        // telling you what any of them meant.
+        return `
+          <tr>
+            <td class="drilldown-cell-time">${this.esc(r.formattedDate)}</td>
+            <td class="drilldown-cell-delay"><span class="drilldown-delay ${r.delayMins >= 20 ? 'is-high' : 'is-mid'}">+${r.delayMins} min</span></td>
+            <td class="drilldown-cell-stop">${this.esc(r.stopName || '—')}</td>
+            <td class="drilldown-cell-veh">${vB}</td>
+            <td class="drilldown-cell-times">${tB}</td>
+            <td class="drilldown-cell-src">${r.isRealTime ? 'GPS' : 'estim'}</td>
+          </tr>`;
       }).join('');
+      const tripLink = this._matchIncidentTrip(ep);
       content.innerHTML = `
         <div style="margin-bottom:0.6rem;">
           <strong style="color:#fff;">Pics d'aquest episodi:</strong>
@@ -1788,11 +1809,89 @@ class ObservatoriApp {
         <div style="margin-bottom:0.6rem; font-size:0.78rem; color:#fbbf24;">
           ⚠️ Aquest episodi agrupa ${ep.rowCount} mostres brutes de registre cada 20 s. El nombre d'"incidents" que apareix al rànquing és el compte de mostres, no de viatges.
         </div>
-        <div style="max-height:320px; overflow:auto;">${rawHtml || '<span style="color:var(--text-muted);">Cap mostra</span>'}</div>
+        ${tripLink}
+        <div class="drilldown-table-scroll">
+          <table class="drilldown-samples-table">
+            <thead>
+              <tr>
+                <th scope="col">Hora</th>
+                <th scope="col">Retard</th>
+                <th scope="col">Parada</th>
+                <th scope="col">Bus</th>
+                <th scope="col">Teòric → Real</th>
+                <th scope="col">Origen</th>
+              </tr>
+            </thead>
+            <tbody>${rawHtml || '<tr><td colspan="6" style="color:var(--text-muted);">Cap mostra</td></tr>'}</tbody>
+          </table>
+        </div>
       `;
     } catch (e) {
       content.innerHTML = `<span style="color:#ef4444;">Error carregant la investigació: ${this.esc(e.message)}</span>`;
     }
+  }
+
+  /**
+   * Find the Expedicions & Trajectòries card that describes this same episode,
+   * and offer a jump to it. The drill-down and the trips tab are two different
+   * aggregations of the same delay_logs rows -- one groups by a 5-minute gap
+   * per bus, the other builds a stop-by-stop trajectory per bus -- so an
+   * operator investigating a delay had no way to get from one to the other
+   * without matching times by eye.
+   *
+   * Matching is deliberately strict: same vehicle, and the trip's window must
+   * overlap the episode's. A loose match would link the wrong bus's card, which
+   * is worse than offering no link.
+   */
+  _matchIncidentTrip(ep) {
+    const key = ep && ep.tripKey;
+    const trips = this.lastIncidentData && Array.isArray(this.lastIncidentData.incidentTrips)
+      ? this.lastIncidentData.incidentTrips
+      : null;
+    if (!key || !trips || !trips.length) return '';
+    if (!key.vehicleId) return '';
+
+    // Match on the NUMERIC start, never on the display string. startTime is a
+    // localized en-GB string and Date.parse cannot read it back --
+    // Date.parse('24/09/2026, 12:05:00') is NaN -- so parsing it here silently
+    // matched nothing and the link never rendered. The server sends startTs /
+    // endTs for exactly this reason. A trip predating that field simply does
+    // not link, which is the safe direction to fail in.
+    const tripStart = (t) => (Number.isFinite(t.startTs) ? t.startTs : null);
+    const match = trips.find(t => {
+      if (t.vehicleId !== key.vehicleId) return false;
+      if (String(t.lineCode || '').replace(/^L/i, '') !== String(key.lineCode || '').replace(/^L/i, '')) return false;
+      const s = tripStart(t);
+      if (s === null) return false;
+      // The cluster window runs to endTs, but a trip still logging samples
+      // after the episode began has an endTs at or after it, so a 10-minute
+      // slack absorbs that without letting an hours-apart trip match.
+      return s <= key.endTs + 10 * 60000 && s >= key.startTs - 10 * 60000;
+    });
+    if (!match) return '';
+
+    const stops = (match.stopProgression && match.stopProgression.length
+      ? match.stopProgression
+      : (match.stopsTraversed || []).map(s => ({ stopName: s, delayMins: null, isRecovered: false })));
+    const flow = stops.map((st, i, arr) => {
+      const d = st.delayMins;
+      const badge = d != null
+        ? `<span class="drilldown-trip-delay ${st.isRecovered ? 'is-recovered' : (d >= 10 ? 'is-high' : 'is-mid')}">${st.isRecovered ? `${d > 0 ? `+${d}` : d}m ✓` : `+${d}m`}</span>`
+        : '';
+      return `<span class="drilldown-trip-stop${st.isRecovered ? ' is-recovered' : ''}" title="${this.esc(st.stopName)}${d != null ? ` (${st.isRecovered ? 'Recuperat' : 'Retard'}: +${d} min)` : ''}">${this.esc(st.stopName)}${badge}</span>${i < arr.length - 1 ? '<span class="drilldown-trip-arrow">→</span>' : ''}`;
+    }).join('');
+
+    return `
+      <div class="drilldown-trip-card">
+        <div class="drilldown-trip-head">
+          <span class="drilldown-trip-label">Expedició &amp; trajectòria corresponent</span>
+          <span class="drilldown-trip-meta">${this.esc(match.lineCode || '')} · bus ${this.esc(match.vehicleId)} · inici ${this.esc(match.startTime || '')} · ${match.sampleCount || 0} mostres</span>
+        </div>
+        <div class="drilldown-trip-flow">${flow || '<span style="color:var(--text-muted);">Sense parades reconstruïdes</span>'}</div>
+        <button type="button" class="btn-locate-incident-stop" data-incident-tab="trips" title="Obre la pestanya Expedicions &amp; Trajectòries">
+          <span>Veure a Expedicions &amp; Trajectòries</span>
+        </button>
+      </div>`;
   }
 
   /** Human label for the server-side times_provenance classification. */
@@ -2080,7 +2179,7 @@ class ObservatoriApp {
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
                           <span>Mapa</span>
                         </button>
-                        <button type="button" class="btn-investigate-incident" data-investigate-line="${this.esc(inc.lineCode)}" data-investigate-stop="${this.esc(inc.stopName)}" data-investigate-at="${inc.timestamp || ''}" title="Investigar aquest retard: veure les mostres originals que el contenen">
+                        <button type="button" class="btn-investigate-incident" data-investigate-line="${this.esc(inc.lineCode)}" data-investigate-stop="${this.esc(inc.stopName)}" data-investigate-vehicle="${this.esc(inc.vehicleId || '')}" data-investigate-at="${inc.timestamp || ''}" title="Investigar aquest retard: veure les mostres originals que el contenen">
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
                           <span>Investigar</span>
                         </button>

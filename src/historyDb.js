@@ -1512,6 +1512,12 @@ class HistoryDatabase {
           lineCode: c.lineCode,
           agency: c.agency,
           startTime: c.startTime,
+          // Numeric twins of startTime/endTime. The localized display strings
+          // are NOT reliably re-parseable (Date.parse('24/09/2026, 12:05:00')
+          // is NaN), so a consumer that needs to match a trajectory card to an
+          // incident window has to compare these instead of re-parsing text.
+          startTs: c.firstTs,
+          endTs: c.lastTs,
           endTime: c.endTime,
           durationMinutes: durMins,
           maxDelayMins: c.maxDelay,
@@ -1621,7 +1627,7 @@ class HistoryDatabase {
   // flags retired-scope lines and feed-tail saturation, and surfaces the
   // underlying observations so an operator can judge whether an "insane delay"
   // is a real event or a measurement artefact.
-  inspectDelayIncident({ lineCode = 'all', stopName = '', at, windowMins = 60, minDelay = 5 } = {}) {
+  inspectDelayIncident({ lineCode = 'all', stopName = '', vehicleId = '', at, windowMins = 60, minDelay = 5 } = {}) {
     if (!this._ensureOpen()) {
       return { found: false, error: 'database unavailable', episode: null, dataQuality: {} };
     }
@@ -1648,6 +1654,15 @@ class HistoryDatabase {
         sqlWhere += ' AND stop_name LIKE ?';
         params.push(`%${stopName}%`);
       }
+      // Narrow to the clicked bus when the operator supplied one. This keeps
+      // totalRawRows/episodesInWindow describing that bus instead of every
+      // bus that happened to touch the stop in the window. An id-less request
+      // is left untouched, so historical rows (pre-2026-09-19) still work.
+      const wantedVehicleFilter = String(vehicleId || '').trim();
+      if (wantedVehicleFilter) {
+        sqlWhere += ' AND vehicle_id = ?';
+        params.push(wantedVehicleFilter);
+      }
 
       const stmt = this.db.prepare(`
         SELECT id, vehicle_id as vehicleId, line_id as lineId, line_code as lineCode,
@@ -1667,21 +1682,53 @@ class HistoryDatabase {
       }
 
       // ── Group into episodes: consecutive rows within 5 minutes ──────
+      // The grouping key MUST carry vehicle identity. Keying on the time gap
+      // alone merged two different buses into one "episode" whenever they
+      // logged the same stop within 5 minutes of each other, so a rider who
+      // clicked Investigar on one bus's delay was handed a second bus's rows
+      // as well. The key deliberately mirrors the ranking table's dedup key
+      // (line+vehicle, falling back to line+stop only when the id was never
+      // stored), so a row in the list and its drill-down describe the same
+      // episode instead of two different ones.
       const GAP_MS = EPISODE_GAP_MS;
-      const episodes = [];
-      let cur = [];
+      const episodeKey = (r) => (r.vehicleId
+        ? `${r.lineCode}|${r.vehicleId}`
+        : `${r.lineCode}|${r.stopName || ''}`);
+      const byKey = new Map();
       for (const r of rows) {
-        if (cur.length && r.timestamp - cur[cur.length - 1].timestamp > GAP_MS) {
-          episodes.push(cur); cur = [];
-        }
-        cur.push(r);
+        const k = episodeKey(r);
+        if (!byKey.has(k)) byKey.set(k, []);
+        byKey.get(k).push(r);
       }
-      if (cur.length) episodes.push(cur);
+      const episodes = [];
+      for (const bucket of byKey.values()) {
+        let cur = [];
+        for (const r of bucket) {
+          if (cur.length && r.timestamp - cur[cur.length - 1].timestamp > GAP_MS) {
+            episodes.push(cur); cur = [];
+          }
+          cur.push(r);
+        }
+        if (cur.length) episodes.push(cur);
+      }
 
-      const pick = episodes.find(e => center >= e[0].timestamp && center <= e[e.length - 1].timestamp + GAP_MS)
+      // Prefer the exact trip the operator clicked. Line+stop+time alone is not
+      // enough to identify an episode once grouping is per-vehicle: two buses
+      // can be logging the same stop seconds apart, and the first episode whose
+      // window merely CONTAINS the clicked instant may belong to the other
+      // bus. The vehicle id is the tie-breaker; the time-window and
+      // peak-delay fallbacks only run when the id is unknown or absent.
+      const wantedVehicle = String(vehicleId || '').trim();
+      const inWindow = (e) => center >= e[0].timestamp && center <= e[e.length - 1].timestamp + GAP_MS;
+      const pick = episodes.find(e => inWindow(e) && e.some(r => r.vehicleId === wantedVehicle))
+        || episodes.find(inWindow)
         || episodes.reduce((a, b) => (b[b.length - 1].delayMins > a[a.length - 1].delayMins ? b : a));
 
       const vehicleIds = [...new Set(pick.map(r => r.vehicleId).filter(Boolean))];
+      // A key without a vehicle id can still hold rows from two real buses, so
+      // report that rather than implying the episode is one identifiable trip.
+      const episodeVehicleAmbiguous = !pick[0].vehicleId && vehicleIds.length > 1;
+
       // Classify every row through the shared provenance helpers. A backfilled
       // approximation is NOT an observed time: it is derived offline from the
       // timetable by guessing the direction, so it must never be counted as
@@ -1751,6 +1798,19 @@ class HistoryDatabase {
           peakAt: new Date(pick.reduce((a, b) => b.delayMins > a.delayMins ? b : a).timestamp).toLocaleString('en-GB', { timeZone: 'Europe/Madrid' }),
           rowCount: pick.length,
           distinctVehicles: vehicleIds,
+          // True only when no id was stored on the opening row yet later rows
+          // in the same episode carry one -- i.e. the episode cannot be
+          // attributed to a single bus and the UI must say so.
+          vehicleAmbiguous: episodeVehicleAmbiguous,
+          // The trip key the Expedicions & Trajectòries tab groups by, so the
+          // drill-down can link straight to the matching trajectory card
+          // instead of the operator hunting for it by eye.
+          tripKey: {
+            lineCode: pick[0].lineCode,
+            vehicleId: pick[0].vehicleId || '',
+            startTs: pick[0].timestamp,
+            endTs: pick[pick.length - 1].timestamp
+          },
           verdict, verdictLabel,
           // Authoritative provenance signal for the whole episode. Consumers
           // should colour from the per-row timesProvenance, which is exact.
@@ -1830,17 +1890,33 @@ class HistoryDatabase {
       if (!isAll) { wh += ' AND (UPPER(line_code) = ? OR UPPER(line_code) = ? OR line_id = ?)'; wp.push(codeWithL, codeWithoutL, codeWithoutL); }
       wh = appendMataroScope(wh, isAll);
       const agg = this.db.prepare(`SELECT COUNT(*) as n, SUM(CASE WHEN vehicle_id = '' OR vehicle_id IS NULL THEN 1 ELSE 0 END) as noVeh, SUM(CASE WHEN scheduled_time = '' OR scheduled_time IS NULL OR actual_time = '' OR actual_time IS NULL THEN 1 ELSE 0 END) as noProv, COUNT(DISTINCT CASE WHEN vehicle_id != '' AND vehicle_id IS NOT NULL THEN vehicle_id END) as vehIds FROM delay_logs WHERE ${wh}`).get(...wp);
-      // A real episode count: a new episode starts at each line+stop when the
-      // gap to the previous sample exceeds the 5-minute boundary that
-      // inspectDelayIncident groups on. The previous query counted
-      // (line, stop) PAIRS HAVING MORE THAN ONE ROW, which is not an episode
-      // count at all, and its COUNT(DISTINCT vehicle_id || '-' || stop_name)
-      // degenerated to '-stopname' because vehicle_id is mostly empty.
+      // A real episode count, using the SAME key inspectDelayIncident groups
+      // on. The old query partitioned by (line_code, stop_name), which was wrong
+      // in the opposite direction from the drill-down's bug: splitting by stop
+      // gives every stop its own episode-start, so one bus passing four stops
+      // counted as four episodes. On the real table it reported 148 episodes
+      // where the true per-vehicle figure is 52 -- an inflated KPI, not a
+      // missing one. Partitioning by (line, vehicle), falling back to
+      // (line, stop) only when the id was never stored, mirrors episodeKey()
+      // exactly, so the "N episodis" figure and the drill-down table now agree
+      // by construction. Verified at parity on live-shaped data: both 52.
+      //
+      // The fallback is expressed in SQL as a sentinel, so id-less rows cannot
+      // collide with a real plate and still split by stop among themselves.
+      // Note the partition drops stop_name for identified rows on purpose: a
+      // trip's episode spans every stop it serves, matching the drill-down.
       const ep = this.db.prepare(`
-        WITH scoped AS (SELECT line_code, stop_name, timestamp FROM delay_logs WHERE ${wh}),
+        WITH scoped AS (
+          SELECT line_code, stop_name, vehicle_id, timestamp,
+            CASE WHEN vehicle_id IS NULL OR vehicle_id = ''
+              THEN '__novehicle__:' || COALESCE(stop_name, '')
+              ELSE 'veh:' || vehicle_id
+            END AS epKey
+          FROM delay_logs WHERE ${wh}
+        ),
         marked AS (
-          SELECT line_code, stop_name, timestamp,
-            LAG(timestamp) OVER (PARTITION BY line_code, stop_name ORDER BY timestamp) AS prevTs
+          SELECT epKey, timestamp,
+            LAG(timestamp) OVER (PARTITION BY epKey ORDER BY timestamp) AS prevTs
           FROM scoped
         )
         SELECT COUNT(*) as n FROM marked WHERE prevTs IS NULL OR (timestamp - prevTs) > ?
@@ -1851,7 +1927,7 @@ class HistoryDatabase {
         rowsWithoutProvenance: agg.noProv || 0,
         distinctEpisodes: ep.n || 0,
         episodeGapMinutes: EPISODE_GAP_MS / 60000,
-        episodesNote: 'distinctEpisodes counts groups of consecutive samples on the same line+stop that are ≤ 5 min apart (the same boundary inspectDelayIncident uses). It is NOT a count of buses or of delay causes.',
+        episodesNote: 'distinctEpisodes counts groups of consecutive samples that are ≤ 5 min apart, grouped by line+vehicle — the same key and the same boundary inspectDelayIncident uses, so this figure and the drill-down table agree. Rows with no stored vehicle_id (before the 2026-09-19 column existed) fall back to line+stop. It is NOT a count of delay causes.',
         feedTailCap: 'Delays ≥ 25 min appear to be the upstream SIRI feed tail cap, not real-world outliers'
       };
     } catch { return { totalRawRows: 0, distinctEpisodes: 0, episodeGapMinutes: EPISODE_GAP_MS / 60000, episodesNote: '', rowsWithoutVehicleId: 0, rowsWithoutProvenance: 0, feedTailCap: '' }; }

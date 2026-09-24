@@ -1076,7 +1076,11 @@ app.get('/api/analytics/incidents/inspect', async (req, res) => {
 
   try {
     const data = await workerBridge.historyQuery('inspectDelayIncident', {
-      lineCode: lineParam, stopName: String(req.query.stop || ''), at, windowMins, minDelay
+      lineCode: lineParam, stopName: String(req.query.stop || ''),
+      // The vehicle is the episode identity: without it the drill-down can
+      // resolve to a neighbouring bus that logged the same stop in the window.
+      vehicleId: String(req.query.vehicle || ''),
+      at, windowMins, minDelay
     }, { timeoutMs: 35000 });
 
     if (data && data.found) {
