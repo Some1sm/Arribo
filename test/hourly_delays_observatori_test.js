@@ -77,8 +77,12 @@ async function runHourlyDelaysObservatoriTests() {
   // Test 5: Synthetic Insertion of Delay Logs to Verify End-to-End Aggregation
   console.log('\n5. Testing End-to-End Aggregation with Synthetic School Rush Delays...');
   const testStopName = '__TEST_SCHOOL_BOTTLENECK_STOP__';
-  const testLineCode = 'T99';
-  const testAgency = 'TestBus';
+  // The synthetic rows must sit on a real Mataró line: getJournalismReport
+  // aggregates the Mataró L1–L8 network only, so a made-up 'T99' line is now
+  // correctly out of scope. The synthetic STOP name and agency markers stay, so
+  // the test still locates and asserts on its own fixture row.
+  const testLineCode = 'L6';
+  const testAgency = 'Mataró Bus (Avanza)';
 
   // Calculate current Madrid offset
   const now = Date.now();
@@ -108,7 +112,7 @@ async function runHourlyDelaysObservatoriTests() {
     // Insert 5 delayed samples at 08:30
     for (let i = 0; i < 5; i++) {
       insertStmt.run(
-        'test_99', testLineCode, testAgency, 'stop_99', testStopName,
+        '6', testLineCode, testAgency, 'stop_99', testStopName,
         12, '08:30', '08:42', 1, 1, testTimestamp + (i * 60000)
       );
     }

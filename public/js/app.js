@@ -1910,6 +1910,38 @@ class TransitApp {
       return '<span style="opacity:0.3; margin-left:4px;">↕</span>';
     };
 
+    // A KPI with no data behind it is not a zero and not a 100%. The server
+    // returns null for an empty window, and the previous `|| 100` / `|| 0`
+    // fallbacks turned that into a flawless punctuality score and two tidy
+    // zeros out of pure absence - the exact opposite of what the panel claims
+    // to measure. An empty window now reads as an empty window.
+    const kpiNumber = (raw, { unit = '', decimals = 1, signed = false, good, bad, noteWhenKnown, noteWhenEmpty }) => {
+      const n = Number(raw);
+      if (raw === null || raw === undefined || !Number.isFinite(n)) {
+        return { value: '—', color: 'var(--text-muted)', note: noteWhenEmpty };
+      }
+      return {
+        value: `${signed && n > 0 ? '+' : ''}${decimals ? n.toFixed(decimals) : n}${unit}`,
+        color: typeof good === 'function' ? (good(n) ? '#10b981' : bad) : bad,
+        note: noteWhenKnown
+      };
+    };
+    const kpiPunctuality = (() => {
+      const n = Number(s.networkPunctualityPct);
+      if (s.networkPunctualityPct === null || s.networkPunctualityPct === undefined || !Number.isFinite(n)) {
+        return { value: '—', color: 'var(--text-muted)', note: 'Sense dades en aquesta finestra' };
+      }
+      return { value: `${n.toFixed(1)}%`, color: n >= 85 ? '#10b981' : '#f59e0b', note: 'Arribades en &le; 3 min de marge' };
+    })();
+    const kpiAvgDelay = kpiNumber(s.networkAvgDelay, {
+      unit: ' min', decimals: 1, signed: true, good: n => n <= 3, bad: '#38bdf8',
+      noteWhenKnown: 'Puntualitat de referència', noteWhenEmpty: 'Sense dades en aquesta finestra'
+    });
+    const kpiMaxDelay = kpiNumber(s.networkMaxDelay, {
+      unit: ' min', decimals: 0, signed: true, good: () => false, bad: '#ef4444',
+      noteWhenKnown: 'Afectació puntual extrema', noteWhenEmpty: 'Sense dades en aquesta finestra'
+    });
+
     let html = `
       <!-- Pre-generated 30-min Cache Banner -->
       ${report.meta?.generatedAt ? `
@@ -1934,20 +1966,20 @@ class TransitApp {
 
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
           <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Puntualitat Global</div>
-          <div style="font-size:1.6rem; font-weight:700; color:${s.networkPunctualityPct >= 85 ? '#10b981' : '#f59e0b'}; margin-top:0.2rem;">${s.networkPunctualityPct || 100}%</div>
-          <div style="font-size:0.72rem; color:var(--text-muted);">Arribades en &le; 3 min de marge</div>
+          <div style="font-size:1.6rem; font-weight:700; color:${kpiPunctuality.color}; margin-top:0.2rem;">${kpiPunctuality.value}</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">${kpiPunctuality.note}</div>
         </div>
 
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
           <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Retard Mitjà Xarxa</div>
-          <div style="font-size:1.6rem; font-weight:700; color:#38bdf8; margin-top:0.2rem;">${Number(s.networkAvgDelay) > 0 ? '+' : ''}${s.networkAvgDelay || 0} min</div>
-          <div style="font-size:0.72rem; color:var(--text-muted);">Puntualitat de referència</div>
+          <div style="font-size:1.6rem; font-weight:700; color:${kpiAvgDelay.color}; margin-top:0.2rem;">${kpiAvgDelay.value}</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">${kpiAvgDelay.note}</div>
         </div>
 
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
           <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Retard Màxim Registrat</div>
-          <div style="font-size:1.6rem; font-weight:700; color:#ef4444; margin-top:0.2rem;">${Number(s.networkMaxDelay) > 0 ? '+' : ''}${s.networkMaxDelay || 0} min</div>
-          <div style="font-size:0.72rem; color:var(--text-muted);">Afectació puntual extrema</div>
+          <div style="font-size:1.6rem; font-weight:700; color:${kpiMaxDelay.color}; margin-top:0.2rem;">${kpiMaxDelay.value}</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">${kpiMaxDelay.note}</div>
         </div>
       </div>
 
@@ -3459,7 +3491,14 @@ class TransitApp {
       ? `⚡ Posició teòrica (${b.lat.toFixed(5)}°, ${b.lon.toFixed(5)}°)`
       : (b.coordinatesFormatted || `${b.lat.toFixed(5)}° N, ${b.lon.toFixed(5)}° E`);
     if (bearingEl) bearingEl.textContent = `${b.compass?.label || 'N/A'} (${b.bearing || 0}°)`;
-    if (speedEl) speedEl.textContent = isGhost ? `~20 km/h (Estimat)` : `${b.speedKmh || 32} km/h`;
+    // Speed honesty: only show a km/h figure for a real finite measurement;
+    // synthetic/estimated vehicles or a missing speed read as unknown, never a
+    // fabricated number. Source-side fabrication (mataroSiriClient.js:319) is
+    // fixed separately.
+    const cockpitHasSpeed = b.speedKmh !== undefined && b.speedKmh !== null && Number.isFinite(Number(b.speedKmh));
+    if (speedEl) speedEl.textContent = (isGhost || (isEst && !cockpitHasSpeed))
+      ? '— (Estimat)'
+      : (cockpitHasSpeed ? `${Math.round(Number(b.speedKmh))} km/h` : '— (Sense dada)');
     if (segmentEl) segmentEl.textContent = `${b.fromStop || 'Origen'} ➔ ${b.toStop || 'Destí'}`;
     if (etaNextEl) etaNextEl.textContent = b.secondsToNextStop ? `~${Math.round(b.secondsToNextStop / 60)} min (${b.toStop})` : `${b.toStop || 'En trajecte'}`;
     if (tripStartEl) tripStartEl.textContent = b.departureTime || b.tripStartTime || '--';
@@ -6107,20 +6146,57 @@ class TransitApp {
     if (!lId || !this.isTabVisible) return;
 
     const dir = this.activeDirection;
-    const buses = snapshot.vehicles.filter(v =>
+    const matchesView = v =>
       String(v.lineId) === String(lId) &&
-      (dir === 'both' || v.direction === undefined || String(v.direction) === String(dir))
+      (dir === 'both' || v.direction === undefined || String(v.direction) === String(dir));
+    const buses = snapshot.vehicles.filter(matchesView);
+
+    // The SSE snapshot is physical-only by design (flightRecorder.getAllVehicles()
+    // excludes ghosts), so replacing the list would drop every timetable-ghost
+    // the 60s REST refresh had drawn. MERGE instead: keep the incoming physical
+    // vehicles and carry over existing theoretical/timetable-only entries that
+    // are still within their validity window. Direction + lineId filtering is
+    // identical for both sets (matchesView), so semantics are unchanged.
+    const lineData = this.activeLineData;
+    const previous = Array.isArray(lineData?.activeBuses) && lineData.activeBuses.length
+      ? lineData.activeBuses
+      : (Array.isArray(this.activeBuses) ? this.activeBuses : []);
+
+    const now = Date.now();
+    const GHOST_TTL_MS = 150000; // > the 60s REST cadence, a safe staleness backstop
+    const isTheoretical = b => Boolean(
+      b.isGhostVehicle || b.isTheoretical ||
+      (b.vehicleId && String(b.vehicleId).startsWith('EST_'))
+    );
+    const lastSeenMs = b => {
+      const raw = b.lastUpdate || b.lastSeen || b.recordedAt || b.timestamp;
+      if (raw === undefined || raw === null || raw === '') return NaN;
+      const t = typeof raw === 'number' ? raw : Date.parse(raw);
+      return Number.isFinite(t) ? t : NaN;
+    };
+    const isGhostValid = b => {
+      const t = lastSeenMs(b);
+      // No parseable timestamp: fall back to the marker hold budget rather than
+      // dropping it, so a single malformed stamp cannot strobe the ghost off.
+      return !Number.isFinite(t) || (now - t) <= GHOST_TTL_MS;
+    };
+
+    const incomingKeys = new Set(buses.map(b => String(b.vehicleId || b.tripId || '')));
+    const carriedGhosts = previous.filter(b =>
+      b && isTheoretical(b) && matchesView(b) && isGhostValid(b) &&
+      !incomingKeys.has(String(b.vehicleId || b.tripId || ''))
     );
 
-    const lineData = this.activeLineData;
+    const merged = [...buses, ...carriedGhosts];
+
     if (lineData && Array.isArray(lineData.activeBuses)) {
-      lineData.activeBuses = buses;
+      lineData.activeBuses = merged;
     }
-    this.activeBuses = buses;
+    this.activeBuses = merged;
 
     const lineColor = lineData?.color || '#009485';
-    this.mapController?.updateBusMarkers(buses, lineColor, '#38bdf8', this.selectedVehicleId, null, lId);
-    this.updateActiveBusesCount(buses.length, lineData);
+    this.mapController?.updateBusMarkers(merged, lineColor, '#38bdf8', this.selectedVehicleId, null, lId);
+    this.updateActiveBusesCount(merged.length, lineData);
   }
 
   startFleetPolling() {
@@ -7107,7 +7183,7 @@ class TransitApp {
       <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.75rem; margin-bottom:1.25rem;">
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
           <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">Retard Màxim Registrat</div>
-          <div style="font-size:1.6rem; font-weight:800; color:#ef4444; margin-top:0.2rem;">+${s.maxDelayMins || 0} min</div>
+          <div style="font-size:1.6rem; font-weight:800; color:${Number.isFinite(Number(s.maxDelayMins)) && s.maxDelayMins !== null ? '#ef4444' : 'var(--text-muted)'}; margin-top:0.2rem;">${s.maxDelayMins === null || s.maxDelayMins === undefined || !Number.isFinite(Number(s.maxDelayMins)) ? '—' : `+${s.maxDelayMins} min`}</div>
           <div style="font-size:0.72rem; color:var(--text-muted);">${(s.totalRecordedIncidents || 0).toLocaleString()} mostres amb retard &ge; 5m</div>
         </div>
 

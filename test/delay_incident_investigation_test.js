@@ -21,7 +21,15 @@ historyDb.init(testDbPath);
 
 const now = Date.now();
 const twentySec = 20 * 1000;
-const daytimeBase = now - 8 * 3600 * 1000;
+const oneHour = 3600 * 1000;
+// Anchor the scenarios to a Madrid daytime hour (16:00). A fixed "now - 8h"
+// drifts into the overnight window, where is_telemetry_anomaly() marks every
+// row as depot/night maintenance and the verdict short-circuits to
+// 'telemetry_anomaly' — the suite then failed depending on the wall clock.
+const madridHourFmt = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', hour: 'numeric', hourCycle: 'h23' });
+const currentMadridHour = parseInt(madridHourFmt.format(new Date()), 10);
+const hoursBackTo16 = (currentMadridHour >= 16) ? (currentMadridHour - 16) : (currentMadridHour + 24 - 16);
+const daytimeBase = now - (hoursBackTo16 * oneHour);
 
 // ── Test Scenario: One bus, 12 ping rows = inflated incident ──
 const busId = '2671';
@@ -71,6 +79,19 @@ for (let i = 0; i < 2; i++) {
   });
 }
 
+// ── Test Scenario: Backfilled approximation (scripts/backfill_delay_times.js) ──
+// Offline guess written by the backfill CLI: same shape as a live derivation
+// but a different times_source literal, and explicitly weaker.
+for (let i = 0; i < 3; i++) {
+  historyDb.recordDelayLog({
+    vehicleId: '2695', lineId: '3', lineCode: 'L3', agency: 'Mataró',
+    stopId: 'Mercat', stopName: 'Mercat Municipal', delayMins: 11,
+    scheduledTime: '16:40:00', actualTime: '16:51:00',
+    direction: '', timesSource: 'derived_timetable_backfill',
+    isRealTime: true, timestamp: baseTs + 9 * twentySec + i * twentySec
+  });
+}
+
 async function runTests() {
   let passed = 0;
   const failed = [];
@@ -117,6 +138,33 @@ async function runTests() {
   const retiredEp = await historyDb.inspectDelayIncident({ lineCode: 'C-10', stopName: 'El Masnou', at: baseTs + 6 * twentySec, minDelay: 10 });
   check(retiredEp.episode?.retiredScope === true || retiredEp.dataQuality?.retiredScopeLinesPresent === true, 'Retirement scope detected for non-L1-L8 line');
 
+  console.log('\n--- 5b. Backfilled approximation is NOT corroborating evidence (D1 regression) ---');
+  // Regression: the verdict used to exact-match a single 'derived_timetable'
+  // literal, so 'derived_timetable_backfill' fell into the OBSERVED bucket and
+  // produced verdict "corroborated" with a note claiming the times were empty.
+  const backfilledEp = await historyDb.inspectDelayIncident({ lineCode: 'L3', stopName: 'Mercat', at: baseTs + 9 * twentySec, minDelay: 5 });
+  check(backfilledEp.found === true, 'Backfilled incident found');
+  check(backfilledEp.episode?.verdict !== 'corroborated', 'A backfilled approximation can never produce a corroborated verdict');
+  check(backfilledEp.episode?.verdict === 'derived_only', 'Backfilled rows alone yield derived_only');
+  check(backfilledEp.episode?.evidence?.hasProvenanceTimes === false, 'Backfilled times are NOT counted as observed provenance');
+  check(backfilledEp.episode?.evidence?.hasBackfilledTimes === true, 'Backfilled rows are counted separately from live-derived rows');
+  check(backfilledEp.episode?.evidence?.rowsWithBackfilledTimes === 3, 'All 3 backfilled rows are counted');
+  check(backfilledEp.episode?.evidence?.rowsWithDerivedTimes === 0, 'Backfilled rows are not miscounted as live-derived');
+  check(backfilledEp.episode?.timesProvenance === 'derived_timetable_backfill', 'Episode provenance names the backfill literal');
+  check(backfilledEp.episode?.timetableCheck?.backfilledFromTimetable === true, 'timetableCheck flags the rows as backfilled');
+  check(backfilledEp.episode?.timetableCheck?.derivedLiveFromTimetable === false, 'timetableCheck does not claim a live derivation');
+  check(backfilledEp.episode?.verdictLabel !== backfilledEp.episode?.verdictLabel?.replace('Backfilled approximation', 'Derived only'),
+    'The backfilled verdict label is distinguishable from a live derivation');
+  check(backfilledEp.episode?.timetableCheck?.note?.includes('approximated offline') === true, 'timetableCheck note explains the offline approximation');
+  check(backfilledEp.episode?.rawRows?.[0]?.timesProvenance === 'derived_timetable_backfill', 'Per-row provenance lets the UI colour backfilled rows apart');
+  check(backfilledEp.episode?.rawRows?.[0]?.timesSource === 'derived_timetable_backfill', 'Raw rows still carry the raw times_source through');
+
+  console.log('\n--- 5c. Real upstream times stay corroborated (D1 non-regression) ---');
+  check(ep3.episode?.timesProvenance === 'observed', 'A real upstream observation is classified as observed');
+  check(ep3.episode?.timetableCheck?.derivedFromTimetable === false, 'Observed times are not flagged as timetable-derived');
+  check(epDerived.episode?.timesProvenance === 'derived_timetable', 'A live derivation is classified as derived_timetable');
+  check(epDerived.episode?.evidence?.hasBackfilledTimes === false, 'A live derivation is not reported as backfilled');
+
   console.log('\n--- 6. Data quality summary in getDelayIncidents ---');
   const summary = await historyDb.getDelayIncidents({ lineCode: 'all', hours: 24, minDelay: 5 });
   check(summary.summary.dataQuality !== undefined, 'Data quality block present in summary');
@@ -124,6 +172,58 @@ async function runTests() {
   check(summary.summary.dataQuality.rowsWithoutVehicleId >= 0, 'Rows without vehicleId counted');
   check(summary.summary.dataQuality.rowsWithoutProvenance >= 0, 'Rows without provenance counted');
   check(summary.summary.dataQuality.distinctEpisodes >= 0, 'Distinct episodes calculated');
+  check(summary.summary.dataQuality.episodeGapMinutes === 5, 'Episode boundary is published (5 min) so the number is interpretable');
+  check(summary.summary.dataQuality.episodesNote && summary.summary.dataQuality.episodesNote.length > 0, 'Episode count states what it actually counts');
+  check(summary.summary.dataQuality.distinctEpisodes <= summary.summary.dataQuality.totalRawRows, 'An episode count can never exceed the raw sample count it clusters');
+
+  console.log('\n--- 6b. Retired non-Mataró rows are excluded from "all lines" (D4 regression) ---');
+  const allLines = await historyDb.getDelayIncidents({ lineCode: 'all', hours: 720, minDelay: 5 });
+  const retiredInTop = [...(allLines.topIncidents || []), ...(allLines.investigationIncidents || []), ...(allLines.telemetryAnomalies || [])]
+    .filter(i => i.lineCode === 'C-10');
+  check(retiredInTop.length === 0, 'A retired C-10 row must not surface in any "all lines" incident list');
+  const retiredInspect = await historyDb.inspectDelayIncident({ lineCode: 'all', stopName: 'El Masnou', at: baseTs + 6 * twentySec, minDelay: 5 });
+  check(retiredInspect.found === false, 'inspectDelayIncident("all") must not return retired-scope rows');
+  check(retiredInspect.episode === null || retiredInspect.episode === undefined, 'No episode is built from retired-scope rows');
+  const scopedReport = await historyDb.getJournalismReport(24, []);
+  const retiredInReport = (scopedReport.rankingMostDelayed || []).filter(r => r.lineCode === 'C-10');
+  check(retiredInReport.length === 0, 'getJournalismReport must not rank retired C-10 lines');
+
+  console.log('\n--- 6c. The headline maximum is the true maximum (D2 regression) ---');
+  // Every genuine delay in the window sits in the investigation tier, so the
+  // commercial figure is unknown. It used to be forced to 0 and the UI printed
+  // "+0 min" as the maximum service delay.
+  const onlyExtreme = await historyDb.getDelayIncidents({ lineCode: 'L3', hours: 24, minDelay: 5 });
+  check(onlyExtreme.summary.maxDelayMins === 11, 'Headline max reports the real 11-min delay in the L3 window');
+  check(onlyExtreme.summary.maxCommercialDelayMins === 11, 'An 11-min delay IS commercial (< 25 min) and is reported as such');
+  // Now a window whose only delay is >= 25 min.
+  historyDb.recordDelayLog({
+    vehicleId: '2700', lineId: '7', lineCode: 'L7', agency: 'Mataró',
+    stopId: 'Salesians', stopName: 'Salesians', delayMins: 30,
+    isRealTime: true, timestamp: daytimeBase
+  });
+  const extremeOnly = await historyDb.getDelayIncidents({ lineCode: 'L7', hours: 24, minDelay: 5 });
+  check(extremeOnly.summary.maxDelayMins === 30, 'Headline max reports the real 30-min delay, not 0');
+  check(extremeOnly.summary.maxCommercialDelayMins === null, 'The commercial-tier max is null (unknown), never 0');
+  check(extremeOnly.summary.maxDelayIsFromInvestigationTier === true, 'The API says the max came from the investigation tier so the UI can say so');
+  check(extremeOnly.investigationIncidents.length > 0, 'The 30-min row lands in investigationIncidents');
+  check(extremeOnly.investigationIncidents[0].investigationReason.includes('≥25 min'), 'The investigation label matches its >= 25 min threshold');
+
+  console.log('\n--- 6d. Distinct buses on one line are not merged by the dedup key (D5 regression) ---');
+  // Both rows have an empty vehicle_id (the dominant historical case) and sit
+  // 5 min apart at different stops. A bare lineCode key merged them into one.
+  for (const [stopId, stopName, delayMins] of [['M1', 'La Riera', 7], ['M2', 'El Castell', 8]]) {
+    historyDb.recordDelayLog({
+      vehicleId: '', lineId: '6', lineCode: 'L6', agency: 'Mataró',
+      stopId, stopName, delayMins, isRealTime: true,
+      timestamp: daytimeBase + (stopId === 'M2' ? 5 * 60 * 1000 : 0)
+    });
+  }
+  const twoStops = await historyDb.getDelayIncidents({ lineCode: 'L6', hours: 24, minDelay: 5 });
+  const l6Stops = twoStops.topIncidents.map(i => i.stopName);
+  check(l6Stops.includes('La Riera') && l6Stops.includes('El Castell'), 'Two stops on one line stay two episodes');
+  check(twoStops.summary.rawSamplesOverThreshold === 2, 'Raw sample KPI counts both samples');
+  check(twoStops.summary.listedCommercialEpisodes === 2, 'The deduped episode count matches the two distinct stops');
+  check(twoStops.summary.kpiBasis && /RAW SAMPLES/.test(twoStops.summary.kpiBasis), 'The API states plainly that the KPI is raw samples, not episodes');
 
   console.log('\n--- 7. Worker RPC dispatch ---');
   const worker = require('../src/workers/ingestionWorker');

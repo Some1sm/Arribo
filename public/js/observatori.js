@@ -609,29 +609,43 @@ class ObservatoriApp {
       <!-- KPI Stats Grid -->
       <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:0.85rem; margin-bottom:1.5rem;">
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:1rem;">
-          <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Arribades Analitzades</div>
+          <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Mostres Analitzades</div>
           <div style="font-size:1.75rem; font-weight:700; color:var(--brand-primary); margin-top:0.25rem;">${(s.totalRecordedArrivals || 0).toLocaleString()}</div>
-          <div style="font-size:0.72rem; color:var(--text-muted);">${s.monitoredLinesCount || 0} línies monitorades</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">${s.monitoredLinesCount || 0} línies monitorades${s.hoursAnalyzed ? ` • darreres ${s.hoursAnalyzed} h` : ''}</div>
         </div>
 
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:1rem;">
           <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Puntualitat Global</div>
-          <div style="font-size:1.75rem; font-weight:700; color:${s.networkPunctualityPct >= 85 ? '#10b981' : '#f59e0b'}; margin-top:0.25rem;">${s.networkPunctualityPct || 100}%</div>
-          <div style="font-size:0.72rem; color:var(--text-muted);">Arribades en &le; 3 min de marge</div>
+          <div style="font-size:1.75rem; font-weight:700; color:${s.networkPunctualityPct === null || s.networkPunctualityPct === undefined ? 'var(--text-muted)' : (s.networkPunctualityPct >= 85 ? '#10b981' : '#f59e0b')}; margin-top:0.25rem;">${s.networkPunctualityPct === null || s.networkPunctualityPct === undefined ? '—' : `${s.networkPunctualityPct}%`}</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">${s.networkPunctualityPct === null || s.networkPunctualityPct === undefined ? 'Sense mostres: la puntualitat no es mesura' : 'Mostres en &le; 3 min de marge'}</div>
         </div>
 
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:1rem;">
           <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Retard Mitjà Xarxa</div>
-          <div style="font-size:1.75rem; font-weight:700; color:#38bdf8; margin-top:0.25rem;">${Number(s.networkAvgDelay) > 0 ? '+' : ''}${s.networkAvgDelay || 0} min</div>
-          <div style="font-size:0.72rem; color:var(--text-muted);">Puntualitat de referència</div>
+          <div style="font-size:1.75rem; font-weight:700; color:#38bdf8; margin-top:0.25rem;">${s.networkAvgDelay === null || s.networkAvgDelay === undefined ? '—' : `${Number(s.networkAvgDelay) > 0 ? '+' : ''}${s.networkAvgDelay} min`}</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">Mitjana de totes les mostres del període</div>
         </div>
 
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:1rem;">
           <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Retard Màxim Registrat</div>
-          <div style="font-size:1.75rem; font-weight:700; color:#ef4444; margin-top:0.25rem;">${Number(s.networkMaxDelay) > 0 ? '+' : ''}${s.networkMaxDelay || 0} min</div>
-          <div style="font-size:0.72rem; color:var(--text-muted);">Afectació puntual extrema</div>
+          <div style="font-size:1.75rem; font-weight:700; color:#ef4444; margin-top:0.25rem;">${s.networkMaxDelay === null || s.networkMaxDelay === undefined ? '—' : `${Number(s.networkMaxDelay) > 0 ? '+' : ''}${s.networkMaxDelay} min`}</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">${s.networkMaxDelay === null || s.networkMaxDelay === undefined ? 'Sense mostres: no hi ha màxim' : 'Afectació puntual extrema'}</div>
         </div>
       </div>
+
+      <!-- Sampling honesty: extrapolated rows are part of the KPIs above -->
+      ${(() => {
+        const sb = s.samplingBreakdown;
+        if (!sb || !sb.totalSamples || !(sb.nonRealtimeSamples > 0)) return '';
+        return `
+        <div style="background:rgba(56,189,248,0.06); border:1px solid rgba(56,189,248,0.22); border-radius:10px; padding:0.7rem 0.95rem; margin-bottom:1.25rem; font-size:0.76rem; color:var(--text-secondary); line-height:1.5;">
+          <strong style="color:#38bdf8;">Mostres, no viatges.</strong>
+          Aquests KPIs es calculen sobre <strong>${sb.totalSamples.toLocaleString()} mostres individuals</strong> (un registre per senyal de vehicle, no pas viatges).
+          D'aquestes, <strong>${sb.nonRealtimeSamples.toLocaleString()} (${sb.nonRealtimePct}%)</strong> són posicions extrapolades
+          (dead-reckoning, <code>is_realtime = 0</code>) i no GPS fresc: s'hi inclouen perquè el retard registrat és real,
+          però no són una observació directa de la posició del vehicle.
+        </div>`;
+      })()}
 
       <!-- Hourly Delay Distribution & School Congestion Profile -->
       ${(() => {
@@ -1411,7 +1425,25 @@ class ObservatoriApp {
     const container = document.getElementById('journalism-termometre-container');
     if (!container || !t) return;
 
+    // An empty window is NOT a perfect score. The API sends explicit nulls and
+    // noData:true; the old renderer substituted its own placeholder scorecard
+    // (grade "A", L1 at 95%, "Pl. Tereses", 08:00-09:00 peak) and the share and
+    // PNG exporters published those invented numbers as real measurements.
+    // A payload that grades a scorecard while analysing zero trips is
+    // self-contradictory, so it is treated as no-data too — that also covers a
+    // report cache written before this contract existed.
+    if (t.noData || t.grade === null || t.grade === undefined || (t.totalTripsAnalyzed || 0) === 0) {
+      this._renderTermometreNoData(container, t);
+      return;
+    }
+
     const gradeColor = (t.grade && t.grade.startsWith('A')) ? '#10b981' : ((t.grade && t.grade.startsWith('B')) ? '#38bdf8' : ((t.grade && t.grade.startsWith('C')) ? '#f59e0b' : '#ef4444'));
+    // A missing sub-value stays missing. Each `—` below means "not measured",
+    // which is different from a measured 0.
+    const pct = (v) => (v === null || v === undefined ? '—' : `${v}%`);
+    const mins = (v) => (v === null || v === undefined ? '—' : `+${v} min`);
+    const championPct = t.championLine && t.championLine.onTimePct !== null && t.championLine.onTimePct !== undefined
+      ? `${t.championLine.onTimePct}%` : '—';
 
     container.innerHTML = `
       <div class="termometre-scorecard" id="termometre-card-root">
@@ -1424,7 +1456,7 @@ class ObservatoriApp {
           <div class="termometre-grade-badge" style="border-color:${gradeColor}; background:rgba(16,185,129,0.12);">
             <div>
               <div style="font-size:0.65rem; font-weight:800; color:var(--text-muted); text-transform:uppercase;">Nota Global</div>
-              <div class="termometre-grade-letter" style="color:${gradeColor};">${this.esc(t.grade || 'A')}</div>
+              <div class="termometre-grade-letter" style="color:${gradeColor};">${this.esc(t.grade)}</div>
             </div>
           </div>
         </div>
@@ -1433,33 +1465,33 @@ class ObservatoriApp {
           <div class="termometre-metric-tile" style="border-left:3px solid #10b981;">
             <span class="termometre-metric-label">Línia Més Puntual</span>
             <span class="termometre-metric-val" style="color:#10b981;">
-              ${this.esc(t.championLine?.code || 'L1')} (${t.championLine?.onTimePct || 95}% puntual)
+              ${t.championLine ? this.esc(t.championLine.code) : '—'} (${championPct} puntual)
             </span>
-            <span style="font-size:0.72rem; color:var(--text-muted);">Retard mitjà: ${t.championLine?.avgDelay || 0.8} min</span>
+            <span style="font-size:0.72rem; color:var(--text-muted);">Retard mitjà: ${t.championLine ? mins(t.championLine.avgDelay) : '—'}</span>
           </div>
 
           <div class="termometre-metric-tile" style="border-left:3px solid #ef4444;">
             <span class="termometre-metric-label">Punt Negre / Retards</span>
             <span class="termometre-metric-val" style="color:#ef4444; font-size:1rem;">
-              ${this.esc(t.worstBottleneck?.stopName || 'Pl. Tereses')}
+              ${t.worstBottleneck ? this.esc(t.worstBottleneck.stopName) : '—'}
             </span>
-            <span style="font-size:0.72rem; color:var(--text-muted);">${this.esc(t.worstBottleneck?.lineCode || '')} • +${t.worstBottleneck?.avgDelay || 3.2} min retard mitjà</span>
+            <span style="font-size:0.72rem; color:var(--text-muted);">${t.worstBottleneck ? this.esc(t.worstBottleneck.lineCode || '') : ''} • ${t.worstBottleneck ? mins(t.worstBottleneck.avgDelay) : '—'} retard mitjà</span>
           </div>
 
           <div class="termometre-metric-tile" style="border-left:3px solid #f59e0b;">
             <span class="termometre-metric-label">Franja de Major Congestió</span>
             <span class="termometre-metric-val" style="color:#f59e0b;">
-              ${this.esc(t.peakHour || '08:00 - 09:00')}
+              ${t.peakHour ? this.esc(t.peakHour) : '—'}
             </span>
-            <span style="font-size:0.72rem; color:var(--text-muted);">Punt màxim de retards a la xarxa</span>
+            <span style="font-size:0.72rem; color:var(--text-muted);">${t.peakHour ? mins(t.peakHourDelay) : '—'} de retard mitjà a la xarxa</span>
           </div>
 
           <div class="termometre-metric-tile" style="border-left:3px solid #38bdf8;">
             <span class="termometre-metric-label">Puntualitat Global</span>
             <span class="termometre-metric-val" style="color:#38bdf8;">
-              ${t.punctualityPct || 92}%
+              ${pct(t.punctualityPct)}
             </span>
-            <span style="font-size:0.72rem; color:var(--text-muted);">${(t.totalTripsAnalyzed || 0).toLocaleString()} expedicions analitzades</span>
+            <span style="font-size:0.72rem; color:var(--text-muted);">${(t.totalTripsAnalyzed || 0).toLocaleString()} mostres analitzades</span>
           </div>
         </div>
 
@@ -1484,13 +1516,13 @@ class ObservatoriApp {
     document.getElementById('btn-termometre-share')?.addEventListener('click', (e) => {
       e.preventDefault();
       const shareText = `🌡️ El Termòmetre del Bus a Mataró (${t.timeframeHours || 24}h)\n\n` +
-        `• Nota Global: ${t.grade} (${t.punctualityPct}% puntualitat)\n` +
-        `• 🏆 Línia més puntual: ${t.championLine?.code} (${t.championLine?.onTimePct}%)\n` +
-        `• ⚠️ Punt negre: ${t.worstBottleneck?.stopName} (+${t.worstBottleneck?.avgDelay} min)\n` +
-        `• ⏱️ Hora punta: ${t.peakHour}\n` +
-        `• Expedicions analitzades: ${(t.totalTripsAnalyzed || 0).toLocaleString()}\n\n` +
+        `• Nota Global: ${t.grade} (${pct(t.punctualityPct)} puntualitat)\n` +
+        `• 🏆 Línia més puntual: ${t.championLine ? t.championLine.code : '—'} (${championPct})\n` +
+        `• ⚠️ Punt negre: ${t.worstBottleneck ? t.worstBottleneck.stopName : '—'} (${t.worstBottleneck ? mins(t.worstBottleneck.avgDelay) : '—'})\n` +
+        `• ⏱️ Hora punta: ${t.peakHour || '—'}\n` +
+        `• Mostres analitzades: ${(t.totalTripsAnalyzed || 0).toLocaleString()}\n\n` +
         `Font: Arribo! Mataró — Dades obertes i telemetria ciutadana.`;
-      
+
       if (navigator.clipboard) {
         navigator.clipboard.writeText(shareText).then(() => {
           alert("Resum copiat al porta-retalls! Ja el pots enganxar a Twitter, Telegram o premsa.");
@@ -1508,31 +1540,31 @@ class ObservatoriApp {
   <text x="40" y="50" fill="#38bdf8" font-size="14" font-weight="bold" letter-spacing="1">OBSERVATORI CÍVIC DE MOBILITAT</text>
   <text x="40" y="85" fill="#ffffff" font-size="26" font-weight="bold">🌡️ El Termòmetre del Bus Mataró</text>
   <text x="40" y="110" fill="#94a3b8" font-size="13">Informe de puntualitat i retards (${t.timeframeHours || 24}h)</text>
-  
+
   <rect x="660" y="35" width="95" height="75" rx="10" fill="#1e293b" stroke="${gradeColor}" stroke-width="2"/>
   <text x="707" y="58" fill="#94a3b8" font-size="11" text-anchor="middle" font-weight="bold">NOTA</text>
-  <text x="707" y="96" fill="${gradeColor}" font-size="34" text-anchor="middle" font-weight="bold">${t.grade}</text>
-  
+  <text x="707" y="96" fill="${gradeColor}" font-size="34" text-anchor="middle" font-weight="bold">${this.esc(t.grade)}</text>
+
   <rect x="40" y="140" width="345" height="100" rx="10" fill="#1e293b" stroke="#10b981" stroke-width="1.5"/>
   <text x="60" y="170" fill="#10b981" font-size="13" font-weight="bold">🏆 LÍNIA MÉS PUNTUAL</text>
-  <text x="60" y="202" fill="#ffffff" font-size="20" font-weight="bold">${t.championLine?.code || 'L1'} (${t.championLine?.onTimePct || 95}% puntual)</text>
-  <text x="60" y="225" fill="#94a3b8" font-size="12">Retard mitjà: ${t.championLine?.avgDelay || 0.8} min</text>
-  
+  <text x="60" y="202" fill="#ffffff" font-size="20" font-weight="bold">${t.championLine ? this.esc(t.championLine.code) : '—'} (${championPct} puntual)</text>
+  <text x="60" y="225" fill="#94a3b8" font-size="12">Retard mitjà: ${t.championLine ? mins(t.championLine.avgDelay) : '—'}</text>
+
   <rect x="415" y="140" width="345" height="100" rx="10" fill="#1e293b" stroke="#ef4444" stroke-width="1.5"/>
   <text x="435" y="170" fill="#ef4444" font-size="13" font-weight="bold">⚠️ PUNT NEGRE / RETARDS</text>
-  <text x="435" y="202" fill="#ffffff" font-size="18" font-weight="bold">${t.worstBottleneck?.stopName || 'Pl. Tereses'}</text>
-  <text x="435" y="225" fill="#94a3b8" font-size="12">${t.worstBottleneck?.lineCode || ''} • +${t.worstBottleneck?.avgDelay || 3.2} min retard mitjà</text>
-  
+  <text x="435" y="202" fill="#ffffff" font-size="18" font-weight="bold">${t.worstBottleneck ? this.esc(t.worstBottleneck.stopName) : '—'}</text>
+  <text x="435" y="225" fill="#94a3b8" font-size="12">${t.worstBottleneck ? this.esc(t.worstBottleneck.lineCode || '') : ''} • ${t.worstBottleneck ? mins(t.worstBottleneck.avgDelay) : '—'} retard mitjà</text>
+
   <rect x="40" y="260" width="345" height="100" rx="10" fill="#f59e0b" stroke="#1.5"/>
   <text x="60" y="290" fill="#f59e0b" font-size="13" font-weight="bold">⏱️ HORA PUNTA CONGESTIÓ</text>
-  <text x="60" y="322" fill="#ffffff" font-size="20" font-weight="bold">${t.peakHour || '08:00 - 09:00'}</text>
-  <text x="60" y="345" fill="#94a3b8" font-size="12">Punt màxim de retards a la xarxa</text>
-  
+  <text x="60" y="322" fill="#ffffff" font-size="20" font-weight="bold">${t.peakHour ? this.esc(t.peakHour) : '—'}</text>
+  <text x="60" y="345" fill="#94a3b8" font-size="12">${t.peakHour ? mins(t.peakHourDelay) : '—'} de retard mitjà a la xarxa</text>
+
   <rect x="415" y="260" width="345" height="100" rx="10" fill="#1e293b" stroke="#38bdf8" stroke-width="1.5"/>
   <text x="435" y="290" fill="#38bdf8" font-size="13" font-weight="bold">🌐 PUNTUALITAT GLOBAL</text>
-  <text x="435" y="322" fill="#ffffff" font-size="20" font-weight="bold">${t.punctualityPct || 92}% (${(t.totalTripsAnalyzed || 0).toLocaleString()} viatges)</text>
-  <text x="435" y="345" fill="#94a3b8" font-size="12">Mitjana xarxa: ${t.networkAvgDelay || 1.1} min retard</text>
-  
+  <text x="435" y="322" fill="#ffffff" font-size="20" font-weight="bold">${pct(t.punctualityPct)} (${(t.totalTripsAnalyzed || 0).toLocaleString()} mostres)</text>
+  <text x="435" y="345" fill="#94a3b8" font-size="12">Mitjana xarxa: ${mins(t.networkAvgDelay)} retard</text>
+
   <text x="40" y="395" fill="#64748b" font-size="12">Arribo! Mataró • Dades oficials en temps real • Avanza / Ajuntament de Mataró</text>
 </svg>`;
       const blob = new Blob([svg], { type: 'image/svg+xml' });
@@ -1543,6 +1575,62 @@ class ObservatoriApp {
       a.click();
       URL.revokeObjectURL(url);
     });
+  }
+
+  /**
+   * Honest empty state: no grade, no invented champion line, no invented
+   * bottleneck, no invented peak hour, and the share/PNG buttons are withheld
+   * because there is nothing true to export.
+   */
+  _renderTermometreNoData(container, t) {
+    const hours = (t && t.timeframeHours) || 24;
+    container.innerHTML = `
+      <div class="termometre-scorecard" id="termometre-card-root">
+        <div class="termometre-header">
+          <div>
+            <span style="font-size:0.75rem; font-weight:800; color:#38bdf8; text-transform:uppercase; letter-spacing:0.5px;">Observatori Cívic de Mobilitat</span>
+            <h3 style="font-size:1.35rem; font-weight:800; color:#fff; margin:0.2rem 0;">El Termòmetre del Bus Mataró</h3>
+            <span style="font-size:0.78rem; color:var(--text-muted);">Dades de les darreres ${hours} hores</span>
+          </div>
+          <div class="termometre-grade-badge" style="border-color:var(--border-subtle); background:rgba(148,163,184,0.08);">
+            <div>
+              <div style="font-size:0.65rem; font-weight:800; color:var(--text-muted); text-transform:uppercase;">Nota Global</div>
+              <div class="termometre-grade-letter" style="color:var(--text-muted);">—</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin:1.25rem 0; padding:1rem 1.1rem; background:rgba(251,191,36,0.07); border:1px solid rgba(251,191,36,0.25); border-radius:10px; font-size:0.82rem; line-height:1.5; color:var(--text-secondary);">
+          <strong style="color:#f59e0b;">Sense dades per puntuar.</strong>
+          No hi ha cap mostra de retard registrada en aquesta finestra temporal, així que no hi ha nota global,
+          ni línia més puntual, ni punt negre, ni hora punta. Aquest Termòmetre no es publica ni s'exporta
+          fins que hi hagi mostres reals: sense mostres, la puntualitat no es mesura.
+        </div>
+
+        <div class="termometre-metrics-grid">
+          <div class="termometre-metric-tile" style="border-left:3px solid var(--border-subtle);">
+            <span class="termometre-metric-label">Línia Més Puntual</span>
+            <span class="termometre-metric-val" style="color:var(--text-muted);">—</span>
+            <span style="font-size:0.72rem; color:var(--text-muted);">Sense mostres</span>
+          </div>
+          <div class="termometre-metric-tile" style="border-left:3px solid var(--border-subtle);">
+            <span class="termometre-metric-label">Punt Negre / Retards</span>
+            <span class="termometre-metric-val" style="color:var(--text-muted); font-size:1rem;">—</span>
+            <span style="font-size:0.72rem; color:var(--text-muted);">Sense mostres</span>
+          </div>
+          <div class="termometre-metric-tile" style="border-left:3px solid var(--border-subtle);">
+            <span class="termometre-metric-label">Franja de Major Congestió</span>
+            <span class="termometre-metric-val" style="color:var(--text-muted);">—</span>
+            <span style="font-size:0.72rem; color:var(--text-muted);">Sense mostres</span>
+          </div>
+          <div class="termometre-metric-tile" style="border-left:3px solid var(--border-subtle);">
+            <span class="termometre-metric-label">Puntualitat Global</span>
+            <span class="termometre-metric-val" style="color:var(--text-muted);">—</span>
+            <span style="font-size:0.72rem; color:var(--text-muted);">0 mostres analitzades</span>
+          </div>
+        </div>
+      </div>
+    `;
   }
 
   // ==========================================
@@ -1645,11 +1733,19 @@ class ObservatoriApp {
         : ev.vehicleIdGapExplained
           ? '<span style="color:#fb7185;">cap vehicle_id — <span style="opacity:0.8;">aquestes files són anteriors a la columna</span></span>'
           : '<span style="color:#fb7185;">cap vehicle_id registrat</span>';
-      const timesBadge = ev.rowsWithProvenanceTimes > 0
-        ? `<span style="color:#34d399;">${ev.rowsWithProvenanceTimes} mostres amb horari observat</span>`
-        : ev.rowsWithDerivedTimes > 0
-          ? `<span style="color:#a78bfa;">${ev.rowsWithDerivedTimes} mostres amb horari <strong>derivat</strong> del horari teòric</span>`
-          : '<span style="color:#fb7185;">cap mostra amb horari teòric ni real</span>';
+      // Three distinct time provenances, never two: a real upstream observation,
+      // a live derivation from the static timetable, and an offline backfilled
+      // approximation. The server classifies every row (timesProvenance) so the
+      // UI never re-derives the rule with a string comparison.
+      const timesBadge = ev.rowsWithObservedTimes > 0
+        ? `<span style="color:#34d399;">${ev.rowsWithObservedTimes} mostres amb horari observat pel feed</span>`
+          + (ev.rowsWithDerivedTimes > 0 ? ` <span style="color:var(--text-muted);">+ ${ev.rowsWithDerivedTimes} derivades</span>` : '')
+          + (ev.rowsWithBackfilledTimes > 0 ? ` <span style="color:var(--text-muted);">+ ${ev.rowsWithBackfilledTimes} reomplenes</span>` : '')
+        : ev.rowsWithBackfilledTimes > 0
+          ? `<span style="color:#fbbf24;">${ev.rowsWithBackfilledTimes} mostres amb horari <strong>aproximat offline</strong> (no observat)</span>`
+          : ev.rowsWithDerivedTimes > 0
+            ? `<span style="color:#a78bfa;">${ev.rowsWithDerivedTimes} mostres amb horari <strong>derivat</strong> del horari teòric</span>`
+            : '<span style="color:#fb7185;">cap mostra amb horari teòric ni real</span>';
       const snapshotBadge = ev.snapshotTrailPoints >= 2 ? `<span style="color:#34d399;">${ev.snapshotTrailPoints} punts GPS</span>` : '<span style="color:#fb7185;">cap traçal GPS proper</span>';
       summary.innerHTML = `
         <table style="width:100%; border-collapse:collapse; font-size:0.82rem;">
@@ -1658,18 +1754,24 @@ class ObservatoriApp {
           <tr><td style="color:var(--text-muted); padding:3px 0;">Horaris</td><td style="color:var(--text-secondary);">${timesBadge}</td></tr>
           <tr><td style="color:var(--text-muted); padding:3px 0;">Traçal</td><td style="color:var(--text-secondary);">${snapshotBadge}</td></tr>
           <tr><td style="color:var(--text-muted); padding:3px 0;">Linies retirades</td><td style="color:${data.dataQuality?.retiredScopeLinesPresent ? '#fb7185' : '#34d399'};">${data.dataQuality?.retiredScopeLinesPresent ? 'Sí — hi ha dades de línies extintes' : 'No'}</td></tr>
+          <tr><td style="color:var(--text-muted); padding:3px 0;">Proveniència horària</td><td style="color:var(--text-secondary);">${this._timesProvenanceLabel(ep.timesProvenance || ev.timesProvenance)}</td></tr>
           <tr><td style="color:var(--text-muted); padding:3px 0;">Total mostres raw</td><td style="color:var(--text-secondary);">${data.dataQuality?.totalRawRows || 0} → ${data.dataQuality?.episodesInWindow || 0} episodis</td></tr>
         </table>
-        ${ep.timetableCheck?.derivedFromTimetable ? '<p style="color:#a78bfa; font-size:0.78rem; margin:8px 0 0;">L\'horari teòric i real d\'aquestes mostres s\'ha <strong>derivat</strong> del quadre horari estàtic: el feed upstream només dona el retard, mai l\'hora amb què es compara. Serveix per contextualitzar, però no és una observació independent.</p>' : ''}
+        ${ep.timetableCheck?.backfilledFromTimetable ? '<p style="color:#fbbf24; font-size:0.78rem; margin:8px 0 0;">L\'horari teòric i real d\'aquestes mostres s\'ha <strong>aproximat offline</strong> (scripts/backfill_delay_times.js) a partir del quadre horari estàtic, endevinant el sentit de circulació. No és una observació del feed ni una derivació en viu, i per tant <strong>no corrobora</strong> el retard: només hi serveix de contextualització.</p>' : ''}
+        ${ep.timetableCheck?.derivedFromTimetable && !ep.timetableCheck?.backfilledFromTimetable ? '<p style="color:#a78bfa; font-size:0.78rem; margin:8px 0 0;">L\'horari teòric i real d\'aquestes mostres s\'ha <strong>derivat</strong> del quadre horari estàtic: el feed upstream només dona el retard, mai l\'hora amb què es compara. Serveix per contextualitzar, però no és una observació independent.</p>' : ''}
         ${ev.vehicleIdNote ? `<p style="color:var(--text-muted); font-size:0.78rem; margin:6px 0 0;">${this.esc(ev.vehicleIdNote)}</p>` : ''}
       `;
       const rawHtml = (ep.rawRows || []).map(r => {
         const vB = r.vehicleId ? this.esc(r.vehicleId) : '<span style="color:#fb7185;">—</span>';
+        // Colour comes from the server-side classification (timesProvenance),
+        // never from a local string comparison on times_source.
         const tB = !r.hasTimes
           ? '<span style="color:#fb7185;">no</span>'
-          : r.timesSource === 'derived_timetable'
-            ? `<span style="color:#a78bfa;">${this.esc((r.scheduledTime || '').slice(0, 5))}→${this.esc((r.actualTime || '').slice(0, 5))} derivat</span>`
-            : `<span style="color:#34d399;">${this.esc((r.scheduledTime || '').slice(0, 5))}→${this.esc((r.actualTime || '').slice(0, 5))}</span>`;
+          : r.timesProvenance === 'derived_timetable_backfill'
+            ? `<span style="color:#fbbf24;" title="Aproximació offline del quadre horari (sentit endevinat)">${this.esc((r.scheduledTime || '').slice(0, 5))}→${this.esc((r.actualTime || '').slice(0, 5))} reomplert</span>`
+            : r.timesProvenance === 'derived_timetable'
+              ? `<span style="color:#a78bfa;" title="Derivat en viu del quadre horari estàtic">${this.esc((r.scheduledTime || '').slice(0, 5))}→${this.esc((r.actualTime || '').slice(0, 5))} derivat</span>`
+              : `<span style="color:#34d399;" title="Hora reportada pel feed upstream">${this.esc((r.scheduledTime || '').slice(0, 5))}→${this.esc((r.actualTime || '').slice(0, 5))}</span>`;
         return `<div style="padding:4px 0; border-bottom:1px solid var(--border-subtle); font-size:0.78rem; display:flex; justify-content:space-between; gap:0.5rem; flex-wrap:wrap;">
           <span style="color:var(--text-secondary);">${this.esc(r.formattedDate)}</span>
           <span style="color:${r.delayMins >= 20 ? '#ef4444' : '#f59e0b'}; font-weight:700;">+${r.delayMins} min</span>
@@ -1693,6 +1795,17 @@ class ObservatoriApp {
     }
   }
 
+  /** Human label for the server-side times_provenance classification. */
+  _timesProvenanceLabel(provenance) {
+    switch (provenance) {
+      case 'observed': return '<span style="color:#34d399;">Horari observat pel feed upstream</span>';
+      case 'derived_timetable': return '<span style="color:#a78bfa;">Derivat del quadre horari (en viu)</span>';
+      case 'derived_timetable_backfill': return '<span style="color:#fbbf24;">Aproximació offline del quadre horari</span>';
+      case 'mixed': return '<span style="color:var(--text-secondary);">Mixta (consulta les mostres individuals)</span>';
+      default: return '<span style="color:var(--text-muted);">Cap horari disponible</span>';
+    }
+  }
+
   _renderIncidentDataQualityBanner(s) {
     const q = s.dataQuality || {};
     if (!q.totalRawRows && !q.rowsWithoutVehicleId) return '';
@@ -1700,20 +1813,36 @@ class ObservatoriApp {
       <div style="background:rgba(251,191,36,0.07); border:1px solid rgba(251,191,36,0.25); border-radius:12px; padding:0.85rem 1rem; margin-bottom:1.25rem;">
         <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.75rem; flex-wrap:wrap;">
           <div>
-            <div style="font-size:0.78rem; font-weight:800; color:#f59e0b;">Qualitat de les dades del "Top incidents"</div>
+            <div style="font-size:0.78rem; font-weight:800; color:#f59e0b;">Què compten exactament aquestes xifres</div>
             <div style="font-size:0.76rem; color:var(--text-secondary); margin-top:0.2rem; line-height:1.5;">
-              Aquestes xifres es calculen sobre les mostres raw de la base de dades. El rànquing ja deduplica els pings cada 20 s, però els KPIs continuen sent mostres, no viatges.
+              Els KPIs (${this._fmtCount(s.rawSamplesOverThreshold ?? s.totalRecordedIncidents)} mostres, ${this._fmtCount(s.worstStopCount)} a ${this.esc(s.worstStop || 'cap parada')}) són
+              <strong>mostres raw</strong>: un mateix autobús hi apareix cada 20 s. Les taules de dalt, en canvi, mostren
+              <strong>epodis deduplicats</strong>${s.listedCommercialEpisodes !== undefined ? ` (${this._fmtCount(s.listedCommercialEpisodes)} de servei, arrodonits al límit de ${s.commercialEpisodeLimit})` : ''}:
+              no són xifres comparables entre elles.
             </div>
+            <div style="font-size:0.76rem; color:var(--text-secondary); margin-top:0.35rem; line-height:1.5;">
+              ${q.episodesNote ? this.esc(q.episodesNote) : ''}
+            </div>
+            ${(s.nonRealtimeSampleCount || 0) > 0 ? `
+              <div style="font-size:0.76rem; color:var(--text-secondary); margin-top:0.35rem; line-height:1.5;">
+                D'aquestes mostres, <strong>${this._fmtCount(s.nonRealtimeSampleCount)} (${s.nonRealtimeSamplePct}%)</strong> són
+                posicions extrapolades (dead-reckoning) i no GPS fresc. S'inclouen perquè el retard registrat és real, però no són una observació directa de la posició.
+              </div>
+            ` : ''}
           </div>
           <div style="font-size:0.74rem; color:var(--text-muted); text-align:right;">
-            ${q.totalRawRows || 0} mostres raw<br>
-            ${q.rowsWithoutVehicleId || 0} sense vehicle<br>
-            ${q.rowsWithoutProvenance || 0} sense horari<br>
-            ${q.distinctEpisodes || 0} episodis reals
+            ${this._fmtCount(q.totalRawRows)} mostres raw<br>
+            ${this._fmtCount(q.rowsWithoutVehicleId)} sense vehicle<br>
+            ${this._fmtCount(q.rowsWithoutProvenance)} sense horari<br>
+            ${this._fmtCount(q.distinctEpisodes)} episodis de retard${q.episodeGapMinutes ? ` (≤${q.episodeGapMinutes} min)` : ''}
           </div>
         </div>
       </div>
     `;
+  }
+
+  _fmtCount(n) {
+    return (Number(n) || 0).toLocaleString('ca-ES');
   }
 
   renderIncidentErrorState(container, lineCode, hours, viewMode) {
@@ -1767,7 +1896,32 @@ class ObservatoriApp {
       return `<span class="bus-id-badge" title="Identificador de vehicle oficial: ${this.esc(vehicleId)}">[ #${this.esc(clean)} ]</span>`;
     };
 
-    const maxCommercialDelay = s.maxCommercialDelayMins || (topList.length > 0 ? topList[0].delayMins : (s.maxDelayMins <= 24 ? s.maxDelayMins : 0));
+    // The headline maximum is the true maximum over the whole window. The
+    // commercial tier is only delays < 25 min, so when every recorded delay sits
+    // in the investigation tier the commercial figure is UNKNOWN (null) — it must
+    // not be coerced to 0, which used to render "+0 min" as the maximum service
+    // delay while real 30-minute delays were on screen.
+    // An empty window reports null, and null is not zero. `Number(null) || 0`
+    // turned "no delays recorded" into a headline of "0 min" - a claim that the
+    // worst service delay in the window was zero minutes, which is exactly the
+    // fabricated-confidence reading this panel exists to eliminate.
+    const trueMaxDelay = (s.maxDelayMins === null || s.maxDelayMins === undefined
+      || !Number.isFinite(Number(s.maxDelayMins))) ? null : Number(s.maxDelayMins);
+    const commercialMax = (s.maxCommercialDelayMins === null || s.maxCommercialDelayMins === undefined
+      || !Number.isFinite(Number(s.maxCommercialDelayMins)))
+      ? null : Number(s.maxCommercialDelayMins);
+    const maxFromInvestigation = s.maxDelayIsFromInvestigationTier === true
+      || (commercialMax === null && trueMaxDelay !== null && trueMaxDelay >= 25);
+    // A window can hold only mid-range delays: then the commercial max is
+    // measured, the investigation tier is empty, and maxFromInvestigation is
+    // false. It can also hold no delays at all. Either way the "else" caption
+    // must not interpolate a null into "+null min".
+    const commercialMaxCaption = commercialMax === null
+      ? (trueMaxDelay === null ? 'sense mostres registrades' : 'no mesurat en aquesta finestra')
+      : `+${commercialMax} min`;
+    const maxDelayValue = trueMaxDelay === null
+      ? '—'
+      : `${trueMaxDelay > 0 ? '+' : ''}${trueMaxDelay} min`;
 
     container.innerHTML = `
       <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:1.1rem; margin-bottom:1.25rem;">
@@ -1776,7 +1930,7 @@ class ObservatoriApp {
             <span style="font-size:0.75rem; font-weight:800; color:#38bdf8; text-transform:uppercase; letter-spacing:0.5px;">Observatori de Mobilitat • Anàlisi de Causes</span>
             <h3 style="font-size:1.35rem; font-weight:800; color:#fff; margin:0.2rem 0;">Investigador d'Incidents de Trànsit &amp; Auditoria de Telemetria</h3>
             <p style="font-size:0.78rem; color:var(--text-muted); margin:0; max-width:740px; line-height:1.45;">
-              Auditoria de retards per telemetria GPS. Els retards de servei comercial es presenten al rànquing de trànsit regular (0–24 min). Els desfasaments extrems (+24 min) es classifiquen en una taula separada com a horaris no normals pendents d'investigació per resoldre la seva causa real.
+              Auditoria de retards per telemetria GPS. Els retards de servei comercial (${s.minDelayThreshold || 5}–24 min) es presenten al rànquing de trànsit regular. Els desfasaments extrems (&ge; 25 min) es classifiquen en una taula separada com a horaris no normals pendents d'investigació per resoldre la seva causa real.
             </p>
           </div>
         </div>
@@ -1813,8 +1967,15 @@ class ObservatoriApp {
       <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.75rem; margin-bottom:1.25rem;">
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
           <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">Retard Màxim de Servei</div>
-          <div style="font-size:1.6rem; font-weight:800; color:#ef4444; margin-top:0.2rem;">+${maxCommercialDelay} min</div>
-          <div style="font-size:0.72rem; color:var(--text-muted);">${(s.totalRecordedIncidents || 0).toLocaleString()} mostres &ge; 5m • ${investigationList.length} en investigació</div>
+          <div style="font-size:1.6rem; font-weight:800; color:${trueMaxDelay === null ? 'var(--text-muted)' : '#ef4444'}; margin-top:0.2rem;">${maxDelayValue}</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">${this._fmtCount(s.rawSamplesOverThreshold ?? s.totalRecordedIncidents)} mostres raw &ge; ${s.minDelayThreshold || 5}m • ${topList.length} episodis al rànquing</div>
+          ${maxFromInvestigation ? `
+            <div style="font-size:0.72rem; color:#fb7185; margin-top:0.2rem; line-height:1.4;">
+              Aquest màxim prové de la taula «Horaris No Habituals» (&ge; 25 min). En aquesta finestra no hi ha cap retard de servei comercial (${s.minDelayThreshold || 5}–24 min), de manera que el màxim comercial no està mesurat.
+            </div>
+          ` : `
+            <div style="font-size:0.72rem; color:var(--text-muted); margin-top:0.2rem;">Màxim del servei comercial (${s.minDelayThreshold || 5}–24 min): ${commercialMaxCaption} • ${investigationList.length} en investigació</div>
+          `}
         </div>
 
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
@@ -1839,10 +2000,10 @@ class ObservatoriApp {
       <!-- Sub-Tab Mode Switcher -->
       <div class="incident-view-mode-tabs-container" role="tablist" aria-label="Mode d'anàlisi d'incidents">
         <button type="button" class="incident-view-mode-tab ${activeTab === 'top' ? 'active' : ''}" data-incident-tab="top" role="tab" aria-selected="${activeTab === 'top'}">
-          <span><span class="incident-tab-title">Rànquing d'Incidents de Servei</span> <span class="incident-tab-meta">(0–24 min) (${topList.length})</span></span>
+          <span><span class="incident-tab-title">Rànquing d'Incidents de Servei</span> <span class="incident-tab-meta">(${s.minDelayThreshold || 5}–24 min) (${topList.length})</span></span>
         </button>
         <button type="button" class="incident-view-mode-tab ${activeTab === 'investigation' ? 'active' : ''}" data-incident-tab="investigation" role="tab" aria-selected="${activeTab === 'investigation'}">
-          <span><span class="incident-tab-title">Horaris No Habituals</span> <span class="incident-tab-meta">(+24 min) (${investigationList.length})</span></span>
+          <span><span class="incident-tab-title">Horaris No Habituals</span> <span class="incident-tab-meta">(&ge; 25 min) (${investigationList.length})</span></span>
         </button>
         <button type="button" class="incident-view-mode-tab ${activeTab === 'trips' ? 'active' : ''}" data-incident-tab="trips" role="tab" aria-selected="${activeTab === 'trips'}">
           <span><span class="incident-tab-title">Expedicions &amp; Trajectòries</span> <span class="incident-tab-meta">(${tripsList.length})</span></span>
@@ -1854,18 +2015,18 @@ class ObservatoriApp {
         <!-- Table 1: Top Delays Table (Peak per Trip 0-24m) -->
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px; margin-bottom:0.6rem;">
           <div style="font-size:0.78rem; color:var(--text-muted); display:flex; align-items:center; gap:6px;">
-            <span>Mostrant incidents de servei comercial (0–24 min). S'agrupen els senyals cada 20s d'un mateix viatge per evitar duplicats.</span>
+            <span>Mostrant incidents de servei comercial (${s.minDelayThreshold || 5}–24 min). S'agrupen els senyals cada 20 s del mateix viatge i parada per evitar duplicats.</span>
           </div>
           ${investigationList.length > 0 ? `
             <div style="font-size:0.75rem; color:#fb7185; font-weight:700;">
-              ${investigationList.length} expedicions amb retard extrem (+24m) mogudes a la taula inferior d'investigació.
+              ${investigationList.length} expedicions amb retard extrem (&ge; 25 m) mogudes a la taula inferior d'investigació.
             </div>
           ` : ''}
         </div>
 
         ${topList.length === 0 ? `
           <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:10px; padding:2rem; text-align:center; color:var(--text-muted);">
-            No s'han registrat retards comercials (5–24 min) per a la selecció actual (${selectedHours}h).
+            No s'han registrat retards comercials (${s.minDelayThreshold || 5}–24 min) per a la selecció actual (${selectedHours}h).
           </div>
         ` : `
           <div class="observatori-table-wrapper">
@@ -1949,18 +2110,18 @@ class ObservatoriApp {
           </div>
         </div>
 
-        <!-- Table 2: Dedicated Table for Non-Normal Schedules Under Investigation (+24 min - infinite) -->
+        <!-- Table 2: Dedicated Table for Non-Normal Schedules Under Investigation (>= 25 min) -->
         <div style="margin-top:2.5rem; border-top:2px solid rgba(244, 63, 94, 0.35); padding-top:1.5rem;" id="section-investigation-incidents">
           <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.75rem; margin-bottom:0.85rem;">
             <div>
               <div style="display:inline-flex; align-items:center; gap:6px; background:rgba(244, 63, 94, 0.15); color:#fb7185; padding:3px 8px; border-radius:6px; font-size:0.72rem; font-weight:800; text-transform:uppercase; letter-spacing:0.4px;">
-                <span>Pendent d'Investigació • Horaris No Habituals (+24 min)</span>
+                <span>Pendent d'Investigació • Horaris No Habituals (&ge; 25 min)</span>
               </div>
               <h4 style="font-size:1.15rem; font-weight:800; color:#fff; margin:0.35rem 0 0.2rem 0;">
-                Horaris No Habituals &amp; Desfasaments Extrems (+24 min – infinit) (${investigationList.length})
+                Horaris No Habituals &amp; Desfasaments Extrems (&ge; 25 min) (${investigationList.length})
               </h4>
               <p style="font-size:0.78rem; color:var(--text-muted); margin:0; max-width:760px; line-height:1.45;">
-                Aquests registres presenten un retard superior als 24 minuts. No es consideren retencions habituals de trànsit de la ciutat, sinó <strong>horaris no normals o possibles incidències de seguiment/telemetria</strong> (com ara autobusos aturats fora de servei en capçalera amb el SAE encès, talls excepcionals de carrer o desfasaments de torn). Estan pendents d'investigació per resoldre la seva causa real.
+                Aquests registres presenten un retard de 25 minuts o més. No es consideren retencions habituals de trànsit de la ciutat, sinó <strong>horaris no normals o possibles incidències de seguiment/telemetria</strong> (com ara autobusos aturats fora de servei en capçalera amb el SAE encès, talls excepcionals de carrer o desfasaments de torn). Estan pendents d'investigació per resoldre la seva causa real.
               </p>
             </div>
             ${investigationList.length > 0 ? `
@@ -1973,7 +2134,7 @@ class ObservatoriApp {
 
           ${investigationList.length === 0 ? `
             <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:10px; padding:1.5rem; text-align:center; color:var(--text-muted); font-size:0.85rem;">
-              Cap horari no habitual ni desfasament extrem (+24 min) detectat en aquest període (${selectedHours}h).
+              Cap horari no habitual ni desfasament extrem (&ge; 25 min) detectat en aquest període (${selectedHours}h).
             </div>
           ` : `
             <div class="observatori-table-wrapper">
@@ -2144,13 +2305,13 @@ class ObservatoriApp {
           <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.75rem; margin-bottom:0.85rem;">
             <div>
               <div style="display:inline-flex; align-items:center; gap:6px; background:rgba(244, 63, 94, 0.15); color:#fb7185; padding:3px 8px; border-radius:6px; font-size:0.72rem; font-weight:800; text-transform:uppercase; letter-spacing:0.4px;">
-                <span>Pendent d'Investigació • Horaris No Habituals (+24 min)</span>
+                <span>Pendent d'Investigació • Horaris No Habituals (&ge; 25 min)</span>
               </div>
               <h4 style="font-size:1.25rem; font-weight:800; color:#fff; margin:0.35rem 0 0.2rem 0;">
-                Horaris No Habituals &amp; Desfasaments Extrems (+24 min – infinit) (${investigationList.length})
+                Horaris No Habituals &amp; Desfasaments Extrems (&ge; 25 min) (${investigationList.length})
               </h4>
               <p style="font-size:0.8rem; color:var(--text-muted); margin:0; max-width:760px; line-height:1.45;">
-                Aquests registres presenten un retard superior als 24 minuts. No es consideren retencions habituals de trànsit de la ciutat, sinó <strong>horaris no normals o possibles incidències de seguiment/telemetria</strong> (com ara autobusos aturats fora de servei en capçalera amb el SAE encès, talls excepcionals de carrer o desfasaments de torn). Estan pendents d'investigació per resoldre la seva causa real.
+                Aquests registres presenten un retard de 25 minuts o més. No es consideren retencions habituals de trànsit de la ciutat, sinó <strong>horaris no normals o possibles incidències de seguiment/telemetria</strong> (com ara autobusos aturats fora de servei en capçalera amb el SAE encès, talls excepcionals de carrer o desfasaments de torn). Estan pendents d'investigació per resoldre la seva causa real.
               </p>
             </div>
             ${investigationList.length > 0 ? `
@@ -2163,7 +2324,7 @@ class ObservatoriApp {
 
           ${investigationList.length === 0 ? `
             <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:10px; padding:2rem; text-align:center; color:var(--text-muted); font-size:0.85rem;">
-              Cap horari no habitual ni desfasament extrem (+24 min) detectat en aquest període (${selectedHours}h).
+              Cap horari no habitual ni desfasament extrem (&ge; 25 min) detectat en aquest període (${selectedHours}h).
             </div>
           ` : `
             <div class="observatori-table-wrapper">
@@ -2381,11 +2542,11 @@ class ObservatoriApp {
     const list = this.lastIncidentData.investigationIncidents;
     if (list.length === 0) return;
 
-    let text = `INFORME D'HORARIS NO HABITUALS & DESFASAMENTS EXTREMS (+24 MIN) — ARRIBO! MATARÓ\n`;
+    let text = `INFORME D'HORARIS NO HABITUALS & DESFASAMENTS EXTREMS (≥25 MIN) — ARRIBO! MATARÓ\n`;
     text += `Període: Darreres ${this._currentIncidentHours || 168}h | Línia: ${this._currentIncidentLine || 'Totes'}\n`;
     text += `Data d'extracció: ${new Date().toLocaleString('ca-ES')}\n`;
     text += `Total expedicions en investigació: ${list.length}\n\n`;
-    text += `Descripció: Aquests registres corresponen a horaris no normals o desfasaments extrems de telemetria (+24 minuts fins a infinit) pendents d'investigació per resoldre la causa real (busos aturats fora de servei, anomalies de servidor o desfasaments de torn).\n\n`;
+    text += `Descripció: Aquests registres corresponen a horaris no normals o desfasaments extrems de telemetria (de 25 minuts o més) pendents d'investigació per resoldre la causa real (busos aturats fora de servei, anomalies de servidor o desfasaments de torn).\n\n`;
     text += `Llistat d'expedicions en investigació:\n`;
 
     list.forEach((item, idx) => {

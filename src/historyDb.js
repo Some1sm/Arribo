@@ -11,6 +11,101 @@ try {
   console.error('[HistoryDB] ⚠️ All delay analytics, trails, and journalism reports will return empty data until upgraded.');
 }
 
+// ── times_source provenance vocabulary ───────────────────────────────
+// delay_logs.times_source records WHERE scheduled_time/actual_time came
+// from. There are three distinct states and they must never be collapsed
+// into two, because the weakest one is an approximation:
+//   '' / anything else  → reported by the upstream feed (OBSERVED evidence)
+//   'derived_timetable' → derived live from the static timetable at ingest
+//   'derived_timetable_backfill' → approximated OFFLINE by
+//                         scripts/backfill_delay_times.js, which matches on
+//                         line + stop name + time + delay and guesses the
+//                         direction; explicitly weaker than a live derivation
+// Every consumer classifies through the helpers below. Exact-equality
+// string checks are exactly what let a backfilled approximation count as an
+// observed time and produce a "corroborated" verdict on no real evidence.
+const TIMES_SOURCE_DERIVED_LIVE = 'derived_timetable';
+const TIMES_SOURCE_DERIVED_BACKFILL = 'derived_timetable_backfill';
+const DERIVED_TIMES_SOURCES = new Set([TIMES_SOURCE_DERIVED_LIVE, TIMES_SOURCE_DERIVED_BACKFILL]);
+const TIMES_PROVENANCE = {
+  OBSERVED: 'observed',
+  DERIVED: TIMES_SOURCE_DERIVED_LIVE,
+  BACKFILL: TIMES_SOURCE_DERIVED_BACKFILL,
+  MIXED: 'mixed',
+  NONE: 'none'
+};
+
+/** A row carries a usable time pair only when BOTH halves are populated. */
+function hasStoredTimes(row) {
+  return !!(row && row.scheduledTime && row.scheduledTime !== '' && row.actualTime && row.actualTime !== '');
+}
+
+/** Per-row provenance: observed / derived_timetable / derived_timetable_backfill / none. */
+function classifyTimes(row) {
+  if (!hasStoredTimes(row)) return TIMES_PROVENANCE.NONE;
+  if (row.timesSource === TIMES_SOURCE_DERIVED_BACKFILL) return TIMES_PROVENANCE.BACKFILL;
+  if (DERIVED_TIMES_SOURCES.has(row.timesSource)) return TIMES_PROVENANCE.DERIVED;
+  return TIMES_PROVENANCE.OBSERVED;
+}
+
+/** Per-row provenance counts, used for the episode-level roll-up. */
+function countTimesProvenance(rows) {
+  const counts = { observed: 0, derived: 0, backfill: 0, none: 0 };
+  for (const r of rows) {
+    switch (classifyTimes(r)) {
+      case TIMES_PROVENANCE.OBSERVED: counts.observed++; break;
+      case TIMES_PROVENANCE.DERIVED: counts.derived++; break;
+      case TIMES_PROVENANCE.BACKFILL: counts.backfill++; break;
+      default: counts.none++;
+    }
+  }
+  return counts;
+}
+
+/**
+ * Episode-level summary of the row-level counts. A single kind means every
+ * timed row agreed; MIXED means the episode mixes kinds, and the per-row
+ * timesProvenance on rawRows is then the authoritative signal.
+ */
+function summariseTimesProvenance(counts) {
+  const present = [];
+  if (counts.observed > 0) present.push(TIMES_PROVENANCE.OBSERVED);
+  if (counts.derived > 0) present.push(TIMES_PROVENANCE.DERIVED);
+  if (counts.backfill > 0) present.push(TIMES_PROVENANCE.BACKFILL);
+  if (present.length === 0) return TIMES_PROVENANCE.NONE;
+  return present.length === 1 ? present[0] : TIMES_PROVENANCE.MIXED;
+}
+
+// ── Mataró scope guard ────────────────────────────────────────────────
+// Mataró Bus Urbà is L1–L8 and nothing else. delay_logs predates that scope
+// and still holds retired Catalonia-wide rows (C-10, AMB, DIREXIS, Monbus,
+// Baix Llobregat), so any "all lines" aggregate that does not filter leaks
+// retired lines into Mataró KPIs and the incident ranking. Mataró rows are
+// written with a bare-digit line_id and an 'L<n>' line_code
+// (src/ingestionDaemon.js); retired rows that happen to reuse an L-code carry
+// a provider-prefixed line_id such as 'amb_l1' or 'cat_fgc_l6_l6', so BOTH
+// halves of the predicate are load-bearing. The id is accepted with or without
+// its L prefix so a row that identifies itself as 'L1' is not dropped on a
+// formatting technicality. Constants only — no user input.
+const MATARO_LINE_IDS = ['1', '2', '3', '4', '5', '6', '7', '8'];
+const MATARO_LINE_CODES = MATARO_LINE_IDS.map(id => `L${id}`);
+const MATARO_SCOPE_SQL = ' AND (UPPER(line_code) IN ('
+  + MATARO_LINE_CODES.map(code => `'${code}'`).join(', ')
+  + ') AND line_id IN ('
+  + MATARO_LINE_IDS.concat(MATARO_LINE_CODES).map(id => `'${id}'`).join(', ')
+  + '))';
+const MATARO_RETIRED_SCOPE_CHECK = MATARO_LINE_CODES;
+
+/** Restrict an already-built WHERE clause to Mataró L1–L8 when no line is selected. */
+function appendMataroScope(sqlWhere, isAll) {
+  return isAll ? sqlWhere + MATARO_SCOPE_SQL : sqlWhere;
+}
+
+// Delay episode boundary: two consecutive samples on the same line+stop that
+// are further apart than this start a new episode. Matches the GAP_MS that
+// inspectDelayIncident groups on, so both report the same thing.
+const EPISODE_GAP_MS = 5 * 60 * 1000;
+
 class HistoryDatabase {
   constructor() {
     const customDataDir = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
@@ -382,8 +477,10 @@ class HistoryDatabase {
           avgDelayMins: Math.round((row.avgDelayMins || 0) * 10) / 10,
           maxDelayMins: row.maxDelayMins || 0,
           onTimePct: Math.round((row.onTimeCount / total) * 100),
+          // Measured straight from the raw rows, so the split is real.
           moderateLatePct: Math.round((row.moderateLateCount / total) * 100),
           severeLatePct: Math.round((row.severeLateCount / total) * 100),
+          severitySplitMeasured: true,
           latePct: Math.round(((row.moderateLateCount + row.severeLateCount) / total) * 100)
         };
       }
@@ -409,8 +506,13 @@ class HistoryDatabase {
           avgDelayMins: Math.round((hRow.avgDelayMins || 0) * 10) / 10,
           maxDelayMins: hRow.maxDelayMins || 0,
           onTimePct: Math.max(0, Math.min(100, onTimePct)),
-          moderateLatePct: Math.round(latePct * 0.7),
-          severeLatePct: Math.round(latePct * 0.3),
+          // hourly_line_stats stores only a single "late" bucket (> 3 min), so
+          // the moderate/severe split is NOT recoverable here. Report it as
+          // not-measured instead of inventing a fixed ratio from latePct.
+          moderateLatePct: null,
+          severeLatePct: null,
+          severitySplitMeasured: false,
+          severitySplitNote: 'hourly_line_stats keeps a single "late > 3 min" bucket, so the moderate/severe split cannot be measured for rolled-up hours',
           latePct: Math.max(0, Math.min(100, latePct))
         };
       }
@@ -437,23 +539,31 @@ class HistoryDatabase {
       const cutoff = Date.now() - hoursBack * 3600 * 1000;
 
       // 1. Overall Summary (excluding phantom ghost delays from parked/unclosed sessions)
+      // Every builder below is scoped to Mataró L1–L8: the table still holds
+      // retired Catalonia-wide rows, and an unscoped "network" average would
+      // fold them into the headline punctuality number.
       const summaryStmt = this.db.prepare(`
-        SELECT 
+        SELECT
           COUNT(*) as totalRecordedArrivals,
           COUNT(DISTINCT line_code) as monitoredLinesCount,
           AVG(delay_mins) as networkAvgDelay,
           MAX(delay_mins) as networkMaxDelay,
           SUM(CASE WHEN delay_mins <= 3 THEN 1 ELSE 0 END) as totalOnTime,
-          SUM(CASE WHEN delay_mins > 5 THEN 1 ELSE 0 END) as totalSignificantDelay
+          SUM(CASE WHEN delay_mins > 5 THEN 1 ELSE 0 END) as totalSignificantDelay,
+          SUM(CASE WHEN is_realtime = 0 THEN 1 ELSE 0 END) as nonRealtimeSamples
         FROM delay_logs
-        WHERE timestamp >= ? AND delay_mins >= -15
+        WHERE timestamp >= ? AND delay_mins >= -15${MATARO_SCOPE_SQL}
       `);
       const sum = summaryStmt.get(cutoff) || {};
       const totalArrivals = sum.totalRecordedArrivals || 0;
+      // Dead-reckoned vehicles are stored with is_realtime = 0. They are a real
+      // part of the sample and are NOT excluded, but the split is disclosed so
+      // nobody reads "Puntualitat Global" as 100% fresh GPS.
+      const nonRealtimeSamples = sum.nonRealtimeSamples || 0;
 
       // 2. Ranking of Most Delayed Lines from DB
       const delayedStmt = this.db.prepare(`
-        SELECT 
+        SELECT
           line_code as lineCode,
           agency,
           COUNT(*) as sampleCount,
@@ -461,7 +571,7 @@ class HistoryDatabase {
           MAX(delay_mins) as maxDelay,
           ROUND((SUM(CASE WHEN delay_mins > 3 THEN 1.0 ELSE 0.0 END) / COUNT(*)) * 100, 1) as latePercentage
         FROM delay_logs
-        WHERE timestamp >= ? AND delay_mins >= -15
+        WHERE timestamp >= ? AND delay_mins >= -15${MATARO_SCOPE_SQL}
         GROUP BY line_code
         HAVING sampleCount >= 1
         ORDER BY avgDelay DESC
@@ -530,14 +640,14 @@ class HistoryDatabase {
 
       // 4. Operator / Agency Breakdown (only with active samples)
       const agencyStmt = this.db.prepare(`
-        SELECT 
+        SELECT
           agency,
           COUNT(*) as totalSamples,
           COUNT(DISTINCT line_code) as linesCount,
           AVG(delay_mins) as avgDelay,
           ROUND((SUM(CASE WHEN delay_mins <= 3 THEN 1.0 ELSE 0.0 END) / COUNT(*)) * 100, 1) as onTimePct
         FROM delay_logs
-        WHERE timestamp >= ? AND delay_mins >= -15
+        WHERE timestamp >= ? AND delay_mins >= -15${MATARO_SCOPE_SQL}
         GROUP BY agency
         HAVING totalSamples >= 1
         ORDER BY avgDelay DESC
@@ -564,7 +674,7 @@ class HistoryDatabase {
           MAX(delay_mins) as maxDelay,
           ROUND((SUM(CASE WHEN delay_mins >= 5 THEN 1.0 ELSE 0.0 END) / COUNT(*)) * 100, 1) as severeLatePct
         FROM delay_logs
-        WHERE timestamp >= ? AND delay_mins >= -15
+        WHERE timestamp >= ? AND delay_mins >= -15${MATARO_SCOPE_SQL}
           AND madrid_hour(timestamp) NOT IN ('00', '01', '02', '03', '04')
           AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
         GROUP BY agency, line_id, stop_id
@@ -603,7 +713,7 @@ class HistoryDatabase {
           MAX(delay_mins) as maxDelay,
           ROUND((SUM(CASE WHEN delay_mins >= 5 THEN 1.0 ELSE 0.0 END) / COUNT(*)) * 100, 1) as severeLatePct
         FROM delay_logs
-        WHERE timestamp >= ? AND delay_mins >= -15
+        WHERE timestamp >= ? AND delay_mins >= -15${MATARO_SCOPE_SQL}
           AND madrid_hour(timestamp) NOT IN ('00', '01', '02', '03', '04')
           AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
         GROUP BY hourOfDay, agency, line_id, stop_id
@@ -714,7 +824,7 @@ class HistoryDatabase {
           ROUND((SUM(CASE WHEN delay_mins > 3 THEN 1.0 ELSE 0.0 END) / COUNT(*)) * 100, 1) as latePercentage,
           ROUND((SUM(CASE WHEN delay_mins >= 5 THEN 1.0 ELSE 0.0 END) / COUNT(*)) * 100, 1) as severeLatePercentage
         FROM delay_logs
-        WHERE timestamp >= ? AND delay_mins >= -15
+        WHERE timestamp >= ? AND delay_mins >= -15${MATARO_SCOPE_SQL}
           AND madrid_hour(timestamp) NOT IN ('00', '01', '02', '03', '04')
           AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
         GROUP BY hourOfDay
@@ -767,23 +877,25 @@ class HistoryDatabase {
           };
         });
 
-      let peakHour = peakHours[0] || {
-        hour: '08',
-        timeWindow: '08:00 - 09:00',
-        avgDelay: 2.1,
-        sampleCount: 0,
-        trafficTag: '🚨 Entrada escolar & feina',
-        icon: '🎒',
-        worstStopsDuringHour: []
-      };
+      // Every figure below is derived from a sublist of real samples. An empty
+      // sublist means the value is UNKNOWN, not zero and not flattering: an
+      // empty window used to publish a full A+ scorecard with an invented
+      // champion line, an invented "Pl. de les Tereses" bottleneck and an
+      // invented 08:00 peak, and the share/PNG exporters published it.
+      const hasSamples = totalArrivals > 0;
+      const peakHour = peakHours[0] || null;
 
-      const punctualityPct = totalArrivals > 0 ? Math.round((sum.totalOnTime / totalArrivals) * 100) : 100;
-      let grade = 'A';
-      if (punctualityPct >= 92) grade = 'A+';
-      else if (punctualityPct >= 84) grade = 'A';
-      else if (punctualityPct >= 74) grade = 'B';
-      else if (punctualityPct >= 62) grade = 'C';
-      else grade = 'D';
+      // Punctuality is a ratio over a real denominator. With no samples the
+      // ratio does not exist; 100% would be the most flattering possible lie.
+      const punctualityPct = hasSamples ? Math.round((sum.totalOnTime / totalArrivals) * 100) : null;
+      let grade = null;
+      if (punctualityPct !== null) {
+        if (punctualityPct >= 92) grade = 'A+';
+        else if (punctualityPct >= 84) grade = 'A';
+        else if (punctualityPct >= 74) grade = 'B';
+        else if (punctualityPct >= 62) grade = 'C';
+        else grade = 'D';
+      }
 
       const champion = rankingBestPunctuality.length > 0 ? rankingBestPunctuality[0] : null;
       const bottleneck = rankingWorstStops.length > 0 ? rankingWorstStops[0] : null;
@@ -791,15 +903,22 @@ class HistoryDatabase {
       const termometre = {
         title: `El Termòmetre del Bus (${hoursBack <= 24 ? '24h' : (hoursBack <= 48 ? '48h' : '7 dies')})`,
         timeframeHours: hoursBack,
+        // Explicit "there is nothing to grade" marker. A truthy termometre is
+        // still returned so consumers render the empty state instead of
+        // substituting their own placeholder scorecard.
+        noData: !hasSamples,
+        noDataReason: hasSamples ? '' : 'No hi ha cap mostra de retard registrada en aquesta finestra temporal.',
         grade,
         punctualityPct,
-        networkAvgDelay: Math.round((sum.networkAvgDelay || 0) * 10) / 10,
+        networkAvgDelay: hasSamples ? Math.round((sum.networkAvgDelay || 0) * 10) / 10 : null,
         championLine: champion ? {
           code: champion.lineCode || champion.id,
           name: champion.name || `Línia ${champion.lineCode}`,
-          onTimePct: champion.onTimePct !== undefined ? champion.onTimePct : (champion.latePercentage !== undefined ? Math.round(100 - champion.latePercentage) : 95),
+          onTimePct: champion.onTimePct !== undefined
+            ? champion.onTimePct
+            : (champion.latePercentage !== undefined ? Math.round(100 - champion.latePercentage) : null),
           avgDelay: champion.avgDelay
-        } : { code: 'L1', name: 'Línia 1', onTimePct: 95, avgDelay: 0.8 },
+        } : null,
         worstBottleneck: bottleneck ? {
           stopName: bottleneck.stopName,
           lineCode: bottleneck.lineCode,
@@ -807,11 +926,11 @@ class HistoryDatabase {
           severeLatePct: bottleneck.severeLatePct,
           criticalHour: bottleneck.criticalHour,
           criticalHourTag: bottleneck.criticalHourTag
-        } : { stopName: 'Pl. de les Tereses', lineCode: 'L2', avgDelay: 3.5, severeLatePct: 15, criticalHour: '08:00 - 09:00', criticalHourTag: '🚨 Entrada escolar & feina' },
-        peakHour: peakHour.timeWindow || `${peakHour.hour}:00 - 09:00`,
-        peakHourDelay: peakHour.avgDelay || 2.5,
-        peakHourTag: peakHour.trafficTag || 'Hora Punta',
-        peakHourIcon: peakHour.icon || '⏱️',
+        } : null,
+        peakHour: peakHour ? peakHour.timeWindow : null,
+        peakHourDelay: peakHour ? (peakHour.avgDelay ?? null) : null,
+        peakHourTag: peakHour ? (peakHour.trafficTag || null) : null,
+        peakHourIcon: peakHour ? (peakHour.icon || null) : null,
         totalTripsAnalyzed: totalArrivals
       };
 
@@ -819,10 +938,20 @@ class HistoryDatabase {
         summary: {
           totalRecordedArrivals: totalArrivals,
           monitoredLinesCount: totalMonitoredCount,
-          networkAvgDelay: Math.round((sum.networkAvgDelay || 0) * 10) / 10,
-          networkMaxDelay: sum.networkMaxDelay || 0,
+          networkAvgDelay: hasSamples ? Math.round((sum.networkAvgDelay || 0) * 10) / 10 : null,
+          networkMaxDelay: hasSamples ? (sum.networkMaxDelay ?? null) : null,
           networkPunctualityPct: punctualityPct,
-          hoursAnalyzed: hoursBack
+          hasSamples,
+          hoursAnalyzed: hoursBack,
+          // Dead-reckoned samples are mixed into the KPIs above (they are real
+          // recorded delays), so the split is published rather than hidden.
+          samplingBreakdown: {
+            totalSamples: totalArrivals,
+            realtimeSamples: totalArrivals - nonRealtimeSamples,
+            nonRealtimeSamples,
+            nonRealtimePct: hasSamples ? Math.round((nonRealtimeSamples / totalArrivals) * 1000) / 10 : null,
+            note: 'Les mostres amb is_realtime = 0 són posicions extrapolades (dead-reckoning), no GPS fresc. Es compten a la puntualitat global perquè el retard registrat és real, però no són una observació directa de la posició.'
+          }
         },
         termometre,
         hourlyDelays,
@@ -951,7 +1080,12 @@ class HistoryDatabase {
         minDelayThreshold: Number(minDelay) || 5,
         summary: {
           totalRecordedIncidents: 0,
-          maxDelayMins: 0,
+          rawSamplesOverThreshold: 0,
+          listedCommercialEpisodes: 0,
+          commercialEpisodeLimit: 0,
+          maxDelayMins: null,
+          maxCommercialDelayMins: null,
+          maxDelayIsFromInvestigationTier: false,
           worstStop: 'Cap',
           worstStopCount: 0,
           worstHour: '--:00',
@@ -960,6 +1094,7 @@ class HistoryDatabase {
           stationaryCount: 0,
           movingPct: 0
         },
+        investigationIncidents: [],
         topIncidents: [],
         telemetryAnomalies: [],
         incidentTrips: []
@@ -983,14 +1118,19 @@ class HistoryDatabase {
         sqlWhere += ' AND (UPPER(line_code) = ? OR UPPER(line_code) = ? OR line_id = ?)';
         baseParams.push(codeWithL, codeWithoutL, codeWithoutL);
       }
+      // "All lines" means Mataró L1–L8. Without this the retired Catalonia-wide
+      // rows still in delay_logs surface as Mataró top incidents.
+      sqlWhere = appendMataroScope(sqlWhere, isAll);
 
       // 1. Summary Aggregate KPIs (filtered to revenue commercial service)
       const aggStmt = this.db.prepare(`
-        SELECT COUNT(*) as totalCount, COALESCE(MAX(delay_mins), 0) as maxDelay
+        SELECT COUNT(*) as totalCount, COALESCE(MAX(delay_mins), 0) as maxDelay,
+          MAX(CASE WHEN delay_mins < 25 THEN delay_mins END) as maxCommercialDelay,
+          SUM(CASE WHEN is_realtime = 0 THEN 1 ELSE 0 END) as nonRealtimeCount
         FROM delay_logs
         WHERE ${sqlWhere} AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
       `);
-      const agg = aggStmt.get(...baseParams) || { totalCount: 0, maxDelay: 0 };
+      const agg = aggStmt.get(...baseParams) || { totalCount: 0, maxDelay: 0, maxCommercialDelay: null, nonRealtimeCount: 0 };
 
       // Worst stop
       const worstStopStmt = this.db.prepare(`
@@ -1093,13 +1233,18 @@ class HistoryDatabase {
 
       // Deduplicate: A single delayed trip produces raw pings every 20 seconds.
       // We keep the peak delay record for each trip on the line (sliding window of 20 min).
+      // The fallback key must include the stop: most historical rows carry no
+      // vehicle_id, and a bare lineCode key then merges two different buses on
+      // the same line into one "incident" whenever they are within the window.
       const deduplicateTripRows = (rows, maxLimit) => {
         const deduped = [];
-        const lineTripWindows = new Map(); // lineCode -> array of timestamps of accepted peak incidents
+        const lineTripWindows = new Map(); // dedup key -> array of timestamps of accepted peak incidents
         const TRIP_WINDOW_MS = 20 * 60 * 1000;
 
         for (const r of rows) {
-          const lk = r.vehicleId ? `${r.lineCode}_${r.vehicleId}` : r.lineCode;
+          const lk = r.vehicleId
+            ? `${r.lineCode}_${r.vehicleId}`
+            : `${r.lineCode}|${r.stopName || ''}`;
           const accepted = lineTripWindows.get(lk) || [];
           const isSameTrip = accepted.some(ts => Math.abs(r.timestamp - ts) < TRIP_WINDOW_MS);
           if (isSameTrip) continue;
@@ -1140,7 +1285,7 @@ class HistoryDatabase {
           isRealTime: Boolean(r.isRealTime),
           trafficTag: '🔬 En investigació',
           trafficIcon: '🔬',
-          investigationReason: 'Horari no habitual (+24 min) — Pendent d\'investigació de telemetria / SAE',
+          investigationReason: 'Horari no habitual (≥25 min) — Pendent d\'investigació de telemetria / SAE',
           isPeak: ctx.isPeak,
           isSchoolHour: ctx.isSchoolHour
         };
@@ -1394,18 +1539,35 @@ class HistoryDatabase {
       const worstHourStr = worstHourRow?.hourOfDay != null ? `${String(worstHourRow.hourOfDay).padStart(2, '0')}:00` : '--:00';
       const worstHourContext = worstHourRow?.hourOfDay != null ? this.getHourlyTrafficContext(parseInt(worstHourRow.hourOfDay, 10)) : null;
 
-      const commercialMaxDelay = enrichedTop.length > 0
-        ? enrichedTop[0].delayMins
-        : (agg.maxDelay <= 24 ? agg.maxDelay : 0);
+      // The headline maximum is the TRUE maximum over every row in the window.
+      // The commercial / investigation split is a separate labelled figure: the
+      // commercial tier is only delays < 25 min, so when every real delay in
+      // the window sits in the investigation tier the commercial figure is
+      // UNKNOWN. It used to be forced to 0, which made the UI print "+0 min"
+      // as the maximum service delay while 30-minute delays were on screen.
+      const trueMaxDelay = agg.maxDelay || 0;
+      const commercialMaxDelay = agg.maxCommercialDelay != null ? agg.maxCommercialDelay : null;
+      const maxDelayIsFromInvestigationTier = trueMaxDelay >= 25 && commercialMaxDelay === null;
 
       return {
         lineCode: isAll ? 'ALL' : codeWithL,
         hoursAnalyzed: hoursNum,
         minDelayThreshold: minDelayNum,
         summary: {
+          // Legacy field name kept for the existing consumers; it has always
+          // been a RAW SAMPLE count, never a count of incidents/episodes.
           totalRecordedIncidents: agg.totalCount || 0,
-          maxDelayMins: agg.maxDelay || 0,
+          rawSamplesOverThreshold: agg.totalCount || 0,
+          listedCommercialEpisodes: enrichedTop.length,
+          commercialEpisodeLimit: limitNum,
+          kpiBasis: 'totalRecordedIncidents / rawSamplesOverThreshold count RAW SAMPLES at or above the threshold; topIncidents and investigationIncidents are those same samples DEDUPED into per-trip episodes (20-minute sliding window, keyed by line+vehicle, or line+stop when vehicle_id is missing). listedCommercialEpisodes is that deduped list after the per-list limit.',
+          maxDelayMins: trueMaxDelay,
           maxCommercialDelayMins: commercialMaxDelay,
+          maxDelayIsFromInvestigationTier,
+          nonRealtimeSampleCount: agg.nonRealtimeCount || 0,
+          nonRealtimeSamplePct: (agg.totalCount || 0) > 0
+            ? Math.round(((agg.nonRealtimeCount || 0) / agg.totalCount) * 1000) / 10
+            : null,
           worstStop: worstStopRow?.stopName || 'Cap',
           worstStopCount: worstStopRow?.cnt || 0,
           worstHour: worstHourStr,
@@ -1430,8 +1592,12 @@ class HistoryDatabase {
         minDelayThreshold: Number(minDelay) || 5,
         summary: {
           totalRecordedIncidents: 0,
-          maxDelayMins: 0,
-          maxCommercialDelayMins: 0,
+          rawSamplesOverThreshold: 0,
+          listedCommercialEpisodes: 0,
+          commercialEpisodeLimit: 0,
+          maxDelayMins: null,
+          maxCommercialDelayMins: null,
+          maxDelayIsFromInvestigationTier: false,
           worstStop: 'Cap',
           worstStopCount: 0,
           worstHour: '--:00',
@@ -1477,6 +1643,7 @@ class HistoryDatabase {
         sqlWhere += ' AND (UPPER(line_code) = ? OR UPPER(line_code) = ? OR line_id = ?)';
         params.push(codeWithL, codeWithoutL, codeWithoutL);
       }
+      sqlWhere = appendMataroScope(sqlWhere, isAll);
       if (stopName) {
         sqlWhere += ' AND stop_name LIKE ?';
         params.push(`%${stopName}%`);
@@ -1500,7 +1667,7 @@ class HistoryDatabase {
       }
 
       // ── Group into episodes: consecutive rows within 5 minutes ──────
-      const GAP_MS = 5 * 60 * 1000;
+      const GAP_MS = EPISODE_GAP_MS;
       const episodes = [];
       let cur = [];
       for (const r of rows) {
@@ -1515,9 +1682,18 @@ class HistoryDatabase {
         || episodes.reduce((a, b) => (b[b.length - 1].delayMins > a[a.length - 1].delayMins ? b : a));
 
       const vehicleIds = [...new Set(pick.map(r => r.vehicleId).filter(Boolean))];
-      const rowsWithTimes = pick.filter(r => r.scheduledTime && r.scheduledTime !== '' && r.actualTime && r.actualTime !== '').length;
-      const derivedRows = pick.filter(r => r.timesSource === 'derived_timetable').length;
-      const observedTimeRows = pick.filter(r => r.scheduledTime && r.scheduledTime !== '' && r.actualTime && r.actualTime !== '' && r.timesSource !== 'derived_timetable').length;
+      // Classify every row through the shared provenance helpers. A backfilled
+      // approximation is NOT an observed time: it is derived offline from the
+      // timetable by guessing the direction, so it must never be counted as
+      // corroborating evidence. The old exact-equality test against the single
+      // literal 'derived_timetable' let 'derived_timetable_backfill' fall
+      // through into the observed bucket.
+      const provenance = countTimesProvenance(pick);
+      const rowsWithTimes = pick.filter(hasStoredTimes).length;
+      const observedTimeRows = provenance.observed;
+      const derivedRows = provenance.derived;
+      const backfilledRows = provenance.backfill;
+      const episodeTimesProvenance = summariseTimesProvenance(provenance);
       const snapshotRows = vehicleIds.length ? this._snapshotTrail(vehicleIds[0], pick[0].timestamp, pick[pick.length - 1].timestamp) : [];
 
       const hasVehicleId = vehicleIds.length > 0;
@@ -1529,10 +1705,11 @@ class HistoryDatabase {
       const vehicleIdColumnAddedMs = Date.parse('2026-09-19T00:00:00Z');
       const allPredateVehicleIdColumn = pick.every(r => r.timestamp < vehicleIdColumnAddedMs);
       const vehicleIdGapExplained = !hasVehicleId && allPredateVehicleIdColumn;
-      // Derived times are weaker evidence than observed ones, so they count
-      // for corroboration only alongside a GPS trail.
+      // Only a real upstream observation counts as provenance. Derived and
+      // backfilled times corroborate alongside a GPS trail, never on their own.
       const hasProvenanceTimes = observedTimeRows > 0;
       const hasDerivedTimes = derivedRows > 0;
+      const hasBackfilledTimes = backfilledRows > 0;
       const hasSnapshotTrail = snapshotRows.length >= 2;
 
       let verdict, verdictLabel;
@@ -1540,15 +1717,24 @@ class HistoryDatabase {
         verdict = 'telemetry_anomaly'; verdictLabel = 'Telemetry anomaly — depot / night maintenance';
       } else if (hasVehicleId && (hasProvenanceTimes || hasSnapshotTrail)) {
         verdict = 'corroborated'; verdictLabel = 'Corroborated — vehicle identity plus independent evidence';
-      } else if (hasVehicleId && hasDerivedTimes) {
-        verdict = 'derived_only'; verdictLabel = 'Derived only — timetable time reconstructed, no observed evidence';
+      } else if (hasVehicleId && (hasDerivedTimes || hasBackfilledTimes)) {
+        verdict = 'derived_only';
+        // A backfilled approximation is weaker than a live derivation and is
+        // reported as such rather than under the same "derived" wording.
+        if (hasBackfilledTimes && !hasDerivedTimes) {
+          verdictLabel = 'Backfilled approximation — timetable time reconstructed offline (direction guessed), no observed evidence';
+        } else if (hasDerivedTimes && !hasBackfilledTimes) {
+          verdictLabel = 'Derived only — timetable time reconstructed, no observed evidence';
+        } else {
+          verdictLabel = 'Derived only — timetable time reconstructed (live and/or backfilled), no observed evidence';
+        }
       } else if (pick.length >= 3 && (!hasVehicleId || vehicleIds.length <= 1)) {
         verdict = 'poll_inflated'; verdictLabel = 'Inflated by repeated polling — same bus logged every 20 s';
       } else {
         verdict = 'unverifiable'; verdictLabel = 'Unverifiable — no vehicle identity or independent evidence';
       }
 
-      const retiredScope = !isAll && !['L1','L2','L3','L4','L5','L6','L7','L8'].includes(codeWithL);
+      const retiredScope = !isAll && !MATARO_RETIRED_SCOPE_CHECK.includes(codeWithL);
       const vehicleDist = {};
       pick.forEach(r => { vehicleDist[r.vehicleId || '(none)'] = (vehicleDist[r.vehicleId || '(none)'] || 0) + 1; });
 
@@ -1566,8 +1752,12 @@ class HistoryDatabase {
           rowCount: pick.length,
           distinctVehicles: vehicleIds,
           verdict, verdictLabel,
+          // Authoritative provenance signal for the whole episode. Consumers
+          // should colour from the per-row timesProvenance, which is exact.
+          timesProvenance: episodeTimesProvenance,
           evidence: {
-            hasVehicleId, hasProvenanceTimes, hasSnapshotTrail, hasDerivedTimes,
+            hasVehicleId, hasProvenanceTimes, hasSnapshotTrail, hasDerivedTimes, hasBackfilledTimes,
+            timesProvenance: episodeTimesProvenance,
             vehicleIdGapExplained,
             vehicleIdNote: vehicleIdGapExplained
               ? 'Rows predate the vehicle_id column (added 2026-09-19). The bus was recorded but the id was not stored, and no snapshot trail survives to recover it.'
@@ -1575,16 +1765,23 @@ class HistoryDatabase {
             vehicleIdDistribution: vehicleDist,
             rowsWithProvenanceTimes: rowsWithTimes,
             rowsWithDerivedTimes: derivedRows,
+            rowsWithBackfilledTimes: backfilledRows,
             rowsWithObservedTimes: observedTimeRows,
             snapshotTrailPoints: snapshotRows.length,
             rowsWithoutProvenance: pick.length - rowsWithTimes
           },
           timetableCheck: {
-            available: derivedRows > 0 || observedTimeRows > 0,
-            derivedFromTimetable: derivedRows > 0,
-            note: derivedRows > 0
-              ? 'Scheduled / actual times were derived from the static timetable, not reported by the upstream feed'
-              : 'Scheduled / actual times are empty in the stored rows — the delay cannot be recomputed from a timetable'
+            available: derivedRows > 0 || backfilledRows > 0 || observedTimeRows > 0,
+            derivedFromTimetable: derivedRows > 0 || backfilledRows > 0,
+            backfilledFromTimetable: backfilledRows > 0,
+            derivedLiveFromTimetable: derivedRows > 0,
+            note: backfilledRows > 0
+              ? 'Scheduled / actual times were approximated offline by scripts/backfill_delay_times.js from the static timetable (the direction was guessed) — not reported by the upstream feed, and weaker than a live derivation'
+              : (derivedRows > 0
+                ? 'Scheduled / actual times were derived from the static timetable, not reported by the upstream feed'
+                : (observedTimeRows > 0
+                  ? 'Scheduled / actual times were reported by the upstream feed'
+                  : 'Scheduled / actual times are empty in the stored rows — the delay cannot be recomputed from a timetable'))
           },
           retiredScope,
           rawRows: pick.slice(0, 100).map(r => ({
@@ -1594,6 +1791,9 @@ class HistoryDatabase {
             scheduledTime: r.scheduledTime || '',
             actualTime: r.actualTime || '',
             timesSource: r.timesSource || '',
+            // Per-row classification so the UI can colour each sample
+            // green / purple / amber without re-deriving the rule itself.
+            timesProvenance: classifyTimes(r),
             direction: r.direction || ''
           }))
         },
@@ -1618,7 +1818,7 @@ class HistoryDatabase {
   }
 
   _delayDataQuality({ hours, lineCode }) {
-    if (!this._ensureOpen()) return { totalRawRows: 0, distinctEpisodes: 0, rowsWithoutVehicleId: 0, rowsWithoutProvenance: 0, feedTailCap: '' };
+    if (!this._ensureOpen()) return { totalRawRows: 0, distinctEpisodes: 0, episodeGapMinutes: EPISODE_GAP_MS / 60000, episodesNote: '', rowsWithoutVehicleId: 0, rowsWithoutProvenance: 0, feedTailCap: '' };
     try {
       const cutoff = Date.now() - (Math.max(1, Math.min(720, Number(hours) || 168)) * 3600 * 1000);
       const cleanCode = String(lineCode || '').toUpperCase().trim();
@@ -1628,10 +1828,33 @@ class HistoryDatabase {
       let wh = 'timestamp >= ?';
       const wp = [cutoff];
       if (!isAll) { wh += ' AND (UPPER(line_code) = ? OR UPPER(line_code) = ? OR line_id = ?)'; wp.push(codeWithL, codeWithoutL, codeWithoutL); }
+      wh = appendMataroScope(wh, isAll);
       const agg = this.db.prepare(`SELECT COUNT(*) as n, SUM(CASE WHEN vehicle_id = '' OR vehicle_id IS NULL THEN 1 ELSE 0 END) as noVeh, SUM(CASE WHEN scheduled_time = '' OR scheduled_time IS NULL OR actual_time = '' OR actual_time IS NULL THEN 1 ELSE 0 END) as noProv, COUNT(DISTINCT CASE WHEN vehicle_id != '' AND vehicle_id IS NOT NULL THEN vehicle_id END) as vehIds FROM delay_logs WHERE ${wh}`).get(...wp);
-      const ep = this.db.prepare(`SELECT COUNT(*) as n FROM (SELECT line_code, COUNT(DISTINCT CASE WHEN vehicle_id != '' AND vehicle_id IS NOT NULL THEN vehicle_id END || '-' || stop_name) as k FROM delay_logs WHERE ${wh} GROUP BY line_code, stop_name HAVING COUNT(*) > 1)`).get(...wp);
-      return { totalRawRows: agg.n || 0, rowsWithoutVehicleId: agg.noVeh || 0, rowsWithoutProvenance: agg.noProv || 0, distinctEpisodes: ep.n || 0, feedTailCap: 'Delays ≥ 25 min appear to be the upstream SIRI feed tail cap, not real-world outliers' };
-    } catch { return { totalRawRows: 0, distinctEpisodes: 0, rowsWithoutVehicleId: 0, rowsWithoutProvenance: 0, feedTailCap: '' }; }
+      // A real episode count: a new episode starts at each line+stop when the
+      // gap to the previous sample exceeds the 5-minute boundary that
+      // inspectDelayIncident groups on. The previous query counted
+      // (line, stop) PAIRS HAVING MORE THAN ONE ROW, which is not an episode
+      // count at all, and its COUNT(DISTINCT vehicle_id || '-' || stop_name)
+      // degenerated to '-stopname' because vehicle_id is mostly empty.
+      const ep = this.db.prepare(`
+        WITH scoped AS (SELECT line_code, stop_name, timestamp FROM delay_logs WHERE ${wh}),
+        marked AS (
+          SELECT line_code, stop_name, timestamp,
+            LAG(timestamp) OVER (PARTITION BY line_code, stop_name ORDER BY timestamp) AS prevTs
+          FROM scoped
+        )
+        SELECT COUNT(*) as n FROM marked WHERE prevTs IS NULL OR (timestamp - prevTs) > ?
+      `).get(...wp, EPISODE_GAP_MS);
+      return {
+        totalRawRows: agg.n || 0,
+        rowsWithoutVehicleId: agg.noVeh || 0,
+        rowsWithoutProvenance: agg.noProv || 0,
+        distinctEpisodes: ep.n || 0,
+        episodeGapMinutes: EPISODE_GAP_MS / 60000,
+        episodesNote: 'distinctEpisodes counts groups of consecutive samples on the same line+stop that are ≤ 5 min apart (the same boundary inspectDelayIncident uses). It is NOT a count of buses or of delay causes.',
+        feedTailCap: 'Delays ≥ 25 min appear to be the upstream SIRI feed tail cap, not real-world outliers'
+      };
+    } catch { return { totalRawRows: 0, distinctEpisodes: 0, episodeGapMinutes: EPISODE_GAP_MS / 60000, episodesNote: '', rowsWithoutVehicleId: 0, rowsWithoutProvenance: 0, feedTailCap: '' }; }
   }
 
   aggregateHourlyStats() {
@@ -1643,7 +1866,12 @@ class HistoryDatabase {
       const maxId = Math.max(lastId, this.db.prepare('SELECT COALESCE(MAX(id), 0) AS id FROM delay_logs').get().id);
       const batches = this.db.prepare(`
         SELECT line_code, MIN(agency) AS agency,
-          strftime('%Y-%m-%d %H:00', timestamp / 1000, 'unixepoch', 'localtime') AS date_hour,
+          -- Europe/Madrid bucketing via the registered madrid_datetime UDF
+          -- ('YYYY-MM-DD HH:MM:SS'), NOT strftime(...,'localtime'). The
+          -- host-local variant silently depended on the process TZ, so a
+          -- deployment outside Europe/Madrid split Madrid's morning peak
+          -- across two buckets and fed the wrong per-line punctuality.
+          substr(madrid_datetime(timestamp), 1, 13) || ':00' AS date_hour,
           COUNT(*) AS samples, SUM(delay_mins) AS delay_sum, MAX(delay_mins) AS max_delay,
           SUM(CASE WHEN delay_mins <= 3 THEN 1 ELSE 0 END) AS on_time,
           SUM(CASE WHEN delay_mins > 3 THEN 1 ELSE 0 END) AS late,
