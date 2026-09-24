@@ -1001,6 +1001,29 @@ class MataroTracker extends BaseTracker {
   }
 
   /**
+   * Is this vehicle one the operator never actually identified?
+   *
+   * mataroSiriClient emits `vehicleRef || 'Bus'`, so any VehicleActivity with no
+   * <VehicleRef> arrives carrying the literal string "Bus" (and an empty id
+   * arrives as one too). Such an activity is a real bus physically, but the feed
+   * does not say WHICH bus it is, so it cannot be attributed to a scheduled
+   * trip, cannot be matched across polls, and cannot be counted as known fleet.
+   * The literal placeholders below are the shapes that fall out of that `||`:
+   * an absent VehicleRef, an empty one, and the upstream provider's own
+   * "unknown". Anything else is a real operator-assigned id and is kept.
+   *
+   * Shared with the post-stitch drop so both sites agree on one definition
+   * rather than two lists that can drift apart.
+   */
+  isAnonymousVehicle(v) {
+    if (!v) return true;
+    const rawId = (v.vehicleId !== undefined && v.vehicleId !== null) ? String(v.vehicleId).trim() : '';
+    if (!rawId) return true;
+    const lower = rawId.toLowerCase();
+    return lower === 'bus' || lower === 'vehicle' || lower === 'unknown';
+  }
+
+  /**
    * Trajectory Continuity & Identity Stitching:
    * Avanza SIRI occasionally drops <VehicleRef>, sending anonymous tags like <VehicleRef>Bus</VehicleRef>.
    * This method inspects incoming live vehicles, identifies anonymous pings, and matches them to
@@ -1021,13 +1044,7 @@ class MataroTracker extends BaseTracker {
       return liveVehicles || [];
     }
 
-    const isAnonymous = (v) => {
-      if (!v) return true;
-      const rawId = v.vehicleId !== undefined && v.vehicleId !== null ? String(v.vehicleId).trim() : '';
-      if (!rawId) return true;
-      const lower = rawId.toLowerCase();
-      return lower === 'bus' || lower === 'vehicle' || lower === 'unknown';
-    };
+    const isAnonymous = (v) => this.isAnonymousVehicle(v);
 
     const hasAnonymous = liveVehicles.some(isAnonymous);
     if (!hasAnonymous) {
@@ -1237,11 +1254,6 @@ class MataroTracker extends BaseTracker {
         if (!lat || !lon) return false;
         // Mataró urban bounding box: 41.48 to 41.62 N, 2.36 to 2.52 E
         if (lat < 41.48 || lat > 41.62 || lon < 2.36 || lon > 2.52) return false;
-        // Exclude dummy vehicleId 'Bus' if far from Mataró route (> 1.5km from any route stop)
-        if (String(v.vehicleId).toLowerCase() === 'bus') {
-          const isNear = routes.some(r => (r.coords || []).some(c => geoUtils.calculateDistanceMeters(lat, lon, parseFloat(c.Latitude), parseFloat(c.Longitude)) < 1500));
-          if (!isNear) return false;
-        }
         return true;
       });
     }
@@ -1266,6 +1278,27 @@ class MataroTracker extends BaseTracker {
       // Restore dropped fleet IDs on live GPS fixes before direction assignment and dead-reckoning
       if (Array.isArray(liveVehicles) && liveVehicles.length > 0) {
         this.stitchAnonymousVehicles(liveVehicles, lId, routes, targetDate);
+
+        // Drop whatever the stitcher could not attribute to a real bus. An
+        // activity the operator never identified is physically real but
+        // operationally useless: it cannot be tied to a scheduled trip, so it
+        // cannot be matched to the timetable, and keeping it is actively
+        // harmful in three ways. It occupies one of the line's fleet slots and
+        // so SUPPRESSES the ghost that should have been drawn for the bus it
+        // is standing in for; it renders on the map as a bus with no identity;
+        // and it arrives carrying isRealTime: true, which claims identified
+        // telemetry the operator never provided. Measured on L1 at 13:25, such
+        // an activity was one of the three buses the rider counted as missing.
+        //
+        // The old guard for this was positional -- drop "Bus" only when it sat
+        // more than 1.5 km from every route coordinate -- which let a phantom
+        // through whenever it happened to be near a route. Identity is the
+        // right test, and it is the same test the stitcher just used, so a
+        // vehicle that could not be given a real id is now dropped rather than
+        // promoted.
+        if (Array.isArray(liveVehicles) && liveVehicles.length > 0) {
+          liveVehicles = liveVehicles.filter(v => !this.isAnonymousVehicle(v));
+        }
       }
 
       // Fallback: If still empty, check this.vehicleHistory for active/recent buses (strict 90s window, §7.6)
@@ -1378,7 +1411,21 @@ class MataroTracker extends BaseTracker {
 
     // Fleet Ceiling Guard: Physical buses (live GPS & dead-reckoned) strictly take priority over synthetic ghost buses.
     // The combined fleet can never exceed the line's scheduled capacity at this hour (both whole-line and per-direction).
-    const maxFleetLimit = isBoth ? lineMaxFleet : (lineMaxFleet === 0 ? 0 : Math.max(1, Math.ceil(lineMaxFleet / Math.max(1, routes.length))));
+    //
+    // For a single-direction request the ceiling is that direction's OWN active
+    // trip count, which fleetStatus already computed from the timetable. It is
+    // NOT half the line's fleet: lineMaxFleet is a whole-line figure and L1 is
+    // asymmetric (31 min one way, 40 min the other), so dividing it by
+    // routes.length gave dir1 a ceiling of 3 when the timetable had 4 trips
+    // running -- the payload then reported 4 scheduled buses and shipped 3.
+    // fleetStatus.scheduledVehicles is the direction-level equivalent of the
+    // isBoth branch, so the two branches now read the same kind of number.
+    // This is the same defect as the per-direction ghost cap in
+    // synthesizeMissingScheduledBuses; both derived a per-direction budget by
+    // dividing a whole-line total.
+    const maxFleetLimit = lineMaxFleet === 0
+      ? 0
+      : (isBoth ? lineMaxFleet : Math.max(1, fleetStatus.scheduledVehicles));
     if (maxFleetLimit === 0) {
       processedBuses = [];
     } else if (processedBuses.length > maxFleetLimit) {
@@ -1862,6 +1909,8 @@ class MataroTracker extends BaseTracker {
     const maxSyntheticForLine = Math.max(0, totalScheduledForWholeLine - totalPhysicalOnWholeLine);
 
     // 3. Pair live buses on each direction to active trips
+    // unpairedPhysicalByDir[dirKey] = buses running that direction that claimed no trip on it.
+    const unpairedPhysicalByDir = { '0': 0, '1': 0 };
     allDirKeys.forEach(dirKey => {
       const dirIndex = parseInt(dirKey, 10) || 0;
       const routeObj = routes[dirIndex] || routes[0];
@@ -1882,6 +1931,18 @@ class MataroTracker extends BaseTracker {
 
       // (a) First pair stationary buses at the origin terminal (< 350m) to terminal layover trip
       // (b) Then pair in-transit buses to their closest in-transit trip by route progress
+      //
+      // unmatchedPhysicalOnDir counts buses running this direction that could not
+      // be matched to ANY trip on it. They are not proof of a covered trip -- the
+      // matcher has a 0.40 progress tolerance, so a bus running late or early
+      // enough to fall outside it leaves its trip looking unpaired -- but a bus
+      // physically on the road is still evidence that a bus is out this way. The
+      // synthesis allowance below subtracts them so a lagging bus does not get a
+      // ghost drawn underneath it. It deliberately counts only the UNMATCHED
+      // ones: a bus that did claim a trip is already excluded via trip.paired, and
+      // subtracting it as well would double-count and silently re-create the
+      // undercount this fix exists to remove.
+      let unmatchedPhysicalOnDir = 0;
       physicalBusesOnDir.forEach(bus => {
         const busLat = bus.lat || bus.latitude;
         const busLon = bus.lon || bus.longitude;
@@ -1893,7 +1954,6 @@ class MataroTracker extends BaseTracker {
           layoverTrip.paired = true;
           return;
         }
-
         const snap = geoEngine.snapPointToPolyline(busLat, busLon, rawCoords);
         const segDist = distTable.cum[snap.index] + geoEngine.calculateDistanceMeters(rawCoords[snap.index].lat, rawCoords[snap.index].lon, snap.lat, snap.lon);
         const busProgress = distTable.total > 0 ? Math.max(0, Math.min(1, segDist / distTable.total)) : 0;
@@ -1912,8 +1972,11 @@ class MataroTracker extends BaseTracker {
 
         if (bestTripIdx !== -1) {
           activeTripsForDir[bestTripIdx].paired = true;
+        } else {
+          unmatchedPhysicalOnDir++;
         }
       });
+      unpairedPhysicalByDir[dirKey] = unmatchedPhysicalOnDir;
 
       // Cross-Direction Pairing:
       // If an incoming bus on the opposite direction is completing its trip at this terminal
@@ -1960,13 +2023,37 @@ class MataroTracker extends BaseTracker {
       if (distTable.total <= 0) return;
 
       const activeTripsForDir = allLineActiveTripsByDir[dirKey] || [];
-      const physicalBusesOnDir = allKnownBuses.filter(b => String(b.direction) === dirKey && this.isPhysicalVehicle(b));
-      const maxFleetForDir = Math.max(1, Math.ceil(lineMaxFleet / Math.max(1, allDirKeys.length)));
-      const maxSyntheticForDir = Math.max(0, Math.min(activeTripsForDir.length, maxFleetForDir) - physicalBusesOnDir.length);
+      // The allowance for this direction is its OWN unserved demand, not half of
+      // the line's fleet. getScheduledFleetRequirement() is a whole-line figure
+      // and a line is not obliged to run it evenly: L1 is 31 min one way and
+      // 40 min the other, so at equal headway one direction always has more
+      // buses in the air than the other. Deriving a per-direction ceiling by
+      // dividing the line total (ceil(lineMaxFleet / 2)) therefore undercounts
+      // the busy direction and overcounts the quiet one, and the bus it drops is
+      // one the timetable says is running -- measured on L1 at 13:25 as 6
+      // required and 5 synthesized. The whole-line budget (maxSyntheticForLine)
+      // is the real global ceiling and still applies.
+      //
+      // This mirrors the candidate filter below exactly. If the two ever drift,
+      // this bound stops being a ceiling and the per-direction `synthOnThisDir`
+      // check at the synthesis loop starts discarding real demand.
+      //
+      // The allowance is this direction's own unserved demand, less any bus
+      // physically running it that no trip could claim. The subtraction is what
+      // keeps a lagging bus from getting a ghost drawn underneath it: matching
+      // has a 0.40 progress tolerance, so a bus running outside that window
+      // leaves its trip looking unpaired even though a real bus is out there.
+      // Measured on L1 Saturday 12:54, where bus 2667 sat at 81% of a direction
+      // whose only trip was at 39% -- a 0.42 gap, unmatched -- and without this
+      // the direction claimed a second, phantom bus.
+      const isSynthesizableTrip = (trip) => !trip.paired && (trip.isTerminalLayover || nowSec < trip.arrSec);
+      const maxSyntheticForDir = Math.max(
+        0,
+        activeTripsForDir.filter(isSynthesizableTrip).length - (unpairedPhysicalByDir[dirKey] || 0)
+      );
 
       activeTripsForDir.forEach(trip => {
-        if (trip.paired) return;
-        if (!trip.isTerminalLayover && nowSec >= trip.arrSec) return;
+        if (!isSynthesizableTrip(trip)) return;
 
         candidateTrips.push({
           trip,

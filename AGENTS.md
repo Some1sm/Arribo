@@ -182,6 +182,36 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   nothing. Compare the numeric `startTs`/`endTs` twins the server sends for
   exactly this reason. When a match cannot be made safely, render no link.
 - Never fall back to missed departures. Include access/transfer walks and waits.
+- **A line's scheduled fleet is not an even number per direction, so never
+  derive a per-direction budget by dividing the whole-line one.**
+  `getScheduledFleetRequirement` returns a WHOLE-LINE figure and takes no
+  direction argument, because the two directions are not symmetric: L1 is 31
+  minutes one way and 40 the other, so at equal headway one direction always
+  has more buses airborne than the other (2 against 4 at 13:25). `ceil(lineMaxFleet / 2)`
+  therefore undercounts the busy direction and overcounts the quiet one, and the
+  bus it drops is one the timetable says is running. Two independent sites did
+  this — the per-direction ghost cap in `synthesizeMissingScheduledBuses` and
+  the single-direction fleet ceiling in `getLineDetails` — and fixing one leaves
+  the other, so a payload could still report `scheduledVehicles: 4` and ship 3
+  buses. A direction's allowance is its own unserved active-trip count, minus
+  physical buses on it that no trip could claim. That subtraction is the reason
+  a real bus is not given a phantom underneath: pairing tolerates 0.40 progress
+  difference, so a bus running outside that window leaves its trip looking
+  unpaired while a real bus is plainly out there. The anti-bunching guards
+  (18% progress and 700 m same-direction, 250 m cross-direction) are separate and
+  deliberate. See `test/fleet_direction_balance_test.js`.
+- **A vehicle the operator never identified is not a real bus.**
+  `mataroSiriClient` emits `vehicleRef || 'Bus'`, so any activity with no
+  `<VehicleRef>` arrives literally identified `"Bus"`. The only guard was
+  positional — drop it when more than 1.5 km from every route coordinate — which
+  admitted any phantom near a route. Identity is the right test: run the shared
+  `isAnonymousVehicle` predicate, let `stitchAnonymousVehicles` try to recover a
+  real id from recent history, and DROP whatever is still anonymous afterwards.
+  Keeping one is harmful three ways: it occupies a fleet slot and so suppresses
+  the ghost that should have been drawn in its place, it renders on the map with
+  no identity, and it arrives carrying `isRealTime: true`, claiming identified
+  telemetry the operator never provided. Dropping must not break stitching — a
+  report that *can* be tied to a recently-seen bus is still recovered.
 - Exclude EST_, isGhostVehicle and isTheoretical vehicles from flightRecorder.
   Freshness is subsystem-specific, not one universal 90-second cutoff. Estimated
   markers do not prove observed GPS.
