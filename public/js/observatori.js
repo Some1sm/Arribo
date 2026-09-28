@@ -203,10 +203,30 @@ class ObservatoriApp {
     }
 
     // 2. Connexió operador (lastError)
-    if (!data || data.lastError === null || data.lastError === undefined) {
+    const ERROR_TEXT = {
+      malformed: "resposta buida o incompleta de l'operador",
+      auth: 'credencials SIRI rebutjades',
+      soap_fault: "error intern del servidor de l'operador",
+      upstream_error: "l'operador ha retornat un error",
+      network_error: "sense connexió amb el servidor de l'operador",
+      timeout: "l'operador no ha respost a temps"
+    };
+    const describeError = (code) => ERROR_TEXT[code] || (/^http_\d+$/.test(String(code)) ? `l'operador ha respost amb HTTP ${String(code).slice(5)}` : String(code));
+    if (!data || !data.upstreamKnown) {
       items.push(makeItem('Connexió operador', '🔌', 'status-neutral', 'Sense dades', 'Sense registres d&#039;errors recents de l&#039;operador.'));
+    } else if (data.lastError === null || data.lastError === undefined) {
+      items.push(makeItem('Connexió operador', '🔌', 'status-success', 'Sense errors', 'Cap error recent de l&#039;operador.'));
     } else {
-      items.push(makeItem('Connexió operador', '🔌', 'status-danger', 'Error recent', `Últim error: ${this.esc(data.lastError)}`));
+      const ageMin = data.lastErrorAt ? Math.max(1, Math.round((Date.now() - data.lastErrorAt) / 60000)) : null;
+      const when = ageMin === null ? '' : `fa ${ageMin} min: `;
+      const what = this.esc(describeError(data.lastError));
+      if (data.circuitOpen) {
+        items.push(makeItem('Connexió operador', '🔌', 'status-danger', 'Error', `Últim error ${when}${what}. Consultes en pausa durant 30 s.`));
+      } else if (ageMin !== null && ageMin >= 10) {
+        items.push(makeItem('Connexió operador', '🔌', 'status-neutral', 'Recuperat', `Últim error ${when}${what}. Des d&#039;aleshores l&#039;operador respon correctament.`));
+      } else {
+        items.push(makeItem('Connexió operador', '🔌', 'status-warning', 'Error recent', `Últim error ${when}${what}.`));
+      }
     }
 
     // 3. Anomalia de flota (fleetAnomaly)
@@ -247,8 +267,14 @@ class ObservatoriApp {
     if (!data || data.season === null || data.season === undefined) {
       items.push(makeItem('Temporada de servei', '📅', 'status-neutral', 'Sense dades', 'Sense dades de temporada oficial.'));
     } else if (data.season.seasonKnown) {
-      const label = data.season.season === 'summer' ? "Horari d&#039;estiu" : "Horari d&#039;hivern";
-      items.push(makeItem('Temporada de servei', '📅', 'status-success', label, `Temporada vigent segons ${this.esc(data.season.seasonSource || 'configuració')}.`));
+      const label = data.season.season === 'summer' ? "Horari d'estiu" : "Horari d'hivern";
+      const src = String(data.season.seasonSource || '');
+      const srcText = src.startsWith('default')
+        ? 'Horari d&#039;hivern per defecte: cap període d&#039;estiu cobreix avui.'
+        : (src.startsWith('notice')
+          ? `Segons l&#039;avís de l&#039;operador ${this.esc(src.replace(/^notice\s*/, ''))}.`
+          : `Temporada vigent segons ${this.esc(src || 'configuració')}.`);
+      items.push(makeItem('Temporada de servei', '📅', 'status-success', label, srcText));
     } else {
       items.push(makeItem('Temporada de servei', '📅', 'status-warning', 'No verificada', `Graella de temporada (${this.esc(data.season.season)}) sense verificar per l&#039;any actual.`));
     }

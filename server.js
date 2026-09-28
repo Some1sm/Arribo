@@ -539,6 +539,9 @@ app.get('/api/data-health', async (req, res) => {
       checkedAt: canary.checkedAt || null
     } : null,
     lastError: circuit?.lastError || null,
+    upstreamKnown: Boolean(circuit),
+    lastErrorAt: circuit?.lastError ? (circuit.lastFailureAt || null) : null,
+    circuitOpen: Boolean(circuit?.circuitOpen),
     // The worker stores the anomaly as a code string or null (null = evaluated, none found).
     fleetAnomaly: worker.metrics ? (anomaly ? {
       detected: true,

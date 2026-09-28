@@ -172,6 +172,18 @@ class MataroSiriClient {
     }
     const hasDelivery = new RegExp(`<(?:[\\w.-]+:)?${deliveryTag}(?:[\\s>])`, 'i').test(trimmed);
     const hasItems = /<(?:[\w.-]+:)?(?:MonitoredStopVisit|VehicleActivity)(?:[\s>])/i.test(trimmed);
+
+    // A line with no buses running (e.g. L7 in the evening) is answered with an
+    // empty <Answer xmlns="" /> and a real ResponseTimestamp. That is a valid
+    // "no vehicles", not a malformed reply; treating it as a failure tripped the
+    // shared circuit breaker and marked every line's buses as estimated.
+    const emptyAnswer = /<(?:[\w.-]+:)?Answer\b[^>]*\/>/i.test(trimmed) ||
+      /<(?:[\w.-]+:)?Answer\b[^>]*>\s*<\/(?:[\w.-]+:)?Answer>/i.test(trimmed);
+    const emptyAnswerTs = this.extractTag(trimmed, 'ResponseTimestamp');
+    if (!hasDelivery && !hasItems && emptyAnswer && emptyAnswerTs && !emptyAnswerTs.startsWith('0001-01-01')) {
+      return { ok: true, error: null, statusFlag: null };
+    }
+
     if (!hasDelivery && !hasItems) {
       return { ok: false, error: 'malformed', statusFlag: null };
     }

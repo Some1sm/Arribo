@@ -15,6 +15,8 @@ const TIMETABLE_ONLY_ARRIVAL_XML = `<?xml version="1.0" encoding="utf-8"?><soap:
 
 const LIVE_ARRIVAL_XML = `<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><GetStopMonitoringResponse xmlns="http://tempuri.org/"><GetStopMonitoringResult><ServiceDeliveryInfo xmlns=""><ResponseTimestamp xmlns="http://www.siri.org.uk/siri">2026-09-27T22:46:55.2018494+02:00</ResponseTimestamp></ServiceDeliveryInfo><Answer xmlns=""><StopMonitoringDelivery xmlns="http://www.siri.org.uk/siri"><ResponseTimestamp>2026-09-27T22:46:55.2018494+02:00</ResponseTimestamp><Status>true</Status><MonitoredStopVisit><MonitoredVehicleJourney><LineRef>1</LineRef><PublishedLineName>L1</PublishedLineName><DirectionName>Hospital</DirectionName><DestinationName>Hospital</DestinationName><VehicleRef>2679</VehicleRef><MonitoredCall><AimedArrivalTime>${new Date(Date.now() + 600000).toISOString()}</AimedArrivalTime><ExpectedArrivalTime>${new Date(Date.now() + 780000).toISOString()}</ExpectedArrivalTime></MonitoredCall></MonitoredVehicleJourney></MonitoredStopVisit></StopMonitoringDelivery></Answer></GetStopMonitoringResult></GetStopMonitoringResponse></soap:Body></soap:Envelope>`;
 
+const IDLE_LINE_XML = `<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><soap:Body><GetVehicleMonitoringResponse xmlns="http://tempuri.org/"><GetVehicleMonitoringResult><ServiceDeliveryInfo xmlns=""><ResponseTimestamp xmlns="http://www.siri.org.uk/siri">2026-09-28T21:50:01.5820725+02:00</ResponseTimestamp></ServiceDeliveryInfo><Answer xmlns="" /></GetVehicleMonitoringResult></GetVehicleMonitoringResponse></soap:Body></soap:Envelope>`;
+
 async function run() {
   console.log('🧪 Running siri_error_detection_test.js...');
 
@@ -116,6 +118,28 @@ async function run() {
     assert.strictEqual(liveRes.length, 1, 'Live arrival parsed');
     assert.strictEqual(liveRes[0].isRealTime, true, 'Live arrival must have isRealTime: true');
     assert.strictEqual(liveRes[0].delayMins, 3, 'Expected - Aimed = 3 mins');
+
+    // 10. Idle line with empty <Answer xmlns="" />
+    siriClient.cache.clear();
+    siriClient.consecutiveFailures = 0;
+    siriClient.circuitOpenUntil = 0;
+    siriClient.setHttpBackend(async () => ({ status: 200, bodyText: IDLE_LINE_XML }));
+
+    const idleRes = await siriClient.getLiveVehicles('7');
+    assert.deepStrictEqual(idleRes, []);
+    assert.strictEqual(siriClient.consecutiveFailures, 0);
+    assert.strictEqual(siriClient.getUpstreamStatus().lastError, null);
+    assert.strictEqual(siriClient.isCircuitOpen(), false);
+
+    // 11. Same body without <Answer xmlns="" /> → malformed
+    siriClient.cache.clear();
+    siriClient.consecutiveFailures = 0;
+    siriClient.circuitOpenUntil = 0;
+    const noAnswerXml = IDLE_LINE_XML.replace(/<Answer\s+xmlns=""\s*\/>/, '');
+    siriClient.setHttpBackend(async () => ({ status: 200, bodyText: noAnswerXml }));
+
+    await siriClient.getLiveVehicles('7');
+    assert.strictEqual(siriClient.getUpstreamStatus().lastError, 'malformed');
 
     console.log('✅ siri_error_detection_test passed all assertions!');
   } finally {

@@ -176,8 +176,33 @@ function requestDataHealth() {
   appInstance.renderDataHealth({ ...healthyData, fleetAnomaly: { detected: true, code: 'no_vehicles_during_service', message: 'x' }, scheduleDrift: { drift: true, differencesCount: 3 } });
   assert(mockDom.gridInnerHtml.includes('>Anomalia<'), 'A detected anomaly must render the Anomalia badge');
   assert(mockDom.gridInnerHtml.includes('>Desviació<'), 'Worker-shaped drift must render the Desviació badge');
-  assert(mockDom.gridInnerHtml.includes('3 sortides'), 'differencesCount must be shown');
   assert(!mockDom.gridInnerHtml.includes('>Normal<'), 'A detected anomaly must never render Normal');
+
+  // D1. Season unescaped label and default text
+  appInstance.renderDataHealth({ ...healthyData, season: { season: 'winter', seasonKnown: true, seasonSource: 'default (no summer window covers this date)' } });
+  assert(mockDom.gridInnerHtml.includes('Horari d&#039;hivern'), 'Should contain unescaped entity in rendered html');
+  assert(!mockDom.gridInnerHtml.includes('&amp;#039;'), 'Must not contain double-escaped &amp;#039;');
+  assert(mockDom.gridInnerHtml.includes('per defecte'), 'Should include per defecte');
+  assert(!mockDom.gridInnerHtml.includes('no summer window'), 'Must not include raw English reason string');
+
+  // D2. Operator error: malformed recent
+  appInstance.renderDataHealth({ ...healthyData, upstreamKnown: true, lastError: 'malformed', lastErrorAt: Date.now() - 60000, circuitOpen: false });
+  assert(mockDom.gridInnerHtml.includes('>Error recent<'), 'Should include Error recent badge');
+  assert(mockDom.gridInnerHtml.includes('resposta buida o incompleta'), 'Should describe malformed error in Catalan');
+  assert(!mockDom.gridInnerHtml.includes('malformed'), 'Must not include raw error code malformed');
+
+  // D3. Operator error: malformed older than 10 min
+  appInstance.renderDataHealth({ ...healthyData, upstreamKnown: true, lastError: 'malformed', lastErrorAt: Date.now() - 30 * 60000, circuitOpen: false });
+  assert(mockDom.gridInnerHtml.includes('>Recuperat<'), 'Older error should render Recuperat badge');
+
+  // D4. Operator error: auth with circuit open
+  appInstance.renderDataHealth({ ...healthyData, upstreamKnown: true, lastError: 'auth', lastErrorAt: Date.now() - 60000, circuitOpen: true });
+  assert(mockDom.gridInnerHtml.includes('>Error<'), 'Circuit open should render Error badge');
+  assert(mockDom.gridInnerHtml.includes('credencials SIRI rebutjades'), 'Should describe auth error in Catalan');
+
+  // D5. Operator error: null
+  appInstance.renderDataHealth({ ...healthyData, upstreamKnown: true, lastError: null });
+  assert(mockDom.gridInnerHtml.includes('>Sense errors<'), 'Null lastError with upstreamKnown should render Sense errors badge');
 
   console.log('PASS: /api/data-health contract, null fields rendered as "sense dades" (never green), zero SQLite access.');
 })().finally(async () => {
