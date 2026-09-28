@@ -4,8 +4,6 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const excluded = {
-  'e2e_test.js': 'Legacy C-10 HTTP contract; requires an external server',
-  'm3_smoke_test.js': 'Retired multi-provider HTTP contract',
   'challenger_m5_adversarial_stress_test.js': 'Manual legacy load/fault-injection diagnostic',
   'challenger_m5_concurrency_ipc_test.js': 'Manual legacy database/fault-injection diagnostic'
 };

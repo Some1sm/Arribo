@@ -548,7 +548,7 @@ class TransitApp {
       this.activeDirection = '0';
     }
 
-    const hash = this.activeLineId === 'c10' ? '#c10' : `#l${this.activeLineId}`;
+    const hash = `#l${this.activeLineId}`;
     if (window.location.hash !== hash) {
       window.history.pushState(null, '', hash);
     }
@@ -1523,7 +1523,7 @@ class TransitApp {
     if (!delayValEl) return;
 
     if (statsContainer) {
-      statsContainer._currentLineQuery = lData?.code || lData?.id || this.activeLineId || 'C-10';
+      statsContainer._currentLineQuery = lData?.code || lData?.id || this.activeLineId || '';
       if (!statsContainer._boundClick) {
         statsContainer._boundClick = true;
         statsContainer.addEventListener('click', () => {
@@ -1539,7 +1539,8 @@ class TransitApp {
     }
 
     let stats = lData?.delayStats || null;
-    const lId = lData?.id || lData?.code || 'c10';
+    const lId = lData?.id || lData?.code || this.activeLineId;
+    if (!lId) return;
 
     if (!stats) {
       try {
@@ -2832,12 +2833,7 @@ class TransitApp {
     if (meta && Array.isArray(meta.directions) && meta.directions.length > 0) {
       return meta.directions;
     }
-    if (String(lineId) === 'c10') {
-      return [
-        { dirId: '1', name: "Cap a Mataró (Hospital / Pl. d'Itàlia)" },
-        { dirId: '0', name: "Cap a Barcelona (Metro la Pau)" }
-      ];
-    }
+
     return [];
   }
 
@@ -3989,7 +3985,7 @@ class TransitApp {
     if (!vehicleId) return;
     const line = this.activeLineData || {};
     const lineCode = line.code || (this.activeLineId ? `L${this.activeLineId}` : '');
-    const lineHash = this.activeLineId === 'c10' ? 'c10' : `l${this.activeLineId}`;
+    const lineHash = `l${this.activeLineId}`;
     
     // Dynamically derive current origin and pathname (works on 87.106.33.66:3000, localhost, or domain)
     const origin = window.location.origin || `${window.location.protocol}//${window.location.host}`;

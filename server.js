@@ -762,60 +762,7 @@ app.get('/api/mataro/stop/:stopId/departures', async (req, res) => {
   }
 });
 
-// Legacy C-10 Corridor alias endpoints
-app.get('/api/c10/target-eta', async (req, res) => {
-  const direction = req.query.direction === '1' ? '1' : '0';
-  const stopId = req.query.stopId || null;
-  try {
-    const resolution = resolveTrackerOr404(res, 'c10');
-    if (!resolution) return;
-    const { tracker } = resolution;
-    const data = await tracker.getTargetStopETA('c10', stopId, direction);
-    res.json({ success: true, data: harmonizeTargetEta(data, tracker, 'c10', direction) });
-  } catch (err) {
-    handleRouteError(req, res, err);
-  }
-});
 
-app.get('/api/c10/live-corridor', async (req, res) => {
-  const direction = req.query.direction === '1' ? '1' : '0';
-  try {
-    const resolution = resolveTrackerOr404(res, 'c10');
-    if (!resolution) return;
-    const { tracker } = resolution;
-    const data = await tracker.getLineDetails('c10', direction);
-    res.json({ success: true, data });
-  } catch (err) {
-    handleRouteError(req, res, err);
-  }
-});
-
-app.get('/api/c10/stops', async (req, res) => {
-  const direction = req.query.direction === '1' ? '1' : '0';
-  try {
-    const resolution = resolveTrackerOr404(res, 'c10');
-    if (!resolution) return;
-    const { tracker } = resolution;
-    const data = await tracker.getLineDetails('c10', direction);
-    res.json({ success: true, totalStops: data?.stops?.length || 0, stops: data?.stops || [] });
-  } catch (err) {
-    handleRouteError(req, res, err);
-  }
-});
-
-app.get('/api/c10/stop/:stopId/departures', async (req, res) => {
-  const { stopId } = req.params;
-  const direction = req.query.direction || '0';
-  try {
-    const resolution = resolveTrackerOr404(res, 'c10');
-    if (!resolution) return;
-    const { tracker } = resolution;
-    const data = await tracker.getStopDepartures(stopId, 'c10', direction);
-    res.json({ success: true, data: harmonizeDeparturesEnvelope(data, tracker, 'c10') });
-  } catch (err) {
-    handleRouteError(req, res, err);
-  }
-});
 // Get Nearby Stops for Mataró Bus (GPS or Zone coordinates)
 app.get(['/api/mataro/stops/nearby', '/api/mataro/nearby', '/api/stops/nearby'], async (req, res) => {
   const lat = req.query.lat;

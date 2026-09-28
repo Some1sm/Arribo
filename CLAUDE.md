@@ -83,7 +83,7 @@ Consequences that are easy to get wrong:
 - `BaseTracker.js` / `TrackerRegistry.js` — tracker lifecycle and line→tracker resolution. **Only Mataró is registered.** The non-Mataró provider trackers and their GTFS/indexer helpers were deleted rather than left dormant, so `TrackerRegistry` has a single provider by construction — there is nothing to re-enable.
 - `httpProtection.js` — security headers, API rate limiter, trusted proxies. `serviceStatus.js` — service calendar/status.
 
-`server.js` is a ~44 KB route table with compatibility aliases (`/api/mataro/*`, `/api/c10/*`, `/api/plan` vs `/api/mataro/plan`, and page aliases `/com-anar-hi`, `/rutes`, `/itinerari`, `/observatori`). Inspect it rather than assuming a contract has been retired.
+`server.js` is a ~44 KB route table with compatibility aliases (`/api/mataro/*`, `/api/plan` vs `/api/mataro/plan`, and page aliases `/com-anar-hi`, `/rutes`, `/itinerari`, `/observatori`). Inspect it rather than assuming a contract has been retired.
 
 ### Coordinates: two orders, both load-bearing
 
