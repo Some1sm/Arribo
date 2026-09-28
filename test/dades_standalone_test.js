@@ -82,7 +82,7 @@ let appServer;
   const appPath = path.join(__dirname, '..', 'public', 'js', 'app.js');
   const appCode = fs.readFileSync(appPath, 'utf8');
   assert.ok(!appCode.includes('Agrupat per línia'), 'app.js must NOT append dynamic group suffix to subtitle');
-  assert.ok(appCode.includes("target.id === 'observatori-group-by-line'"), 'app.js must handle group-by-line change event');
+  assert.ok(obsCode.includes("target.id === 'observatori-group-by-line'"), 'observatori.js must handle group-by-line change event');
   console.log('  ✓ 5. public/js/observatori.js & app.js components, stable subtitles & handlers verified.');
 
   // 6. Verify stop heatmap sticky headers and CSS scroll container
@@ -104,9 +104,12 @@ let appServer;
   assert.ok(cssCode.includes('.incident-tab-meta'), 'style.css must define .incident-tab-meta');
   assert.ok(obsCode.includes('incident-tab-title'), 'observatori.js must wrap titles in incident-tab-title');
   assert.ok(obsCode.includes('incident-tab-meta'), 'observatori.js must wrap badges in incident-tab-meta');
-  assert.ok(appCode.includes('incident-view-mode-tabs-container'), 'app.js must use incident-view-mode-tabs-container');
-  assert.ok(appCode.includes('incident-tab-title'), 'app.js must wrap titles in incident-tab-title');
-  assert.ok(appCode.includes("closest('[data-incident-tab]')"), 'app.js must handle data-incident-tab click events');
+  assert.ok(obsCode.includes('incident-view-mode-tabs-container'), 'observatori.js must use incident-view-mode-tabs-container');
+  assert.ok(obsCode.includes("closest('[data-incident-tab]')"), 'observatori.js must handle data-incident-tab click events');
+  // The Observatori lives only on /dades; app.js (main page) must not carry a second, unreachable copy.
+  for (const dead of ['renderJournalismReport(', 'renderDelayIncidentsView(', 'renderTermometreScorecard(', 'openStopHourlyDrilldown(']) {
+    assert.ok(!appCode.includes(dead), `app.js must not contain the unreachable Observatori method ${dead}`);
+  }
   console.log('  ✓ 6. public/css/style.css sticky headers, rank badges, incident view mode full-width tabs & group rows verified.');
 
   // 7. Verify service worker and HTML asset version alignment
