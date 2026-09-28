@@ -162,6 +162,9 @@ function getMadridMonthRange(monthStr) {
   return { year: y, month: m, monthStr: normalizedMonth, startTs, endTs };
 }
 
+// Built once: Intl.DateTimeFormat construction is expensive and this runs per row.
+const MADRID_HOUR_MINUTE = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+
 class HistoryDatabase {
   constructor() {
     const customDataDir = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
@@ -1650,14 +1653,8 @@ class HistoryDatabase {
   getAnomalyContext(timestamp, delayMins, stopName) {
     const sName = String(stopName || '').toLowerCase();
     const isDepotStop = sName.includes('cotxeres') || sName.includes('depot') || sName.includes('taller');
-    const madridFmt = new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'Europe/Madrid',
-      hour: '2-digit',
-      minute: '2-digit',
-      hourCycle: 'h23'
-    });
     const d = new Date(Number(timestamp));
-    const timeStr = madridFmt.format(d);
+    const timeStr = MADRID_HOUR_MINUTE.format(d);
     const [hStr] = timeStr.split(':');
     const h = parseInt(hStr, 10);
 

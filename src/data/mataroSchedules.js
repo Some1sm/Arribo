@@ -538,6 +538,35 @@ function timeStringToSec(timeStr) {
   return h * 3600 + m * 60 + s;
 }
 
+// Parsed trip intervals per timetable. Keyed by the departures array the loader
+// returns (the same array object for the same line/direction/day/season), so a
+// season or data change produces a new key and never a stale answer.
+const _fleetIntervalCache = new WeakMap();
+
+function fleetIntervals(s0, s1, t0, t1) {
+  const hit = _fleetIntervalCache.get(s0.departures);
+  if (hit && hit.dep1 === s1.departures && hit.t0 === t0 && hit.t1 === t1) return hit;
+  const dep0 = s0.departures.map(d => timeStringToSec(d));
+  const dep1 = s1.departures.map(d => timeStringToSec(d));
+  const starts = [...dep0, ...dep1].sort((a, b) => a - b);
+  const ends = [...dep0.map(s => s + t0 + 60), ...dep1.map(s => s + t1 + 60)].sort((a, b) => a - b);
+  const entry = { dep1: s1.departures, t0, t1, starts, ends };
+  _fleetIntervalCache.set(s0.departures, entry);
+  return entry;
+}
+
+/** How many values of the ascending array `sorted` are <= x. */
+function countAtOrBelow(sorted, x) {
+  let lo = 0;
+  let hi = sorted.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (sorted[mid] <= x) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
 /**
  * Dynamically computes the scheduled active vehicle requirement (fleet size)
  * for a line and day type directly from the official timetable schedule.
@@ -559,44 +588,29 @@ function getScheduledFleetRequirement(lineId, dayType, nowSec = null, season) {
 
   const t0 = s0.totalTravelSec || (s0.totalTravelMinutes * 60) || 1800;
   const t1 = s1.totalTravelSec || (s1.totalTravelMinutes * 60) || 1800;
+  const { starts, ends } = fleetIntervals(s0, s1, t0, t1);
 
   // If nowSec is provided, check if service is currently operating
   if (nowSec !== null) {
-    const allDepSecs = [
-      ...s0.departures.map(d => timeStringToSec(d)),
-      ...s1.departures.map(d => timeStringToSec(d))
-    ].sort((a, b) => a - b);
-
-    if (allDepSecs.length === 0) return 0;
-    const firstServiceSec = Math.max(0, allDepSecs[0] - 1200); // 20m buffer before first departure
-    const lastServiceSec = allDepSecs[allDepSecs.length - 1] + Math.max(t0, t1);
-
+    if (starts.length === 0) return 0;
+    const firstServiceSec = Math.max(0, starts[0] - 1200); // 20m buffer before first departure
+    const lastServiceSec = starts[starts.length - 1] + Math.max(t0, t1);
     if (nowSec < firstServiceSec || nowSec > lastServiceSec) {
       return 0; // Off-hours inactive service
     }
   }
 
-  // Build all scheduled trip intervals [start, end]
-  // Add 60s minimum turnaround clearance to reflect terminal turnaround requirements
-  const trips = [];
-  (s0.departures || []).forEach(d => {
-    const s = timeStringToSec(d);
-    trips.push({ start: s, end: s + t0 + 60 });
-  });
-  (s1.departures || []).forEach(d => {
-    const s = timeStringToSec(d);
-    trips.push({ start: s, end: s + t1 + 60 });
-  });
+  if (starts.length === 0) return 0;
 
-  if (trips.length === 0) return 0;
-
-  // Evaluate the maximum concurrent active trips in the operational window (from nowSec forward up to 60 mins)
+  // Maximum concurrent trips over the next hour, sampled every 30 s. A trip is
+  // active at s when start <= s < end, so the count is (#starts <= s) - (#ends <= s)
+  // because every end is later than its own start.
   const winStart = nowSec !== null ? nowSec : 0;
   const winEnd = nowSec !== null ? Math.min(86400, nowSec + 3600) : 86400;
 
   let maxConcurrent = 0;
   for (let s = winStart; s <= winEnd; s += 30) {
-    const count = trips.filter(t => s >= t.start && s < t.end).length;
+    const count = countAtOrBelow(starts, s) - countAtOrBelow(ends, s);
     if (count > maxConcurrent) maxConcurrent = count;
   }
 
