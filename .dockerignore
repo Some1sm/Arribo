@@ -12,3 +12,9 @@ data/snapshots
 data/test_scratch
 test
 *.log
+data/*.db
+data/shapes.db*
+data/cities/mataro/avanza_raw_timetables.json
+docs
+prompts
+.agents

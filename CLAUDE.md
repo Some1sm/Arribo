@@ -78,8 +78,8 @@ Consequences that are easy to get wrong:
 
 - `time/calendarEngine.js`, `time/timeEngine.js` — all date math. **Europe/Madrid only**; never host-local `getHours()`/`getDay()`. Service dates cross midnight and DST; a nonexistent spring time is rejected and a repeated autumn time resolves to the earlier occurrence.
 - `schedule/transitRouter.js` → generates direct + one-transfer candidates; `schedule/journeyTimeline.js` → resolves walks, checks catchable departures, makes times absolute, ranks, dedupes.
-- `schedule/scheduleSynthesizer.js`, `schedule/delayEngine.js`, `realtime/delayMemory.js`.
-- `geo/geoEngine.js` + `geo/pedestrianRouter.js` (ORS foot-walking or labeled approximate fallback — **never substitute driving routes**), `geo/routeStitcher.js`, `geo/streetGeocoder.js`, `geo/osrmClient.js`.
+- `schedule/scheduleSynthesizer.js`, `schedule/delayEngine.js`.
+- `geo/geoEngine.js` + `geo/pedestrianRouter.js` (ORS foot-walking or labeled approximate fallback — **never substitute driving routes**), `geo/streetGeocoder.js`.
 - `BaseTracker.js` / `TrackerRegistry.js` — tracker lifecycle and line→tracker resolution. **Only Mataró is registered.** The non-Mataró provider trackers and their GTFS/indexer helpers were deleted rather than left dormant, so `TrackerRegistry` has a single provider by construction — there is nothing to re-enable.
 - `httpProtection.js` — security headers, API rate limiter, trusted proxies. `serviceStatus.js` — service calendar/status.
 

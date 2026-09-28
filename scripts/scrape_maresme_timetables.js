@@ -46,7 +46,6 @@ const https = require('node:https');
 
 const CURRENT_PATH = path.join(__dirname, '..', 'src', 'data', 'mataro_schedules.json');
 const OUTPUT_PATH = path.join(__dirname, '..', 'src', 'data', 'mataro_schedules.seasons.json');
-const BACKUP_PATH = path.join(__dirname, '..', 'src', 'data', 'mataro_schedules.pre-season.json');
 
 const SEASONS = { hivern: 'winter', estiu: 'summer' };
 const DAY_KEYS = { a: 'weekday', b: 'saturday', c: 'sunday' };
@@ -591,10 +590,8 @@ async function main() {
     seasons
   };
 
-  if (!fs.existsSync(BACKUP_PATH)) fs.copyFileSync(CURRENT_PATH, BACKUP_PATH);
   fs.writeFileSync(OUTPUT_PATH, formatJsonWithCompactArrays(payload) + '\n');
   console.log(`\n✓ Wrote ${path.relative(process.cwd(), OUTPUT_PATH)}`);
-  console.log(`  backup: ${path.relative(process.cwd(), BACKUP_PATH)}`);
   if (notes.length) {
     console.log(`\n── ${notes.length} note(s) ──`);
     for (const w of notes.slice(0, 40)) console.log('  ' + w);

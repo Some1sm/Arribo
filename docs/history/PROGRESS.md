@@ -28,7 +28,6 @@
 ## Lane 2 Evidence (Iteration 2)
 - historyDb require chain: only ingestionDaemon.js + ingestionWorker.js (+ tests) — server.js clean ✅
 - ambStopRealtime gateway pattern correct: server.js:77 setFetchBackend proxies via workerBridge.historyQuery('getAmbStopRealtimes') — web process never calls AMB directly ✅
-- delayMemory gateway proxied to worker (server.js:72) ✅
 - FINDING #4 (high): request-path live fetches in main process. Evidence: sagalesTracker.getSagalesFeed() fetches https://www.sagales.com/... on cache miss; ambTracker.fetchAmbApi() + rodaliesTracker + corridorTracker use https.request directly; server.js calls tracker.getLineDetails() per request → upstream HTTP possible from main process on 12s-TTL miss.
 - Fix strategy (next iterations): route tracker live fetches through a WorkerBridge-backed transport, mirroring the ambStopRealtime.setFetchBackend pattern; trackers already have BaseTracker seams for injection.
 - FINDING #3 (medium): hardcoded AMB_API_KEY fallback at ambStopRealtime.js:31 — §6 says never hardcode credentials. Per stop rules = needs-human decision (removing fallback changes deploy behavior when env var unset). NOT changed.

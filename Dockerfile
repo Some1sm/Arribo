@@ -18,8 +18,8 @@ RUN npm ci --omit=dev
 # Copy application source code
 COPY . .
 
-# Ensure data and cache directories exist; make /app writable by the non-root node user
-RUN mkdir -p /app/data /app/data/cache && chown -R node:node /app
+# Ensure data directory exists; make /app writable by the non-root node user
+RUN mkdir -p /app/data && chown -R node:node /app
 
 # Run as the non-root user shipped with official node images
 USER node
