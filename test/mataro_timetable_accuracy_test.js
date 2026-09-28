@@ -7,7 +7,7 @@
  * - Tier 3: Cross-Feature Interactions (scheduleSynthesizer Live SIRI/GPS Merging, +-3 Min Duplicate Suppression, Delay Badges)
  * - Tier 4: Real-World Passenger Scenarios (Hospital de Mataró, Estació Rodalies, Parc de Cerdanyola, Pl. Tereses Journeys)
  * 
- * Requirement source: ORIGINAL_REQUEST.md (§R1, §R2, §R3, §R4), PROJECT.md, TEST_INFRA.md
+ * Requirement source: docs/history/ORIGINAL_REQUEST.md (§R1, §R2, §R3, §R4), docs/history/PROJECT.md, docs/history/TEST_INFRA.md
  */
 
 const assert = require('assert');

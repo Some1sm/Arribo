@@ -392,7 +392,7 @@ async function runStartupBenchmark() {
     console.log('📌 [TEST 5: Worker Resilience & IPC Communication]');
     console.log('   Verifying IPC message contracts, health status, and server resilience...');
 
-    // 5.1 Verify IPC Protocol Message Contract Schemas (as defined in PROJECT.md § Interface Contracts)
+    // 5.1 Verify IPC Protocol Message Contract Schemas (as defined in docs/history/PROJECT.md § Interface Contracts)
     const mockWorkerReady = { timestamp: Date.now(), pid: 12345, version: '3.0.0' };
     assert(typeof mockWorkerReady.timestamp === 'number' && typeof mockWorkerReady.pid === 'number', 'WORKER_READY contract');
 

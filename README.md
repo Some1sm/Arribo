@@ -8,7 +8,7 @@ Arribo! combines Avanza SIRI vehicle and arrival data with local route geometry 
 
 The default line catalog, search, and background ingestion focus on Mataró's eight urban bus lines. Trackers for the earlier Catalonia-wide operators have been removed from the codebase, so **Mataró is the only provider present**.
 
-A few compatibility API aliases from that earlier scope remain (see the endpoint table below). [ARCHITECTURE.md](ARCHITECTURE.md) is historical. Use the current source code and [AGENTS.md](AGENTS.md) when working on the active app.
+A few compatibility API aliases from that earlier scope remain (see the endpoint table below). [docs/history/ARCHITECTURE.md](docs/history/ARCHITECTURE.md) is historical. Use the current source code and [AGENTS.md](AGENTS.md) when working on the active app.
 
 See [OPERATIONS.md](OPERATIONS.md) for planner parameters, ORS configuration, local-data
 privacy, PWA updates, readiness and backup/restore.

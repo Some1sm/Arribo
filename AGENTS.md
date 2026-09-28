@@ -58,7 +58,7 @@ structured output printed directly to the user:
 Arribo! serves Mataró Bus Urbà **L1–L8**, eight lines and 153 indexed stops.
 TrackerRegistry registers only Mataró. The Catalonia-wide trackers and their
 GTFS/indexer helpers have been deleted, not left dormant; there is nothing to
-re-enable. [ARCHITECTURE.md](ARCHITECTURE.md)
+re-enable. [docs/history/ARCHITECTURE.md](docs/history/ARCHITECTURE.md)
 is historical. Use [README.md](README.md) and [OPERATIONS.md](OPERATIONS.md) for current
 setup and contracts; verify disagreements against source, not fixed source-line lists.
 
