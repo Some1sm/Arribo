@@ -2058,6 +2058,11 @@ class MataroTracker extends BaseTracker {
     // Whole-line cap: strictly capped by physical line fleet minus all active physical vehicles (live GPS or dead-reckoned)
     const maxSyntheticForLine = Math.max(0, totalScheduledForWholeLine - totalPhysicalOnWholeLine);
 
+    // Why scheduled trips were not drawn. `terminal_bus` is not a missing bus:
+    // it is the trip a real bus standing at (or arriving at) the terminal will
+    // run next, so that bus must not be counted twice in scheduledBuses.
+    const notDrawn = { terminal_bus: 0, terminal_ghost: 0, line_cap: 0, direction_allowance: 0, colocated: 0, no_position: 0 };
+
     // 3. Pair live buses on each direction to active trips
     // unpairedPhysicalByDir[dirKey] = buses running that direction that claimed no trip on it.
     const unpairedPhysicalByDir = { '0': 0, '1': 0 };
@@ -2133,11 +2138,14 @@ class MataroTracker extends BaseTracker {
       // (progress >= 85% and within 400m of the terminal), it will take the layover/turnaround trip!
       const oppDirKey = dirKey === '0' ? '1' : '0';
       const oppPhysicalBuses = allKnownBuses.filter(b => String(b.direction) === oppDirKey && this.isPhysicalVehicle(b));
+      const claimedIncoming = new Set();
+      const sortedTrips = [...activeTripsForDir].sort((a, b) => (b.isTerminalLayover ? 1 : 0) - (a.isTerminalLayover ? 1 : 0));
 
-      activeTripsForDir.forEach(trip => {
+      sortedTrips.forEach(trip => {
         if (trip.paired) return;
-        if (!trip.isTerminalLayover && trip.progress <= 0.20) {
+        if (trip.isTerminalLayover || trip.progress <= 0.20) {
           const incomingBus = oppPhysicalBuses.find(b => {
+            if (claimedIncoming.has(b.vehicleId)) return false;
             const bLat = b.lat || b.latitude;
             const bLon = b.lon || b.longitude;
             if (!bLat || !bLon) return false;
@@ -2147,7 +2155,11 @@ class MataroTracker extends BaseTracker {
             return isAtEnd && isNearTerminal;
           });
           if (incomingBus) {
+            claimedIncoming.add(incomingBus.vehicleId);
             trip.paired = true;
+            // The arriving bus already counts for the trip it is finishing; this
+            // is its next departure, not a second bus.
+            notDrawn.terminal_bus++;
           }
         }
       });
@@ -2226,11 +2238,6 @@ class MataroTracker extends BaseTracker {
       if (prioA !== prioB) return prioA - prioB;
       return a.trip.depSec - b.trip.depSec;
     });
-
-    // Why scheduled trips were not drawn. `terminal_bus` is not a missing bus:
-    // it is the trip a real bus standing at (or arriving at) the terminal will
-    // run next, so that bus must not be counted twice in scheduledBuses.
-    const notDrawn = { terminal_bus: 0, terminal_ghost: 0, line_cap: 0, direction_allowance: 0, colocated: 0, no_position: 0 };
 
     // 5. Synthesize ghost buses up to the line fleet cap
     const allSyntheticBuses = [];

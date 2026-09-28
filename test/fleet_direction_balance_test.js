@@ -572,6 +572,41 @@ async function run() {
     console.log('  ✓ terminal bus suppresses the departure it will run and reduces scheduledBuses by 1\n');
   }
 
+  // ── 12. An arriving bus 300m out pairs with its turnaround layover trip ──
+  console.log('📌 Test 12: an arriving bus 300 m out suppresses the terminal layover ghost...');
+  {
+    const routes = mataroTracker.routesData['1'];
+    const coords0 = routes[0].coords;
+    let cum = 0;
+    let pt300 = null;
+    for (let i = coords0.length - 1; i > 0; i--) {
+      const p1 = coords0[i];
+      const p0 = coords0[i - 1];
+      cum += geoEngine.calculateDistanceMeters(
+        parseFloat(p1.Latitude), parseFloat(p1.Longitude),
+        parseFloat(p0.Latitude), parseFloat(p0.Longitude)
+      );
+      if (cum >= 300) {
+        pt300 = coords0[i - 1];
+        break;
+      }
+    }
+    assert.ok(pt300, 'must find a point >= 300m backwards');
+    const approaching = live('2695', '0', parseFloat(pt300.Latitude), parseFloat(pt300.Longitude), 92);
+    const at = new Date(Date.UTC(2026, 8, 24, 4, 58, 0)); // 06:58 Madrid: 07:01 is terminal layover on dir 1
+    const res = mataroTracker.synthesizeMissingScheduledBuses(
+      '1', 'both', routes, dirTemplate, [approaching], at, [approaching]
+    );
+    const activeBuses = [approaching, ...res.syntheticBuses];
+    assert.ok(
+      !activeBuses.some((b) => b.isGhostVehicle === true && b.isTerminalLayover === true && String(b.direction) === '1'),
+      'an arriving bus 300 m out must not get a phantom layover ghost at the terminal'
+    );
+    assert.strictEqual(res.fleetStatus.notDrawn.terminal_bus, 1);
+    assert.strictEqual(res.fleetStatus.scheduledBuses, res.fleetStatus.scheduledVehicles - 1);
+    console.log('  ✓ arriving bus 300 m out pairs with layover and suppresses phantom ghost\n');
+  }
+
   console.log('=========================================================================');
   console.log('🎉 ALL FLEET DIRECTION-BALANCE TESTS PASSED');
   console.log('=========================================================================');
