@@ -126,11 +126,21 @@ try {
 
   const calendarDateRows = parseCsv(fs.readFileSync(path.join(scratch, 'calendar_dates.txt'), 'utf8'));
   assert(calendarDateRows.length > 0, 'calendar_dates.txt must contain exceptions');
+  const serviceDatePairs = new Set();
   for (const cd of calendarDateRows) {
     assert(serviceIds.has(cd.service_id), `calendar_dates service_id ${cd.service_id} must exist in calendar.txt`);
-    assert(['1', '2'].includes(cd.exception_type), `exception_type must be 1 or 2, got ${cd.exception_type}`);
+    assert.equal(cd.exception_type, '1', `every calendar_dates row must have exception_type 1, got ${cd.exception_type}`);
     assert(/^\d{8}$/.test(cd.date), `date must be YYYYMMDD, got ${cd.date}`);
+    const pair = `${cd.service_id}:${cd.date}`;
+    assert(!serviceDatePairs.has(pair), `Duplicate (service_id, date) pair: ${pair}`);
+    serviceDatePairs.add(pair);
   }
+  const row20261208 = calendarDateRows.find(cd => cd.date === '20261208');
+  assert(row20261208, 'Row for date 20261208 must exist');
+  assert.equal(row20261208.service_id, 'winter_sunday');
+  const row20261209 = calendarDateRows.find(cd => cd.date === '20261209');
+  assert(row20261209, 'Row for date 20261209 must exist');
+  assert.equal(row20261209.service_id, 'winter_weekday');
 
   // 7. Validate trips.txt
   const tripRows = parseCsv(fs.readFileSync(path.join(scratch, 'trips.txt'), 'utf8'));

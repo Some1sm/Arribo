@@ -15,7 +15,6 @@ const mataroFleet = require('./src/data/mataroFleet');
 const mataroSchedules = require('./src/data/mataroSchedules');
 const holidayCalendar = require('./src/core/time/holidayCalendar');
 const streetGeocoder = require('./src/core/geo/streetGeocoder');
-const timeEngine = require('./src/core/time/timeEngine');
 const tripMatcher = require('./src/core/schedule/tripMatcher');
 
 // ==========================================
@@ -486,7 +485,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // Real-time data health and telemetry integrity panel (cached in-memory values only)
-app.get('/api/data-health', (req, res) => {
+app.get('/api/data-health', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const now = Date.now();
   const worker = workerBridge.getStatus();
@@ -500,33 +499,36 @@ app.get('/api/data-health', (req, res) => {
   const holidaysKnown = holidayCalendar.isHolidayKnown(now);
   const holidayCoverage = holidayCalendar.getHolidayCoverage(now);
 
-  const net = timeEngine.getNetworkTime('Europe/Madrid', new Date(now));
-  const nowSec = net.hour * 3600 + net.minute * 60 + net.second;
-  const { dayType } = tripMatcher.resolveDayType(now);
-
-  const allVehicles = flightRecorder.getAllVehicles();
+  // Same source as the landing map (getLineDetails 'both' → fleetStatus), so the
+  // two screens report one fleet. getScheduledFleetRequirement is the PEAK need
+  // over the next hour and must not be shown as "scheduled now".
+  const LINE_IDS = ['1', '2', '3', '4', '5', '6', '7', '8'];
+  const withTimeout = (promise, ms) => Promise.race([promise, new Promise(resolve => { const t = setTimeout(() => resolve(null), ms); t.unref?.(); })]);
+  const details = await Promise.all(LINE_IDS.map(id =>
+    withTimeout(Promise.resolve().then(() => mataroTracker.getLineDetails(id, 'both')), 3000).catch(() => null)));
   const linesFleet = [];
   let totalLiveGps = 0;
+  let totalEstimated = 0;
+  let totalDeadReckoned = 0;
   let totalScheduled = 0;
-
-  for (let i = 1; i <= 8; i++) {
-    const lineId = String(i);
-    const code = `L${lineId}`;
-    const lineVehicles = allVehicles.filter(v => {
-      const c = (v.lineCode || '').toUpperCase();
-      return c === code || c === lineId;
-    });
-    const liveGpsVehicles = lineVehicles.filter(v => !v.isEstimated && !v.isGhostVehicle && !String(v.vehicleId || '').startsWith('EST_')).length;
-    const scheduledVehicles = mataroSchedules.getScheduledFleetRequirement(lineId, dayType, nowSec);
+  let complete = true;
+  LINE_IDS.forEach((lineId, i) => {
+    const fs = details[i] && details[i].fleetStatus;
+    if (!fs) {
+      complete = false;
+      linesFleet.push({ lineId, lineCode: `L${lineId}`, available: false });
+      return;
+    }
+    const liveGpsVehicles = Number(fs.liveGpsVehicles) || 0;
+    const estimatedVehicles = Number(fs.estimatedVehicles) || 0;
+    const deadReckonedVehicles = Number(fs.deadReckonedVehicles) || 0;
+    const scheduledVehicles = Number(fs.scheduledVehicles) || 0;
     totalLiveGps += liveGpsVehicles;
+    totalEstimated += estimatedVehicles;
+    totalDeadReckoned += deadReckonedVehicles;
     totalScheduled += scheduledVehicles;
-    linesFleet.push({
-      lineId,
-      lineCode: code,
-      liveGpsVehicles,
-      scheduledVehicles
-    });
-  }
+    linesFleet.push({ lineId, lineCode: `L${lineId}`, available: true, liveGpsVehicles, estimatedVehicles, deadReckonedVehicles, scheduledVehicles });
+  });
 
   res.json({
     success: true,
@@ -537,16 +539,15 @@ app.get('/api/data-health', (req, res) => {
       checkedAt: canary.checkedAt || null
     } : null,
     lastError: circuit?.lastError || null,
-    fleetAnomaly: anomaly ? {
-      detectedAt: anomaly.detectedAt || null,
-      severity: anomaly.severity || null,
-      message: anomaly.message || null
-    } : null,
-    fleet: {
-      totalLiveGps,
-      totalScheduled,
-      lines: linesFleet
-    },
+    // The worker stores the anomaly as a code string or null (null = evaluated, none found).
+    fleetAnomaly: worker.metrics ? (anomaly ? {
+      detected: true,
+      code: String(anomaly),
+      message: anomaly === 'no_vehicles_during_service'
+        ? "Cap autobús amb GPS mentre l'horari en preveu en servei."
+        : String(anomaly)
+    } : { detected: false, code: null, message: null }) : null,
+    fleet: { totalLiveGps, totalEstimated, totalDeadReckoned, totalScheduled, complete, source: 'tracker-line-details', lines: linesFleet },
     scheduleDrift: drift,
     season: validity.season ? {
       season: validity.season,
@@ -840,6 +841,18 @@ app.get(['/api/mataro/stops/nearby', '/api/mataro/nearby', '/api/stops/nearby'],
   }
 });
 
+// Riders type stop names without accents ("hospital de mataro"). An exact,
+// accent-sensitive comparison sent those to the street geocoder, which resolved
+// "hospital de mataro" to Edif. Vidre - TecnoCampus. Match stops first.
+function resolveStopName(query) {
+  const target = tripMatcher.normalizeStopName(query).toLowerCase();
+  if (!target || !mataroTracker.allStopsMap) return null;
+  for (const stop of mataroTracker.allStopsMap.values()) {
+    if (tripMatcher.normalizeStopName(stop.name).toLowerCase() === target) return stop.name;
+  }
+  return null;
+}
+
 // Journey Planner ("Com anar-hi" - A to B routing in Mataró)
 app.get(['/api/mataro/plan', '/api/plan'], async (req, res) => {
   const numeric = (name, min, max) => req.query[name] === undefined || (typeof req.query[name] === 'string' && req.query[name].trim() !== '' && Number.isFinite(Number(req.query[name])) && Number(req.query[name]) >= min && Number(req.query[name]) <= max);
@@ -879,25 +892,25 @@ app.get(['/api/mataro/plan', '/api/plan'], async (req, res) => {
 
   // Geocode origin / destination if they are street names not matching a known stop
   if (typeof origin === 'string' && !/^\d+$/.test(origin)) {
-    const isStop = mataroTracker.allStopsMap && Array.from(mataroTracker.allStopsMap.values()).some(s => s.name.toLowerCase() === origin.toLowerCase());
-    if (!isStop) {
+    const canonical = resolveStopName(origin);
+    if (canonical) {
+      origin = canonical;
+    } else {
       try {
         const found = await streetGeocoder.searchStreets(origin, 1);
-        if (found.length > 0) {
-          origin = { lat: found[0].lat, lon: found[0].lon, name: found[0].name || origin };
-        }
+        if (found.length > 0) origin = { lat: found[0].lat, lon: found[0].lon, name: found[0].name || origin };
       } catch {}
     }
   }
 
   if (typeof destination === 'string' && !/^\d+$/.test(destination)) {
-    const isStop = mataroTracker.allStopsMap && Array.from(mataroTracker.allStopsMap.values()).some(s => s.name.toLowerCase() === destination.toLowerCase());
-    if (!isStop) {
+    const canonical = resolveStopName(destination);
+    if (canonical) {
+      destination = canonical;
+    } else {
       try {
         const found = await streetGeocoder.searchStreets(destination, 1);
-        if (found.length > 0) {
-          destination = { lat: found[0].lat, lon: found[0].lon, name: found[0].name || destination };
-        }
+        if (found.length > 0) destination = { lat: found[0].lat, lon: found[0].lon, name: found[0].name || destination };
       } catch {}
     }
   }

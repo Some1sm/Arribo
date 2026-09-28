@@ -212,7 +212,7 @@ class ObservatoriApp {
     // 3. Anomalia de flota (fleetAnomaly)
     if (!data || data.fleetAnomaly === null || data.fleetAnomaly === undefined) {
       items.push(makeItem('Anomalia de flota', '🚌', 'status-neutral', 'Sense dades', 'Sense avaluació d&#039;anomalies de flota.'));
-    } else if (data.fleetAnomaly.detected || (data.fleetAnomaly.severity && data.fleetAnomaly.severity !== 'none')) {
+    } else if (data.fleetAnomaly.detected === true) {
       items.push(makeItem('Anomalia de flota', '🚌', 'status-warning', 'Anomalia', this.esc(data.fleetAnomaly.message || 'Desviació en la flota activa detectada.')));
     } else {
       items.push(makeItem('Anomalia de flota', '🚌', 'status-success', 'Normal', 'Sense anomalies de flota detectades a la xarxa.'));
@@ -222,19 +222,23 @@ class ObservatoriApp {
     if (!data || data.fleet === null || data.fleet === undefined) {
       items.push(makeItem('Flota GPS activa', '🛰️', 'status-neutral', 'Sense dades', 'Sense dades de vehicles actius per línia.'));
     } else {
-      const { totalLiveGps, totalScheduled, lines = [] } = data.fleet;
+      const { totalLiveGps = 0, totalEstimated = 0, totalScheduled = 0, complete = true, lines = [] } = data.fleet;
       const isOk = totalScheduled > 0 && totalLiveGps >= Math.ceil(totalScheduled * 0.7);
       const badgeClass = totalScheduled > 0 ? (isOk ? 'status-success' : 'status-warning') : 'status-neutral';
-      const badgeText = `${totalLiveGps} / ${totalScheduled} GPS`;
-      const perLine = lines.map(l => `${l.lineCode}: ${l.liveGpsVehicles}/${l.scheduledVehicles}`).join(' · ');
-      items.push(makeItem('Flota GPS activa', '🛰️', badgeClass, badgeText, `Per línia: ${perLine}`));
+      const badgeText = `${totalLiveGps} GPS · ${totalEstimated} estimats`;
+      const perLine = lines.map(l => l.available === false
+        ? `${l.lineCode}: sense dades`
+        : `${l.lineCode}: ${l.liveGpsVehicles}+${l.estimatedVehicles ?? 0}/${l.scheduledVehicles}`).join(' · ');
+      const note = complete ? '' : ' (algunes línies sense dades)';
+      items.push(makeItem('Flota GPS activa', '🛰️', badgeClass, badgeText,
+        `${totalLiveGps + totalEstimated} autobusos al mapa; l&#039;horari en preveu ${totalScheduled}${note}. GPS+estimats/previstos per línia: ${perLine}`));
     }
 
     // 5. Deriva horària (scheduleDrift)
     if (!data || data.scheduleDrift === null || data.scheduleDrift === undefined) {
       items.push(makeItem('Deriva horària', '⏱️', 'status-neutral', 'Sense dades', 'Sense comprovació de deriva entre operador i graella.'));
-    } else if (data.scheduleDrift.driftFound) {
-      items.push(makeItem('Deriva horària', '⏱️', 'status-warning', 'Desviació', `Detectada diferència de ${data.scheduleDrift.discrepancies || 1} sortides respecte a la graella.`));
+    } else if (data.scheduleDrift.drift === true) {
+      items.push(makeItem('Deriva horària', '⏱️', 'status-warning', 'Desviació', `Detectada diferència de ${data.scheduleDrift.differencesCount || 1} sortides respecte a la graella.`));
     } else {
       items.push(makeItem('Deriva horària', '⏱️', 'status-success', 'Sincronitzat', 'Horaris teòrics de l&#039;operador coincidents amb la graella oficial.'));
     }

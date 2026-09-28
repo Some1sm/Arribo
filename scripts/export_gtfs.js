@@ -24,6 +24,8 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const tripMatcher = require('../src/core/schedule/tripMatcher');
+const seasonCalendar = require('../src/data/seasonCalendar');
 
 const SEASONS_DATA_PATH = path.join(__dirname, '..', 'src', 'data', 'mataro_schedules.seasons.json');
 const HOLIDAYS_PATH = path.join(__dirname, '..', 'src', 'data', 'holidays.json');
@@ -63,14 +65,21 @@ function exportGtfs(targetDir = null) {
 
   const rawSeasons = JSON.parse(fs.readFileSync(SEASONS_DATA_PATH, 'utf8'));
   const seasons = rawSeasons.seasons || {};
-  let holidays = [];
+  // The feed spans every year the holiday calendar covers; day type and season
+  // for each date come from the same resolvers the app uses, so the feed can
+  // never disagree with the boards.
+  let years = [];
   try {
-    const rawHolidays = JSON.parse(fs.readFileSync(HOLIDAYS_PATH, 'utf8'));
-    const h2026 = rawHolidays.years?.['2026'] || {};
-    holidays = [...(h2026.regional || []), ...(h2026.local || [])];
-  } catch {
-    holidays = [];
+    years = Object.keys(JSON.parse(fs.readFileSync(HOLIDAYS_PATH, 'utf8')).years || {})
+      .map(Number).filter(Number.isInteger).sort((a, b) => a - b);
+  } catch { years = []; }
+  if (years.length === 0) {
+    years = [Number(new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid', year: 'numeric' }).format(new Date()))];
   }
+  const firstYear = years[0];
+  const lastYear = years[years.length - 1];
+  const feedStart = `${firstYear}0101`;
+  const feedEnd = `${lastYear}1231`;
 
   // 1. agency.txt
   const agencyRows = [
@@ -140,14 +149,12 @@ function exportGtfs(targetDir = null) {
   // 4. calendar.txt
   const calendarRows = [
     csvRow(['service_id', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'start_date', 'end_date']),
-    // Winter (Default regular service across 2026)
-    csvRow(['winter_weekday', '1', '1', '1', '1', '1', '0', '0', '20260101', '20261231']),
-    csvRow(['winter_saturday', '0', '0', '0', '0', '0', '1', '0', '20260101', '20261231']),
-    csvRow(['winter_sunday', '0', '0', '0', '0', '0', '0', '1', '20260101', '20261231']),
-    // Summer (Notice 1505 window: 2026-07-27 to 2026-08-23)
-    csvRow(['summer_weekday', '1', '1', '1', '1', '1', '0', '0', '20260727', '20260823']),
-    csvRow(['summer_saturday', '0', '0', '0', '0', '0', '1', '0', '20260727', '20260823']),
-    csvRow(['summer_sunday', '0', '0', '0', '0', '0', '0', '1', '20260727', '20260823'])
+    csvRow(['winter_weekday', '0', '0', '0', '0', '0', '0', '0', feedStart, feedEnd]),
+    csvRow(['winter_saturday', '0', '0', '0', '0', '0', '0', '0', feedStart, feedEnd]),
+    csvRow(['winter_sunday', '0', '0', '0', '0', '0', '0', '0', feedStart, feedEnd]),
+    csvRow(['summer_weekday', '0', '0', '0', '0', '0', '0', '0', feedStart, feedEnd]),
+    csvRow(['summer_saturday', '0', '0', '0', '0', '0', '0', '0', feedStart, feedEnd]),
+    csvRow(['summer_sunday', '0', '0', '0', '0', '0', '0', '0', feedStart, feedEnd])
   ];
   fs.writeFileSync(path.join(outDir, 'calendar.txt'), calendarRows.join('\r\n') + '\r\n', 'utf8');
 
@@ -156,39 +163,13 @@ function exportGtfs(targetDir = null) {
     csvRow(['service_id', 'date', 'exception_type'])
   ];
 
-  // 5a. Summer window weekdays: remove winter_weekday
-  const summerStart = new Date(Date.UTC(2026, 6, 27)); // 2026-07-27
-  const summerEnd = new Date(Date.UTC(2026, 7, 23));   // 2026-08-23
-  for (let d = new Date(summerStart); d <= summerEnd; d.setUTCDate(d.getUTCDate() + 1)) {
-    const dayOfWeek = d.getUTCDay(); // 0=Sun, 1=Mon, ..., 6=Sat
-    const yStr = d.getUTCFullYear();
-    const mStr = String(d.getUTCMonth() + 1).padStart(2, '0');
-    const dStr = String(d.getUTCDate()).padStart(2, '0');
-    const dateFormatted = `${yStr}${mStr}${dStr}`;
-
-    if (dayOfWeek >= 1 && dayOfWeek <= 5) {
-      // Winter weekday removed during summer window
-      calendarDateRows.push(csvRow(['winter_weekday', dateFormatted, '2']));
-    }
-  }
-
-  // 5b. Public holidays: run Sunday schedule instead of weekday/saturday
-  for (const h of holidays) {
-    if (!h.date) continue;
-    const dateFormatted = h.date.replace(/-/g, '');
-    const [y, m, da] = h.date.split('-').map(Number);
-    const d = new Date(Date.UTC(y, m - 1, da));
-    const dayOfWeek = d.getUTCDay();
-
-    if (dayOfWeek >= 1 && dayOfWeek <= 5) {
-      calendarDateRows.push(csvRow(['winter_weekday', dateFormatted, '2']));
-      calendarDateRows.push(csvRow(['summer_weekday', dateFormatted, '2']));
-      calendarDateRows.push(csvRow(['winter_sunday', dateFormatted, '1']));
-    } else if (dayOfWeek === 6) {
-      calendarDateRows.push(csvRow(['winter_saturday', dateFormatted, '2']));
-      calendarDateRows.push(csvRow(['summer_saturday', dateFormatted, '2']));
-      calendarDateRows.push(csvRow(['winter_sunday', dateFormatted, '1']));
-    }
+  for (let t = Date.UTC(firstYear, 0, 1); t <= Date.UTC(lastYear, 11, 31); t += 86400000) {
+    const d = new Date(t);
+    const ymd = `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`;
+    const at = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 10, 0, 0); // midday in Madrid
+    const { dayType } = tripMatcher.resolveDayType(at);
+    const { season } = seasonCalendar.resolveSeason(at);
+    calendarDateRows.push(csvRow([`${season}_${dayType}`, ymd, '1']));
   }
   fs.writeFileSync(path.join(outDir, 'calendar_dates.txt'), calendarDateRows.join('\r\n') + '\r\n', 'utf8');
 
@@ -274,7 +255,7 @@ function exportGtfs(targetDir = null) {
   // 8. feed_info.txt
   const feedInfoRows = [
     csvRow(['feed_publisher_name', 'feed_publisher_url', 'feed_lang', 'feed_start_date', 'feed_end_date', 'feed_version']),
-    csvRow(['Arribo! Transit Platform', 'https://arribo.cat', 'ca', '20260101', '20261231', '3.0.0'])
+    csvRow(['Arribo! Transit Platform', 'https://arribo.cat', 'ca', feedStart, feedEnd, '3.0.0'])
   ];
   fs.writeFileSync(path.join(outDir, 'feed_info.txt'), feedInfoRows.join('\r\n') + '\r\n', 'utf8');
 

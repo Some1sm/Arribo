@@ -46,14 +46,17 @@ function requestDataHealth() {
     metrics: {
       upstreamCanary: { ok: true, error: null, checkedAt: Date.now() - 5000 },
       upstream: { lastError: null },
-      fleetAnomaly: { detectedAt: null, severity: 'none', message: null },
-      scheduleDrift: { driftFound: false, discrepancies: 0 }
+      fleetAnomaly: null,
+      scheduleDrift: { drift: false, checkedAt: '2026-09-28T04:15:00.000Z', differencesCount: 0 }
     }
   });
 
   const res = await requestDataHealth();
   assert.equal(res.success, true);
   assert(Number.isFinite(res.timestamp));
+  assert.equal(res.fleetAnomaly.detected, false);
+  assert.equal(res.fleet.lines.length, 8);
+  assert.equal(typeof res.fleet.totalEstimated, 'number');
 
   // Check all required fields are present
   assert('upstreamCanary' in res, 'Missing upstreamCanary field');
@@ -159,9 +162,9 @@ function requestDataHealth() {
   const healthyData = {
     upstreamCanary: { ok: true, error: null, checkedAt: Date.now() },
     lastError: null, // no error
-    fleetAnomaly: { detected: false },
-    fleet: { totalLiveGps: 12, totalScheduled: 12, lines: [] },
-    scheduleDrift: { driftFound: false },
+    fleetAnomaly: { detected: false, code: null, message: null },
+    fleet: { totalLiveGps: 12, totalEstimated: 0, totalScheduled: 12, complete: true, lines: [] },
+    scheduleDrift: { drift: false, differencesCount: 0 },
     season: { season: 'winter', seasonKnown: true, seasonSource: 'config' },
     seasonOutlook: { warning: null },
     holidaysKnownForYear: true,
@@ -169,6 +172,12 @@ function requestDataHealth() {
   };
   appInstance.renderDataHealth(healthyData);
   assert(mockDom.gridInnerHtml.includes('status-success'), 'Healthy fields must render green status-success badges');
+
+  appInstance.renderDataHealth({ ...healthyData, fleetAnomaly: { detected: true, code: 'no_vehicles_during_service', message: 'x' }, scheduleDrift: { drift: true, differencesCount: 3 } });
+  assert(mockDom.gridInnerHtml.includes('>Anomalia<'), 'A detected anomaly must render the Anomalia badge');
+  assert(mockDom.gridInnerHtml.includes('>Desviació<'), 'Worker-shaped drift must render the Desviació badge');
+  assert(mockDom.gridInnerHtml.includes('3 sortides'), 'differencesCount must be shown');
+  assert(!mockDom.gridInnerHtml.includes('>Normal<'), 'A detected anomaly must never render Normal');
 
   console.log('PASS: /api/data-health contract, null fields rendered as "sense dades" (never green), zero SQLite access.');
 })().finally(async () => {
