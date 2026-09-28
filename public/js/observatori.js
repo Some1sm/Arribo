@@ -659,16 +659,13 @@ class ObservatoriApp {
     }
 
     try {
-      const [res, snapshotRes] = await Promise.allSettled([
-        fetch(`/api/analytics/journalism?hours=${hours}`).then(r => r.json()),
-        fetch(`/api/routes/snapshots`).then(r => r.json())
+      const [res] = await Promise.allSettled([
+        fetch(`/api/analytics/journalism?hours=${hours}`).then(r => r.json())
       ]);
 
       const journalismData = res.status === 'fulfilled' && res.value?.success ? (res.value.report || res.value) : null;
-      const snapshotsData = snapshotRes.status === 'fulfilled' && snapshotRes.value?.success ? snapshotRes.value : null;
 
       if (journalismData) {
-        journalismData.snapshotInfo = snapshotsData;
         this.currentReport = journalismData;
         this.renderJournalismReport(journalismData);
       } else {
@@ -1298,40 +1295,6 @@ class ObservatoriApp {
       `}
       </div>
 
-      <!-- Infrastructure Version & Audit Integrity -->
-      ${report.snapshotInfo?.snapshots ? `
-        <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:1.1rem; margin-top:1.5rem;">
-          <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.75rem;">
-            <div>
-              <div style="font-size:0.75rem; font-weight:700; color:var(--accent-scheduled); text-transform:uppercase;">Integritat de la Xarxa i Canvis Operatius</div>
-              <div style="font-size:0.95rem; font-weight:700; color:var(--text-primary); margin-top:0.2rem;">Traçabilitat d'Horaris i Traçats Oficials</div>
-            </div>
-            <div style="font-size:0.74rem; color:var(--text-muted);">
-              Darrera auditoria: <strong>${new Date(report.snapshotInfo.generatedAt || Date.now()).toLocaleDateString()}</strong>
-            </div>
-          </div>
-          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:0.65rem;">
-            ${report.snapshotInfo.snapshots.map(snap => `
-              <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:8px; padding:0.65rem 0.85rem;">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                  <strong style="font-size:0.82rem; color:var(--text-primary);">${this.esc(snap.provider)}</strong>
-                  <span style="font-size:0.7rem; background:rgba(16,185,129,0.15); color:var(--accent-live); padding:1px 6px; border-radius:4px; font-weight:700;">Auditat</span>
-                </div>
-                <div style="font-size:0.72rem; color:var(--text-muted); margin-top:0.3rem;">
-                  ${snap.summary.totalRoutes} línies • ${snap.summary.totalStops} parades troncals
-                </div>
-              </div>
-            `).join('')}
-          </div>
-
-          ${report.snapshotInfo.diff ? `
-            <div style="margin-top:0.75rem; font-size:0.74rem; color:var(--text-muted); display:flex; align-items:center; gap:0.4rem; border-top:1px solid var(--border-subtle); padding-top:0.6rem;">
-              <span>Estat dels canvis:</span>
-              <strong style="color:var(--text-primary);">${report.snapshotInfo.diff.status || 'Estable (Sense canvis en traçats ni parades en les darreres 72h)'}</strong>
-            </div>
-          ` : ''}
-        </div>
-      ` : ''}
     `;
 
     container.innerHTML = html;

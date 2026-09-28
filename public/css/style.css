@@ -6306,19 +6306,6 @@ body {
   padding-bottom: 2px;
 }
 
-.itinerary-step-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: var(--bg-surface-elevated, #1a2337);
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  padding: 3px 8px;
-  font-size: 0.78rem;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
 /* ======================================================== */
 /* CORE BUTTON SYSTEM (.btn-primary, .btn-secondary)        */
 /* ======================================================== */
@@ -6539,8 +6526,7 @@ body {
 }
 
 /* Modern Segmented Control Dock */
-.observatori-page .line-picker-filter-tabs,
-#journalism-modal-backdrop .line-picker-filter-tabs {
+.observatori-page .line-picker-filter-tabs {
   background: rgba(15, 23, 42, 0.75);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -6553,16 +6539,14 @@ body {
   gap: 3px;
 }
 
-[data-theme="light"] .observatori-page .line-picker-filter-tabs,
-[data-theme="light"] #journalism-modal-backdrop .line-picker-filter-tabs {
+[data-theme="light"] .observatori-page .line-picker-filter-tabs {
   background: rgba(241, 245, 249, 0.9);
   border-color: rgba(0, 0, 0, 0.08);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
 }
 
 /* Tab Segmented Buttons */
-.observatori-page .line-filter-tab,
-#journalism-modal-backdrop .line-filter-tab {
+.observatori-page .line-filter-tab {
   background: transparent;
   border: 1px solid transparent;
   border-radius: 8px;
@@ -6581,22 +6565,19 @@ body {
   user-select: none;
 }
 
-.observatori-page .line-filter-tab:hover:not(.active),
-#journalism-modal-backdrop .line-filter-tab:hover:not(.active) {
+.observatori-page .line-filter-tab:hover:not(.active) {
   background: rgba(255, 255, 255, 0.06);
   color: #f8fafc;
   border-color: rgba(255, 255, 255, 0.06);
 }
 
-[data-theme="light"] .observatori-page .line-filter-tab:hover:not(.active),
-[data-theme="light"] #journalism-modal-backdrop .line-filter-tab:hover:not(.active) {
+[data-theme="light"] .observatori-page .line-filter-tab:hover:not(.active) {
   background: rgba(0, 0, 0, 0.05);
   color: #0f172a;
 }
 
 /* Active State: Timeframe Tabs (Emerald Brand Aesthetic matching lane page) */
-.observatori-page .line-filter-tab.active,
-#journalism-modal-backdrop .line-filter-tab.active {
+.observatori-page .line-filter-tab.active {
   background: var(--c10-primary) !important;
   color: #ffffff !important;
   border: 1px solid var(--c10-primary) !important;
@@ -6605,16 +6586,14 @@ body {
   transform: translateY(0);
 }
 
-[data-theme="light"] .observatori-page .line-filter-tab.active,
-[data-theme="light"] #journalism-modal-backdrop .line-filter-tab.active {
+[data-theme="light"] .observatori-page .line-filter-tab.active {
   background: var(--c10-primary) !important;
   color: #ffffff !important;
   border-color: var(--c10-primary) !important;
   box-shadow: 0 2px 10px var(--c10-primary-glow) !important;
 }
 
-.observatori-page .line-filter-tab:focus-visible,
-#journalism-modal-backdrop .line-filter-tab:focus-visible {
+.observatori-page .line-filter-tab:focus-visible {
   outline: 2px solid var(--border-focus);
   outline-offset: 2px;
 }
@@ -6642,21 +6621,18 @@ body {
 }
 
 /* Termòmetre Tab */
-.observatori-page .termometre-tab,
-#journalism-modal-backdrop .termometre-tab {
+.observatori-page .termometre-tab {
   color: #7dd3fc;
 }
 
-.observatori-page .termometre-tab:hover:not(.active),
-#journalism-modal-backdrop .termometre-tab:hover:not(.active) {
+.observatori-page .termometre-tab:hover:not(.active) {
   background: rgba(56, 189, 248, 0.12);
   color: #38bdf8;
   border-color: rgba(56, 189, 248, 0.25);
   transform: translateY(-1px);
 }
 
-.observatori-page .termometre-tab.active,
-#journalism-modal-backdrop .termometre-tab.active {
+.observatori-page .termometre-tab.active {
   background: linear-gradient(135deg, rgba(2, 132, 199, 0.3) 0%, rgba(3, 105, 161, 0.45) 100%) !important;
   color: #38bdf8 !important;
   border: 1px solid rgba(56, 189, 248, 0.45) !important;
@@ -6664,20 +6640,17 @@ body {
   transform: translateY(0);
 }
 
-[data-theme="light"] .observatori-page .termometre-tab,
-[data-theme="light"] #journalism-modal-backdrop .termometre-tab {
+[data-theme="light"] .observatori-page .termometre-tab {
   color: #0369a1;
 }
 
-[data-theme="light"] .observatori-page .termometre-tab:hover:not(.active),
-[data-theme="light"] #journalism-modal-backdrop .termometre-tab:hover:not(.active) {
+[data-theme="light"] .observatori-page .termometre-tab:hover:not(.active) {
   background: rgba(2, 132, 199, 0.1);
   color: #0284c7;
   border-color: rgba(2, 132, 199, 0.25);
 }
 
-[data-theme="light"] .observatori-page .termometre-tab.active,
-[data-theme="light"] #journalism-modal-backdrop .termometre-tab.active {
+[data-theme="light"] .observatori-page .termometre-tab.active {
   background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%) !important;
   color: #ffffff !important;
   border-color: #0284c7 !important;
@@ -6685,21 +6658,18 @@ body {
 }
 
 /* Incidents Tab */
-.observatori-page .incidents-tab,
-#journalism-modal-backdrop .incidents-tab {
+.observatori-page .incidents-tab {
   color: #cbd5e1;
 }
 
-.observatori-page .incidents-tab:hover:not(.active),
-#journalism-modal-backdrop .incidents-tab:hover:not(.active) {
+.observatori-page .incidents-tab:hover:not(.active) {
   background: rgba(244, 63, 94, 0.08);
   color: #fda4af;
   border-color: rgba(244, 63, 94, 0.2);
   transform: translateY(-1px);
 }
 
-.observatori-page .incidents-tab.active,
-#journalism-modal-backdrop .incidents-tab.active {
+.observatori-page .incidents-tab.active {
   background: linear-gradient(135deg, rgba(225, 29, 72, 0.25) 0%, rgba(190, 18, 60, 0.4) 100%) !important;
   color: #fda4af !important;
   border: 1px solid rgba(244, 63, 94, 0.45) !important;
@@ -6707,20 +6677,17 @@ body {
   transform: translateY(0);
 }
 
-[data-theme="light"] .observatori-page .incidents-tab,
-[data-theme="light"] #journalism-modal-backdrop .incidents-tab {
+[data-theme="light"] .observatori-page .incidents-tab {
   color: #475569;
 }
 
-[data-theme="light"] .observatori-page .incidents-tab:hover:not(.active),
-[data-theme="light"] #journalism-modal-backdrop .incidents-tab:hover:not(.active) {
+[data-theme="light"] .observatori-page .incidents-tab:hover:not(.active) {
   background: rgba(225, 29, 72, 0.08);
   color: #be123c;
   border-color: rgba(225, 29, 72, 0.25);
 }
 
-[data-theme="light"] .observatori-page .incidents-tab.active,
-[data-theme="light"] #journalism-modal-backdrop .incidents-tab.active {
+[data-theme="light"] .observatori-page .incidents-tab.active {
   background: linear-gradient(135deg, #e11d48 0%, #be123c 100%) !important;
   color: #ffffff !important;
   border-color: #e11d48 !important;
@@ -6749,8 +6716,7 @@ body {
   border-color: rgba(225, 29, 72, 0.3);
 }
 
-.observatori-page .incidents-tab.active .tab-badge-alert,
-#journalism-modal-backdrop .incidents-tab.active .tab-badge-alert {
+.observatori-page .incidents-tab.active .tab-badge-alert {
   background: rgba(255, 255, 255, 0.22);
   color: #ffffff;
   border-color: rgba(255, 255, 255, 0.35);
@@ -7246,12 +7212,6 @@ body {
   color: var(--text-muted);
 }
 
-.observatori-agency-name {
-  font-size: 0.83rem;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
 /* Responsive visibility toggles for Observatori tables & tabs */
 .tab-text-compact,
 .observatori-mobile-only {
@@ -7263,38 +7223,10 @@ body {
 
 /* Mobile specific styling for Observatori modal */
 @media (max-width: 640px) {
-  /* Prevent modal canvas leakage on mobile */
-  #journalism-modal-backdrop .modal-card {
-    padding: 1rem 0.85rem;
-    max-height: 90vh;
-  }
 
   #journalism-content-container {
     overflow-x: hidden;
     padding-right: 0;
-  }
-
-  /* Timeframe tabs row - fit smoothly across mobile width */
-  #journalism-modal-backdrop .line-picker-filter-tabs {
-    display: flex;
-    width: 100%;
-    justify-content: space-between;
-    align-items: center;
-    gap: 3px;
-    padding: 3px;
-    box-sizing: border-box;
-    overflow-x: visible;
-  }
-  #journalism-modal-backdrop .line-picker-filter-tabs::-webkit-scrollbar {
-    display: none;
-  }
-  #journalism-modal-backdrop .line-filter-tab {
-    flex: 1 1 auto;
-    text-align: center;
-    padding: 0.35rem 0.25rem;
-    font-size: 0.72rem;
-    white-space: nowrap;
-    min-width: 0;
   }
   .tab-text-full {
     display: none;
@@ -7315,23 +7247,6 @@ body {
   }
   .observatori-mobile-only {
     display: block !important;
-  }
-  .observatori-agency-cell {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.15rem;
-  }
-  .observatori-agency-sub {
-    font-size: 0.66rem;
-    color: var(--text-muted);
-    font-weight: 500;
-    white-space: nowrap;
-  }
-  .observatori-line-agency {
-    font-size: 0.68rem;
-    color: var(--text-muted);
-    font-weight: 500;
   }
 
   /* On mobile, disable sticky columns so all table columns scroll as a natural, cohesive row without overlapping */
@@ -7382,15 +7297,6 @@ body {
     white-space: nowrap;
     display: inline-block;
     vertical-align: middle;
-    font-size: 0.82rem;
-  }
-
-  .observatori-agency-name {
-    max-width: 140px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    display: block;
     font-size: 0.82rem;
   }
 
