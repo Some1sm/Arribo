@@ -28,6 +28,17 @@ function requestedInstant(options, now = Date.now()) {
 async function evaluate(candidates, tracker, options = {}) {
   const trk = tracker || require('../../mataroTracker');
   const activeAvisos = Array.isArray(options.avisos) ? options.avisos : (trk?.avisosCache || []);
+  // getStopCancellations re-parses every notice on each call. Notice windows are
+  // minute-precise, so one parse per line per minute is exact for this request.
+  const cancellationMemo = new Map();
+  const cancellationsAt = (lineId, atMs) => {
+    const minuteStart = Math.floor(atMs / 60000) * 60000;
+    const key = `${lineId}|${minuteStart}`;
+    if (!cancellationMemo.has(key)) {
+      cancellationMemo.set(key, trk.getStopCancellations(lineId, activeAvisos, new Date(minuteStart)));
+    }
+    return cancellationMemo.get(key);
+  };
   const start = requestedInstant(options);
   const horizon = start + 86400000;
   const live = Math.abs(start - Date.now()) < 1200000;
@@ -171,44 +182,44 @@ async function evaluate(candidates, tracker, options = {}) {
       const legLineSched = schedules.getLineSchedule(leg.lineId);
       const legDirKey = schedules.resolveDirectionKey(legLineSched, leg.direction);
 
-      const candidateDepartures = departures.filter(dep => {
-        if (!Number.isFinite(dep.at) || dep.at < ready || dep.at > horizon) return false;
+      const isCancelledForLeg = (dep) => {
+        if (!(activeAvisos.length > 0 && trk && typeof trk.getStopCancellations === 'function')) return false;
+        const depDayType = dep.dayType || tripMatcher.resolveDayType(dep.at).dayType;
+        const dayCfg = schedules.getDirectionSchedule(leg.lineId, leg.direction, depDayType);
+        const dayOffsets = dayCfg?.stopTravelSecMap;
+        const fromOffset = dayOffsets?.[leg.fromStop.id];
+        const toOffset = dayOffsets?.[leg.toStop.id];
+        const hasOffsets = Number.isFinite(fromOffset) && Number.isFinite(toOffset) && toOffset > fromOffset;
+        const hasTripDuration = Number.isFinite(dep.duration);
+        const estDuration = hasTripDuration ? dep.duration : (hasOffsets ? toOffset - fromOffset : Math.max(180, (leg.durationMinutes || 3) * 60));
 
-        if (activeAvisos.length > 0 && trk && typeof trk.getStopCancellations === 'function') {
-          const depDayType = dep.dayType || tripMatcher.resolveDayType(dep.at).dayType;
-          const dayCfg = schedules.getDirectionSchedule(leg.lineId, leg.direction, depDayType);
-          const dayOffsets = dayCfg?.stopTravelSecMap;
-          const fromOffset = dayOffsets?.[leg.fromStop.id];
-          const toOffset = dayOffsets?.[leg.toStop.id];
-          const hasOffsets = Number.isFinite(fromOffset) && Number.isFinite(toOffset) && toOffset > fromOffset;
-          const hasTripDuration = Number.isFinite(dep.duration);
-          const estDuration = hasTripDuration ? dep.duration : (hasOffsets ? toOffset - fromOffset : Math.max(180, (leg.durationMinutes || 3) * 60));
-
-          // Boarding stop cancellation check at dep.at
-          const boardDate = new Date(dep.at);
-          const boardCanc = trk.getStopCancellations(leg.lineId, activeAvisos, boardDate);
-          if (boardCanc && boardCanc.cancellations && boardCanc.cancellations.some(c =>
-            String(c.stopId) === String(leg.fromStop.id) &&
-            (c.dirKey == null || String(c.dirKey) === String(legDirKey))
-          )) {
-            return false;
-          }
-
-          // Alighting stop cancellation check at dep.at + estDuration * 1000
-          const alightDate = new Date(dep.at + estDuration * 1000);
-          const alightCanc = trk.getStopCancellations(leg.lineId, activeAvisos, alightDate);
-          if (alightCanc && alightCanc.cancellations && alightCanc.cancellations.some(c =>
-            String(c.stopId) === String(leg.toStop.id) &&
-            (c.dirKey == null || String(c.dirKey) === String(legDirKey))
-          )) {
-            return false;
-          }
+        // Boarding stop cancellation check at dep.at
+        const boardDate = new Date(dep.at);
+        const boardCanc = cancellationsAt(leg.lineId, boardDate.getTime());
+        if (boardCanc && boardCanc.cancellations && boardCanc.cancellations.some(c =>
+          String(c.stopId) === String(leg.fromStop.id) &&
+          (c.dirKey == null || String(c.dirKey) === String(legDirKey))
+        )) {
+          return true;
         }
 
-        return true;
-      });
+        // Alighting stop cancellation check at dep.at + estDuration * 1000
+        const alightDate = new Date(dep.at + estDuration * 1000);
+        const alightCanc = cancellationsAt(leg.lineId, alightDate.getTime());
+        if (alightCanc && alightCanc.cancellations && alightCanc.cancellations.some(c =>
+          String(c.stopId) === String(leg.toStop.id) &&
+          (c.dirKey == null || String(c.dirKey) === String(legDirKey))
+        )) {
+          return true;
+        }
 
-      const departure = candidateDepartures.sort((a, b) => a.at - b.at)[0];
+        return false;
+      };
+
+      const departure = departures
+        .filter(dep => Number.isFinite(dep.at) && dep.at >= ready && dep.at <= horizon)
+        .sort((a, b) => a.at - b.at)
+        .find(dep => !isCancelledForLeg(dep));
       if (!departure) { feasible = false; break; }
       // Ride duration comes from the timetable of the day this bus departs on.
       // Weekday offsets applied to a Sunday or holiday departure understate the
@@ -257,7 +268,7 @@ async function evaluate(candidates, tracker, options = {}) {
         const legBoardTs = Date.parse(leg.boardAt);
         const legAlightTs = Date.parse(leg.alightAt);
         const legMidDate = new Date((legBoardTs + legAlightTs) / 2);
-        const cancData = trk.getStopCancellations(leg.lineId, activeAvisos, legMidDate);
+        const cancData = cancellationsAt(leg.lineId, legMidDate.getTime());
         if (cancData) {
           for (const item of [...(cancData.cancellations || []), ...(cancData.provisional || [])]) {
             if (!itineraryNotices.has(item.noticeId)) {

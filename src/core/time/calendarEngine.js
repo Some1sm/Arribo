@@ -6,6 +6,20 @@
  */
 
 
+// Intl.DateTimeFormat construction is expensive; reuse one per timezone.
+const COMPONENT_FORMATTERS = new Map();
+function componentFormatter(timeZone) {
+  let formatter = COMPONENT_FORMATTERS.get(timeZone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+    });
+    COMPONENT_FORMATTERS.set(timeZone, formatter);
+  }
+  return formatter;
+}
+
 /**
  * Returns structured calendar components for a given date in agency timezone.
  * 
@@ -37,16 +51,7 @@ function getDateComponents(dateObj = new Date(), timeZone = 'Europe/Madrid') {
 
   const validDate = isNaN(d.getTime()) ? new Date() : d;
 
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false
-  });
+  const formatter = componentFormatter(timeZone);
 
   const parts = formatter.formatToParts(validDate);
   let year = 2026, month = 8, day = 20, hour = 0, minute = 0, second = 0;

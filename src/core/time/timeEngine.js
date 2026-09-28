@@ -44,6 +44,54 @@ function secondsToTimeString(totalSec) {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
+const NETWORK_TIME_FORMATTERS = new Map();
+function getNetworkTimeFormatter(timeZone) {
+  let f = NETWORK_TIME_FORMATTERS.get(timeZone);
+  if (!f) {
+    f = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      second: 'numeric',
+      hour12: false
+    });
+    NETWORK_TIME_FORMATTERS.set(timeZone, f);
+  }
+  return f;
+}
+
+const WEEKDAY_FORMATTERS = new Map();
+function getWeekdayFormatter(timeZone) {
+  let f = WEEKDAY_FORMATTERS.get(timeZone);
+  if (!f) {
+    f = new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'short' });
+    WEEKDAY_FORMATTERS.set(timeZone, f);
+  }
+  return f;
+}
+
+const INVERSE_FORMATTERS = new Map();
+function getInverseFormatter(timeZone) {
+  let f = INVERSE_FORMATTERS.get(timeZone);
+  if (!f) {
+    f = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      second: 'numeric',
+      hour12: false
+    });
+    INVERSE_FORMATTERS.set(timeZone, f);
+  }
+  return f;
+}
+
 /**
  * Gets wall-clock time breakdown in the specified agency timezone.
  * 
@@ -57,16 +105,7 @@ function getNetworkTime(timeZone = 'Europe/Madrid', baseDate = new Date()) {
 
   const validDate = isNaN(dateObj.getTime()) ? new Date() : dateObj;
 
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    year: 'numeric',
-    month: 'numeric',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: 'numeric',
-    second: 'numeric',
-    hour12: false
-  });
+  const formatter = getNetworkTimeFormatter(timeZone);
 
   const parts = formatter.formatToParts(validDate);
   const map = {};
@@ -86,7 +125,7 @@ function getNetworkTime(timeZone = 'Europe/Madrid', baseDate = new Date()) {
   const dateStr = `${year}${String(month + 1).padStart(2, '0')}${String(day).padStart(2, '0')}`;
   const timeStr = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 
-  const weekdayName = new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'short' }).format(validDate);
+  const weekdayName = getWeekdayFormatter(timeZone).format(validDate);
   const dayMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
   const dayOfWeek = dayMap[weekdayName] !== undefined ? dayMap[weekdayName] : validDate.getDay();
 
@@ -129,16 +168,7 @@ function localTimeToUtcDate(year, monthIndex, day, hour, minute, second = 0, tim
 
   const targetLocalUtc = Date.UTC(y, mon, d, h, min, s);
 
-  const invFormatter = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    year: 'numeric',
-    month: 'numeric',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: 'numeric',
-    second: 'numeric',
-    hour12: false
-  });
+  const invFormatter = getInverseFormatter(timeZone);
 
   let guess = targetLocalUtc;
   for (let i = 0; i < 5; i++) {
