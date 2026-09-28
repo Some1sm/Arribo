@@ -90,7 +90,6 @@ const PORTLET_LINEA = 'adoLinea_routes_AdoLineaRoutesPortlet_INSTANCE_9eVaGQ76b4
 const PORTLET_PARADA = 'com_ado_portlet_parada_AdoParadaPortlet_INSTANCE_PNmv1B2yu9UG';
 
 const DATA_PATH_SRC = path.join(__dirname, '../src/data/mataro_schedules.json');
-const DATA_PATH_CITIES = path.join(__dirname, '../data/cities/mataro/mataro_schedules.json');
 const ARCHIVE_PATH = path.join(__dirname, '../data/cities/mataro/avanza_raw_timetables.json');
 
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -361,8 +360,6 @@ async function scrapeNetwork() {
   console.log(`💾 Updating ${DATA_PATH_SRC}...`);
   fs.writeFileSync(DATA_PATH_SRC, JSON.stringify(currentSchedules, null, 2), 'utf8');
 
-  console.log(`💾 Updating ${DATA_PATH_CITIES}...`);
-  fs.writeFileSync(DATA_PATH_CITIES, JSON.stringify(currentSchedules, null, 2), 'utf8');
 
   console.log('\n🎉 Official Avanza schedule calibration completed successfully!');
 }

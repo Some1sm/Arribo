@@ -1,7 +1,7 @@
 /**
  * test/timetable_per_trip_test.js
  *
- * Tests the per-trip timetable model (Phase 3 of DATA_TRUST_IMPLEMENTATION_PLAN.md).
+ * Tests the per-trip timetable model (Phase 3 of docs/history/DATA_TRUST_IMPLEMENTATION_PLAN.md).
  * Offline test: never calls network. Uses fixtures and shipped data.
  */
 

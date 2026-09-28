@@ -32,3 +32,6 @@ tmp/
 src/data/*.pre-migration.json
 src/data/*.pre-terminal-repair.json
 src/data/*.pre-season.json
+
+# Avanza scraper raw archive: a local cache for scripts/scrape_avanza_schedules.js, never an app input.
+data/cities/mataro/avanza_raw_timetables.json

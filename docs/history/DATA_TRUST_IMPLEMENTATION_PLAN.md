@@ -1,3 +1,5 @@
+> Historical document — this plan was completed in September 2026. See README.md, AGENTS.md, OPERATIONS.md for the current system.
+
 # Arribo! — Data-Trust Implementation Plan (agent prompt)
 
 > **You are an implementation agent working on the Arribo! repository.** This file is

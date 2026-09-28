@@ -198,7 +198,7 @@ Arribo! includes a scraper script to automate extraction and calibration across 
 node scripts/scrape_avanza_schedules.js
 ```
 
-This updates the network schedule cache in `src/data/mataro_schedules.json` and creates an archival snapshot in `data/cities/mataro/avanza_raw_timetables.json`.
+This updates the network schedule cache in `src/data/mataro_schedules.json` and keeps a local raw archive in `data/cities/mataro/avanza_raw_timetables.json` (git-ignored; the scraper reuses it as a cache on its next run).
 
 #### Seasonal timetables (maresme.net)
 
