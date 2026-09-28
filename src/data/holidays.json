@@ -1,48 +1,44 @@
 {
   "_meta": {
     "timezone": "Europe/Madrid",
-    "notes": "Official public holidays for Mataró Bus Urbà. Sourced from DOGC and Ajuntament de Mataró."
+    "notes": "Regional: Generalitat labour-calendar order (12 days). Local: Ajuntament de Mataró (2 days). A year is fully known only when it has 12 regional and 2 local entries. Update each year: regional order is published around March-May, local days around December."
   },
   "years": {
     "2026": {
       "regional": [
-        { "date": "2026-01-01", "name": "Cap d'Any", "source": "DOGC núm. 9406, Ordre EMT/66/2025" },
-        { "date": "2026-01-06", "name": "Reis", "source": "DOGC núm. 9406, Ordre EMT/66/2025" },
-        { "date": "2026-04-03", "name": "Divendres Sant", "source": "DOGC núm. 9406, Ordre EMT/66/2025" },
-        { "date": "2026-04-06", "name": "Pasqua Florida / Dilluns de Pasqua", "source": "DOGC núm. 9406, Ordre EMT/66/2025" },
-        { "date": "2026-05-01", "name": "Festa del Treball", "source": "DOGC núm. 9406, Ordre EMT/66/2025" },
-        { "date": "2026-06-24", "name": "Sant Joan", "source": "DOGC núm. 9406, Ordre EMT/66/2025" },
-        { "date": "2026-08-15", "name": "L'Assumpció", "source": "DOGC núm. 9406, Ordre EMT/66/2025" },
-        { "date": "2026-09-11", "name": "Diada Nacional de Catalunya", "source": "DOGC núm. 9406, Ordre EMT/66/2025" },
-        { "date": "2026-10-12", "name": "Festa Nacional d'Espanya", "source": "DOGC núm. 9406, Ordre EMT/66/2025" },
-        { "date": "2026-11-01", "name": "Tots Sants", "source": "DOGC núm. 9406, Ordre EMT/66/2025" },
-        { "date": "2026-12-06", "name": "Dia de la Constitució", "source": "DOGC núm. 9406, Ordre EMT/66/2025" },
-        { "date": "2026-12-08", "name": "La Immaculada", "source": "DOGC núm. 9406, Ordre EMT/66/2025" },
-        { "date": "2026-12-25", "name": "Nadal", "source": "DOGC núm. 9406, Ordre EMT/66/2025" },
-        { "date": "2026-12-26", "name": "Sant Esteve", "source": "DOGC núm. 9406, Ordre EMT/66/2025" }
+        { "date": "2026-01-01", "name": "Cap d'Any", "source": "Ordre EMT/66/2025" },
+        { "date": "2026-01-06", "name": "Reis", "source": "Ordre EMT/66/2025" },
+        { "date": "2026-04-03", "name": "Divendres Sant", "source": "Ordre EMT/66/2025" },
+        { "date": "2026-04-06", "name": "Dilluns de Pasqua Florida", "source": "Ordre EMT/66/2025" },
+        { "date": "2026-05-01", "name": "Festa del Treball", "source": "Ordre EMT/66/2025" },
+        { "date": "2026-06-24", "name": "Sant Joan", "source": "Ordre EMT/66/2025" },
+        { "date": "2026-08-15", "name": "L'Assumpció", "source": "Ordre EMT/66/2025" },
+        { "date": "2026-09-11", "name": "Diada Nacional de Catalunya", "source": "Ordre EMT/66/2025" },
+        { "date": "2026-10-12", "name": "Festa Nacional d'Espanya", "source": "Ordre EMT/66/2025" },
+        { "date": "2026-12-08", "name": "La Immaculada", "source": "Ordre EMT/66/2025" },
+        { "date": "2026-12-25", "name": "Nadal", "source": "Ordre EMT/66/2025" },
+        { "date": "2026-12-26", "name": "Sant Esteve", "source": "Ordre EMT/66/2025" }
       ],
       "local": [
-        { "date": "2026-05-25", "name": "Fira de Mataró / Segona Pasqua", "source": "Ajuntament de Mataró / DOGC núm. 9406" },
-        { "date": "2026-07-27", "name": "Festa Major de Les Santes", "source": "Ajuntament de Mataró / DOGC núm. 9406" }
+        { "date": "2026-05-25", "name": "Fira a Mataró", "source": "Ajuntament de Mataró, https://www.mataro.cat/ca/la-ciutat/festius-locals" },
+        { "date": "2026-07-27", "name": "Festa major de Les Santes", "source": "Ajuntament de Mataró, https://www.mataro.cat/ca/la-ciutat/festius-locals" }
       ],
       "serviceOverrides": []
     },
     "2027": {
       "regional": [
-        { "date": "2027-01-01", "name": "Cap d'Any", "source": "DOGC núm. 9637, Ordre EMT/52/2026" },
-        { "date": "2027-01-06", "name": "Reis", "source": "DOGC núm. 9637, Ordre EMT/52/2026" },
-        { "date": "2027-03-26", "name": "Divendres Sant", "source": "DOGC núm. 9637, Ordre EMT/52/2026" },
-        { "date": "2027-03-29", "name": "Dilluns de Pasqua Florida", "source": "DOGC núm. 9637, Ordre EMT/52/2026" },
-        { "date": "2027-05-01", "name": "Festa del Treball", "source": "DOGC núm. 9637, Ordre EMT/52/2026" },
-        { "date": "2027-06-24", "name": "Sant Joan", "source": "DOGC núm. 9637, Ordre EMT/52/2026" },
-        { "date": "2027-08-15", "name": "L'Assumpció", "source": "DOGC núm. 9637, Ordre EMT/52/2026" },
-        { "date": "2027-09-11", "name": "Diada Nacional de Catalunya", "source": "DOGC núm. 9637, Ordre EMT/52/2026" },
-        { "date": "2027-10-12", "name": "Festa Nacional d'Espanya", "source": "DOGC núm. 9637, Ordre EMT/52/2026" },
-        { "date": "2027-11-01", "name": "Tots Sants", "source": "DOGC núm. 9637, Ordre EMT/52/2026" },
-        { "date": "2027-12-06", "name": "Dia de la Constitució", "source": "DOGC núm. 9637, Ordre EMT/52/2026" },
-        { "date": "2027-12-08", "name": "La Immaculada", "source": "DOGC núm. 9637, Ordre EMT/52/2026" },
-        { "date": "2027-12-25", "name": "Nadal", "source": "DOGC núm. 9637, Ordre EMT/52/2026" },
-        { "date": "2027-12-26", "name": "Sant Esteve", "source": "DOGC núm. 9637, Ordre EMT/52/2026" }
+        { "date": "2027-01-01", "name": "Cap d'Any", "source": "Ordre EMT/52/2026" },
+        { "date": "2027-01-06", "name": "Reis", "source": "Ordre EMT/52/2026" },
+        { "date": "2027-03-26", "name": "Divendres Sant", "source": "Ordre EMT/52/2026" },
+        { "date": "2027-03-29", "name": "Dilluns de Pasqua Florida", "source": "Ordre EMT/52/2026" },
+        { "date": "2027-05-01", "name": "Festa del Treball", "source": "Ordre EMT/52/2026" },
+        { "date": "2027-06-24", "name": "Sant Joan", "source": "Ordre EMT/52/2026" },
+        { "date": "2027-09-11", "name": "Diada Nacional de Catalunya", "source": "Ordre EMT/52/2026" },
+        { "date": "2027-10-12", "name": "Festa Nacional d'Espanya", "source": "Ordre EMT/52/2026" },
+        { "date": "2027-11-01", "name": "Tots Sants", "source": "Ordre EMT/52/2026" },
+        { "date": "2027-12-06", "name": "Dia de la Constitució", "source": "Ordre EMT/52/2026" },
+        { "date": "2027-12-08", "name": "La Immaculada", "source": "Ordre EMT/52/2026" },
+        { "date": "2027-12-25", "name": "Nadal", "source": "Ordre EMT/52/2026" }
       ],
       "local": [],
       "serviceOverrides": []

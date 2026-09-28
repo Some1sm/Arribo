@@ -112,14 +112,34 @@ function holidaysForYear(year) {
 }
 
 /**
+ * How completely the holidays of a year are known from src/data/holidays.json.
+ * @param {Date|number|string} [at=new Date()]
+ * @returns {{year:number, regionalKnown:boolean, localKnown:boolean, known:boolean, warning:string|null}}
+ */
+function getHolidayCoverage(at = new Date()) {
+  const c = calendarEngine.getDateComponents(at, 'Europe/Madrid');
+  if (!c) return { year: null, regionalKnown: false, localKnown: false, known: false, warning: null };
+  const status = (year) => {
+    const y = holidaysData?.years?.[String(year)];
+    const regionalKnown = Array.isArray(y?.regional) && y.regional.length === 12;
+    const localKnown = Array.isArray(y?.local) && y.local.length === 2;
+    return { regionalKnown, localKnown, known: regionalKnown && localKnown };
+  };
+  const cur = status(c.year);
+  let warning = null;
+  if (!cur.regionalKnown) warning = `Festius oficials ${c.year} no configurats`;
+  else if (!cur.localKnown) warning = `Festius locals de Mataró ${c.year} no configurats`;
+  else if (c.month >= 11 && !status(c.year + 1).known) warning = `Festius ${c.year + 1} pendents de configurar`;
+  return { year: c.year, ...cur, warning };
+}
+
+/**
  * Whether the holidays for the year of this moment are authoritatively known from data.
  * @param {Date|number|string} [at=new Date()]
  * @returns {boolean}
  */
 function isHolidayKnown(at = new Date()) {
-  const c = calendarEngine.getDateComponents(at, 'Europe/Madrid');
-  if (!c) return false;
-  return Boolean(holidaysData?.years?.[String(c.year)]);
+  return getHolidayCoverage(at).known;
 }
 
 /**
@@ -161,6 +181,7 @@ function madridDate(at) {
 module.exports = {
   isHoliday,
   isHolidayKnown,
+  getHolidayCoverage,
   getServiceOverride,
   madridDate,
   holidaysForYear,

@@ -262,9 +262,13 @@ class ObservatoriApp {
     if (!data || data.holidaysKnownForYear === null || data.holidaysKnownForYear === undefined) {
       items.push(makeItem('Festius oficials', '🎉', 'status-neutral', 'Sense dades', 'Sense verificació del calendari laboral de l&#039;any.'));
     } else if (data.holidaysKnownForYear === true) {
-      items.push(makeItem('Festius oficials', '🎉', 'status-success', 'Verificat', 'Festius oficials de Catalunya i locals de Mataró verificats.'));
+      if (data.holidayCoverage && data.holidayCoverage.warning) {
+        items.push(makeItem('Festius oficials', '🎉', 'status-warning', 'Atenció', this.esc(data.holidayCoverage.warning)));
+      } else {
+        items.push(makeItem('Festius oficials', '🎉', 'status-success', 'Verificat', 'Festius oficials de Catalunya i locals de Mataró verificats.'));
+      }
     } else {
-      items.push(makeItem('Festius oficials', '🎉', 'status-warning', 'Aproximat', 'Any pendent d&#039;incorporació al DOGC; s&#039;apliquen regles estimades.'));
+      items.push(makeItem('Festius oficials', '🎉', 'status-warning', 'Incomplet', this.esc((data.holidayCoverage && data.holidayCoverage.warning) || 'Calendari de festius incomplet') + '. En aquests dies es pot mostrar l&#039;horari de feiner.'));
     }
 
     // 9. Frescor dels informes (reportFreshness)

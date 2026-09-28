@@ -12,15 +12,14 @@ async function runTests() {
   assert.strictEqual(holidayCalendar.isHoliday(immaculada2026), true, '8 Dec 2026 must be a holiday');
   console.log('✓ 8 Dec 2026 recognised as holiday.');
 
-  // 2. 6 Dec 2026 is recognized as Dia de la Constitució
-  console.log('Test 2: 6 Dec 2026 is recognized as Dia de la Constitució');
+  // 2. 6 Dec 2026 is a Sunday (not in official order)
+  console.log('Test 2: 6 Dec 2026 is recognized as not an official holiday (Sunday)');
   const constitucio2026 = Date.UTC(2026, 11, 6, 12, 0, 0);
-  assert.strictEqual(holidayCalendar.isHoliday(constitucio2026), true, '6 Dec 2026 must be a holiday');
+  assert.strictEqual(holidayCalendar.isHoliday(constitucio2026), false, '6 Dec 2026 must not be a holiday'); // not in the official order; a Sunday
   const holidaysData = require('../src/data/holidays.json');
   const dec6Entry = holidaysData.years['2026'].regional.find(h => h.date === '2026-12-06');
-  assert.ok(dec6Entry, '2026-12-06 entry must exist in holidays.json');
-  assert.strictEqual(dec6Entry.name, 'Dia de la Constitució', '6 Dec must be named Dia de la Constitució');
-  console.log('✓ 6 Dec 2026 correctly labelled Dia de la Constitució.');
+  assert.strictEqual(Boolean(dec6Entry), false, '2026-12-06 entry must not exist in holidays.json'); // not in the official order; a Sunday
+  console.log('✓ 6 Dec 2026 correctly excluded from regional list (Sunday).');
 
   // 3. Local holiday from JSON resolves to Sunday service
   console.log('Test 3: Local holiday (Les Santes 27 July 2026) resolves to Sunday service');

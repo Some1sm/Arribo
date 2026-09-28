@@ -477,6 +477,7 @@ app.get('/api/health', (req, res) => {
         source: v.source,
         drift: worker.metrics?.scheduleDrift || null,
         holidaysKnownForYear: holidayCalendar.isHolidayKnown(now),
+        holidayCoverage: holidayCalendar.getHolidayCoverage(now),
         seasonOutlook: mataroSchedules.getSeasonOutlook(now)
       };
     })(),
@@ -497,6 +498,7 @@ app.get('/api/data-health', (req, res) => {
   const validity = mataroSchedules.getScheduleValidity();
   const outlook = mataroSchedules.getSeasonOutlook(now);
   const holidaysKnown = holidayCalendar.isHolidayKnown(now);
+  const holidayCoverage = holidayCalendar.getHolidayCoverage(now);
 
   const net = timeEngine.getNetworkTime('Europe/Madrid', new Date(now));
   const nowSec = net.hour * 3600 + net.minute * 60 + net.second;
@@ -553,6 +555,7 @@ app.get('/api/data-health', (req, res) => {
     } : null,
     seasonOutlook: outlook,
     holidaysKnownForYear: holidaysKnown,
+    holidayCoverage,
     reportFreshness: reports
   });
 });
