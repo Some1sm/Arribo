@@ -121,27 +121,7 @@
       }
     },
 
-    /**
-     * Haversine distance formula between two GPS coordinate points in metres.
-     * @param {number} lat1
-     * @param {number} lon1
-     * @param {number} lat2
-     * @param {number} lon2
-     * @returns {number} Distance in meters
-     */
-    calcDistMeters(lat1, lon1, lat2, lon2) {
-      if (typeof lat1 !== 'number' || typeof lon1 !== 'number' ||
-          typeof lat2 !== 'number' || typeof lon2 !== 'number') {
-        return NaN;
-      }
-      const R = 6371000;
-      const dLat = (lat2 - lat1) * Math.PI / 180;
-      const dLon = (lon2 - lon1) * Math.PI / 180;
-      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-                Math.sin(dLon / 2) * Math.sin(dLon / 2);
-      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    },
+
     /**
      * Parses 'HH:MM' string to seconds since midnight.
      * @param {string} timeStr
@@ -163,23 +143,7 @@
       return timeStr.replace(/^(\d{1,2}:\d{2}):\d{2}$/, '$1');
     },
 
-    /**
-     * Creates a debounced function that delays invoking fn until after
-     * delayMs milliseconds have elapsed since the last time it was invoked.
-     * @param {Function} fn
-     * @param {number} delayMs
-     * @returns {Function}
-     */
-    debounce(fn, delayMs = 250) {
-      let timer = null;
-      return function(...args) {
-        if (timer) clearTimeout(timer);
-        timer = setTimeout(() => {
-          timer = null;
-          fn.apply(this, args);
-        }, delayMs);
-      };
-    },
+
 
     /**
      * Reads the current theme preference from unified localStorage,

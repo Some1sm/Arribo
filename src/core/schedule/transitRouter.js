@@ -106,11 +106,6 @@ class TransitRouter {
     return sliced;
   }
 
-  _resolveStop(query) {
-    const candidates = this._resolveStopCandidates(query);
-    return candidates.length > 0 ? candidates[0] : null;
-  }
-
   _resolveStopCandidates(query) {
     if (!this.tracker || !this.tracker.allStopsMap) return [];
     const allStops = this.tracker.allStopsMap;

@@ -106,9 +106,6 @@
 .heat-empty { color: var(--text-muted); }
 .stop-heat-legend { display: flex; flex-wrap: wrap; gap: .6rem; }
 .stop-heat-legend span { padding: .3rem .5rem; border-radius: 4px; }
-.stop-hourly-detail { margin-top: .7rem; border: 1px solid var(--border-subtle); border-radius: 6px; }
-.stop-hourly-detail summary { cursor: pointer; padding: .7rem; }
-.stop-hourly-detail summary:focus-visible { outline: 2px solid var(--brand-primary); }
 
 /* Stop Hourly Drilldown Modal & Interactive Menu */
 .stop-drilldown-modal {
@@ -479,68 +476,6 @@ body {
   gap: 1rem;
 }
 
-.logo-group {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  cursor: pointer;
-  user-select: none;
-  transition: opacity var(--transition-fast), transform var(--transition-fast);
-  text-decoration: none;
-  flex-shrink: 0;
-}
-
-.logo-group:hover {
-  opacity: 0.92;
-  transform: translateY(-1px);
-}
-
-.logo-brand-badge {
-  width: 38px;
-  height: 38px;
-  background: linear-gradient(135deg, var(--c10-primary) 0%, #0d9488 100%);
-  color: #ffffff;
-  font-size: 1.35rem;
-  border-radius: var(--radius-md);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 12px var(--c10-primary-glow);
-  flex-shrink: 0;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-}
-
-.app-title-group h1 {
-  font-size: 1.15rem;
-  font-weight: 800;
-  color: var(--text-primary);
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  letter-spacing: -0.3px;
-  margin: 0;
-  line-height: 1.2;
-}
-
-.app-version-pill {
-  font-size: 0.68rem;
-  font-weight: 700;
-  padding: 0.12rem 0.45rem;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
-  color: var(--text-muted);
-  letter-spacing: 0.03em;
-}
-
-.app-subtitle {
-  font-size: 0.76rem;
-  color: var(--text-secondary);
-  margin: 0;
-  line-height: 1.2;
-  white-space: nowrap;
-}
-
 /* Header Action Controls */
 .header-actions {
   display: flex;
@@ -643,10 +578,6 @@ body {
 .btn-header-nav:focus-visible {
   outline: 2px solid var(--border-focus);
   outline-offset: 2px;
-}
-
-.btn-header-nav .nav-icon {
-  font-size: 0.9rem;
 }
 
 .btn-header-nav.map-btn {
@@ -857,11 +788,6 @@ body {
   animation: pulse-dot 1.8s infinite;
 }
 
-@keyframes pulse-dot {
-  0% { transform: scale(0.9); opacity: 0.8; }
-  50% { transform: scale(1.3); opacity: 1; box-shadow: 0 0 14px var(--accent-live); }
-  100% { transform: scale(0.9); opacity: 0.8; }
-}
 
 /* Sleek Circular Icon Buttons (Theme, Sound, Refresh) */
 .btn-icon {
@@ -1577,12 +1503,6 @@ body {
   color: #b45309;
   background: rgba(245, 158, 11, 0.12);
   border-color: rgba(245, 158, 11, 0.4);
-}
-
-.stop-target-focused .stop-marker-dot {
-  transform: scale(2.2) !important;
-  box-shadow: 0 0 16px var(--c10-primary, #009485) !important;
-  transition: transform 0.4s ease, box-shadow 0.4s ease !important;
 }
 
 /* ===================================================================
@@ -4407,33 +4327,12 @@ body {
     box-sizing: border-box;
   }
 
-  .logo-group,
   .brand-title-wrap {
     width: auto;
     justify-content: flex-start;
     min-width: 0;
     flex: 0 0 auto;
     gap: 0.45rem;
-  }
-
-  .logo-brand-badge {
-    width: 32px;
-    height: 32px;
-    font-size: 1.15rem;
-  }
-
-  .app-title-group h1 {
-    font-size: 0.95rem;
-    letter-spacing: -0.3px;
-    white-space: nowrap;
-  }
-
-  .app-version-pill {
-    display: none;
-  }
-
-  .app-subtitle {
-    display: none;
   }
 
   .global-search-container {
@@ -4456,10 +4355,6 @@ body {
     flex: 0 0 auto;
     box-sizing: border-box;
     flex-wrap: nowrap;
-  }
-
-  .btn-header-nav span:not(.nav-icon) {
-    display: none !important;
   }
 
   .btn-header-nav {
@@ -4688,9 +4583,6 @@ body {
 }
 
 @media (max-width: 480px) {
-  .btn-header-nav span:not(.nav-icon) {
-    display: none;
-  }
 
   .btn-header-nav {
     padding: 0;
@@ -6537,19 +6429,9 @@ body {
   box-shadow: 0 2px 10px var(--c10-primary-glow) !important;
 }
 
-/* Standard Button Utility Modifiers */
-.btn-pill {
-  border-radius: var(--btn-radius-pill, 9999px) !important;
-}
-
 .btn-sm {
   padding: 0.3rem 0.65rem !important;
   font-size: 0.74rem !important;
-}
-
-.btn-lg {
-  padding: 0.55rem 1.25rem !important;
-  font-size: 0.88rem !important;
 }
 
 /* Report Action & Card Buttons */
@@ -6648,51 +6530,6 @@ body {
   border-radius: var(--btn-radius-md, 8px);
   font-weight: 700;
   gap: 0.45rem;
-}
-
-/* ======================================================== */
-/* OBSERVATORI DE RETARDS & JOURNALISM STYLES               */
-/* ======================================================== */
-/* Hero live telemetry overline tag */
-.observatori-hero-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 12px;
-  border-radius: 9999px;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  background: rgba(16, 185, 129, 0.08);
-  color: #34d399;
-  border: 1px solid rgba(16, 185, 129, 0.22);
-  margin-bottom: 0.65rem;
-  user-select: none;
-}
-
-.observatori-hero-tag .pulse-indicator {
-  position: relative;
-  display: inline-flex;
-  width: 8px;
-  height: 8px;
-}
-
-.observatori-hero-tag .pulse-ring {
-  position: absolute;
-  inset: 0;
-  border-radius: 9999px;
-  background: #10b981;
-  opacity: 0.75;
-  animation: tab-pulse 2s cubic-bezier(0, 0, 0.2, 1) infinite;
-}
-
-.observatori-hero-tag .pulse-dot {
-  position: relative;
-  width: 8px;
-  height: 8px;
-  border-radius: 9999px;
-  background: #10b981;
 }
 
 @keyframes tab-pulse {
@@ -7249,12 +7086,6 @@ body {
   box-shadow: 4px 0 10px -2px rgba(0, 0, 0, 0.55);
 }
 
-/* Table scroll indicators */
-.table-scroll-fade-left,
-.table-scroll-fade-right {
-  display: none !important;
-}
-
 /* Cell content formatters */
 .observatori-line-cell {
   display: flex;
@@ -7575,11 +7406,6 @@ body {
   .peak-hour-time {
     font-size: 0.86rem;
   }
-  .peak-hour-tag {
-    font-size: 0.64rem;
-    padding: 0.15rem 0.35rem;
-    max-width: 50%;
-  }
 }
 
 /* Observatori pagination / expand buttons */
@@ -7710,18 +7536,6 @@ body {
   flex-shrink: 0;
 }
 
-.hourly-bar-icon {
-  font-size: 0.75rem;
-  height: 20px;
-  min-height: 20px;
-  line-height: 20px;
-  margin-top: 2px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
 /* Peak Hours Cards Grid */
 .peak-hours-grid {
   display: grid;
@@ -7761,29 +7575,6 @@ body {
   color: var(--text-primary);
   white-space: nowrap;
   flex-shrink: 0;
-}
-
-.peak-hour-tag {
-  font-size: 0.68rem;
-  font-weight: 700;
-  padding: 0.2rem 0.45rem;
-  border-radius: 6px;
-  background: rgba(245, 158, 11, 0.15);
-  color: #fbbf24;
-  border: 1px solid rgba(245, 158, 11, 0.3);
-  white-space: nowrap;
-  flex-shrink: 1;
-  min-width: 0;
-  max-width: 55%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  box-sizing: border-box;
-}
-
-.peak-hour-tag.school {
-  background: rgba(239, 68, 68, 0.15);
-  color: #f87171;
-  border-color: rgba(239, 68, 68, 0.35);
 }
 
 .peak-hour-metrics {
@@ -7883,17 +7674,6 @@ body {
   font-weight: 700;
   color: var(--accent-warning);
   white-space: nowrap;
-}
-
-.bottleneck-hour-badge.school-rush {
-  background: rgba(239, 68, 68, 0.15);
-  border-color: rgba(239, 68, 68, 0.35);
-  color: var(--accent-danger);
-}
-
-.bottleneck-hour-badge .badge-icon {
-  font-size: 0.85rem;
-  line-height: 1;
 }
 
 .bottleneck-hour-badge .badge-delay {
@@ -9582,56 +9362,6 @@ body {
   font-size: 0.78rem;
 }
 
-.trip-stop-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--border-subtle);
-  padding: 0.18rem 0.5rem;
-  border-radius: 6px;
-  color: var(--text-primary);
-  font-weight: 500;
-  font-size: 0.78rem;
-  line-height: 1.25;
-}
-
-.trip-stop-pill.pill-recovered {
-  background: rgba(16, 185, 129, 0.1);
-  border-color: rgba(16, 185, 129, 0.4);
-  color: #34d399;
-}
-
-.trip-stop-delay {
-  font-size: 0.72rem;
-  font-weight: 800;
-  padding: 0.1rem 0.35rem;
-  border-radius: 4px;
-  line-height: 1;
-  letter-spacing: 0.2px;
-}
-
-.trip-stop-delay.delay-severe {
-  background: rgba(239, 68, 68, 0.2);
-  color: #ef4444;
-}
-
-.trip-stop-delay.delay-moderate {
-  background: rgba(245, 158, 11, 0.2);
-  color: #fbbf24;
-}
-
-.trip-stop-delay.delay-recovered {
-  background: rgba(16, 185, 129, 0.25);
-  color: #10b981;
-}
-
-.trip-arrow {
-  color: var(--brand-primary);
-  font-weight: 800;
-  font-size: 0.72rem;
-}
-
 .incident-badge-maintenance {
   background: rgba(234, 179, 8, 0.16);
   color: #eab308;
@@ -9768,28 +9498,12 @@ body.observatori-page-body {
 
 /* Tabular lining numerals across all telemetry counters and clocks */
 .tabular-nums,
-.timer-countdown,
 .line-badge,
 .landing-line-badge,
-.delay-badge,
-.bus-id-badge,
-.cockpit-stat-val,
-.kpi-value,
-.metric-value {
+.bus-id-badge {
   font-feature-settings: "tnum" 1;
   font-variant-numeric: tabular-nums;
   font-family: var(--font-mono);
-}
-
-/* Subtle dot-grid technical background */
-.bg-tech-grid {
-  background-size: 32px 32px;
-  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
-}
-
-/* Subtle radial emissive illumination */
-.emissive-glow {
-  background: radial-gradient(600px circle at 50% -100px, rgba(16, 185, 129, 0.08), transparent 80%);
 }
 
 /* Live Status Telemetry Beacon */
@@ -9939,38 +9653,6 @@ body.observatori-page-body {
   background: rgba(217, 119, 6, 0.10);
   border-color: rgba(217, 119, 6, 0.28);
   color: #b45309;
-}
-
-/* Nav Links */
-.header-nav-links {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-
-.header-nav-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.4rem 0.75rem;
-  border-radius: var(--radius-sm);
-  font-size: 0.82rem;
-  font-weight: 500;
-  color: var(--text-secondary);
-  text-decoration: none;
-  transition: all var(--transition-fast);
-  border: 1px solid transparent;
-}
-
-.header-nav-link:hover {
-  color: var(--text-primary);
-  background: var(--bg-surface-elevated);
-}
-
-.header-nav-link.active {
-  color: var(--text-primary);
-  background: var(--bg-surface-elevated);
-  border-color: var(--border-subtle);
 }
 
 /* Journey Planner Engineered Form Controls */
@@ -10378,19 +10060,6 @@ input#plan-max-walk:focus {
   letter-spacing: 0.02em;
 }
 
-/* Stop Delay Progression Flow */
-.stop-progression-track {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.35rem 0.45rem;
-  padding: 0.6rem 0.75rem;
-  background: rgba(13, 14, 21, 0.7);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-subtle);
-  margin: 0.4rem 0;
-}
-
 .stop-step {
   display: inline-flex;
   align-items: center;
@@ -10705,19 +10374,18 @@ input#plan-max-walk:focus {
     line-height: 1.4 !important;
   }
 
-  .main-header,
   .observatori-page-hero,
-  .observatori-toolbar,
-  #journalism-search-bar-wrap,
-  #observatori-methodology-details,
-  #data-health-container,
-  #journalism-termometre-container,
-  #journalism-incidents-container,
-  #journalism-content-container,
-  .app-footer,
-  .btn-print-report,
-  .monthly-report-month-input,
-  .monthly-controls-label {
+.observatori-toolbar,
+#journalism-search-bar-wrap,
+#observatori-methodology-details,
+#data-health-container,
+#journalism-termometre-container,
+#journalism-incidents-container,
+#journalism-content-container,
+.app-footer,
+.btn-print-report,
+.monthly-report-month-input,
+.monthly-controls-label {
     display: none !important;
   }
 

@@ -8,7 +8,6 @@
 
 const calendarEngine = require('./time/calendarEngine');
 const geoEngine = require('./geo/geoEngine');
-const delayEngine = require('./schedule/delayEngine');
 
 class BaseTracker {
   /**
@@ -42,16 +41,6 @@ class BaseTracker {
     this.isInitialized = true;
   }
 
-  /**
-   * Resolve a line identifier to an internal route/line configuration.
-   * @param {string|number} lineId
-   * @returns {object|null}
-   */
-  resolveLine(lineId) {
-    if (!lineId) return null;
-    const clean = String(lineId).toLowerCase().trim().replace(/^(line-|linia-)/, '');
-    return this.routesMap.get(clean) || this.routesMap.get(String(lineId)) || null;
-  }
 
   /**
    * Get all supported line catalog entries for this tracker.
@@ -418,14 +407,7 @@ class BaseTracker {
     };
   }
 
-  /**
-   * Helper: Normalizes stop departure response envelope.
-   * @param {object} [raw={}]
-   * @returns {object}
-   */
-  normalizeDeparture(raw = {}) {
-    return delayEngine.standardizeDeparture(raw);
-  }
+
 }
 
 module.exports = BaseTracker;

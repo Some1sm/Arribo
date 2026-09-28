@@ -334,51 +334,7 @@ class TransitMap {
     return subpath;
   }
 
-  // Interpolate along the road subpath (following every street curve)
-  interpolateAlongSubpath(subpath, progress) {
-    if (!subpath || subpath.length === 0) return null;
-    if (subpath.length === 1 || progress <= 0) {
-      return { lat: subpath[0][0], lon: subpath[0][1], bearing: 0 };
-    }
-    if (progress >= 1) {
-      const last = subpath[subpath.length - 1];
-      const prev = subpath[subpath.length - 2] || last;
-      return { lat: last[0], lon: last[1], bearing: this.calculateBearing(prev[0], prev[1], last[0], last[1]) };
-    }
 
-    const segLengths = [];
-    let totalLength = 0;
-
-    for (let i = 0; i < subpath.length - 1; i++) {
-      const d = this.calculateDistanceMeters(subpath[i][0], subpath[i][1], subpath[i + 1][0], subpath[i + 1][1]);
-      segLengths.push(d);
-      totalLength += d;
-    }
-
-    if (totalLength === 0) {
-      return { lat: subpath[0][0], lon: subpath[0][1], bearing: 0 };
-    }
-
-    const targetDist = progress * totalLength;
-    let accumulated = 0;
-
-    for (let i = 0; i < segLengths.length; i++) {
-      const segLen = segLengths[i];
-      if (accumulated + segLen >= targetDist || i === segLengths.length - 1) {
-        const segProgress = segLen > 0 ? (targetDist - accumulated) / segLen : 0;
-        const p1 = subpath[i];
-        const p2 = subpath[i + 1];
-        const lat = p1[0] + segProgress * (p2[0] - p1[0]);
-        const lon = p1[1] + segProgress * (p2[1] - p1[1]);
-        const bearing = this.calculateBearing(p1[0], p1[1], p2[0], p2[1]);
-        return { lat, lon, bearing };
-      }
-      accumulated += segLen;
-    }
-
-    const last = subpath[subpath.length - 1];
-    return { lat: last[0], lon: last[1], bearing: 0 };
-  }
 
   // Create directional arrows along a polyline
   createDirectionalArrows(polylineCoords, color, spacingM = 800) {
@@ -1101,26 +1057,7 @@ class TransitMap {
     }
   }
 
-  // Draw or update the road polyline on map
-  renderPolyline(coords, color = '#009485') {
-    if (!this.map || this.isItineraryMode || !coords || coords.length < 2) return;
-    if (this.routePolyline) {
-      this.map.removeLayer(this.routePolyline);
-      this.routePolyline = null;
-    }
-    this.activePolylineCoords = coords;
-    this.routePolyline = L.polyline(coords, {
-      color: color || '#009485',
-      weight: 5,
-      opacity: 0.85,
-      lineCap: 'round',
-      lineJoin: 'round'
-    }).addTo(this.map);
 
-    try {
-      this.map.fitBounds(this.routePolyline.getBounds(), { padding: [30, 30], maxZoom: 15 });
-    } catch {}
-  }
 
   clearAll() {
     if (!this.map) return;
@@ -2006,14 +1943,7 @@ class TransitMap {
     }, 450);
   }
 
-  focusDetour(detour) {
-    if (!this.map || !detour) return;
-    const pts = detour.detourPolyline || [];
-    if (pts.length > 0) {
-      const bounds = L.latLngBounds(pts);
-      this.map.fitBounds(bounds, { padding: [50, 50], maxZoom: 16, animate: true });
-    }
-  }
+
 
   invalidateSize(options = { pan: false, debounceMoveend: true }) {
     if (!this.map || !this.map._loaded) return;

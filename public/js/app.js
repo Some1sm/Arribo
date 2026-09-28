@@ -695,13 +695,6 @@ class TransitApp {
     return yiq >= 160 ? '#0f172a' : '#ffffff';
   }
 
-  hexToRgb(hex) {
-    if (!hex) return '0, 148, 133';
-    let c = hex.replace('#', '');
-    if (c.length === 3) c = c.split('').map(x => x + x).join('');
-    const num = parseInt(c, 16);
-    return `${(num >> 16) & 255}, ${(num >> 8) & 255}, ${num & 255}`;
-  }
 
   // ==========================================
   // LANDING PAGE LINE CATALOG RENDERING
@@ -1622,13 +1615,6 @@ class TransitApp {
     return '#';
   }
 
-  /**
-   * Makes a string safe for interpolation inside a single-quoted JS string
-   * within an inline on* handler attribute (strips quote/backslash/angle chars).
-   */
-  jsSafe(value) {
-    return String(value === null || value === undefined ? '' : value).replace(/['"\\<>`]/g, '');
-  }
 
   decodeHtml(str) {
     if (!str) return '';
@@ -6027,47 +6013,7 @@ class TransitApp {
     });
   }
 
-  showItineraryOnMap(itinerary) {
-    if (!itinerary) return;
 
-    // 1. Close the modal
-    const modal = document.getElementById('planner-modal-backdrop');
-    if (modal) modal.classList.remove('active');
-
-    // 2. Render on Map
-    if (this.mapController && typeof this.mapController.renderItinerary === 'function') {
-      this.mapController.renderItinerary(itinerary);
-    }
-
-    // 3. Update map header title and hide bus counter tag
-    const mapTitle = document.getElementById('map-line-title');
-    const busCounter = document.getElementById('map-bus-counter-tag');
-    if (mapTitle) {
-      if (!this._savedMapTitle) this._savedMapTitle = mapTitle.textContent;
-      mapTitle.textContent = `🧭 Itinerari: ${itinerary.originStop?.name || 'Origen'} ➔ ${itinerary.destStop?.name || 'Destinació'}`;
-    }
-    if (busCounter) busCounter.style.display = 'none';
-
-    // 4. Show floating guidance bar on the map
-    const bar = document.getElementById('itinerary-floating-bar');
-    const titleText = document.getElementById('itinerary-summary-text');
-    const stepsContainer = document.getElementById('itinerary-bar-steps');
-
-    if (bar && titleText && stepsContainer) {
-      titleText.textContent = `${itinerary.legs.map(l => l.lineCode).join(' ➔ ')} (~${itinerary.totalDurationMins} min)`;
-
-      stepsContainer.innerHTML = itinerary.legs.map((leg) => {
-        return `
-          <div class="itinerary-step-chip">
-            <span class="planner-leg-badge" style="background:${leg.lineColor || '#0ea5e9'}; padding:1px 5px; font-size:10px;">${this.esc(leg.lineCode)}</span>
-            <span>${this.esc(leg.fromStop.name)} ➔ ${this.esc(leg.toStop.name)}</span>
-          </div>
-        `;
-      }).join('<span style="color:var(--text-muted); font-size:0.8rem;">➔</span>');
-
-      bar.classList.add('active');
-    }
-  }
 
   // ==========================================
   // TRAFFIC CONGESTION HEATMAP

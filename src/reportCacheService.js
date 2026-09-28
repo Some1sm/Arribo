@@ -121,27 +121,6 @@ class ReportCacheService {
     }
   }
 
-  getAllReportFiles() {
-    try {
-      if (!fs.existsSync(this.reportsDir)) return [];
-      return fs.readdirSync(this.reportsDir)
-        .filter(f => f.startsWith('journalism_report_') && f.endsWith('.json'))
-        .map(f => {
-          const fullPath = path.join(this.reportsDir, f);
-          const stat = fs.statSync(fullPath);
-          return {
-            filename: f,
-            fullPath,
-            mtime: stat.mtimeMs,
-            sizeBytes: stat.size
-          };
-        })
-        .sort((a, b) => b.mtime - a.mtime);
-    } catch {
-      return [];
-    }
-  }
-
   pruneOldReports() {
     try {
       // 1. Prune per supported timeframe (keep max 2 for 24h, max 2 for 48h, max 2 for 168h)

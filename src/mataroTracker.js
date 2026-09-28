@@ -798,25 +798,6 @@ class MataroTracker extends BaseTracker {
     }
   }
 
-  // Get authoritative schedule parameters for a line, route direction and day type
-  getScheduleForLine(lIdStr, routeId = null, dayType = 'weekday') {
-    const dirSched = mataroSchedules.getDirectionSchedule(lIdStr, routeId, dayType);
-    if (dirSched) {
-      return {
-        inicio: dirSched.firstTrip || '06:30',
-        fin: dirSched.lastTrip || '22:00',
-        departures: dirSched.departures || [],
-        afternoonOnly: Boolean(dirSched.afternoonOnly)
-      };
-    }
-    return {
-      inicio: '06:30',
-      fin: '22:00',
-      departures: [],
-      afternoonOnly: false
-    };
-  }
-
   loadDatasets() {
     try {
       const getFilePath = (fileName) => {
