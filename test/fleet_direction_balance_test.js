@@ -169,6 +169,16 @@ async function run() {
         both.activeBuses.length, both.fleetStatus.scheduledVehicles,
         'the whole-line payload must also agree with its own status'
       );
+      const f = both.fleetStatus;
+      assert.ok(
+        Number.isFinite(f.scheduledBuses) && f.scheduledBuses <= f.scheduledVehicles,
+        'scheduledBuses must exist and never exceed scheduledVehicles'
+      );
+      assert.strictEqual(
+        f.scheduledVehicles - f.scheduledBuses,
+        f.notDrawn.terminal_bus,
+        'the only difference is buses counted twice at a terminal'
+      );
       console.log(`  ✓ every direction agrees with its own scheduledVehicles (both = ${both.activeBuses.length})\n`);
     } finally {
       global.Date = realDate;
@@ -539,6 +549,27 @@ async function run() {
     );
     console.log('  ✓ a real bus claiming the trip is never shadowed by a remembered ghost');
     memory.clear();
+  }
+
+  // ── 11. A bus turning around at the terminal is counted once ─────────────
+  console.log('📌 Test 11: a bus turning around at a terminal is not counted twice in scheduledBuses...');
+  {
+    const routes = mataroTracker.routesData['1'];
+    const originCoord = routes[1].coords[0];
+    const lat = parseFloat(originCoord.Latitude);
+    const lon = parseFloat(originCoord.Longitude);
+    const onTerminal = live('2695', '0', lat, lon, 100);
+    const at = new Date(Date.UTC(2026, 8, 24, 4, 58, 0)); // 06:58 Madrid: 07:01 is terminal layover on dir 1
+    const res = mataroTracker.synthesizeMissingScheduledBuses(
+      '1', 'both', routes, dirTemplate, [onTerminal], at, [onTerminal]
+    );
+    assert.strictEqual(res.fleetStatus.notDrawn.terminal_bus, 1, 'expected 1 trip suppressed by terminal bus');
+    assert.strictEqual(
+      res.fleetStatus.scheduledBuses,
+      res.fleetStatus.scheduledVehicles - 1,
+      'scheduledBuses must be scheduledVehicles - 1 when one bus is turning around'
+    );
+    console.log('  ✓ terminal bus suppresses the departure it will run and reduces scheduledBuses by 1\n');
   }
 
   console.log('=========================================================================');

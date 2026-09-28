@@ -511,6 +511,7 @@ app.get('/api/data-health', async (req, res) => {
   let totalEstimated = 0;
   let totalDeadReckoned = 0;
   let totalScheduled = 0;
+  let totalScheduledBuses = 0;
   let complete = true;
   LINE_IDS.forEach((lineId, i) => {
     const fs = details[i] && details[i].fleetStatus;
@@ -523,11 +524,14 @@ app.get('/api/data-health', async (req, res) => {
     const estimatedVehicles = Number(fs.estimatedVehicles) || 0;
     const deadReckonedVehicles = Number(fs.deadReckonedVehicles) || 0;
     const scheduledVehicles = Number(fs.scheduledVehicles) || 0;
+    const scheduledBuses = Number.isFinite(Number(fs.scheduledBuses)) ? Number(fs.scheduledBuses) : scheduledVehicles;
+    const notDrawn = fs.notDrawn || {};
     totalLiveGps += liveGpsVehicles;
     totalEstimated += estimatedVehicles;
     totalDeadReckoned += deadReckonedVehicles;
     totalScheduled += scheduledVehicles;
-    linesFleet.push({ lineId, lineCode: `L${lineId}`, available: true, liveGpsVehicles, estimatedVehicles, deadReckonedVehicles, scheduledVehicles });
+    totalScheduledBuses += scheduledBuses;
+    linesFleet.push({ lineId, lineCode: `L${lineId}`, available: true, liveGpsVehicles, estimatedVehicles, deadReckonedVehicles, scheduledVehicles, scheduledBuses, notDrawn });
   });
 
   res.json({
@@ -550,7 +554,7 @@ app.get('/api/data-health', async (req, res) => {
         ? "Cap autobús amb GPS mentre l'horari en preveu en servei."
         : String(anomaly)
     } : { detected: false, code: null, message: null }) : null,
-    fleet: { totalLiveGps, totalEstimated, totalDeadReckoned, totalScheduled, complete, source: 'tracker-line-details', lines: linesFleet },
+    fleet: { totalLiveGps, totalEstimated, totalDeadReckoned, totalScheduled, totalScheduledBuses, complete, source: 'tracker-line-details', lines: linesFleet },
     scheduleDrift: drift,
     season: validity.season ? {
       season: validity.season,

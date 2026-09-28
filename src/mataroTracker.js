@@ -1629,6 +1629,8 @@ class MataroTracker extends BaseTracker {
       totalActiveBuses: processedBuses.length,
       fleetStatus: (lineMaxFleet === 0 || maxFleetLimit === 0) ? {
         scheduledVehicles: 0,
+        scheduledBuses: 0,
+        notDrawn: {},
         liveGpsVehicles: 0,
         estimatedVehicles: 0,
         deadReckonedVehicles: 0,
@@ -2134,7 +2136,7 @@ class MataroTracker extends BaseTracker {
 
       activeTripsForDir.forEach(trip => {
         if (trip.paired) return;
-        if (trip.isTerminalLayover || trip.progress <= 0.20) {
+        if (!trip.isTerminalLayover && trip.progress <= 0.20) {
           const incomingBus = oppPhysicalBuses.find(b => {
             const bLat = b.lat || b.latitude;
             const bLon = b.lon || b.longitude;
@@ -2225,13 +2227,18 @@ class MataroTracker extends BaseTracker {
       return a.trip.depSec - b.trip.depSec;
     });
 
+    // Why scheduled trips were not drawn. `terminal_bus` is not a missing bus:
+    // it is the trip a real bus standing at (or arriving at) the terminal will
+    // run next, so that bus must not be counted twice in scheduledBuses.
+    const notDrawn = { terminal_bus: 0, terminal_ghost: 0, line_cap: 0, direction_allowance: 0, colocated: 0, no_position: 0 };
+
     // 5. Synthesize ghost buses up to the line fleet cap
     const allSyntheticBuses = [];
-    for (const cand of candidateTrips) {
-      if (allSyntheticBuses.length >= maxSyntheticForLine) break;
+    for (let ci = 0; ci < candidateTrips.length; ci++) { const cand = candidateTrips[ci];
+      if (allSyntheticBuses.length >= maxSyntheticForLine) { notDrawn.line_cap += candidateTrips.length - ci; break; }
 
       const synthOnThisDir = allSyntheticBuses.filter(b => b.direction === String(cand.dirKey)).length;
-      if (synthOnThisDir >= cand.maxSyntheticForDir) continue;
+      if (synthOnThisDir >= cand.maxSyntheticForDir) { notDrawn.direction_allowance++; continue; }
 
       const { trip, dirKey, dirIndex, sched, rawCoords, distTable, originPt } = cand;
       let lat, lon, bearing, totalProgress, speedKmh, statusText, formattedStatus, delayBadgeText, fromStop, toStop, fromSeq, toSeq;
@@ -2255,18 +2262,22 @@ class MataroTracker extends BaseTracker {
 
         // Anti-stacking at terminal: do not place two buses at the exact same terminal (< 150m)
         const allCurrentBuses = [...allKnownBuses, ...allSyntheticBuses];
-        const hasClashAtTerminal = allCurrentBuses.some(b => {
+        const clashBus = allCurrentBuses.find(b => {
           const bLat = b.lat || b.latitude;
           const bLon = b.lon || b.longitude;
           if (!bLat || !bLon) return false;
           return geoEngine.calculateDistanceMeters(lat, lon, bLat, bLon) < 150;
         });
-        if (hasClashAtTerminal) continue;
+        if (clashBus) {
+          if (this.isPhysicalVehicle(clashBus)) notDrawn.terminal_bus++;
+          else notDrawn.terminal_ghost++;
+          continue;
+        }
       } else {
         // In-transit vehicle along polyline
         const targetDist = trip.progress * distTable.total;
         const pt = geoEngine.pointAtDistance(rawCoords, distTable, targetDist);
-        if (!pt) continue;
+        if (!pt) { notDrawn.no_position++; continue; }
 
         lat = Math.round(pt.lat * 1000000) / 1000000;
         lon = Math.round(pt.lon * 1000000) / 1000000;
@@ -2345,7 +2356,7 @@ class MataroTracker extends BaseTracker {
           const held = this.wasGhostDrawnRecently(`${lId}|${dirKey}|${trip.depTime}`) &&
             (nearestSameDir < MataroTracker.GHOST_RELEASE_M_SAME_DIR ||
               nearestCrossDir < MataroTracker.GHOST_RELEASE_M_CROSS_DIR);
-          if (!held) continue;
+          if (!held) { notDrawn.colocated++; continue; }
         }
       }
 
@@ -2413,6 +2424,8 @@ class MataroTracker extends BaseTracker {
       const effScheduled = Math.min(lineMaxFleet, totalScheduledForWholeLine);
       fleetStatus = {
         scheduledVehicles: effScheduled,
+        scheduledBuses: Math.max(0, effScheduled - notDrawn.terminal_bus),
+        notDrawn: { ...notDrawn },
         liveGpsVehicles: totalLiveOnWholeLine,
         // Dead-reckoned buses count here, alongside timetable ghosts. Both are
         // positions this platform inferred rather than observed, which is what
@@ -2433,6 +2446,8 @@ class MataroTracker extends BaseTracker {
       const effScheduled = activeTripsForDir.length;
       fleetStatus = {
         scheduledVehicles: effScheduled,
+        scheduledBuses: Math.max(0, effScheduled - notDrawn.terminal_bus),
+        notDrawn: { ...notDrawn },
         liveGpsVehicles: liveBusesOnDir.length,
         estimatedVehicles: syntheticBuses.length + deadReckonedOnDir,
         deadReckonedVehicles: deadReckonedOnDir,

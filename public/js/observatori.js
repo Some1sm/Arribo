@@ -243,15 +243,33 @@ class ObservatoriApp {
       items.push(makeItem('Flota GPS activa', '🛰️', 'status-neutral', 'Sense dades', 'Sense dades de vehicles actius per línia.'));
     } else {
       const { totalLiveGps = 0, totalEstimated = 0, totalScheduled = 0, complete = true, lines = [] } = data.fleet;
-      const isOk = totalScheduled > 0 && totalLiveGps >= Math.ceil(totalScheduled * 0.7);
-      const badgeClass = totalScheduled > 0 ? (isOk ? 'status-success' : 'status-warning') : 'status-neutral';
+      const totalBuses = Number.isFinite(data.fleet.totalScheduledBuses) ? data.fleet.totalScheduledBuses : totalScheduled;
+      const isOk = totalBuses > 0 && totalLiveGps >= Math.ceil(totalBuses * 0.7);
+      const badgeClass = totalBuses > 0 ? (isOk ? 'status-success' : 'status-warning') : 'status-neutral';
       const badgeText = `${totalLiveGps} GPS · ${totalEstimated} estimats`;
-      const perLine = lines.map(l => l.available === false
-        ? `${l.lineCode}: sense dades`
-        : `${l.lineCode}: ${l.liveGpsVehicles}+${l.estimatedVehicles ?? 0}/${l.scheduledVehicles}`).join(' · ');
+      const REASON = {
+        terminal_ghost: 'capçalera ocupada',
+        line_cap: 'límit de flota de la línia',
+        direction_allowance: 'bus real fora del seu horari',
+        colocated: 'bus real a menys de 100 m',
+        no_position: 'sense posició al traçat'
+      };
+      const perLine = lines.map(l => {
+        if (l.available === false) return `${l.lineCode}: sense dades`;
+        const buses = Number.isFinite(l.scheduledBuses) ? l.scheduledBuses : l.scheduledVehicles;
+        const gap = buses - (l.liveGpsVehicles + (l.estimatedVehicles ?? 0));
+        let text = `${l.lineCode}: ${l.liveGpsVehicles}+${l.estimatedVehicles ?? 0}/${buses}`;
+        if (gap > 0) {
+          const reasons = Object.entries(l.notDrawn || {})
+            .filter(([k, n]) => k !== 'terminal_bus' && n > 0)
+            .map(([k, n]) => `${REASON[k] || k}${n > 1 ? ` ×${n}` : ''}`);
+          text += ` (${gap} sense dibuixar${reasons.length ? `: ${reasons.join(', ')}` : ''})`;
+        }
+        return text;
+      }).join(' · ');
       const note = complete ? '' : ' (algunes línies sense dades)';
       items.push(makeItem('Flota GPS activa', '🛰️', badgeClass, badgeText,
-        `${totalLiveGps + totalEstimated} autobusos al mapa; l&#039;horari en preveu ${totalScheduled}${note}. GPS+estimats/previstos per línia: ${perLine}`));
+        `${totalLiveGps + totalEstimated} autobusos al mapa; l&#039;horari en necessita ${totalBuses}${note}. Un bus que acaba un trajecte i torna a sortir de la mateixa capçalera compta una sola vegada. GPS+estimats/necessaris per línia: ${this.esc(perLine)}`));
     }
 
     // 5. Deriva horària (scheduleDrift)

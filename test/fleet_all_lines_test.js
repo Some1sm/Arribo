@@ -253,6 +253,16 @@ async function run() {
             lid, 'both', routes, dirTemplates[lid], [], madridInstant(h, m, dayType)
           );
           checked++;
+          const f = r.fleetStatus;
+          assert.ok(
+            Number.isFinite(f.scheduledBuses) && f.scheduledBuses <= f.scheduledVehicles,
+            'scheduledBuses must exist and never exceed scheduledVehicles'
+          );
+          assert.strictEqual(
+            f.scheduledVehicles - f.scheduledBuses,
+            f.notDrawn.terminal_bus,
+            'the only difference is buses counted twice at a terminal'
+          );
           assert.ok(
             r.syntheticBuses.length <= lineMaxFleet,
             `L${lid} ${dayType} ${h}:${m}: ${r.syntheticBuses.length} ghosts exceeds the line's scheduled fleet of ${lineMaxFleet}`

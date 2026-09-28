@@ -204,6 +204,30 @@ function requestDataHealth() {
   appInstance.renderDataHealth({ ...healthyData, upstreamKnown: true, lastError: null });
   assert(mockDom.gridInnerHtml.includes('>Sense errors<'), 'Null lastError with upstreamKnown should render Sense errors badge');
 
+  // D6. Fleet undrawn gap and reasons formatting
+  appInstance.renderDataHealth({
+    ...healthyData,
+    fleet: {
+      totalLiveGps: 1,
+      totalEstimated: 2,
+      totalScheduled: 5,
+      totalScheduledBuses: 4,
+      complete: true,
+      lines: [{
+        lineId: '5',
+        lineCode: 'L5',
+        available: true,
+        liveGpsVehicles: 1,
+        estimatedVehicles: 2,
+        scheduledVehicles: 5,
+        scheduledBuses: 4,
+        notDrawn: { terminal_bus: 1, colocated: 1 }
+      }]
+    }
+  });
+  assert(mockDom.gridInnerHtml.includes('L5: 1+2/4 (1 sense dibuixar: bus real a menys de 100 m)'), 'Should format gap and reason');
+  assert(!mockDom.gridInnerHtml.includes('terminal_bus'), 'Must not include terminal_bus in reasons');
+
   console.log('PASS: /api/data-health contract, null fields rendered as "sense dades" (never green), zero SQLite access.');
 })().finally(async () => {
   if (server?.listening) await new Promise(resolve => server.close(resolve));
