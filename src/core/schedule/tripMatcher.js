@@ -69,11 +69,16 @@ function circularDiffSec(a, b) {
  */
 function resolveDayType(at) {
   const c = calendarEngine.getDateComponents(at, 'Europe/Madrid');
+  const override = holidayCalendar.getServiceOverride(at);
+  if (override) {
+    return { dayType: override, components: c, isHoliday: false, isOverride: true };
+  }
   let dayType = 'weekday';
-  if (c.isSunday) dayType = 'sunday';
+  const isHol = holidayCalendar.isHoliday(at);
+  if (isHol) dayType = 'sunday';
+  else if (c.isSunday) dayType = 'sunday';
   else if (c.isSaturday || (c.isWeekday && c.isAugust)) dayType = 'saturday';
-  else if (holidayCalendar.isHoliday(at)) dayType = 'sunday';
-  return { dayType, components: c, isHoliday: dayType === 'sunday' && !c.isSunday };
+  return { dayType, components: c, isHoliday: isHol || (dayType === 'sunday' && !c.isSunday) };
 }
 
 /**

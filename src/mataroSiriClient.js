@@ -22,10 +22,19 @@ class MataroSiriClient {
     this.lastVehicleSuccessAt = null;
     this.lastArrivalsSuccessAt = null;
     this.lastFailureAt = null;
+    this.lastError = null;
+    this.vehicleDeliveryStatus = null;
+    this.rejectedFixes = 0;
     // Pluggable transport: server.js installs an WorkerBridge-backed backend
     // in the main process so SIRI SOAP traffic stays worker-owned.
     this._httpBackend = null;
     this._rpcBackend = null;
+  }
+
+  isValidMataroCoord(lat, lon) {
+    return Number.isFinite(lat) && Number.isFinite(lon)
+      && lat >= 41.45 && lat <= 41.65
+      && lon >= 2.30 && lon <= 2.55;
   }
 
   observationTimestamp(value) {
@@ -45,6 +54,7 @@ class MataroSiriClient {
   recordSuccess(kind = 'vehicles') {
     this.consecutiveFailures = 0;
     this.circuitOpenUntil = 0;
+    this.lastError = null;
     if (kind === 'arrivals') this.lastArrivalsSuccessAt = Date.now();
     else this.lastVehicleSuccessAt = Date.now();
   }
@@ -59,7 +69,10 @@ class MataroSiriClient {
       cooldownMs: this.circuitCooldownMs,
       lastVehicleSuccessAt: this.lastVehicleSuccessAt,
       lastArrivalsSuccessAt: this.lastArrivalsSuccessAt,
-      lastFailureAt: this.lastFailureAt
+      lastFailureAt: this.lastFailureAt,
+      lastError: this.lastError,
+      vehicleDeliveryStatus: this.vehicleDeliveryStatus,
+      rejectedFixes: this.rejectedFixes
     };
   }
 
@@ -108,7 +121,7 @@ class MataroSiriClient {
         }))
         .then((r) => {
           if (!r || typeof r.bodyText !== 'string') throw new Error('SIRI proxy malformed response');
-          return r.bodyText;
+          return { status: typeof r.status === 'number' ? r.status : 200, bodyText: r.bodyText };
         });
     }
     return new Promise((resolve, reject) => {
@@ -129,7 +142,7 @@ class MataroSiriClient {
       const req = https.request(options, (res) => {
         let data = '';
         res.on('data', chunk => data += chunk);
-        res.on('end', () => resolve(data));
+        res.on('end', () => resolve({ status: res.statusCode, bodyText: data }));
       });
 
       req.on('error', reject);
@@ -141,6 +154,46 @@ class MataroSiriClient {
       req.write(soapXml);
       req.end();
     });
+  }
+
+  classifyDelivery(status, xml, deliveryTag) {
+    if (typeof status === 'number' && status !== 200) {
+      return { ok: false, error: `http_${status}`, statusFlag: null };
+    }
+    if (!xml || typeof xml !== 'string') {
+      return { ok: false, error: 'malformed', statusFlag: null };
+    }
+    const trimmed = xml.trim();
+    if (!trimmed) {
+      return { ok: false, error: 'malformed', statusFlag: null };
+    }
+    if (/<(?:[\w.-]+:)?Fault(?:[\s>])/i.test(trimmed)) {
+      return { ok: false, error: 'soap_fault', statusFlag: null };
+    }
+    const hasDelivery = new RegExp(`<(?:[\\w.-]+:)?${deliveryTag}(?:[\\s>])`, 'i').test(trimmed);
+    const hasItems = /<(?:[\w.-]+:)?(?:MonitoredStopVisit|VehicleActivity)(?:[\s>])/i.test(trimmed);
+    if (!hasDelivery && !hasItems) {
+      return { ok: false, error: 'malformed', statusFlag: null };
+    }
+    const errCondMatch = trimmed.match(/<(?:[\w.-]+:)?ErrorCondition(?:[\s>])([\s\S]*?)<\/(?:[\w.-]+:)?ErrorCondition>/i);
+    if (errCondMatch) {
+      const desc = this.extractTag(errCondMatch[1], 'Description') || '';
+      if (/invalid user|password|unauthori[sz]ed|credential/i.test(desc)) {
+        return { ok: false, error: 'auth', statusFlag: null };
+      }
+      return { ok: false, error: 'upstream_error', statusFlag: null };
+    }
+    const respTs = this.extractTag(trimmed, 'ResponseTimestamp');
+    if (respTs && respTs.startsWith('0001-01-01')) {
+      return { ok: false, error: 'upstream_error', statusFlag: null };
+    }
+    const statusTag = this.extractTag(trimmed, 'Status');
+    let statusFlag = null;
+    if (statusTag !== null) {
+      if (statusTag.toLowerCase() === 'true') statusFlag = true;
+      else if (statusTag.toLowerCase() === 'false') statusFlag = false;
+    }
+    return { ok: true, error: null, statusFlag };
   }
 
   // Parse ISO 8601 duration e.g. "PT2M", "-PT5M", "PT30S".
@@ -164,7 +217,7 @@ class MataroSiriClient {
 
   // Extract simple tag content from XML string, decoding XML entities
   extractTag(xml, tag) {
-    const match = xml.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'i'));
+    const match = xml.match(new RegExp(`<(?:[\\w.-]+:)?${tag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/(?:[\\w.-]+:)?${tag}>`, 'i'));
     if (!match) return null;
     return this.decodeXmlEntities(match[1].trim());
   }
@@ -283,16 +336,33 @@ class MataroSiriClient {
 </soapenv:Envelope>`;
 
       try {
-        const xml = await this.callSoap('GetVehicleMonitoring', soapXml);
+        const soapRes = await this.callSoap('GetVehicleMonitoring', soapXml);
+        const status = (soapRes && typeof soapRes === 'object' && typeof soapRes.status === 'number') ? soapRes.status : 200;
+        const bodyText = (soapRes && typeof soapRes === 'object' && typeof soapRes.bodyText === 'string') ? soapRes.bodyText : (typeof soapRes === 'string' ? soapRes : '');
+        const classification = this.classifyDelivery(status, bodyText, 'VehicleMonitoringDelivery');
+        if (!classification.ok) {
+          this.lastError = classification.error;
+          throw new Error(`SIRI ${classification.error}`);
+        }
+        this.vehicleDeliveryStatus = classification.statusFlag;
+        this.lastError = null;
+
+        const xml = bodyText;
         const vehicles = [];
 
-        const activityRegex = /<VehicleActivity>([\s\S]*?)<\/VehicleActivity>/gi;
+        const activityRegex = /<(?:[\w.-]+:)?VehicleActivity(?:[\s>])([\s\S]*?)<\/(?:[\w.-]+:)?VehicleActivity>/gi;
         let actMatch;
 
         while ((actMatch = activityRegex.exec(xml)) !== null) {
           const itemXml = actMatch[1];
-          const lat = parseFloat(this.extractTag(itemXml, 'Latitude') || '0');
-          const lon = parseFloat(this.extractTag(itemXml, 'Longitude') || '0');
+          const latRaw = this.extractTag(itemXml, 'Latitude');
+          const lonRaw = this.extractTag(itemXml, 'Longitude');
+          const lat = latRaw !== null ? parseFloat(latRaw) : NaN;
+          const lon = lonRaw !== null ? parseFloat(lonRaw) : NaN;
+          const validCoord = this.isValidMataroCoord(lat, lon);
+          if (!validCoord && (latRaw !== null || lonRaw !== null)) {
+            this.rejectedFixes++;
+          }
           const line = this.extractTag(itemXml, 'LineRef') || lineRef;
           const lineName = this.extractTag(itemXml, 'PublishedLineName') || '';
           const directionName = this.extractTag(itemXml, 'DirectionName') || '';
@@ -316,7 +386,7 @@ class MataroSiriClient {
           const recordedAt = recordedAtRaw || ts;
           const observedAt = this.observationTimestamp(recordedAtRaw);
 
-          if (lat && lon) {
+          if (validCoord) {
             vehicles.push({
               vehicleId: vehicleRef,
               lineId: line,
@@ -350,15 +420,23 @@ class MataroSiriClient {
         this.cache.set(cacheKey, { ts: Date.now(), data: vehicles });
         return vehicles;
       } catch (err) {
+        if (!this.lastError) {
+          if (err.message && err.message.startsWith('SIRI ')) {
+            this.lastError = err.message.slice(5);
+          } else {
+            this.lastError = 'network_error';
+          }
+        }
         this.recordFailure(err.message);
+        const safeErrMsg = String(err.message || '').replace(new RegExp(this.accountKey.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), 'g'), '[REDACTED]');
         const nowErr = Date.now();
-        if (err.message.includes('timeout') || err.message.includes('ECONNRESET') || err.message.includes('ECONNREFUSED')) {
+        if (safeErrMsg.includes('timeout') || safeErrMsg.includes('ECONNRESET') || safeErrMsg.includes('ECONNREFUSED')) {
           if (nowErr - this.lastWarnTime > 60000) {
-            console.warn(`[SIRI] Avanza SIRI server transient issue (${err.message}). Using live cache & dead-reckoning fallback.`);
+            console.warn(`[SIRI] Avanza SIRI server transient issue (${safeErrMsg}). Using live cache & dead-reckoning fallback.`);
             this.lastWarnTime = nowErr;
           }
         } else {
-          console.error(`[SIRI Error] GetVehicleMonitoring(${lineRef}):`, err.message);
+          console.error(`[SIRI Error] GetVehicleMonitoring(${lineRef}):`, safeErrMsg);
         }
         if (cached && (Date.now() - cached.ts < this.staleFallbackTtlMs)) {
           return cached.data.map(v => ({
@@ -400,7 +478,7 @@ class MataroSiriClient {
   }
 
   // 2. Get Real-Time Arrival Countdowns for a Specific Stop
-  async getStopArrivals(stopId, lineRef = '') {
+  async getStopArrivals(stopId, lineRef = '', options = {}) {
     const normStopId = this.normalizeStopId(stopId);
     this.assertSafeRef(normStopId, 'stopId');
     this.assertSafeRef(lineRef, 'lineRef');
@@ -409,9 +487,14 @@ class MataroSiriClient {
     const cached = this.cache.get(cacheKey);
     const now = Date.now();
 
-    // 1. Fresh cache: instant 0ms return (<20s)
-    if (cached && (now - cached.ts < this.cacheTtlMs)) {
+    // 1. Fresh cache: instant 0ms return (<20s) (unless bypassCache is requested)
+    if (!options.bypassCache && cached && (now - cached.ts < this.cacheTtlMs)) {
       return cached.data;
+    }
+
+    // 1b. Concurrent identical miss: join the in-flight upstream request
+    if (!options.bypassCache && this._inflight.has(cacheKey)) {
+      return this._inflight.get(cacheKey);
     }
 
     // 2. Circuit breaker check: if upstream is blocked or hanging, return stale fallback immediately in 0ms!
@@ -429,24 +512,31 @@ class MataroSiriClient {
     }
 
     // 3. Pluggable RPC transport (Main process -> Ingestion worker)
-    if (typeof this._rpcBackend === 'function') {
+    if (!options.direct && typeof this._rpcBackend === 'function') {
       // Coalesced promise resolves to the FINAL caller-facing value so
       // concurrent joiners (step 1b) get identical post-processed results.
       return this._coalesce(cacheKey, async () => {
         try {
-          const r = await this._rpcBackend('getMataroStopArrivals', { stopId: normStopId, lineRef });
+          const r = await this._rpcBackend('getMataroStopArrivals', { stopId: normStopId, lineRef, bypassCache: !!options.bypassCache });
           if (Array.isArray(r)) {
-            this.recordSuccess();
+            this.recordSuccess('arrivals');
             this.cache.set(cacheKey, { ts: Date.now(), data: r });
             return r;
           }
         } catch (err) {
+          if (!this.lastError) {
+            if (err.message && err.message.startsWith('SIRI ')) {
+              this.lastError = err.message.slice(5);
+            } else {
+              this.lastError = 'network_error';
+            }
+          }
           this.recordFailure(err.message);
         }
         if (cached && (now - cached.ts < this.staleFallbackTtlMs)) {
           return cached.data.map(a => ({
             ...a,
-          freshness: { ...a.freshness, fallback: true },
+            freshness: { ...a.freshness, fallback: true },
             isEstimated: true,
             isRealTime: false,
             delayBadgeText: '⚡ En ruta (Estimat)'
@@ -480,110 +570,162 @@ class MataroSiriClient {
 </soap:Envelope>`;
 
       try {
-        const xml = await this.callSoap('GetStopMonitoring', soapXml);
-      const arrivals = [];
-
-      const visitRegex = /<MonitoredStopVisit>([\s\S]*?)<\/MonitoredStopVisit>/gi;
-      let visitMatch;
-
-      while ((visitMatch = visitRegex.exec(xml)) !== null) {
-        const itemXml = visitMatch[1];
-        const line = this.extractTag(itemXml, 'LineRef') || '';
-        const lineName = this.extractTag(itemXml, 'PublishedLineName') || '';
-        const directionName = this.extractTag(itemXml, 'DirectionName') || '';
-        const dest = this.extractTag(itemXml, 'DestinationName') || '';
-        const vehicleRef = this.extractTag(itemXml, 'VehicleRef') || '';
-        const dist = this.extractTag(itemXml, 'DistanceFromStop') || '';
-        const expectedArr = this.extractTag(itemXml, 'ExpectedArrivalTime') || this.extractTag(itemXml, 'AimedArrivalTime') || '';
-        const aimedArr = this.extractTag(itemXml, 'AimedArrivalTime') || expectedArr;
-        const delayStr = this.extractTag(itemXml, 'Delay') || 'PT0M';
-        let delayMins = this.parseDurationMinutes(delayStr);
-
-        // Authoritatively compute delay from expected vs aimed arrival times if available
-        if (expectedArr && aimedArr) {
-          const expMs = new Date(expectedArr).getTime();
-          const aimMs = new Date(aimedArr).getTime();
-          if (!isNaN(expMs) && !isNaN(aimMs)) {
-            delayMins = Math.round((expMs - aimMs) / 60000);
-          }
+        const soapRes = await this.callSoap('GetStopMonitoring', soapXml);
+        const status = (soapRes && typeof soapRes === 'object' && typeof soapRes.status === 'number') ? soapRes.status : 200;
+        const bodyText = (soapRes && typeof soapRes === 'object' && typeof soapRes.bodyText === 'string') ? soapRes.bodyText : (typeof soapRes === 'string' ? soapRes : '');
+        const classification = this.classifyDelivery(status, bodyText, 'StopMonitoringDelivery');
+        if (!classification.ok) {
+          this.lastError = classification.error;
+          throw new Error(`SIRI ${classification.error}`);
         }
+        this.lastError = null;
 
-        const lat = parseFloat(this.extractTag(itemXml, 'Latitude') || '0');
-        const lon = parseFloat(this.extractTag(itemXml, 'Longitude') || '0');
+        const xml = bodyText;
+        const arrivals = [];
 
-        let minutesAway = 0;
-        let formattedTime = '--:--';
-        let isValidArrival = false;
+        const visitRegex = /<(?:[\w.-]+:)?MonitoredStopVisit(?:[\s>])([\s\S]*?)<\/(?:[\w.-]+:)?MonitoredStopVisit>/gi;
+        let visitMatch;
 
-        if (expectedArr) {
-          const arrDate = new Date(expectedArr);
-          // Sanity check: timestamp must be valid and not older than 1 hour
-          if (!isNaN(arrDate.getTime()) && arrDate.getTime() >= Date.now() - 3600000) {
-            const now = new Date();
-            const diffMs = arrDate.getTime() - now.getTime();
-            const diffMin = Math.round(diffMs / 60000);
-            if (diffMin >= -2) {
-              minutesAway = Math.max(0, diffMin);
-              formattedTime = timeUtils.formatTimeToTimezone(arrDate, 'Europe/Madrid');
-              if (formattedTime !== '--:--') {
-                isValidArrival = true;
+        while ((visitMatch = visitRegex.exec(xml)) !== null) {
+          const itemXml = visitMatch[1];
+          const line = this.extractTag(itemXml, 'LineRef') || '';
+          const lineName = this.extractTag(itemXml, 'PublishedLineName') || '';
+          const directionName = this.extractTag(itemXml, 'DirectionName') || '';
+          const dest = this.extractTag(itemXml, 'DestinationName') || '';
+          const vehicleRef = this.extractTag(itemXml, 'VehicleRef') || '';
+          const dist = this.extractTag(itemXml, 'DistanceFromStop') || '';
+
+          const hasExpected = Boolean(this.extractTag(itemXml, 'ExpectedArrivalTime'));
+          const expectedArr = this.extractTag(itemXml, 'ExpectedArrivalTime') || '';
+          const aimedArr = this.extractTag(itemXml, 'AimedArrivalTime') || expectedArr;
+
+          let delayMins = null;
+          if (hasExpected && aimedArr && expectedArr) {
+            const expMs = new Date(expectedArr).getTime();
+            const aimMs = new Date(aimedArr).getTime();
+            if (Number.isFinite(expMs) && Number.isFinite(aimMs)) {
+              delayMins = Math.round((expMs - aimMs) / 60000);
+            }
+          } else {
+            const delayRaw = this.extractTag(itemXml, 'Delay');
+            if (delayRaw !== null) {
+              const parsed = this.parseDurationMinutes(delayRaw);
+              if (Number.isFinite(parsed)) delayMins = parsed;
+            }
+          }
+
+          let delayBadgeText;
+          let delayStatus;
+          if (delayMins === null) {
+            delayBadgeText = 'Horari previst';
+            delayStatus = 'scheduled';
+          } else if (delayMins >= 2) {
+            delayBadgeText = `+${delayMins} min retard`;
+            delayStatus = 'delayed';
+          } else if (delayMins <= -1) {
+            delayBadgeText = `${Math.abs(delayMins)} min avançat`;
+            delayStatus = 'early';
+          } else {
+            delayBadgeText = 'Puntual';
+            delayStatus = 'on-time';
+          }
+
+          const latRaw = this.extractTag(itemXml, 'Latitude');
+          const lonRaw = this.extractTag(itemXml, 'Longitude');
+          const lat = latRaw !== null ? parseFloat(latRaw) : NaN;
+          const lon = lonRaw !== null ? parseFloat(lonRaw) : NaN;
+          let busCoords = null;
+          if (this.isValidMataroCoord(lat, lon)) {
+            busCoords = {
+              lat: Math.round(lat * 1000000) / 1000000,
+              lon: Math.round(lon * 1000000) / 1000000
+            };
+          } else if (latRaw !== null || lonRaw !== null) {
+            this.rejectedFixes++;
+          }
+
+          let minutesAway = 0;
+          let formattedTime = '--:--';
+          let isValidArrival = false;
+
+          const refTimeStr = expectedArr || aimedArr;
+          if (refTimeStr) {
+            const arrDate = new Date(refTimeStr);
+            // Sanity check: timestamp must be valid and not older than 1 hour
+            if (!isNaN(arrDate.getTime()) && arrDate.getTime() >= Date.now() - 3600000) {
+              const now = new Date();
+              const diffMs = arrDate.getTime() - now.getTime();
+              const diffMin = Math.round(diffMs / 60000);
+              if (diffMin >= -2) {
+                minutesAway = Math.max(0, diffMin);
+                formattedTime = timeUtils.formatTimeToTimezone(arrDate, 'Europe/Madrid');
+                if (formattedTime !== '--:--') {
+                  isValidArrival = true;
+                }
               }
             }
           }
+
+          if (isValidArrival) {
+            arrivals.push({
+              lineId: line,
+              lineName,
+              directionName,
+              destination: dest,
+              vehicleId: vehicleRef,
+              distanceFromStop: dist,
+              departureTime: formattedTime,
+              freshness: {
+                source: hasExpected ? 'live' : 'timetable',
+                fetchedAt: Date.now(),
+                observedAt: this.observationTimestamp(this.extractTag(itemXml, 'RecordedAtTime'))
+              },
+              expectedIso: expectedArr,
+              aimedIso: aimedArr,
+              minutesAway,
+              formattedStatus: minutesAway === 0 ? 'Imminent' : (minutesAway === 1 ? '1 min' : `${minutesAway} min`),
+              delayMins,
+              delayBadgeText,
+              delayStatus,
+              isRealTime: hasExpected,
+              busCoords
+            });
+          }
         }
 
-        if (isValidArrival) {
-          arrivals.push({
-            lineId: line,
-            lineName,
-            directionName,
-            destination: dest,
-            vehicleId: vehicleRef,
-            distanceFromStop: dist,
-            departureTime: formattedTime,
-            freshness: {
-              source: this.extractTag(itemXml, 'ExpectedArrivalTime') ? 'live' : 'timetable',
-              fetchedAt: Date.now(),
-              observedAt: this.observationTimestamp(this.extractTag(itemXml, 'RecordedAtTime'))
-            },
-            expectedIso: expectedArr,
-            aimedIso: aimedArr,
-            minutesAway,
-            formattedStatus: minutesAway === 0 ? 'Imminent' : (minutesAway === 1 ? '1 min' : `${minutesAway} min`),
-            delayMins,
-            delayBadgeText: delayMins >= 2 ? `+${delayMins} min retard` : (delayMins <= -1 ? `${Math.abs(delayMins)} min avançat` : 'Puntual'),
-            delayStatus: delayMins >= 2 ? 'delayed' : (delayMins <= -1 ? 'early' : 'on-time'),
-            isRealTime: true,
-            busCoords: lat && lon ? { lat, lon } : null
-          });
+        arrivals.sort((a, b) => a.minutesAway - b.minutesAway);
+        this.recordSuccess('arrivals');
+        this.cache.set(cacheKey, { ts: Date.now(), data: arrivals });
+        return arrivals;
+      } catch (err) {
+        if (!this.lastError) {
+          if (err.message && err.message.startsWith('SIRI ')) {
+            this.lastError = err.message.slice(5);
+          } else {
+            this.lastError = 'network_error';
+          }
         }
-      }
-
-      arrivals.sort((a, b) => a.minutesAway - b.minutesAway);
-      this.recordSuccess('arrivals');
-      this.cache.set(cacheKey, { ts: Date.now(), data: arrivals });
-      return arrivals;
-    } catch (err) {
-      this.recordFailure(err.message);
-      const nowErr = Date.now();
-      if (err.message.includes('timeout') || err.message.includes('ECONNRESET') || err.message.includes('ECONNREFUSED')) {
-        if (nowErr - this.lastWarnTime > 60000) {
-          console.warn(`[SIRI] Avanza SIRI server transient issue (${err.message}). Using live cache & dead-reckoning fallback.`);
-          this.lastWarnTime = nowErr;
+        this.recordFailure(err.message);
+        const safeErrMsg = String(err.message || '').replace(new RegExp(this.accountKey.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'), 'g'), '[REDACTED]');
+        const nowErr = Date.now();
+        if (safeErrMsg.includes('timeout') || safeErrMsg.includes('ECONNRESET') || safeErrMsg.includes('ECONNREFUSED')) {
+          if (nowErr - this.lastWarnTime > 60000) {
+            console.warn(`[SIRI] Avanza SIRI server transient issue (${safeErrMsg}). Using live cache & dead-reckoning fallback.`);
+            this.lastWarnTime = nowErr;
+          }
+        } else {
+          console.error(`[SIRI Error] GetStopMonitoring(${stopId}):`, safeErrMsg);
         }
-      } else {
-        console.error(`[SIRI Error] GetStopMonitoring(${stopId}):`, err.message);
-      }
-      if (cached && (Date.now() - cached.ts < this.staleFallbackTtlMs)) {
-        return cached.data.map(a => ({
-          ...a,
-          freshness: { ...a.freshness, fallback: true },
-          isEstimated: true,
-          isRealTime: false,
-          delayBadgeText: '⚡ En ruta (Estimat)'
-        }));
-      }
-      return [];
+        if (cached && (Date.now() - cached.ts < this.staleFallbackTtlMs)) {
+          return cached.data.map(a => ({
+            ...a,
+            freshness: { ...a.freshness, fallback: true },
+            isEstimated: true,
+            isRealTime: false,
+            delayBadgeText: '⚡ En ruta (Estimat)'
+          }));
+        }
+        return [];
       }
     });
   }

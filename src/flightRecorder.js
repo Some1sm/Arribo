@@ -449,11 +449,18 @@ class FlightRecorder {
     this.lineIndex = newLineIndex;
   }
 
-  async exportCsv(hours = 48) {
+  async exportCsv(hours = 48, page = 1) {
     if (!this._gateway) {
       throw new Error('No history gateway configured');
     }
-    return this._gateway('exportDelayLogsCsv', { hours });
+    return this._gateway('exportDelayLogsCsv', { hours, page });
+  }
+
+  async exportVisitsCsv(hours = 48, page = 1) {
+    if (!this._gateway) {
+      throw new Error('No history gateway configured');
+    }
+    return this._gateway('exportStopVisitsCsv', { hours, page });
   }
 }
 

@@ -116,14 +116,27 @@ class WorkerBridge extends EventEmitter {
         this.lastHeartbeatAck = Date.now();
         this.workerPid = payload?.pid || this.worker?.pid || this.workerPid;
         console.log(`[WorkerBridge] ✅ Worker confirmed READY (PID: ${this.workerPid})`);
+        this.send('PING', { timestamp: Date.now() });
         this.emit('ready', payload);
         break;
 
       case 'FLEET_UPDATE':
         if (payload && Array.isArray(payload.vehicles)) {
           flightRecorder.syncFleetFromWorker(payload.vehicles);
+          if (payload.upstreamCanary !== undefined || payload.anomaly !== undefined || payload.scheduleDrift !== undefined) {
+            if (!this.workerMetrics) this.workerMetrics = {};
+            if (payload.upstreamCanary !== undefined) this.workerMetrics.upstreamCanary = payload.upstreamCanary;
+            if (payload.anomaly !== undefined) this.workerMetrics.fleetAnomaly = payload.anomaly;
+            if (payload.scheduleDrift !== undefined) this.workerMetrics.scheduleDrift = payload.scheduleDrift;
+          }
           this.emit('fleet_update', payload);
         }
+        break;
+
+      case 'SCHEDULE_DRIFT_UPDATE':
+        if (!this.workerMetrics) this.workerMetrics = {};
+        this.workerMetrics.scheduleDrift = payload;
+        this.emit('schedule_drift', payload);
         break;
 
       case 'REPORT_CACHE_UPDATE':

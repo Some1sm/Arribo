@@ -47,7 +47,9 @@ const visit = (id, expected, recordedAt = '') => `<MonitoredStopVisit><LineRef>1
 
   // Empty successful upstream response is a success, not an error: it does not revive old cache
   client.cache.get('stop_2002_1').ts = now - 120000;
-  client.callSoap = async () => '';
+  client.circuitOpenUntil = 0;
+  client.consecutiveFailures = 0;
+  client.callSoap = async () => '<StopMonitoringDelivery><Status>true</Status></StopMonitoringDelivery>';
   const empty = await client.getStopArrivals('2002', '1');
   assert.deepEqual(empty, []);
   console.log('PASS: freshness metadata survives cache, flags fallback, and empty responses win over stale data');

@@ -1,4 +1,9 @@
 const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'arribo-termometre-'));
+process.env.DB_PATH = path.join(scratch, 'history.db');
 const historyDb = require('../src/historyDb');
 const trackerRegistry = require('../src/core/TrackerRegistry');
 
@@ -56,13 +61,13 @@ async function runTests() {
   // Anchor inside a Madrid daytime hour so the telemetry-anomaly filter
   // (night hours, depot stops, 06:00-06:30 SAE rollout) does not discard the
   // fixture and leave the window empty again.
-  const now = Date.now();
-  const utc = new Date(now);
-  const tz = new Date(new Date(utc.toLocaleString('en-US', { timeZone: 'Europe/Madrid' })));
-  const offset = tz.getTime() - utc.getTime();
-  const madrid = new Date(now + offset);
-  let base = Date.UTC(madrid.getUTCFullYear(), madrid.getUTCMonth(), madrid.getUTCDate(), 14, 0, 0) - offset;
-  if (base > now - 2 * 3600 * 1000) base -= 86400000;
+  const madridHourFmt = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', hour: '2-digit', hourCycle: 'h23' });
+  let base = Date.now() - 15 * 60 * 1000;
+  while (true) {
+    const h = parseInt(madridHourFmt.format(new Date(base)), 10);
+    if (h >= 8 && h <= 20) break;
+    base -= 3600 * 1000;
+  }
   const minute = 60 * 1000;
 
   // L2 is the worst line and the worst stop, inside a daytime hour.
@@ -123,9 +128,12 @@ async function runTests() {
 
   console.log('\n✅ ALL TERMÒMETRE SCORECARD TESTS PASSED!\n');
   try { historyDb.close(); } catch {}
+  try { fs.rmSync(scratch, { recursive: true, force: true }); } catch {}
 }
 
 runTests().catch(err => {
+  try { historyDb.close(); } catch {}
+  try { fs.rmSync(scratch, { recursive: true, force: true }); } catch {}
   console.error('❌ Test failed:', err);
   process.exit(1);
 });

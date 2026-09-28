@@ -154,6 +154,34 @@ function resolveSeason(at = new Date()) {
   };
 }
 
+/**
+ * Annual outlook for summer timetable configuration.
+ *
+ * @param {Date|number|string} [at=new Date()]
+ * @returns {{ nextSummerConfigured: boolean, warning: string|null }}
+ */
+function getSeasonOutlook(at = new Date()) {
+  const c = calendarEngine.getDateComponents(at, TIMEZONE);
+  const year = c ? c.year : new Date().getFullYear();
+  const yearStr = String(year);
+  const dateKey = madridDateKey(at);
+
+  const hasConfigured = SUMMER_WINDOWS.some(w =>
+    w.season === 'summer' && (w.from.startsWith(yearStr) || w.to.startsWith(yearStr))
+  );
+  const hasNotice = noticeWindows.some(w =>
+    w.season === 'summer' && (w.from.startsWith(yearStr) || w.to.startsWith(yearStr))
+  );
+
+  const nextSummerConfigured = hasConfigured || hasNotice;
+  let warning = null;
+  if (!nextSummerConfigured && dateKey >= `${yearStr}-06-01`) {
+    warning = `Horari d'estiu ${yearStr} no configurat`;
+  }
+
+  return { nextSummerConfigured, warning };
+}
+
 module.exports = {
   TIMEZONE,
   DATA_KNOWN_FROM,
@@ -163,6 +191,7 @@ module.exports = {
   registerWindow,
   clearNoticeWindows,
   resolveSeason,
+  getSeasonOutlook,
   // exported for tests
   _noticeWindows: noticeWindows
 };

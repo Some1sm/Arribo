@@ -15,6 +15,7 @@ const BaseTracker = require('./core/BaseTracker');
 const transitRouter = require('./core/schedule/transitRouter');
 const mataroFleet = require('./data/mataroFleet');
 const verifiedTls = require('./core/http/verifiedTls');
+const holidayCalendar = require('./core/time/holidayCalendar');
 
 /**
  * Resolve the timetable bucket for a moment. August weekdays run the reduced
@@ -26,6 +27,9 @@ const verifiedTls = require('./core/http/verifiedTls');
  * All date math stays in calendarEngine (Europe/Madrid).
  */
 function resolveDayType(dateObj, timeZone) {
+  const override = holidayCalendar.getServiceOverride(dateObj);
+  if (override) return override;
+  if (holidayCalendar.isHoliday(dateObj)) return 'sunday';
   const c = calendarEngine.getDateComponents(dateObj, timeZone);
   let dayType = 'weekday';
   if (c.isSunday) dayType = 'sunday';
@@ -316,12 +320,13 @@ class MataroTracker extends BaseTracker {
 
     // Helper to check if a specific date already has a specific-hour window
     const hasSpecificHourOnDate = (y, m, d) => windows.some(w => {
-      return w.start.getFullYear() === y && w.start.getMonth() === (m - 1) && w.start.getDate() === d &&
-        !(w.start.getHours() === 0 && w.end.getHours() === 23 && w.end.getMinutes() === 59);
+      const sc = calendarEngine.getDateComponents(w.start, 'Europe/Madrid');
+      const ec = calendarEngine.getDateComponents(w.end, 'Europe/Madrid');
+      return sc.year === y && sc.month === m && sc.day === d && !(sc.hour === 0 && ec.hour === 23 && ec.minute === 59);
     });
 
     // 1. Two dates connected by 'i' or 'y' sharing hours: e.g. '14 i 15/09/2026 de 14.00 a 18.00'
-    const multiDaySharedHoursRegex = /(\d{1,2})\s*(?:i|y|,)\s*(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?[^0-9\n\r]*?de\s+(\d{1,2})[.:](\d{2})\s+a\s+(\d{1,2})[.:](\d{2})/gi;
+    const multiDaySharedHoursRegex = /(\d{1,2})\s*(?:i|y|,)\s*(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?[^0-9\n\r]*?de\s+(\d{1,2})(?:[.:](\d{2}))?\s+a\s+(\d{1,2})(?:[.:](\d{2}))?/gi;
     let mm;
     while ((mm = multiDaySharedHoursRegex.exec(text)) !== null) {
       const d1 = parseInt(mm[1], 10);
@@ -329,22 +334,22 @@ class MataroTracker extends BaseTracker {
       const m = parseInt(mm[3], 10);
       let y = mm[4] ? parseInt(mm[4], 10) : currentYear;
       if (y < 100) y += 2000;
-      const hStart = parseInt(mm[5], 10), minStart = parseInt(mm[6], 10);
-      const hEnd = parseInt(mm[7], 10), minEnd = parseInt(mm[8], 10);
+      const hStart = parseInt(mm[5], 10), minStart = mm[6] ? parseInt(mm[6], 10) : 0;
+      const hEnd = parseInt(mm[7], 10), minEnd = mm[8] ? parseInt(mm[8], 10) : 0;
 
       for (const d of [d1, d2]) {
         if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
           windows.push({
-            start: new Date(y, m - 1, d, hStart, minStart, 0),
-            end: new Date(y, m - 1, d, hEnd, minEnd, 0)
+            start: timeEngine.localTimeToUtcDate(y, m - 1, d, hStart, minStart, 0),
+            end: timeEngine.localTimeToUtcDate(y, m - 1, d, hEnd, minEnd, 0)
           });
         }
       }
     }
 
     // 2. Specific date with time interval(s):
-    // e.g. '14/09/2026, de 14.00 a 18.00' or '05/09/2026 de 19.00 a 19.30 hores i de 22.00 a 22.30 hores'
-    const dateTimeRegex = /(?:(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?|(\d{1,2})\s+de\s+([a-zç]+)(?:\s+de\s+(\d{4}))?)[^0-9\n\r]*?de\s+(\d{1,2})[.:](\d{2})\s+a\s+(\d{1,2})[.:](\d{2})(?:[^\n\r]*?i\s+de\s+(\d{1,2})[.:](\d{2})\s+a\s+(\d{1,2})[.:](\d{2}))?/gi;
+    // e.g. '14/09/2026, de 14.00 a 18.00' or '28/09/2026, de 9 a 17 hores'
+    const dateTimeRegex = /(?:(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?|(\d{1,2})\s+de\s+([a-zç]+)(?:\s+de\s+(\d{4}))?)[^0-9\n\r]*?de\s+(\d{1,2})(?:[.:](\d{2}))?\s+a\s+(\d{1,2})(?:[.:](\d{2}))?(?:[^\n\r]*?i\s+de\s+(\d{1,2})(?:[.:](\d{2}))?\s+a\s+(\d{1,2})(?:[.:](\d{2}))?)?/gi;
     while ((mm = dateTimeRegex.exec(text)) !== null) {
       let day, month, year;
       if (mm[1]) {
@@ -359,19 +364,19 @@ class MataroTracker extends BaseTracker {
       }
       if (!month || day < 1 || day > 31) continue;
 
-      const startH1 = parseInt(mm[7], 10), startM1 = parseInt(mm[8], 10);
-      const endH1 = parseInt(mm[9], 10), endM1 = parseInt(mm[10], 10);
+      const startH1 = parseInt(mm[7], 10), startM1 = mm[8] ? parseInt(mm[8], 10) : 0;
+      const endH1 = parseInt(mm[9], 10), endM1 = mm[10] ? parseInt(mm[10], 10) : 0;
       windows.push({
-        start: new Date(year, month - 1, day, startH1, startM1, 0),
-        end: new Date(year, month - 1, day, endH1, endM1, 0)
+        start: timeEngine.localTimeToUtcDate(year, month - 1, day, startH1, startM1, 0),
+        end: timeEngine.localTimeToUtcDate(year, month - 1, day, endH1, endM1, 0)
       });
 
-      if (mm[11] && mm[12] && mm[13] && mm[14]) {
-        const startH2 = parseInt(mm[11], 10), startM2 = parseInt(mm[12], 10);
-        const endH2 = parseInt(mm[13], 10), endM2 = parseInt(mm[14], 10);
+      if (mm[11] && mm[13]) {
+        const startH2 = parseInt(mm[11], 10), startM2 = mm[12] ? parseInt(mm[12], 10) : 0;
+        const endH2 = parseInt(mm[13], 10), endM2 = mm[14] ? parseInt(mm[14], 10) : 0;
         windows.push({
-          start: new Date(year, month - 1, day, startH2, startM2, 0),
-          end: new Date(year, month - 1, day, endH2, endM2, 0)
+          start: timeEngine.localTimeToUtcDate(year, month - 1, day, startH2, startM2, 0),
+          end: timeEngine.localTimeToUtcDate(year, month - 1, day, endH2, endM2, 0)
         });
       }
     }
@@ -389,8 +394,8 @@ class MataroTracker extends BaseTracker {
 
       if (sMonth >= 1 && sMonth <= 12 && sDay >= 1 && sDay <= 31 && eMonth >= 1 && eMonth <= 12 && eDay >= 1 && eDay <= 31) {
         windows.push({
-          start: new Date(sYear, sMonth - 1, sDay, 0, 0, 0),
-          end: new Date(eYear, eMonth - 1, eDay, 23, 59, 59)
+          start: timeEngine.localTimeToUtcDate(sYear, sMonth - 1, sDay, 0, 0, 0),
+          end: timeEngine.localTimeToUtcDate(eYear, eMonth - 1, eDay, 23, 59, 59)
         });
       }
     }
@@ -406,8 +411,8 @@ class MataroTracker extends BaseTracker {
       const sYear = eYear;
       if (sMonth && eMonth && sDay >= 1 && sDay <= 31 && eDay >= 1 && eDay <= 31) {
         windows.push({
-          start: new Date(sYear, sMonth - 1, sDay, 0, 0, 0),
-          end: new Date(eYear, eMonth - 1, eDay, 23, 59, 59)
+          start: timeEngine.localTimeToUtcDate(sYear, sMonth - 1, sDay, 0, 0, 0),
+          end: timeEngine.localTimeToUtcDate(eYear, eMonth - 1, eDay, 23, 59, 59)
         });
       }
     }
@@ -420,8 +425,8 @@ class MataroTracker extends BaseTracker {
       if (year < 100) year += 2000;
       if (month >= 1 && month <= 12 && day >= 1 && day <= 31 && !hasSpecificHourOnDate(year, month, day)) {
         windows.push({
-          start: new Date(year, month - 1, day, 0, 0, 0),
-          end: new Date(year, month - 1, day, 23, 59, 59)
+          start: timeEngine.localTimeToUtcDate(year, month - 1, day, 0, 0, 0),
+          end: timeEngine.localTimeToUtcDate(year, month - 1, day, 23, 59, 59)
         });
       }
     }
@@ -434,8 +439,8 @@ class MataroTracker extends BaseTracker {
       const year = mm[3] ? parseInt(mm[3], 10) : currentYear;
       if (month && day >= 1 && day <= 31 && !hasSpecificHourOnDate(year, month, day)) {
         windows.push({
-          start: new Date(year, month - 1, day, 0, 0, 0),
-          end: new Date(year, month - 1, day, 23, 59, 59)
+          start: timeEngine.localTimeToUtcDate(year, month - 1, day, 0, 0, 0),
+          end: timeEngine.localTimeToUtcDate(year, month - 1, day, 23, 59, 59)
         });
       }
     }
@@ -446,8 +451,8 @@ class MataroTracker extends BaseTracker {
       const day = parseInt(mm[1], 10), month = parseInt(mm[2], 10), year = parseInt(mm[3], 10);
       if (month >= 1 && month <= 12 && day >= 1 && day <= 31 && !hasSpecificHourOnDate(year, month, day)) {
         windows.push({
-          start: new Date(year, month - 1, day, 0, 0, 0),
-          end: new Date(year, month - 1, day, 23, 59, 59)
+          start: timeEngine.localTimeToUtcDate(year, month - 1, day, 0, 0, 0),
+          end: timeEngine.localTimeToUtcDate(year, month - 1, day, 23, 59, 59)
         });
       }
     }
@@ -533,54 +538,179 @@ class MataroTracker extends BaseTracker {
     return active.filter(a => a.severity === 'warning' && Array.isArray(a.linesAffected) && a.linesAffected.includes(cleanId));
   }
 
-  getCancelledStopsForLine(lineId, avisos = [], targetDate = new Date()) {
+  getStopCancellations(lineId, avisos = [], targetDate = new Date()) {
     const lId = String(lineId).replace(/^l/i, '');
-    const cancelledMap = new Map();
+    const lineSched = mataroSchedules.getLineSchedule(lId);
+    const result = {
+      cancellations: [],
+      provisional: [],
+      unmatchedStops: []
+    };
+    if (!lineSched || !lineSched.directions) return result;
+
     const now = (targetDate instanceof Date && !isNaN(targetDate.getTime()))
       ? targetDate
       : (typeof targetDate === 'string' || typeof targetDate === 'number' ? new Date(targetDate) : new Date());
+
+    const normName = (s) => (s || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/\b(?:placa|plaza)\b/g, 'pl')
+      .replace(/\b(?:avinguda|avenida)\b/g, 'av')
+      .replace(/\b(?:carrer|calle)\b/g, 'c')
+      .replace(/\b(?:passeig|paseo)\b/g, 'pg')
+      .replace(/\b(?:passatge|pasaje)\b/g, 'ptge')
+      .replace(/[^a-z0-9]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const STOPWORDS = new Set(['de', 'd', 'la', 'les', 'el', 'els', 'i', 'y', 'en', 'a', 'del', 'dels']);
+    const tokenOverlapRatio = (a, b) => {
+      const setA = new Set(a.split(' ').filter(t => t && !STOPWORDS.has(t)));
+      const setB = new Set(b.split(' ').filter(t => t && !STOPWORDS.has(t)));
+      if (setA.size === 0 || setB.size === 0) return 0;
+      let common = 0;
+      for (const t of setA) {
+        if (setB.has(t)) common++;
+      }
+      return common / Math.max(setA.size, setB.size);
+    };
 
     for (const aviso of avisos) {
       if (aviso.severity !== 'warning' || aviso.active === false) continue;
       if (aviso.expiresAt && new Date(aviso.expiresAt).getTime() < now.getTime()) continue;
       const validity = this.parseAvisoValidity(aviso.title, aviso.description, now);
       if (validity.isExpired) continue;
-      // Do NOT cancel stops if the disruption has not started yet or is not effective at this date/time
       if (validity.isFuture || !validity.isEffectiveNow) continue;
 
       const desc = (aviso.description || aviso.descriptionHtml || '');
-      const norm = desc.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[·\.]/g, '');
-      const lineBlocks = norm.split(/(?:linia|linea)\s*([1-8])/gi);
+      const lineBlocks = desc.split(/(?:l[íi]nia|l[ií]nea)\s*([1-8])/gi);
 
       for (let i = 1; i < lineBlocks.length; i += 2) {
-        const blockLineId = String(lineBlocks[i]);
+        const blockLineId = String(lineBlocks[i]).trim();
         if (blockLineId !== lId) continue;
         const block = lineBlocks[i + 1] || '';
 
-        const match = block.match(/parad[ae]s?\s*anul+[a-z]*\s*:\s*([^\n\r]+)/i);
-        if (match && match[1]) {
-          const names = match[1].split(/(?:,\s*|\s+i\s+|\s+y\s+|\s+e\s+|;\s*)/i).map(s => s.trim().toLowerCase()).filter(Boolean);
-          names.forEach(name => {
-            const matchedIds = [];
-            if (name.includes('tereses')) matchedIds.push('1060');
-            if (name.includes('lepant')) matchedIds.push('1059');
-            if (name.includes('isidor')) matchedIds.push('1061');
-            if (name.includes('isern')) matchedIds.push('1117');
-            if (name.includes('biada')) matchedIds.push('1107');
-            if (name.includes('queralbs')) matchedIds.push('1044');
-            if (name.includes('hospital')) matchedIds.push('1001', '1073');
-            if (name.includes('caminet')) matchedIds.push('1012');
-            if (name.includes('muralla')) matchedIds.push('1013');
-            if (name.includes('santa anna')) matchedIds.push('1014');
+        // Extract address / direction: ADREÇA <X> / DIRECCIÓN <X>
+        const adrMatch = block.match(/(?:adre[cçs]a|direcci[oó]n)\s*([^\n\r,]+)/i);
+        let matchedDirKeys = [];
+        if (adrMatch && adrMatch[1]) {
+          const targetDest = normName(adrMatch[1]);
+          const candidateDirKeys = Object.keys(lineSched.directions);
+          for (const dk of candidateDirKeys) {
+            const dir = lineSched.directions[dk];
+            const terminal = dir.stops && dir.stops.length > 0 ? dir.stops[dir.stops.length - 1] : null;
+            const termName = terminal ? normName(terminal.name) : '';
+            const dirName = normName(dir.directionName);
 
-            matchedIds.forEach(id => {
-              cancelledMap.set(id, aviso.title);
+            if (termName.includes(targetDest) || targetDest.includes(termName) ||
+                dirName.endsWith(targetDest) || dirName.includes(targetDest) ||
+                tokenOverlapRatio(termName, targetDest) >= 0.5) {
+              matchedDirKeys.push(dk);
+            }
+          }
+          if (matchedDirKeys.length === 0) {
+            matchedDirKeys = Object.keys(lineSched.directions);
+            result.unmatchedStops.push({
+              noticeId: aviso.id,
+              address: adrMatch[1],
+              reason: `Direction address "${adrMatch[1]}" did not match any direction of Line ${lId}; scoped to all directions.`
             });
+          }
+        } else {
+          matchedDirKeys = Object.keys(lineSched.directions);
+        }
+
+        // Extract provisional stops: Parada provisional: <name> (<note>)
+        const provRegex = /parada\s+provisional\s*:\s*([^\n\r]+)/gi;
+        let provMatch;
+        while ((provMatch = provRegex.exec(block)) !== null) {
+          const fullProv = provMatch[1].trim();
+          const noteMatch = fullProv.match(/\(([^)]+)\)/);
+          const note = noteMatch ? noteMatch[1].trim() : '';
+          const name = fullProv.replace(/\([^)]+\)/, '').trim();
+          result.provisional.push({
+            provisional: true,
+            name,
+            note,
+            lineId: lId,
+            noticeId: aviso.id,
+            title: aviso.title
           });
+        }
+
+        // Extract cancelled stops: Parada(es) anul·lada(es): <names>
+        const cancMatch = block.match(/parad[ae]s?(?:\(es\))?\s*anul[^:\n\r]*:\s*([^\n\r]+)/i);
+        if (cancMatch && cancMatch[1]) {
+          const rawNames = cancMatch[1]
+            .split(/(?:,\s*|\s+i\s+|\s+y\s+|\s+e\s+|;\s*)/i)
+            .map(s => s.trim())
+            .filter(Boolean);
+
+          for (const rawName of rawNames) {
+            const normTarget = normName(rawName);
+            let matchedAny = false;
+            for (const dk of matchedDirKeys) {
+              const dir = lineSched.directions[dk];
+              const stops = dir.stops || [];
+
+              // Match against stops in direction:
+              // 1. Exact normalized equality
+              let found = stops.find(s => normName(s.name) === normTarget);
+              // 2. One name contains the other
+              if (!found) {
+                found = stops.find(s => {
+                  const sNorm = normName(s.name);
+                  return sNorm.includes(normTarget) || normTarget.includes(sNorm);
+                });
+              }
+              // 3. >= 60% token overlap
+              if (!found) {
+                found = stops.find(s => tokenOverlapRatio(normName(s.name), normTarget) >= 0.6);
+              }
+
+              if (found) {
+                matchedAny = true;
+                result.cancellations.push({
+                  stopId: String(found.id),
+                  dirKey: dk,
+                  noticeId: aviso.id,
+                  title: aviso.title,
+                  from: validity.startsAt ? validity.startsAt.toISOString() : null,
+                  to: validity.expiry ? validity.expiry.toISOString() : null
+                });
+              }
+            }
+            if (!matchedAny) {
+              result.unmatchedStops.push({
+                noticeId: aviso.id,
+                name: rawName,
+                lineId: lId,
+                reason: `Stop "${rawName}" not found on Line ${lId}`
+              });
+            }
+          }
         }
       }
     }
 
+    return result;
+  }
+
+  getCancelledStopsForLine(lineId, avisos = [], targetDate = new Date(), direction = null) {
+    const data = this.getStopCancellations(lineId, avisos, targetDate);
+    const cancelledMap = new Map();
+    const lId = String(lineId).replace(/^l/i, '');
+    const lineSched = mataroSchedules.getLineSchedule(lId);
+    const targetDirKey = (direction !== null && direction !== undefined)
+      ? mataroSchedules.resolveDirectionKey(lineSched, direction)
+      : null;
+
+    for (const c of data.cancellations) {
+      if (targetDirKey && c.dirKey !== targetDirKey) continue;
+      cancelledMap.set(c.stopId, c.title);
+    }
     return cancelledMap;
   }
 
@@ -1847,6 +1977,7 @@ class MataroTracker extends BaseTracker {
     allDirKeys.forEach(dKey => {
       const s = mataroSchedules.getDirectionSchedule(lId, dKey, dayType);
       if (!s || !Array.isArray(s.departures)) return;
+      // (P) position interpolation: median travelSec used as fallback if trip stopSecs unavailable
       const travelSec = s.totalTravelSec || (s.totalTravelMinutes * 60) || 1800;
       const oppDKey = dKey === '0' ? '1' : '0';
       const oppS = mataroSchedules.getDirectionSchedule(lId, oppDKey, dayType);
@@ -1868,6 +1999,7 @@ class MataroTracker extends BaseTracker {
 
         if (nowSec >= depSec && (nowSec < arrSec || (nowSec < arrSec + 480 && hasDelayedLiveBus))) {
           const elapsedSec = nowSec - depSec;
+          // (P) position interpolation: median travelSec used for route progress
           const progress = Math.max(0.01, Math.min(0.99, elapsedSec / travelSec));
           trips.push({ depTime, depSec, arrSec, elapsedSec, progress, isTerminalLayover: false, paired: false });
         }
@@ -1876,6 +2008,7 @@ class MataroTracker extends BaseTracker {
           let layoverStartSec = depSec - 600;
           let oppStillInTransit = false;
           if (oppS && Array.isArray(oppS.departures)) {
+            // (P) position interpolation: median travelSec fallback for opposite direction layover check
             const oppTravelSec = oppS.totalTravelSec || (oppS.totalTravelMinutes * 60) || 1800;
             const prevArrSec = oppS.departures
               .map(d => timeEngine.timeStringToSeconds(d) + oppTravelSec)
@@ -2493,11 +2626,21 @@ class MataroTracker extends BaseTracker {
         if (targetStopIdx === -1) return; // This route direction does not visit this stop
 
         const dirSched = mataroSchedules.getDirectionSchedule(lId, String(route.id || routeIdx), dayType);
+        // (P) position interpolation: median routeTravelSec used as fallback
         const routeTravelSec = dirSched?.totalTravelSec || (dirSched?.totalTravelMinutes * 60) || 1800;
         const lastTripDepSec = dirSched && dirSched.departures && dirSched.departures.length > 0
           ? timeEngine.timeStringToSeconds(dirSched.departures[dirSched.departures.length - 1])
           : (dirSched && dirSched.lastTrip ? timeEngine.timeStringToSeconds(dirSched.lastTrip) : 0);
-        const lastTripArrivalSec = lastTripDepSec + routeTravelSec;
+        let lastTripDuration = null;
+        if (dirSched?.trips && dirSched.trips.length > 0) {
+          const lastTrip = dirSched.trips[dirSched.trips.length - 1];
+          const nonNull = lastTrip.stopSecs?.filter(x => Number.isFinite(x)) || [];
+          if (nonNull.length >= 2) {
+            const dur = nonNull[nonNull.length - 1] - nonNull[0];
+            if (dur > 0) lastTripDuration = dur;
+          }
+        }
+        const lastTripArrivalSec = lastTripDepSec + (lastTripDuration || routeTravelSec);
 
         // If service for this route direction has ended (past last trip arrival + 15m delay grace period), do not synthesize arrivals
         if (lastTripDepSec > 0 && currentSec > lastTripArrivalSec + 900) {
@@ -2630,7 +2773,7 @@ class MataroTracker extends BaseTracker {
               aimedIso: arrDate.toISOString(),
               minutesAway,
               formattedStatus: minutesAway === 0 ? 'Imminent' : (minutesAway === 1 ? '1 min' : `${minutesAway} min`),
-              delayMins: veh.delayMins || 0,
+              delayMins: Number.isFinite(veh.delayMins) ? veh.delayMins : null,
               delayBadgeText: badge,
               delayStatus: isVehDelayed ? 'delayed' : 'estimated',
               isRealTime: false,
@@ -2888,6 +3031,7 @@ class MataroTracker extends BaseTracker {
             const lIdStr = String(dep.lineId);
             const dirKey = String(matchingRoute.id || '0');
 
+            // (P) position interpolation fallback if exact trip was not matched
             let stopTravelSec = mataroSchedules.getStopTravelTime(lIdStr, dirKey, sId, dayTypeToday);
             if (stopTravelSec <= 0) {
               const travelTimes = scheduleSynthesizer.estimateStopTravelTimes(matchingRoute.stops, {
@@ -2912,7 +3056,27 @@ class MataroTracker extends BaseTracker {
             let originDepTime = null;
             let originDepSec = null;
 
-            if (aimedClean && dirSched && Array.isArray(dirSched.departures) && dirSched.departures.length > 0) {
+            // First try matching against published per-trip stop times
+            const tripsServing = mataroSchedules.getTripsServingStop(lIdStr, dirKey, sId, dayTypeToday);
+            if (aimedClean && tripsServing.length > 0) {
+              const aimedSec = timeEngine.timeStringToSeconds(aimedClean);
+              let bestMatch = null;
+              let minDiff = Infinity;
+              for (const trip of tripsServing) {
+                const diff = Math.abs((trip.stopSec % 86400) - (aimedSec % 86400));
+                if (diff < minDiff) {
+                  minDiff = diff;
+                  bestMatch = trip;
+                }
+              }
+              if (bestMatch && minDiff <= 600 && bestMatch.originSec !== null) {
+                originDepSec = bestMatch.originSec;
+                originDepTime = timeEngine.secondsToTimeString(bestMatch.originSec % 86400).slice(0, 5);
+                stopTravelSec = bestMatch.stopSec - bestMatch.originSec;
+              }
+            }
+
+            if (!originDepTime && aimedClean && dirSched && Array.isArray(dirSched.departures) && dirSched.departures.length > 0) {
               const aimedSec = timeEngine.timeStringToSeconds(aimedClean);
               const estOriginDepSec = aimedSec - stopTravelSec;
               let bestTrip = null;
@@ -3000,8 +3164,8 @@ class MataroTracker extends BaseTracker {
 
               // DOMAIN INVARIANT: A bus regulating at origin terminal before scheduled departure
               // can NEVER arrive early ("avançat") at downstream stops!
-              const rawDelay = dep.delayMinutes !== undefined ? dep.delayMinutes : (dep.delayMins !== undefined ? dep.delayMins : 0);
-              if (rawDelay < 0 || dep.delayStatus === 'early') {
+              const rawDelay = Number.isFinite(dep.delayMinutes) ? dep.delayMinutes : (Number.isFinite(dep.delayMins) ? dep.delayMins : null);
+              if ((rawDelay !== null && rawDelay < 0) || dep.delayStatus === 'early') {
                 dep.delayMins = 0;
                 dep.delayMinutes = 0;
                 if (aimedClean) {
@@ -3091,6 +3255,7 @@ class MataroTracker extends BaseTracker {
           });
 
           if (originBoard && Array.isArray(originBoard.departures)) {
+            // (P) position interpolation fallback if exact trip time is missing
             let stopTravelSec = mataroSchedules.getStopTravelTime(lIdStr, dirKey, sId, dayTypeToday);
             if (stopTravelSec <= 0 && r.stops && r.stops.length > 0) {
               const travelTimes = scheduleSynthesizer.estimateStopTravelTimes(r.stops, {
@@ -3127,15 +3292,33 @@ class MataroTracker extends BaseTracker {
               // Downstream terminal propagation applies strictly to imminent or currently regulating departures (within 10m or delayed up to 5m)
               if (secUntilOrigDep > 600 || secUntilOrigDep < -300) continue;
 
-              const estPassingSec = origDepSec + stopTravelSec;
+              const origClock = (origDep.scheduledTime || origDep.departureTime || '').slice(0, 5);
+              const perTripStopSec = mataroSchedules.getTripStopTime(lIdStr, dirKey, origClock, sId, dayTypeToday);
+              const schedDepSec = origDep.scheduledTime ? timeEngine.timeStringToSeconds(origDep.scheduledTime) : origDepSec;
+
+              let schedPassingSec;
+              let estPassingSec;
+              if (perTripStopSec !== null) {
+                schedPassingSec = perTripStopSec;
+                const tripOffset = perTripStopSec - schedDepSec;
+                estPassingSec = origDepSec + tripOffset;
+              } else {
+                // If trip specifically exists in timetable but does NOT serve this stop, don't propagate downstream
+                const dirSched = mataroSchedules.getDirectionSchedule(lIdStr, dirKey, dayTypeToday);
+                if (dirSched?.trips && dirSched.trips.length > 0) {
+                  // Per-trip schedule is authoritative: if trip doesn't serve this stop, skip
+                  continue;
+                }
+                schedPassingSec = schedDepSec + stopTravelSec;
+                estPassingSec = origDepSec + stopTravelSec;
+              }
+
               const minsAway = Math.max(0, Math.round((estPassingSec - currentSecNow) / 60));
 
               // If vehicle already passed this stop (> 90 seconds ago), do not show
               if (currentSecNow > estPassingSec + 90) continue;
               if (minsAway > 90) continue;
 
-              const schedDepSec = origDep.scheduledTime ? timeEngine.timeStringToSeconds(origDep.scheduledTime) : origDepSec;
-              const schedPassingSec = schedDepSec + stopTravelSec;
               const formattedDepTime = timeEngine.minutesToTimeString(Math.round(estPassingSec / 60));
               const formattedSchedTime = timeEngine.minutesToTimeString(Math.round(schedPassingSec / 60));
 
@@ -3205,6 +3388,7 @@ class MataroTracker extends BaseTracker {
       const dirSchedToday = mataroSchedules.getDirectionSchedule(lIdStr, dirKey, dayTypeToday);
       const dirSchedTomorrow = mataroSchedules.getDirectionSchedule(lIdStr, dirKey, dayTypeTomorrow);
 
+      // (P) position interpolation fallback if exact stop departures unavailable
       let stopTravelSec = mataroSchedules.getStopTravelTime(lIdStr, dirKey, sId, dayTypeToday);
       if (stopTravelSec === 0 && r.stops && r.stops.length > 0) {
         const travelTimes = scheduleSynthesizer.estimateStopTravelTimes(r.stops, {
@@ -3214,6 +3398,10 @@ class MataroTracker extends BaseTracker {
         });
         stopTravelSec = scheduleSynthesizer.getTravelTimeToStop(travelTimes, sId);
       }
+
+      const stopDepsToday = mataroSchedules.getDeparturesForStop(lIdStr, dirKey, sId, dayTypeToday);
+      const stopDepsTomorrow = mataroSchedules.getDeparturesForStop(lIdStr, dirKey, sId, dayTypeTomorrow);
+      const hasPerTripDeps = stopDepsToday.length > 0 || (dirSchedToday?.trips && dirSchedToday.trips.length > 0);
 
       // Assign live departures to their matching route variant without cloning
       const liveForRoute = filteredDepartures.filter(d => {
@@ -3244,9 +3432,11 @@ class MataroTracker extends BaseTracker {
       });
 
       const compiledForRoute = scheduleSynthesizer.compileStopDepartures({
-        baseDeparturesToday: dirSchedToday ? dirSchedToday.departures : [],
-        baseDeparturesTomorrow: dirSchedTomorrow ? dirSchedTomorrow.departures : [],
-        stopTravelSec,
+        baseDeparturesToday: hasPerTripDeps ? stopDepsToday : (dirSchedToday ? dirSchedToday.departures : []),
+        baseDeparturesTomorrow: hasPerTripDeps ? stopDepsTomorrow : (dirSchedTomorrow ? dirSchedTomorrow.departures : []),
+        stopDeparturesToday: hasPerTripDeps ? stopDepsToday : undefined,
+        stopDeparturesTomorrow: hasPerTripDeps ? stopDepsTomorrow : undefined,
+        stopTravelSec: hasPerTripDeps ? 0 : stopTravelSec,
         liveDepartures: liveForRoute,
         limit: options.limit !== undefined ? Number(options.limit) : 10,
         minCountBeforeMorning: options.minCountBeforeMorning !== undefined ? Number(options.minCountBeforeMorning) : 5,
@@ -3275,18 +3465,26 @@ class MataroTracker extends BaseTracker {
 
         if (incomingTerminatingRoute) {
           const inSched = mataroSchedules.getDirectionSchedule(lIdStr, String(incomingTerminatingRoute.id), dayTypeToday);
+          // (P) position interpolation: median totalTravelSec fallback for inbound trip duration
           const inTravelSec = inSched?.totalTravelSec || 0;
           const netNowToday = timeEngine.getNetworkTime(this.agencyTimezone, targetDate);
           const currentSecNow = netNowToday.hour * 3600 + netNowToday.minute * 60 + netNowToday.second;
 
-          if (inSched && Array.isArray(inSched.departures) && inTravelSec > 0) {
+          if (inSched && Array.isArray(inSched.departures) && (inTravelSec > 0 || (inSched.trips && inSched.trips.length > 0))) {
+            const inStops = inSched.stops || [];
+            const termStopIdx = inStops.length > 0 ? inStops.length - 1 : -1;
             compiledForRoute.forEach(cd => {
               if (!cd.arrivalTime && cd.departureTime && cd.departureTime !== '--:--') {
                 const depSecVal = timeEngine.timeStringToSeconds(cd.departureTime);
                 if (depSecVal > 0) {
                   const candidateTrips = inSched.departures
-                    .map(t => {
-                      const aSec = timeEngine.timeStringToSeconds(t) + inTravelSec;
+                    .map((t, tIdx) => {
+                      let aSec = null;
+                      if (inSched.trips && inSched.trips[tIdx]?.stopSecs && termStopIdx >= 0) {
+                        const sSec = inSched.trips[tIdx].stopSecs[termStopIdx];
+                        if (sSec !== null && Number.isFinite(sSec)) aSec = sSec;
+                      }
+                      if (aSec === null) aSec = timeEngine.timeStringToSeconds(t) + inTravelSec;
                       return { t, arrSec: aSec, arrTime: timeEngine.minutesToTimeString(Math.round(aSec / 60)) };
                     })
                     .filter(x => x.arrSec <= depSecVal + 60 && x.arrSec >= depSecVal - 1800);
@@ -3438,10 +3636,14 @@ class MataroTracker extends BaseTracker {
     const dayTypeTomorrow = resolveDayType(tomorrow, this.agencyTimezone);
 
     const dirSchedTomorrow = mataroSchedules.getDirectionSchedule(lId, selectedRoute?.id || String(dirIdx), dayTypeTomorrow);
-    const stopTravelSec = mataroSchedules.getStopTravelTime(lId, selectedRoute?.id || String(dirIdx), sId, dayTypeTomorrow);
+    const stopDepsTomorrow = mataroSchedules.getDeparturesForStop(lId, selectedRoute?.id || String(dirIdx), sId, dayTypeTomorrow);
 
     let firstTimeTomorrow = '06:30';
-    if (dirSchedTomorrow && dirSchedTomorrow.firstTrip) {
+    if (stopDepsTomorrow.length > 0) {
+      firstTimeTomorrow = stopDepsTomorrow[0];
+    } else if (dirSchedTomorrow && dirSchedTomorrow.firstTrip) {
+      // (P) fallback for route origin when stop departures unavailable
+      const stopTravelSec = mataroSchedules.getStopTravelTime(lId, selectedRoute?.id || String(dirIdx), sId, dayTypeTomorrow);
       if (stopTravelSec > 0) {
         const [hStr, mStr] = dirSchedTomorrow.firstTrip.split(':');
         const passSec = parseInt(hStr, 10) * 3600 + parseInt(mStr, 10) * 60 + stopTravelSec;
@@ -3542,7 +3744,8 @@ class MataroTracker extends BaseTracker {
           const spd = Number(v.speedKmh !== undefined ? v.speedKmh : v.speed);
           if (Number.isFinite(spd) && spd >= 0) {
             segmentSpeed = spd;
-            segmentDelay = Number(v.delayMinutes !== undefined ? v.delayMinutes : (v.delayMins || 0));
+            const rawDel = v.delayMinutes !== undefined ? v.delayMinutes : v.delayMins;
+            segmentDelay = Number.isFinite(Number(rawDel)) ? Number(rawDel) : null;
             vehicleFound = true;
             break;
           }
@@ -3553,11 +3756,11 @@ class MataroTracker extends BaseTracker {
       let color = '#10b981'; // Green
       let label = 'Fluid';
 
-      if (segmentSpeed < 10 || segmentDelay >= 4) {
+      if (segmentSpeed < 10 || (segmentDelay !== null && segmentDelay >= 4)) {
         status = 'congested';
         color = '#ef4444'; // Red
         label = 'Congestió';
-      } else if (segmentSpeed < 20 || segmentDelay >= 2) {
+      } else if (segmentSpeed < 20 || (segmentDelay !== null && segmentDelay >= 2)) {
         status = 'moderate';
         color = '#f59e0b'; // Amber
         label = 'Trànsit Dens';

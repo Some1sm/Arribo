@@ -1,11 +1,21 @@
 const assert = require('assert');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+
+const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'arribo-flight-rec-'));
+process.env.DB_PATH = path.join(scratch, 'history.db');
+process.env.REPORTS_DIR = path.join(scratch, 'reports');
+
 const server = require('../server');
 const historyDb = require('../src/historyDb');
 const flightRecorder = require('../src/flightRecorder');
 
 async function runTests() {
   console.log('🧪 Starting Centralized Flight Recorder & Journalism Server Tests...');
-  const appServer = server.listen(3098);
+  const appServer = server.listen(0, '127.0.0.1');
+  await new Promise(resolve => appServer.once('listening', resolve));
+  const port = appServer.address().port;
 
   try {
     // Test 1: Ingest sample vehicle snapshot
@@ -74,28 +84,28 @@ async function runTests() {
 
     // Test 4: Endpoint /api/fleet/live
     console.log('Test 4: Endpoint GET /api/fleet/live');
-    const fleetRes = await fetch('http://localhost:3098/api/fleet/live').then(r => r.json());
+    const fleetRes = await fetch(`http://127.0.0.1:${port}/api/fleet/live`).then(r => r.json());
     assert.strictEqual(fleetRes.success, true);
     assert(fleetRes.count >= 1);
     console.log(`✅ GET /api/fleet/live passed (${fleetRes.count} buses returned in <5ms)`);
 
     // Test 5: Endpoint GET /api/vehicle/:vehicleId/trail
     console.log('Test 5: Endpoint GET /api/vehicle/:vehicleId/trail');
-    const trailRes = await fetch('http://localhost:3098/api/vehicle/test_bus_101/trail').then(r => r.json());
+    const trailRes = await fetch(`http://127.0.0.1:${port}/api/vehicle/test_bus_101/trail`).then(r => r.json());
     assert.strictEqual(trailRes.success, true);
     console.log(`✅ GET /api/vehicle/:id/trail passed (${trailRes.pointsCount} GPS breadcrumbs returned)`);
 
     // Test 6: Endpoint GET /api/analytics/journalism
     console.log('Test 6: Endpoint GET /api/analytics/journalism');
-    const journRes = await fetch('http://localhost:3098/api/analytics/journalism?hours=24').then(r => r.json());
+    const journRes = await fetch(`http://127.0.0.1:${port}/api/analytics/journalism?hours=24`).then(r => r.json());
     assert.strictEqual(journRes.success, true);
     assert(journRes.report.summary.totalRecordedArrivals >= 2);
     console.log(`✅ Journalism Report passed (Monitored lines: ${journRes.report.summary.monitoredLinesCount}, Arrivals: ${journRes.report.summary.totalRecordedArrivals})`);
 
     // Test 7: Endpoint GET /api/analytics/export/csv
     console.log('Test 7: Endpoint GET /api/analytics/export/csv');
-    const csvText = await fetch('http://localhost:3098/api/analytics/export/csv?hours=48').then(r => r.text());
-    assert(csvText.includes('Data i Hora,Linia,Operador,Parada,Retard'), 'CSV should have standard headers');
+    const csvText = await fetch(`http://127.0.0.1:${port}/api/analytics/export/csv?hours=48`).then(r => r.text());
+    assert(csvText.includes('Data i Hora') && csvText.includes('Vehicle') && csvText.includes('Linia') && csvText.includes('Parada'), 'CSV should have standard headers');
     assert(csvText.includes('L1') || csvText.includes('L3'), 'CSV should contain recorded line delay samples');
     console.log(`✅ CSV Data Export passed (${csvText.split('\n').length} CSV rows generated)`);
 
@@ -106,6 +116,8 @@ async function runTests() {
     process.exit(1);
   } finally {
     appServer.close();
+    historyDb.close();
+    try { fs.rmSync(scratch, { recursive: true, force: true }); } catch {}
   }
 }
 

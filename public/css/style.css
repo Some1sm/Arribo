@@ -10483,3 +10483,331 @@ input#plan-max-walk:focus {
   background: currentColor;
 }
 
+/* ===================================================================
+   DATA HEALTH & TELEMETRY INTEGRITY PANEL (Plan 9.1)
+   =================================================================== */
+.data-health-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  margin-bottom: 1.5rem;
+  padding: 1.2rem;
+  overflow: hidden;
+}
+
+.data-health-item {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 0.75rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.data-health-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.data-health-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.data-health-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.data-health-badge.status-success {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--accent-live);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.data-health-badge.status-warning {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--accent-warning);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.data-health-badge.status-danger {
+  background: rgba(244, 63, 94, 0.15);
+  color: var(--accent-danger);
+  border: 1px solid rgba(244, 63, 94, 0.3);
+}
+
+.data-health-badge.status-neutral {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+}
+
+.data-health-desc {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  margin: 0;
+}
+
+/* Monthly Report Section (Plan 9.4) */
+.monthly-report-wrapper {
+  background: var(--bg-elevated, #1e222b);
+  border: 1px solid var(--border-subtle, #333);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+  box-sizing: border-box;
+}
+
+.monthly-report-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1.25rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border-subtle, #333);
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.monthly-report-title h2 {
+  margin: 0 0 0.35rem 0;
+  font-size: 1.35rem;
+  color: var(--text-primary, #fff);
+}
+
+.monthly-report-meta {
+  font-size: 0.8rem;
+  color: var(--text-muted, #888);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 0.35rem;
+}
+
+.monthly-report-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.monthly-report-month-input {
+  background: var(--bg-secondary, #252a35);
+  border: 1px solid var(--border-subtle, #444);
+  color: var(--text-primary, #fff);
+  padding: 0.45rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-family: inherit;
+}
+
+.btn-print-report {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: var(--brand-primary, #0ea5e9);
+  color: #fff;
+  border: none;
+  padding: 0.5rem 0.95rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.btn-print-report:hover {
+  opacity: 0.9;
+}
+
+.monthly-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.85rem;
+  margin-bottom: 1.5rem;
+}
+
+.monthly-kpi-card {
+  background: var(--bg-secondary, #252a35);
+  border: 1px solid var(--border-subtle, #333);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+}
+
+.monthly-kpi-card .kpi-val {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--text-primary, #fff);
+  line-height: 1.2;
+}
+
+.monthly-kpi-card .kpi-lbl {
+  font-size: 0.75rem;
+  color: var(--text-secondary, #aaa);
+  margin-top: 0.25rem;
+}
+
+.monthly-report-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1.5rem;
+  font-size: 0.85rem;
+}
+
+.monthly-report-table th,
+.monthly-report-table td {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--border-subtle, #333);
+}
+
+.monthly-report-table th {
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-secondary, #aaa);
+  font-weight: 600;
+  text-align: left;
+}
+
+.monthly-methodology-box {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-subtle, #333);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-top: 1.5rem;
+}
+
+/* Print CSS for A4 official municipal report (Plan 9.4) */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 15mm;
+  }
+
+  body {
+    background: #fff !important;
+    color: #111 !important;
+    font-size: 10pt !important;
+    line-height: 1.4 !important;
+  }
+
+  .main-header,
+  .observatori-page-hero,
+  .observatori-toolbar,
+  #journalism-search-bar-wrap,
+  #observatori-methodology-details,
+  #data-health-container,
+  #journalism-termometre-container,
+  #journalism-incidents-container,
+  #journalism-content-container,
+  .app-footer,
+  .btn-print-report,
+  .monthly-report-month-input,
+  .monthly-controls-label {
+    display: none !important;
+  }
+
+  .observatori-page-container {
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  #journalism-monthly-container {
+    display: block !important;
+  }
+
+  .monthly-report-wrapper {
+    background: #fff !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .monthly-report-header {
+    border-bottom: 2pt solid #111 !important;
+    margin-bottom: 12pt !important;
+    padding-bottom: 8pt !important;
+  }
+
+  .monthly-report-title h2 {
+    color: #000 !important;
+    font-size: 16pt !important;
+  }
+
+  .monthly-report-meta {
+    color: #444 !important;
+    font-size: 8pt !important;
+  }
+
+  .monthly-report-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    margin-bottom: 12pt !important;
+    page-break-inside: avoid;
+  }
+
+  .monthly-report-table th,
+  .monthly-report-table td {
+    border: 0.5pt solid #888 !important;
+    padding: 4pt 6pt !important;
+    font-size: 8.5pt !important;
+    color: #000 !important;
+  }
+
+  .monthly-report-table th {
+    background: #eee !important;
+    font-weight: bold !important;
+    color: #000 !important;
+  }
+
+  .monthly-kpi-grid {
+    display: grid !important;
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 8pt !important;
+    margin-bottom: 12pt !important;
+    page-break-inside: avoid;
+  }
+
+  .monthly-kpi-card {
+    border: 0.5pt solid #888 !important;
+    padding: 6pt !important;
+    background: #fafafa !important;
+  }
+
+  .monthly-kpi-card .kpi-val {
+    font-size: 14pt !important;
+    font-weight: bold !important;
+    color: #000 !important;
+  }
+
+  .monthly-kpi-card .kpi-lbl {
+    font-size: 7.5pt !important;
+    color: #555 !important;
+  }
+
+  .monthly-methodology-box {
+    border: 0.5pt solid #888 !important;
+    padding: 8pt !important;
+    background: #fafafa !important;
+    font-size: 8pt !important;
+    page-break-inside: avoid;
+    margin-top: 12pt !important;
+  }
+}
+
+

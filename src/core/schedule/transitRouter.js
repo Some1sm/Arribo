@@ -195,22 +195,44 @@ class TransitRouter {
     // 4. Cluster expansion:
     // Add all sibling stops with identical clean name OR within 150 meters (opposite sides of street, hubs)
     const candidates = new Map();
+    // First, register all directly matched base stops
+    for (const b of baseStops) {
+      const bLat = parseFloat(b.lat ?? b.latitude);
+      const bLon = parseFloat(b.lon ?? b.longitude);
+      const bId = String(b.id);
+      const bObj = {
+        id: bId,
+        shorthandId: bId.replace(/^10*/, ''),
+        name: (b.name || '').replace(/ - \d+$/, '').trim(),
+        lat: bLat,
+        lon: bLon
+      };
+      if (!candidates.has(bId)) {
+        candidates.set(bId, {
+          id: bId,
+          shorthandId: bObj.shorthandId,
+          name: bObj.name,
+          lat: bLat,
+          lon: bLon,
+          walkingMinutes: 0,
+          requestedStop: bObj
+        });
+      }
+    }
+
+    // Next, expand to siblings for each base stop
     for (const b of baseStops) {
       const bLat = parseFloat(b.lat ?? b.latitude);
       const bLon = parseFloat(b.lon ?? b.longitude);
       const bClean = (b.name || '').replace(/ - \d+$/, '').trim().toLowerCase();
       const bId = String(b.id);
-
-      if (!candidates.has(bId)) {
-        candidates.set(bId, {
-          id: bId,
-          shorthandId: bId.replace(/^10*/, ''),
-          name: (b.name || '').replace(/ - \d+$/, '').trim(),
-          lat: bLat,
-          lon: bLon,
-          walkingMinutes: 0
-        });
-      }
+      const bObj = {
+        id: bId,
+        shorthandId: bId.replace(/^10*/, ''),
+        name: (b.name || '').replace(/ - \d+$/, '').trim(),
+        lat: bLat,
+        lon: bLon
+      };
 
       for (const [, s] of allStops.entries()) {
         const sId = String(s.id);
@@ -221,13 +243,16 @@ class TransitRouter {
 
         // Identical base name (e.g. "Roca Blanca" or "Rodalies" opposite platforms)
         if (sClean === bClean) {
+          const dist = geoEngine.calculateDistanceMeters(bLat, bLon, sLat, sLon);
           candidates.set(sId, {
             id: sId,
             shorthandId: sId.replace(/^10*/, ''),
             name: (s.name || '').replace(/ - \d+$/, '').trim(),
             lat: sLat,
             lon: sLon,
-            walkingMinutes: 0
+            distanceMeters: Math.round(dist),
+            walkingMinutes: dist < 30 ? 0 : Math.max(1, Math.round(dist / 80)),
+            requestedStop: bObj
           });
           continue;
         }
@@ -242,7 +267,9 @@ class TransitRouter {
               name: (s.name || '').replace(/ - \d+$/, '').trim(),
               lat: sLat,
               lon: sLon,
-              walkingMinutes: Math.max(1, Math.round(dist / 80))
+              distanceMeters: Math.round(dist),
+              walkingMinutes: dist < 30 ? 0 : Math.max(1, Math.round(dist / 80)),
+              requestedStop: bObj
             });
           }
         }
@@ -362,6 +389,19 @@ class TransitRouter {
               distanceMeters: o.distanceMeters,
               walkingMinutes: o.walkingMinutes || Math.max(1, Math.round(o.distanceMeters / 80))
             };
+          } else if (o.requestedStop && o.id !== o.requestedStop.id) {
+            const dist = Number.isFinite(o.distanceMeters) ? o.distanceMeters : Math.round(geoEngine.calculateDistanceMeters(o.requestedStop.lat, o.requestedStop.lon, intermediateStops[0].lat, intermediateStops[0].lon));
+            const walkMins = dist < 30 ? 0 : Math.max(1, Math.round(dist / 80));
+            walkToFirstStop = {
+              from: [o.requestedStop.lat, o.requestedStop.lon],
+              to: [intermediateStops[0].lat, intermediateStops[0].lon],
+              fromStop: o.requestedStop,
+              toStop: intermediateStops[0],
+              fromName: o.requestedStop.name,
+              toName: intermediateStops[0].name,
+              distanceMeters: dist,
+              walkingMinutes: walkMins
+            };
           }
 
           let walkFromLastStop = null;
@@ -375,6 +415,19 @@ class TransitRouter {
               toName,
               distanceMeters: d.distanceMeters,
               walkingMinutes: d.walkingMinutes || Math.max(1, Math.round(d.distanceMeters / 80))
+            };
+          } else if (d.requestedStop && d.id !== d.requestedStop.id) {
+            const dist = Number.isFinite(d.distanceMeters) ? d.distanceMeters : Math.round(geoEngine.calculateDistanceMeters(intermediateStops[intermediateStops.length - 1].lat, intermediateStops[intermediateStops.length - 1].lon, d.requestedStop.lat, d.requestedStop.lon));
+            const walkMins = dist < 30 ? 0 : Math.max(1, Math.round(dist / 80));
+            walkFromLastStop = {
+              from: [intermediateStops[intermediateStops.length - 1].lat, intermediateStops[intermediateStops.length - 1].lon],
+              to: [d.requestedStop.lat, d.requestedStop.lon],
+              fromStop: intermediateStops[intermediateStops.length - 1],
+              toStop: d.requestedStop,
+              fromName: intermediateStops[intermediateStops.length - 1].name,
+              toName: d.requestedStop.name,
+              distanceMeters: dist,
+              walkingMinutes: walkMins
             };
           }
 
@@ -490,6 +543,19 @@ class TransitRouter {
                     distanceMeters: o.distanceMeters,
                     walkingMinutes: o.walkingMinutes || Math.max(1, Math.round(o.distanceMeters / 80))
                   };
+                } else if (o.requestedStop && o.id !== o.requestedStop.id) {
+                  const dist = Number.isFinite(o.distanceMeters) ? o.distanceMeters : Math.round(geoEngine.calculateDistanceMeters(o.requestedStop.lat, o.requestedStop.lon, leg1Stops[0].lat, leg1Stops[0].lon));
+                  const walkMins = dist < 30 ? 0 : Math.max(1, Math.round(dist / 80));
+                  walkToFirstStop = {
+                    from: [o.requestedStop.lat, o.requestedStop.lon],
+                    to: [leg1Stops[0].lat, leg1Stops[0].lon],
+                    fromStop: o.requestedStop,
+                    toStop: leg1Stops[0],
+                    fromName: o.requestedStop.name,
+                    toName: leg1Stops[0].name,
+                    distanceMeters: dist,
+                    walkingMinutes: walkMins
+                  };
                 }
 
                 let walkFromLastStop = null;
@@ -503,6 +569,19 @@ class TransitRouter {
                     toName,
                     distanceMeters: d.distanceMeters,
                     walkingMinutes: d.walkingMinutes || Math.max(1, Math.round(d.distanceMeters / 80))
+                  };
+                } else if (d.requestedStop && d.id !== d.requestedStop.id) {
+                  const dist = Number.isFinite(d.distanceMeters) ? d.distanceMeters : Math.round(geoEngine.calculateDistanceMeters(leg2Stops[leg2Stops.length - 1].lat, leg2Stops[leg2Stops.length - 1].lon, d.requestedStop.lat, d.requestedStop.lon));
+                  const walkMins = dist < 30 ? 0 : Math.max(1, Math.round(dist / 80));
+                  walkFromLastStop = {
+                    from: [leg2Stops[leg2Stops.length - 1].lat, leg2Stops[leg2Stops.length - 1].lon],
+                    to: [d.requestedStop.lat, d.requestedStop.lon],
+                    fromStop: leg2Stops[leg2Stops.length - 1],
+                    toStop: d.requestedStop,
+                    fromName: leg2Stops[leg2Stops.length - 1].name,
+                    toName: d.requestedStop.name,
+                    distanceMeters: dist,
+                    walkingMinutes: walkMins
                   };
                 }
 

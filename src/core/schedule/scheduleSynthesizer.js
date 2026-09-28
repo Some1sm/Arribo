@@ -389,9 +389,10 @@ function compileStopDepartures(options = {}) {
   for (const raw of rawLive) {
     if (!raw) continue;
     const std = delayEngine.standardizeDeparture(raw, options);
-    const isEst = Boolean(raw.isEstimated || (!raw.isRealTime && raw.isRealtime === false));
-    std.isRealTime = !isEst;
-    std.isRealtime = !isEst;
+    const isExplicitLive = raw.isRealTime !== undefined ? Boolean(raw.isRealTime) : (raw.isRealtime !== undefined ? Boolean(raw.isRealtime) : !raw.isEstimated);
+    const isEst = Boolean(raw.isEstimated);
+    std.isRealTime = isExplicitLive && !isEst;
+    std.isRealtime = std.isRealTime;
     std.isEstimated = isEst;
     // Carried on the departure itself rather than a parallel array: the
     // minutes-of-day arrays below only get an entry when the time parsed, so a
@@ -451,7 +452,9 @@ function compileStopDepartures(options = {}) {
       // never observed. It may enrich the board, but it must not delete a
       // published departure: doing so hid real trips from riders. (These are the
       // same EST_ runs the flight recorder already excludes.)
-      if (liveDepartures[i]?._isSynthetic) continue;
+      // Similarly, timetable-only SIRI arrivals are not live observations and must
+      // not delete published departures.
+      if (liveDepartures[i]?._isSynthetic || liveDepartures[i]?.freshness?.source === 'timetable' || (!liveDepartures[i]?.isRealTime && !liveDepartures[i]?.isEstimated)) continue;
 
       const liveMin = liveMinutesOfDay[i];
       // The minutes-of-day arrays only gain an entry when a time parsed, so a
@@ -564,11 +567,13 @@ function compileStopDepartures(options = {}) {
   // to the published trip — but keep the synthetic run when nothing published
   // is near it, which is exactly when it carries information.
   const keptLive = liveDepartures.filter(d => {
-    if (!d._isSynthetic) return true;
-    return !scheduledTodayDepartures.some(s => {
-      const diff = Math.abs((Number(d.minutesAway) || 0) - (Number(s.minutesAway) || 0));
-      return diff <= duplicateWindowMinutes;
-    });
+    if (d._isSynthetic || d.freshness?.source === 'timetable' || (!d.isRealTime && !d.isEstimated)) {
+      return !scheduledTodayDepartures.some(s => {
+        const diff = Math.abs((Number(d.minutesAway) || 0) - (Number(s.minutesAway) || 0));
+        return diff <= duplicateWindowMinutes;
+      });
+    }
+    return true;
   });
 
   const combinedToday = [...keptLive, ...scheduledTodayDepartures];

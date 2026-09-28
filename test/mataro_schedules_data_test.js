@@ -171,8 +171,8 @@ assert.strictEqual(l1OriginTravel, 0);
 // 4.4 getDeparturesForStop
 const l1HospitalDeps = mataroSchedulesHelper.getDeparturesForStop('1', '11', '1001', 'weekday');
 assert.strictEqual(l1HospitalDeps.length, 76);
-// Origin departs 05:25 + 2400s (40m 00s) -> 06:05
-assert.strictEqual(l1HospitalDeps[0], '06:05');
+// published maresme.net winter L1 d11 weekday trip 05:25: 05:56
+assert.strictEqual(l1HospitalDeps[0], '05:56');
 
 // 4.5 getAllLines
 const allLines = mataroSchedulesHelper.getAllLines();

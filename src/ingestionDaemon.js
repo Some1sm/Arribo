@@ -3,19 +3,31 @@ const mataroTracker = require('./mataroTracker');
 const reportCacheService = require('./reportCacheService');
 const historyDb = require('./historyDb');
 const tripMatcher = require('./core/schedule/tripMatcher');
+const mataroSchedules = require('./data/mataroSchedules');
+const timeEngine = require('./core/time/timeEngine');
+const calendarEngine = require('./core/time/calendarEngine');
+const siriClient = require('./mataroSiriClient');
 
 class IngestionDaemon {
   constructor() {
     this.isRunning = false;
     this.stopping = false;
+    this.openVisits = new Map();
     this.mataroPollTimer = null;
     this.disruptionsTimer = null;
     this.pruneTimer = null;
     this.journalismReportTimer = null;
+    this.canaryTimer = null;
     this.startupTimeouts = [];
     this.ipcCallback = null;
     this.lastFleetEmit = 0;
     this.lastWarnAt = new Map();
+    this.upstreamCanary = null;
+    this.fleetAnomaly = null;
+    this.zeroFleetSince = null;
+    this.scheduleDrift = null;
+    this.driftTimer = null;
+    this.lastDriftDate = null;
   }
 
   setIpcCallback(callback) {
@@ -47,7 +59,10 @@ class IngestionDaemon {
     const vehicles = flightRecorder.getAllVehicles();
     this.emitIpc('FLEET_UPDATE', {
       timestamp: now,
-      vehicles
+      vehicles,
+      anomaly: this.fleetAnomaly,
+      upstreamCanary: this.upstreamCanary,
+      scheduleDrift: this.scheduleDrift
     });
   }
 
@@ -88,6 +103,13 @@ class IngestionDaemon {
     this.startupTimeouts.push(setTimeout(() => this.generateJournalismReport(), 45000));
     this.journalismReportTimer = setInterval(() => this.generateJournalismReport(), 30 * 60 * 1000);
 
+    // 6. Schedule Upstream Auth Canary Poll (first at 1.5s, then every 5 minutes)
+    this.startupTimeouts.push(setTimeout(() => this.pollCanary(), 1500));
+    this.canaryTimer = setInterval(() => this.pollCanary(), 5 * 60 * 1000);
+
+    // 7. Schedule Daily Timetable Drift Check at 04:1x Madrid time (checked every 60s)
+    this.driftTimer = setInterval(() => this.checkScheduleDriftSchedule(), 60000);
+
     console.log('[IngestionDaemon] ✅ Mataró Bus Ingestion Engine Active.');
   }
 
@@ -100,7 +122,101 @@ class IngestionDaemon {
     if (this.disruptionsTimer) clearInterval(this.disruptionsTimer);
     if (this.pruneTimer) clearInterval(this.pruneTimer);
     if (this.journalismReportTimer) clearInterval(this.journalismReportTimer);
+    if (this.canaryTimer) clearInterval(this.canaryTimer);
+    this.canaryTimer = null;
+    if (this.driftTimer) clearInterval(this.driftTimer);
+    this.driftTimer = null;
+    this.flushAllVisits();
     console.log('[IngestionDaemon] Ingestion Daemon Stopped.');
+  }
+
+  /**
+   * Helper to determine if a line is outside scheduled revenue service window.
+   * Window: from (first departure − 15 min) to (last departure + duration + 20 min).
+   * Respects holiday-aware day type and midnight rollover (E9).
+   */
+  isOutsideRevenueService(lineId, at = Date.now()) {
+    const c = calendarEngine.getDateComponents(at, 'Europe/Madrid');
+    if (!c) return false;
+    const secOfDay = c.hour * 3600 + c.minute * 60 + c.second;
+    const { dayType } = tripMatcher.resolveDayType(at);
+    const winToday = mataroSchedules.getServiceWindow(lineId, dayType);
+    if (winToday && secOfDay >= winToday.startSec && secOfDay <= winToday.endSec) {
+      return false;
+    }
+    // Check if it's late-night spillover from yesterday's service window
+    const yesterdayMs = at - 86400 * 1000;
+    const { dayType: prevDayType } = tripMatcher.resolveDayType(yesterdayMs);
+    const winYesterday = mataroSchedules.getServiceWindow(lineId, prevDayType);
+    if (winYesterday && winYesterday.endSec > 86400) {
+      const secFromYesterday = secOfDay + 86400;
+      if (secFromYesterday <= winYesterday.endSec) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  flushVisit(v) {
+    if (!v) return;
+
+    let measuredDelayMins = null;
+    const passingAt = v.passingAt || v.lastObservedAt || v.lastTs;
+    if (passingAt) {
+      try {
+        const net = timeEngine.getNetworkTime('Europe/Madrid', new Date(passingAt));
+        const passingSec = net.hour * 3600 + net.minute * 60 + net.second;
+        const lineId = String(v.lineCode || '').replace(/^L/i, '');
+        const matched = tripMatcher.matchTrip({
+          lineId,
+          direction: v.direction,
+          stopName: v.stopName,
+          at: passingAt
+        });
+        if (matched && matched.matched && matched.scheduledTime) {
+          const publishedSec = timeEngine.timeStringToSeconds(matched.scheduledTime);
+          if (Number.isFinite(publishedSec)) {
+            let diffSec = passingSec - publishedSec;
+            while (diffSec > 43200) diffSec -= 86400;
+            while (diffSec < -43200) diffSec += 86400;
+            measuredDelayMins = Math.round(diffSec / 60);
+          }
+        }
+      } catch {}
+    }
+
+    historyDb.recordStopVisit({
+      vehicleId: v.vehicleId,
+      lineCode: v.lineCode,
+      direction: v.direction,
+      stopName: v.stopName,
+      firstTs: v.firstTs,
+      lastTs: v.lastTs,
+      delayMins: v.lastDelay,
+      sampleCount: v.count,
+      scheduledTime: v.scheduledTime,
+      actualTime: v.actualTime,
+      timesSource: v.timesSource,
+      isRealTime: v.isRealTime,
+      measuredDelayMins: Number.isFinite(measuredDelayMins) ? measuredDelayMins : null,
+      source: 'live'
+    });
+  }
+
+  flushExpiredVisits(now = Date.now(), maxAgeMs = 5 * 60 * 1000) {
+    for (const [vehId, v] of this.openVisits.entries()) {
+      if (now - v.lastTs > maxAgeMs) {
+        this.flushVisit(v);
+        this.openVisits.delete(vehId);
+      }
+    }
+  }
+
+  flushAllVisits() {
+    for (const v of this.openVisits.values()) {
+      this.flushVisit(v);
+    }
+    this.openVisits.clear();
   }
 
   async pollMataroVehicles() {
@@ -189,24 +305,27 @@ class IngestionDaemon {
               });
 
               // Sanity check: Do NOT record delay logs for ghost buses, parked vehicles, or terminal layovers.
-              // Also ignore depot telemetry outside revenue service hours (23:00 - 05:20 Europe/Madrid).
-              const madridTimeStr = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date());
-              const [mH, mM] = madridTimeStr.split(':').map(Number);
-              const isDepotHours = mH < 5 || (mH === 5 && mM < 20) || mH >= 23;
+              // Also ignore depot telemetry outside revenue service hours (E9 service window from timetable).
+              const outsideRevenue = this.isOutsideRevenueService(lId, observedAt || Date.now());
               // An unknown speed is not a confirmed measurement, so a
               // speed-based parked check must NOT be taken on it (the
               // per-vehicle terminal gate in the tracker already handles the
               // position-based part). Only a real speed drives this branch.
               const speed = hasSpeed ? speedKmh : null;
-              const isLayover = b.isTerminalLayover || isDepotHours ||
+              const isLayover = b.isTerminalLayover || outsideRevenue ||
                 (speed !== null && speed <= 3 && (delayMins !== null && (delayMins > 10 || delayMins < -5)));
-              // Consistency (D4): a value Observatori would refuse to store
-              // (unknown, or outside the plausible range) must not be advertised
-              // as an authoritative live delay either, so the same bus cannot
-              // read "+400 min" on the map while Observatori records nothing.
-              const isPlausibleDelay = hasDelay && delayMins >= -15 && delayMins <= 300;
+              // Consistency (D4 & E8): a value Observatori would refuse to store
+              // (unknown, sentinel <= -15, or outside plausible range) must not be advertised
+              // as an authoritative live delay either. -15 is upstream sentinel.
+              const isPlausibleDelay = hasDelay && delayMins > -15 && delayMins <= 300;
               if (isPlausibleDelay && !isLayover) {
                 const vehId = b.vehicleId || (b.plateNumber ? `mataro_${lId}_${b.plateNumber}` : `mataro_${lId}_bus`);
+                const stopName = b.toStop || 'Parada';
+                const direction = b.direction !== undefined ? String(b.direction) : '';
+                const lineCode = `L${lId}`;
+                const sampleTs = observedAt || Date.now();
+                const visitKey = `${lineCode}|${direction}|${stopName}`;
+
                 // Recover the scheduled/actual passing time from the static
                 // timetable. The feed reports a delay but never the time it is
                 // measured against, so these times are DERIVED, not observed —
@@ -217,24 +336,94 @@ class IngestionDaemon {
                   toSeq: b.toSeq,
                   stopName: b.toStop,
                   delayMins,
-                  at: observedAt || Date.now()
+                  at: sampleTs
                 });
+
+                const open = this.openVisits.get(vehId);
+                // Duplicate observations check: if same GPS fix was polled twice, skip
+                if (open && open.key === visitKey && observedAt && open.lastObservedAt && observedAt === open.lastObservedAt) {
+                  return;
+                }
+
+                const distToStop = Number.isFinite(Number(b.distanceToNextMeters)) ? Number(b.distanceToNextMeters) : null;
+                const isWithin30m = distToStop !== null && distToStop <= 30;
+
+                if (open && open.key === visitKey && (sampleTs - open.lastTs <= 5 * 60 * 1000) && sampleTs >= open.firstTs - 60000) {
+                  // Update existing visit
+                  open.lastTs = sampleTs;
+                  open.lastDelay = delayMins;
+                  open.count++;
+                  if (isWithin30m) {
+                    open.passingAt = observedAt || sampleTs;
+                  }
+                  if (trip.matched) {
+                    open.scheduledTime = trip.scheduledTime;
+                    open.actualTime = trip.actualTime;
+                    open.timesSource = 'derived_timetable';
+                  }
+                  open.isRealTime = !b.isEstimated;
+                  open.lastObservedAt = observedAt || null;
+                } else {
+                  // Flush existing visit for this vehicle if present
+                  if (open) {
+                    if (!open.passingAt) {
+                      open.passingAt = observedAt || sampleTs;
+                    }
+                    this.flushVisit(open);
+                  }
+                  // Open new visit
+                  const newVisit = {
+                    key: visitKey,
+                    vehicleId: vehId,
+                    lineCode,
+                    direction,
+                    stopName,
+                    firstTs: sampleTs,
+                    lastTs: sampleTs,
+                    lastDelay: delayMins,
+                    count: 1,
+                    scheduledTime: trip.matched ? trip.scheduledTime : '',
+                    actualTime: trip.matched ? trip.actualTime : '',
+                    timesSource: trip.matched ? 'derived_timetable' : '',
+                    isRealTime: !b.isEstimated,
+                    lastObservedAt: observedAt || null,
+                    passingAt: isWithin30m ? (observedAt || sampleTs) : null
+                  };
+                  this.openVisits.set(vehId, newVisit);
+                  // Bound the map at 500 entries (flush oldest when exceeded)
+                  if (this.openVisits.size > 500) {
+                    let oldestKey = null;
+                    let oldestTs = Infinity;
+                    for (const [k, v] of this.openVisits.entries()) {
+                      if (v.lastTs < oldestTs) {
+                        oldestTs = v.lastTs;
+                        oldestKey = k;
+                      }
+                    }
+                    if (oldestKey) {
+                      this.flushVisit(this.openVisits.get(oldestKey));
+                      this.openVisits.delete(oldestKey);
+                    }
+                  }
+                }
+
                 historyDb.recordDelayLog({
                   vehicleId: vehId,
                   lineId: lId,
-                  lineCode: `L${lId}`,
+                  lineCode,
                   agency: 'Mataró Bus (Avanza)',
                   // stop_id stays the stop NAME: getDelayIncidents groups and
                   // geolocates by it, so its semantics must not change. The
                   // numeric schedule id is only needed for the join above.
-                  stopId: b.toStop || 'Parada',
-                  stopName: b.toStop || 'Parada',
+                  stopId: stopName,
+                  stopName,
                   delayMins,
                   scheduledTime: trip.matched ? trip.scheduledTime : '',
                   actualTime: trip.matched ? trip.actualTime : '',
-                  direction: b.direction !== undefined ? String(b.direction) : '',
+                  direction,
                   timesSource: trip.matched ? 'derived_timetable' : '',
-                  isRealTime: !b.isEstimated
+                  isRealTime: !b.isEstimated,
+                  observedAt: observedAt || null
                 });
               }
             });
@@ -244,10 +433,60 @@ class IngestionDaemon {
           // Skip individual line
         }
       }));
-      if (!this.stopping) this.emitFleetUpdate();
+      if (!this.stopping) {
+        this.flushExpiredVisits();
+        this.checkFleetAnomaly();
+        this.emitFleetUpdate();
+      }
     } catch (e) {
       this.warnThrottled('pollMataroVehicles', `Mataró SIRI poll failed: ${e.message}`);
     }
+  }
+
+  async pollCanary() {
+    const checkedAt = Date.now();
+    try {
+      await siriClient.getStopArrivals('1016', '', { bypassCache: true, direct: true });
+      if (siriClient.lastError) {
+        this.upstreamCanary = { ok: false, error: siriClient.lastError, checkedAt };
+      } else {
+        this.upstreamCanary = { ok: true, error: null, checkedAt };
+      }
+    } catch (err) {
+      const errName = siriClient.lastError || (err.message && err.message.startsWith('SIRI ') ? err.message.slice(5) : 'upstream_error');
+      this.upstreamCanary = { ok: false, error: errName, checkedAt };
+    }
+    if (!this.stopping) {
+      this.emitFleetUpdate();
+    }
+  }
+
+  checkFleetAnomaly(now = Date.now()) {
+    const liveVehicles = flightRecorder.getAllVehicles();
+    const liveCount = liveVehicles.length;
+
+    const net = timeEngine.getNetworkTime('Europe/Madrid', new Date(now));
+    const nowSec = net.hour * 3600 + net.minute * 60 + net.second;
+    const { dayType } = tripMatcher.resolveDayType(now);
+    let scheduled = 0;
+    for (const lineId of ['1', '2', '3', '4', '5', '6', '7', '8']) {
+      scheduled += mataroSchedules.getScheduledFleetRequirement(lineId, dayType, nowSec);
+    }
+
+    if (liveCount > 0) {
+      this.zeroFleetSince = null;
+      this.fleetAnomaly = null;
+    } else {
+      if (!this.zeroFleetSince) {
+        this.zeroFleetSince = now;
+      }
+      if (scheduled >= 3 && (now - this.zeroFleetSince >= 5 * 60 * 1000)) {
+        this.fleetAnomaly = 'no_vehicles_during_service';
+      } else {
+        this.fleetAnomaly = null;
+      }
+    }
+    return { scheduled, liveCount, anomaly: this.fleetAnomaly };
   }
 
   async pollDisruptions() {
@@ -272,6 +511,48 @@ class IngestionDaemon {
       console.error('[IngestionDaemon] Journalism report generation error:', e.message);
     }
   }
+
+  checkScheduleDriftSchedule(now = Date.now()) {
+    const net = timeEngine.getNetworkTime('Europe/Madrid', new Date(now));
+    if (net.hour === 4 && net.minute >= 10 && net.minute <= 20) {
+      const todayKey = `${net.year}-${net.month}-${net.day}`;
+      if (this.lastDriftDate !== todayKey) {
+        this.lastDriftDate = todayKey;
+        this.checkScheduleDrift().catch(() => {});
+      }
+    }
+  }
+
+  async checkScheduleDrift() {
+    try {
+      const scraper = require('../scripts/scrape_maresme_timetables');
+      const fs = require('fs');
+      const path = require('path');
+      const shippedPath = path.resolve(__dirname, 'data/mataro_schedules.seasons.json');
+      if (!fs.existsSync(shippedPath)) {
+        return null;
+      }
+      const shipped = JSON.parse(fs.readFileSync(shippedPath, 'utf8'));
+      const freshSeasons = {};
+      const notes = [];
+      for (const season of scraper.SEASONS) {
+        freshSeasons[season] = await scraper.buildSeason(season, notes);
+      }
+      const differences = scraper.diffAgainstShipped(shipped.seasons, freshSeasons);
+      this.scheduleDrift = {
+        drift: differences.length > 0,
+        checkedAt: new Date().toISOString(),
+        differencesCount: differences.length
+      };
+      this.emitIpc('SCHEDULE_DRIFT_UPDATE', this.scheduleDrift);
+      return this.scheduleDrift;
+    } catch (err) {
+      console.warn('[IngestionDaemon] Schedule drift check failed:', err.message);
+      return null;
+    }
+  }
 }
 
-module.exports = new IngestionDaemon();
+const daemonInstance = new IngestionDaemon();
+daemonInstance.IngestionDaemon = IngestionDaemon;
+module.exports = daemonInstance;

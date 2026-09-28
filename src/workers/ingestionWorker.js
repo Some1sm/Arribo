@@ -90,11 +90,21 @@ async function executeDbOperation(op, args = {}) {
       return { avisos, timestamp: mataroTracker.avisosCacheTime };
     }
 
-    case 'getMataroLiveVehicles':
-      return mataroSiriClient.getLiveVehicles(String(args.lineRef || ''));
+    case 'getMataroLiveVehicles': {
+      const res = await mataroSiriClient.getLiveVehicles(String(args.lineRef || ''));
+      if (mataroSiriClient.lastError) {
+        throw new Error(`SIRI ${mataroSiriClient.lastError}`);
+      }
+      return res;
+    }
 
-    case 'getMataroStopArrivals':
-      return mataroSiriClient.getStopArrivals(String(args.stopId || ''), String(args.lineRef || ''));
+    case 'getMataroStopArrivals': {
+      const res = await mataroSiriClient.getStopArrivals(String(args.stopId || ''), String(args.lineRef || ''), { bypassCache: !!args.bypassCache });
+      if (mataroSiriClient.lastError) {
+        throw new Error(`SIRI ${mataroSiriClient.lastError}`);
+      }
+      return res;
+    }
 
     case 'proxyUpstreamHttp':
       return proxyUpstreamFetch(args);
@@ -102,8 +112,14 @@ async function executeDbOperation(op, args = {}) {
     case 'getJournalismReport':
       return historyDb.getJournalismReport(args.hours, args.allLinesCatalog || trackerRegistry.getAllLines());
 
+    case 'getMonthlyReport':
+      return historyDb.getMonthlyReport(args.month, args.allLinesCatalog || trackerRegistry.getAllLines());
+
     case 'exportDelayLogsCsv':
-      return historyDb.exportDelayLogsCsv(args.hours);
+      return historyDb.exportDelayLogsCsv(args.hours, args.page, args.pageSize);
+
+    case 'exportStopVisitsCsv':
+      return historyDb.exportStopVisitsCsv(args.hours, args.page, args.pageSize);
 
     case 'getDelayIncidents':
       return historyDb.getDelayIncidents(args);
@@ -117,6 +133,9 @@ async function executeDbOperation(op, args = {}) {
         : trackerRegistry.getAllLines();
       return reportCacheService.generateAndSaveReport(args.hours, catalog);
     }
+
+    case 'checkScheduleDrift':
+      return ingestionDaemon.checkScheduleDrift();
 
     default:
       throw new Error(`Unknown DB operation: ${String(op)}`);
@@ -153,6 +172,9 @@ function handleMasterMessage(message) {
         activeVehicles: flightRecorder.getAllVehicles().length,
         upstream: mataroSiriClient.getUpstreamStatus(),
         noticesUpdatedAt: ingestionDaemon.noticesUpdatedAt || null,
+        upstreamCanary: ingestionDaemon.upstreamCanary || null,
+        fleetAnomaly: ingestionDaemon.fleetAnomaly || null,
+        scheduleDrift: ingestionDaemon.scheduleDrift || null,
         // Freshest REAL observation across the fleet. Reads the flight
         // recorder's observedAt clock (threaded from the SIRI RecordedAtTime
         // through the tracker and daemon). Falls back to the legacy

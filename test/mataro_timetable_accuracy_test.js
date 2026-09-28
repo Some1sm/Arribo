@@ -319,9 +319,10 @@ async function runMataroTimetableAccuracyTests() {
 
   const l1HospitalPassingDeps = mataroSchedules.getDeparturesForStop('1', '11', '1001', 'weekday');
   assert.strictEqual(l1HospitalPassingDeps.length, 76);
-  // Origin 05:25 + 2400s (40m 00s) -> 06:05
-  assert.strictEqual(l1HospitalPassingDeps[0], '06:05');
-  assert.strictEqual(l1HospitalPassingDeps[l1HospitalPassingDeps.length - 1], '23:15');
+  // published maresme.net winter L1 d11 weekday trip 05:25: 05:56
+  assert.strictEqual(l1HospitalPassingDeps[0], '05:56');
+  // published maresme.net winter L1 d11 weekday trip 22:35: 23:05
+  assert.strictEqual(l1HospitalPassingDeps[l1HospitalPassingDeps.length - 1], '23:05');
 
   // The real invariant, asserted across every direction and day grid: cumulative
   // offsets start at 0 and never decrease along the stop list. A tie is fine -

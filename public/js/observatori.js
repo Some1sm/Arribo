@@ -45,6 +45,7 @@ class ObservatoriApp {
     this.bindEvents();
     this.loadActiveTab();
     this.fetchLinesMetadata();
+    this.fetchDataHealth();
   }
 
   initTheme() {
@@ -67,8 +68,12 @@ class ObservatoriApp {
     }
 
     const tab = params.get('tab');
-    if (tab === 'termometre' || tab === 'incidents') {
+    if (tab === 'termometre' || tab === 'incidents' || tab === 'monthly') {
       this.currentTab = tab;
+    }
+    const month = params.get('month');
+    if (month && /^\d{4}-\d{2}$/.test(month)) {
+      this._currentMonthlyMonth = month;
     }
 
     const q = params.get('q');
@@ -96,6 +101,8 @@ class ObservatoriApp {
         btn.classList.add('active');
       } else if (this.currentTab === 'incidents' && dataTab === 'incidents') {
         btn.classList.add('active');
+      } else if (this.currentTab === 'monthly' && dataTab === 'monthly') {
+        btn.classList.add('active');
       } else if (this.currentTab === 'journalism' && dataHours === this.currentHours) {
         btn.classList.add('active');
       }
@@ -110,6 +117,11 @@ class ObservatoriApp {
       params.set('tab', 'incidents');
       if (this._currentIncidentLine && this._currentIncidentLine !== 'all') {
         params.set('line', this._currentIncidentLine);
+      }
+    } else if (this.currentTab === 'monthly') {
+      params.set('tab', 'monthly');
+      if (this._currentMonthlyMonth) {
+        params.set('month', this._currentMonthlyMonth);
       }
     } else {
       if (this.currentHours !== 24) {
@@ -144,12 +156,136 @@ class ObservatoriApp {
     }
   }
 
+  async fetchDataHealth() {
+    try {
+      const res = await fetch('/api/data-health').then(r => r.json());
+      if (res && res.success) {
+        this.renderDataHealth(res);
+      } else {
+        this.renderDataHealth(null);
+      }
+    } catch {
+      this.renderDataHealth(null);
+    }
+  }
+
+  renderDataHealth(data) {
+    const grid = document.getElementById('data-health-grid');
+    if (!grid) return;
+    const timeEl = document.getElementById('data-health-timestamp');
+    if (timeEl) {
+      timeEl.textContent = new Date().toLocaleTimeString('ca-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+
+    const items = [];
+
+    const makeItem = (title, icon, badgeClass, badgeText, description) => `
+      <div class="data-health-item">
+        <div class="data-health-header">
+          <span class="data-health-title">
+            <span>${icon}</span>
+            <span>${this.esc(title)}</span>
+          </span>
+          <span class="data-health-badge ${badgeClass}">${this.esc(badgeText)}</span>
+        </div>
+        <p class="data-health-desc">${description}</p>
+      </div>
+    `;
+
+    // 1. Canari SIRI (upstreamCanary)
+    if (!data || data.upstreamCanary === null || data.upstreamCanary === undefined) {
+      items.push(makeItem('Canari SIRI', '📡', 'status-neutral', 'Sense dades', 'No s&#039;ha obtingut cap comprovació recent del canari.'));
+    } else if (data.upstreamCanary.ok === true) {
+      const ageStr = data.upstreamCanary.checkedAt ? `fa ${Math.round(Math.max(0, Date.now() - data.upstreamCanary.checkedAt) / 1000)}s` : 'recentment';
+      items.push(makeItem('Canari SIRI', '📡', 'status-success', 'Operatiu', `Canal SIRI responent amb èxit (${ageStr}).`));
+    } else {
+      items.push(makeItem('Canari SIRI', '📡', 'status-danger', 'Incidència', `Error en la consulta del canari: ${this.esc(data.upstreamCanary.error || 'sense resposta')}`));
+    }
+
+    // 2. Connexió operador (lastError)
+    if (!data || data.lastError === null || data.lastError === undefined) {
+      items.push(makeItem('Connexió operador', '🔌', 'status-neutral', 'Sense dades', 'Sense registres d&#039;errors recents de l&#039;operador.'));
+    } else {
+      items.push(makeItem('Connexió operador', '🔌', 'status-danger', 'Error recent', `Últim error: ${this.esc(data.lastError)}`));
+    }
+
+    // 3. Anomalia de flota (fleetAnomaly)
+    if (!data || data.fleetAnomaly === null || data.fleetAnomaly === undefined) {
+      items.push(makeItem('Anomalia de flota', '🚌', 'status-neutral', 'Sense dades', 'Sense avaluació d&#039;anomalies de flota.'));
+    } else if (data.fleetAnomaly.detected || (data.fleetAnomaly.severity && data.fleetAnomaly.severity !== 'none')) {
+      items.push(makeItem('Anomalia de flota', '🚌', 'status-warning', 'Anomalia', this.esc(data.fleetAnomaly.message || 'Desviació en la flota activa detectada.')));
+    } else {
+      items.push(makeItem('Anomalia de flota', '🚌', 'status-success', 'Normal', 'Sense anomalies de flota detectades a la xarxa.'));
+    }
+
+    // 4. Flota GPS en servei (fleet)
+    if (!data || data.fleet === null || data.fleet === undefined) {
+      items.push(makeItem('Flota GPS activa', '🛰️', 'status-neutral', 'Sense dades', 'Sense dades de vehicles actius per línia.'));
+    } else {
+      const { totalLiveGps, totalScheduled, lines = [] } = data.fleet;
+      const isOk = totalScheduled > 0 && totalLiveGps >= Math.ceil(totalScheduled * 0.7);
+      const badgeClass = totalScheduled > 0 ? (isOk ? 'status-success' : 'status-warning') : 'status-neutral';
+      const badgeText = `${totalLiveGps} / ${totalScheduled} GPS`;
+      const perLine = lines.map(l => `${l.lineCode}: ${l.liveGpsVehicles}/${l.scheduledVehicles}`).join(' · ');
+      items.push(makeItem('Flota GPS activa', '🛰️', badgeClass, badgeText, `Per línia: ${perLine}`));
+    }
+
+    // 5. Deriva horària (scheduleDrift)
+    if (!data || data.scheduleDrift === null || data.scheduleDrift === undefined) {
+      items.push(makeItem('Deriva horària', '⏱️', 'status-neutral', 'Sense dades', 'Sense comprovació de deriva entre operador i graella.'));
+    } else if (data.scheduleDrift.driftFound) {
+      items.push(makeItem('Deriva horària', '⏱️', 'status-warning', 'Desviació', `Detectada diferència de ${data.scheduleDrift.discrepancies || 1} sortides respecte a la graella.`));
+    } else {
+      items.push(makeItem('Deriva horària', '⏱️', 'status-success', 'Sincronitzat', 'Horaris teòrics de l&#039;operador coincidents amb la graella oficial.'));
+    }
+
+    // 6. Temporada de servei (season)
+    if (!data || data.season === null || data.season === undefined) {
+      items.push(makeItem('Temporada de servei', '📅', 'status-neutral', 'Sense dades', 'Sense dades de temporada oficial.'));
+    } else if (data.season.seasonKnown) {
+      const label = data.season.season === 'summer' ? "Horari d&#039;estiu" : "Horari d&#039;hivern";
+      items.push(makeItem('Temporada de servei', '📅', 'status-success', label, `Temporada vigent segons ${this.esc(data.season.seasonSource || 'configuració')}.`));
+    } else {
+      items.push(makeItem('Temporada de servei', '📅', 'status-warning', 'No verificada', `Graella de temporada (${this.esc(data.season.season)}) sense verificar per l&#039;any actual.`));
+    }
+
+    // 7. Previsió de temporada (seasonOutlook)
+    if (!data || data.seasonOutlook === null || data.seasonOutlook === undefined) {
+      items.push(makeItem('Previsió estiu', '☀️', 'status-neutral', 'Sense dades', 'Sense dades sobre la previsió d&#039;horari d&#039;estiu.'));
+    } else if (!data.seasonOutlook.warning) {
+      items.push(makeItem('Previsió estiu', '☀️', 'status-success', 'Configurat', 'Proper període d&#039;estiu degudament configurat al calendari.'));
+    } else {
+      items.push(makeItem('Previsió estiu', '☀️', 'status-warning', 'Atenció', this.esc(data.seasonOutlook.warning)));
+    }
+
+    // 8. Festius oficials (holidaysKnownForYear)
+    if (!data || data.holidaysKnownForYear === null || data.holidaysKnownForYear === undefined) {
+      items.push(makeItem('Festius oficials', '🎉', 'status-neutral', 'Sense dades', 'Sense verificació del calendari laboral de l&#039;any.'));
+    } else if (data.holidaysKnownForYear === true) {
+      items.push(makeItem('Festius oficials', '🎉', 'status-success', 'Verificat', 'Festius oficials de Catalunya i locals de Mataró verificats.'));
+    } else {
+      items.push(makeItem('Festius oficials', '🎉', 'status-warning', 'Aproximat', 'Any pendent d&#039;incorporació al DOGC; s&#039;apliquen regles estimades.'));
+    }
+
+    // 9. Frescor dels informes (reportFreshness)
+    if (!data || data.reportFreshness === null || data.reportFreshness === undefined || !Array.isArray(data.reportFreshness)) {
+      items.push(makeItem('Frescor informes', '📊', 'status-neutral', 'Sense dades', 'Sense informació d&#039;actualització dels informes.'));
+    } else if (data.reportFreshness.length > 0 && data.reportFreshness.every(r => r.fresh)) {
+      items.push(makeItem('Frescor informes', '📊', 'status-success', 'Al dia', 'Tots els informes analítics (24h, 48h, 7d) estan degudament actualitzats.'));
+    } else {
+      items.push(makeItem('Frescor informes', '📊', 'status-warning', 'Regenerant', 'Alguns informes de l&#039;Observatori estan pendents d&#039;actualització en segon pla.'));
+    }
+
+    grid.innerHTML = items.join('');
+  }
+
   bindEvents() {
     // Refresh Button
     document.getElementById('btn-observatori-refresh')?.addEventListener('click', (e) => {
       e.preventDefault();
       this._incidentCache?.clear();
       this.loadActiveTab(true);
+      this.fetchDataHealth();
     });
 
     // Timeframe tabs (24h, 48h, 7 dies, Termòmetre, Incidents)
@@ -168,6 +304,10 @@ class ObservatoriApp {
           this.currentTab = 'incidents';
           this.updateUrl();
           this.openDelayIncidentsTab('all');
+        } else if (dataTab === 'monthly') {
+          this.currentTab = 'monthly';
+          this.updateUrl();
+          this.loadMonthlyReport(this._currentMonthlyMonth);
         } else {
           this.currentTab = 'journalism';
           this.currentHours = parseInt(btn.getAttribute('data-hours') || '24', 10);
@@ -435,6 +575,8 @@ class ObservatoriApp {
       this.loadTermometre(24, force);
     } else if (this.currentTab === 'incidents') {
       this.openDelayIncidentsTab(this._currentIncidentLine || 'all', force);
+    } else if (this.currentTab === 'monthly') {
+      this.loadMonthlyReport(this._currentMonthlyMonth, force);
     } else {
       this.loadJournalismReport(this.currentHours, force);
     }
@@ -455,6 +597,8 @@ class ObservatoriApp {
     if (contentContainer) contentContainer.style.display = 'block';
     if (termometreContainer) termometreContainer.style.display = 'none';
     if (incidentsContainer) incidentsContainer.style.display = 'none';
+    const monthlyContainer = document.getElementById('journalism-monthly-container');
+    if (monthlyContainer) monthlyContainer.style.display = 'none';
 
     if (!this.currentReport || force) {
       if (contentContainer) {
@@ -610,15 +754,15 @@ class ObservatoriApp {
       <!-- KPI Stats Grid -->
       <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:0.85rem; margin-bottom:1.5rem;">
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:1rem;">
-          <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Mostres Analitzades</div>
-          <div style="font-size:1.75rem; font-weight:700; color:var(--brand-primary); margin-top:0.25rem;">${(s.totalRecordedArrivals || 0).toLocaleString()}</div>
-          <div style="font-size:0.72rem; color:var(--text-muted);">${s.monitoredLinesCount || 0} línies monitorades${s.hoursAnalyzed ? ` • darreres ${s.hoursAnalyzed} h` : ''}</div>
+          <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Passos per Parada</div>
+          <div style="font-size:1.75rem; font-weight:700; color:var(--brand-primary); margin-top:0.25rem;">${(s.totalRecordedArrivals || 0).toLocaleString('ca-ES')}</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">${s.monitoredLinesCount || 0} línies monitorades${s.hoursAnalyzed ? ` • darreres ${s.hoursAnalyzed} h` : ''}${s.totalSamples ? ` (${s.totalSamples.toLocaleString('ca-ES')} mostres individuals)` : ''}</div>
         </div>
 
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:1rem;">
           <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Puntualitat Global</div>
-          <div style="font-size:1.75rem; font-weight:700; color:${s.networkPunctualityPct === null || s.networkPunctualityPct === undefined ? 'var(--text-muted)' : (s.networkPunctualityPct >= 85 ? 'var(--accent-live)' : 'var(--accent-warning)')}; margin-top:0.25rem;">${s.networkPunctualityPct === null || s.networkPunctualityPct === undefined ? '—' : `${s.networkPunctualityPct}%`}</div>
-          <div style="font-size:0.72rem; color:var(--text-muted);">${s.networkPunctualityPct === null || s.networkPunctualityPct === undefined ? 'Sense mostres: la puntualitat no es mesura' : 'Mostres en &le; 3 min de marge'}</div>
+          <div style="font-size:1.75rem; font-weight:700; color:${s.networkPunctualityPct === null || s.networkPunctualityPct === undefined ? 'var(--text-muted)' : (s.networkPunctualityPct >= 85 ? 'var(--accent-live)' : 'var(--accent-warning)')}; margin-top:0.25rem;">${s.networkPunctualityPct === null || s.networkPunctualityPct === undefined ? '—' : `${Number(s.networkPunctualityPct).toLocaleString('ca-ES')}%`}</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">${s.networkPunctualityPct === null || s.networkPunctualityPct === undefined ? 'Sense passos: la puntualitat no es mesura' : `${Number(s.networkPunctualityPct).toLocaleString('ca-ES')}% puntual · ${Number(s.earlyPct || 0).toLocaleString('ca-ES')}% avançat · ${Number(s.latePct || 0).toLocaleString('ca-ES')}% tard`}</div>
         </div>
 
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:1rem;">
@@ -645,6 +789,29 @@ class ObservatoriApp {
           D'aquestes, <strong>${sb.nonRealtimeSamples.toLocaleString()} (${sb.nonRealtimePct}%)</strong> són posicions extrapolades
           (dead-reckoning, <code>is_realtime = 0</code>) i no GPS fresc: s'hi inclouen perquè el retard registrat és real,
           però no són una observació directa de la posició del vehicle.
+        </div>`;
+      })()}
+
+      <!-- Independent Delay Measurement Comparison (Plan 9.3) -->
+      ${(() => {
+        const comp = s.delayMeasurementComparison;
+        if (!comp || !comp.hasData || !comp.comparedVisits) return '';
+        const opAvg = comp.operatorAvgDelay > 0 ? `+${comp.operatorAvgDelay}` : String(comp.operatorAvgDelay);
+        const meAvg = comp.measuredAvgDelay > 0 ? `+${comp.measuredAvgDelay}` : String(comp.measuredAvgDelay);
+        return `
+        <div style="background:rgba(16,185,129,0.06); border:1px solid rgba(16,185,129,0.25); border-radius:10px; padding:0.8rem 1rem; margin-bottom:1.25rem; font-size:0.78rem; color:var(--text-secondary); line-height:1.5;">
+          <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.35rem;">
+            <strong style="color:var(--accent-live); font-size:0.84rem;">🎯 Mesurament Independent de Retard vs. Operador</strong>
+            <span style="font-size:0.75rem; font-family:var(--font-mono); font-weight:600; background:rgba(16,185,129,0.15); color:var(--accent-live); padding:0.15rem 0.5rem; border-radius:9999px;">
+              ${comp.agreementPct.toLocaleString('ca-ES')}% d'acord (≤1 min)
+            </span>
+          </div>
+          <div>
+            Sobre <strong>${comp.comparedVisits.toLocaleString('ca-ES')} passos per parada</strong> analitzats de forma independent:
+            Retard mitjà informat per l'operador: <strong>${opAvg} min</strong> ·
+            Retard mesurat directament per Arribo!: <strong>${meAvg} min</strong>
+            (${comp.agreedVisits.toLocaleString('ca-ES')} passos amb acord absolut o desviació ≤ 1 min).
+          </div>
         </div>`;
       })()}
 
@@ -785,7 +952,7 @@ class ObservatoriApp {
                   <th data-sort-table="mostDelayed" data-sort-key="avgDelay" role="button" tabindex="0">Retard Mitjà ${getSortIndicator('mostDelayed', 'avgDelay')}</th>
                   <th data-sort-table="mostDelayed" data-sort-key="onTimePercentage" role="button" tabindex="0">% Puntual ${getSortIndicator('mostDelayed', 'onTimePercentage')}</th>
                   <th class="observatori-col-desktop" data-sort-table="mostDelayed" data-sort-key="maxDelay" role="button" tabindex="0">Retard Màxim ${getSortIndicator('mostDelayed', 'maxDelay')}</th>
-                  <th class="observatori-col-desktop" data-sort-table="mostDelayed" data-sort-key="sampleCount" role="button" tabindex="0">Mostres ${getSortIndicator('mostDelayed', 'sampleCount')}</th>
+                  <th class="observatori-col-desktop" data-sort-table="mostDelayed" data-sort-key="sampleCount" role="button" tabindex="0">Passos per parada ${getSortIndicator('mostDelayed', 'sampleCount')}</th>
                   <th class="observatori-col-desktop" data-sort-table="mostDelayed" data-sort-key="agency" role="button" tabindex="0">Operador ${getSortIndicator('mostDelayed', 'agency')}</th>
                 </tr>
               </thead>
@@ -808,15 +975,20 @@ class ObservatoriApp {
                       ${avgStr}
                     </td>
                     <td style="white-space:nowrap;">
-                      <div style="display:flex; align-items:center; gap:0.4rem;">
-                        <span style="font-weight:600; color:${onTime >= 85 ? 'var(--accent-live)' : 'var(--accent-warning)'}; min-width:34px;">${onTime}%</span>
-                        <div style="flex:1; max-width:60px; height:5px; background:var(--bg-main); border-radius:3px; overflow:hidden;">
-                          <div style="width:${onTime}%; height:100%; background:${onTime >= 85 ? 'var(--accent-live)' : 'var(--accent-warning)'};"></div>
+                      <div style="display:flex; flex-direction:column; gap:0.2rem;">
+                        <div style="display:flex; align-items:center; gap:0.4rem;">
+                          <span style="font-weight:600; color:${onTime >= 85 ? 'var(--accent-live)' : 'var(--accent-warning)'}; min-width:34px;">${onTime.toLocaleString('ca-ES')}%</span>
+                          <div style="flex:1; max-width:60px; height:5px; background:var(--bg-main); border-radius:3px; overflow:hidden;">
+                            <div style="width:${onTime}%; height:100%; background:${onTime >= 85 ? 'var(--accent-live)' : 'var(--accent-warning)'};"></div>
+                          </div>
+                        </div>
+                        <div style="font-size:0.68rem; color:var(--text-muted);">
+                          ${onTime.toLocaleString('ca-ES')}% puntual · ${(Number(l.earlyPercentage) || 0).toLocaleString('ca-ES')}% avançat · ${(Number(l.latePercentage) || 0).toLocaleString('ca-ES')}% tard
                         </div>
                       </div>
                     </td>
                     <td class="observatori-col-desktop" style="color:var(--text-muted); white-space:nowrap;">${maxStr}</td>
-                    <td class="observatori-col-desktop" style="color:var(--text-muted);">${(l.sampleCount || 0).toLocaleString()}</td>
+                    <td class="observatori-col-desktop" style="color:var(--text-muted);">${(l.sampleCount || 0).toLocaleString('ca-ES')}</td>
                     <td class="observatori-col-desktop" style="color:var(--text-muted); font-size:0.75rem;">
                       ${this.esc(l.agency || 'Mataró Bus')}
                       ${isL95 ? '<span style="color:var(--accent-scheduled); font-size:0.7rem; display:block;">ℹ️ L95 exprés: trànsit C-31/C-32</span>' : ''}
@@ -1047,7 +1219,7 @@ class ObservatoriApp {
               <tr>
                 <th class="sticky-col" data-sort-table="agencies" data-sort-key="agency" role="button" tabindex="0">Empresa ${getSortIndicator('agencies', 'agency')}</th>
                 <th class="observatori-col-desktop" data-sort-table="agencies" data-sort-key="linesCount" role="button" tabindex="0">Línies ${getSortIndicator('agencies', 'linesCount')}</th>
-                <th class="observatori-col-desktop" data-sort-table="agencies" data-sort-key="totalSamples" role="button" tabindex="0">Mostres ${getSortIndicator('agencies', 'totalSamples')}</th>
+                <th class="observatori-col-desktop" data-sort-table="agencies" data-sort-key="totalSamples" role="button" tabindex="0">Passos per parada ${getSortIndicator('agencies', 'totalSamples')}</th>
                 <th data-sort-table="agencies" data-sort-key="avgDelay" role="button" tabindex="0">Retard Mitjà ${getSortIndicator('agencies', 'avgDelay')}</th>
                 <th data-sort-table="agencies" data-sort-key="onTimePct" role="button" tabindex="0">Índex de Puntualitat ${getSortIndicator('agencies', 'onTimePct')}</th>
               </tr>
@@ -1055,13 +1227,17 @@ class ObservatoriApp {
             <tbody>
               ${agencies.map(a => {
                 const aAvg = Number(a.avgDelay) > 0 ? `+${a.avgDelay} min` : (Number(a.avgDelay) < 0 ? `${a.avgDelay} min` : '0.0 min');
+                const onTime = a.onTimePct !== undefined && a.onTimePct !== null ? Number(a.onTimePct) : 100;
                 return `
                 <tr>
                   <td class="sticky-col" style="font-weight:700; color:var(--text-primary);">${this.esc(a.agency)}</td>
                   <td class="observatori-col-desktop" style="color:var(--text-muted); text-align:center;">${a.linesCount || 0}</td>
-                  <td class="observatori-col-desktop" style="color:var(--text-muted);">${(a.totalSamples || 0).toLocaleString()}</td>
+                  <td class="observatori-col-desktop" style="color:var(--text-muted);">${(a.totalVisits || a.totalSamples || 0).toLocaleString('ca-ES')}</td>
                   <td style="font-weight:700; color:${Number(a.avgDelay) > 0 ? 'var(--accent-danger)' : 'var(--accent-live)'}; white-space:nowrap;">${aAvg}</td>
-                  <td style="font-weight:700; color:${a.onTimePct >= 85 ? 'var(--accent-live)' : 'var(--accent-warning)'}; white-space:nowrap;">${a.onTimePct || 100}%</td>
+                  <td style="white-space:nowrap;">
+                    <span style="font-weight:700; color:${onTime >= 85 ? 'var(--accent-live)' : 'var(--accent-warning)'};">${onTime.toLocaleString('ca-ES')}%</span>
+                    <span style="font-size:0.7rem; color:var(--text-muted); margin-left:0.3rem;">puntual${a.earlyPct ? ` · ${Number(a.earlyPct).toLocaleString('ca-ES')}% avançat` : ''}${a.latePct ? ` · ${Number(a.latePct).toLocaleString('ca-ES')}% tard` : ''}</span>
+                  </td>
                 </tr>
               `;}).join('')}
             </tbody>
@@ -1403,6 +1579,8 @@ class ObservatoriApp {
     if (searchBarWrap) searchBarWrap.style.display = 'none';
     if (contentContainer) contentContainer.style.display = 'none';
     if (incidentsContainer) incidentsContainer.style.display = 'none';
+    const monthlyContainer = document.getElementById('journalism-monthly-container');
+    if (monthlyContainer) monthlyContainer.style.display = 'none';
     if (termometreContainer) {
       termometreContainer.style.display = 'block';
       if (!this.termometreData || force) {
@@ -1506,7 +1684,7 @@ class ObservatoriApp {
             <span class="termometre-metric-val" style="color:var(--accent-scheduled);">
               ${pct(t.punctualityPct)}
             </span>
-            <span style="font-size:0.72rem; color:var(--text-muted);">${(t.totalTripsAnalyzed || 0).toLocaleString()} mostres analitzades</span>
+            <span style="font-size:0.72rem; color:var(--text-muted);">${(t.totalTripsAnalyzed || 0).toLocaleString('ca-ES')} passos per parada</span>
           </div>
         </div>
 
@@ -1535,7 +1713,7 @@ class ObservatoriApp {
         `• 🏆 Línia més puntual: ${t.championLine ? t.championLine.code : '—'} (${championPct})\n` +
         `• ⚠️ Punt negre: ${t.worstBottleneck ? t.worstBottleneck.stopName : '—'} (${t.worstBottleneck ? mins(t.worstBottleneck.avgDelay) : '—'})\n` +
         `• ⏱️ Hora punta: ${t.peakHour || '—'}\n` +
-        `• Mostres analitzades: ${(t.totalTripsAnalyzed || 0).toLocaleString()}\n\n` +
+        `• Passos per parada analitzats: ${(t.totalTripsAnalyzed || 0).toLocaleString('ca-ES')}\n\n` +
         `Font: Arribo! Mataró — Dades obertes i telemetria ciutadana.`;
 
       if (navigator.clipboard) {
@@ -1641,7 +1819,7 @@ class ObservatoriApp {
           <div class="termometre-metric-tile" style="border-left:3px solid var(--border-subtle);">
             <span class="termometre-metric-label">Puntualitat Global</span>
             <span class="termometre-metric-val" style="color:var(--text-muted);">—</span>
-            <span style="font-size:0.72rem; color:var(--text-muted);">0 mostres analitzades</span>
+            <span style="font-size:0.72rem; color:var(--text-muted);">0 passos per parada</span>
           </div>
         </div>
       </div>
@@ -1661,6 +1839,8 @@ class ObservatoriApp {
     if (searchBarWrap) searchBarWrap.style.display = 'none';
     if (contentContainer) contentContainer.style.display = 'none';
     if (termometreContainer) termometreContainer.style.display = 'none';
+    const monthlyContainer = document.getElementById('journalism-monthly-container');
+    if (monthlyContainer) monthlyContainer.style.display = 'none';
     if (incidentsContainer) incidentsContainer.style.display = 'block';
 
     const hours = this._currentIncidentHours || 168;
@@ -2689,6 +2869,246 @@ class ObservatoriApp {
     } else {
       prompt('Copia el resum per a la investigació:', text);
     }
+  }
+
+  // ==========================================
+  // 5. MONTHLY AJUNTAMENT REPORT (Plan 9.4)
+  // ==========================================
+
+  async loadMonthlyReport(month = null, force = false) {
+    this.currentTab = 'monthly';
+    const contentContainer = document.getElementById('journalism-content-container');
+    const termometreContainer = document.getElementById('journalism-termometre-container');
+    const incidentsContainer = document.getElementById('journalism-incidents-container');
+    const monthlyContainer = document.getElementById('journalism-monthly-container');
+    const searchBarWrap = document.getElementById('journalism-search-bar-wrap');
+
+    if (searchBarWrap) searchBarWrap.style.display = 'none';
+    if (contentContainer) contentContainer.style.display = 'none';
+    if (termometreContainer) termometreContainer.style.display = 'none';
+    if (incidentsContainer) incidentsContainer.style.display = 'none';
+    if (monthlyContainer) {
+      monthlyContainer.style.display = 'block';
+      if (!this._monthlyData || force || (month && month !== this._currentMonthlyMonth)) {
+        monthlyContainer.innerHTML = '<div style="text-align:center; padding:3rem; color:var(--text-muted);"><span class="loading-spinner-inline"></span> Carregant informe mensual per a l\'Ajuntament...</div>';
+      }
+    }
+
+    try {
+      const qMonth = month || this._currentMonthlyMonth || '';
+      const url = qMonth ? `/api/analytics/report/monthly?month=${encodeURIComponent(qMonth)}` : '/api/analytics/report/monthly';
+      const res = await fetch(url).then(r => r.json());
+      if (res && res.success) {
+        this._monthlyData = res;
+        this._currentMonthlyMonth = res.month;
+        this.renderMonthlyReport(res);
+      } else {
+        if (monthlyContainer) {
+          monthlyContainer.innerHTML = `<div style="text-align:center; padding:2rem; color:var(--text-danger);">Error carregant l'informe mensual: ${this.esc(res?.error || 'Servei no disponible')}</div>`;
+        }
+      }
+    } catch (e) {
+      if (monthlyContainer) {
+        monthlyContainer.innerHTML = `<div style="text-align:center; padding:2rem; color:var(--text-danger);">Error de connexió en carregar l'informe mensual: ${this.esc(e.message)}</div>`;
+      }
+    }
+  }
+
+  renderMonthlyReport(data) {
+    const monthlyContainer = document.getElementById('journalism-monthly-container');
+    if (!monthlyContainer) return;
+
+    const s = data.summary || {};
+    const lines = data.linesPunctuality || [];
+    const hourly = data.hourlyPunctuality || [];
+    const worst = data.worstStops || [];
+    const cov = data.dataCoverage || {};
+
+    const genDate = data.generationTimestamp
+      ? new Date(data.generationTimestamp).toLocaleString('ca-ES', { timeZone: 'Europe/Madrid' })
+      : '--';
+
+    const linesRows = lines.map(l => {
+      const badgeColor = this.getLineColor(l.lineCode) || '#1976d2';
+      return `
+        <tr>
+          <td><span class="line-badge" style="background:${badgeColor}; color:#fff; padding:2px 8px; border-radius:4px; font-weight:bold;">${this.esc(l.lineCode)}</span></td>
+          <td style="text-align:right;">${l.visitCount.toLocaleString('ca-ES')}</td>
+          <td style="text-align:right; font-weight:bold; color:var(--color-on-time, #2e7d32);">${l.onTimePct}%</td>
+          <td style="text-align:right; color:var(--color-early, #1976d2);">${l.earlyPct}%</td>
+          <td style="text-align:right; color:var(--color-late, #f57c00);">${l.latePct}%</td>
+          <td style="text-align:right; color:var(--color-severe, #d32f2f);">${l.severeLatePct}%</td>
+          <td style="text-align:right;">${l.avgDelayMins > 0 ? '+' : ''}${l.avgDelayMins} m</td>
+          <td style="text-align:right;">${l.maxDelayMins} m</td>
+        </tr>
+      `;
+    }).join('');
+
+    const hourlyRows = hourly.map(h => {
+      return `
+        <tr>
+          <td><strong>${this.esc(h.hourLabel)}</strong></td>
+          <td style="text-align:right;">${h.visitCount.toLocaleString('ca-ES')}</td>
+          <td style="text-align:right; font-weight:bold; color:var(--color-on-time, #2e7d32);">${h.onTimePct}%</td>
+          <td style="text-align:right; color:var(--color-early, #1976d2);">${h.earlyPct}%</td>
+          <td style="text-align:right; color:var(--color-late, #f57c00);">${h.latePct}%</td>
+          <td style="text-align:right; color:var(--color-severe, #d32f2f);">${h.severeLatePct}%</td>
+          <td style="text-align:right;">${h.avgDelayMins > 0 ? '+' : ''}${h.avgDelayMins} m</td>
+        </tr>
+      `;
+    }).join('');
+
+    const worstRows = worst.length > 0 ? worst.map((w, idx) => {
+      return `
+        <tr>
+          <td style="text-align:center;">${idx + 1}</td>
+          <td><strong>${this.esc(w.stopName)}</strong></td>
+          <td><span style="font-size:0.8rem; color:var(--text-secondary);">${this.esc(w.linesServed || '')}</span></td>
+          <td style="text-align:right;">${w.visitCount.toLocaleString('ca-ES')}</td>
+          <td style="text-align:right; font-weight:bold; color:var(--color-on-time, #2e7d32);">${w.onTimePct}%</td>
+          <td style="text-align:right; color:var(--color-late, #f57c00);">${w.latePct}%</td>
+          <td style="text-align:right; color:var(--color-severe, #d32f2f);">${w.severeLatePct}%</td>
+          <td style="text-align:right; font-weight:bold; color:var(--color-severe, #d32f2f);">${w.avgDelayMins > 0 ? '+' : ''}${w.avgDelayMins} m</td>
+        </tr>
+      `;
+    }).join('') : `<tr><td colspan="8" style="text-align:center; padding:1rem; color:var(--text-muted); font-style:italic;">Cap parada no supera el llindar de 50 passos consolidats en aquest mes.</td></tr>`;
+
+    monthlyContainer.innerHTML = `
+      <div class="monthly-report-wrapper">
+        <div class="monthly-report-header">
+          <div class="monthly-report-title">
+            <div style="font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--brand-primary); font-weight:700; margin-bottom:0.25rem;">
+              Ajuntament de Mataró • Servei de Mobilitat Urbana
+            </div>
+            <h2>Informe Mensual de Puntualitat i Qualitat de Servei</h2>
+            <div class="monthly-report-meta">
+              <span><strong>Mes d'anàlisi:</strong> ${this.esc(data.month)}</span>
+              <span><strong>Versió de dades:</strong> <code>${this.esc(data.dataVersion || 'v3.0')}</code></span>
+              <span><strong>Generat:</strong> ${this.esc(genDate)}</span>
+              <span><strong>Base:</strong> Passos consolidats per parada (${this.esc(s.basis || 'stop_visits')})</span>
+            </div>
+          </div>
+          <div class="monthly-report-controls">
+            <span class="monthly-controls-label" style="font-size:0.8rem; color:var(--text-secondary);">Selecciona mes:</span>
+            <input type="month" id="monthly-report-month-input" class="monthly-report-month-input" value="${this.esc(data.month)}">
+            <button type="button" class="btn-print-report" id="btn-print-monthly-report" title="Imprimir informe en format A4 o desar com a PDF">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+              <span>Imprimir / PDF</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Global KPIs -->
+        <h4 style="margin:1rem 0 0.5rem 0; font-size:0.95rem; color:var(--text-primary);">1. Resum Global de Puntualitat de la Xarxa</h4>
+        <div class="monthly-kpi-grid">
+          <div class="monthly-kpi-card">
+            <div class="kpi-val">${(s.totalVisits || 0).toLocaleString('ca-ES')}</div>
+            <div class="kpi-lbl">Passos avaluats (stop_visits)</div>
+          </div>
+          <div class="monthly-kpi-card">
+            <div class="kpi-val" style="color:var(--color-on-time, #2e7d32);">${s.onTimePct ?? '--'}%</div>
+            <div class="kpi-lbl">Puntualitat global (-1 a +3 min)</div>
+          </div>
+          <div class="monthly-kpi-card">
+            <div class="kpi-val" style="color:var(--color-early, #1976d2);">${s.earlyPct ?? '--'}%</div>
+            <div class="kpi-lbl">Passos avançats (&lt; -1 min)</div>
+          </div>
+          <div class="monthly-kpi-card">
+            <div class="kpi-val" style="color:var(--color-late, #f57c00);">${s.latePct ?? '--'}%</div>
+            <div class="kpi-lbl">Passos amb retard (&gt; 3 min)</div>
+          </div>
+          <div class="monthly-kpi-card">
+            <div class="kpi-val" style="color:var(--color-severe, #d32f2f);">${s.severeLatePct ?? '--'}%</div>
+            <div class="kpi-lbl">Retards greus (&ge; 5 min)</div>
+          </div>
+          <div class="monthly-kpi-card">
+            <div class="kpi-val">${cov.coveragePct ?? '--'}%</div>
+            <div class="kpi-lbl">Cobertura dades (${cov.activeFeedHours || 0}h / ${cov.scheduledServiceHours || 0}h)</div>
+          </div>
+        </div>
+
+        <!-- Per Line Breakdown -->
+        <h4 style="margin:1.5rem 0 0.5rem 0; font-size:0.95rem; color:var(--text-primary);">2. Puntualitat i Retards per Línia (L1–L8)</h4>
+        <table class="monthly-report-table">
+          <thead>
+            <tr>
+              <th>Línia</th>
+              <th style="text-align:right;">Passos</th>
+              <th style="text-align:right;">Puntual %</th>
+              <th style="text-align:right;">Avançat %</th>
+              <th style="text-align:right;">Retard %</th>
+              <th style="text-align:right;">Greu &ge;5m %</th>
+              <th style="text-align:right;">Retard Mitjà</th>
+              <th style="text-align:right;">Retard Màxim</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${linesRows}
+          </tbody>
+        </table>
+
+        <!-- Per Hour Breakdown -->
+        <h4 style="margin:1.5rem 0 0.5rem 0; font-size:0.95rem; color:var(--text-primary);">3. Puntualitat per Franja Horària Operativa</h4>
+        <table class="monthly-report-table">
+          <thead>
+            <tr>
+              <th>Franja Horària</th>
+              <th style="text-align:right;">Passos</th>
+              <th style="text-align:right;">Puntual %</th>
+              <th style="text-align:right;">Avançat %</th>
+              <th style="text-align:right;">Retard %</th>
+              <th style="text-align:right;">Greu &ge;5m %</th>
+              <th style="text-align:right;">Retard Mitjà</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${hourlyRows}
+          </tbody>
+        </table>
+
+        <!-- Worst Stops (>= 50 visits) -->
+        <h4 style="margin:1.5rem 0 0.5rem 0; font-size:0.95rem; color:var(--text-primary);">4. Parades amb Major Retard Acumulat (mínim 50 passos)</h4>
+        <table class="monthly-report-table">
+          <thead>
+            <tr>
+              <th style="text-align:center;">#</th>
+              <th>Parada</th>
+              <th>Línies</th>
+              <th style="text-align:right;">Passos</th>
+              <th style="text-align:right;">Puntual %</th>
+              <th style="text-align:right;">Retard %</th>
+              <th style="text-align:right;">Greu &ge;5m %</th>
+              <th style="text-align:right;">Retard Mitjà</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${worstRows}
+          </tbody>
+        </table>
+
+        <!-- Methodology & Audit Invariants -->
+        <div class="monthly-methodology-box">
+          <strong style="display:block; margin-bottom:0.35rem; color:var(--text-primary);">Metodologia de Càlcul i Criteris d'Auditoria:</strong>
+          <p style="margin:0; line-height:1.5; color:var(--text-secondary); font-size:0.82rem;">
+            ${this.esc(data.methodology)}
+          </p>
+        </div>
+      </div>
+    `;
+
+    // Bind controls
+    document.getElementById('monthly-report-month-input')?.addEventListener('change', (e) => {
+      const newMonth = e.target.value;
+      if (newMonth && /^\d{4}-\d{2}$/.test(newMonth)) {
+        this._currentMonthlyMonth = newMonth;
+        this.updateUrl();
+        this.loadMonthlyReport(newMonth);
+      }
+    });
+
+    document.getElementById('btn-print-monthly-report')?.addEventListener('click', () => {
+      window.print();
+    });
   }
 }
 

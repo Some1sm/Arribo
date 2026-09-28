@@ -1,5 +1,7 @@
 # Historical architecture — retired Catalonia-wide platform
 
+> Historical document — may not match the current code. See README.md, AGENTS.md, OPERATIONS.md.
+
 > Archived reference, not current deployment guidance. Providers, scale and routes
 > below describe earlier iterations. The active app serves Mataró L1–L8. Start with
 > [README.md](README.md), [AGENTS.md](AGENTS.md) and [OPERATIONS.md](OPERATIONS.md).

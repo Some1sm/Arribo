@@ -53,8 +53,6 @@ const DAY_KEYS = { a: 'weekday', b: 'saturday', c: 'sunday' };
 const CATALAN = { weekday: 'Feiners', saturday: 'Dissabtes', sunday: 'Diumenges i Festius' };
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-const DIFF_ONLY = process.argv.includes('--diff');
-
 // ---------------------------------------------------------------------------
 // Fetch / parse
 // ---------------------------------------------------------------------------
@@ -170,7 +168,11 @@ function medianOffsetSec(from, to) {
   const n = Math.min(from.length, to.length);
   for (let i = 0; i < n; i++) {
     const a = toSec(from[i]); const b = toSec(to[i]);
-    if (Number.isFinite(a) && Number.isFinite(b)) diffs.push(b - a);
+    if (Number.isFinite(a) && Number.isFinite(b)) {
+      let delta = b - a;
+      if (delta < -43200) delta += 86400;
+      diffs.push(delta);
+    }
   }
   if (!diffs.length) return null;
   diffs.sort((a, b) => a - b);
@@ -215,6 +217,26 @@ function resolveBlocks(line, colCount, firstOriginName) {
  * distances and stop lists are carried over from the current file untouched;
  * only times are replaced.
  */
+function toTimeStr(sec) {
+  const s = ((sec % 86400) + 86400) % 86400;
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return `${pad2(h)}:${pad2(m)}`;
+}
+
+function formatJsonWithCompactArrays(obj) {
+  const json = JSON.stringify(obj, null, 2);
+  return json.replace(/"s": \[\s+([\s\S]*?)\s+\]/g, (_, inner) => {
+    const compact = inner.split(/,\s*/).map((x) => x.trim()).join(', ');
+    return `"s": [${compact}]`;
+  });
+}
+
+/**
+ * Builds the timetable half of every direction for one season. Geometry,
+ * distances and stop lists are carried over from the current file untouched;
+ * only times are replaced.
+ */
 function buildSeason(html, line, seasonName, notes) {
   const cols = parseSlotArrays(html);
   const names = parseColumnNames(html);
@@ -247,12 +269,61 @@ function buildSeason(html, line, seasonName, notes) {
     dir.dayTravelSec = {};
     dir.scheduleStats = {};
     dir.afternoonOnly = {};
+    dir.dayTrips = {};
 
     for (const [slot, day] of Object.entries(DAY_KEYS)) {
       const originCol = cols[pad2(offset)][slot];
-      if (!originCol) { notes.push(`${seasonName} L${line.lineId} d${dirKey} ${day}: no origin column`); continue; }
+      let rowCount = originCol ? originCol.length : 0;
+      for (let i = 0; i < stops.length; i++) {
+        const c = cols[pad2(offset + i)] && cols[pad2(offset + i)][slot];
+        if (c && c.length > rowCount) rowCount = c.length;
+      }
+      if (rowCount === 0) { notes.push(`${seasonName} L${line.lineId} d${dirKey} ${day}: no columns found`); continue; }
 
-      const departures = originCol.filter(isTime);
+      // Build dayTrips: full trip matrix
+      const trips = [];
+      for (let k = 0; k < rowCount; k++) {
+        const rawS = stops.map((_, i) => {
+          const cell = (cols[pad2(offset + i)] || {})[slot]?.[k];
+          const sec = toSec(cell);
+          return Number.isFinite(sec) ? sec : null;
+        });
+
+        // A trip is kept if any stop has a time (not only the origin).
+        if (rawS.some((v) => v !== null)) {
+          let rollover = 0;
+          let prev = null;
+          const s = [];
+          for (let i = 0; i < stops.length; i++) {
+            const val = rawS[i];
+            if (val === null) {
+              s.push(null);
+              continue;
+            }
+            let cur = val + rollover;
+            if (prev !== null && cur < prev) {
+              rollover += 86400;
+              cur += 86400;
+            }
+            if (prev !== null && cur < prev) {
+              if (prev - cur > 60) {
+                return { error: `${day} trip times decrease at stop ${stops[i].id} (${prev}s -> ${cur}s); column block is misaligned` };
+              }
+              cur = prev;
+            }
+            prev = cur;
+            s.push(cur);
+          }
+          trips.push({ s });
+        }
+      }
+
+      // Sort trips by their first non-null time
+      trips.sort((a, b) => a.s.find((v) => v !== null) - b.s.find((v) => v !== null));
+      dir.dayTrips[day] = trips;
+
+      // Keep existing schedules[day] derived from dayTrips (trips where s[0] !== null)
+      const departures = trips.filter((t) => t.s[0] !== null).map((t) => toTimeStr(t.s[0]));
       if (!departures.length) { notes.push(`${seasonName} L${line.lineId} d${dirKey} ${day}: no departures`); continue; }
 
       const stopMap = {};
@@ -260,7 +331,7 @@ function buildSeason(html, line, seasonName, notes) {
         if (i === 0) { stopMap[String(stop.id)] = 0; return; }
         const target = cols[pad2(offset + i)] && cols[pad2(offset + i)][slot];
         if (!target) return;
-        const off = medianOffsetSec(originCol, target);
+        const off = medianOffsetSec(originCol || [], target);
         if (off !== null) stopMap[String(stop.id)] = off;
       });
 
@@ -294,7 +365,11 @@ function buildSeason(html, line, seasonName, notes) {
       // Keep the historical alias keys populated; the loader still falls back
       // to them and the data file has always carried both.
       dir.schedules[CATALAN[day]] = departures.slice();
-      if (day === 'sunday') dir.schedules.festius = departures.slice();
+      dir.dayTrips[CATALAN[day]] = trips;
+      if (day === 'sunday') {
+        dir.schedules.festius = departures.slice();
+        dir.dayTrips.festius = trips;
+      }
     }
 
     if (!dir.dayTravelSec.weekday) {
@@ -305,6 +380,7 @@ function buildSeason(html, line, seasonName, notes) {
     dir.totalTravelMinutes = Math.round(dir.totalTravelSec / 60);
     dir._estimatedStops = [];
     dir._season = seasonName;
+    dir._tripsSource = 'maresme.net per-trip grid';
     out[dirKey] = dir;
   }
   return { data: out, order: blocks.order };
@@ -314,7 +390,7 @@ function buildSeason(html, line, seasonName, notes) {
 // Diff mode
 // ---------------------------------------------------------------------------
 
-/** Which season each grid currently shipped in the file actually came from. */
+/** Which season each grid currently shipped in the file actually came from (legacy). */
 function diffAgainstCurrent(current, seasons) {
   const rows = [];
   for (let L = 1; L <= 8; L++) {
@@ -337,11 +413,76 @@ function diffAgainstCurrent(current, seasons) {
   return rows;
 }
 
+/** Compares freshly scraped grids against mataro_schedules.seasons.json. */
+function diffAgainstShipped(shippedSeasons, freshSeasons) {
+  const differences = [];
+  for (const season of ['winter', 'summer']) {
+    const shippedSeason = shippedSeasons[season] || {};
+    const freshSeason = freshSeasons[season] || {};
+    for (let L = 1; L <= 8; L++) {
+      const shippedLine = shippedSeason[String(L)];
+      const freshLine = freshSeason[String(L)];
+      if (!shippedLine || !freshLine) {
+        differences.push({ season, line: L, field: 'line', diff: 'Missing line' });
+        continue;
+      }
+      for (const dirKey of realDirectionKeys(freshLine)) {
+        const sDir = (shippedLine.directions || {})[dirKey];
+        const fDir = (freshLine.directions || {})[dirKey];
+        if (!sDir || !fDir) {
+          differences.push({ season, line: L, dir: dirKey, field: 'direction', diff: 'Missing direction' });
+          continue;
+        }
+        for (const day of ['weekday', 'saturday', 'sunday']) {
+          // 1. schedules
+          const sSch = (sDir.schedules || {})[day] || [];
+          const fSch = (fDir.schedules || {})[day] || [];
+          if (sSch.length !== fSch.length || !sSch.every((t, i) => t === fSch[i])) {
+            differences.push({ season, line: L, dir: dirKey, day, field: 'schedules', diff: `departures: ${sSch.length} shipped vs ${fSch.length} fresh` });
+          }
+          // 2. dayStopTravelSec
+          const sMap = (sDir.dayStopTravelSec || {})[day] || {};
+          const fMap = (fDir.dayStopTravelSec || {})[day] || {};
+          const sKeys = Object.keys(sMap).sort();
+          const fKeys = Object.keys(fMap).sort();
+          if (sKeys.length !== fKeys.length || !sKeys.every((k, i) => k === fKeys[i] && sMap[k] === fMap[k])) {
+            differences.push({ season, line: L, dir: dirKey, day, field: 'dayStopTravelSec', diff: 'stop travel offsets differ' });
+          }
+          // 3. dayTrips
+          const sTrips = (sDir.dayTrips || {})[day] || [];
+          const fTrips = (fDir.dayTrips || {})[day] || [];
+          if (sTrips.length !== fTrips.length) {
+            differences.push({ season, line: L, dir: dirKey, day, field: 'dayTrips', diff: `trip count: ${sTrips.length} shipped vs ${fTrips.length} fresh` });
+          } else {
+            let tripDiff = false;
+            for (let t = 0; t < sTrips.length; t++) {
+              const st = sTrips[t].s || [];
+              const ft = fTrips[t].s || [];
+              if (st.length !== ft.length || !st.every((v, i) => v === ft[i])) {
+                tripDiff = true;
+                break;
+              }
+            }
+            if (tripDiff) {
+              differences.push({ season, line: L, dir: dirKey, day, field: 'dayTrips', diff: 'trip stop times differ' });
+            }
+          }
+        }
+      }
+    }
+  }
+  return differences;
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
-(async () => {
+async function main() {
+  const diffOnly = process.argv.includes('--diff');
+  const legacyDiff = process.argv.includes('--diff-legacy');
+  const checkOnly = process.argv.includes('--check');
+
   const current = JSON.parse(fs.readFileSync(CURRENT_PATH, 'utf8'));
   const notes = [];
   const seasons = {};
@@ -369,15 +510,17 @@ function diffAgainstCurrent(current, seasons) {
         // would silently reverse every direction in the app.
         directionIndexOrder: line.directionIndexOrder
       };
-      const counts = built.order.map((k) => `d${k}=${built.data[k].schedules.weekday.length}`).join(' ');
-      console.log(`  ${seasonName} L${L}: ${counts} (order ${built.order.join(',')})`);
+      if (!checkOnly) {
+        const counts = built.order.map((k) => `d${k}=${built.data[k].schedules.weekday.length}`).join(' ');
+        console.log(`  ${seasonName} L${L}: ${counts} (order ${built.order.join(',')})`);
+      }
     }
   }
 
-  if (DIFF_ONLY) {
+  if (legacyDiff) {
     const rows = diffAgainstCurrent(current, seasons);
     const bad = rows.filter((r) => r.tag !== 'both' && r.tag !== 'winter');
-    console.log('\n── Which season the SHIPPED file currently holds ──');
+    console.log('\n── Which season the CURRENT file holds (legacy) ──');
     for (const r of rows) {
       const mark = r.tag === 'SUMMER' ? '<< SUMMER' : r.tag === 'NEITHER' ? '<< NEITHER' : '';
       console.log(`  L${r.line} d${r.dir} ${r.day.padEnd(8)} n=${String(r.n).padStart(3)} ${r.tag}${mark}`);
@@ -385,6 +528,44 @@ function diffAgainstCurrent(current, seasons) {
     const t = rows.reduce((a, r) => (a[r.tag] = (a[r.tag] || 0) + 1, a), {});
     console.log(`\n  tally: ${JSON.stringify(t)}`);
     console.log(`  grids that are NOT the winter grid: ${bad.length} of ${rows.length}`);
+    if (notes.length) {
+      console.log('\n── Warnings ──');
+      for (const w of notes.slice(0, 40)) console.log('  ' + w);
+    }
+    return;
+  }
+
+  if (checkOnly || diffOnly) {
+    if (!fs.existsSync(OUTPUT_PATH)) {
+      if (checkOnly) {
+        console.log(JSON.stringify({ drift: true, checkedAt: new Date().toISOString(), differences: ['OUTPUT_PATH does not exist'] }));
+        process.exit(2);
+      }
+      console.error(`✗ Shipped file ${OUTPUT_PATH} does not exist.`);
+      process.exit(1);
+    }
+    const shipped = JSON.parse(fs.readFileSync(OUTPUT_PATH, 'utf8'));
+    const differences = diffAgainstShipped(shipped.seasons, seasons);
+
+    if (checkOnly) {
+      console.log(JSON.stringify({
+        drift: differences.length > 0,
+        checkedAt: new Date().toISOString(),
+        differences
+      }));
+      process.exit(differences.length > 0 ? 2 : 0);
+    }
+
+    // diffOnly
+    console.log('\n── Diff against mataro_schedules.seasons.json ──');
+    if (differences.length === 0) {
+      console.log('✓ No drift detected: maresme.net matches mataro_schedules.seasons.json identically.');
+    } else {
+      console.log(`Found ${differences.length} difference(s):`);
+      for (const d of differences) {
+        console.log(`  ${d.season} L${d.line} d${d.dir || ''} ${d.day || ''} [${d.field}]: ${d.diff}`);
+      }
+    }
     if (notes.length) {
       console.log('\n── Warnings ──');
       for (const w of notes.slice(0, 40)) console.log('  ' + w);
@@ -401,6 +582,7 @@ function diffAgainstCurrent(current, seasons) {
       validUntil: null,
       notes: [
         'Each season holds a complete grid. The loader picks one via seasonCalendar.',
+        'dayTrips stores the full published trip matrix per day type. Every displayed/planned timetable time comes from here.',
         'Cumulative stop offsets are median deltas between adjacent published columns, so they are authoritative rather than calibrated.',
         'Weekend grids are identical in both seasons on this operator, which is recorded rather than assumed.',
         '_estimatedStops is empty: every offset here comes from a published time.'
@@ -409,16 +591,23 @@ function diffAgainstCurrent(current, seasons) {
     seasons
   };
 
-
   if (!fs.existsSync(BACKUP_PATH)) fs.copyFileSync(CURRENT_PATH, BACKUP_PATH);
-  fs.writeFileSync(OUTPUT_PATH, JSON.stringify(payload, null, 2) + '\n');
+  fs.writeFileSync(OUTPUT_PATH, formatJsonWithCompactArrays(payload) + '\n');
   console.log(`\n✓ Wrote ${path.relative(process.cwd(), OUTPUT_PATH)}`);
   console.log(`  backup: ${path.relative(process.cwd(), BACKUP_PATH)}`);
   if (notes.length) {
     console.log(`\n── ${notes.length} note(s) ──`);
     for (const w of notes.slice(0, 40)) console.log('  ' + w);
   }
-})().catch((err) => {
-  console.error('scrape failed:', err.message);
-  process.exit(1);
-});
+}
+
+if (require.main === module) {
+  main().catch((err) => { console.error('scrape failed:', err.message); process.exit(1); });
+}
+
+module.exports = {
+  fetchPage, parseSlotArrays, parseColumnNames, parseFirstOriginName, resolveBlocks,
+  buildSeason, medianOffsetSec, toSec, isTime, pad2, normName, realDirectionKeys,
+  diffAgainstShipped, OUTPUT_PATH,
+  SEASONS, DAY_KEYS
+};

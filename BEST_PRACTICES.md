@@ -1,5 +1,7 @@
 # Arribo! Architecture & Development Best Practices Guide
 
+> Historical document — may not match the current code. See README.md, AGENTS.md, OPERATIONS.md.
+
 > **Official standard for developers and AI agents working on the BadAMBBusTracker / Arribo! platform.**
 
 ---

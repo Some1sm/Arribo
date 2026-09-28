@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="/css/style.css?v=6.6.7">
+  <link rel="stylesheet" href="/css/style.css?v=9.4.0">
 </head>
 <body class="observatori-page-body observatori-page">
 
@@ -133,15 +133,34 @@
           <span class="tab-text-compact">Incidents</span>
           <span class="tab-badge-alert">&ge;5m</span>
         </button>
+        <button type="button" class="line-filter-tab monthly-tab" id="btn-observatori-monthly" data-tab="monthly" role="tab" aria-selected="false" title="Informe mensual oficial de puntualitat per a l'Ajuntament de Mataró">
+          <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+          </svg>
+          <span class="tab-text-full">Informe Mensual</span>
+          <span class="tab-text-compact">Mensual</span>
+        </button>
       </div>
 
-      <a href="/api/analytics/export/csv" class="btn-secondary btn-csv-export" download title="Descarregar fitxer CSV complet per a anàlisi amb Excel o fulls de càlcul">
+      <a href="/api/analytics/export/visits.csv" class="btn-secondary btn-csv-export" download title="Descarregar fitxer CSV de passos per parada consolidats">
         <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
           <polyline points="7 10 12 15 17 10"></polyline>
           <line x1="12" y1="15" x2="12" y2="3"></line>
         </svg>
-        <span>Exportar CSV</span>
+        <span>CSV Passos</span>
+      </a>
+      <a href="/api/analytics/export/csv" class="btn-secondary btn-csv-export" download title="Descarregar fitxer CSV complet de mostres per a anàlisi detallada">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+        <span>CSV Mostres</span>
       </a>
     </div>
 
@@ -151,11 +170,76 @@
       <input type="text" id="journalism-search-input" class="line-picker-search-input" placeholder="Cerca per línia (ex: L1, L2, L3, 5, 8), parada o empresa..." autocomplete="off">
     </div>
 
+    <!-- Collapsible Methodology Section (Plan 6.7) -->
+    <details class="observatori-methodology-card" id="observatori-methodology-details" style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; margin-bottom:1.5rem; overflow:hidden;">
+      <summary style="padding:0.85rem 1.2rem; font-weight:600; cursor:pointer; display:flex; align-items:center; justify-content:space-between; user-select:none; color:var(--text-primary); font-size:0.9rem;">
+        <span style="display:flex; align-items:center; gap:0.5rem;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          <strong>Metodologia i Criteris de Càlcul de l'Observatori</strong>
+        </span>
+        <span class="methodology-arrow" style="font-size:0.8rem; color:var(--brand-primary); font-weight:500;">Desplegar ▾</span>
+      </summary>
+      <div style="padding:0.25rem 1.2rem 1.2rem; font-size:0.82rem; line-height:1.6; color:var(--text-secondary); border-top:1px solid var(--border-subtle);">
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:1.25rem; margin-top:1rem;">
+          <div>
+            <h5 style="color:var(--text-primary); margin-bottom:0.35rem; font-size:0.86rem;">📡 Font de dades i telemetria</h5>
+            <p style="margin:0;">Les dades provenen del canal oficial de telemetria en temps real (SIRI) del servei de Mataró Bus Urbà ofert per Avanza. Arribo! sondeja la posició i el retard de cada autobús cada 20 segons de forma ininterrompuda.</p>
+          </div>
+          <div>
+            <h5 style="color:var(--text-primary); margin-bottom:0.35rem; font-size:0.86rem;">📍 Unitat d'anàlisi: Passos per parada</h5>
+            <p style="margin:0;">La unitat d'anàlisi és el <em>pas per parada</em> (un vehicle donant servei a una parada concreta). Les múltiples observacions consecutives d'un mateix autobús mentre s'aproxima o fa parada es consoliden en un únic pas, evitant que una cua o retenció multipliqui artificialment les mostres.</p>
+          </div>
+          <div>
+            <h5 style="color:var(--text-primary); margin-bottom:0.35rem; font-size:0.86rem;">⏱️ Llindars de puntualitat oficials</h5>
+            <ul style="margin:0; padding-left:1.1rem;">
+              <li><strong>Puntual:</strong> retard entre <strong>-1 i +3 minuts</strong>.</li>
+              <li><strong>Avançat:</strong> més d'1 minut abans de l'horari (<strong>&lt; -1 min</strong>). Un bus que passa abans d'hora no és puntual perquè qui arriba a l'horari fixat el perd.</li>
+              <li><strong>Amb retard:</strong> superior a 3 minuts (<strong>&gt; 3 min</strong>).</li>
+              <li><strong>Retard sever:</strong> 5 minuts o més (<strong>&ge; 5 min</strong>).</li>
+            </ul>
+          </div>
+          <div>
+            <h5 style="color:var(--text-primary); margin-bottom:0.35rem; font-size:0.86rem;">📅 Horaris i temporada de referència</h5>
+            <p style="margin:0;">Es comparen les arribades contra la graella oficial publicada a <strong>maresme.net</strong> per a cada expedició concreta, aplicant automàticament el calendari de temporada vigent (estiu/hivern) i tipus de dia (feiner, dissabte o festiu).</p>
+          </div>
+          <div>
+            <h5 style="color:var(--text-primary); margin-bottom:0.35rem; font-size:0.86rem;">🎯 Mesurament independent de retards</h5>
+            <p style="margin:0;">A més de recopilar el retard informat per l'operador (SIRI), Arribo! mesura de forma autònoma l'instant real de pas davant la parada i el compara amb la sortida teòrica de l'expedició. S'informa la taxa de concordança (diferència &le; 1 min) entre ambdues mesures.</p>
+          </div>
+        </div>
+        <div style="margin-top:1.1rem; padding:0.65rem 0.9rem; background:rgba(255,255,255,0.03); border-radius:8px; font-size:0.76rem; color:var(--text-muted);">
+          <strong>Limitacions conegudes:</strong> Poden existir llacunes si el canal de l'operador pateix talls de servei (consultable a l'<a href="/api/health" target="_blank" style="color:var(--brand-primary); text-decoration:none;">estat del sistema</a>). Els autobusos sense emissió de GPS no poden ser mesurats. El retard exposat és l'informat pels sistemes de la companyia operadora.
+        </div>
+      </div>
+    </details>
+
+    <!-- Estat de les dades i telemetria (Plan 9.1) -->
+    <section class="data-health-card" id="data-health-container" aria-labelledby="data-health-title">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem; flex-wrap:wrap; gap:0.5rem;">
+        <div style="display:flex; align-items:center; gap:0.6rem;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--brand-primary);"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          <div>
+            <h3 id="data-health-title" style="margin:0; font-size:1.02rem; font-weight:700; color:var(--text-primary);">Estat de les dades i telemetria</h3>
+            <p style="margin:0; font-size:0.78rem; color:var(--text-secondary);">Supervisió en temps real de la integritat del servei, connectivitat i sincronització.</p>
+          </div>
+        </div>
+        <div id="data-health-timestamp" style="font-size:0.75rem; color:var(--text-muted); font-family:var(--font-mono, monospace);">--:--:--</div>
+      </div>
+      <div id="data-health-grid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:0.85rem;">
+        <div style="text-align:center; padding:1.5rem; color:var(--text-muted); grid-column: 1 / -1;">
+          <span class="loading-spinner-inline"></span> Carregant estat de les dades...
+        </div>
+      </div>
+    </section>
+
     <!-- Termòmetre Infographic Scorecard Container -->
     <div id="journalism-termometre-container" style="display:none; margin-bottom:1.5rem;"></div>
 
     <!-- Incident Deep-Dive Inspector Container -->
     <div id="journalism-incidents-container" style="display:none; margin-bottom:1.5rem;"></div>
+
+    <!-- Monthly Report Container (Plan 9.4) -->
+    <div id="journalism-monthly-container" class="journalism-monthly-section" style="display:none; margin-bottom:1.5rem;"></div>
 
     <!-- Main Dynamic Analytics Container -->
     <div id="journalism-content-container" style="min-height:320px;">
@@ -181,9 +265,9 @@
   </footer>
 
   <!-- Scripts -->
-  <script src="/js/utils.js?v=6.6.7"></script>
-  <script src="/js/storage.js?v=6.6.7"></script>
-  <script src="/js/pwa.js?v=6.6.7"></script>
-  <script src="/js/observatori.js?v=6.6.7"></script>
+  <script src="/js/utils.js?v=9.4.0"></script>
+  <script src="/js/storage.js?v=9.4.0"></script>
+  <script src="/js/pwa.js?v=9.4.0"></script>
+  <script src="/js/observatori.js?v=9.4.0"></script>
 </body>
 </html>

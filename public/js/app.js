@@ -279,6 +279,7 @@ class TransitApp {
       }
 
       // 5. Start Polling & Animation Glider Loop
+      this.checkUpstreamStatus();
       this.startAutoRefresh();
       this.startAnimationLoop();
       this.setupFleetStream();
@@ -1678,6 +1679,22 @@ class TransitApp {
       banner.style.display = 'flex';
     } else {
       banner.style.display = 'none';
+    }
+  }
+
+  renderUpstreamOutageBanner(isOutage) {
+    const banner = document.getElementById('upstream-outage-banner');
+    if (!banner) return;
+    banner.style.display = isOutage ? 'flex' : 'none';
+  }
+
+  async checkUpstreamStatus() {
+    try {
+      const res = await fetch('/api/ready').then(r => r.json());
+      const isOutage = res.status === 'degraded' && (res.fleet?.anomaly === 'no_vehicles_during_service' || res.upstream?.canaryOk === false);
+      this.renderUpstreamOutageBanner(isOutage);
+    } catch {
+      // Ignore network errors
     }
   }
 
@@ -6378,6 +6395,11 @@ class TransitApp {
   applyFleetSnapshot(snapshot) {
     if (!this.isTabVisible) return;
 
+    if (snapshot.anomaly !== undefined || snapshot.upstreamCanary !== undefined) {
+      const isOutage = snapshot.anomaly === 'no_vehicles_during_service' || Boolean(snapshot.upstreamCanary && !snapshot.upstreamCanary.ok);
+      this.renderUpstreamOutageBanner(isOutage);
+    }
+
     // The landing page has no activeLineId, but its network map still wants the
     // live positions — and the stream is already open, so this costs no extra
     // request. The stream is physical-only, so this is a top-up over the ghosts
@@ -6474,6 +6496,7 @@ class TransitApp {
         this.secondsRemaining = effectiveInterval;
         this.updateCountdownLabel();
         this.refreshAllData(false);
+        this.checkUpstreamStatus();
       } else {
         this.updateCountdownLabel();
       }

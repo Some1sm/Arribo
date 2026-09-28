@@ -29,6 +29,24 @@ The tracker distinguishes fresh GPS observations, extrapolated positions based o
 
 Synthetic vehicles (`EST_` IDs or `isGhostVehicle`/`isTheoretical` flags) are excluded from the flight recorder. Telemetry freshness and fallback windows differ between the SIRI client, tracker, and recorder; there is no single universal 90-second cutoff.
 
+## Data sources and trust
+
+Arribo! integrates data from three primary sources with strict integrity rules:
+
+- **SIRI (live):** Real-time vehicle positions and stop arrival predictions provided by Avanza via SIRI SOAP (`sirimataro.avanzagrupo.com/Siri/SiriWS.asmx`) polled every 20 seconds. Coordinates are validated against a strict Mataró bounding box (lat 41.45–41.65, lon 2.30–2.55) to reject invalid or unlocated GPS fixes. Speed and delay measurements remain explicitly nullable (`null` when unknown/unreported) to prevent fake 0 km/h or fake punctual classifications. Anonymous or unstitchable vehicle entities are dropped so phantom vehicles never pollute the fleet or map.
+- **maresme.net (timetable, per trip):** Authoritative published timetables (`https://maresme.net/matarobus/{hivern,estiu}/`). Extracted and calibrated per-trip (`dayTrips`) across winter and summer grids, ensuring intermediate stop passing times and mid-route starts or early terminations precisely match what riders are held to.
+- **Avanza portal (geometry, notices):** Official line geometries, stop coordinates, and service disruption notices scraped from `mataro.avanzagrupo.com`. Uses vendored intermediate TLS certificates to guarantee authenticity without bypassing certificate verification.
+
+### Health and diagnostics fields (`/api/health` and `/api/ready`)
+
+- `status`: Overall service health (`ok`, `degraded` if operating on timetable fallback, or `down`).
+- `schedule.season` / `schedule.seasonSource`: Operational season (`winter` / `summer`) and provenance (`notice` from operator disruption feed or `calendar` window).
+- `schedule.drift`: Daily automated check comparing local timetables against maresme.net (`drift: false` when in sync).
+- `upstream`: Live status of the SIRI SOAP client, including circuit-breaker state (`circuitOpen`), consecutive failures, and upstream SOAP delivery flags.
+- `upstreamCanary`: Background worker probe detecting empty or corrupted SIRI deliveries.
+- `fleetAnomaly`: Discrepancy detection between active observed buses and scheduled trips.
+- `lastObservationAt`: Timestamp of the freshest confirmed physical vehicle GPS fix.
+
 ## Architecture
 
 ```text

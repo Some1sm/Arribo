@@ -26,6 +26,8 @@ function requestedInstant(options, now = Date.now()) {
 }
 
 async function evaluate(candidates, tracker, options = {}) {
+  const trk = tracker || require('../../mataroTracker');
+  const activeAvisos = Array.isArray(options.avisos) ? options.avisos : (trk?.avisosCache || []);
   const start = requestedInstant(options);
   const horizon = start + 86400000;
   const live = Math.abs(start - Date.now()) < 1200000;
@@ -56,7 +58,10 @@ async function evaluate(candidates, tracker, options = {}) {
     for (const field of ['walkToFirstStop', 'transferWalk', 'walkFromLastStop']) {
       if (!itin[field]) continue;
       const route = await walking.route(itin[field].from, itin[field].to, speed, budget);
-      Object.assign(itin[field], route, { walkingMinutes: Math.ceil(route.durationSeconds / 60) });
+      const isUnder30m = route.distanceMeters < 30;
+      const walkingMinutes = isUnder30m ? 0 : Math.ceil(route.durationSeconds / 60);
+      const durationSeconds = isUnder30m ? 0 : route.durationSeconds;
+      Object.assign(itin[field], route, { durationSeconds, walkingMinutes });
       walkMeters += route.distanceMeters;
     }
     if (walkMeters > maxWalk) continue;
@@ -68,7 +73,8 @@ async function evaluate(candidates, tracker, options = {}) {
       const leg = itin.legs[index];
       if (index) cursor += (itin.transferWalk?.durationSeconds || 0) * 1000;
       const ready = cursor + (index ? 120000 : 60000);
-      const key = `${leg.lineId}/${leg.direction}/${leg.fromStop.id}`;
+      const boardKey = `${leg.lineId}/${leg.direction}/${leg.fromStop.id}`;
+      const schedKey = `${leg.lineId}/${leg.direction}/${leg.fromStop.id}/${leg.toStop.id}`;
       let departures = [];
       // Direction identity (dirId/pathId) is day-independent, so this config is
       // safe to cache without a date. Cumulative offsets are NOT day-independent
@@ -78,46 +84,131 @@ async function evaluate(candidates, tracker, options = {}) {
       if (!configs.has(configKey)) configs.set(configKey, schedules.getDirectionSchedule(leg.lineId, leg.direction));
       const cfg = configs.get(configKey);
       if (live && tracker?.getStopDepartures) {
-        if (!boards.has(key)) boards.set(key, Promise.resolve().then(() => tracker.getStopDepartures(leg.fromStop.id, leg.lineId, leg.direction)).catch(() => null));
-        const board = await boards.get(key);
+        if (!boards.has(boardKey)) boards.set(boardKey, Promise.resolve().then(() => tracker.getStopDepartures(leg.fromStop.id, leg.lineId, leg.direction)).catch(() => null));
+        const board = await boards.get(boardKey);
         departures = (board?.departures || []).filter(dep => {
           const direction = dep.direction;
           return direction == null || [leg.direction, cfg?.dirId, cfg?.pathId].some(value => String(value) === String(direction));
         }).map(dep => ({ at: Date.parse(dep.expectedIso || dep.aimedIso), live: !!dep.isRealTime }));
       }
-      // Origin clock plus cumulative stop offsets, retaining the service date.
-      if (!scheduleBoards.has(key)) {
-        const datedKey = `${startDay.dateStr}/${key}`;
+      // Per-trip stop passing times from published grid (dayTrips), retaining the service date.
+      if (!scheduleBoards.has(schedKey)) {
+        const datedKey = `${startDay.dateStr}/${schedKey}`;
         const existing = datedBoards.get(datedKey);
-        if (existing && existing.schedule === cfg?.departures && existing.offsets === cfg?.stopTravelSecMap) {
-          scheduleBoards.set(key, existing.departures);
+        if (existing && existing.trips === cfg?.trips && existing.offsets === cfg?.stopTravelSecMap) {
+          scheduleBoards.set(schedKey, existing.departures);
         } else {
-        const scheduled = [];
-        for (const day of serviceDays) {
-        const dayType = dayTypeByDate.get(day.dateStr);
-        const schedule = schedules.getDirectionSchedule(leg.lineId, leg.direction, dayType);
-        if (!Number.isFinite(schedule?.stopTravelSecMap?.[leg.fromStop.id])) continue;
-        for (const clock of schedule.departures || []) {
-          const seconds = time.timeStringToSeconds(clock);
-          const serviceDate = new Date(Date.UTC(day.year, day.month - 1, day.day + Math.floor(seconds / 86400)));
-          const originKey = `${serviceDate.toISOString().slice(0, 10)}/${clock}`;
-          if (!originInstants.has(originKey)) originInstants.set(originKey, time.localTimeToUtcDate(serviceDate.getUTCFullYear(), serviceDate.getUTCMonth(), serviceDate.getUTCDate(), Math.floor(seconds / 3600) % 24, Math.floor(seconds / 60) % 60).getTime());
-          while (originInstants.size > 8192) originInstants.delete(originInstants.keys().next().value);
-          const at = originInstants.get(originKey) + schedule.stopTravelSecMap[leg.fromStop.id] * 1000;
-          // A live board takes precedence for matching scheduled departures.
-          // dayType travels with the departure so the ride duration below is
-          // resolved from the same timetable this instant was drawn from.
-          scheduled.push({ at, live: false, dayType });
+          const scheduled = [];
+          for (const day of serviceDays) {
+            const dayType = dayTypeByDate.get(day.dateStr);
+            const schedule = schedules.getDirectionSchedule(leg.lineId, leg.direction, dayType);
+            const stops = schedule?.stops || [];
+            const fromIndex = stops.findIndex(id => String(id) === String(leg.fromStop.id));
+            const toIndex = stops.findIndex(id => String(id) === String(leg.toStop.id));
+
+            if (Array.isArray(schedule?.trips) && schedule.trips.length > 0 && fromIndex >= 0 && toIndex > fromIndex) {
+              // Exact published per-trip stop times
+              for (const trip of schedule.trips) {
+                const fromSec = trip.stopSecs?.[fromIndex];
+                const toSec = trip.stopSecs?.[toIndex];
+                if (fromSec === null || toSec === null || fromSec === undefined || toSec === undefined || toSec < fromSec) {
+                  continue; // Trip does not serve boarding or alighting stop, or terminates early
+                }
+                const serviceDate = new Date(Date.UTC(day.year, day.month - 1, day.day + Math.floor(fromSec / 86400)));
+                const originKey = `${serviceDate.toISOString().slice(0, 10)}/${fromSec}`;
+                if (!originInstants.has(originKey)) {
+                  originInstants.set(
+                    originKey,
+                    time.localTimeToUtcDate(
+                      serviceDate.getUTCFullYear(),
+                      serviceDate.getUTCMonth(),
+                      serviceDate.getUTCDate(),
+                      Math.floor(fromSec / 3600) % 24,
+                      Math.floor((fromSec % 3600) / 60),
+                      fromSec % 60
+                    ).getTime()
+                  );
+                }
+                while (originInstants.size > 8192) originInstants.delete(originInstants.keys().next().value);
+                const at = originInstants.get(originKey);
+                const duration = toSec - fromSec;
+                scheduled.push({ at, live: false, dayType, duration, tripIndex: trip.index });
+              }
+            } else {
+              // Fallback (P) to median profile if trips are unavailable
+              if (!Number.isFinite(schedule?.stopTravelSecMap?.[leg.fromStop.id])) continue;
+              for (const clock of schedule.departures || []) {
+                const seconds = time.timeStringToSeconds(clock);
+                const serviceDate = new Date(Date.UTC(day.year, day.month - 1, day.day + Math.floor(seconds / 86400)));
+                const originKey = `${serviceDate.toISOString().slice(0, 10)}/${clock}`;
+                if (!originInstants.has(originKey)) {
+                  originInstants.set(
+                    originKey,
+                    time.localTimeToUtcDate(
+                      serviceDate.getUTCFullYear(),
+                      serviceDate.getUTCMonth(),
+                      serviceDate.getUTCDate(),
+                      Math.floor(seconds / 3600) % 24,
+                      Math.floor(seconds / 60) % 60
+                    ).getTime()
+                  );
+                }
+                while (originInstants.size > 8192) originInstants.delete(originInstants.keys().next().value);
+                const at = originInstants.get(originKey) + schedule.stopTravelSecMap[leg.fromStop.id] * 1000;
+                scheduled.push({ at, live: false, dayType });
+              }
+            }
+          }
+          scheduleBoards.set(schedKey, scheduled);
+          datedBoards.set(datedKey, { departures: scheduled, trips: cfg?.trips, offsets: cfg?.stopTravelSecMap });
+          if (datedBoards.size > 512) datedBoards.delete(datedBoards.keys().next().value);
         }
       }
-        scheduleBoards.set(key, scheduled);
-        datedBoards.set(datedKey, { departures: scheduled, schedule: cfg?.departures, offsets: cfg?.stopTravelSecMap });
-        if (datedBoards.size > 512) datedBoards.delete(datedBoards.keys().next().value);
-        }
-      }
-      const scheduled = scheduleBoards.get(key);
+      const scheduled = scheduleBoards.get(schedKey) || [];
       departures.push(...scheduled.filter(dep => !departures.some(observation => Math.abs(observation.at - dep.at) < 60000)));
-      const departure = departures.filter(dep => Number.isFinite(dep.at) && dep.at >= ready && dep.at <= horizon).sort((a, b) => a.at - b.at)[0];
+
+      // Filter departures against stop cancellations for this line and direction
+      const legLineSched = schedules.getLineSchedule(leg.lineId);
+      const legDirKey = schedules.resolveDirectionKey(legLineSched, leg.direction);
+
+      const candidateDepartures = departures.filter(dep => {
+        if (!Number.isFinite(dep.at) || dep.at < ready || dep.at > horizon) return false;
+
+        if (activeAvisos.length > 0 && trk && typeof trk.getStopCancellations === 'function') {
+          const depDayType = dep.dayType || tripMatcher.resolveDayType(dep.at).dayType;
+          const dayCfg = schedules.getDirectionSchedule(leg.lineId, leg.direction, depDayType);
+          const dayOffsets = dayCfg?.stopTravelSecMap;
+          const fromOffset = dayOffsets?.[leg.fromStop.id];
+          const toOffset = dayOffsets?.[leg.toStop.id];
+          const hasOffsets = Number.isFinite(fromOffset) && Number.isFinite(toOffset) && toOffset > fromOffset;
+          const hasTripDuration = Number.isFinite(dep.duration);
+          const estDuration = hasTripDuration ? dep.duration : (hasOffsets ? toOffset - fromOffset : Math.max(180, (leg.durationMinutes || 3) * 60));
+
+          // Boarding stop cancellation check at dep.at
+          const boardDate = new Date(dep.at);
+          const boardCanc = trk.getStopCancellations(leg.lineId, activeAvisos, boardDate);
+          if (boardCanc && boardCanc.cancellations && boardCanc.cancellations.some(c =>
+            String(c.stopId) === String(leg.fromStop.id) &&
+            (c.dirKey == null || String(c.dirKey) === String(legDirKey))
+          )) {
+            return false;
+          }
+
+          // Alighting stop cancellation check at dep.at + estDuration * 1000
+          const alightDate = new Date(dep.at + estDuration * 1000);
+          const alightCanc = trk.getStopCancellations(leg.lineId, activeAvisos, alightDate);
+          if (alightCanc && alightCanc.cancellations && alightCanc.cancellations.some(c =>
+            String(c.stopId) === String(leg.toStop.id) &&
+            (c.dirKey == null || String(c.dirKey) === String(legDirKey))
+          )) {
+            return false;
+          }
+        }
+
+        return true;
+      });
+
+      const departure = candidateDepartures.sort((a, b) => a.at - b.at)[0];
       if (!departure) { feasible = false; break; }
       // Ride duration comes from the timetable of the day this bus departs on.
       // Weekday offsets applied to a Sunday or holiday departure understate the
@@ -131,24 +222,17 @@ async function evaluate(candidates, tracker, options = {}) {
       // August and public holidays where a hardcoded weekday grid would not.
       const depDayType = departure.dayType || tripMatcher.resolveDayType(departure.at).dayType;
       const dayCfg = schedules.getDirectionSchedule(leg.lineId, leg.direction, depDayType);
+      // Fallback median offset map for live departures or lines without per-trip grid
       const dayOffsets = dayCfg?.stopTravelSecMap;
       const fromOffset = dayOffsets?.[leg.fromStop.id];
       const toOffset = dayOffsets?.[leg.toStop.id];
-      // A stop whose offset was repaired rather than calibrated is an estimate.
-      // Almost every direction's terminus is one.
-      //
-      // The estimate is still the best number available, so it is USED for the
-      // arrival time - discarding a calibrated offset for the neighbouring stop
-      // and substituting the router's guess would make the answer worse, not
-      // more honest. What the estimate must not do is make the leg look
-      // authoritative, so it caps how the leg is LABELLED, separately from what
-      // value it is computed from.
       const estimated = dayCfg?.estimatedStopIds || [];
       const touchesEstimate = estimated.includes(String(leg.fromStop.id))
         || estimated.includes(String(leg.toStop.id));
       const hasOffsets = Number.isFinite(fromOffset) && Number.isFinite(toOffset) && toOffset > fromOffset;
-      const exact = hasOffsets && !touchesEstimate;
-      const duration = hasOffsets ? toOffset - fromOffset : Math.max(180, (leg.durationMinutes || 3) * 60);
+      const hasTripDuration = Number.isFinite(departure.duration);
+      const exact = (hasTripDuration || hasOffsets) && !touchesEstimate;
+      const duration = hasTripDuration ? departure.duration : (hasOffsets ? toOffset - fromOffset : Math.max(180, (leg.durationMinutes || 3) * 60));
       const wait = (departure.at - cursor) / 1000;
       waitSeconds += wait;
       rideSeconds += duration;
@@ -167,9 +251,32 @@ async function evaluate(candidates, tracker, options = {}) {
     cursor += (itin.walkFromLastStop?.durationSeconds || 0) * 1000;
     if (cursor > horizon) continue;
     const walkSeconds = ['walkToFirstStop', 'transferWalk', 'walkFromLastStop'].reduce((sum, field) => sum + (itin[field]?.durationSeconds || 0), 0);
+    const itineraryNotices = new Map();
+    if (activeAvisos.length > 0 && trk && typeof trk.getStopCancellations === 'function') {
+      for (const leg of itin.legs) {
+        const legBoardTs = Date.parse(leg.boardAt);
+        const legAlightTs = Date.parse(leg.alightAt);
+        const legMidDate = new Date((legBoardTs + legAlightTs) / 2);
+        const cancData = trk.getStopCancellations(leg.lineId, activeAvisos, legMidDate);
+        if (cancData) {
+          for (const item of [...(cancData.cancellations || []), ...(cancData.provisional || [])]) {
+            if (!itineraryNotices.has(item.noticeId)) {
+              const matchedAviso = activeAvisos.find(a => a.id === item.noticeId);
+              itineraryNotices.set(item.noticeId, {
+                id: item.noticeId,
+                title: item.title || matchedAviso?.title || '',
+                url: matchedAviso?.url || 'https://mataro.avanzagrupo.com/ca/avisos'
+              });
+            }
+          }
+        }
+      }
+    }
     Object.assign(itin, {
       id: itin.legs.map(leg => `${leg.lineId}:${leg.direction}:${leg.fromStop.id}:${leg.toStop.id}`).join('|'),
       requestedDepartureAt: new Date(start).toISOString(), arrivalAt: new Date(cursor).toISOString(),
+      notices: Array.from(itineraryNotices.values()),
+      timesBasis: 'published_trip',
       totalDurationMinutes: Math.ceil((cursor - start) / 60000), totalDurationMins: Math.ceil((cursor - start) / 60000),
       walkingMinutes: Math.ceil(walkSeconds / 60), walkingDistanceMeters: walkMeters, rideMinutes: rideSeconds / 60, waitMinutes: Math.ceil(waitSeconds / 60),
       departureTime: itin.legs[0].departureTime, nextDepartureMinutes: itin.legs[0].nextDepartureMinutes, nextDepartureMins: itin.legs[0].nextDepartureMinutes,

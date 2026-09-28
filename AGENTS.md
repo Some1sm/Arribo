@@ -113,6 +113,11 @@ setup and contracts; verify disagreements against source, not fixed source-line 
 - Times come from maresme.net (the grid riders are held to); stop geometry, coordinates
   and distances come from the Avanza scrape. `scripts/scrape_maresme_timetables.js --diff`
   is the audit for grid provenance.
+- **A displayed or planned timetable time is the published time of that trip at that stop (`dayTrips`).**
+  The median profile (`dayStopTravelSec`) is for position interpolation only. Call sites
+  displaying or planning arrivals must query per-trip times (`getDeparturesForStop`,
+  `getTripsServingStop`, `getTripStopTime`) rather than adding median cumulative offsets to
+  origin departure times. See `test/timetable_per_trip_test.js`.
 - **A live bus may hide its own trip on the board, never a neighbour's.**
   `compileStopDepartures` merges real vehicles into the published grid, and that
   merge is a deletion mechanism, so its scope must stay tight. When a bus names
@@ -295,6 +300,7 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   copy and the fix appears to do nothing in the browser. The `CACHE_NAME` bump is what
   evicts the old shell on activate; `VERSION` alone does not. When a CSS/JS change
   mysteriously has no effect locally, check for a precached shell before re-debugging.
+- **Observatori rates are per stop visit (one bus, one stop), use `src/core/punctuality.js`, and report early running separately. Raw sample counts are only ever labelled as samples.** Consolidated stop visits (`stop_visits`) eliminate dwell/congestion sampling bias. The platform punctuality contract is: early (< -1 min), on-time (-1..+3 min), late (> 3 min), severe late (>= 5 min). Delays <= -15 min are sentinels, not genuine time-travel.
 - The planner is a full-bleed app shell: `body.planner-page-body .header-container`
   spans the viewport while the map and Observatori pages keep a centred
   `max-width` container. Do not unify these — the centred layout is correct for the

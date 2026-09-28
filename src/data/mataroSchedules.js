@@ -284,6 +284,11 @@ function getDirectionSchedule(lineId, direction = '0', dayType = 'weekday', seas
   const normDay = normalizeDayType(dayType);
   const catDay = toCatalanDayType(dayType);
   const departures = dirObj.schedules[normDay] || dirObj.schedules[catDay] || [];
+  const rawTrips = (dirObj.dayTrips && (dirObj.dayTrips[normDay] || dirObj.dayTrips[catDay])) || [];
+  const trips = rawTrips.map((t, idx) => ({
+    index: idx,
+    stopSecs: Array.isArray(t.s) ? t.s.slice() : []
+  }));
   const afternoonOnly = Boolean(dirObj.afternoonOnly?.[normDay]);
   const totalTravelSec = (dirObj.dayTravelSec && dirObj.dayTravelSec[normDay]) || dirObj.totalTravelSec || 0;
   const totalTravelMinutes = Math.round(totalTravelSec / 60) || dirObj.totalTravelMinutes || 0;
@@ -301,6 +306,7 @@ function getDirectionSchedule(lineId, direction = '0', dayType = 'weekday', seas
     originStop: dirObj.originStop,
     terminalStop: dirObj.terminalStop,
     departures: departures,
+    trips: trips,
     stops: dirObj.stops || [],
     stopTravelSecMap: stopTravelSecMap,
     // Stops whose cumulative offset is a repaired estimate rather than a
@@ -321,6 +327,106 @@ function getDirectionSchedule(lineId, direction = '0', dayType = 'weekday', seas
 }
 
 /**
+ * Returns all published trips that serve a specific stop, with their scheduled times.
+ *
+ * @param {string|number} lineId
+ * @param {string|number} [direction='0']
+ * @param {string|number} stopId
+ * @param {string} [dayType='weekday']
+ * @param {string} [season]
+ * @returns {Array<{ tripIndex: number, originSec: number|null, stopSec: number, firstStopIndex: number, lastStopIndex: number }>}
+ */
+function getTripsServingStop(lineId, direction = '0', stopId, dayType = 'weekday', season) {
+  const dirSched = getDirectionSchedule(lineId, direction, dayType, season);
+  if (!dirSched || !Array.isArray(dirSched.stops)) return [];
+
+  const sId = String(stopId);
+  const stopIndex = dirSched.stops.findIndex(s => String(s.id) === sId);
+  if (stopIndex < 0) return [];
+
+  if (Array.isArray(dirSched.trips) && dirSched.trips.length > 0) {
+    const results = [];
+    for (const t of dirSched.trips) {
+      const stopSec = t.stopSecs[stopIndex];
+      if (stopSec === null || stopSec === undefined || !Number.isFinite(stopSec)) continue;
+
+      let firstStopIndex = -1;
+      let lastStopIndex = -1;
+      for (let i = 0; i < t.stopSecs.length; i++) {
+        if (t.stopSecs[i] !== null && t.stopSecs[i] !== undefined) {
+          if (firstStopIndex === -1) firstStopIndex = i;
+          lastStopIndex = i;
+        }
+      }
+
+      const originSec = (t.stopSecs[0] !== null && t.stopSecs[0] !== undefined) ? t.stopSecs[0] : null;
+      results.push({
+        tripIndex: t.index,
+        originSec,
+        stopSec,
+        firstStopIndex,
+        lastStopIndex
+      });
+    }
+    return results.sort((a, b) => a.stopSec - b.stopSec || a.tripIndex - b.tripIndex);
+  }
+
+  // Fallback for legacy data without dayTrips
+  const travelSec = (dirSched.stopTravelSecMap && dirSched.stopTravelSecMap[sId]) ?? 0;
+  return (dirSched.departures || []).map((dep, idx) => {
+    const originSec = timeStringToSec(dep);
+    return {
+      tripIndex: idx,
+      originSec,
+      stopSec: originSec + travelSec,
+      firstStopIndex: 0,
+      lastStopIndex: dirSched.stops.length - 1
+    };
+  }).sort((a, b) => a.stopSec - b.stopSec);
+}
+
+/**
+ * Looks up the published passing time in seconds-of-day for a specific trip at a stop.
+ * Trip is identified by its origin departure time ('HH:MM').
+ *
+ * @param {string|number} lineId
+ * @param {string|number} [direction='0']
+ * @param {string} originDep - 'HH:MM' departure time at route origin
+ * @param {string|number} stopId
+ * @param {string} [dayType='weekday']
+ * @param {string} [season]
+ * @returns {number|null} seconds-of-day or null if trip does not exist or does not serve the stop
+ */
+function getTripStopTime(lineId, direction = '0', originDep, stopId, dayType = 'weekday', season) {
+  const dirSched = getDirectionSchedule(lineId, direction, dayType, season);
+  if (!dirSched || !Array.isArray(dirSched.stops)) return null;
+
+  const sId = String(stopId);
+  const stopIndex = dirSched.stops.findIndex(s => String(s.id) === sId);
+  if (stopIndex < 0) return null;
+
+  const targetOriginSec = timeStringToSec(originDep);
+
+  if (Array.isArray(dirSched.trips) && dirSched.trips.length > 0) {
+    const trip = dirSched.trips.find(t => {
+      if (t.stopSecs[0] === null || t.stopSecs[0] === undefined) return false;
+      return ((t.stopSecs[0] % 86400) + 86400) % 86400 === targetOriginSec;
+    });
+    if (!trip) return null;
+    const stopSec = trip.stopSecs[stopIndex];
+    return (stopSec !== null && stopSec !== undefined && Number.isFinite(stopSec)) ? stopSec : null;
+  }
+
+  // Fallback for legacy
+  if (!dirSched.departures.includes(originDep)) return null;
+  const travelSec = (dirSched.stopTravelSecMap && dirSched.stopTravelSecMap[sId]) ?? null;
+  return travelSec !== null ? targetOriginSec + travelSec : null;
+}
+
+/**
+ * Median profile across all trips. For position interpolation only; never use it
+ * to display or plan a time — use getTripStopTime / getTripsServingStop.
+ *
  * Looks up the cumulative travel time in seconds from route origin to a target stop.
  * 
  * @param {string|number} lineId 
@@ -357,34 +463,25 @@ function hasStopInSchedule(lineId, direction = '0', stopId, dayType = 'weekday',
 }
 
 /**
- * Computes passing timetable departure times at a specific stop by adding stop travel time
- * to origin departures.
+ * Computes passing timetable departure times at a specific stop directly from
+ * published per-trip stop times (dayTrips).
  *
- * Returns an empty array when the stop is not part of this direction. A missing
- * stop is a missing value, not the origin: returning the origin departures made
- * an unknown stop look like a bus standing at the terminus.
+ * Returns an empty array when the stop is not part of this direction.
  *
  * @param {string|number} lineId
  * @param {string|number} [direction='0']
  * @param {string|number} stopId
  * @param {string} [dayType='weekday']
+ * @param {string} [season]
  * @returns {string[]} Array of passing times in 'HH:MM' format; empty if unresolvable
  */
 function getDeparturesForStop(lineId, direction = '0', stopId, dayType = 'weekday', season) {
-  const dirSched = getDirectionSchedule(lineId, direction, dayType, season);
-  if (!dirSched || !Array.isArray(dirSched.departures)) return [];
-  if (!hasStopInSchedule(lineId, direction, stopId, dayType, season)) return [];
+  const trips = getTripsServingStop(lineId, direction, stopId, dayType, season);
+  if (!trips.length) return [];
 
-  const travelSec = getStopTravelTime(lineId, direction, stopId, dayType, season);
-  // 0 is legitimate here: the stop was just confirmed to be in this direction's
-  // stop list, so this is the origin and its passing times are the departures.
-  if (travelSec === 0) return dirSched.departures.slice();
-
-  return dirSched.departures.map(originTime => {
-    const [hStr, mStr] = originTime.split(':');
-    const baseSec = parseInt(hStr, 10) * 3600 + parseInt(mStr, 10) * 60;
-    const passSec = baseSec + travelSec;
-    const passH = Math.floor(passSec / 3600) % 24;
+  return trips.map(t => {
+    const passSec = ((t.stopSec % 86400) + 86400) % 86400;
+    const passH = Math.floor(passSec / 3600);
     const passM = Math.floor((passSec % 3600) / 60);
     return `${String(passH).padStart(2, '0')}:${String(passM).padStart(2, '0')}`;
   });
@@ -519,10 +616,72 @@ module.exports = {
   getDirectionSchedule,
   hasStopInSchedule,
   getStopTravelTime,
+  getTripsServingStop,
+  getTripStopTime,
   getDeparturesForStop,
   getAllLines,
-  getScheduledFleetRequirement
+  getScheduledFleetRequirement,
+  timeStringToSec,
+  getSeasonOutlook: (at) => seasonCalendar.getSeasonOutlook(at),
+  getServiceWindow
 };
+
+/**
+ * Calculates the revenue service window for a line on a given dayType:
+ * from (first departure of the day − 15 min) to (last departure + that trip's duration from dayTrips + 20 min).
+ *
+ * @param {string|number} lineId
+ * @param {string} [dayType='weekday']
+ * @param {string|null} [season=null]
+ * @returns {{ startSec: number, endSec: number } | null}
+ */
+function getServiceWindow(lineId, dayType = 'weekday', season = null) {
+  const lId = String(lineId).replace(/^l/i, '');
+  const sched = getLineSchedule(lId, season);
+  if (!sched || !sched.directions) return null;
+
+  let minOriginSec = Infinity;
+  let maxEndSec = -Infinity;
+
+  for (const dk of Object.keys(sched.directions)) {
+    const dir = sched.directions[dk];
+    const trips = dir.dayTrips?.[dayType] || [];
+    if (trips.length > 0) {
+      for (const t of trips) {
+        const s = t.s || [];
+        let firstSec = null;
+        let lastSec = null;
+        for (let i = 0; i < s.length; i++) {
+          if (s[i] !== null && Number.isFinite(s[i])) {
+            if (firstSec === null) firstSec = s[i];
+            lastSec = s[i];
+          }
+        }
+        if (firstSec !== null && firstSec < minOriginSec) minOriginSec = firstSec;
+        if (lastSec !== null && lastSec > maxEndSec) maxEndSec = lastSec;
+      }
+    } else {
+      // Fallback to departures and median totalTravelSec
+      const deps = dir.schedules?.[dayType] || [];
+      const travelSec = dir.dayStopTravelSec?.[dayType]?.totalTravelSec || 1800;
+      for (const clock of deps) {
+        const sec = timeStringToSec(clock);
+        if (sec < minOriginSec) minOriginSec = sec;
+        const endSec = sec + travelSec;
+        if (endSec > maxEndSec) maxEndSec = endSec;
+      }
+    }
+  }
+
+  if (!Number.isFinite(minOriginSec) || !Number.isFinite(maxEndSec)) {
+    return null;
+  }
+
+  return {
+    startSec: minOriginSec - 15 * 60,
+    endSec: maxEndSec + 20 * 60
+  };
+}
 
 /**
  * The seasonal grid currently in force, with the reason it was chosen.

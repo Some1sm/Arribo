@@ -41,8 +41,12 @@ Additive response fields:
 
 ## Existing OpenRouteService endpoint
 
-Walking routing is **disabled unless ORS_BASE_URL is configured**. There is no silent
-public provider default. Set process environment variables, or Compose `.env`:
+Walking routing is **disabled unless ORS_BASE_URL is configured**. In production environments
+where ORS environment variables are unset, walking calculations fall back to straight-line
+approximate distance (`source: 'approximate'`, `approximate: true`). There is no silent public
+provider default. To enable actual street-network pedestrian routing, configure a self-hosted
+OpenRouteService container (e.g. using the official `openrouteservice/openrouteservice` image) or
+provide an ORS key, setting process environment variables or Compose `.env`:
 
 ```text
 ORS_BASE_URL=https://your-existing-ors-host.example/ors
@@ -89,8 +93,9 @@ service-worker versions together when shell assets change.
 ## Health, logs and shutdown
 
 - `/api/health` remains HTTP-200 liveness and the Docker healthcheck target. It also
-  reports `schedule`: the active timetable season, why it was chosen, and whether the
-  server considers the date covered. The read is in-memory and touches neither a provider
+  reports `schedule`: the active timetable season, why it was chosen, whether the
+  server considers the date covered, and `drift`: `{ drift, checkedAt, differencesCount }`
+  (or null before the first check). The read is in-memory and touches neither a provider
   nor SQLite, so it does not weaken the probe contract.
 - `/api/ready` returns 503 before catalog/worker usability and while stopping,
   otherwise 200 with `ready` or `degraded` status. Fleet fetch age over 60 seconds
@@ -131,6 +136,30 @@ A five-second busy timeout bounds lock waits, not total copy duration.
 node scripts/history_backup.js backup data/transit_history.db /backups/history-2026-09-17.db
 node scripts/history_backup.js verify /backups/history-2026-09-17.db
 node scripts/history_backup.js restore /backups/history-2026-09-17.db /restore-check/history.db
+```
+
+## Stop visits backfill and CSV audit
+
+The historical analytics system measures punctuality per **stop visit** (one vehicle
+serving one stop), consolidating raw 20-second GPS polls. For databases populated
+prior to stop visits tracking, the offline backfill CLI reconstructs `stop_visits`
+records from historical `delay_logs` using SQLite window functions:
+
+```bash
+# Must be executed offline (stop the service or run against a backup copy)
+node scripts/backfill_stop_visits.js data/transit_history.db
+
+# To re-run and overwrite existing backfilled records:
+node scripts/backfill_stop_visits.js data/transit_history.db --force
+```
+
+- **Concurrency protection:** Tries `BEGIN IMMEDIATE` and aborts immediately with a clear error on `SQLITE_BUSY` if the database is active or locked by another process.
+- **Idempotency:** Checks for existing `source = 'backfill'` rows and skips unless `--force` is supplied. Never exposed over HTTP.
+
+To independently verify an exported CSV (samples or visits) against the official methodology:
+
+```bash
+node scripts/audit_observatori_csv.js /path/to/exported.csv
 ```
 
 ## Seasonal timetable checks
@@ -267,6 +296,49 @@ Check task exit status and periodically verify an isolated restore. Nothing is
 scheduled by the app. **Retention defaults to keep everything**: configure your
 backup system explicitly (for example 30 verified daily copies). The CLI does not
 prune old files automatically. Monitor disk space.
+
+## Timetable drift monitoring and refresh procedure
+
+The ingestion worker automatically monitors maresme.net for timetable drift daily at
+04:1x Europe/Madrid without touching the HTTP process or writing files to disk.
+The drift status is published via `/api/health` under `schedule.drift`:
+
+```json
+"schedule": {
+  "season": "winter",
+  "drift": {
+    "drift": false,
+    "checkedAt": "2026-09-28T04:15:00.000Z",
+    "differencesCount": 0
+  }
+}
+```
+
+If `drift.drift` is `true`, the published timetable on maresme.net has changed compared
+to the shipped `src/data/mataro_schedules.seasons.json`. To refresh:
+
+1. Review differences against the published grid:
+   ```bash
+   node scripts/scrape_maresme_timetables.js --diff
+   ```
+2. If differences are legitimate operator updates, scrape and regenerate the seasons dataset:
+   ```bash
+   node scripts/scrape_maresme_timetables.js
+   ```
+3. Run the validation suite to ensure integrity:
+   ```bash
+   npm test
+   ```
+4. Deploy the updated dataset.
+
+### Yearly seasonal upkeep checklist
+
+In June of each year, the operator publishes the summer service window notice (e.g. "HORARIS ESTIU <year>").
+1. Check `/api/health` for `schedule.seasonOutlook`: starting 1 June, a warning (`Horari d'estiu <year> no configurat`) is published if the upcoming summer window is not yet configured.
+2. Read the operator's summer notice from the portal or notice feed to find the exact service dates.
+3. Add the dated window to `SUMMER_WINDOWS` in `src/data/seasonCalendar.js` with its `source` description.
+4. Run `node test/season_provenance_test.js` and `npm test` to verify that both directions and all lines remain internally consistent across seasons.
+5. Deploy the updated configuration.
 
 ## Documentation checks and credentials
 

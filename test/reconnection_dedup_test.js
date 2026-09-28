@@ -39,10 +39,10 @@ async function runReconnectionTests() {
 
   // Test 2: Simulating GPS loss and dead-reckoning on Line 1
   console.log('📌 Test 2: Simulating momentary GPS signal loss (dead-reckoning without ghost spawning)...');
-  mataroTracker.vehicleHistory.clear();
-
   const routes = mataroTracker.routesData['1'] || [];
   const lineDetails = await mataroTracker.getLineDetails('1', 'both');
+  if (flightRecorder.vehicles) flightRecorder.vehicles.clear();
+  mataroTracker.vehicleHistory.clear();
   const now = Date.now();
 
   // Bus 2673 seen 20 seconds ago at the start of route 0

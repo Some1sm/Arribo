@@ -901,6 +901,24 @@ class PlannerPageApp {
               ` : ''}
             </div>
 
+            ${Array.isArray(it.notices) && it.notices.length > 0 ? `
+              <div class="planner-itinerary-notices" style="margin-top:0.75rem;">
+                ${it.notices.map(notice => `
+                  <div class="disruption-banner-card" style="margin-bottom:0.4rem; padding:0.5rem 0.75rem; background:linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(220, 38, 38, 0.1) 100%); border:1px solid rgba(245, 158, 11, 0.35); border-radius:var(--radius-md);">
+                    <span class="disruption-banner-icon" style="font-size:1rem; margin-right:6px;">⚠️</span>
+                    <div class="disruption-banner-content" style="flex:1;">
+                      <strong style="color:#d97706; font-size:0.8rem; font-weight:700;">Avís de servei a la línia</strong>
+                      <span style="font-size:0.75rem; line-height:1.3;">
+                        <a href="${this.esc(notice.url || 'https://mataro.avanzagrupo.com/ca/avisos')}" target="_blank" rel="noopener noreferrer" style="color:inherit; text-decoration:underline; font-weight:600;">
+                          ${this.esc(notice.title)}
+                        </a>
+                      </span>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+            ` : ''}
+
             <!-- Eco-Impact CO2 Savings Badge (clearly indicated as approximate) -->
             <div class="planner-eco-strip" style="display:flex; align-items:center; gap:6px; margin-top:0.75rem; font-size:0.75rem; color:#10b981; background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.2); padding:4px 8px; border-radius:5px;">
               <span>Estalvi aprox. <strong>${this.esc(it.co2Formatted || (it.co2SavedGrams ? (it.co2SavedGrams >= 1000 ? '~' + it.co2SavedKg + ' kg' : '~' + it.co2SavedGrams + ' g') : '~350 g'))}</strong> CO₂ respecte al cotxe</span>

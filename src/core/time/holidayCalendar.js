@@ -9,16 +9,30 @@
  * half the headway, and the matcher returns a confident wrong time because the
  * residual still lands inside its tolerance.
  *
- * Scope: Catalonia regional + national holidays, which is what CTSA applies to
- * the Mataró urban network. Local Mataró-only holidays are not modelled — an
- * unmodelled holiday is reported as unknown by isHoliday(), never as "not a
- * holiday".
+ * Scope: Catalonia regional + national holidays + Mataró local holidays.
+ * Verified dates for covered years are loaded from src/data/holidays.json.
+ * Unmodelled years fall back to anonymous Gregorian computus + fixed dates,
+ * reporting isHolidayKnown() === false.
  *
  * All date work is Europe/Madrid wall-clock and calendar-date based; no
- * timestamps, no host-local getDay().
+ * host-local getDay(), safe across midnight and DST.
  */
 
+'use strict';
+
+const path = require('path');
+const fs = require('fs');
 const calendarEngine = require('./calendarEngine');
+
+let holidaysData = null;
+try {
+  const jsonPath = path.join(__dirname, '..', '..', 'data', 'holidays.json');
+  if (fs.existsSync(jsonPath)) {
+    holidaysData = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+  }
+} catch (e) {
+  console.warn('[HolidayCalendar] Could not load holidays.json:', e.message);
+}
 
 /** Anonymous Gregorian computus. Returns {month, day} 1-based for Easter Sunday. */
 function easterSunday(year) {
@@ -40,8 +54,6 @@ function easterSunday(year) {
 }
 
 function shift({ month, day }, days) {
-  // Days-from-civil style arithmetic via UTC, which is safe here because we
-  // only ever manipulate a calendar date, never a wall-clock instant.
   const ms = Date.UTC(2000, month - 1, day) + days * 86400000;
   const d = new Date(ms);
   return { month: d.getUTCMonth() + 1, day: d.getUTCDate() };
@@ -51,8 +63,8 @@ function ymd(year, month, day) {
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
-/** Fixed-date national + Catalan holidays, plus the Easter-derived ones. */
-function holidayDatesForYear(year) {
+/** Fallback fixed-date national + Catalan holidays, plus the Easter-derived ones. */
+function fallbackHolidayDatesForYear(year) {
   const easter = easterSunday(year);
   const easterMonday = shift(easter, 1);
   const goodFriday = shift(easter, -2);
@@ -64,16 +76,17 @@ function holidayDatesForYear(year) {
     ymd(year, 8, 15),   // Assumpció
     ymd(year, 10, 12),  // Mare de Déu del Pilar
     ymd(year, 11, 1),   // Tots Sants
-    ymd(year, 12, 6),   // Sant Nicolau
+    ymd(year, 12, 6),   // Dia de la Constitució
+    ymd(year, 12, 8),   // La Immaculada
     ymd(year, 12, 25),  // Nadal
     ymd(year, 12, 26),  // Sant Esteve
     // Catalan (Diada Nacional)
     ymd(year, 9, 11),   // Diada Nacional de Catalunya
     ymd(year, 6, 24),   // Sant Joan
     // Easter-derived
-    ymd(year, goodFriday.month, goodFriday.day),   // Divendres Sant
-    ymd(year, easter.month, easter.day),           // Pasqua
-    ymd(year, easterMonday.month, easterMonday.day), // Dilluns de Pasqua
+    ymd(year, goodFriday.month, goodFriday.day),    // Divendres Sant
+    ymd(year, easter.month, easter.day),            // Pasqua
+    ymd(year, easterMonday.month, easterMonday.day) // Dilluns de Pasqua
   ]);
   return dates;
 }
@@ -81,15 +94,38 @@ function holidayDatesForYear(year) {
 const cache = new Map();
 
 function holidaysForYear(year) {
-  if (!cache.has(year)) cache.set(year, holidayDatesForYear(year));
-  return cache.get(year);
+  if (cache.has(year)) return cache.get(year);
+
+  const yearStr = String(year);
+  const yearData = holidaysData?.years?.[yearStr];
+  if (yearData) {
+    const dates = new Set();
+    (yearData.regional || []).forEach(h => dates.add(h.date));
+    (yearData.local || []).forEach(h => dates.add(h.date));
+    cache.set(year, dates);
+    return dates;
+  }
+
+  const fallback = fallbackHolidayDatesForYear(year);
+  cache.set(year, fallback);
+  return fallback;
+}
+
+/**
+ * Whether the holidays for the year of this moment are authoritatively known from data.
+ * @param {Date|number|string} [at=new Date()]
+ * @returns {boolean}
+ */
+function isHolidayKnown(at = new Date()) {
+  const c = calendarEngine.getDateComponents(at, 'Europe/Madrid');
+  if (!c) return false;
+  return Boolean(holidaysData?.years?.[String(c.year)]);
 }
 
 /**
  * Whether a moment falls on a modelled public holiday in Europe/Madrid.
- *
- * @param {number} at Epoch ms
- * @returns {boolean} true only for a holiday this module actually knows about
+ * @param {Date|number|string} at Epoch ms or Date
+ * @returns {boolean} true only for a holiday this module knows about
  */
 function isHoliday(at) {
   const c = calendarEngine.getDateComponents(at, 'Europe/Madrid');
@@ -98,9 +134,23 @@ function isHoliday(at) {
 }
 
 /**
+ * Checks for a service override for the date of `at`.
+ * @param {Date|number|string} at Epoch ms or Date
+ * @returns {string|null} 'weekday'|'saturday'|'sunday'|null
+ */
+function getServiceOverride(at) {
+  const c = calendarEngine.getDateComponents(at, 'Europe/Madrid');
+  if (!c) return null;
+  const dateKey = ymd(c.year, c.month, c.day);
+  const yearData = holidaysData?.years?.[String(c.year)];
+  if (!yearData || !Array.isArray(yearData.serviceOverrides)) return null;
+  const override = yearData.serviceOverrides.find(o => o.date === dateKey);
+  return override ? override.dayType : null;
+}
+
+/**
  * The calendar date of a moment, as YYYY-MM-DD in Europe/Madrid.
- *
- * @param {number} at Epoch ms
+ * @param {Date|number|string} at Epoch ms or Date
  * @returns {string}
  */
 function madridDate(at) {
@@ -108,4 +158,11 @@ function madridDate(at) {
   return ymd(c.year, c.month, c.day);
 }
 
-module.exports = { isHoliday, madridDate, holidaysForYear, easterSunday };
+module.exports = {
+  isHoliday,
+  isHolidayKnown,
+  getServiceOverride,
+  madridDate,
+  holidaysForYear,
+  easterSunday
+};

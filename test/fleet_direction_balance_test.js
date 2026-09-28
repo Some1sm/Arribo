@@ -32,6 +32,10 @@
 
 'use strict';
 
+// Fixtures below are built from Date.now(); pin it inside weekday service
+// hours so the suite does not depend on when it is run.
+require('./helpers/fixed_clock.cjs').install('2026-09-23T08:00:00Z'); // Wed 10:00 Madrid
+
 const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');

@@ -13,7 +13,10 @@ const calendarEngine = require('./src/core/time/calendarEngine');
 const delayEngine = require('./src/core/schedule/delayEngine');
 const mataroFleet = require('./src/data/mataroFleet');
 const mataroSchedules = require('./src/data/mataroSchedules');
+const holidayCalendar = require('./src/core/time/holidayCalendar');
 const streetGeocoder = require('./src/core/geo/streetGeocoder');
+const timeEngine = require('./src/core/time/timeEngine');
+const tripMatcher = require('./src/core/schedule/tripMatcher');
 
 // ==========================================
 // 0. PROCESS-LEVEL RESILIENCE TRAPS
@@ -471,10 +474,86 @@ app.get('/api/health', (req, res) => {
         usingSeasonsFile: v.usingSeasonsFile,
         validUntil: v.validUntil,
         expired: v.expired,
-        source: v.source
+        source: v.source,
+        drift: worker.metrics?.scheduleDrift || null,
+        holidaysKnownForYear: holidayCalendar.isHolidayKnown(now),
+        seasonOutlook: mataroSchedules.getSeasonOutlook(now)
       };
     })(),
     dataReady: worker.isHealthy && reports.every(report => report.fresh)
+  });
+});
+
+// Real-time data health and telemetry integrity panel (cached in-memory values only)
+app.get('/api/data-health', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const now = Date.now();
+  const worker = workerBridge.getStatus();
+  const circuit = worker.metrics?.upstream || null;
+  const canary = worker.metrics?.upstreamCanary || null;
+  const anomaly = worker.metrics?.fleetAnomaly || null;
+  const drift = worker.metrics?.scheduleDrift || null;
+  const reports = reportCacheService.getFreshnessStatus();
+  const validity = mataroSchedules.getScheduleValidity();
+  const outlook = mataroSchedules.getSeasonOutlook(now);
+  const holidaysKnown = holidayCalendar.isHolidayKnown(now);
+
+  const net = timeEngine.getNetworkTime('Europe/Madrid', new Date(now));
+  const nowSec = net.hour * 3600 + net.minute * 60 + net.second;
+  const { dayType } = tripMatcher.resolveDayType(now);
+
+  const allVehicles = flightRecorder.getAllVehicles();
+  const linesFleet = [];
+  let totalLiveGps = 0;
+  let totalScheduled = 0;
+
+  for (let i = 1; i <= 8; i++) {
+    const lineId = String(i);
+    const code = `L${lineId}`;
+    const lineVehicles = allVehicles.filter(v => {
+      const c = (v.lineCode || '').toUpperCase();
+      return c === code || c === lineId;
+    });
+    const liveGpsVehicles = lineVehicles.filter(v => !v.isEstimated && !v.isGhostVehicle && !String(v.vehicleId || '').startsWith('EST_')).length;
+    const scheduledVehicles = mataroSchedules.getScheduledFleetRequirement(lineId, dayType, nowSec);
+    totalLiveGps += liveGpsVehicles;
+    totalScheduled += scheduledVehicles;
+    linesFleet.push({
+      lineId,
+      lineCode: code,
+      liveGpsVehicles,
+      scheduledVehicles
+    });
+  }
+
+  res.json({
+    success: true,
+    timestamp: now,
+    upstreamCanary: canary ? {
+      ok: Boolean(canary.ok),
+      error: canary.error || null,
+      checkedAt: canary.checkedAt || null
+    } : null,
+    lastError: circuit?.lastError || null,
+    fleetAnomaly: anomaly ? {
+      detectedAt: anomaly.detectedAt || null,
+      severity: anomaly.severity || null,
+      message: anomaly.message || null
+    } : null,
+    fleet: {
+      totalLiveGps,
+      totalScheduled,
+      lines: linesFleet
+    },
+    scheduleDrift: drift,
+    season: validity.season ? {
+      season: validity.season,
+      seasonKnown: validity.seasonKnown,
+      seasonSource: validity.seasonSource
+    } : null,
+    seasonOutlook: outlook,
+    holidaysKnownForYear: holidaysKnown,
+    reportFreshness: reports
   });
 });
 
@@ -830,7 +909,8 @@ app.get(['/api/mataro/plan', '/api/plan'], async (req, res) => {
       walkingSpeed: req.query.walkingSpeed,
       maxWalkingDistance: req.query.maxWalkingDistance,
       departureTime: req.query.departureTime || req.query.time || null,
-      departureDate: req.query.departureDate || req.query.date || null
+      departureDate: req.query.departureDate || req.query.date || null,
+      avisos: mataroTracker.avisosCache || []
     });
     res.json(plan);
   } catch (err) {
@@ -886,10 +966,13 @@ app.get('/api/vehicles', (req, res) => {
 
 app.get('/api/fleet/live', (req, res) => {
   const vehicles = flightRecorder.getAllVehicles();
+  const status = workerBridge.getStatus();
   res.json({
     success: true,
     count: vehicles.length,
     timestamp: Date.now(),
+    anomaly: status.metrics?.fleetAnomaly || null,
+    upstreamCanary: status.metrics?.upstreamCanary || null,
     vehicles
   });
 });
@@ -948,12 +1031,54 @@ app.get(['/api/analytics/journalism', '/api/retards/journalism'], async (req, re
   }
 });
 
-app.get(['/api/analytics/export/csv', '/api/retards/export/csv'], async (req, res) => {
-  const hours = Math.max(1, Math.min(168, parseInt(req.query.hours, 10) || 48));
+app.get(['/api/analytics/report/monthly', '/api/retards/report/monthly'], async (req, res) => {
+  const month = typeof req.query.month === 'string' && /^\d{4}-\d{2}$/.test(req.query.month)
+    ? req.query.month
+    : null;
+  const allLines = trackerRegistry.getAllLines();
   try {
-    const csv = await flightRecorder.exportCsv(hours);
+    const report = await workerBridge.historyQuery('getMonthlyReport', { month, allLinesCatalog: allLines }, { timeoutMs: 30000 });
+    if (!report) {
+      return res.status(503).json({ success: false, error: 'Monthly report service unavailable.' });
+    }
+    res.json({ success: true, ...report });
+  } catch (err) {
+    sendInternalError(req, res, err);
+  }
+});
+
+app.get(['/api/analytics/export/csv', '/api/retards/export/csv'], async (req, res) => {
+  const hours = Math.max(1, Math.min(720, parseInt(req.query.hours, 10) || 48));
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  try {
+    const result = await flightRecorder.exportCsv(hours, page);
+    const csv = typeof result === 'string' ? result : (result?.csv || '');
+    const total = result?.total ?? 0;
+    const totalPages = result?.totalPages ?? 1;
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="transit_delays_${hours}h.csv"`);
+    res.setHeader('Content-Disposition', `attachment; filename="transit_delays_${hours}h_p${page}.csv"`);
+    res.setHeader('X-Total-Rows', String(total));
+    res.setHeader('X-Page', String(page));
+    res.setHeader('X-Pages', String(totalPages));
+    res.send(csv);
+  } catch (err) {
+    sendInternalError(req, res, err);
+  }
+});
+
+app.get(['/api/analytics/export/visits.csv', '/api/retards/export/visits.csv'], async (req, res) => {
+  const hours = Math.max(1, Math.min(720, parseInt(req.query.hours, 10) || 48));
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  try {
+    const result = await flightRecorder.exportVisitsCsv(hours, page);
+    const csv = typeof result === 'string' ? result : (result?.csv || '');
+    const total = result?.total ?? 0;
+    const totalPages = result?.totalPages ?? 1;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="transit_stop_visits_${hours}h_p${page}.csv"`);
+    res.setHeader('X-Total-Rows', String(total));
+    res.setHeader('X-Page', String(page));
+    res.setHeader('X-Pages', String(totalPages));
     res.send(csv);
   } catch (err) {
     sendInternalError(req, res, err);
@@ -1099,8 +1224,10 @@ app.get('/api/diagnostics/upstream', (req, res) => {
   const now = Date.now();
   const status = workerBridge.getStatus();
   const circuit = status.metrics?.upstream || null;
+  const canary = status.metrics?.upstreamCanary || null;
   const snapshotAt = circuit?.timestamp || null;
   const snapshotAgeMs = Number.isFinite(snapshotAt) ? Math.max(0, now - snapshotAt) : null;
+  const canaryAgeMs = canary?.checkedAt ? Math.max(0, now - canary.checkedAt) : null;
   res.json({
     success: true,
     timestamp: now,
@@ -1114,13 +1241,30 @@ app.get('/api/diagnostics/upstream', (req, res) => {
       circuitOpenUntil: circuit.circuitOpenUntil || null,
       consecutiveFailures: circuit.consecutiveFailures ?? null,
       cooldownMs: circuit.cooldownMs ?? null,
+      lastError: circuit.lastError || null,
+      vehicleDeliveryStatus: circuit.vehicleDeliveryStatus !== undefined ? circuit.vehicleDeliveryStatus : null,
       lastSuccess: {
         vehicles: circuit.lastVehicleSuccessAt || null,
         arrivals: circuit.lastArrivalsSuccessAt || null
       },
       lastFailureAt: circuit.lastFailureAt || null,
-      snapshotAgeMs
-    } : { available: false, snapshotAgeMs }
+      snapshotAgeMs,
+      canary: canary ? {
+        ok: Boolean(canary.ok),
+        error: canary.error || null,
+        checkedAt: canary.checkedAt || null,
+        ageMs: canaryAgeMs
+      } : null
+    } : {
+      available: false,
+      snapshotAgeMs,
+      canary: canary ? {
+        ok: Boolean(canary.ok),
+        error: canary.error || null,
+        checkedAt: canary.checkedAt || null,
+        ageMs: canaryAgeMs
+      } : null
+    }
   });
 });
 

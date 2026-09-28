@@ -50,6 +50,9 @@ function request() {
   assert(fresh.worker.heartbeatAgeMs >= 1000);
   assert.deepEqual(fresh.reports.map(report => report.hours), [24, 48, 168]);
   assert(fresh.reports.every(report => report.fresh && report.ageMs >= 60000));
+  assert.equal(typeof fresh.schedule.holidaysKnownForYear, 'boolean');
+  assert.equal(typeof fresh.schedule.seasonOutlook, 'object');
+  assert.equal(typeof fresh.schedule.seasonOutlook.nextSummerConfigured, 'boolean');
 
   reports.updateMemoryCache(48, { summary: {}, meta: { generatedTimestamp: Date.now() - 65 * 60000 } });
   const stale = await request();
