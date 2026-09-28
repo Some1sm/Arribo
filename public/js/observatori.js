@@ -2763,27 +2763,30 @@ class ObservatoriApp {
                       if (dMins != null) {
                         const delayText = st.isRecovered
                           ? `${dMins > 0 ? `+${dMins}` : dMins}m ✓`
-                          : `+${dMins}m`;
-                        const chipClass = st.isRecovered
-                          ? 'delay-low'
-                          : (dMins >= 10 ? 'delay-high' : 'delay-mid');
+                          : `${dMins > 0 ? `+${dMins}` : dMins}m`;
+                        const chipClass = st.isRecovered ? 'delay-low' : (st.belowThreshold ? 'delay-ok' : (dMins >= 10 ? 'delay-high' : 'delay-mid'));
                         delayBadge = `<span class="delay-chip ${chipClass}">${delayText}</span>`;
                       }
                       return `
-                        <span class="stop-step ${st.isRecovered ? 'is-recovered' : ''}" title="${this.esc(st.stopName)}${dMins != null ? ` (${st.isRecovered ? 'Recuperat' : 'Retard'}: +${dMins} min)` : ''}">
-                          <span class="stop-node ${st.isRecovered ? 'recovered' : (dMins >= 10 ? 'critical' : 'delayed')}"></span>
+                        <span class="stop-step ${st.isRecovered ? 'is-recovered' : ''} ${st.belowThreshold && !st.isRecovered ? 'is-below-threshold' : ''}" title="${this.esc(st.stopName)}${dMins != null ? ` (${st.isRecovered ? 'Recuperat' : 'Retard'}: +${dMins} min)` : ''}">
+                          <span class="stop-node ${st.isRecovered ? 'recovered' : (st.belowThreshold ? 'ok' : (dMins >= 10 ? 'critical' : 'delayed'))}"></span>
                           <span class="stop-name">${this.esc(st.stopName)}</span>
                           ${delayBadge}
                         </span>
                         ${sIdx < arr.length - 1 ? '<span class="step-arrow">→</span>' : ''}
                       `;
-                    }).join('')}
+                    }).join('')}${({
+                      end_of_line: `<span class="trajectory-end">🏁 Final de línia</span>`,
+                      recovered: `<span class="trajectory-end is-recovered">✅ Recuperat</span>`,
+                      signal_lost: `<span class="trajectory-end">📡 Sense més dades</span>`,
+                      ongoing: `<span class="trajectory-end">⏳ En curs</span>`
+                    })[trip.endReason] || ''}
                   </div>
 
                   <!-- Context and action footer -->
                   <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.6rem; font-size:0.75rem; color:var(--text-muted); flex-wrap:wrap; gap:0.4rem;">
                     <div>
-                      <span>${this.esc(trip.trafficTag || '')} • ${trip.sampleCount} mostres registrades (${trip.incidentType === 'maintenance' ? 'proves o encesa a cotxeres' : (trip.isMovingTraffic ? `recorregut per ${trip.stopsCount} parades en retenció` : 'aturat a parada / regulant capçalera')})</span>
+                      <span>${this.esc(trip.trafficTag || '')} • ${trip.sampleCount} mostres registrades (${trip.incidentType === 'maintenance' ? 'proves o encesa a cotxeres' : (trip.isMovingTraffic ? `recorregut per ${trip.stopsCount} parades` : 'aturat a parada / regulant capçalera')})</span>
                     </div>
                     ${trip.incidentType !== 'maintenance' ? `
                       <button type="button" class="btn-locate-incident-stop" data-locate-line="${this.esc(trip.lineCode)}" data-locate-stop="${this.esc(trip.firstStop || trip.stopsTraversed[0])}" title="Veure aquesta parada al mapa">

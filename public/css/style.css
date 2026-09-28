@@ -10810,4 +10810,11 @@ input#plan-max-walk:focus {
   }
 }
 
+.stop-step.is-below-threshold .stop-name { opacity: 0.65; }
+.stop-node.ok { background: var(--text-muted); }
+.delay-chip.delay-ok { background: var(--bg-surface-2, rgba(148,163,184,0.15)); color: var(--text-secondary); border-color: transparent; }
+.trajectory-end { margin-left: 0.4rem; font-size: 0.75rem; font-weight: 700; color: var(--text-muted); white-space: nowrap; }
+.trajectory-end.is-recovered { color: #22c55e; }
+
+
 

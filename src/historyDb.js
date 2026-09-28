@@ -1921,6 +1921,7 @@ class HistoryDatabase {
           agency,
           stop_id as stopId,
           stop_name as stopName,
+          direction,
           delay_mins as delayMins,
           is_realtime as isRealTime,
           timestamp,
@@ -1928,10 +1929,14 @@ class HistoryDatabase {
           madrid_hour(timestamp) as hourOfDay
         FROM delay_logs
         WHERE ${sqlWhere}
-        ORDER BY line_code ASC, timestamp ASC
-        LIMIT 3000
+        ORDER BY timestamp DESC
+        LIMIT 30000
       `);
-      const clusterRows = clusterStmt.all(...baseParams);
+      // Newest-first so a cap drops the OLDEST samples, never whole lines or today.
+      const clusterRowsDesc = clusterStmt.all(...baseParams);
+      const trajectorySamplesTruncated = clusterRowsDesc.length === 30000;
+      const clusterRows = clusterRowsDesc.reverse();
+      clusterRows.sort((a, b) => String(a.lineCode).localeCompare(String(b.lineCode)) || a.timestamp - b.timestamp);
 
       const recoveryStmt = this.db.prepare(`
         SELECT 
@@ -1947,6 +1952,15 @@ class HistoryDatabase {
           AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
         ORDER BY timestamp ASC
         LIMIT 10
+      `);
+
+      const vehicleSamplesStmt = this.db.prepare(`
+        SELECT stop_name as stopName, delay_mins as delayMins, direction, timestamp
+        FROM delay_logs
+        WHERE vehicle_id = ? AND timestamp >= ? AND timestamp <= ?
+          AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
+        ORDER BY timestamp ASC
+        LIMIT 2000
       `);
 
       const byLine = new Map();
@@ -1972,7 +1986,13 @@ class HistoryDatabase {
             const t = activeTracks[i];
             const gap = r.timestamp - t.lastTs;
             const dur = r.timestamp - t.firstTs;
-            if (gap > 12 * 60 * 1000 || dur > 45 * 60 * 1000) {
+            // An identified bus is one trip until its direction changes (end of line);
+            // the 45-minute cap only applies to legacy rows with no vehicle id.
+            const newTrip = Boolean(t.vehicleId && r.vehicleId && t.vehicleId === r.vehicleId &&
+              t.direction && r.direction && String(t.direction) !== String(r.direction));
+            const capped = !t.vehicleId && dur > 45 * 60 * 1000;
+            if (gap > 12 * 60 * 1000 || capped || newTrip) {
+              t.closeReason = newTrip ? 'end_of_line' : (capped ? 'split' : 'gap');
               allClusters.push(t);
               activeTracks.splice(i, 1);
             }
@@ -2026,6 +2046,7 @@ class HistoryDatabase {
 
           if (bestTrack) {
             bestTrack.lastTs = r.timestamp;
+            if (!bestTrack.direction && r.direction) bestTrack.direction = r.direction;
             bestTrack.endTime = r.formattedDate;
             bestTrack.sampleCount++;
             bestTrack.delaySum += r.delayMins;
@@ -2050,6 +2071,8 @@ class HistoryDatabase {
               vehicleId: r.vehicleId || '',
               lineCode: lk,
               agency: r.agency,
+              direction: r.direction || '',
+              closeReason: null,
               firstTs: r.timestamp,
               lastTs: r.timestamp,
               startTime: r.formattedDate,
@@ -2069,12 +2092,24 @@ class HistoryDatabase {
         });
 
         // Push any remaining active tracks
-        activeTracks.forEach(t => allClusters.push(t));
+        activeTracks.forEach(t => { t.closeReason = t.closeReason || 'open'; allClusters.push(t); });
       });
 
       const enrichedClusters = allClusters.map(c => {
-        // Check if there was a recovery ping shortly after the trip (within 15 min) where delay dropped below threshold
-        if (!c.isDepot && c.stops.length > 1) {
+        c.endReason = null;
+        c.endStop = c.lastStop;
+        if (c.vehicleId && !c.isDepot && c.stops.length > 1) {
+          try {
+            const traj = this._buildVehicleTrajectory(c, minDelayNum, vehicleSamplesStmt);
+            if (traj.progression.length > 0) {
+              c.stopProgression = traj.progression;
+              c.stops = traj.progression.map(p => p.stopName);
+              c.lastStop = traj.endStop;
+            }
+            c.endReason = traj.endReason;
+            c.endStop = traj.endStop;
+          } catch {}
+        } else if (!c.isDepot && c.stops.length > 1) {
           try {
             const lk = c.lineCode;
             const lkWithL = lk.startsWith('L') ? lk : `L${lk}`;
@@ -2097,6 +2132,8 @@ class HistoryDatabase {
               c.lastStop = recoveryPing.stopName;
             }
           } catch {}
+          c.endReason = c.stopProgression.some(p => p.isRecovered) ? 'recovered' : 'unknown';
+          c.endStop = c.lastStop;
         }
 
         const durMins = Math.round((c.lastTs - c.firstTs) / 60000);
@@ -2119,6 +2156,9 @@ class HistoryDatabase {
           vehicleId: c.vehicleId || '',
           lineCode: c.lineCode,
           agency: c.agency,
+          direction: c.direction || '',
+          endReason: c.endReason || 'unknown',
+          endStop: c.endStop || c.lastStop,
           startTime: c.startTime,
           // Numeric twins of startTime/endTime. The localized display strings
           // are NOT reliably re-parseable (Date.parse('24/09/2026, 12:05:00')
@@ -2174,6 +2214,7 @@ class HistoryDatabase {
           rawSamplesOverThreshold: agg.totalCount || 0,
           listedCommercialEpisodes: enrichedTop.length,
           commercialEpisodeLimit: limitNum,
+          trajectorySamplesTruncated,
           kpiBasis: 'totalRecordedIncidents / rawSamplesOverThreshold count RAW SAMPLES at or above the threshold; topIncidents and investigationIncidents are those same samples DEDUPED into per-trip episodes (20-minute sliding window, keyed by line+vehicle, or line+stop when vehicle_id is missing). listedCommercialEpisodes is that deduped list after the per-list limit.',
           maxDelayMins: trueMaxDelay,
           maxCommercialDelayMins: commercialMaxDelay,
@@ -2209,6 +2250,7 @@ class HistoryDatabase {
           rawSamplesOverThreshold: 0,
           listedCommercialEpisodes: 0,
           commercialEpisodeLimit: 0,
+          trajectorySamplesTruncated: false,
           maxDelayMins: null,
           maxCommercialDelayMins: null,
           maxDelayIsFromInvestigationTier: false,
@@ -2228,6 +2270,42 @@ class HistoryDatabase {
         incidentTrips: []
       };
     }
+  }
+
+  /**
+   * Every stop an identified bus passed during a delay episode, plus the tail
+   * after the last delayed sample: up to the first stop back under the
+   * threshold (recovered), or the stop where its direction changed (end of line).
+   * One entry per consecutive stop visit; a stop passed twice appears twice.
+   */
+  _buildVehicleTrajectory(c, minDelay, samplesStmt) {
+    const rows = samplesStmt.all(c.vehicleId, c.firstTs, c.lastTs + 15 * 60 * 1000);
+    const visits = [];
+    let endReason = null;
+    for (const row of rows) {
+      const last = visits[visits.length - 1];
+      if (last && last.firstTs > c.lastTs && last.delayMins < minDelay && last.stopName !== row.stopName) break;
+      if (c.direction && row.direction && String(row.direction) !== String(c.direction)) { endReason = 'end_of_line'; break; }
+      if (last && last.stopName === row.stopName) {
+        last.delayMins = row.delayMins;
+        last.lastTs = row.timestamp;
+      } else {
+        visits.push({ stopName: row.stopName, delayMins: row.delayMins, firstTs: row.timestamp, lastTs: row.timestamp });
+      }
+    }
+    const lastVisit = visits[visits.length - 1];
+    if (!endReason && lastVisit && lastVisit.firstTs > c.lastTs && lastVisit.delayMins < minDelay) endReason = 'recovered';
+    if (!endReason && c.closeReason === 'end_of_line') endReason = 'end_of_line';
+    if (!endReason) endReason = (Date.now() - c.lastTs) < 5 * 60 * 1000 ? 'ongoing' : 'signal_lost';
+    // Drop tail visits that are still delayed but were cut by the 15-minute look-ahead.
+    while (visits.length > 1 && visits[visits.length - 1].firstTs > c.lastTs && endReason !== 'recovered' && visits[visits.length - 1].delayMins >= minDelay) visits.pop();
+    const progression = visits.map((v, idx) => ({
+      stopName: v.stopName,
+      delayMins: v.delayMins,
+      isRecovered: endReason === 'recovered' && idx === visits.length - 1,
+      belowThreshold: v.delayMins < minDelay
+    }));
+    return { progression, endReason, endStop: progression.length ? progression[progression.length - 1].stopName : c.lastStop };
   }
 
   // ── Forensic delay inspection ──────────────────────────────────────
