@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Arribo! is a real-time transit platform for **Mataró Bus Urbà L1–L8** (8 lines, 153 stops): live map/arrivals, a direct+one-transfer journey planner, and a historical punctuality "Observatori". Node.js ≥22.5 (needs built-in `node:sqlite`), Express + vanilla JS frontend, no build step. Production deps: `express`, `cors`, `compression`.
+Arribo! is a real-time transit platform for **Mataró Bus Urbà L1–L8** (8 lines, 153 stops): live map/arrivals, a direct+one-transfer journey planner, and a historical punctuality "Observatori". Node.js ≥22.5 (needs built-in `node:sqlite`), Express + vanilla JS frontend, no build step for development (the Docker image serves esbuild-minified copies of `public/js` and `public/css`, built by `scripts/minify_public.js`). Production deps: `express`, `cors`, `compression`.
 
 **Read [AGENTS.md](AGENTS.md) first** — it is the authoritative contract for ownership boundaries, domain invariants, and required validation. [README.md](README.md) and [OPERATIONS.md](OPERATIONS.md) are current; [docs/history/ARCHITECTURE.md](docs/history/ARCHITECTURE.md) is historical and describes a retired Catalonia-wide scope. Verify anything against source, not against those older documents.
 

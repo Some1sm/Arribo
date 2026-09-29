@@ -68,7 +68,7 @@ The main process serves the frontend and API, maintains in-memory fleet/report c
 
 - **Runtime:** Node.js **22.5 or newer**, required for built-in `node:sqlite`.
 - **Production dependencies:** `express`, `cors`, and `compression`.
-- **Frontend:** plain HTML/CSS/JavaScript; no build step is required.
+- **Frontend:** plain HTML/CSS/JavaScript; no build step is needed to develop or run locally. The Docker image serves esbuild-minified copies of `public/js` and `public/css` ([scripts/minify_public.js](scripts/minify_public.js)).
 - **Storage:** SQLite history plus local route and timetable data.
 
 ## Run locally

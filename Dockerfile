@@ -1,4 +1,14 @@
-# Use Node 22 Alpine for minimal footprint and native node:sqlite support
+# Stage 1: minified copies of the browser JS/CSS (the repository keeps the readable sources).
+# The copy lives in dist/public because minify_public.js refuses the public/ next to it.
+FROM node:22.19.0-alpine@sha256:d2166de198f26e17e5a442f537754dd616ab069c47cc57b889310a717e0abbf9 AS assets
+WORKDIR /build
+COPY package*.json ./
+RUN npm ci
+COPY scripts/minify_public.js ./scripts/minify_public.js
+COPY public ./dist/public
+RUN node scripts/minify_public.js dist/public
+
+# Stage 2: runtime. Node 22 Alpine for minimal footprint and native node:sqlite support
 FROM node:22.19.0-alpine@sha256:d2166de198f26e17e5a442f537754dd616ab069c47cc57b889310a717e0abbf9
 
 # Set working directory
@@ -17,6 +27,10 @@ RUN npm ci --omit=dev
 
 # Copy application source code
 COPY . .
+
+# Serve the minified browser JS/CSS built in the assets stage
+COPY --from=assets /build/dist/public/js ./public/js
+COPY --from=assets /build/dist/public/css ./public/css
 
 # Ensure data directory exists; make /app writable by the non-root node user
 RUN mkdir -p /app/data && chown -R node:node /app

@@ -123,6 +123,8 @@ official tag/digest, review security fixes, run syntax/full tests and container
 boot/shutdown checks, then update the pin. A registry lookup is not a Docker build.
 Non-root operation, 160 MB V8 heap and 400 MB Compose limit remain.
 
+The image is built in two stages. The `assets` stage runs a full locked `npm ci` (dev dependencies included) and minifies copies of `public/js/*.js` and `public/css/*.css` with esbuild (`scripts/minify_public.js`); the runtime stage copies only those minified files over the readable sources. HTML, `sw.js` and the manifest are served unchanged. To debug a browser error with readable stack traces, reproduce it with `npm start`, which serves the sources.
+
 ## Consistent backup and isolated restore
 
 The administrative CLI uses SQLite VACUUM INTO from a read-only source, including
