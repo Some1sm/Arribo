@@ -135,7 +135,16 @@ const { IngestionDaemon } = require('../src/ingestionDaemon');
   console.log(`  ✓ Sample 2 (next-stop transition): Operator delay ${row2.delay_mins}m, Measured delay ${row2.measured_delay_mins}m.`);
 
   // Scenario 3: Verify getJournalismReport delayMeasurementComparison KPI
-  const report = historyDb.getJournalismReport(24, [{ id: '1', code: 'L1' }]);
+  // The fixture visits are dated 2026-09-28; evaluate the rolling 24 h report one
+  // hour after the second visit so the suite does not depend on the real clock.
+  const realDateNow = Date.now;
+  Date.now = () => baseEpochMs2 + 3600 * 1000;
+  let report;
+  try {
+    report = historyDb.getJournalismReport(24, [{ id: '1', code: 'L1' }]);
+  } finally {
+    Date.now = realDateNow;
+  }
   assert(report.summary);
   assert(report.summary.delayMeasurementComparison, 'summary must include delayMeasurementComparison');
   const comp = report.summary.delayMeasurementComparison;
