@@ -314,7 +314,9 @@ class HistoryDatabase {
             times_source TEXT DEFAULT '',
             is_realtime INTEGER DEFAULT 1,
             measured_delay_mins INTEGER,
-            source TEXT DEFAULT 'live'
+            source TEXT DEFAULT 'live',
+            measured_method TEXT DEFAULT '',
+            trip_agrees INTEGER
           );
           CREATE INDEX IF NOT EXISTS idx_visits_time_line ON stop_visits(last_ts, line_code);
           CREATE INDEX IF NOT EXISTS idx_visits_stop ON stop_visits(stop_name, last_ts);
@@ -404,6 +406,16 @@ class HistoryDatabase {
         }
         if (!this.db.prepare('PRAGMA table_info(delay_logs)').all().some(column => column.name === 'observed_at')) {
           this.db.exec("ALTER TABLE delay_logs ADD COLUMN observed_at INTEGER;");
+        }
+        // Measured-delay provenance. Rows written before this column existed
+        // hold a nearest-departure value (capped at half a headway) and keep
+        // measured_method = '', so the operator comparison and the CSV skip them.
+        const visitColumns = this.db.prepare('PRAGMA table_info(stop_visits)').all().map(column => column.name);
+        if (!visitColumns.includes('measured_method')) {
+          this.db.exec("ALTER TABLE stop_visits ADD COLUMN measured_method TEXT DEFAULT '';");
+        }
+        if (!visitColumns.includes('trip_agrees')) {
+          this.db.exec('ALTER TABLE stop_visits ADD COLUMN trip_agrees INTEGER;');
         }
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_delay_veh_time ON delay_logs(vehicle_id, timestamp);');
         // Preserve legacy rollups whose raw observations have already been pruned.
@@ -543,8 +555,8 @@ class HistoryDatabase {
       if (!this._stopVisitStmt) {
         this._stopVisitStmt = this.db.prepare(`
           INSERT INTO stop_visits
-          (vehicle_id, line_code, direction, stop_name, first_ts, last_ts, delay_mins, sample_count, scheduled_time, actual_time, times_source, is_realtime, measured_delay_mins, source)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (vehicle_id, line_code, direction, stop_name, first_ts, last_ts, delay_mins, sample_count, scheduled_time, actual_time, times_source, is_realtime, measured_delay_mins, source, measured_method, trip_agrees)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
       }
       this._stopVisitStmt.run(
@@ -561,7 +573,9 @@ class HistoryDatabase {
         String(visit.timesSource || ''),
         visit.isRealTime !== false ? 1 : 0,
         visit.measuredDelayMins !== undefined && visit.measuredDelayMins !== null ? Number(visit.measuredDelayMins) : null,
-        String(visit.source || 'live')
+        String(visit.source || 'live'),
+        String(visit.measuredMethod || ''),
+        visit.tripAgrees === 1 || visit.tripAgrees === 0 ? visit.tripAgrees : null
       );
     } catch {
       // Ignore transient write errors
@@ -1211,36 +1225,72 @@ class HistoryDatabase {
         totalStopVisits: totalArrivals
       };
 
+      // Operator delay vs. Arribo's own passing time, both on the trip the feed
+      // points to. Only rows written with measured_method = 'operator_trip'
+      // count; older nearest-departure rows are excluded.
       let delayMeasurementComparison = {
         hasData: false,
+        method: 'operator_trip',
         comparedVisits: 0,
         operatorAvgDelay: null,
         measuredAvgDelay: null,
+        biasMins: null,
         agreedVisits: 0,
-        agreementPct: null
+        agreementPct: null,
+        tripCheckedVisits: 0,
+        tripConfirmedVisits: 0,
+        tripConfirmedPct: null,
+        byLine: [],
+        byHour: []
       };
 
       if (useVisits) {
         try {
-          const compStmt = this.db.prepare(`
-            SELECT
+          const compWhere = `WHERE last_ts >= ? AND measured_method = 'operator_trip' AND measured_delay_mins IS NOT NULL AND ${VALID_DELAY_SQL}${scopeSql}`;
+          const compCols = `
               COUNT(*) as comparedVisits,
               AVG(delay_mins) as operatorAvgDelay,
               AVG(measured_delay_mins) as measuredAvgDelay,
+              AVG(measured_delay_mins - delay_mins) as biasMins,
               SUM(CASE WHEN ABS(delay_mins - measured_delay_mins) <= 1 THEN 1 ELSE 0 END) as agreedVisits,
-              ROUND((SUM(CASE WHEN ABS(delay_mins - measured_delay_mins) <= 1 THEN 1.0 ELSE 0.0 END) / COUNT(*)) * 100, 1) as agreementPct
-            FROM stop_visits
-            WHERE ${tsCol} >= ? AND measured_delay_mins IS NOT NULL AND ${VALID_DELAY_SQL}${scopeSql}
-          `);
-          const comp = compStmt.get(cutoff);
+              SUM(CASE WHEN trip_agrees IS NOT NULL THEN 1 ELSE 0 END) as tripCheckedVisits,
+              SUM(CASE WHEN trip_agrees = 1 THEN 1 ELSE 0 END) as tripConfirmedVisits`;
+          const round1 = x => (x === null || x === undefined ? null : Math.round(Number(x) * 10) / 10);
+          const pct = (part, whole) => (whole > 0 ? Math.round((part / whole) * 1000) / 10 : null);
+          const shape = r => ({
+            comparedVisits: r.comparedVisits,
+            operatorAvgDelay: round1(r.operatorAvgDelay),
+            measuredAvgDelay: round1(r.measuredAvgDelay),
+            biasMins: round1(r.biasMins),
+            agreedVisits: r.agreedVisits || 0,
+            agreementPct: pct(r.agreedVisits || 0, r.comparedVisits),
+            tripCheckedVisits: r.tripCheckedVisits || 0,
+            tripConfirmedVisits: r.tripConfirmedVisits || 0,
+            tripConfirmedPct: pct(r.tripConfirmedVisits || 0, r.tripCheckedVisits || 0)
+          });
+
+          const comp = this.db.prepare(`SELECT ${compCols} FROM stop_visits ${compWhere}`).get(cutoff);
           if (comp && comp.comparedVisits > 0) {
+            const byLine = this.db.prepare(`
+              SELECT UPPER(line_code) as lineCode, ${compCols}
+              FROM stop_visits ${compWhere}
+              GROUP BY UPPER(line_code)
+            `).all(cutoff)
+              .map(r => ({ lineCode: r.lineCode, ...shape(r) }))
+              .sort((a, b) => (parseInt(a.lineCode.replace(/^L/, ''), 10) || 0) - (parseInt(b.lineCode.replace(/^L/, ''), 10) || 0));
+            const byHour = this.db.prepare(`
+              SELECT madrid_hour(last_ts) as hour, ${compCols}
+              FROM stop_visits ${compWhere}
+              GROUP BY madrid_hour(last_ts)
+              ORDER BY hour
+            `).all(cutoff)
+              .map(r => ({ hour: r.hour, ...shape(r) }));
             delayMeasurementComparison = {
               hasData: true,
-              comparedVisits: comp.comparedVisits,
-              operatorAvgDelay: Math.round((comp.operatorAvgDelay || 0) * 10) / 10,
-              measuredAvgDelay: Math.round((comp.measuredAvgDelay || 0) * 10) / 10,
-              agreedVisits: comp.agreedVisits || 0,
-              agreementPct: comp.agreementPct !== null ? Number(comp.agreementPct) : 0
+              method: 'operator_trip',
+              ...shape(comp),
+              byLine,
+              byHour
             };
           }
         } catch {}
@@ -1559,7 +1609,7 @@ class HistoryDatabase {
     const offset = (pageNum - 1) * limit;
     if (!this._ensureOpen()) {
       return {
-        csv: 'Data i Hora,Vehicle,Linia,Direcció,Parada,Retard informat (min),Retard mesurat (min),Mostres,Horari Teoric,Horari Real,Origen horari,Es Temps Real,Font\n',
+        csv: 'Data i Hora,Vehicle,Linia,Direcció,Parada,Retard informat (min),Retard mesurat (min),Mostres,Horari Teoric,Horari Real,Origen horari,Es Temps Real,Font,Viatge confirmat\n',
         total: 0,
         page: pageNum,
         totalPages: 1
@@ -1584,6 +1634,8 @@ class HistoryDatabase {
           stop_name,
           delay_mins,
           measured_delay_mins,
+          measured_method,
+          trip_agrees,
           sample_count,
           scheduled_time,
           actual_time,
@@ -1596,14 +1648,16 @@ class HistoryDatabase {
         LIMIT ? OFFSET ?
       `);
       const rows = stmt.all(cutoff, limit, offset);
-      let csv = 'Data i Hora,Vehicle,Linia,Direcció,Parada,Retard informat (min),Retard mesurat (min),Mostres,Horari Teoric,Horari Real,Origen horari,Es Temps Real,Font\n';
+      let csv = 'Data i Hora,Vehicle,Linia,Direcció,Parada,Retard informat (min),Retard mesurat (min),Mostres,Horari Teoric,Horari Real,Origen horari,Es Temps Real,Font,Viatge confirmat\n';
       rows.forEach(r => {
         const cleanStop = (r.stop_name || '').replace(/"/g, '""');
         const cleanVeh = (r.vehicle_id || '').replace(/"/g, '""');
         const cleanDir = (r.direction || '').replace(/"/g, '""');
         const cleanSrc = (r.times_source || '').replace(/"/g, '""');
-        const measured = r.measured_delay_mins !== null && r.measured_delay_mins !== undefined ? r.measured_delay_mins : '';
-        csv += `"${r.formatted_date}","${cleanVeh}","${r.line_code}","${cleanDir}","${cleanStop}",${r.delay_mins},"${measured}",${r.sample_count},"${r.scheduled_time || ''}","${r.actual_time || ''}",${cleanSrc ? `"${cleanSrc}"` : '""'},${r.is_realtime},"${r.source || 'live'}"\n`;
+        // Only operator-trip measurements are exported; older nearest-departure values stay blank.
+        const measured = r.measured_method === 'operator_trip' && r.measured_delay_mins !== null && r.measured_delay_mins !== undefined ? r.measured_delay_mins : '';
+        const tripConfirmed = r.trip_agrees === 1 || r.trip_agrees === 0 ? r.trip_agrees : '';
+        csv += `"${r.formatted_date}","${cleanVeh}","${r.line_code}","${cleanDir}","${cleanStop}",${r.delay_mins},"${measured}",${r.sample_count},"${r.scheduled_time || ''}","${r.actual_time || ''}",${cleanSrc ? `"${cleanSrc}"` : '""'},${r.is_realtime},"${r.source || 'live'}","${tripConfirmed}"\n`;
       });
       return { csv, total, page: pageNum, totalPages };
     } catch (e) {

@@ -305,6 +305,16 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   spans the viewport while the map and Observatori pages keep a centred
   `max-width` container. Do not unify these — the centred layout is correct for the
   document pages.
+- **A measured delay is timed on the trip the operator's delay points to, never on the
+  nearest departure.** `flushVisit` in [ingestionDaemon.js](src/ingestionDaemon.js) subtracts
+  the published time of `visit.scheduledTime` (recovered by `tripMatcher.matchTrip` WITH the
+  feed delay) from our own passing time. Matching the passing time to the nearest departure
+  caps every delay at half a headway: on 29 Sep 2026 production it turned 662 visits with an
+  operator delay of about 14 min into "about 4 min early on the next trip" and pulled the
+  published agreement from 79 % down to 72 %. Whether the nearest departure independently
+  lands on the same trip is stored separately in `stop_visits.trip_agrees`. Rows with
+  `measured_method = ''` predate this and are excluded from the comparison and blanked in
+  the visits CSV.
 
 ## 4. Runtime, configuration and privacy
 

@@ -7053,6 +7053,20 @@ body {
 }
 
 /* Cell content formatters */
+.observatori-line-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.2rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  line-height: 1.2;
+  color: #fff;
+  white-space: nowrap;
+}
+
 .observatori-line-cell {
   display: flex;
   align-items: center;

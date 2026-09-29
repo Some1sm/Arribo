@@ -841,26 +841,74 @@ class ObservatoriApp {
         </div>`;
       })()}
 
-      <!-- Independent Delay Measurement Comparison (Plan 9.3) -->
+      <!-- Operator delay vs. Arribo's own passing time, on the operator's trip -->
       ${(() => {
         const comp = s.delayMeasurementComparison;
         if (!comp || !comp.hasData || !comp.comparedVisits) return '';
-        const opAvg = comp.operatorAvgDelay > 0 ? `+${comp.operatorAvgDelay}` : String(comp.operatorAvgDelay);
-        const meAvg = comp.measuredAvgDelay > 0 ? `+${comp.measuredAvgDelay}` : String(comp.measuredAvgDelay);
+        const signed = v => (v === null || v === undefined ? '—' : `${v > 0 ? '+' : ''}${Number(v).toLocaleString('ca-ES')} min`);
+        const pctStr = v => (v === null || v === undefined ? '—' : `${Number(v).toLocaleString('ca-ES')}%`);
+        const tone = v => (v === null || v === undefined ? 'var(--text-muted)' : v >= 75 ? 'var(--accent-live)' : v >= 60 ? 'var(--accent-warning)' : 'var(--accent-danger)');
+        const lines = Array.isArray(comp.byLine) ? comp.byLine : [];
+        const hours = (Array.isArray(comp.byHour) ? comp.byHour : []).filter(h => h.comparedVisits >= 20);
         return `
         <div style="background:rgba(16,185,129,0.06); border:1px solid rgba(16,185,129,0.25); border-radius:10px; padding:0.8rem 1rem; margin-bottom:1.25rem; font-size:0.78rem; color:var(--text-secondary); line-height:1.5;">
           <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.35rem;">
-            <strong style="color:var(--accent-live); font-size:0.84rem;">🎯 Mesurament Independent de Retard vs. Operador</strong>
-            <span style="font-size:0.75rem; font-family:var(--font-mono); font-weight:600; background:rgba(16,185,129,0.15); color:var(--accent-live); padding:0.15rem 0.5rem; border-radius:9999px;">
-              ${comp.agreementPct.toLocaleString('ca-ES')}% d'acord (≤1 min)
+            <strong style="color:var(--accent-live); font-size:0.84rem;">🎯 Contrast independent: retard informat vs. pas mesurat</strong>
+            <span style="font-size:0.75rem; font-family:var(--font-mono); font-weight:600; background:rgba(16,185,129,0.15); color:${tone(comp.agreementPct)}; padding:0.15rem 0.5rem; border-radius:9999px;">
+              ${pctStr(comp.agreementPct)} d'acord (≤1 min)
             </span>
           </div>
           <div>
-            Sobre <strong>${comp.comparedVisits.toLocaleString('ca-ES')} passos per parada</strong> analitzats de forma independent:
-            Retard mitjà informat per l'operador: <strong>${opAvg} min</strong> ·
-            Retard mesurat directament per Arribo!: <strong>${meAvg} min</strong>
-            (${comp.agreedVisits.toLocaleString('ca-ES')} passos amb acord absolut o desviació ≤ 1 min).
+            Sobre <strong>${comp.comparedVisits.toLocaleString('ca-ES')} passos per parada</strong>, comparem el retard que informa l'operador
+            amb l'hora a què el GPS mostra que el bus ha passat per la parada, mesurada contra l'horari publicat del mateix viatge.
+            Retard mitjà informat: <strong>${signed(comp.operatorAvgDelay)}</strong> ·
+            mesurat per Arribo!: <strong>${signed(comp.measuredAvgDelay)}</strong> ·
+            diferència mitjana: <strong>${signed(comp.biasMins)}</strong>.
           </div>
+          <div style="margin-top:0.35rem;">
+            <strong>Viatge confirmat de forma independent: ${pctStr(comp.tripConfirmedPct)}</strong>
+            (${comp.tripConfirmedVisits.toLocaleString('ca-ES')} de ${comp.tripCheckedVisits.toLocaleString('ca-ES')} passos):
+            el viatge programat més proper a l'hora de pas és el mateix que indica l'operador.
+            La resta són busos amb més retard que mig interval entre busos; per a aquests només l'operador sap quin viatge fan,
+            i el contrast es fa sobre el viatge que indica.
+          </div>
+          ${lines.length ? `
+          <div class="observatori-table-wrapper" style="margin-top:0.6rem;">
+            <table class="observatori-table">
+              <thead>
+                <tr>
+                  <th class="sticky-col">Línia</th>
+                  <th>Passos</th>
+                  <th>Acord ≤1 min</th>
+                  <th>Diferència mitjana</th>
+                  <th>Viatge confirmat</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${lines.map(l => {
+                  const colour = this.getLineColor(l.lineCode);
+                  return `
+                <tr>
+                  <td class="sticky-col"><span class="observatori-line-badge" style="background:${colour}; color:${this.chipInk(colour)};">${this.esc(l.lineCode)}</span></td>
+                  <td>${l.comparedVisits.toLocaleString('ca-ES')}</td>
+                  <td style="font-weight:700; color:${tone(l.agreementPct)};">${pctStr(l.agreementPct)}</td>
+                  <td>${signed(l.biasMins)}</td>
+                  <td>${pctStr(l.tripConfirmedPct)}</td>
+                </tr>`;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>` : ''}
+          ${hours.length ? `
+          <div style="margin-top:0.6rem;">
+            <div style="font-weight:600; color:var(--text-primary); margin-bottom:0.3rem;">Acord per franja horària</div>
+            <div style="display:flex; flex-wrap:wrap; gap:0.35rem;">
+              ${hours.map(h => `
+              <span title="${h.comparedVisits.toLocaleString('ca-ES')} passos" style="font-family:var(--font-mono); font-size:0.72rem; padding:0.15rem 0.45rem; border-radius:6px; background:var(--bg-elevated); border:1px solid var(--border-subtle); color:${tone(h.agreementPct)};">
+                ${this.esc(h.hour)}h ${pctStr(h.agreementPct)}
+              </span>`).join('')}
+            </div>
+          </div>` : ''}
         </div>`;
       })()}
 

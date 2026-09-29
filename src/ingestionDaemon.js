@@ -160,27 +160,30 @@ class IngestionDaemon {
   flushVisit(v) {
     if (!v) return;
 
+    // Measured delay = our own passing time minus the published time of the
+    // trip the feed's delay points to (v.scheduledTime). Matching the passing
+    // time to the NEAREST departure instead would cap every delay at half a
+    // headway: a bus 13 min late on an 18 min line would be recorded as 5 min
+    // early on the next trip. Whether the nearest departure independently
+    // lands on that same trip is kept separately in tripAgrees (1/0/null).
     let measuredDelayMins = null;
+    let tripAgrees = null;
     const passingAt = v.passingAt || v.lastObservedAt || v.lastTs;
-    if (passingAt) {
+    const publishedSec = v.scheduledTime ? timeEngine.timeStringToSeconds(v.scheduledTime) : NaN;
+    if (passingAt && Number.isFinite(publishedSec)) {
       try {
         const net = timeEngine.getNetworkTime('Europe/Madrid', new Date(passingAt));
         const passingSec = net.hour * 3600 + net.minute * 60 + net.second;
-        const lineId = String(v.lineCode || '').replace(/^L/i, '');
-        const matched = tripMatcher.matchTrip({
-          lineId,
+        measuredDelayMins = Math.round(tripMatcher.circularDiffSec(passingSec, publishedSec) / 60);
+        const nearest = tripMatcher.matchTrip({
+          lineId: String(v.lineCode || '').replace(/^L/i, ''),
           direction: v.direction,
           stopName: v.stopName,
           at: passingAt
         });
-        if (matched && matched.matched && matched.scheduledTime) {
-          const publishedSec = timeEngine.timeStringToSeconds(matched.scheduledTime);
-          if (Number.isFinite(publishedSec)) {
-            let diffSec = passingSec - publishedSec;
-            while (diffSec > 43200) diffSec -= 86400;
-            while (diffSec < -43200) diffSec += 86400;
-            measuredDelayMins = Math.round(diffSec / 60);
-          }
+        const nearestSec = nearest && nearest.matched ? timeEngine.timeStringToSeconds(nearest.scheduledTime) : NaN;
+        if (Number.isFinite(nearestSec)) {
+          tripAgrees = tripMatcher.circularDiffSec(nearestSec, publishedSec) === 0 ? 1 : 0;
         }
       } catch {}
     }
@@ -199,6 +202,8 @@ class IngestionDaemon {
       timesSource: v.timesSource,
       isRealTime: v.isRealTime,
       measuredDelayMins: Number.isFinite(measuredDelayMins) ? measuredDelayMins : null,
+      measuredMethod: Number.isFinite(measuredDelayMins) ? 'operator_trip' : '',
+      tripAgrees,
       source: 'live'
     });
   }

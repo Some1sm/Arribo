@@ -7,10 +7,15 @@
  * 1. Computes bus's own passing time at that stop:
  *    the observedAt of the first sample whose toStop is the next stop,
  *    or if the bus was within 30m of the stop, that sample's observedAt.
- * 2. Matches trip with tripMatcher (per-trip times) and stores
- *    measured_delay_mins = passing - published in stop_visits.measured_delay_mins.
- * 3. Asserts getJournalismReport calculates delayMeasurementComparison (operator vs measured delay
- *    and agreement rate within 1 min).
+ * 2. Stores measured_delay_mins = passing - published time of the trip the
+ *    operator's delay points to (visit.scheduledTime), with
+ *    measured_method = 'operator_trip' and trip_agrees = whether the nearest
+ *    departure to the passing time is that same trip.
+ * 3. Asserts getJournalismReport calculates delayMeasurementComparison (operator vs measured delay,
+ *    agreement within 1 min, bias, trip confirmation, per-line and per-hour rows) from
+ *    operator_trip rows only, and that the visits CSV blanks legacy measurements.
+ * 4. A bus later than half a headway keeps its real delay instead of flipping
+ *    to "early on the next trip".
  */
 
 const assert = require('node:assert/strict');
@@ -92,6 +97,8 @@ const { IngestionDaemon } = require('../src/ingestionDaemon');
   assert.equal(row.stop_name, 'Rodalies');
   assert.equal(row.delay_mins, 2, 'Operator delay should be 2 mins');
   assert.equal(row.measured_delay_mins, 2, `Arribo measured delay should be 2 mins (got ${row.measured_delay_mins})`);
+  assert.equal(row.measured_method, 'operator_trip');
+  assert.equal(row.trip_agrees, 1, 'nearest departure is the operator trip');
   console.log(`  ✓ Sample 1 (bus at <=30m): Operator delay ${row.delay_mins}m, Measured delay ${row.measured_delay_mins}m.`);
 
   // Scenario 2: Bus passing time detected via transition to next stop
@@ -132,7 +139,24 @@ const { IngestionDaemon } = require('../src/ingestionDaemon');
   assert(row2);
   assert.equal(row2.delay_mins, 4, 'Operator delay should be 4 mins');
   assert.equal(row2.measured_delay_mins, 4, `Arribo measured delay should be 4 mins (got ${row2.measured_delay_mins})`);
+  assert.equal(row2.measured_method, 'operator_trip');
+  assert.equal(row2.trip_agrees, 1, 'nearest departure is the operator trip');
   console.log(`  ✓ Sample 2 (next-stop transition): Operator delay ${row2.delay_mins}m, Measured delay ${row2.measured_delay_mins}m.`);
+
+  // A row written before measured_method existed (nearest-departure value) must
+  // be excluded from the comparison and blanked in the CSV.
+  historyDb.recordStopVisit({
+    vehicleId: 'bus_legacy',
+    lineCode: 'L1',
+    direction: '11',
+    stopName: 'Rodalies',
+    firstTs: baseEpochMs2 + 300 * 1000,
+    lastTs: baseEpochMs2 + 300 * 1000,
+    delayMins: 3,
+    sampleCount: 1,
+    measuredDelayMins: -9,
+    source: 'live'
+  });
 
   // Scenario 3: Verify getJournalismReport delayMeasurementComparison KPI
   // The fixture visits are dated 2026-09-28; evaluate the rolling 24 h report one
@@ -140,8 +164,10 @@ const { IngestionDaemon } = require('../src/ingestionDaemon');
   const realDateNow = Date.now;
   Date.now = () => baseEpochMs2 + 3600 * 1000;
   let report;
+  let visitsCsv;
   try {
     report = historyDb.getJournalismReport(24, [{ id: '1', code: 'L1' }]);
+    visitsCsv = historyDb.exportStopVisitsCsv(24).csv;
   } finally {
     Date.now = realDateNow;
   }
@@ -154,7 +180,61 @@ const { IngestionDaemon } = require('../src/ingestionDaemon');
   assert.equal(comp.measuredAvgDelay, 3.0); // (2 + 4) / 2 = 3.0
   assert.equal(comp.agreedVisits, 2);
   assert.equal(comp.agreementPct, 100);
+  assert.equal(comp.method, 'operator_trip');
+  assert.equal(comp.biasMins, 0);
+  assert.equal(comp.tripCheckedVisits, 2);
+  assert.equal(comp.tripConfirmedVisits, 2);
+  assert.equal(comp.tripConfirmedPct, 100);
+  assert.equal(comp.byLine.length, 1);
+  assert.equal(comp.byLine[0].lineCode, 'L1');
+  assert.equal(comp.byLine[0].comparedVisits, 2);
+  assert.equal(comp.byHour.reduce((sum, h) => sum + h.comparedVisits, 0), 2);
   console.log(`  ✓ Journalism report delay comparison: ${comp.comparedVisits} visits compared, ${comp.agreementPct}% agreement.`);
+
+  const csvLines = visitsCsv.trim().split('\n');
+  assert.ok(csvLines[0].endsWith(',Font,Viatge confirmat'), 'visits CSV header ends with Viatge confirmat');
+  const legacyLine = csvLines.find(l => l.includes('"bus_legacy"'));
+  assert.ok(legacyLine, 'legacy row is exported');
+  assert.ok(legacyLine.includes(',3,"",1,'), 'legacy nearest-departure measurement is blank in the CSV');
+  assert.ok(legacyLine.endsWith(',"live",""'), 'legacy row has no trip confirmation');
+  const liveLine = csvLines.find(l => l.includes('"bus_test_2"'));
+  assert.ok(liveLine.includes(',4,"4",') && liveLine.endsWith(',"live","1"'), 'operator-trip row exports measured delay and trip confirmation');
+  console.log('  ✓ Visits CSV blanks legacy measurements and exports trip confirmation.');
+
+  // Scenario 4: a bus later than half the headway. The nearest departure is the
+  // NEXT trip, but the measurement stays on the operator's trip.
+  let k = -1;
+  for (let i = 0; i + 1 < departures.length; i++) {
+    const gap = (timeEngine.timeStringToSeconds(departures[i + 1]) - timeEngine.timeStringToSeconds(departures[i])) / 60;
+    if (gap >= 8 && gap <= 20) { k = i; break; }
+  }
+  assert(k >= 0, 'Line 1 Rodalies must have two consecutive departures 8-20 min apart');
+  const gapMins = (timeEngine.timeStringToSeconds(departures[k + 1]) - timeEngine.timeStringToSeconds(departures[k])) / 60;
+  const lateMins = Math.ceil(gapMins * 0.75);
+  const pubSec4 = timeEngine.timeStringToSeconds(departures[k]);
+  const baseEpochMs4 = Date.UTC(2026, 8, 28, Math.floor(pubSec4 / 3600) - 2, Math.floor((pubSec4 % 3600) / 60), pubSec4 % 60);
+  const passing4 = baseEpochMs4 + lateMins * 60 * 1000;
+  daemon.flushVisit({
+    key: '1|11|Rodalies',
+    vehicleId: 'bus_test_late',
+    lineCode: 'L1',
+    direction: '11',
+    stopName: 'Rodalies',
+    firstTs: passing4 - 60 * 1000,
+    lastTs: passing4,
+    lastDelay: lateMins,
+    count: 3,
+    scheduledTime: departures[k],
+    actualTime: departures[k],
+    timesSource: 'derived_timetable',
+    isRealTime: true,
+    lastObservedAt: passing4,
+    passingAt: passing4
+  });
+  const row4 = historyDb.db.prepare('SELECT * FROM stop_visits WHERE vehicle_id = ?').get('bus_test_late');
+  assert.equal(row4.measured_delay_mins, lateMins, `a bus ${lateMins} min late must be measured ${lateMins} min late (got ${row4.measured_delay_mins})`);
+  assert.equal(row4.trip_agrees, 0, 'the nearest departure is the next trip, so the trip is not independently confirmed');
+  console.log(`  ✓ Sample 4 (late beyond half headway): Operator delay ${row4.delay_mins}m, Measured delay ${row4.measured_delay_mins}m, trip confirmed ${row4.trip_agrees}.`);
 
   console.log('🎉 ALL INDEPENDENT DELAY MEASUREMENT ASSERTIONS PASSED!');
 })().finally(() => {
