@@ -844,10 +844,12 @@ class ObservatoriApp {
       <!-- Operator delay vs. Arribo's own passing time, on the operator's trip -->
       ${(() => {
         const comp = s.delayMeasurementComparison;
-        if (!comp || !comp.hasData || !comp.comparedVisits) return '';
+        // A report cached by an older build lacks the operator_trip fields; skip the panel until it is regenerated.
+        if (!comp || !comp.hasData || !comp.comparedVisits || comp.method !== 'operator_trip') return '';
         const signed = v => (v === null || v === undefined ? '—' : `${v > 0 ? '+' : ''}${Number(v).toLocaleString('ca-ES')} min`);
         const pctStr = v => (v === null || v === undefined ? '—' : `${Number(v).toLocaleString('ca-ES')}%`);
         const tone = v => (v === null || v === undefined ? 'var(--text-muted)' : v >= 75 ? 'var(--accent-live)' : v >= 60 ? 'var(--accent-warning)' : 'var(--accent-danger)');
+        const num = v => (Number(v) || 0).toLocaleString('ca-ES');
         const lines = Array.isArray(comp.byLine) ? comp.byLine : [];
         const hours = (Array.isArray(comp.byHour) ? comp.byHour : []).filter(h => h.comparedVisits >= 20);
         return `
@@ -859,7 +861,7 @@ class ObservatoriApp {
             </span>
           </div>
           <div>
-            Sobre <strong>${comp.comparedVisits.toLocaleString('ca-ES')} passos per parada</strong>, comparem el retard que informa l'operador
+            Sobre <strong>${num(comp.comparedVisits)} passos per parada</strong>, comparem el retard que informa l'operador
             amb l'hora a què el GPS mostra que el bus ha passat per la parada, mesurada contra l'horari publicat del mateix viatge.
             Retard mitjà informat: <strong>${signed(comp.operatorAvgDelay)}</strong> ·
             mesurat per Arribo!: <strong>${signed(comp.measuredAvgDelay)}</strong> ·
@@ -867,7 +869,7 @@ class ObservatoriApp {
           </div>
           <div style="margin-top:0.35rem;">
             <strong>Viatge confirmat de forma independent: ${pctStr(comp.tripConfirmedPct)}</strong>
-            (${comp.tripConfirmedVisits.toLocaleString('ca-ES')} de ${comp.tripCheckedVisits.toLocaleString('ca-ES')} passos):
+            (${num(comp.tripConfirmedVisits)} de ${num(comp.tripCheckedVisits)} passos):
             el viatge programat més proper a l'hora de pas és el mateix que indica l'operador.
             La resta són busos amb més retard que mig interval entre busos; per a aquests només l'operador sap quin viatge fan,
             i el contrast es fa sobre el viatge que indica.
@@ -890,7 +892,7 @@ class ObservatoriApp {
                   return `
                 <tr>
                   <td class="sticky-col"><span class="observatori-line-badge" style="background:${colour}; color:${this.chipInk(colour)};">${this.esc(l.lineCode)}</span></td>
-                  <td>${l.comparedVisits.toLocaleString('ca-ES')}</td>
+                  <td>${num(l.comparedVisits)}</td>
                   <td style="font-weight:700; color:${tone(l.agreementPct)};">${pctStr(l.agreementPct)}</td>
                   <td>${signed(l.biasMins)}</td>
                   <td>${pctStr(l.tripConfirmedPct)}</td>
@@ -904,7 +906,7 @@ class ObservatoriApp {
             <div style="font-weight:600; color:var(--text-primary); margin-bottom:0.3rem;">Acord per franja horària</div>
             <div style="display:flex; flex-wrap:wrap; gap:0.35rem;">
               ${hours.map(h => `
-              <span title="${h.comparedVisits.toLocaleString('ca-ES')} passos" style="font-family:var(--font-mono); font-size:0.72rem; padding:0.15rem 0.45rem; border-radius:6px; background:var(--bg-elevated); border:1px solid var(--border-subtle); color:${tone(h.agreementPct)};">
+              <span title="${num(h.comparedVisits)} passos" style="font-family:var(--font-mono); font-size:0.72rem; padding:0.15rem 0.45rem; border-radius:6px; background:var(--bg-elevated); border:1px solid var(--border-subtle); color:${tone(h.agreementPct)};">
                 ${this.esc(h.hour)}h ${pctStr(h.agreementPct)}
               </span>`).join('')}
             </div>

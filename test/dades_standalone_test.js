@@ -62,6 +62,7 @@ let appServer;
   const obsCode = fs.readFileSync(obsPath, 'utf8');
   assert.ok(obsCode.includes('class ObservatoriApp'), 'observatori.js must define ObservatoriApp');
   assert.ok(obsCode.includes('renderJournalismReport'), 'observatori.js must have renderJournalismReport');
+  assert.ok(obsCode.includes("comp.method !== 'operator_trip'"), 'the comparison panel must skip a report cached by an older build');
   assert.ok(obsCode.includes('renderStopHeatmap'), 'observatori.js must have renderStopHeatmap');
   assert.ok(obsCode.includes('renderTermometreScorecard'), 'observatori.js must have renderTermometreScorecard');
   assert.ok(obsCode.includes('renderDelayIncidentsView'), 'observatori.js must have renderDelayIncidentsView');
