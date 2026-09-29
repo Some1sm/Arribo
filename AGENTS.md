@@ -326,6 +326,16 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   `inspectDelayIncident` returns the `trip_relink` verdict. A direction change, a
   reset at the origin or terminus, or a jump back to an earlier stop is a trip
   boundary, never a relink: the delay before it may have been real.
+- **Investigar shows the bus's run, not the clicked stop alone.** A stop often
+  holds a single sample of a bus that reported all along its route (L8 bus 2669,
+  29 Sep 2026: one sample at Escola El Turó inside a +23..+27 run over 10 stops),
+  and on its own it read as "one GPS ping". `inspectDelayIncident` returns
+  `episode.run` ([incidentRun.js](src/core/schedule/incidentRun.js): every stop
+  visit 30 min either side, with a sustained / building / recovering / variable /
+  isolated summary for the clicked trip only: a direction change or a jump back
+  along the route starts a new trip), and looks for GPS positions 5 min
+  either side of the episode. Positions are kept only SNAPSHOT_RETENTION_HOURS
+  (2 h in Compose), so their absence on an older episode is not evidence.
 
 ## 4. Runtime, configuration and privacy
 

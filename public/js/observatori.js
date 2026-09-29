@@ -1990,87 +1990,106 @@ class ObservatoriApp {
       }
       const ep = data.episode || {};
       const ev = ep.evidence || {};
-      // Token values, not hexes: this paints text in a table cell, and the
-      // hardcoded dark-palette values were 1.8-2.6:1 on the light surface.
-      const verdictColors = { corroborated: 'var(--accent-live)', derived_only: 'var(--accent-regulating)', poll_inflated: 'var(--accent-warning)', unverifiable: 'var(--accent-danger)', telemetry_anomaly: 'var(--text-muted)', trip_relink: 'var(--accent-warning)' };
-      // The fallback was '#fff', i.e. white text on a light table in light mode.
-      const verdictLabel = verdictColors[ep.verdict] || 'var(--text-primary)';
-      const vehicleBadge = ep.distinctVehicles.length
-        ? ep.distinctVehicles.map(v => `<span style="background:rgba(255,255,255,0.08); padding:2px 6px; border-radius:4px; font-size:0.74rem;">${this.esc(v)}</span>`).join(' ')
+      // The bus's whole run around the clicked delay (server: episode.run). The
+      // clicked stop alone often holds a single sample, which read as "the bus
+      // only sent one GPS ping" when it had reported every minute along the route.
+      const run = ep.run && Array.isArray(ep.run.stops) && ep.run.stops.length ? ep.run : null;
+      const sum = run ? (run.summary || {}) : {};
+      const bus = Array.isArray(ep.distinctVehicles) && ep.distinctVehicles.length === 1 ? ep.distinctVehicles[0] : '';
+      const signed = v => (Number(v) > 0 ? `+${v}` : String(v));
+      const hhmm = t => String(t || '').slice(0, 5);
+      const range = sum.fromTime && sum.toTime ? ` (${hhmm(sum.fromTime)}–${hhmm(sum.toTime)})` : '';
+      const stopsWord = n => (n === 1 ? '1 parada' : `${n} parades`);
+
+      // What happened, in one plain sentence. Token colours only (light + dark).
+      let headline;
+      if (ep.tripRelink) {
+        headline = { tone: 'var(--accent-warning)', title: '🔀 Viatge reassignat pel SAE', text: `A ${this.esc(ep.tripRelink.stopName)} el retard passa de +${ep.tripRelink.delayBefore} a ${ep.tripRelink.delayAfter} min de cop: cap autobús pot recuperar tant de temps entre dues parades. El sistema de l'operador tenia el bus assignat a un viatge que no feia, i el retard anterior es mesurava contra aquell viatge. No és un retard real verificable.` };
+      } else if (!run) {
+        headline = { tone: 'var(--text-muted)', title: 'Recorregut no disponible', text: 'Aquestes mostres no tenen un únic identificador de bus, així que no es pot reconstruir el seu recorregut.' };
+      } else {
+        const who = bus ? `El bus ${this.esc(bus)}` : 'El bus';
+        const byPattern = {
+          sustained: { tone: 'var(--accent-danger)', title: 'Retard sostingut', text: `${who} va circular entre ${signed(sum.minDelay)} i ${signed(sum.maxDelay)} min de retard durant ${stopsWord(sum.stopCount)}${range}. Un retard estable al llarg del recorregut és un retard real del servei.` },
+          building: { tone: 'var(--accent-danger)', title: 'Retard creixent', text: `${who} va passar de ${signed(sum.firstDelay)} a ${signed(sum.lastDelay)} min de retard en ${stopsWord(sum.stopCount)}${range}: va perdent temps al llarg del recorregut.` },
+          recovering: { tone: 'var(--accent-warning)', title: 'Retard que es recupera', text: `${who} va baixar de ${signed(sum.firstDelay)} a ${signed(sum.lastDelay)} min de retard en ${stopsWord(sum.stopCount)}${range}.` },
+          variable: { tone: 'var(--accent-warning)', title: 'Retard variable', text: `${who} va tenir entre ${signed(sum.minDelay)} i ${signed(sum.maxDelay)} min de retard en ${stopsWord(sum.stopCount)}${range}, sense una tendència clara.` },
+          isolated: { tone: 'var(--text-secondary)', title: 'Registre aïllat', text: `${who} només consta en aquesta parada en aquest sentit. Pot ser un valor puntual de l'operador: cal prudència.` }
+        };
+        headline = byPattern[sum.pattern] || byPattern.variable;
+      }
+
+      // Evidence, in Catalan. The server's English verdictLabel stays in the API
+      // for other consumers; the panel shows its own wording keyed on ep.verdict.
+      const verdicts = {
+        corroborated: ['var(--accent-live)', 'Confirmat', 'Bus identificat, amb posicions GPS guardades o horaris enviats per l\'operador que ho corroboren.'],
+        derived_only: ['var(--accent-regulating)', 'Dada de l\'operador', 'El retard és el que envia l\'operador. No hi ha cap altra font independent per a aquest moment.'],
+        poll_inflated: ['var(--accent-warning)', 'Mostres repetides', 'El mateix bus registrat moltes vegades seguides: compta com un sol cas.'],
+        unverifiable: ['var(--accent-danger)', 'No verificable', 'No hi ha identificador de bus ni cap altra evidència.'],
+        telemetry_anomaly: ['var(--text-muted)', 'Fora de servei', 'Registre de nit o a cotxeres: no és un retard de servei.'],
+        trip_relink: ['var(--accent-warning)', 'Viatge reassignat pel SAE', 'El retard es mesurava contra un viatge que el bus no feia.']
+      };
+      const [vTone, vTitle, vText] = verdicts[ep.verdict] || ['var(--text-primary)', 'Sense veredicte', ''];
+      const busCell = Array.isArray(ep.distinctVehicles) && ep.distinctVehicles.length
+        ? ep.distinctVehicles.map(v => `<span class="drilldown-bus-chip">${this.esc(v)}</span>`).join(' ')
         : ev.vehicleIdGapExplained
-          ? '<span style="color:var(--accent-danger);">cap vehicle_id — <span style="opacity:0.8;">aquestes files són anteriors a la columna</span></span>'
-          : '<span style="color:var(--accent-danger);">cap vehicle_id registrat</span>';
-      // Two buses in one episode used to be silently merged and shown as a
-      // normal multi-badge list. It now only happens when no id was stored on
-      // the opening row, and it has to be called out rather than left to look
-      // like one trip.
+          ? '<span style="color:var(--text-muted);">Sense identificador: són mostres anteriors al 19/09/2026, quan encara no es guardava</span>'
+          : '<span style="color:var(--accent-danger);">L\'operador no va enviar l\'identificador del bus</span>';
       const ambiguousNote = ep.vehicleAmbiguous
-        ? '<tr><td style="color:var(--text-muted); padding:3px 0;">Identitat</td><td style="color:var(--accent-warning);"><strong>Episodi ambigu</strong> — les mostres no tenen vehicle_id i no es poden atribuir a un únic autobús</td></tr>'
+        ? '<tr><th scope="row">Atenció</th><td style="color:var(--accent-warning);">Mostres sense identificador: podrien ser de més d\'un autobús</td></tr>'
         : '';
-      // Three distinct time provenances, never two: a real upstream observation,
-      // a live derivation from the static timetable, and an offline backfilled
-      // approximation. The server classifies every row (timesProvenance) so the
-      // UI never re-derives the rule with a string comparison.
-      const timesBadge = ev.rowsWithObservedTimes > 0
-        ? `<span style="color:var(--accent-live);">${ev.rowsWithObservedTimes} mostres amb horari observat pel feed</span>`
-          + (ev.rowsWithDerivedTimes > 0 ? ` <span style="color:var(--text-muted);">+ ${ev.rowsWithDerivedTimes} derivades</span>` : '')
-          + (ev.rowsWithBackfilledTimes > 0 ? ` <span style="color:var(--text-muted);">+ ${ev.rowsWithBackfilledTimes} reomplenes</span>` : '')
-        : ev.rowsWithBackfilledTimes > 0
-          ? `<span style="color:var(--accent-warning);">${ev.rowsWithBackfilledTimes} mostres amb horari <strong>aproximat offline</strong> (no observat)</span>`
-          : ev.rowsWithDerivedTimes > 0
-            ? `<span style="color:var(--accent-regulating);">${ev.rowsWithDerivedTimes} mostres amb horari <strong>derivat</strong> del horari teòric</span>`
-            : '<span style="color:var(--accent-danger);">cap mostra amb horari teòric ni real</span>';
-      const snapshotBadge = ev.snapshotTrailPoints >= 2 ? `<span style="color:var(--accent-live);">${ev.snapshotTrailPoints} punts GPS</span>` : '<span style="color:var(--accent-danger);">cap traçal GPS proper</span>';
+      const keptHours = Number(ev.snapshotRetentionHours) || 2;
+      const endTs = ep.tripKey && Number.isFinite(Number(ep.tripKey.endTs)) ? Number(ep.tripKey.endTs) : null;
+      const olderThanKept = endTs !== null && (Date.now() - endTs) > keptHours * 3600 * 1000;
+      const gpsCell = ev.snapshotTrailPoints >= 2
+        ? `<span style="color:var(--accent-live);">${ev.snapshotTrailPoints} posicions al voltant d'aquest moment</span>`
+        : olderThanKept
+          ? `<span style="color:var(--text-muted);">Ja no disponibles: només es guarden ${keptHours} h</span>`
+          : '<span style="color:var(--accent-warning);">Cap posició guardada al voltant d\'aquest moment</span>';
       summary.innerHTML = `
-        <table style="width:100%; border-collapse:collapse; font-size:0.82rem;">
-          <tr><td style="color:var(--text-muted); padding:3px 0;">Veïnatge</td><td style="color:${verdictLabel}; font-weight:600;">${this.esc(ep.verdictLabel)}</td></tr>
-          <tr><td style="color:var(--text-muted); padding:3px 0;">Vehicles</td><td style="color:var(--text-secondary);">${vehicleBadge}</td></tr>
+        <table class="drilldown-evidence-table">
+          <tr><th scope="row">Veredicte</th><td><strong style="color:${vTone};">${vTitle}</strong><div class="drilldown-evidence-note">${vText}</div></td></tr>
+          <tr><th scope="row">Bus</th><td>${busCell}</td></tr>
           ${ambiguousNote}
-          <tr><td style="color:var(--text-muted); padding:3px 0;">Horaris</td><td style="color:var(--text-secondary);">${timesBadge}</td></tr>
-          <tr><td style="color:var(--text-muted); padding:3px 0;">Traçal</td><td style="color:var(--text-secondary);">${snapshotBadge}</td></tr>
-          <tr><td style="color:var(--text-muted); padding:3px 0;">Linies retirades</td><td style="color:${data.dataQuality?.retiredScopeLinesPresent ? 'var(--accent-danger)' : 'var(--accent-live)'};">${data.dataQuality?.retiredScopeLinesPresent ? 'Sí — hi ha dades de línies extintes' : 'No'}</td></tr>
-          <tr><td style="color:var(--text-muted); padding:3px 0;">Proveniència horària</td><td style="color:var(--text-secondary);">${this._timesProvenanceLabel(ep.timesProvenance || ev.timesProvenance)}</td></tr>
-          <tr><td style="color:var(--text-muted); padding:3px 0;">Total mostres raw</td><td style="color:var(--text-secondary);">${data.dataQuality?.totalRawRowsReturned ?? 0} → ${data.dataQuality?.episodesInWindow || 0} episodis</td></tr>
+          <tr><th scope="row">Hora teòrica</th><td>${this._timesProvenanceLabel(ep.timesProvenance || ev.timesProvenance)}</td></tr>
+          <tr><th scope="row">Posicions GPS guardades</th><td>${gpsCell}</td></tr>
         </table>
-        ${ep.tripRelink ? `<p style="color:var(--accent-warning); font-size:0.78rem; margin:8px 0 0;"><strong>Viatge reassignat pel SAE.</strong> A ${this.esc(ep.tripRelink.stopName)} el retard passa de +${ep.tripRelink.delayBefore} a ${ep.tripRelink.delayAfter} min de cop: cap autobús pot recuperar tant de temps entre dues parades. El sistema de l'operador tenia el bus assignat a un viatge que no feia i mesurava el retard contra aquell viatge. No és un retard real verificable.</p>` : ''}
-        ${ep.timetableCheck?.backfilledFromTimetable ? '<p style="color:var(--accent-warning); font-size:0.78rem; margin:8px 0 0;">L\'horari teòric i real d\'aquestes mostres s\'ha <strong>aproximat offline</strong> (scripts/backfill_delay_times.js) a partir del quadre horari estàtic, endevinant el sentit de circulació. No és una observació del feed ni una derivació en viu, i per tant <strong>no corrobora</strong> el retard: només hi serveix de contextualització.</p>' : ''}
-        ${ep.timetableCheck?.derivedFromTimetable && !ep.timetableCheck?.backfilledFromTimetable ? '<p style="color:var(--accent-regulating); font-size:0.78rem; margin:8px 0 0;">L\'horari teòric i real d\'aquestes mostres s\'ha <strong>derivat</strong> del quadre horari estàtic: el feed upstream només dona el retard, mai l\'hora amb què es compara. Serveix per contextualitzar, però no és una observació independent.</p>' : ''}
-        ${ev.vehicleIdNote ? `<p style="color:var(--text-muted); font-size:0.78rem; margin:6px 0 0;">${this.esc(ev.vehicleIdNote)}</p>` : ''}
       `;
-      const rawHtml = (ep.rawRows || []).map(r => {
-        const vB = r.vehicleId ? this.esc(r.vehicleId) : '<span style="color:var(--accent-danger);">—</span>';
-        // Colour comes from the server-side classification (timesProvenance),
-        // never from a local string comparison on times_source.
-        const tB = !r.hasTimes
-          ? '<span style="color:var(--accent-danger);">no</span>'
-          : r.timesProvenance === 'derived_timetable_backfill'
-            ? `<span style="color:var(--accent-warning);" title="Aproximació offline del quadre horari (sentit endevinat)">${this.esc((r.scheduledTime || '').slice(0, 5))}→${this.esc((r.actualTime || '').slice(0, 5))} reomplert</span>`
-            : r.timesProvenance === 'derived_timetable'
-              ? `<span style="color:var(--accent-regulating);" title="Derivat en viu del quadre horari estàtic">${this.esc((r.scheduledTime || '').slice(0, 5))}→${this.esc((r.actualTime || '').slice(0, 5))} derivat</span>`
-              : `<span style="color:var(--accent-live);" title="Hora reportada pel feed upstream">${this.esc((r.scheduledTime || '').slice(0, 5))}→${this.esc((r.actualTime || '').slice(0, 5))}</span>`;
-        // A real table row, not a flex div. The old markup was
-        // justify-content:space-between over six inline spans, so every column
-        // shifted with the length of the cell before it and there was no header
-        // telling you what any of them meant.
+
+      const runRows = run
+        ? run.stops
+        : (ep.rawRows || []).map(r => ({
+          stopName: r.stopName, direction: r.direction, towards: '', time: String(r.formattedDate || '').slice(11, 19),
+          delayMins: r.delayMins, isRealTime: r.isRealTime, scheduledTime: r.scheduledTime, actualTime: r.actualTime,
+          timesProvenance: r.timesProvenance, isClicked: true, directionChanged: false
+        }));
+      // One row per stop visit, six fixed columns (see .drilldown-samples-table).
+      const rowsHtml = runRows.map(s => {
+        const times = s.scheduledTime && s.actualTime
+          ? `${this.esc(hhmm(s.scheduledTime))} → ${this.esc(hhmm(s.actualTime))}${s.timesProvenance === 'derived_timetable_backfill' ? ' ≈' : ''}`
+          : '—';
+        const delayClass = s.delayMins >= 20 ? 'is-high' : (s.delayMins >= 5 ? 'is-mid' : 'is-low');
+        const rowClass = [s.isClicked ? 'is-clicked' : '', (s.newTrip || s.directionChanged) ? 'is-new-trip' : ''].filter(Boolean).join(' ');
         return `
-          <tr>
-            <td class="drilldown-cell-time">${this.esc(r.formattedDate)}</td>
-            <td class="drilldown-cell-delay"><span class="drilldown-delay ${r.delayMins >= 20 ? 'is-high' : 'is-mid'}">+${r.delayMins} min</span></td>
-            <td class="drilldown-cell-stop">${this.esc(r.stopName || '—')}</td>
-            <td class="drilldown-cell-veh">${vB}</td>
-            <td class="drilldown-cell-times">${tB}</td>
-            <td class="drilldown-cell-src">${r.isRealTime ? 'GPS' : 'estim'}</td>
+          <tr class="${rowClass}">
+            <td class="drilldown-cell-time">${this.esc(hhmm(s.time))}</td>
+            <td class="drilldown-cell-delay"><span class="drilldown-delay ${delayClass}">${signed(s.delayMins)} min</span></td>
+            <td class="drilldown-cell-stop">${this.esc(s.stopName || '—')}${s.isClicked ? ' <span class="drilldown-clicked-tag">consultada</span>' : ''}</td>
+            <td class="drilldown-cell-veh">${s.towards ? `→ ${this.esc(s.towards)}` : '—'}</td>
+            <td class="drilldown-cell-times">${times}</td>
+            <td class="drilldown-cell-src">${s.isRealTime ? 'GPS' : 'Estimat'}</td>
           </tr>`;
       }).join('');
       const tripLink = this._matchIncidentTrip(ep);
+      const clicked = runRows.find(s => s.isClicked) || null;
       content.innerHTML = `
-        <div style="margin-bottom:0.6rem;">
-          <strong style="color:var(--text-primary);">Pics d'aquest episodi:</strong>
-          <span style="color:var(--text-primary); font-weight:800;"> ${ep.peakDelayMins} min</span>
-          <span style="color:var(--text-muted); font-size:0.78rem;"> (${this.esc(ep.start)} → ${this.esc(ep.end)}, ${ep.durationMinutes.toFixed(1)} min)</span>
+        <div class="drilldown-headline" style="border-left-color:${headline.tone};">
+          <div class="drilldown-headline-title" style="color:${headline.tone};">${headline.title}</div>
+          <div class="drilldown-headline-text">${headline.text}</div>
         </div>
-        <div style="margin-bottom:0.6rem; font-size:0.78rem; color:var(--accent-warning);">
-          ⚠️ Aquest episodi agrupa ${ep.rowCount} mostres brutes de registre cada 20 s. El nombre d'"incidents" que apareix al rànquing és el compte de mostres, no de viatges.
+        <div class="drilldown-context">
+          Parada consultada: <strong>${this.esc(clicked ? clicked.stopName : (data.stopName || stopName))}</strong>${clicked && clicked.time ? ` a les ${this.esc(hhmm(clicked.time))}` : ''} · retard màxim en aquesta parada: ${signed(ep.peakDelayMins)} min.
+          ${run ? ` A sota hi ha tot el que va registrar aquest bus entre les ${this.esc(hhmm(runRows[0].time))} i les ${this.esc(hhmm(runRows[runRows.length - 1].time))}, una fila per parada.` : ''}
         </div>
         ${tripLink}
         <div class="drilldown-table-scroll">
@@ -2080,15 +2099,20 @@ class ObservatoriApp {
                 <th scope="col">Hora</th>
                 <th scope="col">Retard</th>
                 <th scope="col">Parada</th>
-                <th scope="col">Bus</th>
+                <th scope="col">Sentit</th>
                 <th scope="col">Teòric → Real</th>
-                <th scope="col">Origen</th>
+                <th scope="col">Senyal</th>
               </tr>
             </thead>
-            <tbody>${rawHtml || '<tr><td colspan="6" style="color:var(--text-muted);">Cap mostra</td></tr>'}</tbody>
+            <tbody>${rowsHtml || '<tr><td colspan="6" style="color:var(--text-muted);">Cap mostra</td></tr>'}</tbody>
           </table>
         </div>
+        <p class="drilldown-legend">«Teòric → Real»: l'operador només envia el retard; l'hora teòrica és la de l'horari publicat per a aquell viatge i la real és la teòrica més el retard. «Senyal»: GPS si la posició era recent, Estimat si el bus havia perdut el senyal uns segons.</p>
       `;
+      // Bring the clicked stop into view inside the scrolling table.
+      const scroller = content.querySelector('.drilldown-table-scroll');
+      const clickedRow = content.querySelector('tr.is-clicked');
+      if (scroller && clickedRow) scroller.scrollTop = Math.max(0, clickedRow.offsetTop - scroller.clientHeight / 2);
     } catch (e) {
       content.innerHTML = `<span style="color:var(--accent-danger);">Error carregant la investigació: ${this.esc(e.message)}</span>`;
     }
@@ -2157,14 +2181,14 @@ class ObservatoriApp {
       </div>`;
   }
 
-  /** Human label for the server-side times_provenance classification. */
+  /** Plain-Catalan label for the server-side times_provenance classification. */
   _timesProvenanceLabel(provenance) {
     switch (provenance) {
-      case 'observed': return '<span style="color:var(--accent-live);">Horari observat pel feed upstream</span>';
-      case 'derived_timetable': return '<span style="color:var(--accent-regulating);">Derivat del quadre horari (en viu)</span>';
-      case 'derived_timetable_backfill': return '<span style="color:var(--accent-warning);">Aproximació offline del quadre horari</span>';
-      case 'mixed': return '<span style="color:var(--text-secondary);">Mixta (consulta les mostres individuals)</span>';
-      default: return '<span style="color:var(--text-muted);">Cap horari disponible</span>';
+      case 'observed': return '<span style="color:var(--accent-live);">Enviada per l\'operador</span>';
+      case 'derived_timetable': return '<span style="color:var(--text-secondary);">Calculada per Arribo! amb l\'horari publicat i el retard que envia l\'operador (l\'operador no envia l\'hora teòrica)</span>';
+      case 'derived_timetable_backfill': return '<span style="color:var(--accent-warning);">Aproximada a posteriori amb l\'horari publicat (menys fiable)</span>';
+      case 'mixed': return '<span style="color:var(--text-secondary);">Diverses fonts: vegeu la columna «Teòric → Real»</span>';
+      default: return '<span style="color:var(--text-muted);">No disponible</span>';
     }
   }
 

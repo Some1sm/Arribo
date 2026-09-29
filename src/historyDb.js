@@ -18,6 +18,7 @@ const {
 } = require('./core/schedule/tripRelink');
 const mataroSchedules = require('./data/mataroSchedules');
 const { normalizeStopName } = require('./core/schedule/tripMatcher');
+const { buildIncidentRun, RUN_CONTEXT_MS } = require('./core/schedule/incidentRun');
 
 let DatabaseSync;
 try {
@@ -153,6 +154,17 @@ function scheduleStopIndex() {
     return indexes.length ? { indexes, lastIndex: names.length - 1 } : null;
   };
 }
+
+/** Name of a direction's last stop in the published timetable ('' when unknown). */
+function directionTerminus(lineCode, direction) {
+  const ds = mataroSchedules.getDirectionSchedule(String(lineCode || '').replace(/^L/i, ''), direction, 'weekday');
+  const stops = ds && Array.isArray(ds.stops) ? ds.stops : [];
+  return stops.length ? String(stops[stops.length - 1].name || '') : '';
+}
+
+// GPS positions are stored about once a minute, so a single-sample episode
+// needs a margin on each side to find the two positions that corroborate it.
+const SNAPSHOT_CONTEXT_MS = 5 * 60 * 1000;
 
 let cachedDataVersion = null;
 function getDataVersion() {
@@ -2624,7 +2636,7 @@ class HistoryDatabase {
       const derivedRows = provenance.derived;
       const backfilledRows = provenance.backfill;
       const episodeTimesProvenance = summariseTimesProvenance(provenance);
-      const snapshotRows = vehicleIds.length ? this._snapshotTrail(vehicleIds[0], pick[0].timestamp, pick[pick.length - 1].timestamp) : [];
+      const snapshotRows = vehicleIds.length ? this._snapshotTrail(vehicleIds[0], pick[0].timestamp - SNAPSHOT_CONTEXT_MS, pick[pick.length - 1].timestamp + SNAPSHOT_CONTEXT_MS) : [];
 
       const hasVehicleId = vehicleIds.length > 0;
       // The vehicle_id column was added by ALTER TABLE on 2026-09-19, so every
@@ -2645,15 +2657,28 @@ class HistoryDatabase {
       // A trip relink outranks every provenance grade: the delay itself was
       // measured against a trip the bus was not running.
       let tripRelink = null;
+      // The bus's whole run around the episode (see incidentRun.js), so the
+      // Investigar panel shows every stop it logged, not only the clicked one.
+      let run = null;
       if (vehicleIds.length === 1) {
         const vehicleRows = this.db.prepare(`
-          SELECT vehicle_id AS vehicleId, line_code AS lineCode, direction, delay_mins AS delayMins, timestamp, stop_name AS stopName
+          SELECT vehicle_id AS vehicleId, line_code AS lineCode, direction, delay_mins AS delayMins, timestamp, stop_name AS stopName,
+            madrid_datetime(timestamp) AS formattedDate, is_realtime AS isRealTime,
+            scheduled_time AS scheduledTime, actual_time AS actualTime, times_source AS timesSource
           FROM delay_logs
           WHERE vehicle_id = ? AND timestamp >= ? AND timestamp <= ?
           ORDER BY timestamp ASC
           LIMIT 3000
-        `).all(vehicleIds[0], pick[0].timestamp - 3 * 3600 * 1000, pick[pick.length - 1].timestamp + 15 * 60 * 1000);
-        tripRelink = relinkOverlapping(findTripRelinks(vehicleRows, { stopIndex: scheduleStopIndex() }), vehicleIds[0], pick[0].lineCode, pick[0].timestamp, pick[pick.length - 1].timestamp);
+        `).all(vehicleIds[0], pick[0].timestamp - 3 * 3600 * 1000, pick[pick.length - 1].timestamp + RUN_CONTEXT_MS);
+        const relinkRows = vehicleRows.filter(r => r.timestamp <= pick[pick.length - 1].timestamp + 15 * 60 * 1000);
+        tripRelink = relinkOverlapping(findTripRelinks(relinkRows, { stopIndex: scheduleStopIndex() }), vehicleIds[0], pick[0].lineCode, pick[0].timestamp, pick[pick.length - 1].timestamp);
+        const lineUpper = String(pick[0].lineCode || '').toUpperCase();
+        run = buildIncidentRun(
+          vehicleRows
+            .filter(r => String(r.lineCode || '').toUpperCase() === lineUpper && r.timestamp >= pick[0].timestamp - RUN_CONTEXT_MS)
+            .map(r => ({ ...r, timesProvenance: classifyTimes(r) })),
+          { clickedStop: stopName, clickedFrom: pick[0].timestamp, clickedTo: pick[pick.length - 1].timestamp, towards: directionTerminus, stopIndex: scheduleStopIndex() }
+        );
       }
 
       let verdict, verdictLabel;
@@ -2715,6 +2740,7 @@ class HistoryDatabase {
           tripRelink: tripRelink
             ? { delayBefore: tripRelink.delayBefore, delayAfter: tripRelink.delayAfter, stopName: tripRelink.relinkStop, relinkTs: tripRelink.relinkTs, staleStops: tripRelink.staleStops }
             : null,
+          run,
           // Authoritative provenance signal for the whole episode. Consumers
           // should colour from the per-row timesProvenance, which is exact.
           timesProvenance: episodeTimesProvenance,
@@ -2731,6 +2757,7 @@ class HistoryDatabase {
             rowsWithBackfilledTimes: backfilledRows,
             rowsWithObservedTimes: observedTimeRows,
             snapshotTrailPoints: snapshotRows.length,
+            snapshotRetentionHours: this.snapshotRetentionHours,
             rowsWithoutProvenance: pick.length - rowsWithTimes
           },
           timetableCheck: {

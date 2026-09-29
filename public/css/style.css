@@ -9181,25 +9181,105 @@ body {
 
 /* Column widths are percentages of a fixed layout, so they hold at any
    container width instead of being computed per row. */
-.drilldown-cell-time  { width: 16%; white-space: nowrap; color: var(--text-secondary); }
-.drilldown-cell-delay { width: 11%; white-space: nowrap; }
-.drilldown-cell-stop  { width: 26%; }
-.drilldown-cell-veh   { width: 10%; white-space: nowrap; }
-.drilldown-cell-times { width: 25%; white-space: nowrap; }
-.drilldown-cell-src   { width: 12%; white-space: nowrap; color: var(--text-muted); }
+.drilldown-cell-time  { width: 10%; white-space: nowrap; color: var(--text-secondary); }
+.drilldown-cell-delay { width: 12%; white-space: nowrap; }
+.drilldown-cell-stop  { width: 30%; }
+.drilldown-cell-veh   { width: 20%; }
+.drilldown-cell-times { width: 18%; white-space: nowrap; }
+.drilldown-cell-src   { width: 10%; white-space: nowrap; color: var(--text-muted); }
 
-.drilldown-samples-table thead th:nth-child(1) { width: 16%; }
-.drilldown-samples-table thead th:nth-child(2) { width: 11%; }
-.drilldown-samples-table thead th:nth-child(3) { width: 26%; }
-.drilldown-samples-table thead th:nth-child(4) { width: 10%; }
-.drilldown-samples-table thead th:nth-child(5) { width: 25%; }
-.drilldown-samples-table thead th:nth-child(6) { width: 12%; }
+.drilldown-samples-table thead th:nth-child(1) { width: 10%; }
+.drilldown-samples-table thead th:nth-child(2) { width: 12%; }
+.drilldown-samples-table thead th:nth-child(3) { width: 30%; }
+.drilldown-samples-table thead th:nth-child(4) { width: 20%; }
+.drilldown-samples-table thead th:nth-child(5) { width: 18%; }
+.drilldown-samples-table thead th:nth-child(6) { width: 10%; }
 
 .drilldown-delay {
   font-weight: 700;
 }
 .drilldown-delay.is-high { color: #ef4444; }
 .drilldown-delay.is-mid  { color: #f59e0b; }
+.drilldown-delay.is-low  { color: var(--text-secondary); }
+
+/* Investigar: the clicked stop inside the bus's run, and where a new trip starts. */
+.drilldown-samples-table tbody tr.is-clicked td {
+  background: rgba(56, 189, 248, 0.12);
+  color: var(--text-primary);
+}
+.drilldown-samples-table tbody tr.is-new-trip td {
+  border-top: 2px dashed var(--border-subtle);
+}
+.drilldown-clicked-tag {
+  display: inline-block;
+  margin-left: 0.3rem;
+  padding: 0 0.35rem;
+  border-radius: 4px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: rgba(56, 189, 248, 0.18);
+  color: var(--text-primary);
+}
+.drilldown-headline {
+  border-left: 3px solid var(--border-subtle);
+  background: var(--bg-surface);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.7rem;
+}
+.drilldown-headline-title {
+  font-weight: 800;
+  font-size: 0.95rem;
+  margin-bottom: 0.2rem;
+}
+.drilldown-headline-text {
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+.drilldown-context {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  margin-bottom: 0.6rem;
+}
+.drilldown-legend {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  line-height: 1.45;
+  margin: 0.5rem 0 0;
+}
+.drilldown-evidence-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+.drilldown-evidence-table th {
+  width: 40%;
+  padding: 4px 8px 4px 0;
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-muted);
+  vertical-align: top;
+}
+.drilldown-evidence-table td {
+  padding: 4px 0;
+  color: var(--text-secondary);
+  vertical-align: top;
+}
+.drilldown-evidence-note {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+.drilldown-bus-chip {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.74rem;
+}
 
 /* ── Drill-down → Expedicions & Trajectòries cross-link ─────────────── */
 .drilldown-trip-card {

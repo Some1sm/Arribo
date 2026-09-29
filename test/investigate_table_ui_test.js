@@ -147,7 +147,7 @@ check(app._matchIncidentTrip(episode('2672')) !== '',
 // Structural, because the defect WAS structural: a flex div cannot hold
 // columns still, and a real <table> with a fixed layout can.
 const drilldownBody = observatoriSrc.slice(
-  observatoriSrc.indexOf('const rawHtml = (ep.rawRows || [])'),
+  observatoriSrc.indexOf('const rowsHtml = runRows.map('),
   observatoriSrc.indexOf('_matchIncidentTrip(ep) {')
 );
 check(drilldownBody.includes('<table class="drilldown-samples-table">'),
@@ -157,7 +157,7 @@ check(drilldownBody.includes('<thead>') && drilldownBody.includes('<tbody>'),
 
 const headers = [...drilldownBody.matchAll(/<th scope="col">([^<]+)<\/th>/g)].map(m => m[1].trim());
 check(headers.length === 6, `every column is labelled, found ${headers.length}: ${JSON.stringify(headers)}`);
-check(headers.join('|') === 'Hora|Retard|Parada|Bus|Teòric → Real|Origen',
+check(headers.join('|') === 'Hora|Retard|Parada|Sentit|Teòric → Real|Senyal',
   `headers are the expected six, got ${JSON.stringify(headers)}`);
 
 // One <td> per column per row, or the cells drift out of alignment again.
@@ -175,7 +175,7 @@ check(cellCount === 6, `each sample row emits exactly 6 cells, got ${cellCount}`
 // to make a test pass. AGENTS.md records the same class of trap elsewhere: a
 // naive source scan reading a comment as code.
 const rowBlock = drilldownBody.slice(0, drilldownBody.indexOf('}).join(\'\');'));
-check(rowBlock.includes('<tr>') && rowBlock.includes('<td class="drilldown-cell-time"'),
+check(rowBlock.includes('<tr class=') && rowBlock.includes('<td class="drilldown-cell-time"'),
   'the sample renderer emits table rows and cells');
 check(!rowBlock.includes('display:flex'),
   'the flex layout that made the columns drift is gone from the sample renderer');
