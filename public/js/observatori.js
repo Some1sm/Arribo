@@ -2075,6 +2075,28 @@ class ObservatoriApp {
           </div>`
         : '';
 
+      // Where the delay came from: back to the last stop without delay (often several
+      // trips earlier), with the places where it grew most. Not for a record that is
+      // not a real delay (deadhead return, trip relink).
+      const origin = run && run.origin && ep.verdict !== 'deadhead_return' && !ep.tripRelink ? run.origin : null;
+      const originPlace = e => {
+        const span = `${this.esc(hhmm(e.fromTime))}–${this.esc(hhmm(e.toTime))}, ${signed(e.fromDelay)} → ${signed(e.toDelay)} min`;
+        if (e.kind === 'between') return `entre ${this.esc(e.previousStop)} i ${this.esc(e.stopName)} (${span})`;
+        if (e.kind === 'turn') return `en girar, de ${this.esc(e.previousStop)} a ${this.esc(e.stopName)} (${span})`;
+        return `a ${this.esc(e.stopName)} (${span})`;
+      };
+      const originNote = origin && (origin.tripsBefore > 0 || origin.events.length)
+        ? `<div class="drilldown-callout drilldown-origin">
+            <strong>D'on ve el retard</strong>
+            ${origin.onTime
+              ? `L'últim registre sense retard és a les ${this.esc(hhmm(origin.onTime.time))} a ${this.esc(origin.onTime.stopName)} (${signed(origin.onTime.delayMins)} min)${origin.tripsBefore > 0 ? `, ${origin.tripsBefore === 1 ? 'al viatge anterior' : `${origin.tripsBefore} viatges abans`}` : ''}.`
+              : `Al primer registre disponible, a les ${this.esc(hhmm(origin.since.time))}, ja anava amb ${signed(origin.since.delayMins)} min.`}
+            ${origin.tripsBefore > 0 ? "El retard passa d'un viatge a l'altre: el temps a les capçaleres no n'ha recuperat prou." : ''}
+            ${origin.events.length ? `On va créixer més: ${origin.events.map(originPlace).join('; ')}.` : 'No hi ha cap salt concret: es va acumulant a poc a poc.'}
+            <button type="button" class="btn-secondary btn-sm drilldown-jump">Veure-ho a la taula</button>
+          </div>`
+        : '';
+
       // Evidence, in Catalan. The server's English verdictLabel stays in the API
       // for other consumers; the panel shows its own wording keyed on ep.verdict.
       const verdicts = {
@@ -2152,12 +2174,12 @@ class ObservatoriApp {
           ? `${this.esc(hhmm(s.scheduledTime))} → ${this.esc(hhmm(s.actualTime))}${s.timesProvenance === 'derived_timetable_backfill' ? ' ≈' : ''}`
           : '—';
         const delayClass = s.phantom ? 'is-phantom' : (s.delayMins >= 20 ? 'is-high' : (s.delayMins >= 5 ? 'is-mid' : 'is-low'));
-        const rowClass = [s.isClicked ? 'is-clicked' : '', s.phantom ? 'is-phantom' : ''].filter(Boolean).join(' ');
+        const rowClass = [s.isClicked ? 'is-clicked' : '', s.phantom ? 'is-phantom' : '', s.originStart ? 'is-origin-start' : ''].filter(Boolean).join(' ');
         return `${header}
           <tr class="${rowClass}">
             <td class="drilldown-cell-time">${this.esc(hhmm(s.time))}</td>
-            <td class="drilldown-cell-delay"><span class="drilldown-delay ${delayClass}">${signed(s.delayMins)} min</span></td>
-            <td class="drilldown-cell-stop">${this.esc(s.stopName || '—')}${s.isClicked ? ' <span class="drilldown-clicked-tag">consultada</span>' : ''}</td>
+            <td class="drilldown-cell-delay"><span class="drilldown-delay ${delayClass}">${signed(s.delayMins)} min</span>${s.delayGrowth ? ` <span class="drilldown-growth" title="El retard va créixer ${s.delayGrowth} min en aquest punt">▲${s.delayGrowth}</span>` : ''}</td>
+            <td class="drilldown-cell-stop">${this.esc(s.stopName || '—')}${s.isClicked ? ' <span class="drilldown-clicked-tag">consultada</span>' : ''}${s.originStart ? ' <span class="drilldown-origin-tag">sense retard</span>' : ''}</td>
             <td class="drilldown-cell-times">${times}</td>
             <td class="drilldown-cell-src">${s.isRealTime ? 'GPS' : 'Estimat'}</td>
           </tr>`;
@@ -2169,6 +2191,7 @@ class ObservatoriApp {
           <div class="drilldown-headline-title">${headline.title}</div>
           <p class="drilldown-headline-text">${headline.text}</p>
         </div>
+        ${originNote}
         ${shortTurnNote}
         ${deadheadNote}
         <p class="drilldown-context">
@@ -2189,13 +2212,22 @@ class ObservatoriApp {
             <tbody>${rowsHtml || '<tr><td colspan="5" style="color:var(--text-muted);">Cap mostra</td></tr>'}</tbody>
           </table>
         </div>
-        <p class="drilldown-legend">El retard es mesura per viatge: quan el bus comença un viatge nou es torna a comptar. «Teòric → Real»: l'operador només envia el retard; l'hora teòrica és la de l'horari publicat per a aquell viatge i la real és la teòrica més el retard. «Senyal»: GPS si la posició era recent, Estimat si el bus havia perdut el senyal uns segons.</p>
+        <p class="drilldown-legend">El retard es mesura per viatge: quan el bus comença un viatge nou es torna a comptar. «Teòric → Real»: l'operador només envia el retard; l'hora teòrica és la de l'horari publicat per a aquell viatge i la real és la teòrica més el retard. «Senyal»: GPS si la posició era recent, Estimat si el bus havia perdut el senyal uns segons. «▲»: minuts de retard que el bus va guanyar en aquell punt.</p>
       `;
       // Show the clicked trip from its header row, directly under the sticky column header.
       const scroller = content.querySelector('.drilldown-table-scroll');
       const anchorRow = content.querySelector('tr.is-clicked-trip') || content.querySelector('tr.is-clicked');
       const headRow = content.querySelector('.drilldown-samples-table thead tr');
       if (scroller && anchorRow) scroller.scrollTop = Math.max(0, anchorRow.offsetTop - (headRow ? headRow.offsetHeight : 0));
+      // "Veure-ho a la taula": scroll up to where the delay began, with its trip header.
+      let originRow = content.querySelector('tr.is-origin-start') || content.querySelector('.drilldown-samples-table tbody tr');
+      if (originRow && originRow.previousElementSibling && originRow.previousElementSibling.classList.contains('drilldown-trip-row')) originRow = originRow.previousElementSibling;
+      const jump = content.querySelector('.drilldown-jump');
+      if (jump && scroller && originRow) {
+        jump.addEventListener('click', () => {
+          scroller.scrollTop = Math.max(0, originRow.offsetTop - (headRow ? headRow.offsetHeight : 0));
+        });
+      }
     } catch (e) {
       content.innerHTML = `<span style="color:var(--accent-danger);">Error carregant la investigació: ${this.esc(e.message)}</span>`;
     }

@@ -9329,6 +9329,33 @@ body {
   background: color-mix(in srgb, var(--brand-primary, #38bdf8) 12%, transparent);
   color: var(--text-primary);
 }
+/* Where the delay came from: the last stop without delay and the rises. */
+.drilldown-callout.drilldown-origin {
+  border-color: color-mix(in srgb, var(--accent-regulating) 35%, transparent);
+  background: color-mix(in srgb, var(--accent-regulating) 7%, var(--bg-surface));
+}
+.drilldown-callout.drilldown-origin > strong:first-child { color: var(--accent-regulating); }
+.drilldown-callout .drilldown-jump { display: block; margin-top: 0.45rem; }
+.drilldown-growth {
+  margin-left: 0.25rem;
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: var(--accent-danger);
+  white-space: nowrap;
+}
+.drilldown-samples-table tbody tr.is-origin-start td {
+  background: color-mix(in srgb, var(--accent-live) 10%, transparent);
+}
+.drilldown-origin-tag {
+  display: inline-block;
+  margin-left: 0.3rem;
+  padding: 0 0.35rem;
+  border-radius: 4px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--accent-live) 20%, transparent);
+  color: var(--text-primary);
+}
 .drilldown-clicked-tag {
   display: inline-block;
   margin-left: 0.3rem;

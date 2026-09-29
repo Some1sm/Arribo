@@ -351,6 +351,12 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   (src/core/schedule/deadheadReturn.js) detects this; those records stay out of the
   rankings and Investigar groups them as "Tornada sense servei". Say "no bus in the
   operator's data", never "no bus": a bus without tracking would not appear.
+- **A delay often starts trips earlier.** L8 bus 2667 (29 Sep 2026) started a trip
+  at +18 because it had been late since 10:38 (La Rambla, +3): +9 at Sant Joan
+  (10:41-10:50) and +9 between Sant Joan and Can Marfà (11:55-12:07), carried over
+  four trips. Investigar loads 4 h of the bus (`RUN_LOOKBACK_MS`) and `buildIncidentRun`
+  returns `origin`: the last stop without delay (<= +3) and the largest rises. A step
+  back of 1-2 stops is feed jitter, not a new trip (`JUMP_BACK_MIN_STOPS` = 3).
 
 ## 4. Runtime, configuration and privacy
 

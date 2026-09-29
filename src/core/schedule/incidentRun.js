@@ -15,11 +15,27 @@
  * marked `phantom` and grouped on their own, so they neither read as trips nor
  * count in any trip's delay pattern.
  *
+ * The panel also traces where the clicked delay came from: back to the last stop
+ * the bus logged without delay (possibly several trips earlier), with the stops
+ * where the delay grew most. A bus that starts a trip at +18 inherited it from
+ * the trips before; showing only the clicked trip hid that.
+ *
  * Pure module: no database, no clock. Timestamps are epoch ms.
  */
 
+const { LATE_LIMIT_MIN } = require('../punctuality');
+
 // How much of the bus's run to show on each side of the clicked episode.
 const RUN_CONTEXT_MS = 30 * 60 * 1000;
+// How far back the caller should load the bus's samples so the origin of a delay
+// can be traced (production L8 bus 2667, 29 Sep 2026: +25 at 13:40, last without
+// delay at 10:38).
+const RUN_LOOKBACK_MS = 4 * 60 * 60 * 1000;
+// A rise of at least this much between two consecutive stop visits is named as a
+// place where the delay grew.
+const ORIGIN_GROWTH_MINS = 3;
+// At most this many such places are named.
+const MAX_ORIGIN_EVENTS = 3;
 // A delay that stays within this spread over the whole direction is "sustained".
 const SUSTAINED_SPREAD_MINS = 5;
 // A first-to-last change of at least this much is "building" or "recovering".
@@ -32,6 +48,11 @@ const MAX_RUN_STOPS = 150;
 // direction's stop order was joined mid-route (the first stop or two are often
 // not logged because the bus is still flagged as a terminal layover there).
 const MID_ROUTE_JOIN_MIN_INDEX = 3;
+// A step back along the route of at least this many stops starts a new trip. The
+// operator's feed often logs neighbouring stops out of order near a terminus (L8:
+// Galícia, Euskadi, Poliesportiu Euskadi, Galícia): on 7 days of production samples
+// 1,006 of 1,088 backward steps were 1-2 stops, so smaller steps are not a new trip.
+const JUMP_BACK_MIN_STOPS = 3;
 
 function fold(value) {
   return String(value || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
@@ -84,16 +105,22 @@ function summarise(segment) {
  * @param {Array<{lineCode: string, phantomFromTs: number, phantomToTs: number}>} [options.deadheads]
  *   This bus's deadhead returns (findDeadheadReturns). Stop visits inside a phantom
  *   stretch get `phantom: true` and form one group; the visit after it starts a trip.
- * @returns {{stops: Array<object>, summary: object, trips: Array<object>}}
+ * @param {number} [options.showFrom]  Epoch ms. Stop visits that ended before it are left
+ *   out, unless they are needed to show where the clicked delay came from. Without it
+ *   every visit is shown.
+ * @returns {{stops: Array<object>, summary: object, trips: Array<object>, origin: (object|null)}}
  *   stops: { stopName, direction, towards, time ('HH:MM:SS'), firstTs, lastTs, delayMins,
  *   sampleCount, isRealTime, scheduledTime, actualTime, timesProvenance, directionChanged,
  *   newTrip, isClicked, phantom }. newTrip is true on the first visit of a new trip (direction
  *   change or jump back along the route) and on the first visit of a phantom group. trips:
- *   one summary per group, with isDeadhead true for a phantom group. summary: the clicked trip's pattern ('sustained' |
+ *   one summary per group, with isDeadhead true for a phantom group. Stops also carry
+ *   firstDelay, lastTime, delayGrowth (minutes gained there when it is one of the named
+ *   places, else 0) and originStart (the last visit without delay before the clicked one).
+ *   origin (see traceDelayOrigin) is null when the clicked visit is not a service delay. summary: the clicked trip's pattern ('sustained' |
  *   'building' | 'recovering' | 'variable' | 'isolated' | 'none') with its stop count, time
  *   range and delays.
  */
-function buildIncidentRun(rows, { clickedStop = '', clickedFrom, clickedTo, towards, stopIndex, directionStops, deadheads } = {}) {
+function buildIncidentRun(rows, { clickedStop = '', clickedFrom, clickedTo, towards, stopIndex, directionStops, deadheads, showFrom } = {}) {
   const sorted = (Array.isArray(rows) ? rows : [])
     .filter(r => r && Number.isFinite(Number(r.timestamp)) && Number.isFinite(Number(r.delayMins)))
     .slice()
@@ -116,6 +143,7 @@ function buildIncidentRun(rows, { clickedStop = '', clickedFrom, clickedTo, towa
     const delay = Number(r.delayMins);
     if (last && last.stopName === stopName && last.direction === direction) {
       last.lastTs = ts;
+      last.lastTime = String(r.formattedDate || '').slice(11, 19);
       last.delayMins = delay;
       last.sampleCount++;
       if (r.isRealTime) last.isRealTime = true;
@@ -131,7 +159,7 @@ function buildIncidentRun(rows, { clickedStop = '', clickedFrom, clickedTo, towa
     if (last && !directionChanged && typeof stopIndex === 'function') {
       const prev = stopIndex(r.lineCode, last.direction, last.stopName);
       const cur = stopIndex(r.lineCode, direction, stopName);
-      jumpedBack = Boolean(prev && cur && Math.max(...cur.indexes) < Math.min(...prev.indexes));
+      jumpedBack = Boolean(prev && cur && Math.min(...prev.indexes) - Math.max(...cur.indexes) >= JUMP_BACK_MIN_STOPS);
     }
     stops.push({
       stopName,
@@ -139,8 +167,10 @@ function buildIncidentRun(rows, { clickedStop = '', clickedFrom, clickedTo, towa
       direction,
       towards: terminusOf(r.lineCode, direction),
       time: String(r.formattedDate || '').slice(11, 19),
+      lastTime: String(r.formattedDate || '').slice(11, 19),
       firstTs: ts,
       lastTs: ts,
+      firstDelay: delay,
       delayMins: delay,
       sampleCount: 1,
       isRealTime: Boolean(r.isRealTime),
@@ -150,7 +180,9 @@ function buildIncidentRun(rows, { clickedStop = '', clickedFrom, clickedTo, towa
       directionChanged,
       newTrip: directionChanged || jumpedBack,
       isClicked: false,
-      phantom: false
+      phantom: false,
+      delayGrowth: 0,
+      originStart: false
     });
   }
 
@@ -224,13 +256,25 @@ function buildIncidentRun(rows, { clickedStop = '', clickedFrom, clickedTo, towa
     while (segEnd + 1 < stops.length && !stops[segEnd + 1].newTrip) segEnd++;
   }
   const summary = summarise(stops.slice(segStart, segEnd + 1));
+  const origin = traceDelayOrigin(stops, clickedIdx, segStart);
 
-  // Keep the clicked stop in view when the run is longer than the cap.
-  let shown = stops;
-  if (stops.length > MAX_RUN_STOPS) {
-    const centre = clickedIdx >= 0 ? clickedIdx : 0;
-    const begin = Math.max(0, Math.min(stops.length - MAX_RUN_STOPS, centre - Math.floor(MAX_RUN_STOPS / 2)));
-    shown = stops.slice(begin, begin + MAX_RUN_STOPS);
+  // Show from showFrom, reaching further back when the delay began earlier.
+  let first = 0;
+  const showFromTs = Number(showFrom);
+  if (showFrom !== undefined && showFrom !== null && Number.isFinite(showFromTs)) {
+    first = stops.findIndex(s => s.lastTs >= showFromTs);
+    if (first < 0) first = stops.length;
+    if (clickedIdx >= 0) first = Math.min(first, clickedIdx);
+    if (origin) first = Math.min(first, origin.fromIndex);
+  }
+  let shown = stops.slice(first);
+  // Keep the clicked stop in view when the run is longer than the cap, starting
+  // where the delay began when that still leaves room after the clicked stop.
+  if (shown.length > MAX_RUN_STOPS) {
+    const centre = clickedIdx >= 0 ? clickedIdx - first : 0;
+    const preferred = origin ? origin.fromIndex - first : centre - Math.floor(MAX_RUN_STOPS / 2);
+    const begin = Math.max(0, Math.min(shown.length - MAX_RUN_STOPS, Math.max(preferred, centre - (MAX_RUN_STOPS - 20))));
+    shown = shown.slice(begin, begin + MAX_RUN_STOPS);
   }
 
   // One entry per trip in the shown run, for the panel's group headers.
@@ -250,15 +294,100 @@ function buildIncidentRun(rows, { clickedStop = '', clickedFrom, clickedTo, towa
       isClickedTrip: segment.some(v => v.isClicked)
     };
   });
-  return { stops: shown, summary, trips: tripSummaries };
+  if (origin) delete origin.fromIndex;
+  return { stops: shown, summary, trips: tripSummaries, origin };
+}
+
+/**
+ * Where the clicked delay came from: walk back from the clicked stop visit to the
+ * last visit whose delay was LATE_LIMIT_MIN or less (the platform's "not late"),
+ * and name the places in between where the delay grew by ORIGIN_GROWTH_MINS or
+ * more (the MAX_ORIGIN_EVENTS largest, in time order). A rise is measured from the
+ * previous visit on the same trip; at a new trip, from the previous trip's last
+ * visit (a late departure after turning). Phantom visits (deadhead returns) are
+ * skipped and break the chain across them. Marks originStart and delayGrowth on
+ * the stop objects.
+ *
+ * @returns {null|{onTime: (null|{stopName, towards, time, delayMins}), since: {time, delayMins},
+ *   tripsBefore: number, events: Array<{kind: ('at_stop'|'between'|'turn'), stopName, previousStop,
+ *   fromTime, toTime, fromDelay, toDelay, growth}>, fromIndex: number}}
+ */
+function traceDelayOrigin(stops, clickedIdx, clickedTripStart) {
+  if (clickedIdx < 0) return null;
+  const clicked = stops[clickedIdx];
+  if (clicked.phantom || clicked.delayMins < SERVICE_DELAY_MINS) return null;
+  let onTimeIdx = -1;
+  for (let i = clickedIdx - 1; i >= 0; i--) {
+    const s = stops[i];
+    if (s.phantom) continue;
+    if (Math.min(s.firstDelay, s.delayMins) <= LATE_LIMIT_MIN) { onTimeIdx = i; break; }
+  }
+  let from = onTimeIdx;
+  if (from < 0) from = stops.findIndex(s => !s.phantom);
+  if (from < 0 || from > clickedIdx) return null;
+
+  const events = [];
+  let prev = null;
+  let tripsBefore = 0;
+  for (let i = from; i <= clickedIdx; i++) {
+    const s = stops[i];
+    if (s.phantom) { prev = null; continue; }
+    if (i > from && s.newTrip && i <= clickedTripStart) tripsBefore++;
+    let kind;
+    let startDelay;
+    if (!prev) {
+      kind = 'at_stop';
+      startDelay = s.firstDelay;
+    } else if (s.newTrip) {
+      kind = 'turn';
+      startDelay = prev.delayMins;
+    } else {
+      startDelay = prev.delayMins;
+      kind = (s.delayMins - s.firstDelay) * 2 >= s.delayMins - startDelay ? 'at_stop' : 'between';
+    }
+    const growth = s.delayMins - startDelay;
+    if (growth >= ORIGIN_GROWTH_MINS) {
+      const atStop = kind === 'at_stop';
+      events.push({
+        index: i,
+        kind,
+        stopName: s.stopName,
+        previousStop: prev ? prev.stopName : '',
+        fromTime: atStop ? s.time : prev.lastTime,
+        toTime: s.lastTime,
+        fromDelay: atStop ? s.firstDelay : prev.delayMins,
+        toDelay: s.delayMins,
+        growth
+      });
+    }
+    prev = s;
+  }
+  const named = events.slice().sort((a, b) => b.growth - a.growth || a.index - b.index)
+    .slice(0, MAX_ORIGIN_EVENTS).sort((a, b) => a.index - b.index);
+  for (const e of named) stops[e.index].delayGrowth = e.growth;
+  if (onTimeIdx >= 0) stops[onTimeIdx].originStart = true;
+  const start = stops[from];
+  return {
+    onTime: onTimeIdx >= 0
+      ? { stopName: start.stopName, towards: start.towards, time: start.time, delayMins: Math.min(start.firstDelay, start.delayMins) }
+      : null,
+    since: { time: start.time, delayMins: start.firstDelay },
+    tripsBefore,
+    events: named.map(({ index, ...e }) => e),
+    fromIndex: from
+  };
 }
 
 module.exports = {
   buildIncidentRun,
   RUN_CONTEXT_MS,
+  RUN_LOOKBACK_MS,
+  ORIGIN_GROWTH_MINS,
+  MAX_ORIGIN_EVENTS,
   SUSTAINED_SPREAD_MINS,
   TREND_MINS,
   SERVICE_DELAY_MINS,
   MAX_RUN_STOPS,
-  MID_ROUTE_JOIN_MIN_INDEX
+  MID_ROUTE_JOIN_MIN_INDEX,
+  JUMP_BACK_MIN_STOPS
 };

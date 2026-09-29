@@ -25,7 +25,7 @@ const {
 const mataroSchedules = require('./data/mataroSchedules');
 const { normalizeStopName, resolveDayType } = require('./core/schedule/tripMatcher');
 const timeEngine = require('./core/time/timeEngine');
-const { buildIncidentRun, RUN_CONTEXT_MS } = require('./core/schedule/incidentRun');
+const { buildIncidentRun, RUN_CONTEXT_MS, RUN_LOOKBACK_MS } = require('./core/schedule/incidentRun');
 
 let DatabaseSync;
 try {
@@ -2878,7 +2878,7 @@ class HistoryDatabase {
           WHERE vehicle_id = ? AND timestamp >= ? AND timestamp <= ?
           ORDER BY timestamp ASC
           LIMIT 3000
-        `).all(vehicleIds[0], pick[0].timestamp - 3 * 3600 * 1000, pick[pick.length - 1].timestamp + RUN_CONTEXT_MS);
+        `).all(vehicleIds[0], pick[0].timestamp - RUN_LOOKBACK_MS, pick[pick.length - 1].timestamp + RUN_CONTEXT_MS);
         const relinkRows = vehicleRows.filter(r => r.timestamp <= pick[pick.length - 1].timestamp + 15 * 60 * 1000);
         tripRelink = relinkOverlapping(findTripRelinks(relinkRows, { stopIndex: scheduleStopIndex() }), vehicleIds[0], pick[0].lineCode, pick[0].timestamp, pick[pick.length - 1].timestamp);
         const deadheadList = findDeadheadReturns(vehicleRows, { stopIndex: scheduleStopIndex(), tripMinutes: scheduleTripMinutes });
@@ -2888,9 +2888,9 @@ class HistoryDatabase {
         const lineUpper = String(pick[0].lineCode || '').toUpperCase();
         run = buildIncidentRun(
           vehicleRows
-            .filter(r => String(r.lineCode || '').toUpperCase() === lineUpper && r.timestamp >= pick[0].timestamp - RUN_CONTEXT_MS)
+            .filter(r => String(r.lineCode || '').toUpperCase() === lineUpper)
             .map(r => ({ ...r, timesProvenance: classifyTimes(r) })),
-          { clickedStop: stopName, clickedFrom: pick[0].timestamp, clickedTo: pick[pick.length - 1].timestamp, towards: directionTerminus, stopIndex: scheduleStopIndex(), directionStops: directionStopNames, deadheads: deadhead ? [deadhead] : [] }
+          { clickedStop: stopName, clickedFrom: pick[0].timestamp, clickedTo: pick[pick.length - 1].timestamp, towards: directionTerminus, stopIndex: scheduleStopIndex(), directionStops: directionStopNames, deadheads: deadheadList, showFrom: pick[0].timestamp - RUN_CONTEXT_MS }
         );
       }
 
