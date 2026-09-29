@@ -2550,6 +2550,10 @@ class ObservatoriApp {
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
                             <span>Mapa</span>
                           </button>
+                          <button type="button" class="btn-investigate-incident" data-investigate-line="${this.esc(inc.lineCode)}" data-investigate-stop="${this.esc(inc.stopName)}" data-investigate-vehicle="${this.esc(inc.vehicleId || '')}" data-investigate-at="${inc.timestamp || ''}" title="Investigar aquest retard: veure les mostres originals que el contenen">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+                            <span>Investigar</span>
+                          </button>
                         </td>
                       </tr>
                     `;
@@ -2650,6 +2654,10 @@ class ObservatoriApp {
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
                               <span>Mapa</span>
                             </button>
+                            <button type="button" class="btn-investigate-incident" data-investigate-line="${this.esc(inc.lineCode)}" data-investigate-stop="${this.esc(inc.stopName)}" data-investigate-vehicle="${this.esc(inc.vehicleId || '')}" data-investigate-at="${inc.timestamp || ''}" title="Investigar aquest retard: veure les mostres originals que el contenen">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+                              <span>Investigar</span>
+                            </button>
                           `}
                         </td>
                       </tr>
@@ -2740,6 +2748,10 @@ class ObservatoriApp {
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
                             <span>Mapa</span>
                           </button>
+                          <button type="button" class="btn-investigate-incident" data-investigate-line="${this.esc(inc.lineCode)}" data-investigate-stop="${this.esc(inc.stopName)}" data-investigate-vehicle="${this.esc(inc.vehicleId || '')}" data-investigate-at="${inc.timestamp || ''}" title="Investigar aquest retard: veure les mostres originals que el contenen">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+                            <span>Investigar</span>
+                          </button>
                         </td>
                       </tr>
                     `;
@@ -2748,6 +2760,20 @@ class ObservatoriApp {
               </table>
             </div>
           `}
+        </div>
+
+        <!-- Forensic drill-down panel for this tab (populated by the Investigar buttons) -->
+        <div id="incident-drilldown-panel" style="margin-top:2rem; padding:1.5rem; background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; display:none;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; flex-wrap:wrap;">
+            <div style="flex:1; min-width:280px;">
+              <h3 style="margin:0 0 0.5rem 0; font-size:1.2rem; color:var(--text-primary);">Investigació del retard</h3>
+              <div id="drilldown-content" style="color:var(--text-secondary); line-height:1.5; font-size:0.84rem;">Selecciona un retard de la taula per a investigar-lo.</div>
+            </div>
+            <div style="flex:0 0 260px;">
+              <h4 style="margin:0 0 0.4rem 0; font-size:0.9rem; color:var(--text-muted);">Evidència</h4>
+              <div id="drilldown-summary" style="font-size:0.84rem; color:var(--text-primary);"></div>
+            </div>
+          </div>
         </div>
       ` : `
         <!-- Mode 2: Clustered Trips & Trajectories -->
