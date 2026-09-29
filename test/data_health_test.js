@@ -225,7 +225,8 @@ function requestDataHealth() {
       }]
     }
   });
-  assert(mockDom.gridInnerHtml.includes('L5: 1+2/4 (1 sense dibuixar: bus real a menys de 100 m)'), 'Should format gap and reason');
+  assert(mockDom.gridInnerHtml.includes('>L5</span>') && mockDom.gridInnerHtml.includes('>1+2/4</span>'), 'Should render the L5 chip with GPS+estimated/needed');
+  assert(mockDom.gridInnerHtml.includes('>1 sense dibuixar: bus real a menys de 100 m</span>'), 'Should explain the undrawn bus under the L5 chip');
   assert(!mockDom.gridInnerHtml.includes('terminal_bus'), 'Must not include terminal_bus in reasons');
 
   console.log('PASS: /api/data-health contract, null fields rendered as "sense dades" (never green), zero SQLite access.');

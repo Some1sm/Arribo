@@ -336,6 +336,13 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   along the route starts a new trip), and looks for GPS positions 5 min
   either side of the episode. Positions are kept only SNAPSHOT_RETENTION_HOURS
   (2 h in Compose), so their absence on an older episode is not evidence.
+- **A large delay that vanishes at a new trip can be a short-turn, not a recovery.**
+  L2 bus 2679 (29 Sep 2026) was +26 at Mataró Parc, then ran the next trip on time
+  from Edif. Vidre - TecnoCampus, the 15th stop of that trip; La Llàntia and
+  Cerdanyola went 35-36 min without a bus. `buildIncidentRun` flags a new trip whose
+  first logged stop is the 4th or later of its direction as `joinedMidRoute`, and
+  Investigar names the stops it left out. Stop-visit punctuality cannot see skipped
+  stops at all: it only measures buses that came.
 
 ## 4. Runtime, configuration and privacy
 

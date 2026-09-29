@@ -178,28 +178,31 @@ class ObservatoriApp {
     }
 
     const items = [];
+    let fleetHtml = '';
 
-    const makeItem = (title, icon, badgeClass, badgeText, description) => `
-      <div class="data-health-item">
+    // One compact row per check: status dot, title, badge, one-line detail.
+    // The tone travels with the item so the summary line can count it.
+    const TONE = { 'status-success': 'ok', 'status-warning': 'warn', 'status-danger': 'bad', 'status-neutral': 'none' };
+    const makeItem = (title, badgeClass, badgeText, description) => ({
+      tone: TONE[badgeClass] || 'none',
+      html: `
+      <div class="data-health-item dh-${TONE[badgeClass] || 'none'}">
         <div class="data-health-header">
-          <span class="data-health-title">
-            <span>${icon}</span>
-            <span>${this.esc(title)}</span>
-          </span>
+          <span class="data-health-title"><span class="dh-dot" aria-hidden="true"></span><span>${this.esc(title)}</span></span>
           <span class="data-health-badge ${badgeClass}">${this.esc(badgeText)}</span>
         </div>
         <p class="data-health-desc">${description}</p>
-      </div>
-    `;
+      </div>`
+    });
 
     // 1. Canari SIRI (upstreamCanary)
     if (!data || data.upstreamCanary === null || data.upstreamCanary === undefined) {
-      items.push(makeItem('Canari SIRI', '📡', 'status-neutral', 'Sense dades', 'No s&#039;ha obtingut cap comprovació recent del canari.'));
+      items.push(makeItem('Canari SIRI', 'status-neutral', 'Sense dades', 'No s&#039;ha obtingut cap comprovació recent del canari.'));
     } else if (data.upstreamCanary.ok === true) {
-      const ageStr = data.upstreamCanary.checkedAt ? `fa ${Math.round(Math.max(0, Date.now() - data.upstreamCanary.checkedAt) / 1000)}s` : 'recentment';
-      items.push(makeItem('Canari SIRI', '📡', 'status-success', 'Operatiu', `Canal SIRI responent amb èxit (${ageStr}).`));
+      const ageStr = data.upstreamCanary.checkedAt ? `fa ${Math.round(Math.max(0, Date.now() - data.upstreamCanary.checkedAt) / 1000)} s` : 'recentment';
+      items.push(makeItem('Canari SIRI', 'status-success', 'Operatiu', `El canal SIRI respon (${ageStr}).`));
     } else {
-      items.push(makeItem('Canari SIRI', '📡', 'status-danger', 'Incidència', `Error en la consulta del canari: ${this.esc(data.upstreamCanary.error || 'sense resposta')}`));
+      items.push(makeItem('Canari SIRI', 'status-danger', 'Incidència', `Error en la consulta del canari: ${this.esc(data.upstreamCanary.error || 'sense resposta')}`));
     }
 
     // 2. Connexió operador (lastError)
@@ -213,34 +216,36 @@ class ObservatoriApp {
     };
     const describeError = (code) => ERROR_TEXT[code] || (/^http_\d+$/.test(String(code)) ? `l'operador ha respost amb HTTP ${String(code).slice(5)}` : String(code));
     if (!data || !data.upstreamKnown) {
-      items.push(makeItem('Connexió operador', '🔌', 'status-neutral', 'Sense dades', 'Sense registres d&#039;errors recents de l&#039;operador.'));
+      items.push(makeItem('Connexió operador', 'status-neutral', 'Sense dades', 'Sense registres d&#039;errors recents de l&#039;operador.'));
     } else if (data.lastError === null || data.lastError === undefined) {
-      items.push(makeItem('Connexió operador', '🔌', 'status-success', 'Sense errors', 'Cap error recent de l&#039;operador.'));
+      items.push(makeItem('Connexió operador', 'status-success', 'Sense errors', 'Cap error recent de l&#039;operador.'));
     } else {
       const ageMin = data.lastErrorAt ? Math.max(1, Math.round((Date.now() - data.lastErrorAt) / 60000)) : null;
       const when = ageMin === null ? '' : `fa ${ageMin} min: `;
       const what = this.esc(describeError(data.lastError));
       if (data.circuitOpen) {
-        items.push(makeItem('Connexió operador', '🔌', 'status-danger', 'Error', `Últim error ${when}${what}. Consultes en pausa durant 30 s.`));
+        items.push(makeItem('Connexió operador', 'status-danger', 'Error', `Últim error ${when}${what}. Consultes en pausa durant 30 s.`));
       } else if (ageMin !== null && ageMin >= 10) {
-        items.push(makeItem('Connexió operador', '🔌', 'status-neutral', 'Recuperat', `Últim error ${when}${what}. Des d&#039;aleshores l&#039;operador respon correctament.`));
+        items.push(makeItem('Connexió operador', 'status-neutral', 'Recuperat', `Últim error ${when}${what}. Des d&#039;aleshores l&#039;operador respon correctament.`));
       } else {
-        items.push(makeItem('Connexió operador', '🔌', 'status-warning', 'Error recent', `Últim error ${when}${what}.`));
+        items.push(makeItem('Connexió operador', 'status-warning', 'Error recent', `Últim error ${when}${what}.`));
       }
     }
 
     // 3. Anomalia de flota (fleetAnomaly)
     if (!data || data.fleetAnomaly === null || data.fleetAnomaly === undefined) {
-      items.push(makeItem('Anomalia de flota', '🚌', 'status-neutral', 'Sense dades', 'Sense avaluació d&#039;anomalies de flota.'));
+      items.push(makeItem('Anomalia de flota', 'status-neutral', 'Sense dades', 'Sense avaluació d&#039;anomalies de flota.'));
     } else if (data.fleetAnomaly.detected === true) {
-      items.push(makeItem('Anomalia de flota', '🚌', 'status-warning', 'Anomalia', this.esc(data.fleetAnomaly.message || 'Desviació en la flota activa detectada.')));
+      items.push(makeItem('Anomalia de flota', 'status-warning', 'Anomalia', this.esc(data.fleetAnomaly.message || 'Desviació en la flota activa detectada.')));
     } else {
-      items.push(makeItem('Anomalia de flota', '🚌', 'status-success', 'Normal', 'Sense anomalies de flota detectades a la xarxa.'));
+      items.push(makeItem('Anomalia de flota', 'status-success', 'Normal', 'Cap anomalia de flota a la xarxa.'));
     }
 
-    // 4. Flota GPS en servei (fleet)
+    // 4. Flota en servei (fleet): its own full-width row with one chip per line.
     if (!data || data.fleet === null || data.fleet === undefined) {
-      items.push(makeItem('Flota GPS activa', '🛰️', 'status-neutral', 'Sense dades', 'Sense dades de vehicles actius per línia.'));
+      const empty = makeItem('Flota en servei', 'status-neutral', 'Sense dades', 'Sense dades de vehicles actius per línia.');
+      items.push({ tone: empty.tone, html: '' });
+      fleetHtml = `<div class="dh-fleet">${empty.html}</div>`;
     } else {
       const { totalLiveGps = 0, totalEstimated = 0, totalScheduled = 0, complete = true, lines = [] } = data.fleet;
       const totalBuses = Number.isFinite(data.fleet.totalScheduledBuses) ? data.fleet.totalScheduledBuses : totalScheduled;
@@ -254,36 +259,41 @@ class ObservatoriApp {
         colocated: 'bus real a menys de 100 m',
         no_position: 'sense posició al traçat'
       };
-      const perLine = lines.map(l => {
-        if (l.available === false) return `${l.lineCode}: sense dades`;
+      const chips = lines.map(l => {
+        const colour = this.getLineColor(l.lineCode);
+        const code = `<span class="dh-line-code" style="background:${colour}; color:${this.chipInk(colour)};">${this.esc(l.lineCode)}</span>`;
+        if (l.available === false) return `<div class="dh-line">${code}<span class="dh-line-count">sense dades</span></div>`;
         const buses = Number.isFinite(l.scheduledBuses) ? l.scheduledBuses : l.scheduledVehicles;
-        const gap = buses - (l.liveGpsVehicles + (l.estimatedVehicles ?? 0));
-        let text = `${l.lineCode}: ${l.liveGpsVehicles}+${l.estimatedVehicles ?? 0}/${buses}`;
+        const shown = l.liveGpsVehicles + (l.estimatedVehicles ?? 0);
+        const gap = buses - shown;
+        let note = '';
         if (gap > 0) {
           const reasons = Object.entries(l.notDrawn || {})
             .filter(([k, n]) => k !== 'terminal_bus' && n > 0)
             .map(([k, n]) => `${REASON[k] || k}${n > 1 ? ` ×${n}` : ''}`);
-          text += ` (${gap} sense dibuixar${reasons.length ? `: ${reasons.join(', ')}` : ''})`;
+          note = `<span class="dh-line-note">${gap} sense dibuixar${reasons.length ? `: ${this.esc(reasons.join(', '))}` : ''}</span>`;
         }
-        return text;
-      }).join(' · ');
-      const note = complete ? '' : ' (algunes línies sense dades)';
-      items.push(makeItem('Flota GPS activa', '🛰️', badgeClass, badgeText,
-        `${totalLiveGps + totalEstimated} autobusos al mapa; l&#039;horari en necessita ${totalBuses}${note}. Un bus que acaba un trajecte i torna a sortir de la mateixa capçalera compta una sola vegada. GPS+estimats/necessaris per línia: ${this.esc(perLine)}`));
+        return `<div class="dh-line${gap > 0 ? ' has-gap' : ''}">${code}<span class="dh-line-count">${l.liveGpsVehicles}+${l.estimatedVehicles ?? 0}/${buses}</span>${note}</div>`;
+      }).join('');
+      const note = complete ? '' : ' Algunes línies no tenen dades.';
+      const fleetItem = makeItem('Flota en servei', badgeClass, badgeText,
+        `${totalLiveGps + totalEstimated} autobusos al mapa; l&#039;horari en necessita ${totalBuses}.${note} Per línia: amb GPS + estimats / necessaris. Un bus que acaba un trajecte i torna a sortir de la mateixa capçalera compta una sola vegada.`);
+      items.push({ tone: fleetItem.tone, html: '' });
+      fleetHtml = `<div class="dh-fleet">${fleetItem.html}${chips ? `<div class="dh-lines">${chips}</div>` : ''}</div>`;
     }
 
     // 5. Deriva horària (scheduleDrift)
     if (!data || data.scheduleDrift === null || data.scheduleDrift === undefined) {
-      items.push(makeItem('Deriva horària', '⏱️', 'status-neutral', 'Sense dades', 'Sense comprovació de deriva entre operador i graella.'));
+      items.push(makeItem('Deriva horària', 'status-neutral', 'Sense dades', 'Sense comprovació de deriva entre operador i graella.'));
     } else if (data.scheduleDrift.drift === true) {
-      items.push(makeItem('Deriva horària', '⏱️', 'status-warning', 'Desviació', `Detectada diferència de ${data.scheduleDrift.differencesCount || 1} sortides respecte a la graella.`));
+      items.push(makeItem('Deriva horària', 'status-warning', 'Desviació', `Detectada diferència de ${data.scheduleDrift.differencesCount || 1} sortides respecte a la graella.`));
     } else {
-      items.push(makeItem('Deriva horària', '⏱️', 'status-success', 'Sincronitzat', 'Horaris teòrics de l&#039;operador coincidents amb la graella oficial.'));
+      items.push(makeItem('Deriva horària', 'status-success', 'Sincronitzat', 'Horaris de l&#039;operador coincidents amb la graella oficial.'));
     }
 
     // 6. Temporada de servei (season)
     if (!data || data.season === null || data.season === undefined) {
-      items.push(makeItem('Temporada de servei', '📅', 'status-neutral', 'Sense dades', 'Sense dades de temporada oficial.'));
+      items.push(makeItem('Temporada de servei', 'status-neutral', 'Sense dades', 'Sense dades de temporada oficial.'));
     } else if (data.season.seasonKnown) {
       const label = data.season.season === 'summer' ? "Horari d'estiu" : "Horari d'hivern";
       const src = String(data.season.seasonSource || '');
@@ -292,43 +302,57 @@ class ObservatoriApp {
         : (src.startsWith('notice')
           ? `Segons l&#039;avís de l&#039;operador ${this.esc(src.replace(/^notice\s*/, ''))}.`
           : `Temporada vigent segons ${this.esc(src || 'configuració')}.`);
-      items.push(makeItem('Temporada de servei', '📅', 'status-success', label, srcText));
+      items.push(makeItem('Temporada de servei', 'status-success', label, srcText));
     } else {
-      items.push(makeItem('Temporada de servei', '📅', 'status-warning', 'No verificada', `Graella de temporada (${this.esc(data.season.season)}) sense verificar per l&#039;any actual.`));
+      items.push(makeItem('Temporada de servei', 'status-warning', 'No verificada', `Graella de temporada (${this.esc(data.season.season)}) sense verificar per l&#039;any actual.`));
     }
 
     // 7. Previsió de temporada (seasonOutlook)
     if (!data || data.seasonOutlook === null || data.seasonOutlook === undefined) {
-      items.push(makeItem('Previsió estiu', '☀️', 'status-neutral', 'Sense dades', 'Sense dades sobre la previsió d&#039;horari d&#039;estiu.'));
+      items.push(makeItem('Previsió estiu', 'status-neutral', 'Sense dades', 'Sense dades sobre la previsió d&#039;horari d&#039;estiu.'));
     } else if (!data.seasonOutlook.warning) {
-      items.push(makeItem('Previsió estiu', '☀️', 'status-success', 'Configurat', 'Proper període d&#039;estiu degudament configurat al calendari.'));
+      items.push(makeItem('Previsió estiu', 'status-success', 'Configurat', 'Proper període d&#039;estiu configurat al calendari.'));
     } else {
-      items.push(makeItem('Previsió estiu', '☀️', 'status-warning', 'Atenció', this.esc(data.seasonOutlook.warning)));
+      items.push(makeItem('Previsió estiu', 'status-warning', 'Atenció', this.esc(data.seasonOutlook.warning)));
     }
 
     // 8. Festius oficials (holidaysKnownForYear)
     if (!data || data.holidaysKnownForYear === null || data.holidaysKnownForYear === undefined) {
-      items.push(makeItem('Festius oficials', '🎉', 'status-neutral', 'Sense dades', 'Sense verificació del calendari laboral de l&#039;any.'));
+      items.push(makeItem('Festius oficials', 'status-neutral', 'Sense dades', 'Sense verificació del calendari laboral de l&#039;any.'));
     } else if (data.holidaysKnownForYear === true) {
       if (data.holidayCoverage && data.holidayCoverage.warning) {
-        items.push(makeItem('Festius oficials', '🎉', 'status-warning', 'Atenció', this.esc(data.holidayCoverage.warning)));
+        items.push(makeItem('Festius oficials', 'status-warning', 'Atenció', this.esc(data.holidayCoverage.warning)));
       } else {
-        items.push(makeItem('Festius oficials', '🎉', 'status-success', 'Verificat', 'Festius oficials de Catalunya i locals de Mataró verificats.'));
+        items.push(makeItem('Festius oficials', 'status-success', 'Verificat', 'Festius de Catalunya i locals de Mataró verificats.'));
       }
     } else {
-      items.push(makeItem('Festius oficials', '🎉', 'status-warning', 'Incomplet', this.esc((data.holidayCoverage && data.holidayCoverage.warning) || 'Calendari de festius incomplet') + '. En aquests dies es pot mostrar l&#039;horari de feiner.'));
+      items.push(makeItem('Festius oficials', 'status-warning', 'Incomplet', this.esc((data.holidayCoverage && data.holidayCoverage.warning) || 'Calendari de festius incomplet') + '. En aquests dies es pot mostrar l&#039;horari de feiner.'));
     }
 
     // 9. Frescor dels informes (reportFreshness)
     if (!data || data.reportFreshness === null || data.reportFreshness === undefined || !Array.isArray(data.reportFreshness)) {
-      items.push(makeItem('Frescor informes', '📊', 'status-neutral', 'Sense dades', 'Sense informació d&#039;actualització dels informes.'));
+      items.push(makeItem('Frescor informes', 'status-neutral', 'Sense dades', 'Sense informació d&#039;actualització dels informes.'));
     } else if (data.reportFreshness.length > 0 && data.reportFreshness.every(r => r.fresh)) {
-      items.push(makeItem('Frescor informes', '📊', 'status-success', 'Al dia', 'Tots els informes analítics (24h, 48h, 7d) estan degudament actualitzats.'));
+      items.push(makeItem('Frescor informes', 'status-success', 'Al dia', 'Informes de 24 h, 48 h i 7 dies actualitzats.'));
     } else {
-      items.push(makeItem('Frescor informes', '📊', 'status-warning', 'Regenerant', 'Alguns informes de l&#039;Observatori estan pendents d&#039;actualització en segon pla.'));
+      items.push(makeItem('Frescor informes', 'status-warning', 'Regenerant', 'Alguns informes s&#039;estan actualitzant en segon pla.'));
     }
 
-    grid.innerHTML = items.join('');
+    // Summary line: the one thing to read first.
+    const count = tone => items.filter(i => i.tone === tone).length;
+    const problems = count('warn') + count('bad');
+    const unknown = count('none');
+    const summaryTone = count('bad') ? 'bad' : (problems ? 'warn' : (unknown === items.length ? 'none' : 'ok'));
+    const summaryText = summaryTone === 'none'
+      ? 'Encara no hi ha dades de l&#039;estat del servei.'
+      : problems
+        ? `${problems} ${problems === 1 ? 'indicador necessita' : 'indicadors necessiten'} atenció.`
+        : 'Tot correcte.';
+    const unknownText = unknown && summaryTone !== 'none' ? ` ${unknown} sense dades.` : '';
+    grid.innerHTML = `
+      <p class="dh-summary dh-${summaryTone}"><span class="dh-dot" aria-hidden="true"></span>${summaryText}${unknownText}</p>
+      <div class="dh-list">${items.map(i => i.html).join('')}</div>
+      ${fleetHtml}`;
   }
 
   bindEvents() {
@@ -1990,10 +2014,11 @@ class ObservatoriApp {
       }
       const ep = data.episode || {};
       const ev = ep.evidence || {};
-      // The bus's whole run around the clicked delay (server: episode.run). The
-      // clicked stop alone often holds a single sample, which read as "the bus
-      // only sent one GPS ping" when it had reported every minute along the route.
+      // The bus's whole run around the clicked delay (server: episode.run), grouped
+      // by trip. The clicked stop alone often holds a single sample, which read as
+      // "the bus only sent one GPS ping" when it had reported all along its route.
       const run = ep.run && Array.isArray(ep.run.stops) && ep.run.stops.length ? ep.run : null;
+      const trips = run && Array.isArray(run.trips) ? run.trips : [];
       const sum = run ? (run.summary || {}) : {};
       const bus = Array.isArray(ep.distinctVehicles) && ep.distinctVehicles.length === 1 ? ep.distinctVehicles[0] : '';
       const signed = v => (Number(v) > 0 ? `+${v}` : String(v));
@@ -2004,7 +2029,7 @@ class ObservatoriApp {
       // What happened, in one plain sentence. Token colours only (light + dark).
       let headline;
       if (ep.tripRelink) {
-        headline = { tone: 'var(--accent-warning)', title: '🔀 Viatge reassignat pel SAE', text: `A ${this.esc(ep.tripRelink.stopName)} el retard passa de +${ep.tripRelink.delayBefore} a ${ep.tripRelink.delayAfter} min de cop: cap autobús pot recuperar tant de temps entre dues parades. El sistema de l'operador tenia el bus assignat a un viatge que no feia, i el retard anterior es mesurava contra aquell viatge. No és un retard real verificable.` };
+        headline = { tone: 'var(--accent-warning)', title: 'Viatge reassignat pel SAE', text: `A ${this.esc(ep.tripRelink.stopName)} el retard passa de +${ep.tripRelink.delayBefore} a ${ep.tripRelink.delayAfter} min de cop: cap autobús pot recuperar tant de temps entre dues parades. El sistema de l'operador tenia el bus assignat a un viatge que no feia, i el retard anterior es mesurava contra aquell viatge. No és un retard real verificable.` };
       } else if (!run) {
         headline = { tone: 'var(--text-muted)', title: 'Recorregut no disponible', text: 'Aquestes mostres no tenen un únic identificador de bus, així que no es pot reconstruir el seu recorregut.' };
       } else {
@@ -2014,10 +2039,24 @@ class ObservatoriApp {
           building: { tone: 'var(--accent-danger)', title: 'Retard creixent', text: `${who} va passar de ${signed(sum.firstDelay)} a ${signed(sum.lastDelay)} min de retard en ${stopsWord(sum.stopCount)}${range}: va perdent temps al llarg del recorregut.` },
           recovering: { tone: 'var(--accent-warning)', title: 'Retard que es recupera', text: `${who} va baixar de ${signed(sum.firstDelay)} a ${signed(sum.lastDelay)} min de retard en ${stopsWord(sum.stopCount)}${range}.` },
           variable: { tone: 'var(--accent-warning)', title: 'Retard variable', text: `${who} va tenir entre ${signed(sum.minDelay)} i ${signed(sum.maxDelay)} min de retard en ${stopsWord(sum.stopCount)}${range}, sense una tendència clara.` },
-          isolated: { tone: 'var(--text-secondary)', title: 'Registre aïllat', text: `${who} només consta en aquesta parada en aquest sentit. Pot ser un valor puntual de l'operador: cal prudència.` }
+          isolated: { tone: 'var(--text-secondary)', title: 'Registre aïllat', text: `${who} només consta en aquesta parada en aquest viatge. Pot ser un valor puntual de l'operador: cal prudència.` }
         };
         headline = byPattern[sum.pattern] || byPattern.variable;
       }
+
+      // The trip right after the clicked one, when the bus joined it mid-route: that
+      // is why a large delay "disappears" from one stop to the next.
+      const clickedTripIdx = trips.findIndex(t => t.isClickedTrip);
+      const nextTrip = clickedTripIdx >= 0 ? trips[clickedTripIdx + 1] : null;
+      const shortTurn = nextTrip && nextTrip.joinedMidRoute ? nextTrip : null;
+      const shortTurnNote = shortTurn
+        ? `<div class="drilldown-callout">
+            <strong>Per què el retard desapareix després?</strong>
+            En girar, el bus no va començar el viatge següent${shortTurn.towards ? ` cap a ${this.esc(shortTurn.towards)}` : ''} des de l'inici: la primera parada on consta és <strong>${this.esc(run.stops[shortTurn.startIndex].stopName)}</strong>.
+            Les ${shortTurn.joinedMidRoute.skippedCount} parades anteriors d'aquell viatge${shortTurn.joinedMidRoute.firstSkipped ? ` (${this.esc(shortTurn.joinedMidRoute.firstSkipped)} → ${this.esc(shortTurn.joinedMidRoute.lastSkipped)})` : ''} no consten servides per aquest bus.
+            Això apunta a un escurçament del recorregut per recuperar l'horari: el retard no es va recuperar, el bus es va saltar part del trajecte.
+          </div>`
+        : '';
 
       // Evidence, in Catalan. The server's English verdictLabel stays in the API
       // for other consumers; the panel shows its own wording keyed on ep.verdict.
@@ -2033,49 +2072,63 @@ class ObservatoriApp {
       const busCell = Array.isArray(ep.distinctVehicles) && ep.distinctVehicles.length
         ? ep.distinctVehicles.map(v => `<span class="drilldown-bus-chip">${this.esc(v)}</span>`).join(' ')
         : ev.vehicleIdGapExplained
-          ? '<span style="color:var(--text-muted);">Sense identificador: són mostres anteriors al 19/09/2026, quan encara no es guardava</span>'
+          ? '<span class="drilldown-fact-note">Sense identificador: són mostres anteriors al 19/09/2026, quan encara no es guardava</span>'
           : '<span style="color:var(--accent-danger);">L\'operador no va enviar l\'identificador del bus</span>';
-      const ambiguousNote = ep.vehicleAmbiguous
-        ? '<tr><th scope="row">Atenció</th><td style="color:var(--accent-warning);">Mostres sense identificador: podrien ser de més d\'un autobús</td></tr>'
-        : '';
       const keptHours = Number(ev.snapshotRetentionHours) || 2;
       const endTs = ep.tripKey && Number.isFinite(Number(ep.tripKey.endTs)) ? Number(ep.tripKey.endTs) : null;
       const olderThanKept = endTs !== null && (Date.now() - endTs) > keptHours * 3600 * 1000;
       const gpsCell = ev.snapshotTrailPoints >= 2
         ? `<span style="color:var(--accent-live);">${ev.snapshotTrailPoints} posicions al voltant d'aquest moment</span>`
         : olderThanKept
-          ? `<span style="color:var(--text-muted);">Ja no disponibles: només es guarden ${keptHours} h</span>`
+          ? `<span>Ja no disponibles</span><span class="drilldown-fact-note">Només es guarden ${keptHours} h.</span>`
           : '<span style="color:var(--accent-warning);">Cap posició guardada al voltant d\'aquest moment</span>';
       summary.innerHTML = `
-        <table class="drilldown-evidence-table">
-          <tr><th scope="row">Veredicte</th><td><strong style="color:${vTone};">${vTitle}</strong><div class="drilldown-evidence-note">${vText}</div></td></tr>
-          <tr><th scope="row">Bus</th><td>${busCell}</td></tr>
-          ${ambiguousNote}
-          <tr><th scope="row">Hora teòrica</th><td>${this._timesProvenanceLabel(ep.timesProvenance || ev.timesProvenance)}</td></tr>
-          <tr><th scope="row">Posicions GPS guardades</th><td>${gpsCell}</td></tr>
-        </table>
+        <dl class="drilldown-facts">
+          <div class="drilldown-fact"><dt>Veredicte</dt><dd><strong style="color:${vTone};">${vTitle}</strong><span class="drilldown-fact-note">${vText}</span></dd></div>
+          <div class="drilldown-fact"><dt>Bus</dt><dd>${busCell}</dd></div>
+          ${ep.vehicleAmbiguous ? '<div class="drilldown-fact"><dt>Atenció</dt><dd style="color:var(--accent-warning);">Mostres sense identificador: podrien ser de més d\'un autobús</dd></div>' : ''}
+          <div class="drilldown-fact"><dt>Hora teòrica</dt><dd>${this._timesProvenanceLabel(ep.timesProvenance || ev.timesProvenance)}</dd></div>
+          <div class="drilldown-fact"><dt>Posicions GPS guardades</dt><dd>${gpsCell}</dd></div>
+        </dl>
       `;
 
       const runRows = run
         ? run.stops
         : (ep.rawRows || []).map(r => ({
-          stopName: r.stopName, direction: r.direction, towards: '', time: String(r.formattedDate || '').slice(11, 19),
+          stopName: r.stopName, direction: r.direction, time: String(r.formattedDate || '').slice(11, 19),
           delayMins: r.delayMins, isRealTime: r.isRealTime, scheduledTime: r.scheduledTime, actualTime: r.actualTime,
-          timesProvenance: r.timesProvenance, isClicked: true, directionChanged: false
+          timesProvenance: r.timesProvenance, isClicked: true, newTrip: false
         }));
-      // One row per stop visit, six fixed columns (see .drilldown-samples-table).
-      const rowsHtml = runRows.map(s => {
+      // One header row per trip: where it was going, when, and how its delay moved.
+      const tripByStart = new Map(trips.map((t, i) => [t.startIndex, { ...t, order: i }]));
+      const tripHeader = (idx) => {
+        const t = tripByStart.get(idx);
+        if (!t) return '';
+        const delays = t.firstDelay === t.lastDelay ? `${signed(t.firstDelay)} min` : `${signed(t.firstDelay)} → ${signed(t.lastDelay)} min`;
+        const join = t.joinedMidRoute
+          ? `<span class="drilldown-trip-join">S'hi incorpora a mig recorregut: no consta a les ${t.joinedMidRoute.skippedCount} parades anteriors${t.joinedMidRoute.firstSkipped ? ` (${this.esc(t.joinedMidRoute.firstSkipped)} → ${this.esc(t.joinedMidRoute.lastSkipped)})` : ''}.</span>`
+          : '';
+        return `
+          <tr class="drilldown-trip-row${t.isClickedTrip ? ' is-clicked-trip' : ''}">
+            <th colspan="5" scope="colgroup">
+              <span class="drilldown-trip-name">${t.order > 0 ? 'Nou viatge' : 'Viatge'}${t.towards ? ` cap a ${this.esc(t.towards)}` : ''}</span>
+              <span class="drilldown-trip-meta">${this.esc(hhmm(t.fromTime))}–${this.esc(hhmm(t.toTime))} · ${delays}</span>
+              ${join}
+            </th>
+          </tr>`;
+      };
+      // One row per stop visit, five fixed columns (see .drilldown-samples-table).
+      const rowsHtml = runRows.map((s, idx) => {
+        const header = tripHeader(idx);
         const times = s.scheduledTime && s.actualTime
           ? `${this.esc(hhmm(s.scheduledTime))} → ${this.esc(hhmm(s.actualTime))}${s.timesProvenance === 'derived_timetable_backfill' ? ' ≈' : ''}`
           : '—';
         const delayClass = s.delayMins >= 20 ? 'is-high' : (s.delayMins >= 5 ? 'is-mid' : 'is-low');
-        const rowClass = [s.isClicked ? 'is-clicked' : '', (s.newTrip || s.directionChanged) ? 'is-new-trip' : ''].filter(Boolean).join(' ');
-        return `
-          <tr class="${rowClass}">
+        return `${header}
+          <tr class="${s.isClicked ? 'is-clicked' : ''}">
             <td class="drilldown-cell-time">${this.esc(hhmm(s.time))}</td>
             <td class="drilldown-cell-delay"><span class="drilldown-delay ${delayClass}">${signed(s.delayMins)} min</span></td>
             <td class="drilldown-cell-stop">${this.esc(s.stopName || '—')}${s.isClicked ? ' <span class="drilldown-clicked-tag">consultada</span>' : ''}</td>
-            <td class="drilldown-cell-veh">${s.towards ? `→ ${this.esc(s.towards)}` : '—'}</td>
             <td class="drilldown-cell-times">${times}</td>
             <td class="drilldown-cell-src">${s.isRealTime ? 'GPS' : 'Estimat'}</td>
           </tr>`;
@@ -2083,14 +2136,14 @@ class ObservatoriApp {
       const tripLink = this._matchIncidentTrip(ep);
       const clicked = runRows.find(s => s.isClicked) || null;
       content.innerHTML = `
-        <div class="drilldown-headline" style="border-left-color:${headline.tone};">
-          <div class="drilldown-headline-title" style="color:${headline.tone};">${headline.title}</div>
-          <div class="drilldown-headline-text">${headline.text}</div>
+        <div class="drilldown-headline" style="--tone:${headline.tone};">
+          <div class="drilldown-headline-title">${headline.title}</div>
+          <p class="drilldown-headline-text">${headline.text}</p>
         </div>
-        <div class="drilldown-context">
-          Parada consultada: <strong>${this.esc(clicked ? clicked.stopName : (data.stopName || stopName))}</strong>${clicked && clicked.time ? ` a les ${this.esc(hhmm(clicked.time))}` : ''} · retard màxim en aquesta parada: ${signed(ep.peakDelayMins)} min.
-          ${run ? ` A sota hi ha tot el que va registrar aquest bus entre les ${this.esc(hhmm(runRows[0].time))} i les ${this.esc(hhmm(runRows[runRows.length - 1].time))}, una fila per parada.` : ''}
-        </div>
+        ${shortTurnNote}
+        <p class="drilldown-context">
+          Parada consultada: <strong>${this.esc(clicked ? clicked.stopName : (data.stopName || stopName))}</strong>${clicked && clicked.time ? ` a les ${this.esc(hhmm(clicked.time))}` : ''} · retard màxim en aquesta parada: ${signed(ep.peakDelayMins)} min.${run ? ` A sota, tot el que va registrar aquest bus entre les ${this.esc(hhmm(runRows[0].time))} i les ${this.esc(hhmm(runRows[runRows.length - 1].time))}.` : ''}
+        </p>
         ${tripLink}
         <div class="drilldown-table-scroll">
           <table class="drilldown-samples-table">
@@ -2099,20 +2152,20 @@ class ObservatoriApp {
                 <th scope="col">Hora</th>
                 <th scope="col">Retard</th>
                 <th scope="col">Parada</th>
-                <th scope="col">Sentit</th>
                 <th scope="col">Teòric → Real</th>
                 <th scope="col">Senyal</th>
               </tr>
             </thead>
-            <tbody>${rowsHtml || '<tr><td colspan="6" style="color:var(--text-muted);">Cap mostra</td></tr>'}</tbody>
+            <tbody>${rowsHtml || '<tr><td colspan="5" style="color:var(--text-muted);">Cap mostra</td></tr>'}</tbody>
           </table>
         </div>
-        <p class="drilldown-legend">«Teòric → Real»: l'operador només envia el retard; l'hora teòrica és la de l'horari publicat per a aquell viatge i la real és la teòrica més el retard. «Senyal»: GPS si la posició era recent, Estimat si el bus havia perdut el senyal uns segons.</p>
+        <p class="drilldown-legend">El retard es mesura per viatge: quan el bus comença un viatge nou es torna a comptar. «Teòric → Real»: l'operador només envia el retard; l'hora teòrica és la de l'horari publicat per a aquell viatge i la real és la teòrica més el retard. «Senyal»: GPS si la posició era recent, Estimat si el bus havia perdut el senyal uns segons.</p>
       `;
-      // Bring the clicked stop into view inside the scrolling table.
+      // Show the clicked trip from its header row, directly under the sticky column header.
       const scroller = content.querySelector('.drilldown-table-scroll');
-      const clickedRow = content.querySelector('tr.is-clicked');
-      if (scroller && clickedRow) scroller.scrollTop = Math.max(0, clickedRow.offsetTop - scroller.clientHeight / 2);
+      const anchorRow = content.querySelector('tr.is-clicked-trip') || content.querySelector('tr.is-clicked');
+      const headRow = content.querySelector('.drilldown-samples-table thead tr');
+      if (scroller && anchorRow) scroller.scrollTop = Math.max(0, anchorRow.offsetTop - (headRow ? headRow.offsetHeight : 0));
     } catch (e) {
       content.innerHTML = `<span style="color:var(--accent-danger);">Error carregant la investigació: ${this.esc(e.message)}</span>`;
     }
@@ -2483,16 +2536,16 @@ class ObservatoriApp {
         ${this._renderIncidentDataQualityBanner(s)}
 
         <!-- Forensic drill-down panel (populated on click) -->
-        <div id="incident-drilldown-panel" style="margin-top:2rem; padding:1.5rem; background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; display:none;">
-          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; flex-wrap:wrap;">
-            <div style="flex:1; min-width:280px;">
-              <h3 style="margin:0 0 0.5rem 0; font-size:1.2rem; color:var(--text-primary);">Investigació del retard</h3>
-              <div id="drilldown-content" style="color:var(--text-secondary); line-height:1.5; font-size:0.84rem;">Selecciona un retard de la taula per a investigar-lo.</div>
+        <div id="incident-drilldown-panel" class="drilldown-panel" style="display:none;">
+          <div class="drilldown-layout">
+            <div class="drilldown-main">
+              <h3 class="drilldown-title">Investigació del retard</h3>
+              <div id="drilldown-content">Selecciona un retard de la taula per a investigar-lo.</div>
             </div>
-            <div style="flex:0 0 260px;">
-              <h4 style="margin:0 0 0.4rem 0; font-size:0.9rem; color:var(--text-muted);">Evidència</h4>
-              <div id="drilldown-summary" style="font-size:0.84rem; color:var(--text-primary);"></div>
-            </div>
+            <aside class="drilldown-aside" aria-label="Evidència">
+              <h4 class="drilldown-aside-title">Evidència</h4>
+              <div id="drilldown-summary"></div>
+            </aside>
           </div>
         </div>
 
@@ -2789,16 +2842,16 @@ class ObservatoriApp {
         </div>
 
         <!-- Forensic drill-down panel for this tab (populated by the Investigar buttons) -->
-        <div id="incident-drilldown-panel" style="margin-top:2rem; padding:1.5rem; background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; display:none;">
-          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; flex-wrap:wrap;">
-            <div style="flex:1; min-width:280px;">
-              <h3 style="margin:0 0 0.5rem 0; font-size:1.2rem; color:var(--text-primary);">Investigació del retard</h3>
-              <div id="drilldown-content" style="color:var(--text-secondary); line-height:1.5; font-size:0.84rem;">Selecciona un retard de la taula per a investigar-lo.</div>
+        <div id="incident-drilldown-panel" class="drilldown-panel" style="display:none;">
+          <div class="drilldown-layout">
+            <div class="drilldown-main">
+              <h3 class="drilldown-title">Investigació del retard</h3>
+              <div id="drilldown-content">Selecciona un retard de la taula per a investigar-lo.</div>
             </div>
-            <div style="flex:0 0 260px;">
-              <h4 style="margin:0 0 0.4rem 0; font-size:0.9rem; color:var(--text-muted);">Evidència</h4>
-              <div id="drilldown-summary" style="font-size:0.84rem; color:var(--text-primary);"></div>
-            </div>
+            <aside class="drilldown-aside" aria-label="Evidència">
+              <h4 class="drilldown-aside-title">Evidència</h4>
+              <div id="drilldown-summary"></div>
+            </aside>
           </div>
         </div>
       ` : `

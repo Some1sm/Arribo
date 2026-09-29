@@ -162,6 +162,12 @@ function directionTerminus(lineCode, direction) {
   return stops.length ? String(stops[stops.length - 1].name || '') : '';
 }
 
+/** A direction's published stop names, in order ([] when unknown). */
+function directionStopNames(lineCode, direction) {
+  const ds = mataroSchedules.getDirectionSchedule(String(lineCode || '').replace(/^L/i, ''), direction, 'weekday');
+  return ds && Array.isArray(ds.stops) ? ds.stops.map(s => String(s.name || '')) : [];
+}
+
 // GPS positions are stored about once a minute, so a single-sample episode
 // needs a margin on each side to find the two positions that corroborate it.
 const SNAPSHOT_CONTEXT_MS = 5 * 60 * 1000;
@@ -2677,7 +2683,7 @@ class HistoryDatabase {
           vehicleRows
             .filter(r => String(r.lineCode || '').toUpperCase() === lineUpper && r.timestamp >= pick[0].timestamp - RUN_CONTEXT_MS)
             .map(r => ({ ...r, timesProvenance: classifyTimes(r) })),
-          { clickedStop: stopName, clickedFrom: pick[0].timestamp, clickedTo: pick[pick.length - 1].timestamp, towards: directionTerminus, stopIndex: scheduleStopIndex() }
+          { clickedStop: stopName, clickedFrom: pick[0].timestamp, clickedTo: pick[pick.length - 1].timestamp, towards: directionTerminus, stopIndex: scheduleStopIndex(), directionStops: directionStopNames }
         );
       }
 

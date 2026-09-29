@@ -84,6 +84,40 @@ const row = (stopName, delayMins, h, m, s = 0, direction = '1') =>
   assert.equal(buildIncidentRun(jump, { clickedStop: 'Q', clickedFrom: madrid(14, 2), clickedTo: madrid(14, 2) }).summary.pattern, 'building', 'CONTROL: without stop order the jump is not detected');
   console.log('  ✓ Visits collapse, direction changes and jumps back split the summary, the cap keeps the clicked stop.');
 
+  // ── Pure: short-turn (turn-around joined mid-route) and trip summaries ──
+  // Shape of L2 bus 2679 on 2026-09-29: +24/+26 towards Hospital, then the next
+  // trip towards Rodalies first logged at its 16th stop (index 15), on time.
+  const l2Dir0 = ['Hospital', ...Array.from({ length: 13 }, (_, i) => `Mid ${i + 1}`), 'ICS', 'Edif', 'Next'];
+  const l2Dir1 = { 'Salvador Espriu': 10, 'Mataró Parc': 12 };
+  const l2Index = (line, dir, name) => {
+    if (dir === '1' && l2Dir1[name] !== undefined) return { indexes: [l2Dir1[name]], lastIndex: 13 };
+    const i = l2Dir0.indexOf(name);
+    return dir === '0' && i >= 0 ? { indexes: [i], lastIndex: l2Dir0.length - 1 } : null;
+  };
+  const shortTurnRows = [
+    row('Salvador Espriu', 24, 12, 16), row('Mataró Parc', 26, 12, 24),
+    row('Edif', 0, 12, 34, 0, '0'), row('Next', 0, 12, 36, 0, '0')
+  ];
+  const st = buildIncidentRun(shortTurnRows, {
+    clickedStop: 'Salvador Espriu', clickedFrom: madrid(12, 16), clickedTo: madrid(12, 16),
+    stopIndex: l2Index, directionStops: (line, dir) => (dir === '0' ? l2Dir0 : []), towards: (line, dir) => (dir === '0' ? 'Rodalies' : 'Hospital')
+  });
+  assert.deepEqual(st.stops[2].joinedMidRoute, { skippedCount: 15, firstSkipped: 'Hospital', lastSkipped: 'ICS' });
+  assert.equal(st.trips.length, 2);
+  assert.equal(st.trips[0].isClickedTrip, true);
+  assert.equal(st.trips[0].firstDelay, 24);
+  assert.equal(st.trips[0].lastDelay, 26);
+  assert.equal(st.trips[0].towards, 'Hospital');
+  assert.equal(st.trips[1].towards, 'Rodalies');
+  assert.equal(st.trips[1].joinedMidRoute.skippedCount, 15);
+  assert.equal(st.summary.pattern, 'sustained', 'the on-time trip after the short-turn does not change the clicked trip');
+  // A turn-around at the start of the route, or a single stray sample, is not a mid-route join.
+  const atStart = buildIncidentRun([row('Mataró Parc', 26, 12, 24), row('Mid 1', 1, 12, 30, 0, '0'), row('Mid 2', 1, 12, 32, 0, '0')], { stopIndex: l2Index, directionStops: () => l2Dir0 });
+  assert.equal(atStart.stops[1].joinedMidRoute, undefined, 'joining at the 2nd stop is an ordinary start');
+  const stray = buildIncidentRun([row('Mataró Parc', 26, 12, 24), row('Edif', 0, 12, 34, 0, '0')], { stopIndex: l2Index, directionStops: () => l2Dir0 });
+  assert.equal(stray.stops[1].joinedMidRoute, undefined, 'a single sample after a turn-around is too weak to call a short-turn');
+  console.log('  ✓ Short-turn: the next trip joined at its 16th stop is flagged, with the 15 stops it left out; trips are summarised.');
+
   // ── Observatori integration: bus 2669 ──────────────────────────────
   historyDb.init(process.env.DB_PATH);
   const bus2669 = [
@@ -128,6 +162,10 @@ const row = (stopName, delayMins, h, m, s = 0, direction = '1') =>
   assert.equal(ep.run.summary.towards, 'Galícia', 'the direction is named by its terminus from the published timetable');
   assert.equal(ep.run.stops[ep.run.stops.length - 1].directionChanged, true, 'the return trip is marked as a new direction');
   assert.equal(ep.run.stops[ep.run.stops.length - 1].newTrip, true);
+  assert.equal(ep.run.trips.length, 3, 'three trips: the clicked one, the jump back, the return');
+  assert.equal(ep.run.trips[0].isClickedTrip, true);
+  assert.equal(ep.run.trips[0].stopCount, 10);
+  assert.equal(ep.run.trips[1].joinedMidRoute, null, 'a same-direction jump back is never called a mid-route join');
   assert.equal(ep.evidence.snapshotTrailPoints, 2, 'positions two minutes either side of a single-sample episode are found');
   assert.equal(ep.evidence.snapshotRetentionHours, 2);
   assert.equal(ep.verdict, 'corroborated');

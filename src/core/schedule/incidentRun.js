@@ -23,6 +23,10 @@ const TREND_MINS = 5;
 const SERVICE_DELAY_MINS = 5;
 // Upper bound on rows sent to the browser.
 const MAX_RUN_STOPS = 150;
+// A turn-around whose first logged stop sits at this position or later in its
+// direction's stop order was joined mid-route (the first stop or two are often
+// not logged because the bus is still flagged as a terminal layover there).
+const MID_ROUTE_JOIN_MIN_INDEX = 3;
 
 function fold(value) {
   return String(value || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
@@ -67,8 +71,12 @@ function summarise(segment) {
  * @param {function(string, string): string} [options.towards]  (lineCode, direction) -> terminus name.
  * @param {function(string, string, string): ({indexes: number[], lastIndex: number}|null)} [options.stopIndex]
  *   Position of a stop in its direction's published stop order (as in tripRelink.js).
- *   With it, a jump back to an earlier stop in the same direction starts a new trip.
- * @returns {{stops: Array<object>, summary: object}}
+ *   With it, a jump back to an earlier stop in the same direction starts a new trip,
+ *   and a new trip that starts far along its route is flagged as joined mid-route.
+ * @param {function(string, string): string[]} [options.directionStops]
+ *   (lineCode, direction) -> that direction's published stop names, used to name the
+ *   stops a mid-route join left out.
+ * @returns {{stops: Array<object>, summary: object, trips: Array<object>}}
  *   stops: { stopName, direction, towards, time ('HH:MM:SS'), firstTs, lastTs, delayMins,
  *   sampleCount, isRealTime, scheduledTime, actualTime, timesProvenance, directionChanged,
  *   newTrip, isClicked }. newTrip is true on the first visit of a new trip (direction change
@@ -76,7 +84,7 @@ function summarise(segment) {
  *   'building' | 'recovering' | 'variable' | 'isolated' | 'none') with its stop count, time
  *   range and delays.
  */
-function buildIncidentRun(rows, { clickedStop = '', clickedFrom, clickedTo, towards, stopIndex } = {}) {
+function buildIncidentRun(rows, { clickedStop = '', clickedFrom, clickedTo, towards, stopIndex, directionStops } = {}) {
   const sorted = (Array.isArray(rows) ? rows : [])
     .filter(r => r && Number.isFinite(Number(r.timestamp)) && Number.isFinite(Number(r.delayMins)))
     .slice()
@@ -118,6 +126,7 @@ function buildIncidentRun(rows, { clickedStop = '', clickedFrom, clickedTo, towa
     }
     stops.push({
       stopName,
+      lineCode: String(r.lineCode || ''),
       direction,
       towards: terminusOf(r.lineCode, direction),
       time: String(r.formattedDate || '').slice(11, 19),
@@ -133,6 +142,26 @@ function buildIncidentRun(rows, { clickedStop = '', clickedFrom, clickedTo, towa
       newTrip: directionChanged || jumpedBack,
       isClicked: false
     });
+  }
+
+  // A new trip that begins far along its route: the bus joined it mid-route (a
+  // short-turn), so the stops before it on that trip were not served by this bus.
+  // Measured on L2 bus 2679 (29 Sep 2026): +26 at Mataró Parc, then the next trip
+  // from Edif. Vidre - TecnoCampus (15th stop) on time; La Llàntia and Cerdanyola
+  // went 35-36 min without a bus. Without this the drop read as "recovered 26 min".
+  // Only a turn-around counts (the bus changed direction and then stayed on the new
+  // trip for at least two stops): a same-direction jump back or a single stray
+  // sample is too weak to say a trip was joined mid-route.
+  if (typeof stopIndex === 'function') {
+    for (let i = 0; i < stops.length; i++) {
+      const s = stops[i];
+      if (!s.directionChanged || !stops[i + 1] || stops[i + 1].newTrip) continue;
+      const pos = stopIndex(s.lineCode, s.direction, s.stopName);
+      const first = pos ? Math.min(...pos.indexes) : 0;
+      if (first < MID_ROUTE_JOIN_MIN_INDEX) continue;
+      const names = typeof directionStops === 'function' ? (directionStops(s.lineCode, s.direction) || []) : [];
+      s.joinedMidRoute = { skippedCount: first, firstSkipped: String(names[0] || ''), lastSkipped: String(names[first - 1] || '') };
+    }
   }
 
   const wanted = fold(clickedStop);
@@ -170,7 +199,24 @@ function buildIncidentRun(rows, { clickedStop = '', clickedFrom, clickedTo, towa
     const begin = Math.max(0, Math.min(stops.length - MAX_RUN_STOPS, centre - Math.floor(MAX_RUN_STOPS / 2)));
     shown = stops.slice(begin, begin + MAX_RUN_STOPS);
   }
-  return { stops: shown, summary };
+
+  // One entry per trip in the shown run, for the panel's group headers.
+  const trips = [];
+  shown.forEach((s, i) => {
+    if (i === 0 || s.newTrip) trips.push({ startIndex: i, endIndex: i });
+    else trips[trips.length - 1].endIndex = i;
+  });
+  const tripSummaries = trips.map(t => {
+    const segment = shown.slice(t.startIndex, t.endIndex + 1);
+    return {
+      ...summarise(segment),
+      startIndex: t.startIndex,
+      endIndex: t.endIndex,
+      joinedMidRoute: segment[0].joinedMidRoute || null,
+      isClickedTrip: segment.some(v => v.isClicked)
+    };
+  });
+  return { stops: shown, summary, trips: tripSummaries };
 }
 
 module.exports = {
@@ -179,5 +225,6 @@ module.exports = {
   SUSTAINED_SPREAD_MINS,
   TREND_MINS,
   SERVICE_DELAY_MINS,
-  MAX_RUN_STOPS
+  MAX_RUN_STOPS,
+  MID_ROUTE_JOIN_MIN_INDEX
 };

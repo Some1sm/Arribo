@@ -9124,7 +9124,7 @@ body {
    a sticky header, inside a horizontal scroll container so the columns
    cannot squeeze on a narrow screen. */
 .drilldown-table-scroll {
-  max-height: 320px;
+  max-height: 440px;
   overflow: auto;
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
@@ -9181,19 +9181,17 @@ body {
 
 /* Column widths are percentages of a fixed layout, so they hold at any
    container width instead of being computed per row. */
-.drilldown-cell-time  { width: 10%; white-space: nowrap; color: var(--text-secondary); }
-.drilldown-cell-delay { width: 12%; white-space: nowrap; }
-.drilldown-cell-stop  { width: 30%; }
-.drilldown-cell-veh   { width: 20%; }
-.drilldown-cell-times { width: 18%; white-space: nowrap; }
-.drilldown-cell-src   { width: 10%; white-space: nowrap; color: var(--text-muted); }
+.drilldown-cell-time  { width: 11%; white-space: nowrap; color: var(--text-secondary); }
+.drilldown-cell-delay { width: 13%; white-space: nowrap; }
+.drilldown-cell-stop  { width: 42%; }
+.drilldown-cell-times { width: 22%; white-space: nowrap; }
+.drilldown-cell-src   { width: 12%; white-space: nowrap; color: var(--text-muted); }
 
-.drilldown-samples-table thead th:nth-child(1) { width: 10%; }
-.drilldown-samples-table thead th:nth-child(2) { width: 12%; }
-.drilldown-samples-table thead th:nth-child(3) { width: 30%; }
-.drilldown-samples-table thead th:nth-child(4) { width: 20%; }
-.drilldown-samples-table thead th:nth-child(5) { width: 18%; }
-.drilldown-samples-table thead th:nth-child(6) { width: 10%; }
+.drilldown-samples-table thead th:nth-child(1) { width: 11%; }
+.drilldown-samples-table thead th:nth-child(2) { width: 13%; }
+.drilldown-samples-table thead th:nth-child(3) { width: 42%; }
+.drilldown-samples-table thead th:nth-child(4) { width: 22%; }
+.drilldown-samples-table thead th:nth-child(5) { width: 12%; }
 
 .drilldown-delay {
   font-weight: 700;
@@ -9202,13 +9200,131 @@ body {
 .drilldown-delay.is-mid  { color: #f59e0b; }
 .drilldown-delay.is-low  { color: var(--text-secondary); }
 
-/* Investigar: the clicked stop inside the bus's run, and where a new trip starts. */
-.drilldown-samples-table tbody tr.is-clicked td {
-  background: rgba(56, 189, 248, 0.12);
+/* ── Investigar panel ───────────────────────────────────────────────
+   The panel is a size container: the evidence column sits beside the run
+   only when the panel itself is wide enough, and moves below it otherwise
+   (Baseline container queries; the stacked layout is the default). */
+.drilldown-panel {
+  margin-top: 2rem;
+  padding: 1.25rem;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  container: drilldown / inline-size;
+}
+.drilldown-layout {
+  display: grid;
+  gap: 1.25rem;
+}
+@container drilldown (min-width: 860px) {
+  .drilldown-layout { grid-template-columns: minmax(0, 1fr) 17.5rem; }
+}
+.drilldown-title {
+  margin: 0 0 0.75rem;
+  font-size: 1.15rem;
   color: var(--text-primary);
 }
-.drilldown-samples-table tbody tr.is-new-trip td {
-  border-top: 2px dashed var(--border-subtle);
+#drilldown-content {
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+.drilldown-aside {
+  align-self: start;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+}
+.drilldown-aside-title {
+  margin: 0 0 0.6rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.drilldown-headline {
+  --tone: var(--text-secondary);
+  border-left: 3px solid var(--tone);
+  background: color-mix(in srgb, var(--tone) 8%, var(--bg-surface));
+  border-radius: 8px;
+  padding: 0.6rem 0.85rem;
+  margin-bottom: 0.75rem;
+}
+.drilldown-headline-title {
+  color: var(--tone);
+  font-weight: 800;
+  font-size: 0.95rem;
+  margin-bottom: 0.15rem;
+}
+.drilldown-headline-text {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+.drilldown-callout {
+  border: 1px solid color-mix(in srgb, var(--accent-warning) 35%, transparent);
+  background: color-mix(in srgb, var(--accent-warning) 7%, var(--bg-surface));
+  border-radius: 8px;
+  padding: 0.55rem 0.85rem;
+  margin-bottom: 0.75rem;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+.drilldown-callout > strong:first-child {
+  display: block;
+  color: var(--accent-warning);
+  margin-bottom: 0.1rem;
+}
+.drilldown-context {
+  margin: 0 0 0.6rem;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+.drilldown-legend {
+  margin: 0.5rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+/* Trip group rows inside the run table. */
+.drilldown-samples-table tbody tr.drilldown-trip-row th {
+  padding: 0.5rem 0.6rem 0.4rem;
+  background: var(--bg-surface-elevated);
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: left;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+.drilldown-samples-table tbody tr.drilldown-trip-row:not(:first-child) th {
+  border-top: 1px solid var(--border-subtle);
+}
+.drilldown-trip-name {
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-right: 0.5rem;
+}
+.drilldown-trip-meta {
+  white-space: nowrap;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+.drilldown-trip-join {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.74rem;
+  color: var(--accent-warning);
+}
+.drilldown-samples-table tbody tr.is-clicked td {
+  background: color-mix(in srgb, var(--brand-primary, #38bdf8) 12%, transparent);
+  color: var(--text-primary);
 }
 .drilldown-clicked-tag {
   display: inline-block;
@@ -9217,68 +9333,56 @@ body {
   border-radius: 4px;
   font-size: 0.68rem;
   font-weight: 700;
-  background: rgba(56, 189, 248, 0.18);
+  background: color-mix(in srgb, var(--brand-primary, #38bdf8) 20%, transparent);
   color: var(--text-primary);
 }
-.drilldown-headline {
-  border-left: 3px solid var(--border-subtle);
-  background: var(--bg-surface);
-  border-radius: 6px;
-  padding: 0.5rem 0.75rem;
-  margin-bottom: 0.7rem;
+
+/* Evidence facts: label above value, so the narrow column never squeezes text. */
+.drilldown-facts {
+  margin: 0;
+  display: grid;
+  gap: 0.8rem;
 }
-.drilldown-headline-title {
-  font-weight: 800;
-  font-size: 0.95rem;
-  margin-bottom: 0.2rem;
-}
-.drilldown-headline-text {
-  color: var(--text-secondary);
-  font-size: 0.84rem;
-  line-height: 1.45;
-}
-.drilldown-context {
-  color: var(--text-secondary);
-  font-size: 0.8rem;
-  line-height: 1.45;
-  margin-bottom: 0.6rem;
-}
-.drilldown-legend {
+.drilldown-fact dt {
+  margin-bottom: 0.15rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--text-muted);
-  font-size: 0.74rem;
-  line-height: 1.45;
-  margin: 0.5rem 0 0;
 }
-.drilldown-evidence-table {
-  width: 100%;
-  border-collapse: collapse;
+.drilldown-fact dd {
+  margin: 0;
   font-size: 0.82rem;
-}
-.drilldown-evidence-table th {
-  width: 40%;
-  padding: 4px 8px 4px 0;
-  text-align: left;
-  font-weight: 500;
-  color: var(--text-muted);
-  vertical-align: top;
-}
-.drilldown-evidence-table td {
-  padding: 4px 0;
+  line-height: 1.4;
   color: var(--text-secondary);
-  vertical-align: top;
 }
-.drilldown-evidence-note {
-  margin-top: 2px;
-  color: var(--text-muted);
+.drilldown-fact-note {
+  display: block;
+  margin-top: 0.15rem;
   font-size: 0.76rem;
   line-height: 1.4;
+  color: var(--text-muted);
 }
 .drilldown-bus-chip {
-  background: var(--bg-surface);
+  background: var(--bg-surface-elevated);
   border: 1px solid var(--border-subtle);
-  padding: 2px 6px;
+  padding: 2px 7px;
   border-radius: 4px;
-  font-size: 0.74rem;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.76rem;
+  color: var(--text-primary);
+}
+
+/* A narrow panel keeps the three columns that tell the story. */
+@container drilldown (max-width: 560px) {
+  .drilldown-samples-table thead th:nth-child(4),
+  .drilldown-samples-table thead th:nth-child(5),
+  .drilldown-samples-table td.drilldown-cell-times,
+  .drilldown-samples-table td.drilldown-cell-src { display: none; }
+  .drilldown-samples-table thead th:nth-child(1) { width: 22%; }
+  .drilldown-samples-table thead th:nth-child(2) { width: 26%; }
+  .drilldown-samples-table thead th:nth-child(3) { width: 52%; }
 }
 
 /* ── Drill-down → Expedicions & Trajectòries cross-link ─────────────── */
@@ -10164,31 +10268,67 @@ input#plan-max-walk:focus {
   overflow: hidden;
 }
 
-.data-health-item {
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid var(--border-subtle);
+/* One row per check, no boxes: uneven descriptions no longer stretch a grid
+   of cards into tall empty panels. */
+.dh-body {
+  display: grid;
+  gap: 0.9rem;
+}
+.dh-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.55rem 0.8rem;
   border-radius: 8px;
-  padding: 0.75rem 0.9rem;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+}
+.dh-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
+  column-gap: 1.75rem;
+  align-items: start;
+}
+
+.data-health-item {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.2rem;
+  padding: 0.6rem 0;
+  border-top: 1px solid var(--border-subtle);
 }
 
 .data-health-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: 0.75rem;
 }
 
 .data-health-title {
-  font-size: 0.82rem;
+  font-size: 0.84rem;
   font-weight: 600;
   color: var(--text-primary);
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.5rem;
+  min-width: 0;
 }
+
+.dh-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+.dh-ok > .dh-dot, .dh-ok .data-health-title .dh-dot { background: var(--accent-live); }
+.dh-warn > .dh-dot, .dh-warn .data-health-title .dh-dot { background: var(--accent-warning); }
+.dh-bad > .dh-dot, .dh-bad .data-health-title .dh-dot { background: var(--accent-danger); }
 
 .data-health-badge {
   font-size: 0.72rem;
@@ -10227,10 +10367,57 @@ input#plan-max-walk:focus {
 }
 
 .data-health-desc {
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-  line-height: 1.4;
-  margin: 0;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+  margin: 0 0 0 1rem;
+}
+
+/* Fleet: full-width row with one chip per line. */
+.dh-fleet {
+  border-top: 1px solid var(--border-subtle);
+}
+.dh-fleet > .data-health-item {
+  border-top: 0;
+}
+.dh-lines {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 8.5rem), 1fr));
+  gap: 0.5rem;
+  margin: 0.25rem 0 0.2rem 1rem;
+}
+.dh-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-surface-elevated);
+}
+.dh-line.has-gap {
+  border-color: color-mix(in srgb, var(--accent-warning) 45%, var(--border-subtle));
+}
+.dh-line-code {
+  min-width: 2rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 5px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-align: center;
+}
+.dh-line-count {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.dh-line-note {
+  flex-basis: 100%;
+  font-size: 0.7rem;
+  line-height: 1.3;
+  color: var(--accent-warning);
 }
 
 /* Monthly Report Section (Plan 9.4) */

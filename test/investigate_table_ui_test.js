@@ -156,14 +156,16 @@ check(drilldownBody.includes('<thead>') && drilldownBody.includes('<tbody>'),
   'the table has a thead and a tbody');
 
 const headers = [...drilldownBody.matchAll(/<th scope="col">([^<]+)<\/th>/g)].map(m => m[1].trim());
-check(headers.length === 6, `every column is labelled, found ${headers.length}: ${JSON.stringify(headers)}`);
-check(headers.join('|') === 'Hora|Retard|Parada|Sentit|Teòric → Real|Senyal',
+check(headers.length === 5, `every column is labelled, found ${headers.length}: ${JSON.stringify(headers)}`);
+check(headers.join('|') === 'Hora|Retard|Parada|Teòric → Real|Senyal',
   `headers are the expected six, got ${JSON.stringify(headers)}`);
 
 // One <td> per column per row, or the cells drift out of alignment again.
 const rowHtml = drilldownBody.slice(drilldownBody.indexOf('return `'), drilldownBody.indexOf('}).join(\'\');'));
 const cellCount = (rowHtml.match(/<td /g) || []).length;
-check(cellCount === 6, `each sample row emits exactly 6 cells, got ${cellCount}`);
+check(cellCount === 5, `each sample row emits exactly 5 cells, got ${cellCount}`);
+check(observatoriSrc.includes('<tr class="drilldown-trip-row') && observatoriSrc.includes('<th colspan="5" scope="colgroup">'),
+  'each trip in the run opens with a full-width group header row');
 
 // The old drifting pattern must be gone from this renderer. Scoped to the
 // renderer, not the whole file: other panels legitimately use flex rows.
@@ -200,7 +202,7 @@ check(css.includes('overflow-wrap: anywhere'),
 // aligns these with two spaces, and pinning that would break the test on a
 // formatting change that changes nothing.
 for (const cls of ['drilldown-cell-time', 'drilldown-cell-delay', 'drilldown-cell-stop',
-                   'drilldown-cell-veh', 'drilldown-cell-times', 'drilldown-cell-src']) {
+                   'drilldown-cell-times', 'drilldown-cell-src']) {
   check(new RegExp(`\\.${cls}\\s*\\{[^}]*width:`).test(css), `${cls} declares a width`);
 }
 
