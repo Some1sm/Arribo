@@ -9199,6 +9199,9 @@ body {
 .drilldown-delay.is-high { color: #ef4444; }
 .drilldown-delay.is-mid  { color: #f59e0b; }
 .drilldown-delay.is-low  { color: var(--text-secondary); }
+/* Records logged during a deadhead return: shown, but visibly not stop visits. */
+.drilldown-delay.is-phantom { color: var(--text-muted); text-decoration: line-through; }
+.drilldown-samples-table tbody tr.is-phantom td { color: var(--text-muted); font-style: italic; }
 
 /* ── Investigar panel ───────────────────────────────────────────────
    The panel is a size container: the evidence column sits beside the run

@@ -343,6 +343,14 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   first logged stop is the 4th or later of its direction as `joinedMidRoute`, and
   Investigar names the stops it left out. Stop-visit punctuality cannot see skipped
   stops at all: it only measures buses that came.
+- **A bus can skip a whole trip, and the operator's feed hides it.** L8 bus 2669
+  (29 Sep 2026) was +26 at Euskadi (14:46), then Sant Joan +3 on the next
+  Rodalies -> Galícia trip at 14:57: it never ran the 14:24 Galícia -> Rodalies trip
+  (21 min). Meanwhile the feed re-logged Biblioteca Pompeu Fabra at +49 (already
+  served at 14:29) and "arrived" at Rodalies at +10. `findDeadheadReturns`
+  (src/core/schedule/deadheadReturn.js) detects this; those records stay out of the
+  rankings and Investigar groups them as "Tornada sense servei". Say "no bus in the
+  operator's data", never "no bus": a bus without tracking would not appear.
 
 ## 4. Runtime, configuration and privacy
 

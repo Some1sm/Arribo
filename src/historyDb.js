@@ -16,8 +16,15 @@ const {
   RELINK_DROP_MINS,
   RELINK_WINDOW_MS
 } = require('./core/schedule/tripRelink');
+const {
+  findDeadheadReturns,
+  deadheadCovering,
+  deadheadTouching,
+  DEADHEAD_SPEED_FACTOR
+} = require('./core/schedule/deadheadReturn');
 const mataroSchedules = require('./data/mataroSchedules');
-const { normalizeStopName } = require('./core/schedule/tripMatcher');
+const { normalizeStopName, resolveDayType } = require('./core/schedule/tripMatcher');
+const timeEngine = require('./core/time/timeEngine');
 const { buildIncidentRun, RUN_CONTEXT_MS } = require('./core/schedule/incidentRun');
 
 let DatabaseSync;
@@ -129,7 +136,8 @@ function appendMataroScope(sqlWhere, isAll) {
 const EPISODE_GAP_MS = 5 * 60 * 1000;
 
 // A delay_logs row inside a trip-relink stale stretch (see
-// src/core/schedule/tripRelink.js). temp.relink_windows is refilled by
+// src/core/schedule/tripRelink.js) or a deadhead-return phantom stretch (see
+// src/core/schedule/deadheadReturn.js). temp.relink_windows is refilled by
 // _setRelinkWindows() at the start of every getDelayIncidents() call.
 const IN_RELINK_SQL = 'EXISTS (SELECT 1 FROM temp.relink_windows rw WHERE rw.vehicle_id = delay_logs.vehicle_id AND rw.line_code = UPPER(delay_logs.line_code) AND delay_logs.timestamp BETWEEN rw.from_ts AND rw.to_ts)';
 
@@ -166,6 +174,13 @@ function directionTerminus(lineCode, direction) {
 function directionStopNames(lineCode, direction) {
   const ds = mataroSchedules.getDirectionSchedule(String(lineCode || '').replace(/^L/i, ''), direction, 'weekday');
   return ds && Array.isArray(ds.stops) ? ds.stops.map(s => String(s.name || '')) : [];
+}
+
+/** A direction's scheduled end-to-end trip time in minutes (null when unknown). */
+function scheduleTripMinutes(lineCode, direction) {
+  const ds = mataroSchedules.getDirectionSchedule(String(lineCode || '').replace(/^L/i, ''), direction, 'weekday');
+  const mins = ds ? Number(ds.totalTravelMinutes) : NaN;
+  return Number.isFinite(mins) && mins > 0 ? mins : null;
 }
 
 // GPS positions are stored about once a minute, so a single-sample episode
@@ -1839,12 +1854,19 @@ class HistoryDatabase {
       // was not running (the operator's AVL re-attached it later). They are
       // listed with the SAE anomalies and kept out of the service KPIs and
       // rankings; trajectories that contain one end as 'relinked'.
-      const relinks = this._findTripRelinks({
+      const lineScope = {
         since: cutoff,
         lineWhereSql: isAll ? MATARO_SCOPE_SQL : ' AND (UPPER(line_code) = ? OR UPPER(line_code) = ? OR line_id = ?)',
         lineParams: isAll ? [] : [codeWithL, codeWithoutL, codeWithoutL]
-      });
-      this._setRelinkWindows(relinks);
+      };
+      const relinks = this._findTripRelinks(lineScope);
+      // Deadhead returns: records the operator's system logged while a bus drove
+      // back to the start of its route without passengers. Same treatment as a
+      // relink stretch; trajectories that end in one end as 'deadhead_return'.
+      const deadheads = this._findDeadheadReturns(lineScope);
+      this._setRelinkWindows([...relinks, ...deadheads.map(d => ({
+        vehicleId: d.vehicleId, lineCode: d.lineCode, staleFromTs: d.phantomFromTs, staleToTs: d.phantomToTs
+      }))]);
       const serviceWhere = `${sqlWhere} AND NOT ${IN_RELINK_SQL}`;
 
       // 1. Summary Aggregate KPIs (filtered to revenue commercial service)
@@ -1977,6 +1999,16 @@ class HistoryDatabase {
         LIMIT 2000
       `);
       const relinkCandidates = relinkStmt.all(...baseParams).map(r => {
+        const dh = deadheadCovering(deadheads, r.vehicleId, r.lineCode, r.timestamp);
+        if (dh) {
+          return {
+            ...r,
+            anomalyType: 'deadhead_return',
+            diagnosticBadge: '↩️ Tornada sense servei',
+            anomalyIcon: '↩️',
+            deadhead: { lastServedStop: dh.lastServedStop, resumeStop: dh.resumeStop, returnMinutes: dh.returnMinutes, oppositeTripMinutes: dh.oppositeTripMinutes }
+          };
+        }
         const rl = relinkCovering(relinks, r.vehicleId, r.lineCode, r.timestamp);
         return {
           ...r,
@@ -2085,7 +2117,8 @@ class HistoryDatabase {
       // Newest-first so a cap drops the OLDEST samples, never whole lines or today.
       const clusterRowsDesc = clusterStmt.all(...baseParams);
       const trajectorySamplesTruncated = clusterRowsDesc.length === 30000;
-      const clusterRows = clusterRowsDesc.reverse();
+      // Records logged during a deadhead return are not part of any trip.
+      const clusterRows = clusterRowsDesc.reverse().filter(r => !deadheadCovering(deadheads, r.vehicleId, r.lineCode, r.timestamp));
       clusterRows.sort((a, b) => String(a.lineCode).localeCompare(String(b.lineCode)) || a.timestamp - b.timestamp);
 
       const recoveryStmt = this.db.prepare(`
@@ -2293,6 +2326,18 @@ class HistoryDatabase {
           c.endReason = 'relinked';
           c.stopProgression = (c.stopProgression || []).map(p => ({ ...p, isRecovered: false }));
         }
+        // A bus that stopped serving its trip and drove back without passengers
+        // did not recover its delay: the trajectory ends at its last served stop.
+        const deadhead = !relink && c.vehicleId ? deadheadTouching(deadheads, c.vehicleId, c.lineCode, c.firstTs, c.lastTs) : null;
+        if (deadhead) {
+          const progression = c.stopProgression || [];
+          const lastServedAt = progression.map(p => p.stopName).lastIndexOf(deadhead.lastServedStop);
+          c.stopProgression = (lastServedAt >= 0 ? progression.slice(0, lastServedAt + 1) : progression).map(p => ({ ...p, isRecovered: false }));
+          c.stops = c.stopProgression.map(p => p.stopName);
+          c.lastStop = deadhead.lastServedStop;
+          c.endReason = 'deadhead_return';
+          c.endStop = deadhead.lastServedStop;
+        }
 
         const durMins = Math.round((c.lastTs - c.firstTs) / 60000);
         const h = parseInt(c.hourOfDay, 10);
@@ -2346,6 +2391,9 @@ class HistoryDatabase {
           trafficIcon: ctx.icon,
           relink: relink
             ? { delayBefore: relink.delayBefore, delayAfter: relink.delayAfter, stopName: relink.relinkStop, relinkTs: relink.relinkTs, staleStops: relink.staleStops }
+            : null,
+          deadhead: deadhead
+            ? { lastServedStop: deadhead.lastServedStop, resumeStop: deadhead.resumeStop, returnMinutes: deadhead.returnMinutes, oppositeTripMinutes: deadhead.oppositeTripMinutes, towards: directionTerminus(deadhead.lineCode, deadhead.oppositeDirection) }
             : null
         };
       }).sort((a, b) => (a.incidentType === 'trip_relink') - (b.incidentType === 'trip_relink') || b.maxDelayMins - a.maxDelayMins || b.sampleCount - a.sampleCount);
@@ -2398,6 +2446,7 @@ class HistoryDatabase {
           movingPct: totalClusters > 0 ? Math.round((movingCount / totalClusters) * 100) : 0,
           investigationCount: enrichedInvestigation.length,
           tripRelinkEpisodes: relinks.length,
+          deadheadReturns: deadheads.length,
           dataQuality: this._delayDataQuality({ hours: hoursNum, lineCode: lineCode })
         },
         topIncidents: enrichedTop,
@@ -2429,7 +2478,8 @@ class HistoryDatabase {
           maintenanceCount: 0,
           movingPct: 0,
           investigationCount: 0,
-          tripRelinkEpisodes: 0
+          tripRelinkEpisodes: 0,
+          deadheadReturns: 0
         },
         topIncidents: [],
         investigationIncidents: [],
@@ -2477,6 +2527,156 @@ class HistoryDatabase {
       if (found) relinks.push(found);
     }
     return relinks;
+  }
+
+  /**
+   * Deadhead returns (src/core/schedule/deadheadReturn.js) for identified buses
+   * from `since` to `until`. During one the feed puts the bus on the opposite
+   * direction and back in less than DEADHEAD_SPEED_FACTOR of that direction's
+   * trip time, so direction changes are found in SQL with LAG and only buses
+   * that flip there and back that fast have their samples loaded.
+   */
+  _findDeadheadReturns({ since, until = Date.now(), lineWhereSql = '', lineParams = [] } = {}) {
+    const changes = this.db.prepare(`
+      SELECT vehicleId, lineCode, direction, timestamp FROM (
+        SELECT vehicle_id AS vehicleId, UPPER(line_code) AS lineCode, direction, timestamp,
+          LAG(direction) OVER w AS prevDirection,
+          LAG(UPPER(line_code)) OVER w AS prevLine
+        FROM delay_logs
+        WHERE vehicle_id <> '' AND timestamp >= ? AND timestamp <= ?${lineWhereSql}
+        WINDOW w AS (PARTITION BY vehicle_id ORDER BY timestamp)
+      )
+      WHERE direction <> '' AND prevDirection <> '' AND direction <> prevDirection AND lineCode = prevLine
+      ORDER BY vehicleId, timestamp
+    `).all(since, until, ...lineParams);
+    if (changes.length < 2) return [];
+    const samplesStmt = this.db.prepare(`
+      SELECT vehicle_id AS vehicleId, line_code AS lineCode, direction, delay_mins AS delayMins, timestamp,
+        stop_name AS stopName, scheduled_time AS scheduledTime
+      FROM delay_logs
+      WHERE vehicle_id = ? AND timestamp >= ? AND timestamp <= ?
+      ORDER BY timestamp ASC
+      LIMIT 3000
+    `);
+    const stopIndex = scheduleStopIndex();
+    const found = new Map();
+    for (let i = 1; i < changes.length; i++) {
+      const out = changes[i - 1];
+      const back = changes[i];
+      if (out.vehicleId !== back.vehicleId || out.lineCode !== back.lineCode) continue;
+      const tripMins = scheduleTripMinutes(out.lineCode, out.direction);
+      if (!tripMins || back.timestamp - out.timestamp >= DEADHEAD_SPEED_FACTOR * tripMins * 60000) continue;
+      const rows = samplesStmt.all(out.vehicleId, out.timestamp - 3 * 3600 * 1000, back.timestamp + 45 * 60 * 1000);
+      for (const d of findDeadheadReturns(rows, { stopIndex, tripMinutes: scheduleTripMinutes })) {
+        if (d.phantomFromTs <= out.timestamp && d.phantomToTs >= out.timestamp) found.set(`${d.vehicleId}|${d.resumeTs}`, d);
+      }
+    }
+    return [...found.values()];
+  }
+
+  /**
+   * The Investigar panel's account of a deadhead return: where the bus stopped
+   * serving, where it started again, the records logged in between, and the trip
+   * it skipped.
+   */
+  _describeDeadhead(d) {
+    const hhmm = ts => timeEngine.formatTimeToTimezone(ts, 'Europe/Madrid');
+    const skipped = this._skippedTrip(d);
+    return {
+      vehicleId: d.vehicleId,
+      lineCode: d.lineCode,
+      lastServedStop: d.lastServedStop,
+      lastServedTime: hhmm(d.lastServedTs),
+      lastServedDelay: d.lastServedDelay,
+      resumeStop: d.resumeStop,
+      resumeTime: hhmm(d.resumeTs),
+      returnMinutes: d.returnMinutes,
+      oppositeTripMinutes: d.oppositeTripMinutes,
+      towards: directionTerminus(d.lineCode, d.direction),
+      skippedFrom: directionStopNames(d.lineCode, d.oppositeDirection)[0] || '',
+      skippedTo: directionTerminus(d.lineCode, d.oppositeDirection),
+      skippedDeparture: skipped ? skipped.departure : '',
+      phantoms: d.phantoms.map(p => ({ stopName: p.stopName, delayMins: p.delayMins, time: hhmm(p.firstTs) })),
+      unservedGap: skipped ? skipped.gap : null
+    };
+  }
+
+  /**
+   * The trip a deadhead return skipped: the opposite-direction trip whose stop
+   * the operator's system logged without the bus running it, found in the
+   * timetable of that day. Its departure time, and at its second stop (the
+   * origin's terminal dwell is not a pass) the wait between the buses the feed
+   * did log there around the time the skipped trip was due. A bus that sends
+   * nothing to the operator's system would not show, so this is "no bus in the
+   * operator's data", not proof that no bus came.
+   */
+  _skippedTrip(d) {
+    const closed = d.closedTrip;
+    if (!closed || !closed.scheduledTime) return null;
+    const target = timeEngine.timeStringToSeconds(closed.scheduledTime);
+    if (!Number.isFinite(target)) return null;
+    const { dayType, components } = resolveDayType(closed.timestamp);
+    const ds = mataroSchedules.getDirectionSchedule(String(d.lineCode || '').replace(/^L/i, ''), closed.direction, dayType);
+    if (!ds || !Array.isArray(ds.stops) || ds.stops.length < 2 || !Array.isArray(ds.trips)) return null;
+    const daySec = sec => ((sec % 86400) + 86400) % 86400;
+    const wanted = normalizeStopName(closed.stopName);
+    const at = ds.stops.map((s, i) => (normalizeStopName(s.name) === wanted ? i : -1)).filter(i => i >= 0);
+    const tripIdx = ds.trips.findIndex(t => Array.isArray(t.stopSecs)
+      && at.some(i => Number.isFinite(t.stopSecs[i]) && daySec(t.stopSecs[i]) === target));
+    if (tripIdx < 0) return null;
+    const PROBE = 1;
+    const secs = ds.trips[tripIdx].stopSecs;
+    if (!Number.isFinite(secs[0]) || !Number.isFinite(secs[PROBE])) return null;
+    const departure = timeEngine.secondsToTimeString(daySec(secs[0])).slice(0, 5);
+
+    // When the skipped trip was due at the probe stop, on the service day of the
+    // closed record (trips after midnight carry seconds past 86400).
+    const dueOn = dayOffset => {
+      const sec = secs[PROBE];
+      const s = daySec(sec);
+      return timeEngine.localTimeToUtcDate(components.year, components.monthIndex,
+        components.day + dayOffset + Math.floor(sec / 86400), Math.floor(s / 3600), Math.floor((s % 3600) / 60), s % 60).getTime();
+    };
+    const due = [dueOn(-1), dueOn(0)].reduce((a, b) => (Math.abs(b - closed.timestamp) < Math.abs(a - closed.timestamp) ? b : a));
+
+    const probeName = normalizeStopName(ds.stops[PROBE].name);
+    const rows = this.db.prepare(`
+      SELECT vehicle_id AS vehicleId, stop_name AS stopName, timestamp
+      FROM delay_logs
+      WHERE UPPER(line_code) = ? AND direction = ? AND vehicle_id <> '' AND timestamp >= ? AND timestamp <= ?
+      ORDER BY timestamp ASC
+    `).all(String(d.lineCode || '').toUpperCase(), String(closed.direction), due - 3 * 3600 * 1000, due + 3 * 3600 * 1000)
+      .filter(r => normalizeStopName(r.stopName) === probeName
+        && !(r.vehicleId === d.vehicleId && r.timestamp >= d.phantomFromTs && r.timestamp <= d.phantomToTs));
+    // One pass per bus visit: the same bus again within 10 minutes is the same pass.
+    const passes = [];
+    const lastByBus = new Map();
+    for (const r of rows) {
+      const prev = lastByBus.get(r.vehicleId);
+      if (prev === undefined || r.timestamp - prev > 10 * 60 * 1000) passes.push(r.timestamp);
+      lastByBus.set(r.vehicleId, r.timestamp);
+    }
+    passes.sort((a, b) => a - b);
+    const before = passes.filter(ts => ts <= due).pop();
+    const after = passes.find(ts => ts > due);
+    let gap = null;
+    if (before !== undefined && after !== undefined) {
+      const probeAt = t => (t && Array.isArray(t.stopSecs) && Number.isFinite(t.stopSecs[PROBE]) ? t.stopSecs[PROBE] : null);
+      const prevDue = probeAt(ds.trips[tripIdx - 1]);
+      const nextDue = probeAt(ds.trips[tripIdx + 1]);
+      let plannedSec = null;
+      if (prevDue !== null && nextDue !== null) plannedSec = (nextDue - prevDue) / 2;
+      else if (prevDue !== null) plannedSec = secs[PROBE] - prevDue;
+      else if (nextDue !== null) plannedSec = nextDue - secs[PROBE];
+      gap = {
+        stopName: String(ds.stops[PROBE].name || ''),
+        fromTime: timeEngine.formatTimeToTimezone(before, 'Europe/Madrid'),
+        toTime: timeEngine.formatTimeToTimezone(after, 'Europe/Madrid'),
+        minutes: Math.round((after - before) / 60000),
+        plannedHeadwayMinutes: plannedSec !== null ? Math.round(plannedSec / 60) : null
+      };
+    }
+    return { departure, gap };
   }
 
   /** Refill temp.relink_windows, which IN_RELINK_SQL reads. */
@@ -2663,6 +2863,9 @@ class HistoryDatabase {
       // A trip relink outranks every provenance grade: the delay itself was
       // measured against a trip the bus was not running.
       let tripRelink = null;
+      // A deadhead return in or next to the episode (see deadheadReturn.js).
+      let deadhead = null;
+      let clickedPhantom = false;
       // The bus's whole run around the episode (see incidentRun.js), so the
       // Investigar panel shows every stop it logged, not only the clicked one.
       let run = null;
@@ -2678,17 +2881,24 @@ class HistoryDatabase {
         `).all(vehicleIds[0], pick[0].timestamp - 3 * 3600 * 1000, pick[pick.length - 1].timestamp + RUN_CONTEXT_MS);
         const relinkRows = vehicleRows.filter(r => r.timestamp <= pick[pick.length - 1].timestamp + 15 * 60 * 1000);
         tripRelink = relinkOverlapping(findTripRelinks(relinkRows, { stopIndex: scheduleStopIndex() }), vehicleIds[0], pick[0].lineCode, pick[0].timestamp, pick[pick.length - 1].timestamp);
+        const deadheadList = findDeadheadReturns(vehicleRows, { stopIndex: scheduleStopIndex(), tripMinutes: scheduleTripMinutes });
+        deadhead = deadheadTouching(deadheadList, vehicleIds[0], pick[0].lineCode, pick[0].timestamp - RUN_CONTEXT_MS, pick[pick.length - 1].timestamp + RUN_CONTEXT_MS);
+        const peakRow = pick.reduce((a, b) => (b.delayMins > a.delayMins ? b : a));
+        clickedPhantom = Boolean(deadheadCovering(deadheadList, peakRow.vehicleId, peakRow.lineCode, peakRow.timestamp));
         const lineUpper = String(pick[0].lineCode || '').toUpperCase();
         run = buildIncidentRun(
           vehicleRows
             .filter(r => String(r.lineCode || '').toUpperCase() === lineUpper && r.timestamp >= pick[0].timestamp - RUN_CONTEXT_MS)
             .map(r => ({ ...r, timesProvenance: classifyTimes(r) })),
-          { clickedStop: stopName, clickedFrom: pick[0].timestamp, clickedTo: pick[pick.length - 1].timestamp, towards: directionTerminus, stopIndex: scheduleStopIndex(), directionStops: directionStopNames }
+          { clickedStop: stopName, clickedFrom: pick[0].timestamp, clickedTo: pick[pick.length - 1].timestamp, towards: directionTerminus, stopIndex: scheduleStopIndex(), directionStops: directionStopNames, deadheads: deadhead ? [deadhead] : [] }
         );
       }
 
       let verdict, verdictLabel;
-      if (tripRelink) {
+      if (clickedPhantom && deadhead) {
+        verdict = 'deadhead_return';
+        verdictLabel = `Deadhead return — bus ${deadhead.vehicleId} stopped serving its trip after ${deadhead.lastServedStop} and was back at ${deadhead.resumeStop} ${deadhead.returnMinutes} min later (the opposite trip takes ${deadhead.oppositeTripMinutes} min); this record was logged while it ran without passengers and is not a stop visit`;
+      } else if (tripRelink) {
         verdict = 'trip_relink';
         verdictLabel = `Trip relink — the operator's AVL re-attached bus ${tripRelink.vehicleId} to its real trip at ${tripRelink.relinkStop} (+${tripRelink.delayBefore} → ${tripRelink.delayAfter} min within ${Math.max(1, Math.round((tripRelink.relinkTs - tripRelink.staleToTs) / 60000))} min); the delay before it was measured against a trip the bus was not running`;
       } else if (pick.every(r => r.isAnomaly)) {
@@ -2746,6 +2956,7 @@ class HistoryDatabase {
           tripRelink: tripRelink
             ? { delayBefore: tripRelink.delayBefore, delayAfter: tripRelink.delayAfter, stopName: tripRelink.relinkStop, relinkTs: tripRelink.relinkTs, staleStops: tripRelink.staleStops }
             : null,
+          deadheadReturn: deadhead ? this._describeDeadhead(deadhead) : null,
           run,
           // Authoritative provenance signal for the whole episode. Consumers
           // should colour from the per-row timesProvenance, which is exact.

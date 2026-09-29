@@ -2028,7 +2028,12 @@ class ObservatoriApp {
 
       // What happened, in one plain sentence. Token colours only (light + dark).
       let headline;
-      if (ep.tripRelink) {
+      const dh = ep.deadheadReturn || null;
+      // Catalan elision: "d'Euskadi", "de Rodalies".
+      const afterStop = name => (/^[aeiouàèéíïòóúüh]/i.test(String(name || '')) ? `d'${this.esc(name)}` : `de ${this.esc(name)}`);
+      if (ep.verdict === 'deadhead_return' && dh) {
+        headline = { tone: 'var(--accent-warning)', title: 'Tornada sense servei', text: `Aquest registre no és un pas real. Després ${afterStop(dh.lastServedStop)} (${this.esc(dh.lastServedTime)}) el bus ${this.esc(dh.vehicleId)} va deixar de fer servei i va tornar sense passatgers fins a ${this.esc(dh.resumeStop)}, on consta a les ${this.esc(dh.resumeTime)}. Mentre tornava, el sistema de l'operador va continuar anotant parades que el bus no servia.` };
+      } else if (ep.tripRelink) {
         headline = { tone: 'var(--accent-warning)', title: 'Viatge reassignat pel SAE', text: `A ${this.esc(ep.tripRelink.stopName)} el retard passa de +${ep.tripRelink.delayBefore} a ${ep.tripRelink.delayAfter} min de cop: cap autobús pot recuperar tant de temps entre dues parades. El sistema de l'operador tenia el bus assignat a un viatge que no feia, i el retard anterior es mesurava contra aquell viatge. No és un retard real verificable.` };
       } else if (!run) {
         headline = { tone: 'var(--text-muted)', title: 'Recorregut no disponible', text: 'Aquestes mostres no tenen un únic identificador de bus, així que no es pot reconstruir el seu recorregut.' };
@@ -2058,6 +2063,18 @@ class ObservatoriApp {
           </div>`
         : '';
 
+      // A deadhead return in the shown run: why the bus starts again so soon, why the
+      // records in between do not count, and the wait it left on the skipped trip.
+      const dhGap = dh && dh.unservedGap ? dh.unservedGap : null;
+      const deadheadNote = dh
+        ? `<div class="drilldown-callout">
+            <strong>El bus es va saltar un viatge</strong>
+            Després ${afterStop(dh.lastServedStop)} (${this.esc(dh.lastServedTime)}, ${signed(dh.lastServedDelay)} min) el bus no va fer el viatge ${dh.skippedDeparture ? `de les ${this.esc(dh.skippedDeparture)} ` : ''}${this.esc(dh.skippedFrom)} → ${this.esc(dh.skippedTo)}, que dura ${dh.oppositeTripMinutes} min: ${dh.returnMinutes} min després ja començava un altre viatge a ${this.esc(dh.resumeStop)} (${this.esc(dh.resumeTime)}).
+            Els registres d'entremig (${dh.phantoms.map(p => `${this.esc(p.stopName)} ${signed(p.delayMins)} min`).join(', ')}) els va anotar el sistema de l'operador mentre el bus tornava sense passatgers: no són passos reals i no compten en els rànquings.
+            ${dhGap ? `A ${this.esc(dhGap.stopName)} no consta cap bus a les dades de l'operador entre les ${this.esc(dhGap.fromTime)} i les ${this.esc(dhGap.toTime)} (${dhGap.minutes} min${dhGap.plannedHeadwayMinutes ? `; l'horari en preveu un cada ${dhGap.plannedHeadwayMinutes} min` : ''}). Un bus sense equip de seguiment no constaria en aquestes dades.` : ''}
+          </div>`
+        : '';
+
       // Evidence, in Catalan. The server's English verdictLabel stays in the API
       // for other consumers; the panel shows its own wording keyed on ep.verdict.
       const verdicts = {
@@ -2066,7 +2083,8 @@ class ObservatoriApp {
         poll_inflated: ['var(--accent-warning)', 'Mostres repetides', 'El mateix bus registrat moltes vegades seguides: compta com un sol cas.'],
         unverifiable: ['var(--accent-danger)', 'No verificable', 'No hi ha identificador de bus ni cap altra evidència.'],
         telemetry_anomaly: ['var(--text-muted)', 'Fora de servei', 'Registre de nit o a cotxeres: no és un retard de servei.'],
-        trip_relink: ['var(--accent-warning)', 'Viatge reassignat pel SAE', 'El retard es mesurava contra un viatge que el bus no feia.']
+        trip_relink: ['var(--accent-warning)', 'Viatge reassignat pel SAE', 'El retard es mesurava contra un viatge que el bus no feia.'],
+        deadhead_return: ['var(--accent-warning)', 'Tornada sense servei', 'Anotat mentre el bus tornava sense passatgers: no és un pas real per aquesta parada.']
       };
       const [vTone, vTitle, vText] = verdicts[ep.verdict] || ['var(--text-primary)', 'Sense veredicte', ''];
       const busCell = Array.isArray(ep.distinctVehicles) && ep.distinctVehicles.length
@@ -2104,6 +2122,16 @@ class ObservatoriApp {
       const tripHeader = (idx) => {
         const t = tripByStart.get(idx);
         if (!t) return '';
+        if (t.isDeadhead) {
+          return `
+          <tr class="drilldown-trip-row is-deadhead${t.isClickedTrip ? ' is-clicked-trip' : ''}">
+            <th colspan="5" scope="colgroup">
+              <span class="drilldown-trip-name">Tornada sense servei</span>
+              <span class="drilldown-trip-meta">${this.esc(hhmm(t.fromTime))}–${this.esc(hhmm(t.toTime))}</span>
+              <span class="drilldown-trip-join">El bus tornava sense passatgers: aquests registres no són passos reals.</span>
+            </th>
+          </tr>`;
+        }
         const delays = t.firstDelay === t.lastDelay ? `${signed(t.firstDelay)} min` : `${signed(t.firstDelay)} → ${signed(t.lastDelay)} min`;
         const join = t.joinedMidRoute
           ? `<span class="drilldown-trip-join">S'hi incorpora a mig recorregut: no consta a les ${t.joinedMidRoute.skippedCount} parades anteriors${t.joinedMidRoute.firstSkipped ? ` (${this.esc(t.joinedMidRoute.firstSkipped)} → ${this.esc(t.joinedMidRoute.lastSkipped)})` : ''}.</span>`
@@ -2123,9 +2151,10 @@ class ObservatoriApp {
         const times = s.scheduledTime && s.actualTime
           ? `${this.esc(hhmm(s.scheduledTime))} → ${this.esc(hhmm(s.actualTime))}${s.timesProvenance === 'derived_timetable_backfill' ? ' ≈' : ''}`
           : '—';
-        const delayClass = s.delayMins >= 20 ? 'is-high' : (s.delayMins >= 5 ? 'is-mid' : 'is-low');
+        const delayClass = s.phantom ? 'is-phantom' : (s.delayMins >= 20 ? 'is-high' : (s.delayMins >= 5 ? 'is-mid' : 'is-low'));
+        const rowClass = [s.isClicked ? 'is-clicked' : '', s.phantom ? 'is-phantom' : ''].filter(Boolean).join(' ');
         return `${header}
-          <tr class="${s.isClicked ? 'is-clicked' : ''}">
+          <tr class="${rowClass}">
             <td class="drilldown-cell-time">${this.esc(hhmm(s.time))}</td>
             <td class="drilldown-cell-delay"><span class="drilldown-delay ${delayClass}">${signed(s.delayMins)} min</span></td>
             <td class="drilldown-cell-stop">${this.esc(s.stopName || '—')}${s.isClicked ? ' <span class="drilldown-clicked-tag">consultada</span>' : ''}</td>
@@ -2141,8 +2170,9 @@ class ObservatoriApp {
           <p class="drilldown-headline-text">${headline.text}</p>
         </div>
         ${shortTurnNote}
+        ${deadheadNote}
         <p class="drilldown-context">
-          Parada consultada: <strong>${this.esc(clicked ? clicked.stopName : (data.stopName || stopName))}</strong>${clicked && clicked.time ? ` a les ${this.esc(hhmm(clicked.time))}` : ''} · retard màxim en aquesta parada: ${signed(ep.peakDelayMins)} min.${run ? ` A sota, tot el que va registrar aquest bus entre les ${this.esc(hhmm(runRows[0].time))} i les ${this.esc(hhmm(runRows[runRows.length - 1].time))}.` : ''}
+          Parada consultada: <strong>${this.esc(clicked ? clicked.stopName : (data.stopName || stopName))}</strong>${clicked && clicked.time ? ` a les ${this.esc(hhmm(clicked.time))}` : ''} · ${ep.verdict === 'deadhead_return' ? `retard anotat: ${signed(ep.peakDelayMins)} min, que no és un pas real` : `retard màxim en aquesta parada: ${signed(ep.peakDelayMins)} min`}.${run ? ` A sota, tot el que va registrar aquest bus entre les ${this.esc(hhmm(runRows[0].time))} i les ${this.esc(hhmm(runRows[runRows.length - 1].time))}.` : ''}
         </p>
         ${tripLink}
         <div class="drilldown-table-scroll">
@@ -2687,7 +2717,7 @@ class ObservatoriApp {
                   ${anomaliesList.map((inc, i) => {
                     const lColor = getLineColor(inc.lineCode);
                     const isStartup = inc.anomalyType === 'startup_sae';
-                    const isRelink = inc.anomalyType === 'trip_relink';
+                    const isRelink = inc.anomalyType === 'trip_relink' || inc.anomalyType === 'deadhead_return';
                     const isMaintenance = inc.anomalyType === 'maintenance' || (!isStartup && !isRelink);
                     const badgeBg = (isStartup || isRelink) ? 'rgba(245, 158, 11, 0.15)' : 'rgba(147, 51, 234, 0.15)';
                     const badgeColor = (isStartup || isRelink) ? 'var(--accent-warning)' : 'var(--accent-regulating)';
@@ -2941,6 +2971,7 @@ class ObservatoriApp {
                       end_of_line: `<span class="trajectory-end">🏁 Final de línia</span>`,
                       recovered: `<span class="trajectory-end is-recovered">✅ Recuperat</span>`,
                       relinked: `<span class="trajectory-end">🔀 Viatge reassignat pel SAE</span>`,
+                      deadhead_return: `<span class="trajectory-end">↩️ Tornada sense servei</span>`,
                       signal_lost: `<span class="trajectory-end">📡 Sense més dades</span>`,
                       ongoing: `<span class="trajectory-end">⏳ En curs</span>`
                     })[trip.endReason] || ''}
@@ -2949,6 +2980,11 @@ class ObservatoriApp {
                   ${trip.relink ? `
                   <div style="margin-top:0.5rem; font-size:0.76rem; color:var(--accent-warning); line-height:1.45;">
                     El sistema de l'operador tenia aquest bus assignat a un viatge anterior: a ${this.esc(trip.relink.stopName)} el retard passa de +${trip.relink.delayBefore} a ${trip.relink.delayAfter} min de cop, cosa físicament impossible. No és un retard real verificable.
+                  </div>` : ''}
+
+                  ${trip.deadhead ? `
+                  <div style="margin-top:0.5rem; font-size:0.76rem; color:var(--accent-warning); line-height:1.45;">
+                    Després ${/^[aeiouàèéíïòóúüh]/i.test(trip.deadhead.lastServedStop) ? 'd\'' : 'de '}${this.esc(trip.deadhead.lastServedStop)} el bus va tornar sense passatgers a ${this.esc(trip.deadhead.resumeStop)} en ${trip.deadhead.returnMinutes} min i no va fer el viatge cap a ${this.esc(trip.deadhead.towards)}, que dura ${trip.deadhead.oppositeTripMinutes} min. El retard no es va recuperar: el bus es va saltar un viatge.
                   </div>` : ''}
 
                   <!-- Context and action footer -->
@@ -2981,12 +3017,12 @@ class ObservatoriApp {
     text += `Període: Darreres ${this._currentIncidentHours || 168}h | Línia: ${this._currentIncidentLine || 'Totes'}\n`;
     text += `Data d'extracció: ${new Date().toLocaleString('ca-ES')}\n`;
     text += `Total anomalies detectades: ${list.length}\n\n`;
-    text += `Descripció: Aquests registres corresponen a desfasaments transmesos pel sistema SAE (CAD/AVL) d'Avanza (habitualment per assignació d'autobusos que inicien torn a expedicions anteriors no cobertes o arrencada a cotxeres amb consola encesa abans de sortida). No reflecteixen retencions de trànsit reals a la ciutat. També inclou els viatges reassignats pel SAE: trams on el retard desapareix de cop perquè el sistema tenia el bus assignat a un viatge que no feia.\n\n`;
+    text += `Descripció: Aquests registres corresponen a desfasaments transmesos pel sistema SAE (CAD/AVL) d'Avanza (habitualment per assignació d'autobusos que inicien torn a expedicions anteriors no cobertes o arrencada a cotxeres amb consola encesa abans de sortida). No reflecteixen retencions de trànsit reals a la ciutat. També inclou els viatges reassignats pel SAE: trams on el retard desapareix de cop perquè el sistema tenia el bus assignat a un viatge que no feia. I les tornades sense servei: parades anotades mentre un bus tornava sense passatgers a l'inici de la línia després de saltar-se un viatge.\n\n`;
     text += `Llistat d'incidències per auditar amb Avanza / Ajuntament de Mataró:\n`;
 
     list.forEach((item, idx) => {
       const sig = item.isRealTime ? 'GPS' : 'Estimat (dead-reckoning)';
-      const isMaint = item.anomalyType === 'maintenance' || (item.anomalyType !== 'startup_sae' && item.anomalyType !== 'trip_relink');
+      const isMaint = item.anomalyType === 'maintenance' || (item.anomalyType !== 'startup_sae' && item.anomalyType !== 'trip_relink' && item.anomalyType !== 'deadhead_return');
       const stopInfo = isMaint ? 'Cotxeres / Manteniment' : `Parada: "${item.stopName}"`;
       const busTag = item.vehicleId && !item.vehicleId.toLowerCase().endsWith('bus') ? ` | Bus #${item.vehicleId.replace(/^mataro_\w+_/i, '')}` : '';
       text += `${idx + 1}. [${item.lineCode}] ${item.formattedDate} — ${stopInfo} | Retard transmès: +${item.delayMins} min | Causa: ${item.trafficTag || item.diagnosticBadge || 'Anomalia'}${busTag} | Senyal: ${sig}\n`;

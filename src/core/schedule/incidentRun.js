@@ -10,6 +10,11 @@
  * run is what lets a reader tell a sustained real delay from a one-off value or
  * an operator-system glitch.
  *
+ * Records the operator's system logged while the bus drove back to the start of
+ * its route without passengers (a deadhead return, see deadheadReturn.js) are
+ * marked `phantom` and grouped on their own, so they neither read as trips nor
+ * count in any trip's delay pattern.
+ *
  * Pure module: no database, no clock. Timestamps are epoch ms.
  */
 
@@ -76,15 +81,19 @@ function summarise(segment) {
  * @param {function(string, string): string[]} [options.directionStops]
  *   (lineCode, direction) -> that direction's published stop names, used to name the
  *   stops a mid-route join left out.
+ * @param {Array<{lineCode: string, phantomFromTs: number, phantomToTs: number}>} [options.deadheads]
+ *   This bus's deadhead returns (findDeadheadReturns). Stop visits inside a phantom
+ *   stretch get `phantom: true` and form one group; the visit after it starts a trip.
  * @returns {{stops: Array<object>, summary: object, trips: Array<object>}}
  *   stops: { stopName, direction, towards, time ('HH:MM:SS'), firstTs, lastTs, delayMins,
  *   sampleCount, isRealTime, scheduledTime, actualTime, timesProvenance, directionChanged,
- *   newTrip, isClicked }. newTrip is true on the first visit of a new trip (direction change
- *   or jump back along the route). summary: the clicked trip's pattern ('sustained' |
+ *   newTrip, isClicked, phantom }. newTrip is true on the first visit of a new trip (direction
+ *   change or jump back along the route) and on the first visit of a phantom group. trips:
+ *   one summary per group, with isDeadhead true for a phantom group. summary: the clicked trip's pattern ('sustained' |
  *   'building' | 'recovering' | 'variable' | 'isolated' | 'none') with its stop count, time
  *   range and delays.
  */
-function buildIncidentRun(rows, { clickedStop = '', clickedFrom, clickedTo, towards, stopIndex, directionStops } = {}) {
+function buildIncidentRun(rows, { clickedStop = '', clickedFrom, clickedTo, towards, stopIndex, directionStops, deadheads } = {}) {
   const sorted = (Array.isArray(rows) ? rows : [])
     .filter(r => r && Number.isFinite(Number(r.timestamp)) && Number.isFinite(Number(r.delayMins)))
     .slice()
@@ -140,8 +149,30 @@ function buildIncidentRun(rows, { clickedStop = '', clickedFrom, clickedTo, towa
       timesProvenance: r.timesProvenance || 'none',
       directionChanged,
       newTrip: directionChanged || jumpedBack,
-      isClicked: false
+      isClicked: false,
+      phantom: false
     });
+  }
+
+  // A deadhead return: everything logged between the last served stop and the
+  // restart is one phantom group, and the stop after it starts the next trip.
+  // Measured on L8 bus 2669 (29 Sep 2026): Biblioteca Pompeu Fabra re-logged at
+  // +49 and Rodalies at +10 read as two one-stop "new trips" within 3 minutes.
+  const deadheadList = Array.isArray(deadheads) ? deadheads : [];
+  if (deadheadList.length) {
+    let group = null;
+    for (const s of stops) {
+      const code = s.lineCode.toUpperCase();
+      const d = deadheadList.find(x => String(x.lineCode || '').toUpperCase() === code
+        && s.firstTs >= x.phantomFromTs && s.firstTs <= x.phantomToTs) || null;
+      if (d) {
+        s.phantom = true;
+        s.newTrip = group !== d;
+      } else if (group) {
+        s.newTrip = true;
+      }
+      group = d;
+    }
   }
 
   // A new trip that begins far along its route: the bus joined it mid-route (a
@@ -156,6 +187,8 @@ function buildIncidentRun(rows, { clickedStop = '', clickedFrom, clickedTo, towa
     for (let i = 0; i < stops.length; i++) {
       const s = stops[i];
       if (!s.directionChanged || !stops[i + 1] || stops[i + 1].newTrip) continue;
+      // After a deadhead return the restart is explained by the phantom group.
+      if (s.phantom || (i > 0 && stops[i - 1].phantom)) continue;
       const pos = stopIndex(s.lineCode, s.direction, s.stopName);
       const first = pos ? Math.min(...pos.indexes) : 0;
       if (first < MID_ROUTE_JOIN_MIN_INDEX) continue;
@@ -213,6 +246,7 @@ function buildIncidentRun(rows, { clickedStop = '', clickedFrom, clickedTo, towa
       startIndex: t.startIndex,
       endIndex: t.endIndex,
       joinedMidRoute: segment[0].joinedMidRoute || null,
+      isDeadhead: segment[0].phantom,
       isClickedTrip: segment.some(v => v.isClicked)
     };
   });
