@@ -1992,7 +1992,7 @@ class ObservatoriApp {
       const ev = ep.evidence || {};
       // Token values, not hexes: this paints text in a table cell, and the
       // hardcoded dark-palette values were 1.8-2.6:1 on the light surface.
-      const verdictColors = { corroborated: 'var(--accent-live)', derived_only: 'var(--accent-regulating)', poll_inflated: 'var(--accent-warning)', unverifiable: 'var(--accent-danger)', telemetry_anomaly: 'var(--text-muted)' };
+      const verdictColors = { corroborated: 'var(--accent-live)', derived_only: 'var(--accent-regulating)', poll_inflated: 'var(--accent-warning)', unverifiable: 'var(--accent-danger)', telemetry_anomaly: 'var(--text-muted)', trip_relink: 'var(--accent-warning)' };
       // The fallback was '#fff', i.e. white text on a light table in light mode.
       const verdictLabel = verdictColors[ep.verdict] || 'var(--text-primary)';
       const vehicleBadge = ep.distinctVehicles.length
@@ -2030,8 +2030,9 @@ class ObservatoriApp {
           <tr><td style="color:var(--text-muted); padding:3px 0;">Traçal</td><td style="color:var(--text-secondary);">${snapshotBadge}</td></tr>
           <tr><td style="color:var(--text-muted); padding:3px 0;">Linies retirades</td><td style="color:${data.dataQuality?.retiredScopeLinesPresent ? 'var(--accent-danger)' : 'var(--accent-live)'};">${data.dataQuality?.retiredScopeLinesPresent ? 'Sí — hi ha dades de línies extintes' : 'No'}</td></tr>
           <tr><td style="color:var(--text-muted); padding:3px 0;">Proveniència horària</td><td style="color:var(--text-secondary);">${this._timesProvenanceLabel(ep.timesProvenance || ev.timesProvenance)}</td></tr>
-          <tr><td style="color:var(--text-muted); padding:3px 0;">Total mostres raw</td><td style="color:var(--text-secondary);">${data.dataQuality?.totalRawRows || 0} → ${data.dataQuality?.episodesInWindow || 0} episodis</td></tr>
+          <tr><td style="color:var(--text-muted); padding:3px 0;">Total mostres raw</td><td style="color:var(--text-secondary);">${data.dataQuality?.totalRawRowsReturned ?? 0} → ${data.dataQuality?.episodesInWindow || 0} episodis</td></tr>
         </table>
+        ${ep.tripRelink ? `<p style="color:var(--accent-warning); font-size:0.78rem; margin:8px 0 0;"><strong>Viatge reassignat pel SAE.</strong> A ${this.esc(ep.tripRelink.stopName)} el retard passa de +${ep.tripRelink.delayBefore} a ${ep.tripRelink.delayAfter} min de cop: cap autobús pot recuperar tant de temps entre dues parades. El sistema de l'operador tenia el bus assignat a un viatge que no feia i mesurava el retard contra aquell viatge. No és un retard real verificable.</p>` : ''}
         ${ep.timetableCheck?.backfilledFromTimetable ? '<p style="color:var(--accent-warning); font-size:0.78rem; margin:8px 0 0;">L\'horari teòric i real d\'aquestes mostres s\'ha <strong>aproximat offline</strong> (scripts/backfill_delay_times.js) a partir del quadre horari estàtic, endevinant el sentit de circulació. No és una observació del feed ni una derivació en viu, i per tant <strong>no corrobora</strong> el retard: només hi serveix de contextualització.</p>' : ''}
         ${ep.timetableCheck?.derivedFromTimetable && !ep.timetableCheck?.backfilledFromTimetable ? '<p style="color:var(--accent-regulating); font-size:0.78rem; margin:8px 0 0;">L\'horari teòric i real d\'aquestes mostres s\'ha <strong>derivat</strong> del quadre horari estàtic: el feed upstream només dona el retard, mai l\'hora amb què es compara. Serveix per contextualitzar, però no és una observació independent.</p>' : ''}
         ${ev.vehicleIdNote ? `<p style="color:var(--text-muted); font-size:0.78rem; margin:6px 0 0;">${this.esc(ev.vehicleIdNote)}</p>` : ''}
@@ -2575,7 +2576,7 @@ class ObservatoriApp {
                 Anomalies de Telemetria SAE &amp; Sortida de Cotxeres (${anomaliesList.length})
               </h4>
               <p style="font-size:0.78rem; color:var(--text-muted); margin:0; max-width:740px; line-height:1.45;">
-                Aquests registres no corresponen a retencions de trànsit de la ciutat, sinó a <strong>desfasaments de telemetria generats pel sistema SAE (CAD/AVL) d'Avanza</strong> a primera hora del matí (arrencada de servei abans de les 06:15) o durant proves nocturnes a cotxeres. Es publiquen aquí per facilitar l'auditoria i la seva correcció per part de l'Ajuntament de Mataró.
+                Aquests registres no corresponen a retencions de trànsit de la ciutat, sinó a <strong>desfasaments de telemetria generats pel sistema SAE (CAD/AVL) d'Avanza</strong> a primera hora del matí (arrencada de servei abans de les 06:15) o durant proves nocturnes a cotxeres. També hi apareixen els <strong>viatges reassignats pel SAE</strong> (🔀): trams on el retard desapareix de cop perquè el sistema tenia el bus assignat a un viatge que no feia. Es publiquen aquí per facilitar l'auditoria i la seva correcció per part de l'Ajuntament de Mataró.
               </p>
             </div>
             ${anomaliesList.length > 0 ? `
@@ -2609,9 +2610,10 @@ class ObservatoriApp {
                   ${anomaliesList.map((inc, i) => {
                     const lColor = getLineColor(inc.lineCode);
                     const isStartup = inc.anomalyType === 'startup_sae';
-                    const isMaintenance = inc.anomalyType === 'maintenance' || !isStartup;
-                    const badgeBg = isStartup ? 'rgba(245, 158, 11, 0.15)' : 'rgba(147, 51, 234, 0.15)';
-                    const badgeColor = isStartup ? 'var(--accent-warning)' : 'var(--accent-regulating)';
+                    const isRelink = inc.anomalyType === 'trip_relink';
+                    const isMaintenance = inc.anomalyType === 'maintenance' || (!isStartup && !isRelink);
+                    const badgeBg = (isStartup || isRelink) ? 'rgba(245, 158, 11, 0.15)' : 'rgba(147, 51, 234, 0.15)';
+                    const badgeColor = (isStartup || isRelink) ? 'var(--accent-warning)' : 'var(--accent-regulating)';
                     const signalTooltip = inc.isRealTime
                       ? 'Senyal GPS directe transmès pel vehicle físic.'
                       : 'Estimació per estima (dead-reckoning) per pèrdua temporal de senyal.';
@@ -2812,7 +2814,7 @@ class ObservatoriApp {
           <div style="display:flex; flex-direction:column; gap:0.75rem;">
             ${tripsList.map(trip => {
               const lColor = getLineColor(trip.lineCode);
-              const typeBadgeClass = trip.incidentType === 'maintenance'
+              const typeBadgeClass = (trip.incidentType === 'maintenance' || trip.incidentType === 'trip_relink')
                 ? 'incident-badge-maintenance'
                 : (trip.isMovingTraffic ? 'incident-badge-traffic' : 'incident-badge-layover');
               return `
@@ -2861,10 +2863,16 @@ class ObservatoriApp {
                     }).join('')}${({
                       end_of_line: `<span class="trajectory-end">🏁 Final de línia</span>`,
                       recovered: `<span class="trajectory-end is-recovered">✅ Recuperat</span>`,
+                      relinked: `<span class="trajectory-end">🔀 Viatge reassignat pel SAE</span>`,
                       signal_lost: `<span class="trajectory-end">📡 Sense més dades</span>`,
                       ongoing: `<span class="trajectory-end">⏳ En curs</span>`
                     })[trip.endReason] || ''}
                   </div>
+
+                  ${trip.relink ? `
+                  <div style="margin-top:0.5rem; font-size:0.76rem; color:var(--accent-warning); line-height:1.45;">
+                    El sistema de l'operador tenia aquest bus assignat a un viatge anterior: a ${this.esc(trip.relink.stopName)} el retard passa de +${trip.relink.delayBefore} a ${trip.relink.delayAfter} min de cop, cosa físicament impossible. No és un retard real verificable.
+                  </div>` : ''}
 
                   <!-- Context and action footer -->
                   <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.6rem; font-size:0.75rem; color:var(--text-muted); flex-wrap:wrap; gap:0.4rem;">
@@ -2896,12 +2904,12 @@ class ObservatoriApp {
     text += `Període: Darreres ${this._currentIncidentHours || 168}h | Línia: ${this._currentIncidentLine || 'Totes'}\n`;
     text += `Data d'extracció: ${new Date().toLocaleString('ca-ES')}\n`;
     text += `Total anomalies detectades: ${list.length}\n\n`;
-    text += `Descripció: Aquests registres corresponen a desfasaments transmesos pel sistema SAE (CAD/AVL) d'Avanza (habitualment per assignació d'autobusos que inicien torn a expedicions anteriors no cobertes o arrencada a cotxeres amb consola encesa abans de sortida). No reflecteixen retencions de trànsit reals a la ciutat.\n\n`;
+    text += `Descripció: Aquests registres corresponen a desfasaments transmesos pel sistema SAE (CAD/AVL) d'Avanza (habitualment per assignació d'autobusos que inicien torn a expedicions anteriors no cobertes o arrencada a cotxeres amb consola encesa abans de sortida). No reflecteixen retencions de trànsit reals a la ciutat. També inclou els viatges reassignats pel SAE: trams on el retard desapareix de cop perquè el sistema tenia el bus assignat a un viatge que no feia.\n\n`;
     text += `Llistat d'incidències per auditar amb Avanza / Ajuntament de Mataró:\n`;
 
     list.forEach((item, idx) => {
       const sig = item.isRealTime ? 'GPS' : 'Estimat (dead-reckoning)';
-      const isMaint = item.anomalyType === 'maintenance' || item.anomalyType !== 'startup_sae';
+      const isMaint = item.anomalyType === 'maintenance' || (item.anomalyType !== 'startup_sae' && item.anomalyType !== 'trip_relink');
       const stopInfo = isMaint ? 'Cotxeres / Manteniment' : `Parada: "${item.stopName}"`;
       const busTag = item.vehicleId && !item.vehicleId.toLowerCase().endsWith('bus') ? ` | Bus #${item.vehicleId.replace(/^mataro_\w+_/i, '')}` : '';
       text += `${idx + 1}. [${item.lineCode}] ${item.formattedDate} — ${stopInfo} | Retard transmès: +${item.delayMins} min | Causa: ${item.trafficTag || item.diagnosticBadge || 'Anomalia'}${busTag} | Senyal: ${sig}\n`;

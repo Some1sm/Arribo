@@ -315,6 +315,17 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   lands on the same trip is stored separately in `stop_visits.trip_agrees`. Rows with
   `measured_method = ''` predate this and are excluded from the comparison and blanked in
   the visits CSV.
+- **A delay that collapses by 10+ min within 10 min on the same line and direction is a
+  trip relink, not a recovery.** A bus can only claw back a minute or two between
+  neighbouring stops. On 25 Sep 2026 L8 bus 2675 showed +50 at La Coma, La Riera and
+  Parc Central while running the 15:30 trip on time, then 0 at O´ Donnell: the
+  operator's AVL had kept it on the 14:41 trip (run by bus 2677) after a long stop.
+  [tripRelink.js](src/core/schedule/tripRelink.js) detects the stale stretch;
+  `getDelayIncidents` lists it with the SAE anomalies, keeps it out of the service
+  KPIs and rankings and ends its trajectory as `relinked`, and
+  `inspectDelayIncident` returns the `trip_relink` verdict. A direction change, a
+  reset at the origin or terminus, or a jump back to an earlier stop is a trip
+  boundary, never a relink: the delay before it may have been real.
 
 ## 4. Runtime, configuration and privacy
 

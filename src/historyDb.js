@@ -9,6 +9,15 @@ const {
   LATE_SQL,
   SEVERE_LATE_SQL
 } = punctuality;
+const {
+  findTripRelinks,
+  relinkCovering,
+  relinkOverlapping,
+  RELINK_DROP_MINS,
+  RELINK_WINDOW_MS
+} = require('./core/schedule/tripRelink');
+const mataroSchedules = require('./data/mataroSchedules');
+const { normalizeStopName } = require('./core/schedule/tripMatcher');
 
 let DatabaseSync;
 try {
@@ -117,6 +126,33 @@ function appendMataroScope(sqlWhere, isAll) {
 // are further apart than this start a new episode. Matches the GAP_MS that
 // inspectDelayIncident groups on, so both report the same thing.
 const EPISODE_GAP_MS = 5 * 60 * 1000;
+
+// A delay_logs row inside a trip-relink stale stretch (see
+// src/core/schedule/tripRelink.js). temp.relink_windows is refilled by
+// _setRelinkWindows() at the start of every getDelayIncidents() call.
+const IN_RELINK_SQL = 'EXISTS (SELECT 1 FROM temp.relink_windows rw WHERE rw.vehicle_id = delay_logs.vehicle_id AND rw.line_code = UPPER(delay_logs.line_code) AND delay_logs.timestamp BETWEEN rw.from_ts AND rw.to_ts)';
+
+/**
+ * Stop-order resolver for findTripRelinks: where a stop sits in its direction's
+ * published stop list, so a delay reset at a terminus or after a jump back to
+ * an earlier stop (a new trip) is never mistaken for a relink.
+ */
+function scheduleStopIndex() {
+  const cache = new Map();
+  return (lineCode, direction, stopName) => {
+    const key = `${lineCode}|${direction}`;
+    if (!cache.has(key)) {
+      const ds = mataroSchedules.getDirectionSchedule(String(lineCode || '').replace(/^L/i, ''), direction, 'weekday');
+      cache.set(key, ds && Array.isArray(ds.stops) && ds.stops.length ? ds.stops.map(s => normalizeStopName(s.name)) : null);
+    }
+    const names = cache.get(key);
+    if (!names) return null;
+    const wanted = normalizeStopName(stopName);
+    const indexes = [];
+    names.forEach((name, idx) => { if (name === wanted) indexes.push(idx); });
+    return indexes.length ? { indexes, lastIndex: names.length - 1 } : null;
+  };
+}
 
 let cachedDataVersion = null;
 function getDataVersion() {
@@ -1781,13 +1817,25 @@ class HistoryDatabase {
       // rows still in delay_logs surface as Mataró top incidents.
       sqlWhere = appendMataroScope(sqlWhere, isAll);
 
+      // Trip relinks: stretches whose delay was measured against a trip the bus
+      // was not running (the operator's AVL re-attached it later). They are
+      // listed with the SAE anomalies and kept out of the service KPIs and
+      // rankings; trajectories that contain one end as 'relinked'.
+      const relinks = this._findTripRelinks({
+        since: cutoff,
+        lineWhereSql: isAll ? MATARO_SCOPE_SQL : ' AND (UPPER(line_code) = ? OR UPPER(line_code) = ? OR line_id = ?)',
+        lineParams: isAll ? [] : [codeWithL, codeWithoutL, codeWithoutL]
+      });
+      this._setRelinkWindows(relinks);
+      const serviceWhere = `${sqlWhere} AND NOT ${IN_RELINK_SQL}`;
+
       // 1. Summary Aggregate KPIs (filtered to revenue commercial service)
       const aggStmt = this.db.prepare(`
         SELECT COUNT(*) as totalCount, COALESCE(MAX(delay_mins), 0) as maxDelay,
           MAX(CASE WHEN delay_mins < 25 THEN delay_mins END) as maxCommercialDelay,
           SUM(CASE WHEN is_realtime = 0 THEN 1 ELSE 0 END) as nonRealtimeCount
         FROM delay_logs
-        WHERE ${sqlWhere} AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
+        WHERE ${serviceWhere} AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
       `);
       const agg = aggStmt.get(...baseParams) || { totalCount: 0, maxDelay: 0, maxCommercialDelay: null, nonRealtimeCount: 0 };
 
@@ -1795,7 +1843,7 @@ class HistoryDatabase {
       const worstStopStmt = this.db.prepare(`
         SELECT stop_name as stopName, COUNT(*) as cnt
         FROM delay_logs
-        WHERE ${sqlWhere} AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
+        WHERE ${serviceWhere} AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
         GROUP BY stop_name
         ORDER BY cnt DESC
         LIMIT 1
@@ -1806,7 +1854,7 @@ class HistoryDatabase {
       const worstHourStmt = this.db.prepare(`
         SELECT madrid_hour(timestamp) as hourOfDay, COUNT(*) as cnt
         FROM delay_logs
-        WHERE ${sqlWhere} AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
+        WHERE ${serviceWhere} AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
         GROUP BY hourOfDay
         ORDER BY cnt DESC
         LIMIT 1
@@ -1833,7 +1881,7 @@ class HistoryDatabase {
           madrid_hour(timestamp) as hourOfDay,
           0 as isAnomaly
         FROM delay_logs
-        WHERE ${sqlWhere} AND delay_mins < 25 AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
+        WHERE ${serviceWhere} AND delay_mins < 25 AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
         ORDER BY delay_mins DESC, timestamp DESC
         LIMIT 3000
       `);
@@ -1855,7 +1903,7 @@ class HistoryDatabase {
           madrid_hour(timestamp) as hourOfDay,
           0 as isAnomaly
         FROM delay_logs
-        WHERE ${sqlWhere} AND delay_mins >= 25 AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
+        WHERE ${serviceWhere} AND delay_mins >= 25 AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
         ORDER BY delay_mins DESC, timestamp DESC
         LIMIT 2000
       `);
@@ -1890,6 +1938,39 @@ class HistoryDatabase {
         };
       });
 
+      const relinkStmt = this.db.prepare(`
+        SELECT
+          id,
+          vehicle_id as vehicleId,
+          line_id as lineId,
+          line_code as lineCode,
+          agency,
+          stop_id as stopId,
+          stop_name as stopName,
+          delay_mins as delayMins,
+          is_realtime as isRealTime,
+          timestamp,
+          madrid_datetime(timestamp) as formattedDate,
+          madrid_hour(timestamp) as hourOfDay,
+          1 as isAnomaly
+        FROM delay_logs
+        WHERE ${sqlWhere} AND ${IN_RELINK_SQL} AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
+        ORDER BY delay_mins DESC, timestamp DESC
+        LIMIT 2000
+      `);
+      const relinkCandidates = relinkStmt.all(...baseParams).map(r => {
+        const rl = relinkCovering(relinks, r.vehicleId, r.lineCode, r.timestamp);
+        return {
+          ...r,
+          anomalyType: 'trip_relink',
+          diagnosticBadge: '🔀 Viatge reassignat pel SAE',
+          anomalyIcon: '🔀',
+          relink: rl ? { delayBefore: rl.delayBefore, delayAfter: rl.delayAfter, stopName: rl.relinkStop, relinkTs: rl.relinkTs } : null
+        };
+      });
+      const allAnomalyCandidates = [...anomalyCandidates, ...relinkCandidates]
+        .sort((a, b) => b.delayMins - a.delayMins || b.timestamp - a.timestamp);
+
       // Deduplicate: A single delayed trip produces raw pings every 20 seconds.
       // We keep the peak delay record for each trip on the line (sliding window of 20 min).
       // The fallback key must include the stop: most historical rows carry no
@@ -1919,7 +2000,7 @@ class HistoryDatabase {
 
       const dedupedRegular = deduplicateTripRows(regularCandidates, limitNum);
       const dedupedInvestigation = deduplicateTripRows(investigationCandidates, limitNum);
-      const dedupedAnomalies = deduplicateTripRows(anomalyCandidates, limitNum);
+      const dedupedAnomalies = deduplicateTripRows(allAnomalyCandidates, limitNum);
 
       const enrichedTop = dedupedRegular.map((r, idx) => {
         const h = parseInt(r.hourOfDay, 10);
@@ -2187,6 +2268,14 @@ class HistoryDatabase {
           c.endStop = c.lastStop;
         }
 
+        // A stretch the operator's AVL later re-linked to the bus's real trip is
+        // not a delay the bus had, so it must not read as "recovered".
+        const relink = c.vehicleId ? relinkOverlapping(relinks, c.vehicleId, c.lineCode, c.firstTs, c.lastTs) : null;
+        if (relink) {
+          c.endReason = 'relinked';
+          c.stopProgression = (c.stopProgression || []).map(p => ({ ...p, isRecovered: false }));
+        }
+
         const durMins = Math.round((c.lastTs - c.firstTs) / 60000);
         const h = parseInt(c.hourOfDay, 10);
         const ctx = this.getHourlyTrafficContext(h);
@@ -2201,6 +2290,10 @@ class HistoryDatabase {
         } else if (!isMovingTraffic) {
           incidentType = 'layover';
           incidentTypeLabel = '⏱️ Regulació / Capçalera';
+        }
+        if (relink && !isDepot) {
+          incidentType = 'trip_relink';
+          incidentTypeLabel = '🔀 Viatge reassignat (SAE)';
         }
 
         return {
@@ -2232,9 +2325,12 @@ class HistoryDatabase {
           incidentType,
           incidentTypeLabel,
           trafficTag: ctx.tag,
-          trafficIcon: ctx.icon
+          trafficIcon: ctx.icon,
+          relink: relink
+            ? { delayBefore: relink.delayBefore, delayAfter: relink.delayAfter, stopName: relink.relinkStop, relinkTs: relink.relinkTs, staleStops: relink.staleStops }
+            : null
         };
-      }).sort((a, b) => b.maxDelayMins - a.maxDelayMins || b.sampleCount - a.sampleCount);
+      }).sort((a, b) => (a.incidentType === 'trip_relink') - (b.incidentType === 'trip_relink') || b.maxDelayMins - a.maxDelayMins || b.sampleCount - a.sampleCount);
 
       const movingCount = enrichedClusters.filter(c => c.incidentType === 'traffic').length;
       const stationaryCount = enrichedClusters.filter(c => c.incidentType === 'layover').length;
@@ -2283,6 +2379,7 @@ class HistoryDatabase {
           maintenanceCount,
           movingPct: totalClusters > 0 ? Math.round((movingCount / totalClusters) * 100) : 0,
           investigationCount: enrichedInvestigation.length,
+          tripRelinkEpisodes: relinks.length,
           dataQuality: this._delayDataQuality({ hours: hoursNum, lineCode: lineCode })
         },
         topIncidents: enrichedTop,
@@ -2313,7 +2410,8 @@ class HistoryDatabase {
           stationaryCount: 0,
           maintenanceCount: 0,
           movingPct: 0,
-          investigationCount: 0
+          investigationCount: 0,
+          tripRelinkEpisodes: 0
         },
         topIncidents: [],
         investigationIncidents: [],
@@ -2321,6 +2419,54 @@ class HistoryDatabase {
         incidentTrips: []
       };
     }
+  }
+
+  /**
+   * Trip relinks (src/core/schedule/tripRelink.js) for identified buses from
+   * `since` to `until`. Candidate drops are found in SQL with LAG over each
+   * bus's samples; only those buses' three hours before each drop are loaded to
+   * rebuild the stale stretch.
+   */
+  _findTripRelinks({ since, until = Date.now(), lineWhereSql = '', lineParams = [] } = {}) {
+    const drops = this.db.prepare(`
+      SELECT vehicleId, timestamp FROM (
+        SELECT vehicle_id AS vehicleId, UPPER(line_code) AS lineCode, direction, timestamp, delay_mins AS delayMins,
+          LAG(delay_mins) OVER w AS prevDelay,
+          LAG(timestamp) OVER w AS prevTs,
+          LAG(UPPER(line_code)) OVER w AS prevLine,
+          LAG(direction) OVER w AS prevDirection
+        FROM delay_logs
+        WHERE vehicle_id <> '' AND timestamp >= ? AND timestamp <= ?${lineWhereSql}
+        WINDOW w AS (PARTITION BY vehicle_id ORDER BY timestamp)
+      )
+      WHERE prevDelay - delayMins >= ? AND timestamp - prevTs <= ?
+        AND lineCode = prevLine AND direction <> '' AND direction = prevDirection
+      ORDER BY vehicleId, timestamp
+    `).all(since, until, ...lineParams, RELINK_DROP_MINS, RELINK_WINDOW_MS);
+    if (!drops.length) return [];
+    const samplesStmt = this.db.prepare(`
+      SELECT vehicle_id AS vehicleId, line_code AS lineCode, direction, delay_mins AS delayMins, timestamp, stop_name AS stopName
+      FROM delay_logs
+      WHERE vehicle_id = ? AND timestamp >= ? AND timestamp <= ?
+      ORDER BY timestamp ASC
+      LIMIT 3000
+    `);
+    const relinks = [];
+    const stopIndex = scheduleStopIndex();
+    for (const d of drops) {
+      const found = findTripRelinks(samplesStmt.all(d.vehicleId, d.timestamp - 3 * 3600 * 1000, d.timestamp), { stopIndex })
+        .find(r => r.relinkTs === d.timestamp);
+      if (found) relinks.push(found);
+    }
+    return relinks;
+  }
+
+  /** Refill temp.relink_windows, which IN_RELINK_SQL reads. */
+  _setRelinkWindows(relinks) {
+    this.db.exec('CREATE TEMP TABLE IF NOT EXISTS relink_windows (vehicle_id TEXT, line_code TEXT, from_ts INTEGER, to_ts INTEGER)');
+    this.db.exec('DELETE FROM temp.relink_windows');
+    const insert = this.db.prepare('INSERT INTO temp.relink_windows (vehicle_id, line_code, from_ts, to_ts) VALUES (?, ?, ?, ?)');
+    for (const r of relinks) insert.run(r.vehicleId, r.lineCode, r.staleFromTs, r.staleToTs);
   }
 
   /**
@@ -2496,8 +2642,25 @@ class HistoryDatabase {
       const hasBackfilledTimes = backfilledRows > 0;
       const hasSnapshotTrail = snapshotRows.length >= 2;
 
+      // A trip relink outranks every provenance grade: the delay itself was
+      // measured against a trip the bus was not running.
+      let tripRelink = null;
+      if (vehicleIds.length === 1) {
+        const vehicleRows = this.db.prepare(`
+          SELECT vehicle_id AS vehicleId, line_code AS lineCode, direction, delay_mins AS delayMins, timestamp, stop_name AS stopName
+          FROM delay_logs
+          WHERE vehicle_id = ? AND timestamp >= ? AND timestamp <= ?
+          ORDER BY timestamp ASC
+          LIMIT 3000
+        `).all(vehicleIds[0], pick[0].timestamp - 3 * 3600 * 1000, pick[pick.length - 1].timestamp + 15 * 60 * 1000);
+        tripRelink = relinkOverlapping(findTripRelinks(vehicleRows, { stopIndex: scheduleStopIndex() }), vehicleIds[0], pick[0].lineCode, pick[0].timestamp, pick[pick.length - 1].timestamp);
+      }
+
       let verdict, verdictLabel;
-      if (pick.every(r => r.isAnomaly)) {
+      if (tripRelink) {
+        verdict = 'trip_relink';
+        verdictLabel = `Trip relink — the operator's AVL re-attached bus ${tripRelink.vehicleId} to its real trip at ${tripRelink.relinkStop} (+${tripRelink.delayBefore} → ${tripRelink.delayAfter} min within ${Math.max(1, Math.round((tripRelink.relinkTs - tripRelink.staleToTs) / 60000))} min); the delay before it was measured against a trip the bus was not running`;
+      } else if (pick.every(r => r.isAnomaly)) {
         verdict = 'telemetry_anomaly'; verdictLabel = 'Telemetry anomaly — depot / night maintenance';
       } else if (hasVehicleId && (hasProvenanceTimes || hasSnapshotTrail)) {
         verdict = 'corroborated'; verdictLabel = 'Corroborated — vehicle identity plus independent evidence';
@@ -2549,6 +2712,9 @@ class HistoryDatabase {
             endTs: pick[pick.length - 1].timestamp
           },
           verdict, verdictLabel,
+          tripRelink: tripRelink
+            ? { delayBefore: tripRelink.delayBefore, delayAfter: tripRelink.delayAfter, stopName: tripRelink.relinkStop, relinkTs: tripRelink.relinkTs, staleStops: tripRelink.staleStops }
+            : null,
           // Authoritative provenance signal for the whole episode. Consumers
           // should colour from the per-row timesProvenance, which is exact.
           timesProvenance: episodeTimesProvenance,
