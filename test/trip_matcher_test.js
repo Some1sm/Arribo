@@ -37,10 +37,14 @@ const departures = mataroSchedules.getDeparturesForStop(L5, DIR0, targetStop.id,
 console.log('--- 1. Day-type resolution ---');
 {
   const wed = calendarEngine.getDateComponents(at(2026, 8, 23, 12, 0), 'Europe/Madrid');
-  check(tripMatcher.resolveDayType(at(2026, 8, 23, 12, 0)).dayType === (wed.isSunday ? 'sunday' : (wed.isSaturday || (wed.isWeekday && wed.isAugust) ? 'saturday' : 'weekday')),
+  check(tripMatcher.resolveDayType(at(2026, 8, 23, 12, 0)).dayType === (wed.isSunday ? 'sunday' : (wed.isSaturday ? 'saturday' : 'weekday')),
     'Day type matches calendarEngine for a mid-September Wednesday');
-  check(tripMatcher.resolveDayType(at(2026, 7, 12, 12, 0)).dayType === 'saturday',
-    'A weekday in August uses the reduced summer timetable bucket, not "weekday"');
+  // Summer is a season (seasonCalendar picks the summer weekday grid), not a
+  // day type: an August weekday must not be served the Saturday timetable.
+  check(tripMatcher.resolveDayType(at(2026, 7, 12, 12, 0)).dayType === 'weekday',
+    'A weekday in August is a weekday; the summer grid comes from the season, not the Saturday timetable');
+  check(tripMatcher.resolveDayType(at(2026, 7, 26, 12, 0)).dayType === 'weekday',
+    'A weekday after the summer window (26 Aug 2026) is a weekday');
   check(tripMatcher.resolveDayType(at(2026, 8, 20, 12, 0)).dayType === 'sunday',
     'Sunday resolves to the sunday bucket');
   check(tripMatcher.resolveDayType(at(2026, 8, 19, 12, 0)).dayType === 'saturday',

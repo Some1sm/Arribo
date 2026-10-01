@@ -154,6 +154,25 @@ function isHoliday(at) {
 }
 
 /**
+ * The modelled holiday on the date of `at`, named when holidays.json names it.
+ * A computed fallback year (no data for it) yields `name: null`.
+ * @param {Date|number|string} at Epoch ms or Date
+ * @returns {{date:string, name:string|null, scope:'regional'|'local'|'computed'}|null}
+ */
+function holidayInfo(at) {
+  const c = calendarEngine.getDateComponents(at, 'Europe/Madrid');
+  if (!c) return null;
+  const key = ymd(c.year, c.month, c.day);
+  if (!holidaysForYear(c.year).has(key)) return null;
+  const y = holidaysData?.years?.[String(c.year)];
+  for (const scope of ['regional', 'local']) {
+    const h = (y?.[scope] || []).find(e => e.date === key);
+    if (h) return { date: key, name: h.name || null, scope };
+  }
+  return { date: key, name: null, scope: 'computed' };
+}
+
+/**
  * Checks for a service override for the date of `at`.
  * @param {Date|number|string} at Epoch ms or Date
  * @returns {string|null} 'weekday'|'saturday'|'sunday'|null
@@ -180,6 +199,7 @@ function madridDate(at) {
 
 module.exports = {
   isHoliday,
+  holidayInfo,
   isHolidayKnown,
   getHolidayCoverage,
   getServiceOverride,

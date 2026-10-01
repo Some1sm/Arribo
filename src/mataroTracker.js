@@ -18,12 +18,12 @@ const verifiedTls = require('./core/http/verifiedTls');
 const holidayCalendar = require('./core/time/holidayCalendar');
 
 /**
- * Resolve the timetable bucket for a moment. August weekdays run the reduced
- * summer "Dissabtes" timetable, so they must NOT be treated as ordinary
- * weekdays. This is the same rule tripMatcher.resolveDayType() applies (and
- * that test/trip_matcher_test.js asserts): the tracker's ghost synthesizer and
- * the trip matcher must agree on the bucket or a physical bus is looked up in
- * a different trip list than the one it was synthesized from.
+ * Resolve the timetable bucket for a moment. This is the same rule
+ * tripMatcher.resolveDayType() applies (and that test/trip_matcher_test.js
+ * asserts): the tracker's ghost synthesizer and the trip matcher must agree on
+ * the bucket or a physical bus is looked up in a different trip list than the
+ * one it was synthesized from. A summer weekday is still a weekday: the summer
+ * grid is a season, chosen by seasonCalendar, never the Saturday timetable.
  * All date math stays in calendarEngine (Europe/Madrid).
  */
 function resolveDayType(dateObj, timeZone) {
@@ -33,9 +33,15 @@ function resolveDayType(dateObj, timeZone) {
   const c = calendarEngine.getDateComponents(dateObj, timeZone);
   let dayType = 'weekday';
   if (c.isSunday) dayType = 'sunday';
-  else if (c.isSaturday || (c.isWeekday && c.isAugust)) dayType = 'saturday';
+  else if (c.isSaturday) dayType = 'saturday';
   return dayType;
 }
+
+/** Catalan label of the timetable a day type selects. */
+const GRID_LABEL = {
+  saturday: 'horari de dissabtes',
+  sunday: 'horari de diumenges i festius'
+};
 
 class MataroTracker extends BaseTracker {
   constructor() {
@@ -71,7 +77,79 @@ class MataroTracker extends BaseTracker {
   syncAvisos(avisos, timestamp) {
     this.avisosCache = structuredClone(avisos);
     this.avisosCacheTime = timestamp;
+    // The worker fetches the notices and learns season windows from them; this
+    // process only receives the list. Register the windows here too, or the
+    // boards and planner here would keep the winter grid while the worker's
+    // trip matcher had already switched to summer.
+    for (const a of Array.isArray(avisos) ? avisos : []) {
+      try {
+        this.registerSeasonNotice(a.title, a.description, this.parseAvisoValidity(a.title, a.description, new Date()));
+      } catch {}
+    }
     this.invalidateLineDetailsCache();
+  }
+
+  /**
+   * The lines a notice names, as '1'..'8'.
+   *
+   * Only an explicit line reference counts: "LÍNIA 4", "línies 2 i 5", "L7".
+   * The old test accepted any "l" followed by a number, so dates and addresses
+   * named lines ("del 4 al 6" -> L4 and L6, "fins al 3/10" -> L3, "Hospital 7"
+   * -> L7). A line in brackets after a stop name says which line serves that
+   * stop, not that the line is affected: the 6 Oct 2026 Carrer Sant Benet
+   * closure (L4, L7) offered "Parada provisional: Ronda República (L5)" and
+   * was shown on L5.
+   */
+  detectAffectedLines(text) {
+    const norm = String(text || '')
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .replace(/\([^)]*\)/g, ' ');
+    const found = new Set();
+    const re = /\b(?:linies|linias|lineas|linia|linea|l)\s*-?\s*([1-8](?:\s*(?:,|\bi\b|\by\b)\s*[1-8])*)(?![0-9])/g;
+    let m;
+    while ((m = re.exec(norm)) !== null) {
+      for (const d of m[1].match(/[1-8]/g)) found.add(d);
+    }
+    return Array.from(found).sort();
+  }
+
+  /**
+   * The service day as the stop view states it: which timetable the boards
+   * are using and why. The day type comes from the same resolveDayType the
+   * boards use (holidays and service overrides included) and the grid from
+   * the season calendar, so the label can never read "Feiner" while the board
+   * runs the Sunday timetable. No frequency is stated: headways differ by line
+   * and hour, and the old fixed "Cada 15-30 min" was not true for L4 or L8.
+   */
+  getServiceCalendarInfo(targetDate = new Date()) {
+    const c = calendarEngine.getDateComponents(targetDate, this.agencyTimezone);
+    const dayType = resolveDayType(targetDate, this.agencyTimezone);
+    const holiday = holidayCalendar.holidayInfo(targetDate);
+    const season = seasonCalendar.resolveSeason(targetDate);
+    const pad = n => String(n).padStart(2, '0');
+
+    let name;
+    if (holidayCalendar.getServiceOverride(targetDate)) name = 'Horari especial';
+    else if (holiday) name = holiday.name ? `Festiu (${holiday.name})` : 'Festiu';
+    else name = c.isSunday ? 'Diumenge' : (c.isSaturday ? 'Dissabte' : 'Feiner');
+
+    const grid = dayType === 'weekday'
+      ? (season.season === 'summer' ? "horari d'estiu" : "horari d'hivern")
+      : GRID_LABEL[dayType];
+
+    return {
+      serviceId: dayType,
+      dayType,
+      season: season.season,
+      seasonKnown: Boolean(season.known),
+      name,
+      isWeekend: c.isWeekend,
+      isHoliday: Boolean(holiday),
+      calendarTag: `${name} · ${grid}${season.known ? '' : ' (no verificat)'}`,
+      dateFormatted: `${pad(c.day)}/${pad(c.month)}/${c.year}`
+    };
   }
 
   async fetchAvisos() {
@@ -150,18 +228,7 @@ class MataroTracker extends BaseTracker {
               .replace(/<[^>]+>/g, '')
               .trim();
 
-            const normText = (title + ' ' + plainText)
-              .normalize('NFD')
-              .replace(/[\u0300-\u036f]/g, '')
-              .toLowerCase();
-
-            const linesAffected = new Set();
-            for (let i = 1; i <= 8; i++) {
-              const re = new RegExp('(?:linia|linea|l)\\s*' + i + '(?:[^0-9]|$)', 'i');
-              if (re.test(normText)) {
-                linesAffected.add(String(i));
-              }
-            }
+            const linesAffected = new Set(this.detectAffectedLines(title + '\n' + plainText));
 
             const isWarning = /tall|corte|anul|desvi|obres|obras|afectaci/i.test(title + ' ' + plainText);
             const hasExplicitLines = linesAffected.size > 0;
@@ -255,12 +322,15 @@ class MataroTracker extends BaseTracker {
    * is a diversion or a cancellation, not a timetable change, and registering
    * one as a season would swap the whole network's grid over a road closure.
    *
-   * The window bounds are read back as HOST-LOCAL calendar parts on purpose:
-   * parseAvisoValidity built them from the operator's own wording ("27 de
-   * juliol") using local Date construction, so reading them back the same way
-   * round-trips the stated date exactly. The query side of the comparison is
-   * Europe/Madrid, which is a different question and is handled in
-   * seasonCalendar.
+   * parseAvisoValidity builds the bounds as Europe/Madrid instants (00:00 of
+   * the first day, 23:59:59 of the last), so they are read back as Madrid
+   * calendar dates. Reading them with host-local getDate() moved the start a
+   * day early on a UTC host (27 Jul 00:00 Madrid is 26 Jul 22:00 UTC).
+   *
+   * A notice whose dates carry no year is parsed in the current year, so an
+   * old notice left on the portal ("HORARIS ESTIU 2026" read in 2027) would
+   * otherwise declare a summer that was never announced. When the notice
+   * names a year, the window must fall in it.
    */
   registerSeasonNotice(title, description, validity) {
     const text = (title + ' ' + description).normalize('NFD')
@@ -271,19 +341,27 @@ class MataroTracker extends BaseTracker {
     if (isSummer === isWinter) return false;
     if (!validity || !validity.startsAt || !validity.expiry) return false;
 
-    const d = validity.startsAt;
-    const e = validity.expiry;
-    const key = (x) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+    const from = seasonCalendar.madridDateKey(validity.startsAt);
+    const to = seasonCalendar.madridDateKey(validity.expiry);
+    const namedYears = text.match(/\b20\d\d\b/g);
+    if (namedYears && !namedYears.includes(from.slice(0, 4))) return false;
     return seasonCalendar.registerWindow({
-      from: key(d),
-      to: key(e),
+      from,
+      to,
       season: isSummer ? 'summer' : 'winter',
       title: String(title || '').trim()
     });
   }
 
   parseAvisoValidity(title = '', description = '', refDate = new Date()) {
-    const text = (title + ' ' + description).toLowerCase();
+    // Catalan elides "de" before a vowel: "23 d'agost", "15 d'octubre",
+    // "5 d'abril". The portal writes the apostrophe in several forms, so they
+    // are unified first and every month pattern below accepts "de " or "d'".
+    // Without this the real summer notice ("Del 27 de juliol fins al 23
+    // d'agost") parsed as a notice with no dates: it never expired and its
+    // season window was never registered.
+    const text = (title + ' ' + description).toLowerCase().replace(/[’‘´ʼ`]/g, "'");
+    const OF = "(?:de\\s+|d')";
     const dc = calendarEngine.getDateComponents(refDate, 'Europe/Madrid');
     const currentYear = dc.year;
 
@@ -349,7 +427,7 @@ class MataroTracker extends BaseTracker {
 
     // 2. Specific date with time interval(s):
     // e.g. '14/09/2026, de 14.00 a 18.00' or '28/09/2026, de 9 a 17 hores'
-    const dateTimeRegex = /(?:(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?|(\d{1,2})\s+de\s+([a-zç]+)(?:\s+de\s+(\d{4}))?)[^0-9\n\r]*?de\s+(\d{1,2})(?:[.:](\d{2}))?\s+a\s+(\d{1,2})(?:[.:](\d{2}))?(?:[^\n\r]*?i\s+de\s+(\d{1,2})(?:[.:](\d{2}))?\s+a\s+(\d{1,2})(?:[.:](\d{2}))?)?/gi;
+    const dateTimeRegex = /(?:(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?|(\d{1,2})\s+(?:de\s+|d')([a-zç]+)(?:\s+de\s+(\d{4}))?)[^0-9\n\r]*?de\s+(\d{1,2})(?:[.:](\d{2}))?\s+a\s+(\d{1,2})(?:[.:](\d{2}))?(?:[^\n\r]*?i\s+de\s+(\d{1,2})(?:[.:](\d{2}))?\s+a\s+(\d{1,2})(?:[.:](\d{2}))?)?/gi;
     while ((mm = dateTimeRegex.exec(text)) !== null) {
       let day, month, year;
       if (mm[1]) {
@@ -401,7 +479,7 @@ class MataroTracker extends BaseTracker {
     }
 
     // 4. Named month ranges: 'del 1 al 2 de setembre'
-    const namedRange = new RegExp('(?:del|des de|des del)\\s+(\\d{1,2})(?:\\s+de\\s+(' + monthNamesStr + '))?\\s+(?:al|fins al|fins el|fins a|hasta el)\\s+(\\d{1,2})\\s+de\\s+(' + monthNamesStr + ')(?:\\s+de\\s+(\\d{4}))?', 'gi');
+    const namedRange = new RegExp('(?:del|des de|des del)\\s+(\\d{1,2})(?:\\s+' + OF + '(' + monthNamesStr + '))?\\s+(?:al|fins al|fins el|fins a|hasta el)\\s+(\\d{1,2})\\s+' + OF + '(' + monthNamesStr + ')(?:\\s+de\\s+(\\d{4}))?', 'gi');
     while ((mm = namedRange.exec(text)) !== null) {
       const sDay = parseInt(mm[1], 10);
       const eDay = parseInt(mm[3], 10);
@@ -432,7 +510,7 @@ class MataroTracker extends BaseTracker {
     }
 
     // 6. Named month until date: 'fins al 2 de setembre de 2026'
-    const untilNamed = new RegExp('(?:fins al|fins el|fins a|fins|hasta el)\\s+(\\d{1,2})\\s+de\\s+(' + monthNamesStr + ')(?:\\s+de\\s+(\\d{4}))?', 'gi');
+    const untilNamed = new RegExp('(?:fins al|fins el|fins a|fins|hasta el)\\s+(\\d{1,2})\\s+' + OF + '(' + monthNamesStr + ')(?:\\s+de\\s+(\\d{4}))?', 'gi');
     while ((mm = untilNamed.exec(text)) !== null) {
       const day = parseInt(mm[1], 10);
       const month = MONTHS[mm[2].toLowerCase()];
@@ -482,13 +560,18 @@ class MataroTracker extends BaseTracker {
 
     // Find latest end
     const latestWindow = [...windows].sort((a, b) => b.end.getTime() - a.end.getTime())[0];
-    const expiry = new Date(latestWindow.end.getTime());
+    let expiry = new Date(latestWindow.end.getTime());
 
-    if (lastTimeMatch && windows.every(w => w.start.getHours() === 0 && w.end.getHours() === 23)) {
+    // Whole-day windows ending at a stated time ("fins a les 18.30"). Hours are
+    // read and set in Europe/Madrid: host-local getHours()/setHours() only
+    // worked on a host that happened to run in Madrid time.
+    const madrid = (d) => calendarEngine.getDateComponents(d, 'Europe/Madrid');
+    if (lastTimeMatch && windows.every(w => madrid(w.start).hour === 0 && madrid(w.end).hour === 23)) {
       const endH = parseInt(lastTimeMatch[1], 10);
       const endM = parseInt(lastTimeMatch[2], 10);
       if (endH >= 0 && endH <= 23 && endM >= 0 && endM <= 59) {
-        expiry.setHours(endH, endM, 0, 0);
+        const e = madrid(expiry);
+        expiry = timeEngine.localTimeToUtcDate(e.year, e.month - 1, e.day, endH, endM, 0);
       }
     }
 

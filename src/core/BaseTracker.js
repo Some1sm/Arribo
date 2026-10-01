@@ -394,17 +394,7 @@ class BaseTracker {
    * @returns {object}
    */
   getServiceCalendarInfo(targetDate = new Date()) {
-    const dateComp = calendarEngine.getDateComponents(targetDate, this.agencyTimezone);
-    const dayType = dateComp.isSunday ? 'Diumenge / Festiu' : (dateComp.isSaturday ? 'Dissabte' : 'Feiner');
-    return {
-      serviceId: dateComp.isWeekend ? 'weekend' : 'weekday',
-      name: dayType,
-      frequency: 'Cada 15-30 min',
-      frequencyMinutes: 20,
-      isWeekend: dateComp.isWeekend,
-      calendarTag: `${dayType} (${dateComp.dateStr})`,
-      dateFormatted: dateComp.dateStr
-    };
+    return calendarEngine.getServiceCalendarInfo(targetDate, this.agencyTimezone);
   }
 
 

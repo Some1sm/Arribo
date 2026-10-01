@@ -59,9 +59,8 @@ const ALL_LINES = ['1', '2', '3', '4', '5', '6', '7', '8'];
 // Thursday run against a Saturday fleet requirement compares two different
 // timetables and invents failures.
 //
-// 2026-09-24 is a Thursday, 2026-09-26 a Saturday. September is chosen so
-// resolveDayType() does not silently route an August weekday onto the Saturday
-// grid.
+// 2026-09-24 is a Thursday, 2026-09-26 a Saturday. September is outside the
+// summer window, so these run the winter grid.
 const madridInstant = (h, m, dayType = 'weekday') => new Date(
   Date.UTC(2026, 8, dayType === 'saturday' ? 26 : 24, h - 2, m, 0)
 );

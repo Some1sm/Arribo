@@ -177,14 +177,16 @@ async function runTests() {
   assert.strictEqual(calendarEngine.isServiceActiveOnDate('GEN_185080', null, null, wednesdayAug), true); // Weekday August
   assert.strictEqual(calendarEngine.isServiceActiveOnDate('GEN_184910', null, null, wednesdayAug), false); // Weekday non-August
 
-  // Service Calendar Info
+  // Service Calendar Info: the day of the week only. It no longer carries the
+  // retired C-10 service ids and frequencies; the Mataró tracker adds holidays
+  // and the season on top.
   const calInfoSun = calendarEngine.getServiceCalendarInfo(sundayAug);
-  assert.strictEqual(calInfoSun.serviceId, 'GEN_184749');
-  assert.strictEqual(calInfoSun.frequencyMinutes, 120);
+  assert.strictEqual(calInfoSun.serviceId, 'sunday');
+  assert.strictEqual(calInfoSun.dateFormatted, '16/08/2026');
+  assert.strictEqual(calInfoSun.frequencyMinutes, undefined);
 
   const calInfoWedAug = calendarEngine.getServiceCalendarInfo(wednesdayAug);
-  assert.strictEqual(calInfoWedAug.serviceId, 'GEN_185080');
-  assert.strictEqual(calInfoWedAug.frequencyMinutes, 90);
+  assert.strictEqual(calInfoWedAug.serviceId, 'weekday'); // summer is a season, not a day type
 
   console.log('✅ Calendar Engine verified.');
 

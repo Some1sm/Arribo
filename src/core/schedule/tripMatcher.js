@@ -63,9 +63,15 @@ function circularDiffSec(a, b) {
 }
 
 /**
- * Which timetable bucket a moment falls in. August weekdays run the reduced
- * "Dissabtes" timetable, so they must not be treated as ordinary weekdays.
- * Public holidays run the reduced "Diumenges i Festius" timetable.
+ * Which timetable bucket a moment falls in. Public holidays run the reduced
+ * "Diumenges i Festius" timetable.
+ *
+ * Summer is a SEASON, not a day type: a weekday in the operator's summer
+ * window runs the summer weekday grid, which seasonCalendar selects at the
+ * mataroSchedules boundary. Mapping August weekdays to "saturday" (a rule
+ * inherited from the retired C-10 line) served the Saturday grid instead:
+ * 37 L1 trips instead of 69 on 5 Aug 2026, and still 37 instead of 76 after
+ * the summer window ended on 23 Aug.
  */
 function resolveDayType(at) {
   const c = calendarEngine.getDateComponents(at, 'Europe/Madrid');
@@ -77,7 +83,7 @@ function resolveDayType(at) {
   const isHol = holidayCalendar.isHoliday(at);
   if (isHol) dayType = 'sunday';
   else if (c.isSunday) dayType = 'sunday';
-  else if (c.isSaturday || (c.isWeekday && c.isAugust)) dayType = 'saturday';
+  else if (c.isSaturday) dayType = 'saturday';
   return { dayType, components: c, isHoliday: isHol || (dayType === 'sunday' && !c.isSunday) };
 }
 

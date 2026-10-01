@@ -357,6 +357,14 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   four trips. Investigar loads 4 h of the bus (`RUN_LOOKBACK_MS`) and `buildIncidentRun`
   returns `origin`: the last stop without delay (<= +3) and the largest rises. A step
   back of 1-2 stops is feed jitter, not a new trip (`JUMP_BACK_MIN_STOPS` = 3).
+- **Summer is a season, not a day type, and notice dates are read in Catalan.** An
+  August weekday runs the summer weekday grid, which seasonCalendar selects; mapping it to
+  "saturday" (a rule left over from the retired C-10 line) served L1 37 trips instead of 69
+  on 5 Aug 2026, and kept doing so after the window ended on 23 Aug. The window comes from
+  the operator's notice ("Del 27 de juliol fins al 23 d'agost"), so month patterns accept
+  "de " and "d'" (abril, agost, octubre) and its bounds are Madrid dates on any host. A
+  notice names a line only as "Línia N", "línies N i M" or "LN"; "(L5)" after a stop name is
+  the line serving that stop. See `test/calendar_and_notices_test.js`.
 
 ## 4. Runtime, configuration and privacy
 

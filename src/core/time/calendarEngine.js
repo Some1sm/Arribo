@@ -173,54 +173,29 @@ function isServiceActiveOnDate(serviceId, calendar = null, calendarExceptions = 
 }
 
 /**
- * Returns user-facing service calendar descriptor object.
- * 
+ * Calendar-only service-day descriptor: the day of the week, nothing more.
+ *
+ * Holidays and the summer season are not known here (holidayCalendar depends
+ * on this module), so the Mataró tracker overrides getServiceCalendarInfo with
+ * the holiday- and season-aware version. This used to return the retired C-10
+ * line's service ids and frequencies ("cada 45 / 90 / 120 minuts"), which were
+ * never true for Mataró Bus Urbà.
+ *
  * @param {Date|string|number} [dateObj=new Date()]
  * @param {string} [timeZone='Europe/Madrid']
- * @returns {Object}
+ * @returns {{serviceId:string, dayType:string, name:string, isWeekend:boolean, calendarTag:string, dateFormatted:string}}
  */
 function getServiceCalendarInfo(dateObj = new Date(), timeZone = 'Europe/Madrid') {
-  const { isAugust, isSaturday, isSunday, isWeekday, year, month, day } = getDateComponents(dateObj, timeZone);
-  const dateFormatted = `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`;
-
-  if (isSunday) {
-    return {
-      serviceId: 'GEN_184749',
-      name: 'Diumenges i festius',
-      frequency: 'Cada 120 minuts (2 hores)',
-      frequencyMinutes: 120,
-      isAugustSeason: isAugust,
-      isWeekend: true,
-      calendarTag: 'Diumenges i festius (cada 2h)',
-      periodLabel: 'Festius',
-      dateFormatted
-    };
-  }
-
-  if (isSaturday || (isWeekday && isAugust)) {
-    return {
-      serviceId: 'GEN_185080',
-      name: isSaturday ? 'Dissabtes' : "Feiners d'Agost",
-      frequency: 'Cada 90 minuts (1h 30m)',
-      frequencyMinutes: 90,
-      isAugustSeason: isAugust,
-      isWeekend: isSaturday,
-      calendarTag: isAugust ? "Horari d'estiu (Agost: cada 90 min)" : 'Dissabtes (cada 90 min)',
-      periodLabel: isAugust ? 'Estiu (Agost)' : 'Dissabte',
-      dateFormatted
-    };
-  }
-
+  const { isSaturday, isSunday, isWeekend, year, month, day } = getDateComponents(dateObj, timeZone);
+  const dayType = isSunday ? 'sunday' : (isSaturday ? 'saturday' : 'weekday');
+  const name = isSunday ? 'Diumenge' : (isSaturday ? 'Dissabte' : 'Feiner');
   return {
-    serviceId: 'GEN_184910',
-    name: "Feiners de dilluns a divendres (resta de l'any)",
-    frequency: 'Cada 45 minuts',
-    frequencyMinutes: 45,
-    isAugustSeason: false,
-    isWeekend: false,
-    calendarTag: 'Feiners habituals (cada 45 min)',
-    periodLabel: 'Feiners',
-    dateFormatted
+    serviceId: dayType,
+    dayType,
+    name,
+    isWeekend,
+    calendarTag: name,
+    dateFormatted: `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`
   };
 }
 

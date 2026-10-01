@@ -702,9 +702,11 @@ function getServiceWindow(lineId, dayType = 'weekday', season = null) {
  * @param {Date|number|string} [at=new Date()]
  */
 function getActiveSeason(at) {
-  return at === undefined
-    ? { ...activeGrid().resolution, usingSeasonsFile: activeGrid().usingSeasonsFile }
-    : { ...seasonCalendar.resolveSeason(at), usingSeasonsFile: Boolean(gridFor(at)) };
+  if (at === undefined) return { ...activeGrid().resolution, usingSeasonsFile: activeGrid().usingSeasonsFile };
+  // gridFor() takes a season name, not a date: passing `at` made this false
+  // for every date.
+  const res = seasonCalendar.resolveSeason(at);
+  return { ...res, usingSeasonsFile: Boolean(seasonsFile && seasonsFile.seasons && seasonsFile.seasons[res.season]) };
 }
 
 // `rawSchedules` used to be a plain object. It is a getter now so that anything

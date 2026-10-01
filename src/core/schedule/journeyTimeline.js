@@ -58,7 +58,7 @@ async function evaluate(candidates, tracker, options = {}) {
   //
   // resolveDayType is shared with the ingestion matcher so the planner and the
   // Observatori can never disagree about which grid a date runs on - including
-  // the August reduction and public holidays, which are not Saturday or Sunday.
+  // public holidays, which are not Saturday or Sunday.
   const dayTypeByDate = new Map(serviceDays.map(day => [
     day.dateStr,
     tripMatcher.resolveDayType(Date.UTC(day.year, day.month - 1, day.day, 12)).dayType
@@ -230,7 +230,7 @@ async function evaluate(candidates, tracker, options = {}) {
       // A scheduled departure carries its service date. A live departure is an
       // observation, so its day is read off the instant itself: the observed
       // Madrid date is the best available signal, and it correctly picks up
-      // August and public holidays where a hardcoded weekday grid would not.
+      // public holidays where a hardcoded weekday grid would not.
       const depDayType = departure.dayType || tripMatcher.resolveDayType(departure.at).dayType;
       const dayCfg = schedules.getDirectionSchedule(leg.lineId, leg.direction, depDayType);
       // Fallback median offset map for live departures or lines without per-trip grid

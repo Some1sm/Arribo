@@ -206,6 +206,7 @@ console.log('\n📌 Test 6: The loader consumes the calendar rather than re-deri
   eq(viaSchedules.season, viaCalendar.season, 'getActiveSeason agrees with resolveSeason');
   eq(viaSchedules.known, viaCalendar.known, 'getActiveSeason agrees on known-ness');
   eq(viaSchedules.source, viaCalendar.source, 'getActiveSeason reports the same provenance');
+  eq(viaSchedules.usingSeasonsFile, true, 'getActiveSeason(date) reports the seasons file (it used to pass the date to gridFor and always said false)');
 
   const validity = mataroSchedules.getScheduleValidity();
   eq(validity.season, mataroSchedules.getActiveSeason().season, 'Validity reports the active season');
