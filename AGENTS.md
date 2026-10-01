@@ -373,6 +373,16 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   operator's trip, so it cannot catch this. [delayJump.js](src/core/schedule/delayJump.js)
   finds the stretch; it gets the relink treatment (out of KPIs and rankings, listed with
   the SAE anomalies, Investigar verdict `delay_jump`). See `test/delay_jump_test.js`.
+- **Every punctuality figure counts the same rows, and service hours come from the
+  timetable.** `_serviceFilter` in historyDb leaves out records outside the line's
+  published service that day ([serviceHours.js](src/core/schedule/serviceHours.js): day
+  type, holidays, season), 10+ min records in the first half hour of the line's service,
+  and relink / deadhead / delay-jump stretches. The incident tables did this; the summary,
+  rankings, termòmetre, monthly report and line pages did not, so one week could show
+  "+50 max" beside an incident list calling it a relink. Fixed clock rules ("before 06:00
+  is depot") dropped L1/L2's 05:25 trips and L1/L3's last trips. The worst stop and hour
+  count stop visits, never raw 20-second samples. No data is `null` ("--"), never 100 %
+  or 0 %. See `test/service_rows_test.js`.
 
 ## 4. Runtime, configuration and privacy
 

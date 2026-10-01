@@ -1,3 +1,6 @@
+// Line statistics with no data: no ratio exists, so none is stated (the page shows "--").
+const NO_LINE_STATS = Object.freeze({ totalVisits: 0, totalSamples: 0, avgDelayMins: null, maxDelayMins: null, onTimePct: null, earlyPct: null, latePct: null, moderateLatePct: null, severeLatePct: null, isBaseline: true });
+
 class FlightRecorder {
   constructor() {
     this.vehicles = new Map(); // vehicleId -> VehicleState
@@ -353,12 +356,12 @@ class FlightRecorder {
         // Delay stats are auxiliary: a DB RPC timeout (e.g. worker busy with
         // startup report scans) must never 500 the line-details route.
         console.warn(`[FlightRecorder] getLineDelayStats unavailable (${err.message}) — serving baseline stats.`);
-        data = { totalSamples: 0, avgDelayMins: 0, maxDelayMins: 0, onTimePct: 100, latePct: 0, moderateLatePct: 0, severeLatePct: 0, isBaseline: true };
+        data = { ...NO_LINE_STATS };
       }
     } else {
       // Mirror the persistence layer's empty-stats shape so callers see an
       // identical baseline whether or not a gateway is installed.
-      data = { totalSamples: 0, avgDelayMins: 0, maxDelayMins: 0, onTimePct: 100, latePct: 0, moderateLatePct: 0, severeLatePct: 0, isBaseline: true };
+      data = { ...NO_LINE_STATS };
     }
     this.statsCache.set(key, { data, timestamp: now });
     // Bound cache size defensively

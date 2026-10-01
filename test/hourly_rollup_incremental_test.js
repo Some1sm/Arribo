@@ -12,7 +12,7 @@ let clock = Date.parse('2026-09-17T12:30:00Z');
 Date.now = () => clock;
 const timestamp = clock - 2 * hour;
 const record = (delay, time = timestamp, line = 'L1') => history.recordDelayLog({ lineCode: line, agency: 'Mataró Bus', delayMins: delay, timestamp: time });
-const state = () => history.db.prepare('SELECT line_code, date_hour, sample_count, delay_sum, avg_delay_mins, max_delay_mins, on_time_count, late_count FROM hourly_line_stats ORDER BY line_code, date_hour').all();
+const state = () => history.db.prepare('SELECT line_code, date_hour, sample_count, delay_sum, avg_delay_mins, max_delay_mins, on_time_count, early_count, late_count FROM hourly_line_stats ORDER BY line_code, date_hour').all();
 const progress = () => history.db.prepare('SELECT last_id FROM hourly_rollup_progress').get().last_id;
 try {
   history.init();
@@ -36,7 +36,8 @@ try {
   const reference = history.db.prepare(`
     SELECT line_code, strftime('%Y-%m-%d %H:00', timestamp / 1000, 'unixepoch', 'localtime') AS date_hour,
       COUNT(*) AS sample_count, SUM(delay_mins) AS delay_sum, ROUND(AVG(delay_mins), 2) AS avg_delay_mins,
-      MAX(delay_mins) AS max_delay_mins, SUM(delay_mins <= 3) AS on_time_count, SUM(delay_mins > 3) AS late_count
+      MAX(delay_mins) AS max_delay_mins, SUM(delay_mins >= -1 AND delay_mins <= 3) AS on_time_count,
+      SUM(delay_mins < -1 AND delay_mins > -15) AS early_count, SUM(delay_mins > 3) AS late_count
     FROM delay_logs GROUP BY line_code, date_hour ORDER BY line_code, date_hour
   `).all();
   assert.deepEqual(state(), reference);
@@ -85,6 +86,7 @@ try {
   assert.equal(state()[0].sample_count, 11);
   assert.equal(state()[0].delay_sum, 33);
   assert.equal(state()[0].avg_delay_mins, 3);
+  assert.equal(state()[0].early_count, null, 'a legacy bucket stays marked legacy: its on-time count includes early buses');
   console.log('PASS: exact sums, reference equivalence, no-op reruns, restart, late data, pruning, rollback, legacy migration');
 } finally {
   Date.now = now;

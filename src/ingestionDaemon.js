@@ -3,9 +3,9 @@ const mataroTracker = require('./mataroTracker');
 const reportCacheService = require('./reportCacheService');
 const historyDb = require('./historyDb');
 const tripMatcher = require('./core/schedule/tripMatcher');
+const serviceHours = require('./core/schedule/serviceHours');
 const mataroSchedules = require('./data/mataroSchedules');
 const timeEngine = require('./core/time/timeEngine');
-const calendarEngine = require('./core/time/calendarEngine');
 const siriClient = require('./mataroSiriClient');
 
 class IngestionDaemon {
@@ -133,28 +133,12 @@ class IngestionDaemon {
   /**
    * Helper to determine if a line is outside scheduled revenue service window.
    * Window: from (first departure − 15 min) to (last departure + duration + 20 min).
-   * Respects holiday-aware day type and midnight rollover (E9).
+   * Respects holiday-aware day type, the season of that date and midnight
+   * rollover (E9). Shared with the Observatori (see serviceHours.js) so the
+   * rows ingestion keeps and the rows the reports count use one definition.
    */
   isOutsideRevenueService(lineId, at = Date.now()) {
-    const c = calendarEngine.getDateComponents(at, 'Europe/Madrid');
-    if (!c) return false;
-    const secOfDay = c.hour * 3600 + c.minute * 60 + c.second;
-    const { dayType } = tripMatcher.resolveDayType(at);
-    const winToday = mataroSchedules.getServiceWindow(lineId, dayType);
-    if (winToday && secOfDay >= winToday.startSec && secOfDay <= winToday.endSec) {
-      return false;
-    }
-    // Check if it's late-night spillover from yesterday's service window
-    const yesterdayMs = at - 86400 * 1000;
-    const { dayType: prevDayType } = tripMatcher.resolveDayType(yesterdayMs);
-    const winYesterday = mataroSchedules.getServiceWindow(lineId, prevDayType);
-    if (winYesterday && winYesterday.endSec > 86400) {
-      const secFromYesterday = secOfDay + 86400;
-      if (secFromYesterday <= winYesterday.endSec) {
-        return false;
-      }
-    }
-    return true;
+    return serviceHours.isOutsideRevenueService(lineId, at);
   }
 
   flushVisit(v) {

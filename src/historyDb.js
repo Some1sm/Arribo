@@ -30,6 +30,7 @@ const {
   JUMP_MAX_GAP_MS,
   JUMP_FROM_MIN_MINS
 } = require('./core/schedule/delayJump');
+const serviceHours = require('./core/schedule/serviceHours');
 const mataroSchedules = require('./data/mataroSchedules');
 const { normalizeStopName, resolveDayType } = require('./core/schedule/tripMatcher');
 const timeEngine = require('./core/time/timeEngine');
@@ -143,12 +144,24 @@ function appendMataroScope(sqlWhere, isAll) {
 // inspectDelayIncident groups on, so both report the same thing.
 const EPISODE_GAP_MS = 5 * 60 * 1000;
 
+// The worst hour is picked among hours with at least this many stop visits, so
+// one late bus in a quiet hour cannot top the table.
+const WORST_HOUR_MIN_VISITS = 20;
+
+// Line statistics with no data in the window: no ratio exists, so none is stated.
+const NO_LINE_STATS = Object.freeze({
+  totalVisits: 0, totalSamples: 0, sampleCount: 0, avgDelayMins: null, maxDelayMins: null,
+  onTimePct: null, earlyPct: null, latePct: null, moderateLatePct: null, severeLatePct: null, isBaseline: true
+});
+
 // A delay_logs row inside a trip-relink stale stretch (see
 // src/core/schedule/tripRelink.js), a deadhead-return phantom stretch (see
 // src/core/schedule/deadheadReturn.js) or an impossible delay jump (see
 // src/core/schedule/delayJump.js). temp.relink_windows is refilled by
 // _setRelinkWindows() at the start of every getDelayIncidents() call.
 const IN_RELINK_SQL = 'EXISTS (SELECT 1 FROM temp.relink_windows rw WHERE rw.vehicle_id = delay_logs.vehicle_id AND rw.line_code = UPPER(delay_logs.line_code) AND delay_logs.timestamp BETWEEN rw.from_ts AND rw.to_ts)';
+// The same for a stop visit: it overlaps one of those stretches.
+const VISIT_IN_RELINK_SQL = 'EXISTS (SELECT 1 FROM temp.relink_windows rw WHERE rw.vehicle_id = stop_visits.vehicle_id AND rw.line_code = UPPER(stop_visits.line_code) AND stop_visits.first_ts <= rw.to_ts AND stop_visits.last_ts >= rw.from_ts)';
 
 /**
  * Stop-order resolver for findTripRelinks: where a stop sits in its direction's
@@ -240,8 +253,6 @@ function getMadridMonthRange(monthStr) {
   return { year: y, month: m, monthStr: normalizedMonth, startTs, endTs };
 }
 
-// Built once: Intl.DateTimeFormat construction is expensive and this runs per row.
-const MADRID_HOUR_MINUTE = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 
 class HistoryDatabase {
   constructor() {
@@ -304,20 +315,20 @@ class HistoryDatabase {
           if (!timestamp) return '';
           return madridDateTimeFmt.format(new Date(Number(timestamp)));
         });
-        const madridTimeFmt = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
-        this.db.function('is_telemetry_anomaly', { deterministic: true }, (timestamp, delayMins, stopName) => {
+        // A record that is not service: a depot stop, a time outside the line's
+        // published service that day (serviceHours.js: day type, holidays and
+        // season from the timetable), or 10+ min in the first half hour of the
+        // line's service (a bus starting its shift attached to an earlier trip).
+        // This used fixed clock hours (before 06:00, from 23:00, 06:00-06:30), but
+        // L1 and L2 leave at 05:25 and L1/L3 run until 23:05.
+        this.db.function('is_telemetry_anomaly', { deterministic: true }, (timestamp, delayMins, stopName, lineCode) => {
           if (!timestamp) return 0;
           const sName = String(stopName || '').toLowerCase();
           if (sName.includes('cotxeres') || sName.includes('depot') || sName.includes('taller')) return 1;
-          const timeStr = madridTimeFmt.format(new Date(Number(timestamp)));
-          const [hStr, mStr] = timeStr.split(':');
-          const h = parseInt(hStr, 10);
-          const m = parseInt(mStr, 10);
+          const ts = Number(timestamp);
+          if (serviceHours.isOutsideRevenueService(lineCode, ts)) return 1;
           const delay = Number.isFinite(Number(delayMins)) ? Number(delayMins) : null;
-          // Maintenance hours: night and early morning before 06:00 (first revenue trips start ~06:00)
-          if (h >= 23 || h < 6) return 1;
-          // Morning rollout SAE trip misassignment: 06:00 to 06:30 with high delay
-          if (h === 6 && m <= 30 && delay !== null && delay >= 10) return 1;
+          if (delay !== null && delay >= 10 && serviceHours.isServiceStartup(lineCode, ts)) return 1;
           return 0;
         });
         this.db.exec(`
@@ -468,6 +479,11 @@ class HistoryDatabase {
         `);
         if (!this.db.prepare('PRAGMA table_info(hourly_line_stats)').all().some(column => column.name === 'delay_sum')) {
           this.db.exec('ALTER TABLE hourly_line_stats ADD COLUMN delay_sum REAL;');
+        }
+        // NULL on rows rolled up before early buses were counted apart: their
+        // on_time_count includes early buses, so on-time cannot be read from them.
+        if (!this.db.prepare('PRAGMA table_info(hourly_line_stats)').all().some(column => column.name === 'early_count')) {
+          this.db.exec('ALTER TABLE hourly_line_stats ADD COLUMN early_count INTEGER;');
         }
         if (!this.db.prepare('PRAGMA table_info(delay_logs)').all().some(column => column.name === 'vehicle_id')) {
           this.db.exec("ALTER TABLE delay_logs ADD COLUMN vehicle_id TEXT DEFAULT '';");
@@ -679,7 +695,7 @@ class HistoryDatabase {
   }
 
   getLineDelayStats(lineCode, hoursBack = 24, lineId = null) {
-    if (!this._ensureOpen()) return { totalVisits: 0, totalSamples: 0, sampleCount: 0, avgDelayMins: 0, maxDelayMins: 0, onTimePct: 100, earlyPct: 0, latePct: 0, moderateLatePct: 0, severeLatePct: 0, isBaseline: true };
+    if (!this._ensureOpen()) return { ...NO_LINE_STATS };
     try {
       const cutoff = Date.now() - hoursBack * 3600 * 1000;
       const raw = String(lineCode || '').trim();
@@ -689,6 +705,9 @@ class HistoryDatabase {
       const codeWithoutL = codeUpper.startsWith('L') ? codeUpper.substring(1) : codeUpper;
       const idUpper = lineId ? String(lineId).toUpperCase().trim() : codeUpper;
       const idClean = idUpper.replace('CAT_GEN_', '').replace(/.*_/, '');
+      // The rows the network reports count: in service, not measured against a
+      // trip the bus was not running (see _serviceFilter).
+      const service = this._serviceFilter({ since: cutoff, lineCode: codeWithL });
 
       // 1. Query stop_visits (primary source)
       const visitStmt = this.db.prepare(`
@@ -709,7 +728,7 @@ class HistoryDatabase {
           OR UPPER(line_code) = ?
           OR UPPER(line_code) = ?
           OR UPPER(REPLACE(REPLACE(line_code, '-', ''), '_', '')) = ?
-        ) AND last_ts >= ? AND ${VALID_DELAY_SQL}
+        ) AND last_ts >= ? AND ${VALID_DELAY_SQL}${service.visits}
       `);
       const vRow = visitStmt.get(codeUpper, codeNoHyphen, codeWithL, codeWithoutL, codeNoHyphen, cutoff);
       if (vRow && vRow.totalVisits > 0) {
@@ -753,7 +772,7 @@ class HistoryDatabase {
           OR UPPER(line_id) = ?
           OR UPPER(line_id) = ?
           OR UPPER(REPLACE(REPLACE(line_code, '-', ''), '_', '')) = ?
-        ) AND timestamp >= ? AND ${VALID_DELAY_SQL}
+        ) AND timestamp >= ? AND ${VALID_DELAY_SQL}${service.logs}
       `);
       const row = stmt.get(codeUpper, codeNoHyphen, codeWithL, codeWithoutL, idClean, idUpper, codeUpper, codeNoHyphen, cutoff);
       if (row && row.totalSamples > 0) {
@@ -778,10 +797,12 @@ class HistoryDatabase {
 
       // 3. Check hourly visit rollup
       const hourlyVisitStmt = this.db.prepare(`
-        SELECT 
+        SELECT
           SUM(visit_count) as totalVisits,
           SUM(sample_count) as totalSamples,
-          AVG(avg_delay_mins) as avgDelayMins,
+          -- Weighted by volume: a plain AVG of hourly averages counts an hour
+          -- with one visit as much as an hour with two hundred.
+          SUM(delay_sum) * 1.0 / NULLIF(SUM(visit_count), 0) as avgDelayMins,
           MAX(max_delay_mins) as maxDelayMins,
           SUM(on_time_count) as onTimeCount,
           SUM(early_count) as earlyCount,
@@ -813,11 +834,13 @@ class HistoryDatabase {
 
       // 4. Check legacy hourly sample rollup
       const hourlyStmt = this.db.prepare(`
-        SELECT 
+        SELECT
           SUM(sample_count) as totalSamples,
-          AVG(avg_delay_mins) as avgDelayMins,
+          SUM(COALESCE(delay_sum, avg_delay_mins * sample_count)) * 1.0 / NULLIF(SUM(sample_count), 0) as avgDelayMins,
           MAX(max_delay_mins) as maxDelayMins,
           SUM(on_time_count) as onTimeCount,
+          SUM(early_count) as earlyCount,
+          SUM(CASE WHEN early_count IS NULL THEN 1 ELSE 0 END) as legacyHours,
           SUM(late_count) as lateCount
         FROM hourly_line_stats
         WHERE (UPPER(line_code) = ? OR UPPER(line_code) = ? OR UPPER(line_code) = ?) AND timestamp >= ?
@@ -825,40 +848,31 @@ class HistoryDatabase {
       const hRow = hourlyStmt.get(codeUpper, codeNoHyphen, codeWithL, cutoff);
       if (hRow && hRow.totalSamples > 0) {
         const total = hRow.totalSamples;
-        const onTimePct = Math.round((hRow.onTimeCount / total) * 100);
-        const latePct = Math.round((hRow.lateCount / total) * 100);
+        const pct = n => Math.max(0, Math.min(100, Math.round((n / total) * 100)));
+        // Hours rolled up before early buses were counted apart folded them into
+        // on-time, so neither figure can be stated for a window containing one.
+        const splitKnown = !hRow.legacyHours;
         return {
           totalVisits: total,
           totalSamples: total,
           sampleCount: total,
           avgDelayMins: Math.round((hRow.avgDelayMins || 0) * 10) / 10,
           maxDelayMins: hRow.maxDelayMins || 0,
-          onTimePct: Math.max(0, Math.min(100, onTimePct)),
-          earlyPct: 0,
-          latePct: Math.max(0, Math.min(100, latePct)),
+          onTimePct: splitKnown ? pct(hRow.onTimeCount) : null,
+          earlyPct: splitKnown ? pct(hRow.earlyCount || 0) : null,
+          latePct: pct(hRow.lateCount),
           moderateLatePct: null,
           severeLatePct: null,
           severitySplitMeasured: false,
-          severitySplitNote: 'hourly_line_stats keeps a single "late > 3 min" bucket, so the moderate/severe split cannot be measured for rolled-up hours'
+          severitySplitNote: 'hourly_line_stats keeps a single "late > 3 min" bucket, so the moderate/severe split cannot be measured for rolled-up hours',
+          earlySplitNote: splitKnown ? '' : 'rolled-up hours before early buses were counted apart: on-time and early cannot be separated'
         };
       }
 
-      return {
-        totalVisits: 0,
-        totalSamples: 0,
-        sampleCount: 0,
-        avgDelayMins: 0,
-        maxDelayMins: 0,
-        onTimePct: 100,
-        earlyPct: 0,
-        latePct: 0,
-        moderateLatePct: 0,
-        severeLatePct: 0,
-        isBaseline: true
-      };
+      return { ...NO_LINE_STATS };
     } catch (e) {
       console.error('[HistoryDB] getLineDelayStats error:', e.message);
-      return { totalVisits: 0, totalSamples: 0, sampleCount: 0, avgDelayMins: 0, maxDelayMins: 0, onTimePct: 100, earlyPct: 0, latePct: 0, isBaseline: true };
+      return { ...NO_LINE_STATS };
     }
   }
 
@@ -873,6 +887,9 @@ class HistoryDatabase {
       const tbl = useVisits ? 'stop_visits' : 'delay_logs';
       const tsCol = useVisits ? 'last_ts' : 'timestamp';
       const scopeSql = useVisits ? MATARO_VISITS_SCOPE_SQL : MATARO_SCOPE_SQL;
+      // Every figure below counts the same rows as the incident tables: in
+      // service, and not measured against a trip the bus was not running.
+      const serviceSql = this._serviceFilter({ since: cutoff, tables: [useVisits ? 'visits' : 'logs'] })[useVisits ? 'visits' : 'logs'];
 
       // 1. Overall Summary (excluding phantom ghost delays from parked/unclosed sessions)
       const summaryStmt = this.db.prepare(`
@@ -888,7 +905,7 @@ class HistoryDatabase {
           SUM(CASE WHEN is_realtime = 0 THEN 1 ELSE 0 END) as nonRealtimeSamples,
           ${useVisits ? 'SUM(sample_count)' : 'COUNT(*)'} as rawSampleCount
         FROM ${tbl}
-        WHERE ${tsCol} >= ? AND ${VALID_DELAY_SQL}${scopeSql}
+        WHERE ${tsCol} >= ? AND ${VALID_DELAY_SQL}${scopeSql}${serviceSql}
       `);
       const sum = summaryStmt.get(cutoff) || {};
       const totalArrivals = sum.totalRecordedArrivals || 0;
@@ -908,7 +925,7 @@ class HistoryDatabase {
           ROUND((SUM(CASE WHEN ${EARLY_SQL} THEN 1.0 ELSE 0.0 END) / COUNT(*)) * 100, 1) as earlyPercentage,
           ROUND((SUM(CASE WHEN ${LATE_SQL} THEN 1.0 ELSE 0.0 END) / COUNT(*)) * 100, 1) as latePercentage
         FROM ${tbl}
-        WHERE ${tsCol} >= ? AND ${VALID_DELAY_SQL}${scopeSql}
+        WHERE ${tsCol} >= ? AND ${VALID_DELAY_SQL}${scopeSql}${serviceSql}
         GROUP BY line_code
         HAVING sampleCount >= 1
         ORDER BY avgDelay DESC
@@ -991,7 +1008,7 @@ class HistoryDatabase {
           ROUND((SUM(CASE WHEN ${EARLY_SQL} THEN 1.0 ELSE 0.0 END) / COUNT(*)) * 100, 1) as earlyPct,
           ROUND((SUM(CASE WHEN ${LATE_SQL} THEN 1.0 ELSE 0.0 END) / COUNT(*)) * 100, 1) as latePct
         FROM ${tbl}
-        WHERE ${tsCol} >= ? AND ${VALID_DELAY_SQL}${scopeSql}
+        WHERE ${tsCol} >= ? AND ${VALID_DELAY_SQL}${scopeSql}${serviceSql}
         GROUP BY ${useVisits ? '1' : 'agency'}
         HAVING totalSamples >= 1
         ORDER BY avgDelay DESC
@@ -1020,9 +1037,8 @@ class HistoryDatabase {
           MAX(delay_mins) as maxDelay,
           ROUND((SUM(CASE WHEN ${SEVERE_LATE_SQL} THEN 1.0 ELSE 0.0 END) / COUNT(*)) * 100, 1) as severeLatePct
         FROM ${tbl}
-        WHERE ${tsCol} >= ? AND ${VALID_DELAY_SQL}${scopeSql}
+        WHERE ${tsCol} >= ? AND ${VALID_DELAY_SQL}${scopeSql}${serviceSql}
           AND madrid_hour(${tsCol}) NOT IN ('00', '01', '02', '03', '04')
-          AND is_telemetry_anomaly(${tsCol}, delay_mins, stop_name) = 0
         GROUP BY agency, recordedLineId, stopId
         HAVING arrivalCount >= 1
         ORDER BY avgDelay DESC, maxDelay DESC
@@ -1032,18 +1048,15 @@ class HistoryDatabase {
 
       const getHourlyTrafficContext = (hourNum) => this.getHourlyTrafficContext(hourNum);
 
-      // Official scheduled operating hours for Mataró Bus Urbà lines L1-L8.
-      // Outside these revenue hours, no buses operate and hourly cells are strictly empty.
-      const lineOperatingHours = {
-        '1': { minH: 5, maxH: 22 }, 'L1': { minH: 5, maxH: 22 },
-        '2': { minH: 5, maxH: 22 }, 'L2': { minH: 5, maxH: 22 },
-        '3': { minH: 6, maxH: 22 }, 'L3': { minH: 6, maxH: 22 },
-        '4': { minH: 7, maxH: 22 }, 'L4': { minH: 7, maxH: 22 },
-        '5': { minH: 5, maxH: 22 }, 'L5': { minH: 5, maxH: 22 },
-        '6': { minH: 6, maxH: 22 }, 'L6': { minH: 6, maxH: 22 },
-        '7': { minH: 7, maxH: 21 }, 'L7': { minH: 7, maxH: 21 },
-        '8': { minH: 6, maxH: 22 }, 'L8': { minH: 6, maxH: 22 }
-      };
+      // Published operating hours of each line (any day type of the season in
+      // force). Outside them no bus runs and hourly cells stay empty. This was
+      // a hand-written table that stopped L1 and L3 at 22:00 (they run until
+      // 23:05) and started L3 at 06:00 (it leaves at 05:28).
+      const lineOperatingHours = {};
+      for (let l = 1; l <= 8; l++) {
+        const op = serviceHours.operatingHours(String(l));
+        if (op) { lineOperatingHours[String(l)] = op; lineOperatingHours[`L${l}`] = op; }
+      }
 
       // Query Hourly Breakdown for All Stops
       const stopHourlyStmt = this.db.prepare(`
@@ -1059,9 +1072,8 @@ class HistoryDatabase {
           MAX(delay_mins) as maxDelay,
           ROUND((SUM(CASE WHEN ${SEVERE_LATE_SQL} THEN 1.0 ELSE 0.0 END) / COUNT(*)) * 100, 1) as severeLatePct
         FROM ${tbl}
-        WHERE ${tsCol} >= ? AND ${VALID_DELAY_SQL}${scopeSql}
+        WHERE ${tsCol} >= ? AND ${VALID_DELAY_SQL}${scopeSql}${serviceSql}
           AND madrid_hour(${tsCol}) NOT IN ('00', '01', '02', '03', '04')
-          AND is_telemetry_anomaly(${tsCol}, delay_mins, stop_name) = 0
         GROUP BY hourOfDay, agency, recordedLineId, stopId
         ORDER BY hourOfDay ASC, avgDelay DESC, arrivalCount DESC
       `);
@@ -1174,9 +1186,8 @@ class HistoryDatabase {
           ROUND((SUM(CASE WHEN ${LATE_SQL} THEN 1.0 ELSE 0.0 END) / COUNT(*)) * 100, 1) as latePercentage,
           ROUND((SUM(CASE WHEN ${SEVERE_LATE_SQL} THEN 1.0 ELSE 0.0 END) / COUNT(*)) * 100, 1) as severeLatePercentage
         FROM ${tbl}
-        WHERE ${tsCol} >= ? AND ${VALID_DELAY_SQL}${scopeSql}
+        WHERE ${tsCol} >= ? AND ${VALID_DELAY_SQL}${scopeSql}${serviceSql}
           AND madrid_hour(${tsCol}) NOT IN ('00', '01', '02', '03', '04')
-          AND is_telemetry_anomaly(${tsCol}, delay_mins, stop_name) = 0
         GROUP BY hourOfDay
         ORDER BY hourOfDay ASC
       `);
@@ -1324,7 +1335,7 @@ class HistoryDatabase {
 
       if (useVisits) {
         try {
-          const compWhere = `WHERE last_ts >= ? AND measured_method = 'operator_trip' AND measured_delay_mins IS NOT NULL AND ${VALID_DELAY_SQL}${scopeSql}`;
+          const compWhere = `WHERE last_ts >= ? AND measured_method = 'operator_trip' AND measured_delay_mins IS NOT NULL AND ${VALID_DELAY_SQL}${scopeSql}${serviceSql}`;
           const compCols = `
               COUNT(*) as comparedVisits,
               AVG(delay_mins) as operatorAvgDelay,
@@ -1426,7 +1437,7 @@ class HistoryDatabase {
         linesPunctuality: [],
         hourlyPunctuality: [],
         worstStops: [],
-        dataCoverage: { activeFeedHours: 0, scheduledServiceHours: 0, coveragePct: 0, operatingWindowDaily: '05:00 - 23:00' },
+        dataCoverage: { activeFeedHours: 0, scheduledServiceHours: 0, coveragePct: null, operatingWindowDaily: "horari publicat de cada línia i dia" },
         methodology: ''
       };
     }
@@ -1441,6 +1452,7 @@ class HistoryDatabase {
       const tbl = useVisits ? 'stop_visits' : 'delay_logs';
       const tsCol = useVisits ? 'last_ts' : 'timestamp';
       const scopeSql = useVisits ? MATARO_VISITS_SCOPE_SQL : MATARO_SCOPE_SQL;
+      const serviceSql = this._serviceFilter({ since: startTs, until: Math.min(Date.now(), endTs), tables: [useVisits ? 'visits' : 'logs'] })[useVisits ? 'visits' : 'logs'];
 
       // 2. Network Summary
       const summaryStmt = this.db.prepare(`
@@ -1454,19 +1466,21 @@ class HistoryDatabase {
           SUM(CASE WHEN ${LATE_SQL} THEN 1 ELSE 0 END) as lateCount,
           SUM(CASE WHEN ${SEVERE_LATE_SQL} THEN 1 ELSE 0 END) as severeLateCount
         FROM ${tbl}
-        WHERE ${tsCol} >= ? AND ${tsCol} < ? AND ${VALID_DELAY_SQL}${scopeSql}
+        WHERE ${tsCol} >= ? AND ${tsCol} < ? AND ${VALID_DELAY_SQL}${scopeSql}${serviceSql}
       `);
       const sumRow = summaryStmt.get(startTs, endTs) || {};
       const totalVisits = sumRow.totalVisits || 0;
+      // A month without data has no punctuality: null, shown as "--", not 0 %.
+      const share = n => (totalVisits > 0 ? Math.round((n * 1000) / totalVisits) / 10 : null);
       const summary = {
         totalVisits,
         monitoredLinesCount: sumRow.monitoredLinesCount || 0,
-        avgDelayMins: Math.round((sumRow.networkAvgDelay || 0) * 10) / 10,
-        maxDelayMins: sumRow.networkMaxDelay || 0,
-        onTimePct: totalVisits > 0 ? Math.round((sumRow.onTimeCount * 1000) / totalVisits) / 10 : 0,
-        earlyPct: totalVisits > 0 ? Math.round((sumRow.earlyCount * 1000) / totalVisits) / 10 : 0,
-        latePct: totalVisits > 0 ? Math.round((sumRow.lateCount * 1000) / totalVisits) / 10 : 0,
-        severeLatePct: totalVisits > 0 ? Math.round((sumRow.severeLateCount * 1000) / totalVisits) / 10 : 0,
+        avgDelayMins: totalVisits > 0 ? Math.round((sumRow.networkAvgDelay || 0) * 10) / 10 : null,
+        maxDelayMins: totalVisits > 0 ? (sumRow.networkMaxDelay ?? null) : null,
+        onTimePct: share(sumRow.onTimeCount),
+        earlyPct: share(sumRow.earlyCount),
+        latePct: share(sumRow.lateCount),
+        severeLatePct: share(sumRow.severeLateCount),
         basis: useVisits ? 'stop_visits' : 'delay_logs'
       };
 
@@ -1482,7 +1496,7 @@ class HistoryDatabase {
           SUM(CASE WHEN ${LATE_SQL} THEN 1 ELSE 0 END) as lateCount,
           SUM(CASE WHEN ${SEVERE_LATE_SQL} THEN 1 ELSE 0 END) as severeLateCount
         FROM ${tbl}
-        WHERE ${tsCol} >= ? AND ${tsCol} < ? AND ${VALID_DELAY_SQL}${scopeSql}
+        WHERE ${tsCol} >= ? AND ${tsCol} < ? AND ${VALID_DELAY_SQL}${scopeSql}${serviceSql}
         GROUP BY line_code
         ORDER BY line_code ASC
       `);
@@ -1511,7 +1525,7 @@ class HistoryDatabase {
           SUM(CASE WHEN ${LATE_SQL} THEN 1 ELSE 0 END) as lateCount,
           SUM(CASE WHEN ${SEVERE_LATE_SQL} THEN 1 ELSE 0 END) as severeLateCount
         FROM ${tbl}
-        WHERE ${tsCol} >= ? AND ${tsCol} < ? AND ${VALID_DELAY_SQL}${scopeSql}
+        WHERE ${tsCol} >= ? AND ${tsCol} < ? AND ${VALID_DELAY_SQL}${scopeSql}${serviceSql}
         GROUP BY hourStr
         ORDER BY hourStr ASC
       `);
@@ -1544,7 +1558,7 @@ class HistoryDatabase {
           ROUND((SUM(CASE WHEN ${LATE_SQL} THEN 1.0 ELSE 0.0 END) / COUNT(*)) * 100, 1) as latePct,
           ROUND((SUM(CASE WHEN ${SEVERE_LATE_SQL} THEN 1.0 ELSE 0.0 END) / COUNT(*)) * 100, 1) as severeLatePct
         FROM ${tbl}
-        WHERE ${tsCol} >= ? AND ${tsCol} < ? AND ${VALID_DELAY_SQL}${scopeSql}
+        WHERE ${tsCol} >= ? AND ${tsCol} < ? AND ${VALID_DELAY_SQL}${scopeSql}${serviceSql}
         GROUP BY stop_name
         HAVING visitCount >= 50
         ORDER BY avgDelayMins DESC
@@ -1555,36 +1569,42 @@ class HistoryDatabase {
         avgDelayMins: Math.round((r.avgDelayMins || 0) * 10) / 10
       }));
 
-      // 6. Data Coverage: hours with a working feed / service hours
+      // 6. Data Coverage: of the hours with published service (each date's own
+      // timetable: day type, holidays and season), those with any record. A
+      // fixed 05:00-23:00 window counted Sunday 05:00-08:00, when no line runs,
+      // as hours without data.
       const now = Date.now();
       const effectiveEndTs = Math.min(now, endTs);
-      let scheduledServiceHours = 0;
+      const pad2 = n => String(n).padStart(2, '0');
+      const scheduledHourKeys = new Set();
       if (effectiveEndTs > startTs) {
         const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
         for (let d = 1; d <= daysInMonth; d++) {
-          for (let h = 5; h <= 22; h++) {
+          for (const h of serviceHours.serviceHoursOnDate(year, month, d)) {
             const hourTs = toMadridUtcEpoch(year, month, d, h);
-            if (hourTs >= startTs && hourTs < effectiveEndTs) {
-              scheduledServiceHours++;
-            }
+            if (hourTs >= startTs && hourTs < effectiveEndTs) scheduledHourKeys.add(`${year}-${pad2(month)}-${pad2(d)} ${pad2(h)}`);
           }
         }
       }
-
-      const feedHoursStmt = this.db.prepare(`
-        SELECT COUNT(DISTINCT substr(madrid_datetime(${tsCol}), 1, 13)) as activeHours
+      const scheduledServiceHours = scheduledHourKeys.size;
+      const activeFeedHours = this.db.prepare(`
+        SELECT DISTINCT substr(madrid_datetime(${tsCol}), 1, 13) as hourKey
         FROM ${tbl}
         WHERE ${tsCol} >= ? AND ${tsCol} < ?
-          AND CAST(madrid_hour(${tsCol}) AS INTEGER) >= 5
-          AND CAST(madrid_hour(${tsCol}) AS INTEGER) <= 22
-      `);
-      const activeFeedHours = feedHoursStmt.get(startTs, effectiveEndTs)?.activeHours || 0;
+      `).all(startTs, effectiveEndTs).filter(r => scheduledHourKeys.has(r.hourKey)).length;
       const coveragePct = scheduledServiceHours > 0
         ? Math.min(100, Math.round((activeFeedHours * 1000) / scheduledServiceHours) / 10)
-        : 100;
+        : null;
 
       // 7. Methodology Text (in Catalan)
-      const methodology = "L'Informe Mensual de Puntualitat i Qualitat de Servei de Mataró Bus Urbà s'elabora mitjançant el registre autònom de la telemetria en temps real (SIRI) proveïda per l'operador Avanza i la seva comparació contra els horaris oficials per expedició publicats a maresme.net en l'àmbit horari de referència Europe/Madrid. La unitat d'anàlisi és el pas consolidat per parada (stop_visits), el qual elimina qualsevol biaix derivat de cues, retencions o mostreig repetit a semàfors. Els criteris de puntualitat segueixen els estàndards objectius de la plataforma: avançat (retard < -1 min, considerat no puntual atès que comporta la pèrdua del servei per als viatgers que acudeixen a l'hora fixada), puntual (-1 min a +3 min), retardat (> 3 min) i retard greu (>= 5 min). Les parades més afectades s'avaluen amb un filtre de significació estadística mínim de 50 passos consolidats al llarg del mes. La taxa de cobertura de dades reflecteix la proporció d'hores operatives (de 05:00 a 23:00) amb telemetria vàlida rebuda respecte a les hores programades de servei.";
+      // Says what the figures are: the operator's own delay, per stop visit when
+      // there are visits, and what is left out. It used to claim visits even
+      // when it fell back to raw samples, and a comparison against maresme.net
+      // that the delay figures do not make.
+      const unitText = useVisits
+        ? "La unitat d'anàlisi és el pas consolidat per parada (stop_visits): un bus a una parada compta una sola vegada, sense el biaix de cues, retencions o mostreig repetit."
+        : "Aquest mes no té passos consolidats per parada: les xifres es calculen sobre mostres individuals del feed, i un mateix bus pot comptar diverses vegades a la mateixa parada.";
+      const methodology = `L'Informe Mensual de Puntualitat i Qualitat de Servei de Mataró Bus Urbà es basa en el retard que el sistema de l'operador (Avanza, feed SIRI) informa per a cada bus, registrat per Arribo! cada 20 segons en horari Europe/Madrid. ${unitText} Criteris de puntualitat: avançat (retard < -1 min, no puntual perquè qui arriba a l'hora fixada perd el bus), puntual (-1 a +3 min), retardat (> 3 min) i retard greu (>= 5 min). Queden fora els registres fora de l'horari publicat de cada línia, els de 10 min o més a la primera mitja hora de servei de la línia (un bus que comença torn assignat a una expedició anterior) i els trams en què el retard es mesurava contra una expedició que el bus no feia (reassignacions del SAE, tornades sense servei i salts de retard impossibles). Les parades més afectades requereixen un mínim de 50 passos al mes. La cobertura de dades és la proporció d'hores amb servei publicat, segons l'horari de cada dia, en què s'ha rebut alguna dada.`;
 
       return {
         month: normMonth,
@@ -1600,7 +1620,7 @@ class HistoryDatabase {
           activeFeedHours,
           scheduledServiceHours,
           coveragePct,
-          operatingWindowDaily: '05:00 - 23:00'
+          operatingWindowDaily: "horari publicat de cada línia i dia"
         },
         methodology
       };
@@ -1618,7 +1638,7 @@ class HistoryDatabase {
         linesPunctuality: [],
         hourlyPunctuality: [],
         worstStops: [],
-        dataCoverage: { activeFeedHours: 0, scheduledServiceHours: 0, coveragePct: 0, operatingWindowDaily: '05:00 - 23:00' },
+        dataCoverage: { activeFeedHours: 0, scheduledServiceHours: 0, coveragePct: null, operatingWindowDaily: "horari publicat de cada línia i dia" },
         methodology: ''
       };
     }
@@ -1746,8 +1766,12 @@ class HistoryDatabase {
 
   getHourlyTrafficContext(hourNum) {
     const h = Number(hourNum) || 0;
-    if (h >= 0 && h < 6) {
+    if (h >= 0 && h < 5) {
       return { tag: '🔧 Cotxeres / Manteniment nocturn', isSchoolHour: false, isPeak: false, icon: '🔧', isDepot: true };
+    }
+    if (h === 5) {
+      // L1 and L2 leave at 05:25 on weekdays: this hour has service.
+      return { tag: '🌅 Primeres sortides', isSchoolHour: false, isPeak: false, icon: '🌅', isDepot: false };
     }
     if (h === 6) {
       return { tag: '🌅 Inici servei matinal', isSchoolHour: false, isPeak: false, icon: '🌅', isDepot: false };
@@ -1782,15 +1806,12 @@ class HistoryDatabase {
     return { tag: '🌙 Tancament servei', isSchoolHour: false, isPeak: false, icon: '🌙', isDepot: false };
   }
 
-  getAnomalyContext(timestamp, delayMins, stopName) {
+  getAnomalyContext(timestamp, delayMins, stopName, lineCode) {
     const sName = String(stopName || '').toLowerCase();
     const isDepotStop = sName.includes('cotxeres') || sName.includes('depot') || sName.includes('taller');
-    const d = new Date(Number(timestamp));
-    const timeStr = MADRID_HOUR_MINUTE.format(d);
-    const [hStr] = timeStr.split(':');
-    const h = parseInt(hStr, 10);
 
-    if (h >= 23 || h < 6 || isDepotStop) {
+    // Same rule as is_telemetry_anomaly: outside the line's published service.
+    if (isDepotStop || serviceHours.isOutsideRevenueService(lineCode, Number(timestamp))) {
       return {
         anomalyType: 'maintenance',
         diagnosticBadge: '🔧 Cotxeres / Manteniment nocturn',
@@ -1883,31 +1904,62 @@ class HistoryDatabase {
           MAX(CASE WHEN delay_mins < 25 THEN delay_mins END) as maxCommercialDelay,
           SUM(CASE WHEN is_realtime = 0 THEN 1 ELSE 0 END) as nonRealtimeCount
         FROM delay_logs
-        WHERE ${serviceWhere} AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
+        WHERE ${serviceWhere} AND is_telemetry_anomaly(timestamp, delay_mins, stop_name, line_code) = 0
       `);
       const agg = aggStmt.get(...baseParams) || { totalCount: 0, maxDelay: 0, maxCommercialDelay: null, nonRealtimeCount: 0 };
 
-      // Worst stop
-      const worstStopStmt = this.db.prepare(`
-        SELECT stop_name as stopName, COUNT(*) as cnt
-        FROM delay_logs
-        WHERE ${serviceWhere} AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
-        GROUP BY stop_name
-        ORDER BY cnt DESC
-        LIMIT 1
-      `);
-      const worstStopRow = worstStopStmt.get(...baseParams);
-
-      // Worst hour
-      const worstHourStmt = this.db.prepare(`
-        SELECT madrid_hour(timestamp) as hourOfDay, COUNT(*) as cnt
-        FROM delay_logs
-        WHERE ${serviceWhere} AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
-        GROUP BY hourOfDay
-        ORDER BY cnt DESC
-        LIMIT 1
-      `);
-      const worstHourRow = worstHourStmt.get(...baseParams);
+      // Worst stop and worst hour, counted in stop visits (one bus at one stop)
+      // when the window has them. They used to count raw 20-second samples, so
+      // a bus waiting at a terminus counted many times, and the busiest hour
+      // always "had the most delays". The hour is the one with the largest
+      // share of late visits among hours with at least WORST_HOUR_MIN_VISITS.
+      const visitLineWhere = isAll ? MATARO_VISITS_SCOPE_SQL : ' AND (UPPER(line_code) = ? OR UPPER(line_code) = ?)';
+      const visitLineParams = isAll ? [] : [codeWithL, codeWithoutL];
+      const visitFilter = this._serviceFilter({ since: cutoff, lineCode: isAll ? null : codeWithL, tables: ['visits'], windowsReady: true }).visits;
+      const visitServiceWhere = `last_ts >= ? AND ${VALID_DELAY_SQL}${visitLineWhere}${visitFilter}`;
+      const hasVisits = (this.db.prepare(`SELECT COUNT(*) AS c FROM stop_visits WHERE ${visitServiceWhere}`).get(cutoff, ...visitLineParams)?.c || 0) > 0;
+      let worstStopRow;
+      let worstHourRow;
+      let worstBasis;
+      if (hasVisits) {
+        worstBasis = 'visits';
+        worstStopRow = this.db.prepare(`
+          SELECT stop_name as stopName, COUNT(*) as cnt
+          FROM stop_visits
+          WHERE ${visitServiceWhere} AND delay_mins >= ?
+          GROUP BY stop_name
+          ORDER BY cnt DESC
+          LIMIT 1
+        `).get(cutoff, ...visitLineParams, minDelayNum);
+        const hourRows = this.db.prepare(`
+          SELECT madrid_hour(last_ts) as hourOfDay, COUNT(*) as visits, SUM(CASE WHEN delay_mins >= ? THEN 1 ELSE 0 END) as cnt
+          FROM stop_visits
+          WHERE ${visitServiceWhere}
+          GROUP BY hourOfDay
+        `).all(minDelayNum, cutoff, ...visitLineParams).filter(r => r.cnt > 0);
+        const enough = hourRows.filter(r => r.visits >= WORST_HOUR_MIN_VISITS);
+        const pool = enough.length ? enough : hourRows;
+        worstHourRow = pool.sort((a, b) => (b.cnt / b.visits) - (a.cnt / a.visits) || b.cnt - a.cnt)[0] || null;
+        if (worstHourRow) worstHourRow.latePct = Math.round((worstHourRow.cnt / worstHourRow.visits) * 100);
+      } else {
+        worstBasis = 'samples';
+        worstStopRow = this.db.prepare(`
+          SELECT stop_name as stopName, COUNT(*) as cnt
+          FROM delay_logs
+          WHERE ${serviceWhere} AND is_telemetry_anomaly(timestamp, delay_mins, stop_name, line_code) = 0
+          GROUP BY stop_name
+          ORDER BY cnt DESC
+          LIMIT 1
+        `).get(...baseParams);
+        worstHourRow = this.db.prepare(`
+          SELECT madrid_hour(timestamp) as hourOfDay, COUNT(*) as cnt
+          FROM delay_logs
+          WHERE ${serviceWhere} AND is_telemetry_anomaly(timestamp, delay_mins, stop_name, line_code) = 0
+          GROUP BY hourOfDay
+          ORDER BY cnt DESC
+          LIMIT 1
+        `).get(...baseParams);
+      }
 
       // 2. Query candidates partitioned into:
       // a) Regular service incidents: non-anomalies with delay < 25 min (0-24 min)
@@ -1929,7 +1981,7 @@ class HistoryDatabase {
           madrid_hour(timestamp) as hourOfDay,
           0 as isAnomaly
         FROM delay_logs
-        WHERE ${serviceWhere} AND delay_mins < 25 AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
+        WHERE ${serviceWhere} AND delay_mins < 25 AND is_telemetry_anomaly(timestamp, delay_mins, stop_name, line_code) = 0
         ORDER BY delay_mins DESC, timestamp DESC
         LIMIT 3000
       `);
@@ -1951,7 +2003,7 @@ class HistoryDatabase {
           madrid_hour(timestamp) as hourOfDay,
           0 as isAnomaly
         FROM delay_logs
-        WHERE ${serviceWhere} AND delay_mins >= 25 AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
+        WHERE ${serviceWhere} AND delay_mins >= 25 AND is_telemetry_anomaly(timestamp, delay_mins, stop_name, line_code) = 0
         ORDER BY delay_mins DESC, timestamp DESC
         LIMIT 2000
       `);
@@ -1973,13 +2025,13 @@ class HistoryDatabase {
           madrid_hour(timestamp) as hourOfDay,
           1 as isAnomaly
         FROM delay_logs
-        WHERE ${sqlWhere} AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 1
+        WHERE ${sqlWhere} AND is_telemetry_anomaly(timestamp, delay_mins, stop_name, line_code) = 1
         ORDER BY delay_mins DESC, timestamp DESC
         LIMIT 2000
       `);
       const rawAnomalyRows = anomalyStmt.all(...baseParams);
       const anomalyCandidates = rawAnomalyRows.map(r => {
-        const anomalyCtx = this.getAnomalyContext(r.timestamp, r.delayMins, r.stopName);
+        const anomalyCtx = this.getAnomalyContext(r.timestamp, r.delayMins, r.stopName, r.lineCode);
         return {
           ...r,
           ...anomalyCtx
@@ -2002,7 +2054,7 @@ class HistoryDatabase {
           madrid_hour(timestamp) as hourOfDay,
           1 as isAnomaly
         FROM delay_logs
-        WHERE ${sqlWhere} AND ${IN_RELINK_SQL} AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
+        WHERE ${sqlWhere} AND ${IN_RELINK_SQL} AND is_telemetry_anomaly(timestamp, delay_mins, stop_name, line_code) = 0
         ORDER BY delay_mins DESC, timestamp DESC
         LIMIT 2000
       `);
@@ -2150,7 +2202,7 @@ class HistoryDatabase {
           AND timestamp > ?
           AND timestamp <= ?
           AND delay_mins < ?
-          AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
+          AND is_telemetry_anomaly(timestamp, delay_mins, stop_name, line_code) = 0
         ORDER BY timestamp ASC
         LIMIT 10
       `);
@@ -2159,7 +2211,7 @@ class HistoryDatabase {
         SELECT stop_name as stopName, delay_mins as delayMins, direction, timestamp
         FROM delay_logs
         WHERE vehicle_id = ? AND timestamp >= ? AND timestamp <= ?
-          AND is_telemetry_anomaly(timestamp, delay_mins, stop_name) = 0
+          AND is_telemetry_anomaly(timestamp, delay_mins, stop_name, line_code) = 0
         ORDER BY timestamp ASC
         LIMIT 2000
       `);
@@ -2177,8 +2229,7 @@ class HistoryDatabase {
         const activeTracks = [];
 
         rows.forEach(r => {
-          const h = parseInt(r.hourOfDay, 10);
-          const isDepotHour = h < 6;
+          const isDepotHour = serviceHours.isOutsideRevenueService(r.lineCode, r.timestamp);
 
           // Retire stale tracks from activeTracks:
           // 1. Inactive for > 12 minutes
@@ -2204,8 +2255,7 @@ class HistoryDatabase {
           let bestScore = -1;
 
           for (const t of activeTracks) {
-            const prevWasDepot = parseInt(t.hourOfDay, 10) < 6;
-            if (isDepotHour !== prevWasDepot) continue;
+            if (isDepotHour !== Boolean(t.isDepot)) continue;
 
             // 1. Exact vehicleId match
             if (r.vehicleId && t.vehicleId) {
@@ -2360,7 +2410,7 @@ class HistoryDatabase {
         const durMins = Math.round((c.lastTs - c.firstTs) / 60000);
         const h = parseInt(c.hourOfDay, 10);
         const ctx = this.getHourlyTrafficContext(h);
-        const isDepot = h < 6;
+        const isDepot = Boolean(c.isDepot);
         const isMovingTraffic = !isDepot && c.stops.length > 1;
 
         let incidentType = 'traffic';
@@ -2456,6 +2506,8 @@ class HistoryDatabase {
             : null,
           worstStop: worstStopRow?.stopName || 'Cap',
           worstStopCount: worstStopRow?.cnt || 0,
+          worstBasis,
+          worstHourLatePct: worstHourRow && worstHourRow.latePct !== undefined ? worstHourRow.latePct : null,
           worstHour: worstHourStr,
           worstHourTag: worstHourContext ? worstHourContext.tag : '',
           movingCount,
@@ -2515,8 +2567,8 @@ class HistoryDatabase {
    * bus's samples; only those buses' three hours before each drop are loaded to
    * rebuild the stale stretch.
    */
-  _findTripRelinks({ since, until = Date.now(), lineWhereSql = '', lineParams = [] } = {}) {
-    const drops = this.db.prepare(`
+  _findTripRelinks({ since, until = Date.now(), lineWhereSql = '', lineParams = [] } = {}, candidates = null) {
+    const drops = candidates || this.db.prepare(`
       SELECT vehicleId, timestamp FROM (
         SELECT vehicle_id AS vehicleId, UPPER(line_code) AS lineCode, direction, timestamp, delay_mins AS delayMins,
           LAG(delay_mins) OVER w AS prevDelay,
@@ -2556,8 +2608,8 @@ class HistoryDatabase {
    * trip time, so direction changes are found in SQL with LAG and only buses
    * that flip there and back that fast have their samples loaded.
    */
-  _findDeadheadReturns({ since, until = Date.now(), lineWhereSql = '', lineParams = [] } = {}) {
-    const changes = this.db.prepare(`
+  _findDeadheadReturns({ since, until = Date.now(), lineWhereSql = '', lineParams = [] } = {}, candidates = null) {
+    const changes = candidates || this.db.prepare(`
       SELECT vehicleId, lineCode, direction, timestamp FROM (
         SELECT vehicle_id AS vehicleId, UPPER(line_code) AS lineCode, direction, timestamp,
           LAG(direction) OVER w AS prevDirection,
@@ -2705,8 +2757,8 @@ class HistoryDatabase {
    * over each bus's samples; only those buses' three hours from each rise are
    * loaded to follow the stale stretch.
    */
-  _findDelayJumps({ since, until = Date.now(), lineWhereSql = '', lineParams = [] } = {}) {
-    const rises = this.db.prepare(`
+  _findDelayJumps({ since, until = Date.now(), lineWhereSql = '', lineParams = [] } = {}, candidates = null) {
+    const rises = candidates || this.db.prepare(`
       SELECT vehicleId, prevTs FROM (
         SELECT vehicle_id AS vehicleId, UPPER(line_code) AS lineCode, timestamp, delay_mins AS delayMins,
           LAG(delay_mins) OVER w AS prevDelay,
@@ -2739,15 +2791,52 @@ class HistoryDatabase {
   }
 
   /**
+   * The candidate rows of all three phantom detectors from ONE pass over each
+   * bus's samples (the LAG scan is the expensive part; running it once instead
+   * of three times keeps a 7-day report at the cost it had before): relink
+   * drops, direction changes (deadhead returns) and delay jumps, each with the
+   * same conditions as the finder's own query.
+   */
+  _phantomCandidates({ since, until = Date.now(), lineWhereSql = '', lineParams = [] } = {}) {
+    const rows = this.db.prepare(`
+      SELECT vehicleId, lineCode, direction, timestamp, delayMins, prevTs, prevDelay, prevDirection FROM (
+        SELECT vehicle_id AS vehicleId, UPPER(line_code) AS lineCode, direction, timestamp, delay_mins AS delayMins,
+          LAG(delay_mins) OVER w AS prevDelay,
+          LAG(timestamp) OVER w AS prevTs,
+          LAG(UPPER(line_code)) OVER w AS prevLine,
+          LAG(direction) OVER w AS prevDirection
+        FROM delay_logs
+        WHERE vehicle_id <> '' AND timestamp >= ? AND timestamp <= ?${lineWhereSql}
+        WINDOW w AS (PARTITION BY vehicle_id ORDER BY timestamp)
+      )
+      WHERE lineCode = prevLine AND (
+        (direction <> '' AND prevDirection <> '' AND direction <> prevDirection)
+        OR (prevDelay - delayMins >= ? AND timestamp - prevTs <= ? AND direction <> '' AND direction = prevDirection)
+        OR (prevDelay >= ? AND delayMins - prevDelay >= ? AND timestamp - prevTs <= ? AND (delayMins - prevDelay) * 60000 > (timestamp - prevTs) + ?)
+      )
+      ORDER BY vehicleId, timestamp
+    `).all(since, until, ...lineParams, RELINK_DROP_MINS, RELINK_WINDOW_MS, JUMP_FROM_MIN_MINS, JUMP_MIN_MINS, JUMP_MAX_GAP_MS, JUMP_SLACK_MINS * 60000);
+    const dir = r => (r === null || r === undefined ? '' : String(r));
+    return {
+      drops: rows.filter(r => r.prevDelay - r.delayMins >= RELINK_DROP_MINS && r.timestamp - r.prevTs <= RELINK_WINDOW_MS
+        && dir(r.direction) !== '' && dir(r.direction) === dir(r.prevDirection)),
+      changes: rows.filter(r => dir(r.direction) !== '' && dir(r.prevDirection) !== '' && dir(r.direction) !== dir(r.prevDirection)),
+      rises: rows.filter(r => r.prevDelay >= JUMP_FROM_MIN_MINS && r.delayMins - r.prevDelay >= JUMP_MIN_MINS
+        && r.timestamp - r.prevTs <= JUMP_MAX_GAP_MS && (r.delayMins - r.prevDelay) * 60000 > (r.timestamp - r.prevTs) + JUMP_SLACK_MINS * 60000)
+    };
+  }
+
+  /**
    * Every stretch whose delay was measured against a trip the bus was not
    * running (trip relinks, deadhead returns, impossible delay jumps), with the
    * windows _setRelinkWindows takes. Shared by the incident tables and the
    * punctuality reports so both leave out the same records.
    */
   _findPhantomStretches(lineScope) {
-    const relinks = this._findTripRelinks(lineScope);
-    const deadheads = this._findDeadheadReturns(lineScope);
-    const jumps = this._findDelayJumps(lineScope);
+    const candidates = this._phantomCandidates(lineScope);
+    const relinks = this._findTripRelinks(lineScope, candidates.drops);
+    const deadheads = this._findDeadheadReturns(lineScope, candidates.changes);
+    const jumps = this._findDelayJumps(lineScope, candidates.rises);
     const windows = [
       ...relinks,
       ...deadheads.map(d => ({ vehicleId: d.vehicleId, lineCode: d.lineCode, staleFromTs: d.phantomFromTs, staleToTs: d.phantomToTs })),
@@ -2756,9 +2845,50 @@ class HistoryDatabase {
     return { relinks, deadheads, jumps, windows };
   }
 
+  /**
+   * The rows every punctuality figure counts, as SQL to append to a WHERE
+   * clause over stop_visits (`visits`) or delay_logs (`logs`): inside the
+   * line's published service, not a shift-start misassignment, and not inside
+   * a stretch measured against a trip the bus was not running. The excluded
+   * rows of [since, until] are computed ONCE into temp.excluded_visits /
+   * temp.excluded_logs (a report runs a dozen queries over the same rows), so
+   * build the statements that use them before the next call.
+   * The incident tables have applied this since trip relinks were detected;
+   * the summary, rankings, monthly report and line pages now apply it too.
+   * `windowsReady` reuses the stretches the caller already put in
+   * temp.relink_windows.
+   */
+  _serviceFilter({ since, until = Date.now(), lineCode = null, tables = ['visits', 'logs'], windowsReady = false } = {}) {
+    const code = lineCode ? String(lineCode).toUpperCase() : null;
+    if (!windowsReady) {
+      const scope = code
+        ? { lineWhereSql: ' AND UPPER(line_code) = ?', lineParams: [code] }
+        : { lineWhereSql: MATARO_SCOPE_SQL, lineParams: [] };
+      // A stretch can start up to a few hours before the window it reaches into.
+      const { windows } = this._findPhantomStretches({ since: since - 3 * 3600 * 1000, until, ...scope });
+      this._setRelinkWindows(windows);
+    }
+    const out = {};
+    const exclude = (name, table, tsCol, inRelinkSql, scopeSql) => {
+      this.db.exec(`CREATE TEMP TABLE IF NOT EXISTS ${name} (id INTEGER PRIMARY KEY)`);
+      this.db.exec(`DELETE FROM temp.${name}`);
+      this.db.prepare(`
+        INSERT INTO temp.${name} (id)
+        SELECT id FROM ${table}
+        WHERE ${tsCol} >= ? AND ${tsCol} <= ?${code ? ' AND UPPER(line_code) = ?' : scopeSql}
+          AND (${inRelinkSql} OR is_telemetry_anomaly(${tsCol}, delay_mins, stop_name, line_code) = 1)
+      `).run(since, until, ...(code ? [code] : []));
+      return ` AND id NOT IN (SELECT id FROM temp.${name})`;
+    };
+    if (tables.includes('visits')) out.visits = exclude('excluded_visits', 'stop_visits', 'last_ts', VISIT_IN_RELINK_SQL, MATARO_VISITS_SCOPE_SQL);
+    if (tables.includes('logs')) out.logs = exclude('excluded_logs', 'delay_logs', 'timestamp', IN_RELINK_SQL, MATARO_SCOPE_SQL);
+    return out;
+  }
+
   /** Refill temp.relink_windows, which IN_RELINK_SQL reads. */
   _setRelinkWindows(relinks) {
     this.db.exec('CREATE TEMP TABLE IF NOT EXISTS relink_windows (vehicle_id TEXT, line_code TEXT, from_ts INTEGER, to_ts INTEGER)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS temp.idx_relink_windows_vehicle ON relink_windows (vehicle_id, line_code)');
     this.db.exec('DELETE FROM temp.relink_windows');
     const insert = this.db.prepare('INSERT INTO temp.relink_windows (vehicle_id, line_code, from_ts, to_ts) VALUES (?, ?, ?, ?)');
     for (const r of relinks) insert.run(r.vehicleId, r.lineCode, r.staleFromTs, r.staleToTs);
@@ -2848,7 +2978,7 @@ class HistoryDatabase {
           direction, times_source as timesSource,
           is_realtime as isRealTime, timestamp, madrid_datetime(timestamp) as formattedDate,
           scheduled_time as scheduledTime, actual_time as actualTime,
-          is_telemetry_anomaly(timestamp, delay_mins, stop_name) as isAnomaly
+          is_telemetry_anomaly(timestamp, delay_mins, stop_name, line_code) as isAnomaly
         FROM delay_logs
         WHERE ${sqlWhere}
         ORDER BY timestamp ASC
@@ -3192,7 +3322,8 @@ class HistoryDatabase {
           -- across two buckets and fed the wrong per-line punctuality.
           substr(madrid_datetime(timestamp), 1, 13) || ':00' AS date_hour,
           COUNT(*) AS samples, SUM(delay_mins) AS delay_sum, MAX(delay_mins) AS max_delay,
-          SUM(CASE WHEN delay_mins <= 3 THEN 1 ELSE 0 END) AS on_time,
+          SUM(CASE WHEN ${ON_TIME_SQL} THEN 1 ELSE 0 END) AS on_time,
+          SUM(CASE WHEN ${EARLY_SQL} THEN 1 ELSE 0 END) AS early,
           SUM(CASE WHEN delay_mins > 3 THEN 1 ELSE 0 END) AS late,
           MIN(timestamp) AS timestamp
         FROM delay_logs WHERE id > ? AND id <= ?
@@ -3201,13 +3332,13 @@ class HistoryDatabase {
       const existing = this.db.prepare('SELECT * FROM hourly_line_stats WHERE line_code = ? AND date_hour = ?');
       const save = this.db.prepare(`
         INSERT INTO hourly_line_stats
-          (line_code, agency, date_hour, sample_count, delay_sum, avg_delay_mins, max_delay_mins, on_time_count, late_count, timestamp)
-        VALUES (?, ?, ?, ?, ?, ROUND(? * 1.0 / ?, 2), ?, ?, ?, ?)
+          (line_code, agency, date_hour, sample_count, delay_sum, avg_delay_mins, max_delay_mins, on_time_count, early_count, late_count, timestamp)
+        VALUES (?, ?, ?, ?, ?, ROUND(? * 1.0 / ?, 2), ?, ?, ?, ?, ?)
         ON CONFLICT(line_code, date_hour) DO UPDATE SET
           agency = excluded.agency, sample_count = excluded.sample_count,
           delay_sum = excluded.delay_sum, avg_delay_mins = excluded.avg_delay_mins,
           max_delay_mins = excluded.max_delay_mins, on_time_count = excluded.on_time_count,
-          late_count = excluded.late_count, timestamp = excluded.timestamp
+          early_count = excluded.early_count, late_count = excluded.late_count, timestamp = excluded.timestamp
       `);
       for (const batch of batches) {
         const previous = existing.get(batch.line_code, batch.date_hour);
@@ -3219,7 +3350,10 @@ class HistoryDatabase {
         const sum = (base ? (base.delay_sum ?? base.avg_delay_mins * base.sample_count) : 0) + batch.delay_sum;
         save.run(batch.line_code, base?.agency ?? batch.agency, batch.date_hour, samples,
           sum, sum, samples, base ? Math.max(base.max_delay_mins, batch.max_delay) : batch.max_delay,
-          (base?.on_time_count || 0) + batch.on_time, (base?.late_count || 0) + batch.late,
+          (base?.on_time_count || 0) + batch.on_time,
+          // A legacy row (early_count NULL) stays legacy: its on-time part already includes early buses.
+          base && (base.early_count === null || base.early_count === undefined) ? null : (base?.early_count || 0) + batch.early,
+          (base?.late_count || 0) + batch.late,
           base ? Math.min(base.timestamp, batch.timestamp) : batch.timestamp);
       }
       this.db.prepare(`

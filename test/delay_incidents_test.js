@@ -178,10 +178,21 @@ assert.strictEqual(l1IncidentsLow.topIncidents[0].lineCode, 'L1');
 console.log('✅ Delay threshold boundary filtering verified.');
 
 console.log('\n--- 5b. Testing telemetryAnomalies partitioning & diagnostics ---');
-// Insert an early morning SAE startup anomaly at 06:03 (Madrid time) with +16 min delay
+// Madrid wall-clock instants today. A fixed "+02:00" suffix was an hour off in
+// winter time, so 06:03 became 05:03 after the last Sunday of October.
+const timeEngine = require('../src/core/time/timeEngine');
+const tripMatcher = require('../src/core/schedule/tripMatcher');
+const seasonCalendar = require('../src/data/seasonCalendar');
+const mataroSchedules = require('../src/data/mataroSchedules');
 const madridFmt = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit' });
 const [dDay, dMon, dYr] = madridFmt.format(new Date()).split('/');
-const morning0603Ts = new Date(`${dYr}-${dMon}-${dDay}T06:03:09+02:00`).getTime();
+const madridToday = (sec) => timeEngine.localTimeToUtcDate(Number(dYr), Number(dMon) - 1, Number(dDay),
+  Math.floor(sec / 3600), Math.floor((sec % 3600) / 60), sec % 60).getTime();
+// A shift-start misassignment: +16 min in the first half hour of L2's service
+// today (its first departure depends on the day type and season).
+const todayNoon = madridToday(12 * 3600);
+const l2Window = mataroSchedules.getServiceWindow('2', tripMatcher.resolveDayType(todayNoon).dayType, seasonCalendar.resolveSeason(todayNoon).season);
+const morning0603Ts = madridToday(l2Window.firstDepartureSec + 8 * 60 + 9);
 
 historyDb.recordDelayLog({
   lineId: '2',
@@ -196,8 +207,8 @@ historyDb.recordDelayLog({
   timestamp: morning0603Ts
 });
 
-// Insert an early morning 05:14 telemetry ping (pre-service / maintenance)
-const morning0514Ts = new Date(`${dYr}-${dMon}-${dDay}T05:14:46+02:00`).getTime();
+// Insert an early morning 05:14 telemetry ping: L7 publishes no service before 07:00 on any day.
+const morning0514Ts = madridToday(5 * 3600 + 14 * 60 + 46);
 historyDb.recordDelayLog({
   lineId: '7',
   lineCode: 'L7',
@@ -215,10 +226,10 @@ const anomaliesCheck = historyDb.getDelayIncidents({ lineCode: 'all', hours: 48,
 assert.ok(Array.isArray(anomaliesCheck.telemetryAnomalies));
 assert.ok(anomaliesCheck.telemetryAnomalies.length >= 3, 'Should have nocturnal maintenance, 05:14 maintenance, and 06:03 morning rollout anomalies');
 
-// Check 05:14 anomaly: before 06:00 is maintenance, NOT startup_sae
+// Check 05:14 anomaly: outside L7's published service is maintenance, NOT startup_sae
 const early0514Anomaly = anomaliesCheck.telemetryAnomalies.find(a => a.lineCode === 'L7' && a.timestamp === morning0514Ts);
 assert.ok(early0514Anomaly, '05:14 telemetry must be caught in telemetryAnomalies');
-assert.strictEqual(early0514Anomaly.anomalyType, 'maintenance', '05:14 before 06:00 must be classified as maintenance');
+assert.strictEqual(early0514Anomaly.anomalyType, 'maintenance', '05:14, before L7 starts, must be classified as maintenance');
 assert.strictEqual(early0514Anomaly.diagnosticBadge, '🔧 Cotxeres / Manteniment nocturn');
 assert.ok(early0514Anomaly.formattedDate.includes('05:14:46'), 'formattedDate must be formatted in Madrid time (05:14:46)');
 
@@ -229,7 +240,7 @@ assert.strictEqual(maintAnomaly.anomalyType, 'maintenance');
 assert.strictEqual(maintAnomaly.diagnosticBadge, '🔧 Cotxeres / Manteniment nocturn');
 assert.strictEqual(maintAnomaly.trafficIcon, '🔧');
 
-// Check early morning startup anomaly (L2 06:03:09)
+// Check the shift-start anomaly (L2, 8 min after its first departure)
 const startupAnomaly = anomaliesCheck.telemetryAnomalies.find(a => a.lineCode === 'L2' && a.stopName === 'Sant Isidor');
 assert.ok(startupAnomaly, 'Early morning rollout anomaly must be detected in telemetryAnomalies');
 assert.strictEqual(startupAnomaly.anomalyType, 'startup_sae');

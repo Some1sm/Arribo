@@ -1548,17 +1548,23 @@ class TransitApp {
       }
     }
 
-    const latePct = (stats && typeof stats.latePct === 'number') ? stats.latePct : 0;
-    const avgDelay = (stats && typeof stats.avgDelayMins === 'number' && stats.totalSamples > 0) ? `${stats.avgDelayMins} min` : '-- min';
+    // A share of a handful of stop visits is noise, and no data is not 0 %:
+    // below LINE_STATS_MIN_VISITS the page says "--" rather than "0%".
+    const LINE_STATS_MIN_VISITS = 20;
+    const visits = stats ? Number(stats.totalVisits ?? stats.totalSamples ?? 0) || 0 : 0;
+    const enough = visits >= LINE_STATS_MIN_VISITS;
+    const latePct = enough && typeof stats.latePct === 'number' ? stats.latePct : null;
+    const avgDelay = enough && typeof stats.avgDelayMins === 'number' ? `${stats.avgDelayMins} min` : '-- min';
 
-    delayValEl.textContent = `${latePct}%`;
+    delayValEl.textContent = latePct === null ? '--' : `${latePct}%`;
     if (avgValEl) avgValEl.textContent = avgDelay;
 
     if (pillEl) {
       pillEl.classList.remove('moderate', 'severe');
-      if (latePct > 25) {
+      pillEl.title = enough ? '' : `Poques dades: ${visits} passos per parada en 24 h`;
+      if (latePct !== null && latePct > 25) {
         pillEl.classList.add('severe');
-      } else if (latePct > 10) {
+      } else if (latePct !== null && latePct > 10) {
         pillEl.classList.add('moderate');
       }
     }

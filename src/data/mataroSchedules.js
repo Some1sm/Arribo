@@ -644,22 +644,28 @@ module.exports = {
  * Calculates the revenue service window for a line on a given dayType:
  * from (first departure of the day − 15 min) to (last departure + that trip's duration from dayTrips + 20 min).
  *
+ * `firstDepartureSec` / `lastStopSec` are the published bounds without the
+ * margins. The day type is normalized ('Feiners', 'saturday', ...), and a
+ * direction without per-trip times falls back to its total trip time.
+ *
  * @param {string|number} lineId
  * @param {string} [dayType='weekday']
  * @param {string|null} [season=null]
- * @returns {{ startSec: number, endSec: number } | null}
+ * @returns {{ startSec: number, endSec: number, firstDepartureSec: number, lastStopSec: number } | null}
  */
 function getServiceWindow(lineId, dayType = 'weekday', season = null) {
   const lId = String(lineId).replace(/^l/i, '');
   const sched = getLineSchedule(lId, season);
   if (!sched || !sched.directions) return null;
+  const day = normalizeDayType(dayType);
 
   let minOriginSec = Infinity;
   let maxEndSec = -Infinity;
 
   for (const dk of Object.keys(sched.directions)) {
     const dir = sched.directions[dk];
-    const trips = dir.dayTrips?.[dayType] || [];
+    if (dir._invalid) continue;
+    const trips = dir.dayTrips?.[day] || [];
     if (trips.length > 0) {
       for (const t of trips) {
         const s = t.s || [];
@@ -675,9 +681,11 @@ function getServiceWindow(lineId, dayType = 'weekday', season = null) {
         if (lastSec !== null && lastSec > maxEndSec) maxEndSec = lastSec;
       }
     } else {
-      // Fallback to departures and median totalTravelSec
-      const deps = dir.schedules?.[dayType] || [];
-      const travelSec = dir.dayStopTravelSec?.[dayType]?.totalTravelSec || 1800;
+      // Fallback to departures and the direction's total trip time. (This read
+      // dayStopTravelSec[day].totalTravelSec, a key that map never has, so it
+      // always assumed 30 minutes.)
+      const deps = dir.schedules?.[day] || [];
+      const travelSec = dir.dayTravelSec?.[day] || dir.totalTravelSec || 1800;
       for (const clock of deps) {
         const sec = timeStringToSec(clock);
         if (sec < minOriginSec) minOriginSec = sec;
@@ -693,7 +701,9 @@ function getServiceWindow(lineId, dayType = 'weekday', season = null) {
 
   return {
     startSec: minOriginSec - 15 * 60,
-    endSec: maxEndSec + 20 * 60
+    endSec: maxEndSec + 20 * 60,
+    firstDepartureSec: minOriginSec,
+    lastStopSec: maxEndSec
   };
 }
 

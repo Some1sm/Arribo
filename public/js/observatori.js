@@ -879,7 +879,7 @@ class ObservatoriApp {
         return `
         <div style="background:rgba(16,185,129,0.06); border:1px solid rgba(16,185,129,0.25); border-radius:10px; padding:0.8rem 1rem; margin-bottom:1.25rem; font-size:0.78rem; color:var(--text-secondary); line-height:1.5;">
           <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.35rem;">
-            <strong style="color:var(--accent-live); font-size:0.84rem;">🎯 Contrast independent: retard informat vs. pas mesurat</strong>
+            <strong style="color:var(--accent-live); font-size:0.84rem;">🎯 Contrast: retard informat vs. pas mesurat</strong>
             <span style="font-size:0.75rem; font-family:var(--font-mono); font-weight:600; background:rgba(16,185,129,0.15); color:${tone(comp.agreementPct)}; padding:0.15rem 0.5rem; border-radius:9999px;">
               ${pctStr(comp.agreementPct)} d'acord (≤1 min)
             </span>
@@ -887,6 +887,7 @@ class ObservatoriApp {
           <div>
             Sobre <strong>${num(comp.comparedVisits)} passos per parada</strong>, comparem el retard que informa l'operador
             amb l'hora a què el GPS mostra que el bus ha passat per la parada, mesurada contra l'horari publicat del mateix viatge.
+            L'acord diu que el nostre rellotge i el de l'operador coincideixen; no prova que el bus fes aquell viatge (això ho mira la línia següent).
             Retard mitjà informat: <strong>${signed(comp.operatorAvgDelay)}</strong> ·
             mesurat per Arribo!: <strong>${signed(comp.measuredAvgDelay)}</strong> ·
             diferència mitjana: <strong>${signed(comp.biasMins)}</strong>.
@@ -1350,7 +1351,7 @@ class ObservatoriApp {
             <tbody>
               ${agencies.map(a => {
                 const aAvg = Number(a.avgDelay) > 0 ? `+${a.avgDelay} min` : (Number(a.avgDelay) < 0 ? `${a.avgDelay} min` : '0.0 min');
-                const onTime = a.onTimePct !== undefined && a.onTimePct !== null ? Number(a.onTimePct) : 100;
+                const onTime = a.onTimePct !== undefined && a.onTimePct !== null ? Number(a.onTimePct) : null;
                 return `
                 <tr>
                   <td class="sticky-col" style="font-weight:700; color:var(--text-primary);">${this.esc(a.agency)}</td>
@@ -1358,7 +1359,7 @@ class ObservatoriApp {
                   <td class="observatori-col-desktop" style="color:var(--text-muted);">${(a.totalVisits || a.totalSamples || 0).toLocaleString('ca-ES')}</td>
                   <td style="font-weight:700; color:${Number(a.avgDelay) > 0 ? 'var(--accent-danger)' : 'var(--accent-live)'}; white-space:nowrap;">${aAvg}</td>
                   <td style="white-space:nowrap;">
-                    <span style="font-weight:700; color:${onTime >= 85 ? 'var(--accent-live)' : 'var(--accent-warning)'};">${onTime.toLocaleString('ca-ES')}%</span>
+                    <span style="font-weight:700; color:${onTime === null ? 'var(--text-muted)' : (onTime >= 85 ? 'var(--accent-live)' : 'var(--accent-warning)')};">${onTime === null ? '—' : `${onTime.toLocaleString('ca-ES')}%`}</span>
                     <span style="font-size:0.7rem; color:var(--text-muted); margin-left:0.3rem;">puntual${a.earlyPct ? ` · ${Number(a.earlyPct).toLocaleString('ca-ES')}% avançat` : ''}${a.latePct ? ` · ${Number(a.latePct).toLocaleString('ca-ES')}% tard` : ''}</span>
                   </td>
                 </tr>
@@ -2320,9 +2321,9 @@ class ObservatoriApp {
           <div>
             <div style="font-size:0.78rem; font-weight:800; color:var(--accent-warning);">Què compten exactament aquestes xifres</div>
             <div style="font-size:0.76rem; color:var(--text-secondary); margin-top:0.2rem; line-height:1.5;">
-              Els KPIs (${this._fmtCount(s.rawSamplesOverThreshold ?? s.totalRecordedIncidents)} mostres, ${this._fmtCount(s.worstStopCount)} a ${this.esc(s.worstStop || 'cap parada')}) són
-              <strong>mostres raw</strong>: un mateix autobús hi apareix cada 20 s. Les taules de dalt, en canvi, mostren
-              <strong>epodis deduplicats</strong>${s.listedCommercialEpisodes !== undefined ? ` (${this._fmtCount(s.listedCommercialEpisodes)} de servei, arrodonits al límit de ${s.commercialEpisodeLimit})` : ''}:
+              Els KPIs de mostres (${this._fmtCount(s.rawSamplesOverThreshold ?? s.totalRecordedIncidents)} mostres) són
+              <strong>mostres raw</strong>: un mateix autobús hi apareix cada 20 s.${s.worstBasis === 'visits' ? ' El punt negre i la franja es compten en <strong>passos per parada</strong> (un bus a una parada, una vegada).' : ''} Les taules de dalt, en canvi, mostren
+              <strong>episodis deduplicats</strong>${s.listedCommercialEpisodes !== undefined ? ` (${this._fmtCount(s.listedCommercialEpisodes)} de servei, arrodonits al límit de ${s.commercialEpisodeLimit})` : ''}:
               no són xifres comparables entre elles.
             </div>
             <div style="font-size:0.76rem; color:var(--text-secondary); margin-top:0.35rem; line-height:1.5;">
@@ -2486,13 +2487,13 @@ class ObservatoriApp {
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
           <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">Punt Negre (Més Afectat)</div>
           <div style="font-size:1.05rem; font-weight:700; color:var(--brand-primary); margin-top:0.25rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${this.esc(s.worstStop || 'Cap')}">${this.esc(s.worstStop || 'Cap')}</div>
-          <div style="font-size:0.72rem; color:var(--text-muted);">${s.worstStopCount || 0} afectacions registrades</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">${this._fmtCount(s.worstStopCount || 0)} ${s.worstBasis === 'visits' ? (s.worstStopCount === 1 ? 'pas' : 'passos') : (s.worstStopCount === 1 ? 'mostra raw' : 'mostres raw')} amb retard &ge; ${s.minDelayThreshold || 5} min</div>
         </div>
 
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
           <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">Franja amb Més Retards</div>
           <div style="font-size:1.15rem; font-weight:700; color:var(--accent-warning); margin-top:0.25rem;">${s.worstHour || '--:00'}</div>
-          <div style="font-size:0.72rem; color:var(--text-muted);">${s.worstHourTag || 'Horari regular'}</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">${s.worstHourLatePct !== null && s.worstHourLatePct !== undefined ? `${s.worstHourLatePct}% dels passos amb retard &ge; ${s.minDelayThreshold || 5} min · ` : ''}${s.worstHourTag || 'Horari regular'}</div>
         </div>
 
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
@@ -2719,7 +2720,7 @@ class ObservatoriApp {
                 Anomalies de Telemetria SAE &amp; Sortida de Cotxeres (${anomaliesList.length})
               </h4>
               <p style="font-size:0.78rem; color:var(--text-muted); margin:0; max-width:740px; line-height:1.45;">
-                Aquests registres no corresponen a retencions de trànsit de la ciutat, sinó a <strong>desfasaments de telemetria generats pel sistema SAE (CAD/AVL) d'Avanza</strong> a primera hora del matí (arrencada de servei abans de les 06:15) o durant proves nocturnes a cotxeres. També hi apareixen els <strong>viatges reassignats pel SAE</strong> (🔀): trams on el retard desapareix de cop perquè el sistema tenia el bus assignat a un viatge que no feia, i els <strong>salts de retard impossibles</strong> (⏫): el retard puja més de pressa que passa el temps perquè el sistema passa el bus a una expedició anterior. Es publiquen aquí per facilitar l'auditoria i la seva correcció per part de l'Ajuntament de Mataró.
+                Aquests registres no corresponen a retencions de trànsit de la ciutat, sinó a <strong>desfasaments de telemetria generats pel sistema SAE (CAD/AVL) d'Avanza</strong> fora de l'horari publicat de cada línia (sortides i tornades a cotxeres) o amb 10 min o més durant la primera mitja hora de servei de la línia (un bus que comença torn assignat a una expedició anterior). També hi apareixen els <strong>viatges reassignats pel SAE</strong> (🔀): trams on el retard desapareix de cop perquè el sistema tenia el bus assignat a un viatge que no feia, i els <strong>salts de retard impossibles</strong> (⏫): el retard puja més de pressa que passa el temps perquè el sistema passa el bus a una expedició anterior. Es publiquen aquí per facilitar l'auditoria i la seva correcció per part de l'Ajuntament de Mataró.
               </p>
             </div>
             ${anomaliesList.length > 0 ? `
@@ -3254,7 +3255,7 @@ class ObservatoriApp {
         <div class="monthly-kpi-grid">
           <div class="monthly-kpi-card">
             <div class="kpi-val">${(s.totalVisits || 0).toLocaleString('ca-ES')}</div>
-            <div class="kpi-lbl">Passos avaluats (stop_visits)</div>
+            <div class="kpi-lbl">${s.basis === 'delay_logs' ? 'Mostres avaluades (sense passos consolidats)' : 'Passos avaluats (stop_visits)'}</div>
           </div>
           <div class="monthly-kpi-card">
             <div class="kpi-val" style="color:var(--color-on-time, #2e7d32);">${s.onTimePct ?? '--'}%</div>
