@@ -2035,6 +2035,9 @@ class ObservatoriApp {
         headline = { tone: 'var(--accent-warning)', title: 'Tornada sense servei', text: `Aquest registre no és un pas real. Després ${afterStop(dh.lastServedStop)} (${this.esc(dh.lastServedTime)}) el bus ${this.esc(dh.vehicleId)} va deixar de fer servei i va tornar sense passatgers fins a ${this.esc(dh.resumeStop)}, on consta a les ${this.esc(dh.resumeTime)}. Mentre tornava, el sistema de l'operador va continuar anotant parades que el bus no servia.` };
       } else if (ep.tripRelink) {
         headline = { tone: 'var(--accent-warning)', title: 'Viatge reassignat pel SAE', text: `A ${this.esc(ep.tripRelink.stopName)} el retard passa de +${ep.tripRelink.delayBefore} a ${ep.tripRelink.delayAfter} min de cop: cap autobús pot recuperar tant de temps entre dues parades. El sistema de l'operador tenia el bus assignat a un viatge que no feia, i el retard anterior es mesurava contra aquell viatge. No és un retard real verificable.` };
+      } else if (ep.verdict === 'delay_jump' && ep.delayJump) {
+        const jp = ep.delayJump;
+        headline = { tone: 'var(--accent-warning)', title: 'Salt de retard impossible', text: `El sistema de l'operador va passar el bus ${this.esc(jp.vehicleId)} de ${signed(jp.delayBefore)} min a ${this.esc(jp.beforeStop)} (${this.esc(jp.beforeTime)}) a ${signed(jp.delayAfter)} min a ${this.esc(jp.jumpStop)} (${this.esc(jp.jumpTime)}), només ${jp.elapsedMins} min després. Un retard no pot créixer més de pressa que passa el temps: el sistema el va assignar a una expedició anterior a la que feia (ja feta, o d'un altre bus), i el retard es mesurava contra aquella. Aquests registres no compten com a retard del servei.` };
       } else if (!run) {
         headline = { tone: 'var(--text-muted)', title: 'Recorregut no disponible', text: 'Aquestes mostres no tenen un únic identificador de bus, així que no es pot reconstruir el seu recorregut.' };
       } else {
@@ -2078,7 +2081,7 @@ class ObservatoriApp {
       // Where the delay came from: back to the last stop without delay (often several
       // trips earlier), with the places where it grew most. Not for a record that is
       // not a real delay (deadhead return, trip relink).
-      const origin = run && run.origin && ep.verdict !== 'deadhead_return' && !ep.tripRelink ? run.origin : null;
+      const origin = run && run.origin && ep.verdict !== 'deadhead_return' && ep.verdict !== 'delay_jump' && !ep.tripRelink ? run.origin : null;
       const originPlace = e => {
         const span = `${this.esc(hhmm(e.fromTime))}–${this.esc(hhmm(e.toTime))}, ${signed(e.fromDelay)} → ${signed(e.toDelay)} min`;
         if (e.kind === 'between') return `entre ${this.esc(e.previousStop)} i ${this.esc(e.stopName)} (${span})`;
@@ -2106,6 +2109,7 @@ class ObservatoriApp {
         unverifiable: ['var(--accent-danger)', 'No verificable', 'No hi ha identificador de bus ni cap altra evidència.'],
         telemetry_anomaly: ['var(--text-muted)', 'Fora de servei', 'Registre de nit o a cotxeres: no és un retard de servei.'],
         trip_relink: ['var(--accent-warning)', 'Viatge reassignat pel SAE', 'El retard es mesurava contra un viatge que el bus no feia.'],
+        delay_jump: ['var(--accent-warning)', 'Salt de retard impossible', 'El retard va pujar més de pressa que el rellotge: es mesurava contra una expedició que el bus no feia.'],
         deadhead_return: ['var(--accent-warning)', 'Tornada sense servei', 'Anotat mentre el bus tornava sense passatgers: no és un pas real per aquesta parada.']
       };
       const [vTone, vTitle, vText] = verdicts[ep.verdict] || ['var(--text-primary)', 'Sense veredicte', ''];
@@ -2195,7 +2199,7 @@ class ObservatoriApp {
         ${shortTurnNote}
         ${deadheadNote}
         <p class="drilldown-context">
-          Parada consultada: <strong>${this.esc(clicked ? clicked.stopName : (data.stopName || stopName))}</strong>${clicked && clicked.time ? ` a les ${this.esc(hhmm(clicked.time))}` : ''} · ${ep.verdict === 'deadhead_return' ? `retard anotat: ${signed(ep.peakDelayMins)} min, que no és un pas real` : `retard màxim en aquesta parada: ${signed(ep.peakDelayMins)} min`}.${run ? ` A sota, tot el que va registrar aquest bus entre les ${this.esc(hhmm(runRows[0].time))} i les ${this.esc(hhmm(runRows[runRows.length - 1].time))}.` : ''}
+          Parada consultada: <strong>${this.esc(clicked ? clicked.stopName : (data.stopName || stopName))}</strong>${clicked && clicked.time ? ` a les ${this.esc(hhmm(clicked.time))}` : ''} · ${ep.verdict === 'deadhead_return' ? `retard anotat: ${signed(ep.peakDelayMins)} min, que no és un pas real` : ep.verdict === 'delay_jump' ? `retard anotat: ${signed(ep.peakDelayMins)} min, mesurat contra una expedició que el bus no feia` : `retard màxim en aquesta parada: ${signed(ep.peakDelayMins)} min`}.${run ? ` A sota, tot el que va registrar aquest bus entre les ${this.esc(hhmm(runRows[0].time))} i les ${this.esc(hhmm(runRows[runRows.length - 1].time))}.` : ''}
         </p>
         ${tripLink}
         <div class="drilldown-table-scroll">
@@ -2715,7 +2719,7 @@ class ObservatoriApp {
                 Anomalies de Telemetria SAE &amp; Sortida de Cotxeres (${anomaliesList.length})
               </h4>
               <p style="font-size:0.78rem; color:var(--text-muted); margin:0; max-width:740px; line-height:1.45;">
-                Aquests registres no corresponen a retencions de trànsit de la ciutat, sinó a <strong>desfasaments de telemetria generats pel sistema SAE (CAD/AVL) d'Avanza</strong> a primera hora del matí (arrencada de servei abans de les 06:15) o durant proves nocturnes a cotxeres. També hi apareixen els <strong>viatges reassignats pel SAE</strong> (🔀): trams on el retard desapareix de cop perquè el sistema tenia el bus assignat a un viatge que no feia. Es publiquen aquí per facilitar l'auditoria i la seva correcció per part de l'Ajuntament de Mataró.
+                Aquests registres no corresponen a retencions de trànsit de la ciutat, sinó a <strong>desfasaments de telemetria generats pel sistema SAE (CAD/AVL) d'Avanza</strong> a primera hora del matí (arrencada de servei abans de les 06:15) o durant proves nocturnes a cotxeres. També hi apareixen els <strong>viatges reassignats pel SAE</strong> (🔀): trams on el retard desapareix de cop perquè el sistema tenia el bus assignat a un viatge que no feia, i els <strong>salts de retard impossibles</strong> (⏫): el retard puja més de pressa que passa el temps perquè el sistema passa el bus a una expedició anterior. Es publiquen aquí per facilitar l'auditoria i la seva correcció per part de l'Ajuntament de Mataró.
               </p>
             </div>
             ${anomaliesList.length > 0 ? `
@@ -2749,7 +2753,7 @@ class ObservatoriApp {
                   ${anomaliesList.map((inc, i) => {
                     const lColor = getLineColor(inc.lineCode);
                     const isStartup = inc.anomalyType === 'startup_sae';
-                    const isRelink = inc.anomalyType === 'trip_relink' || inc.anomalyType === 'deadhead_return';
+                    const isRelink = inc.anomalyType === 'trip_relink' || inc.anomalyType === 'deadhead_return' || inc.anomalyType === 'delay_jump';
                     const isMaintenance = inc.anomalyType === 'maintenance' || (!isStartup && !isRelink);
                     const badgeBg = (isStartup || isRelink) ? 'rgba(245, 158, 11, 0.15)' : 'rgba(147, 51, 234, 0.15)';
                     const badgeColor = (isStartup || isRelink) ? 'var(--accent-warning)' : 'var(--accent-regulating)';
@@ -3049,12 +3053,12 @@ class ObservatoriApp {
     text += `Període: Darreres ${this._currentIncidentHours || 168}h | Línia: ${this._currentIncidentLine || 'Totes'}\n`;
     text += `Data d'extracció: ${new Date().toLocaleString('ca-ES')}\n`;
     text += `Total anomalies detectades: ${list.length}\n\n`;
-    text += `Descripció: Aquests registres corresponen a desfasaments transmesos pel sistema SAE (CAD/AVL) d'Avanza (habitualment per assignació d'autobusos que inicien torn a expedicions anteriors no cobertes o arrencada a cotxeres amb consola encesa abans de sortida). No reflecteixen retencions de trànsit reals a la ciutat. També inclou els viatges reassignats pel SAE: trams on el retard desapareix de cop perquè el sistema tenia el bus assignat a un viatge que no feia. I les tornades sense servei: parades anotades mentre un bus tornava sense passatgers a l'inici de la línia després de saltar-se un viatge.\n\n`;
+    text += `Descripció: Aquests registres corresponen a desfasaments transmesos pel sistema SAE (CAD/AVL) d'Avanza (habitualment per assignació d'autobusos que inicien torn a expedicions anteriors no cobertes o arrencada a cotxeres amb consola encesa abans de sortida). No reflecteixen retencions de trànsit reals a la ciutat. També inclou els viatges reassignats pel SAE: trams on el retard desapareix de cop perquè el sistema tenia el bus assignat a un viatge que no feia. I les tornades sense servei: parades anotades mentre un bus tornava sense passatgers a l'inici de la línia després de saltar-se un viatge. I els salts de retard impossibles: el retard puja més de pressa que passa el temps perquè el sistema passa el bus a una expedició anterior.\n\n`;
     text += `Llistat d'incidències per auditar amb Avanza / Ajuntament de Mataró:\n`;
 
     list.forEach((item, idx) => {
       const sig = item.isRealTime ? 'GPS' : 'Estimat (dead-reckoning)';
-      const isMaint = item.anomalyType === 'maintenance' || (item.anomalyType !== 'startup_sae' && item.anomalyType !== 'trip_relink' && item.anomalyType !== 'deadhead_return');
+      const isMaint = item.anomalyType === 'maintenance' || (item.anomalyType !== 'startup_sae' && item.anomalyType !== 'trip_relink' && item.anomalyType !== 'deadhead_return' && item.anomalyType !== 'delay_jump');
       const stopInfo = isMaint ? 'Cotxeres / Manteniment' : `Parada: "${item.stopName}"`;
       const busTag = item.vehicleId && !item.vehicleId.toLowerCase().endsWith('bus') ? ` | Bus #${item.vehicleId.replace(/^mataro_\w+_/i, '')}` : '';
       text += `${idx + 1}. [${item.lineCode}] ${item.formattedDate} — ${stopInfo} | Retard transmès: +${item.delayMins} min | Causa: ${item.trafficTag || item.diagnosticBadge || 'Anomalia'}${busTag} | Senyal: ${sig}\n`;

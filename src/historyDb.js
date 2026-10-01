@@ -22,6 +22,14 @@ const {
   deadheadTouching,
   DEADHEAD_SPEED_FACTOR
 } = require('./core/schedule/deadheadReturn');
+const {
+  findDelayJumps,
+  jumpCovering,
+  JUMP_MIN_MINS,
+  JUMP_SLACK_MINS,
+  JUMP_MAX_GAP_MS,
+  JUMP_FROM_MIN_MINS
+} = require('./core/schedule/delayJump');
 const mataroSchedules = require('./data/mataroSchedules');
 const { normalizeStopName, resolveDayType } = require('./core/schedule/tripMatcher');
 const timeEngine = require('./core/time/timeEngine');
@@ -136,8 +144,9 @@ function appendMataroScope(sqlWhere, isAll) {
 const EPISODE_GAP_MS = 5 * 60 * 1000;
 
 // A delay_logs row inside a trip-relink stale stretch (see
-// src/core/schedule/tripRelink.js) or a deadhead-return phantom stretch (see
-// src/core/schedule/deadheadReturn.js). temp.relink_windows is refilled by
+// src/core/schedule/tripRelink.js), a deadhead-return phantom stretch (see
+// src/core/schedule/deadheadReturn.js) or an impossible delay jump (see
+// src/core/schedule/delayJump.js). temp.relink_windows is refilled by
 // _setRelinkWindows() at the start of every getDelayIncidents() call.
 const IN_RELINK_SQL = 'EXISTS (SELECT 1 FROM temp.relink_windows rw WHERE rw.vehicle_id = delay_logs.vehicle_id AND rw.line_code = UPPER(delay_logs.line_code) AND delay_logs.timestamp BETWEEN rw.from_ts AND rw.to_ts)';
 
@@ -1859,14 +1868,13 @@ class HistoryDatabase {
         lineWhereSql: isAll ? MATARO_SCOPE_SQL : ' AND (UPPER(line_code) = ? OR UPPER(line_code) = ? OR line_id = ?)',
         lineParams: isAll ? [] : [codeWithL, codeWithoutL, codeWithoutL]
       };
-      const relinks = this._findTripRelinks(lineScope);
       // Deadhead returns: records the operator's system logged while a bus drove
       // back to the start of its route without passengers. Same treatment as a
       // relink stretch; trajectories that end in one end as 'deadhead_return'.
-      const deadheads = this._findDeadheadReturns(lineScope);
-      this._setRelinkWindows([...relinks, ...deadheads.map(d => ({
-        vehicleId: d.vehicleId, lineCode: d.lineCode, staleFromTs: d.phantomFromTs, staleToTs: d.phantomToTs
-      }))]);
+      // Impossible delay jumps: records measured against an earlier trip than
+      // the bus was on (see delayJump.js). Same treatment again.
+      const { relinks, deadheads, jumps, windows } = this._findPhantomStretches(lineScope);
+      this._setRelinkWindows(windows);
       const serviceWhere = `${sqlWhere} AND NOT ${IN_RELINK_SQL}`;
 
       // 1. Summary Aggregate KPIs (filtered to revenue commercial service)
@@ -2010,6 +2018,16 @@ class HistoryDatabase {
           };
         }
         const rl = relinkCovering(relinks, r.vehicleId, r.lineCode, r.timestamp);
+        const jp = rl ? null : jumpCovering(jumps, r.vehicleId, r.lineCode, r.timestamp);
+        if (jp) {
+          return {
+            ...r,
+            anomalyType: 'delay_jump',
+            diagnosticBadge: '⏫ Salt de retard impossible',
+            anomalyIcon: '⏫',
+            delayJump: { delayBefore: jp.delayBefore, delayAfter: jp.delayAfter, beforeStop: jp.beforeStop, jumpStop: jp.jumpStop, elapsedMins: jp.elapsedMins, jumpTs: jp.jumpTs }
+          };
+        }
         return {
           ...r,
           anomalyType: 'trip_relink',
@@ -2447,6 +2465,7 @@ class HistoryDatabase {
           investigationCount: enrichedInvestigation.length,
           tripRelinkEpisodes: relinks.length,
           deadheadReturns: deadheads.length,
+          delayJumps: jumps.length,
           dataQuality: this._delayDataQuality({ hours: hoursNum, lineCode: lineCode })
         },
         topIncidents: enrichedTop,
@@ -2479,7 +2498,8 @@ class HistoryDatabase {
           movingPct: 0,
           investigationCount: 0,
           tripRelinkEpisodes: 0,
-          deadheadReturns: 0
+          deadheadReturns: 0,
+          delayJumps: 0
         },
         topIncidents: [],
         investigationIncidents: [],
@@ -2679,6 +2699,63 @@ class HistoryDatabase {
     return { departure, gap };
   }
 
+  /**
+   * Impossible delay jumps (src/core/schedule/delayJump.js) for identified
+   * buses from `since` to `until`. Candidate rises are found in SQL with LAG
+   * over each bus's samples; only those buses' three hours from each rise are
+   * loaded to follow the stale stretch.
+   */
+  _findDelayJumps({ since, until = Date.now(), lineWhereSql = '', lineParams = [] } = {}) {
+    const rises = this.db.prepare(`
+      SELECT vehicleId, prevTs FROM (
+        SELECT vehicle_id AS vehicleId, UPPER(line_code) AS lineCode, timestamp, delay_mins AS delayMins,
+          LAG(delay_mins) OVER w AS prevDelay,
+          LAG(timestamp) OVER w AS prevTs,
+          LAG(UPPER(line_code)) OVER w AS prevLine
+        FROM delay_logs
+        WHERE vehicle_id <> '' AND timestamp >= ? AND timestamp <= ?${lineWhereSql}
+        WINDOW w AS (PARTITION BY vehicle_id ORDER BY timestamp)
+      )
+      WHERE lineCode = prevLine AND prevDelay >= ? AND delayMins - prevDelay >= ?
+        AND timestamp - prevTs <= ? AND (delayMins - prevDelay) * 60000 > (timestamp - prevTs) + ?
+      ORDER BY vehicleId, timestamp
+    `).all(since, until, ...lineParams, JUMP_FROM_MIN_MINS, JUMP_MIN_MINS, JUMP_MAX_GAP_MS, JUMP_SLACK_MINS * 60000);
+    if (!rises.length) return [];
+    const samplesStmt = this.db.prepare(`
+      SELECT vehicle_id AS vehicleId, line_code AS lineCode, direction, delay_mins AS delayMins, timestamp, stop_name AS stopName
+      FROM delay_logs
+      WHERE vehicle_id = ? AND timestamp >= ? AND timestamp <= ?
+      ORDER BY timestamp ASC
+      LIMIT 3000
+    `);
+    const found = new Map();
+    for (const r of rises) {
+      const rows = samplesStmt.all(r.vehicleId, r.prevTs, Math.min(until, r.prevTs + 3 * 3600 * 1000));
+      for (const j of findDelayJumps(rows)) {
+        if (!found.has(`${j.vehicleId}|${j.jumpTs}`)) found.set(`${j.vehicleId}|${j.jumpTs}`, j);
+      }
+    }
+    return [...found.values()].sort((a, b) => a.vehicleId.localeCompare(b.vehicleId) || a.jumpTs - b.jumpTs);
+  }
+
+  /**
+   * Every stretch whose delay was measured against a trip the bus was not
+   * running (trip relinks, deadhead returns, impossible delay jumps), with the
+   * windows _setRelinkWindows takes. Shared by the incident tables and the
+   * punctuality reports so both leave out the same records.
+   */
+  _findPhantomStretches(lineScope) {
+    const relinks = this._findTripRelinks(lineScope);
+    const deadheads = this._findDeadheadReturns(lineScope);
+    const jumps = this._findDelayJumps(lineScope);
+    const windows = [
+      ...relinks,
+      ...deadheads.map(d => ({ vehicleId: d.vehicleId, lineCode: d.lineCode, staleFromTs: d.phantomFromTs, staleToTs: d.phantomToTs })),
+      ...jumps
+    ];
+    return { relinks, deadheads, jumps, windows };
+  }
+
   /** Refill temp.relink_windows, which IN_RELINK_SQL reads. */
   _setRelinkWindows(relinks) {
     this.db.exec('CREATE TEMP TABLE IF NOT EXISTS relink_windows (vehicle_id TEXT, line_code TEXT, from_ts INTEGER, to_ts INTEGER)');
@@ -2866,6 +2943,8 @@ class HistoryDatabase {
       // A deadhead return in or next to the episode (see deadheadReturn.js).
       let deadhead = null;
       let clickedPhantom = false;
+      // An impossible delay jump covering the episode's peak (see delayJump.js).
+      let delayJump = null;
       // The bus's whole run around the episode (see incidentRun.js), so the
       // Investigar panel shows every stop it logged, not only the clicked one.
       let run = null;
@@ -2885,6 +2964,7 @@ class HistoryDatabase {
         deadhead = deadheadTouching(deadheadList, vehicleIds[0], pick[0].lineCode, pick[0].timestamp - RUN_CONTEXT_MS, pick[pick.length - 1].timestamp + RUN_CONTEXT_MS);
         const peakRow = pick.reduce((a, b) => (b.delayMins > a.delayMins ? b : a));
         clickedPhantom = Boolean(deadheadCovering(deadheadList, peakRow.vehicleId, peakRow.lineCode, peakRow.timestamp));
+        delayJump = jumpCovering(findDelayJumps(vehicleRows), peakRow.vehicleId, peakRow.lineCode, peakRow.timestamp);
         const lineUpper = String(pick[0].lineCode || '').toUpperCase();
         run = buildIncidentRun(
           vehicleRows
@@ -2901,6 +2981,9 @@ class HistoryDatabase {
       } else if (tripRelink) {
         verdict = 'trip_relink';
         verdictLabel = `Trip relink — the operator's AVL re-attached bus ${tripRelink.vehicleId} to its real trip at ${tripRelink.relinkStop} (+${tripRelink.delayBefore} → ${tripRelink.delayAfter} min within ${Math.max(1, Math.round((tripRelink.relinkTs - tripRelink.staleToTs) / 60000))} min); the delay before it was measured against a trip the bus was not running`;
+      } else if (delayJump) {
+        verdict = 'delay_jump';
+        verdictLabel = `Impossible delay jump — the operator's AVL moved bus ${delayJump.vehicleId} from ${delayJump.delayBefore >= 0 ? '+' : ''}${delayJump.delayBefore} at ${delayJump.beforeStop} to +${delayJump.delayAfter} at ${delayJump.jumpStop} in ${delayJump.elapsedMins} min; a delay cannot grow faster than time passes, so it was measured against an earlier trip than the bus was running`;
       } else if (pick.every(r => r.isAnomaly)) {
         verdict = 'telemetry_anomaly'; verdictLabel = 'Telemetry anomaly — depot / night maintenance';
       } else if (hasVehicleId && (hasProvenanceTimes || hasSnapshotTrail)) {
@@ -2957,6 +3040,19 @@ class HistoryDatabase {
             ? { delayBefore: tripRelink.delayBefore, delayAfter: tripRelink.delayAfter, stopName: tripRelink.relinkStop, relinkTs: tripRelink.relinkTs, staleStops: tripRelink.staleStops }
             : null,
           deadheadReturn: deadhead ? this._describeDeadhead(deadhead) : null,
+          delayJump: delayJump
+            ? {
+              vehicleId: delayJump.vehicleId,
+              delayBefore: delayJump.delayBefore,
+              beforeStop: delayJump.beforeStop,
+              beforeTime: timeEngine.formatTimeToTimezone(delayJump.beforeTs, 'Europe/Madrid'),
+              delayAfter: delayJump.delayAfter,
+              jumpStop: delayJump.jumpStop,
+              jumpTime: timeEngine.formatTimeToTimezone(delayJump.jumpTs, 'Europe/Madrid'),
+              elapsedMins: delayJump.elapsedMins,
+              staleStops: delayJump.staleStops
+            }
+            : null,
           run,
           // Authoritative provenance signal for the whole episode. Consumers
           // should colour from the per-row timesProvenance, which is exact.

@@ -365,6 +365,14 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   "de " and "d'" (abril, agost, octubre) and its bounds are Madrid dates on any host. A
   notice names a line only as "Línia N", "línies N i M" or "LN"; "(L5)" after a stop name is
   the line serving that stop. See `test/calendar_and_notices_test.js`.
+- **A delay cannot rise faster than the clock.** A rise of 10+ min that exceeds the time
+  elapsed by more than 3 min means the operator's AVL moved the bus onto an earlier trip.
+  L7 bus 2653 (1 Oct 2026, single midday bus, 28-min cycle) arrived at Parc Cerdanyola on
+  time, left on the 14:12 trip and was reported +29/+30 to Pl. Tereses against the 13:44
+  trip it had already run. Our measured delay agreed (+28) because it is timed on the
+  operator's trip, so it cannot catch this. [delayJump.js](src/core/schedule/delayJump.js)
+  finds the stretch; it gets the relink treatment (out of KPIs and rankings, listed with
+  the SAE anomalies, Investigar verdict `delay_jump`). See `test/delay_jump_test.js`.
 
 ## 4. Runtime, configuration and privacy
 
