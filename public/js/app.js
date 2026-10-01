@@ -3279,14 +3279,14 @@ class TransitApp {
                     const delayClass = (b.delayMins > 3) ? 'delay-late' : (b.delayMins > 0 ? 'delay-warning' : 'delay-on-time');
                     const badgeText = b.delayBadgeText || (b.delayMins > 0 ? `+${b.delayMins} min` : 'A l\'hora');
                     const isHybrid = Boolean(b.isHybrid || b.propulsion === 'hybrid');
-                    const ecoClass = isHybrid ? 'is-hybrid' : 'is-diesel';
-                    const ecoBadge = b.propulsionBadge || (isHybrid ? 'Híbrid Eco' : 'Dièsel');
+                    // Only a sourced fact gets a chip (see src/data/mataroFleet.js).
+                    const ecoBadge = b.propulsionBadge || (isHybrid ? 'Híbrid Eco' : '');
                     return `
                       <div class="schematic-bus-chip docked ${delayClass}" data-vehicle-id="${this.esc(b.vehicleId)}" data-lat="${b.latitude || b.lat}" data-lon="${b.longitude || b.lon}" title="Fes clic per centrar aquest bus al mapa">
                         <span class="schematic-bus-pulse-dot"></span>
                         <strong class="schematic-bus-id">#${this.esc(b.vehicleId)}</strong>
                         <span class="schematic-bus-badge">${this.esc(badgeText)}</span>
-                        <span class="schematic-bus-eco ${ecoClass}">${this.esc(ecoBadge)}</span>
+                        ${ecoBadge ? `<span class="schematic-bus-eco is-hybrid">${this.esc(ecoBadge)}</span>` : ''}
                         <button type="button" class="btn-share-bus" data-share-bus="${this.esc(b.vehicleId)}" title="Compartir enllaç en directe del Bus #${this.esc(b.vehicleId)}">
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
                         </button>
@@ -3307,15 +3307,14 @@ class TransitApp {
                   const badgeText = b.delayBadgeText || (b.delayMins > 0 ? `+${b.delayMins} min` : 'A l\'hora');
                   const speedText = b.speedKmh ? `${Math.round(b.speedKmh)} km/h` : 'En trànsit';
                   const isHybrid = Boolean(b.isHybrid || b.propulsion === 'hybrid');
-                  const ecoClass = isHybrid ? 'is-hybrid' : 'is-diesel';
-                  const ecoBadge = b.propulsionBadge || (isHybrid ? 'Híbrid Eco' : 'Dièsel');
+                  const ecoBadge = b.propulsionBadge || (isHybrid ? 'Híbrid Eco' : '');
                   return `
                     <div class="schematic-bus-chip in-transit ${delayClass}" data-vehicle-id="${this.esc(b.vehicleId)}" data-lat="${b.latitude || b.lat}" data-lon="${b.longitude || b.lon}" title="Fes clic per centrar aquest bus al mapa">
                       <span class="schematic-transit-arrow">↓</span>
                       <strong class="schematic-bus-id">#${this.esc(b.vehicleId)}</strong>
                       <span class="schematic-bus-speed">${this.esc(speedText)}</span>
                       <span class="schematic-bus-badge">${this.esc(badgeText)}</span>
-                      <span class="schematic-bus-eco ${ecoClass}">${this.esc(ecoBadge)}</span>
+                      ${ecoBadge ? `<span class="schematic-bus-eco is-hybrid">${this.esc(ecoBadge)}</span>` : ''}
                       <button type="button" class="btn-share-bus" data-share-bus="${this.esc(b.vehicleId)}" title="Compartir enllaç en directe del Bus #${this.esc(b.vehicleId)}">
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
                       </button>

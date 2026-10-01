@@ -383,6 +383,14 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   is depot") dropped L1/L2's 05:25 trips and L1/L3's last trips. The worst stop and hour
   count stop visits, never raw 20-second samples. No data is `null` ("--"), never 100 %
   or 0 %. See `test/service_rows_test.js`.
+- **A fact shown to riders needs a source.** [mataroFleet.js](src/data/mataroFleet.js)
+  states only what the Ajuntament (5 Jul 2024) and the operator publish: 2668-2687 are
+  Volvo 7900 Hybrid, Euro VI, and every bus has a ramp. Make, model and propulsion of the
+  other buses, and air conditioning, are unknown and show no chip; the old diesel models,
+  legacy series and "Dièsel" fallback were not sourced. Per-stop `segmentMeters` /
+  `cumulativeMeters` are along the drawn route and `travelSec` is the published offset
+  (`node scripts/stop_route_distances.js --check`); they were straight lines and an
+  8 m/s estimate. See `test/mataro_fleet_test.js` and `test/stop_route_distances_test.js`.
 
 ## 4. Runtime, configuration and privacy
 

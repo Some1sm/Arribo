@@ -1581,7 +1581,7 @@ class MataroTracker extends BaseTracker {
         propulsion: fleetInfo.propulsion,
         isElectric: fleetInfo.isElectric,
         isHybrid: fleetInfo.isHybrid,
-        propulsionBadge: fleetInfo.propulsionBadge || `${fleetInfo.badgeIcon} ${fleetInfo.badgeText}`,
+        propulsionBadge: fleetInfo.propulsionBadge,
         propulsionIcon: fleetInfo.badgeIcon,
         propulsionClass: fleetInfo.badgeClass,
         modelName: fleetInfo.modelName,
@@ -2476,7 +2476,8 @@ class MataroTracker extends BaseTracker {
         fromSeq,
         toSeq,
         totalProgress,
-        propulsion: 'diesel',
+        // A timetable-only bus: nothing is known about the vehicle.
+        propulsion: null,
         isElectric: false,
         isHybrid: false,
         propulsionBadge: '🕒 Horari Teòric',
