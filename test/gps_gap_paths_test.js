@@ -139,6 +139,8 @@ const at = (lat, lon, dxM, dyM) => ({ lat: lat + dyM * M_LAT, lon: lon + dxM * M
     assert.ok(obs.includes("on('popupopen', (e) => this.showGpsGapPaths(c, e.popup))"), 'opening a circle draws its streets');
     assert.ok(obs.includes('/api/analytics/gps-gaps/paths?ids='), 'from the API');
     assert.ok(obs.includes('data-gps-route'), 'and the popup says what was drawn');
+    assert.ok(!obs.includes("on('popupclose'"), 'closing the popup keeps the streets visible');
+    assert.ok(obs.includes("map.on('click', () => this.clearGpsGapPaths())"), 'a click on the map background clears them');
     ok('hotspots carry gap ids; worker, API and page draw the streets on click');
   }
 

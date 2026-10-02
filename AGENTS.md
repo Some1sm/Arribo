@@ -411,7 +411,9 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   a fixed grid split neighbours across its lines; recurrent: 3+ gaps from 2+ buses). Clicking
   a hotspot draws the street each loss was driven on, cut from the line's route by
   [gapPath.js](src/core/geo/gapPath.js) (forward along the route, right pass on circular
-  lines, drivable in the gap's time; otherwise none). Rows are pruned with the delay logs.
+  lines, drivable in the gap's time; otherwise none). The streets stay drawn after the popup
+  closes (it would cover them) until the map background or another hotspot is clicked, and
+  the popup is kept inside the map. Rows are pruned with the delay logs.
   See `test/gps_gaps_test.js` and `test/gps_gap_paths_test.js`.
 - **Colours, radii and spacing come from tokens.** [UI_GUIDE.md](UI_GUIDE.md) §2.0 lists the
   design-system tokens (`--brand`, `--action`/`--on-action`, `--status-*`, `--punct-*`,

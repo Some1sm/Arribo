@@ -246,6 +246,9 @@ class ObservatoriApp {
     this.gpsGapLayer = L.layerGroup().addTo(map);
     this.gpsGapPathLayer = L.layerGroup().addTo(map);
     this.gpsGapPathCache = new Map();
+    // A drawn path outlives its popup (closing it uncovers the streets); a
+    // click on the map background clears it, another circle replaces it.
+    map.on('click', () => this.clearGpsGapPaths());
     new MutationObserver(() => this.gpsGapTiles.setUrl(this.gpsGapTileUrl()))
       .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     this.gpsGapMap = map;
@@ -263,6 +266,11 @@ class ObservatoriApp {
    * Draws the streets a hotspot's buses drove without GPS (from the server,
    * cut from each line's route) and states it in the popup.
    */
+  clearGpsGapPaths() {
+    this._gpsGapPathReq = (this._gpsGapPathReq || 0) + 1;
+    if (this.gpsGapPathLayer) this.gpsGapPathLayer.clearLayers();
+  }
+
   async showGpsGapPaths(cell, popup) {
     const token = (this._gpsGapPathReq = (this._gpsGapPathReq || 0) + 1);
     this.gpsGapPathLayer.clearLayers();
@@ -297,11 +305,31 @@ class ObservatoriApp {
         : paths.length === 1
           ? `Tram sense GPS dibuixat al mapa: ${lengths[0]} m.`
           : `${paths.length} trams sense GPS dibuixats al mapa (${lengths[0]}-${lengths[lengths.length - 1]} m).`) + stoodTxt;
+      if (paths.length) note.textContent += " Tanca aquesta finestra per veure el recorregut; s'esborra en tocar el mapa.";
       note.textContent = note.textContent.trim();
     }
-    if (paths.length && this.gpsGapMap) {
-      const bounds = L.latLngBounds(paths.flatMap(p => p.path));
-      if (!this.gpsGapMap.getBounds().contains(bounds)) this.gpsGapMap.fitBounds(bounds, { padding: [40, 40], maxZoom: 17 });
+    const map = this.gpsGapMap;
+    if (!map) return;
+    // The popup opens above the circle and grows once the note is filled in:
+    // fit the streets and the circle into the space below it, then pan until
+    // the whole popup (and its close button) is inside the map.
+    const popupEl = popup && popup.getElement && popup.getElement();
+    const size = map.getSize();
+    const top = Math.min((popupEl ? popupEl.offsetHeight : 0) + 30, Math.max(40, size.y - 140));
+    if (paths.length) {
+      const bounds = L.latLngBounds(paths.flatMap(p => p.path)).extend([cell.lat, cell.lon]);
+      const fits = [bounds.getNorthWest(), bounds.getSouthEast()].every(ll => {
+        const pt = map.latLngToContainerPoint(ll);
+        return pt.x >= 30 && pt.x <= size.x - 30 && pt.y >= top && pt.y <= size.y - 30;
+      });
+      if (!fits) map.fitBounds(bounds, { paddingTopLeft: [30, top], paddingBottomRight: [30, 30], maxZoom: 17, animate: false });
+    }
+    if (popupEl && popupEl.isConnected) {
+      const p = popupEl.getBoundingClientRect();
+      const m = map.getContainer().getBoundingClientRect();
+      const dx = p.left - m.left < 10 ? p.left - m.left - 10 : (p.right > m.right - 10 ? p.right - m.right + 10 : 0);
+      const dy = p.top - m.top < 10 ? p.top - m.top - 10 : 0;
+      if (dx || dy) map.panBy([dx, dy], { animate: false });
     }
   }
 
@@ -404,10 +432,6 @@ class ObservatoriApp {
           color: colour, weight: 2, fillColor: colour, fillOpacity: c.recurrent ? 0.5 : 0.28
         }).bindPopup(popup, { className: 'gps-gaps-leaflet-popup', minWidth: 260, maxWidth: 300 }).addTo(this.gpsGapLayer);
         this.gpsGapMarkers[i].on('popupopen', (e) => this.showGpsGapPaths(c, e.popup));
-        this.gpsGapMarkers[i].on('popupclose', () => {
-          this._gpsGapPathReq = (this._gpsGapPathReq || 0) + 1;
-          this.gpsGapPathLayer.clearLayers();
-        });
       }
       map.invalidateSize();
       if (cells.length) map.fitBounds(cells.map(c => [c.lat, c.lon]), { padding: [30, 30], maxZoom: 16 });
