@@ -476,6 +476,28 @@ class HistoryDatabase {
             created_ms INTEGER NOT NULL
           );
           CREATE INDEX IF NOT EXISTS idx_ambobs_line ON amb_bus_observations(line_id, direction, scheduled_ms);
+
+          -- GPS gaps: one row per silence of 90 s - 15 min in a bus's fixes
+          -- (src/core/geo/gpsGapDetector.js). Where the signal was lost and
+          -- where it came back; terminal layovers and feed-wide stalls are
+          -- kept but flagged, so they can be left off the map.
+          CREATE TABLE IF NOT EXISTS gps_gaps (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            vehicle_id TEXT NOT NULL,
+            line_code TEXT NOT NULL,
+            direction TEXT DEFAULT '',
+            lost_ts INTEGER NOT NULL,
+            regained_ts INTEGER NOT NULL,
+            gap_sec INTEGER NOT NULL,
+            lost_lat REAL NOT NULL,
+            lost_lon REAL NOT NULL,
+            regained_lat REAL NOT NULL,
+            regained_lon REAL NOT NULL,
+            stop_name TEXT DEFAULT '',
+            at_terminal INTEGER DEFAULT 0,
+            feed_wide INTEGER DEFAULT 0
+          );
+          CREATE INDEX IF NOT EXISTS idx_gps_gaps_time ON gps_gaps(lost_ts, line_code);
         `);
         if (!this.db.prepare('PRAGMA table_info(hourly_line_stats)').all().some(column => column.name === 'delay_sum')) {
           this.db.exec('ALTER TABLE hourly_line_stats ADD COLUMN delay_sum REAL;');
@@ -673,6 +695,131 @@ class HistoryDatabase {
       );
     } catch {
       // Ignore transient write errors
+    }
+  }
+
+  recordGpsGap(gap) {
+    if (!gap || !gap.vehicleId) return;
+    if (!this._ensureOpen()) return;
+    try {
+      if (!this._gpsGapStmt) {
+        this._gpsGapStmt = this.db.prepare(`
+          INSERT INTO gps_gaps
+          (vehicle_id, line_code, direction, lost_ts, regained_ts, gap_sec, lost_lat, lost_lon, regained_lat, regained_lon, stop_name, at_terminal, feed_wide)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+      }
+      this._gpsGapStmt.run(
+        String(gap.vehicleId),
+        String(gap.lineCode || '').toUpperCase(),
+        String(gap.direction || ''),
+        Number(gap.lostTs),
+        Number(gap.regainedTs),
+        Math.round(Number(gap.gapSec) || 0),
+        Number(gap.lostLat),
+        Number(gap.lostLon),
+        Number(gap.regainedLat),
+        Number(gap.regainedLon),
+        String(gap.stopName || ''),
+        gap.atTerminal ? 1 : 0,
+        gap.feedWide ? 1 : 0
+      );
+    } catch {
+      // Ignore transient write errors
+    }
+  }
+
+  /**
+   * Where buses lose GPS: gaps grouped into ~150 m cells by the point where
+   * the signal was lost. Terminal layovers and feed-wide stalls are counted
+   * but left off the map. A cell is `recurrent` when at least 3 gaps from at
+   * least 2 different buses start there: one bus's bad receiver is not a
+   * dead zone.
+   */
+  getGpsGapHotspots({ days = 7, lineCode = '', now = Date.now() } = {}) {
+    const empty = { days, lineCode: '', since: 0, until: now, totals: { gaps: 0, mapped: 0, atTerminal: 0, feedWide: 0, vehicles: 0, medianGapSec: null, recurrentShare: null }, cells: [], gaps: [] };
+    if (!this._ensureOpen()) return empty;
+    try {
+      const d = Math.min(30, Math.max(1, Math.round(Number(days) || 7)));
+      const since = now - d * 86400 * 1000;
+      const code = String(lineCode || '').trim().toUpperCase().replace(/^(\d)$/, 'L$1');
+      const lineSql = code && code !== 'ALL' ? ' AND line_code = ?' : '';
+      const params = lineSql ? [since, now, code] : [since, now];
+      const rows = this.db.prepare(`
+        SELECT vehicle_id AS vehicleId, line_code AS lineCode, lost_ts AS lostTs, gap_sec AS gapSec,
+               lost_lat AS lostLat, lost_lon AS lostLon, regained_lat AS regainedLat, regained_lon AS regainedLon,
+               stop_name AS stopName, at_terminal AS atTerminal, feed_wide AS feedWide
+        FROM gps_gaps
+        WHERE lost_ts >= ? AND lost_ts < ?${lineSql}
+        ORDER BY lost_ts DESC
+      `).all(...params);
+
+      const mapped = rows.filter(r => !r.atTerminal && !r.feedWide);
+      const median = (xs) => {
+        if (!xs.length) return null;
+        const s = [...xs].sort((a, b) => a - b);
+        const m = Math.floor(s.length / 2);
+        return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2);
+      };
+      const CELL_LAT = 0.00135; // ~150 m
+      const CELL_LON = 0.0018;  // ~150 m at 41.5 N
+      const cellsByKey = new Map();
+      for (const r of mapped) {
+        const key = `${Math.floor(r.lostLat / CELL_LAT)}|${Math.floor(r.lostLon / CELL_LON)}`;
+        if (!cellsByKey.has(key)) cellsByKey.set(key, []);
+        cellsByKey.get(key).push(r);
+      }
+      const mode = (xs) => {
+        const counts = new Map();
+        for (const x of xs) if (x) counts.set(x, (counts.get(x) || 0) + 1);
+        let best = '';
+        let n = 0;
+        for (const [k, c] of counts) if (c > n) { best = k; n = c; }
+        return best;
+      };
+      const cells = [...cellsByKey.values()].map(rs => {
+        const vehicles = new Set(rs.map(r => r.vehicleId)).size;
+        const mean = (f) => rs.reduce((s, r) => s + r[f], 0) / rs.length;
+        return {
+          lat: Math.round(mean('lostLat') * 1e6) / 1e6,
+          lon: Math.round(mean('lostLon') * 1e6) / 1e6,
+          regainedLat: Math.round(mean('regainedLat') * 1e6) / 1e6,
+          regainedLon: Math.round(mean('regainedLon') * 1e6) / 1e6,
+          count: rs.length,
+          vehicles,
+          lines: [...new Set(rs.map(r => r.lineCode))].sort(),
+          medianGapSec: median(rs.map(r => r.gapSec)),
+          maxGapSec: Math.max(...rs.map(r => r.gapSec)),
+          stopName: mode(rs.map(r => r.stopName)),
+          lastTs: Math.max(...rs.map(r => r.lostTs)),
+          recurrent: rs.length >= 3 && vehicles >= 2
+        };
+      }).sort((a, b) => b.count - a.count || b.vehicles - a.vehicles || b.lastTs - a.lastTs);
+
+      const inRecurrent = cells.filter(c => c.recurrent).reduce((s, c) => s + c.count, 0);
+      return {
+        days: d,
+        lineCode: code && code !== 'ALL' ? code : '',
+        since,
+        until: now,
+        totals: {
+          gaps: rows.length,
+          mapped: mapped.length,
+          atTerminal: rows.filter(r => r.atTerminal).length,
+          feedWide: rows.filter(r => !r.atTerminal && r.feedWide).length,
+          vehicles: new Set(mapped.map(r => r.vehicleId)).size,
+          medianGapSec: median(mapped.map(r => r.gapSec)),
+          recurrentShare: mapped.length ? Math.round((inRecurrent / mapped.length) * 100) : null
+        },
+        cells: cells.slice(0, 80),
+        gaps: mapped.slice(0, 400).map(r => ({
+          lineCode: r.lineCode, gapSec: r.gapSec,
+          lostLat: r.lostLat, lostLon: r.lostLon, regainedLat: r.regainedLat, regainedLon: r.regainedLon
+        }))
+      };
+    } catch (e) {
+      console.error('[HistoryDB] getGpsGapHotspots error:', e.message);
+      return empty;
     }
   }
 
@@ -3451,6 +3598,9 @@ class HistoryDatabase {
         .run(cutoff);
       const _deletedVisits = this.db
         .prepare(`DELETE FROM stop_visits WHERE last_ts < ?`)
+        .run(cutoff);
+      this.db
+        .prepare(`DELETE FROM gps_gaps WHERE lost_ts < ?`)
         .run(cutoff);
 
       // optimize() does not return pages to the filesystem. Since the database

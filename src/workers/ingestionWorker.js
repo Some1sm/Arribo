@@ -127,6 +127,9 @@ async function executeDbOperation(op, args = {}) {
     case 'inspectDelayIncident':
       return historyDb.inspectDelayIncident(args);
 
+    case 'getGpsGapHotspots':
+      return historyDb.getGpsGapHotspots({ days: args.days, lineCode: args.lineCode });
+
     case 'generateReport': {
       const catalog = Array.isArray(args.allLinesCatalog)
         ? args.allLinesCatalog

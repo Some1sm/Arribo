@@ -10366,6 +10366,243 @@ input#plan-max-walk:focus {
   overflow: hidden;
 }
 
+/* GPS loss map (/dades) */
+.gps-gaps-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  margin-bottom: 1.5rem;
+  padding: 1.2rem;
+}
+
+.gps-gaps-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.gps-gaps-title {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.gps-gaps-subtitle {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.gps-gaps-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.gps-gaps-filters .observatori-mode-toggle-group {
+  flex-wrap: wrap;
+}
+
+.gps-gaps-summary {
+  margin: 0 0 0.85rem;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.gps-gaps-summary strong {
+  color: var(--text-primary);
+}
+
+.gps-gaps-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 1rem;
+  align-items: start;
+}
+
+.gps-gaps-map-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.gps-gaps-map {
+  height: 420px;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface-elevated);
+  z-index: 0;
+}
+
+.gps-gaps-empty {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 420px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--bg-surface) 70%, transparent);
+  border-radius: 10px;
+  z-index: 500;
+  pointer-events: none;
+}
+
+.gps-gaps-empty[hidden] {
+  display: none;
+}
+
+.gps-gaps-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+  margin-top: 0.5rem;
+  font-size: 0.74rem;
+  color: var(--text-secondary);
+}
+
+.gps-gaps-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.gps-gaps-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2px solid #f59e0b;
+  background: rgba(245, 158, 11, 0.3);
+}
+
+.gps-gaps-dot.recurrent {
+  border-color: #f43f5e;
+  background: rgba(244, 63, 94, 0.5);
+}
+
+.gps-gaps-line {
+  width: 18px;
+  border-top: 2px dashed #fbbf24;
+}
+
+.gps-gaps-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.gps-gaps-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.65rem;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--btn-radius-md);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: var(--btn-transition);
+}
+
+.gps-gaps-item:hover {
+  border-color: var(--border-focus);
+  transform: translateY(-1px);
+}
+
+.gps-gaps-item:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.gps-gaps-rank {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #fff;
+  background: #d97706;
+}
+
+.gps-gaps-rank.recurrent {
+  background: #e11d48;
+}
+
+.gps-gaps-item-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.74rem;
+  color: var(--text-secondary);
+}
+
+.gps-gaps-item-main strong {
+  font-size: 0.82rem;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gps-gaps-item-main .observatori-line-badge {
+  margin-right: 0.25rem;
+}
+
+.gps-gaps-item-count {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  line-height: 1.1;
+}
+
+.gps-gaps-item-count small {
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.gps-gaps-popup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+@media (max-width: 900px) {
+  .gps-gaps-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .gps-gaps-map,
+  .gps-gaps-empty {
+    height: 320px;
+  }
+}
+
 /* One row per check, no boxes: uneven descriptions no longer stretch a grid
    of cards into tall empty panels. */
 .dh-body {

@@ -46,6 +46,7 @@ class ObservatoriApp {
     this.loadActiveTab();
     this.fetchLinesMetadata();
     this.fetchDataHealth();
+    this.initGpsGaps();
   }
 
   initTheme() {
@@ -167,6 +168,189 @@ class ObservatoriApp {
     } catch {
       this.renderDataHealth(null);
     }
+  }
+
+  // ==========================================
+  // GPS LOSS MAP: where buses stop reporting
+  // ==========================================
+
+  initGpsGaps() {
+    const section = document.getElementById('gps-gaps-section');
+    if (!section) return;
+    this.gpsGapDays = 7;
+    this.gpsGapLine = 'all';
+    this.gpsGapMarkers = [];
+    section.addEventListener('click', (e) => {
+      const dayBtn = e.target.closest('[data-gps-days]');
+      const lineBtn = e.target.closest('[data-gps-line]');
+      const item = e.target.closest('[data-gps-cell]');
+      if (dayBtn) {
+        this.gpsGapDays = Number(dayBtn.dataset.gpsDays) || 7;
+        section.querySelectorAll('[data-gps-days]').forEach(b => b.classList.toggle('active', b === dayBtn));
+        this.loadGpsGaps();
+      } else if (lineBtn) {
+        this.gpsGapLine = lineBtn.dataset.gpsLine || 'all';
+        section.querySelectorAll('[data-gps-line]').forEach(b => b.classList.toggle('active', b === lineBtn));
+        this.loadGpsGaps();
+      } else if (item) {
+        this.focusGpsGapCell(Number(item.dataset.gpsCell));
+      }
+    });
+    // The map and its tiles load only once the section is about to be seen.
+    if ('IntersectionObserver' in window) {
+      const io = new IntersectionObserver((entries) => {
+        if (entries.some(en => en.isIntersecting)) {
+          io.disconnect();
+          this.loadGpsGaps();
+        }
+      }, { rootMargin: '200px' });
+      io.observe(section);
+    } else {
+      this.loadGpsGaps();
+    }
+  }
+
+  async loadGpsGaps() {
+    const reqId = (this._gpsGapReq = (this._gpsGapReq || 0) + 1);
+    const summary = document.getElementById('gps-gaps-summary');
+    if (summary) summary.textContent = 'Carregant pèrdues de senyal...';
+    let data = null;
+    try {
+      const res = await fetch(`/api/analytics/gps-gaps?days=${this.gpsGapDays}&line=${encodeURIComponent(this.gpsGapLine)}`).then(r => r.json());
+      data = res && res.success ? res : null;
+    } catch {
+      data = null;
+    }
+    if (reqId !== this._gpsGapReq) return; // a newer filter choice superseded this one
+    this.renderGpsGaps(data);
+  }
+
+  gpsGapTileUrl() {
+    const isDark = (document.documentElement.getAttribute('data-theme') || 'dark') === 'dark';
+    const cartoKey = 'cb1_2e4m_1_e5f70f18572ed17fe4483c7e';
+    return isDark
+      ? `https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png?key=${cartoKey}`
+      : `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=${cartoKey}`;
+  }
+
+  ensureGpsGapMap() {
+    if (this.gpsGapMap) return this.gpsGapMap;
+    const el = document.getElementById('gps-gaps-map');
+    if (!el || typeof L === 'undefined') return null;
+    const map = L.map(el, { preferCanvas: true, scrollWheelZoom: false }).setView([41.5405, 2.4445], 14);
+    this.gpsGapTiles = L.tileLayer(this.gpsGapTileUrl(), {
+      attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      subdomains: 'abcd',
+      maxZoom: 19
+    }).addTo(map);
+    this.gpsGapLayer = L.layerGroup().addTo(map);
+    new MutationObserver(() => this.gpsGapTiles.setUrl(this.gpsGapTileUrl()))
+      .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    this.gpsGapMap = map;
+    return map;
+  }
+
+  fmtGapDuration(sec) {
+    if (!Number.isFinite(sec)) return '--';
+    if (sec < 60) return `${sec} s`;
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return s ? `${m} min ${s} s` : `${m} min`;
+  }
+
+  renderGpsGaps(data) {
+    const summary = document.getElementById('gps-gaps-summary');
+    const list = document.getElementById('gps-gaps-list');
+    const empty = document.getElementById('gps-gaps-empty');
+    const map = this.ensureGpsGapMap();
+    if (this.gpsGapLayer) this.gpsGapLayer.clearLayers();
+    this.gpsGapMarkers = [];
+    if (!summary || !list || !empty) return;
+
+    if (!data) {
+      summary.textContent = "No s'han pogut carregar les pèrdues de senyal.";
+      list.innerHTML = '';
+      empty.textContent = 'Sense dades';
+      empty.hidden = false;
+      return;
+    }
+
+    const t = data.totals || {};
+    const cells = Array.isArray(data.cells) ? data.cells : [];
+    const period = data.days === 1 ? 'les últimes 24 h' : `els últims ${data.days} dies`;
+    const onLine = data.lineCode ? ` a la ${this.esc(data.lineCode)}` : '';
+    const left = [];
+    if (t.atTerminal) left.push(`${t.atTerminal} a capçalera`);
+    if (t.feedWide) left.push(`${t.feedWide} talls de tot el canal`);
+    const leftTxt = left.length ? ` No s'hi compten ${left.join(' ni ')}.` : '';
+
+    if (!t.mapped) {
+      summary.textContent = `Cap pèrdua de senyal registrada${data.lineCode ? ` a la ${data.lineCode}` : ''} en ${period}.${leftTxt}`;
+      list.innerHTML = '';
+      empty.textContent = "Encara no hi ha pèrdues de senyal per mostrar en aquest període.";
+      empty.hidden = false;
+      return;
+    }
+    empty.hidden = true;
+
+    const recurrent = cells.filter(c => c.recurrent).length;
+    summary.innerHTML = `<strong>${t.mapped}</strong> pèrdues de senyal${onLine} en ${period}, de ${t.vehicles} busos; durada mediana <strong>${this.esc(this.fmtGapDuration(t.medianGapSec))}</strong>. `
+      + (recurrent
+        ? `<strong>${t.recurrentShare}%</strong> es concentren en ${recurrent} ${recurrent === 1 ? 'punt recurrent' : 'punts recurrents'}.`
+        : 'Cap punt es repeteix prou encara per ser recurrent.')
+      + this.esc(leftTxt);
+
+    if (map) {
+      // Straight from where the signal went to where it came back: the bus
+      // drove the street in between with no GPS.
+      for (const g of (data.gaps || [])) {
+        L.polyline([[g.lostLat, g.lostLon], [g.regainedLat, g.regainedLon]], {
+          color: '#fbbf24', weight: 2.5, opacity: 0.7, dashArray: '4 6', interactive: false
+        }).addTo(this.gpsGapLayer);
+      }
+      // Smallest first, so the busiest points are drawn on top.
+      for (let i = cells.length - 1; i >= 0; i--) {
+        const c = cells[i];
+        const colour = c.recurrent ? '#f43f5e' : '#f59e0b';
+        const back = Math.round(L.latLng(c.lat, c.lon).distanceTo(L.latLng(c.regainedLat, c.regainedLon)));
+        const popup = `<div class="gps-gaps-popup">
+          <strong>${c.stopName ? `Prop de ${this.esc(c.stopName)}` : 'Punt sense parada propera'}</strong>
+          <span>${c.count} ${c.count === 1 ? 'pèrdua' : 'pèrdues'} · ${c.vehicles} ${c.vehicles === 1 ? 'bus' : 'busos'} · ${this.esc(c.lines.join(', '))}</span>
+          <span>Sense senyal: mediana ${this.esc(this.fmtGapDuration(c.medianGapSec))}, màxim ${this.esc(this.fmtGapDuration(c.maxGapSec))}</span>
+          <span>De mitjana el recupera a ${back} m d'aquí</span>
+          <span>Última: ${this.esc(new Date(c.lastTs).toLocaleString('ca-ES', { timeZone: 'Europe/Madrid', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</span>
+        </div>`;
+        this.gpsGapMarkers[i] = L.circleMarker([c.lat, c.lon], {
+          radius: Math.min(26, 6 + 4 * Math.sqrt(c.count)),
+          color: colour, weight: 2, fillColor: colour, fillOpacity: c.recurrent ? 0.5 : 0.28
+        }).bindPopup(popup).addTo(this.gpsGapLayer);
+      }
+      map.invalidateSize();
+      if (cells.length) map.fitBounds(cells.map(c => [c.lat, c.lon]), { padding: [30, 30], maxZoom: 16 });
+    }
+
+    list.innerHTML = cells.slice(0, 8).map((c, i) => `
+      <li>
+        <button type="button" class="gps-gaps-item" data-gps-cell="${i}">
+          <span class="gps-gaps-rank${c.recurrent ? ' recurrent' : ''}">${i + 1}</span>
+          <span class="gps-gaps-item-main">
+            <strong>${c.stopName ? `Prop de ${this.esc(c.stopName)}` : 'Sense parada propera'}</strong>
+            <span>${c.lines.map(code => {
+              const colour = this.getLineColor(code);
+              return `<span class="observatori-line-badge" style="background:${colour}; color:${this.chipInk(colour)};">${this.esc(code)}</span>`;
+            }).join('')} ${c.vehicles} ${c.vehicles === 1 ? 'bus' : 'busos'} · mediana ${this.esc(this.fmtGapDuration(c.medianGapSec))}</span>
+          </span>
+          <span class="gps-gaps-item-count">${c.count}<small>${c.count === 1 ? 'pèrdua' : 'pèrdues'}</small></span>
+        </button>
+      </li>`).join('');
+  }
+
+  focusGpsGapCell(i) {
+    const marker = this.gpsGapMarkers[i];
+    if (!marker || !this.gpsGapMap) return;
+    document.getElementById('gps-gaps-map')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    this.gpsGapMap.setView(marker.getLatLng(), 17);
+    marker.openPopup();
   }
 
   renderDataHealth(data) {

@@ -12,7 +12,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="/css/style.css?v=9.4.22">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  <link rel="stylesheet" href="/css/style.css?v=9.4.23">
 </head>
 <body class="observatori-page-body observatori-page">
 
@@ -232,6 +233,50 @@
       </div>
     </section>
 
+    <!-- Where buses lose GPS (gps_gaps, recorded by the ingestion worker) -->
+    <section class="gps-gaps-card" id="gps-gaps-section" aria-labelledby="gps-gaps-title">
+      <div class="gps-gaps-head">
+        <div style="display:flex; align-items:center; gap:0.6rem;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent-warning);" aria-hidden="true"><line x1="2" y1="2" x2="22" y2="22"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><path d="M2 8.82a15 15 0 0 1 4.17-2.65"/><path d="M10.66 5c4.01-.36 8.14.9 11.34 3.76"/><path d="M16.85 11.25a10 10 0 0 1 2.22 1.68"/><path d="M5 13a10 10 0 0 1 5.24-2.76"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+          <div>
+            <h3 id="gps-gaps-title" class="gps-gaps-title">On perden el GPS els autobusos</h3>
+            <p class="gps-gaps-subtitle">Llocs on un bus deixa d'enviar la seva posició durant 90 s o més i el mapa en directe l'ha d'estimar.</p>
+          </div>
+        </div>
+        <div class="gps-gaps-filters">
+          <div class="observatori-mode-toggle-group" id="gps-gaps-days" role="group" aria-label="Període">
+            <button type="button" class="observatori-pill-btn" data-gps-days="1">24 h</button>
+            <button type="button" class="observatori-pill-btn active" data-gps-days="7">7 dies</button>
+            <button type="button" class="observatori-pill-btn" data-gps-days="30">30 dies</button>
+          </div>
+          <div class="observatori-mode-toggle-group" id="gps-gaps-lines" role="group" aria-label="Línia">
+            <button type="button" class="observatori-pill-btn active" data-gps-line="all">Totes</button>
+            <button type="button" class="observatori-pill-btn" data-gps-line="L1">L1</button>
+            <button type="button" class="observatori-pill-btn" data-gps-line="L2">L2</button>
+            <button type="button" class="observatori-pill-btn" data-gps-line="L3">L3</button>
+            <button type="button" class="observatori-pill-btn" data-gps-line="L4">L4</button>
+            <button type="button" class="observatori-pill-btn" data-gps-line="L5">L5</button>
+            <button type="button" class="observatori-pill-btn" data-gps-line="L6">L6</button>
+            <button type="button" class="observatori-pill-btn" data-gps-line="L7">L7</button>
+            <button type="button" class="observatori-pill-btn" data-gps-line="L8">L8</button>
+          </div>
+        </div>
+      </div>
+      <p class="gps-gaps-summary" id="gps-gaps-summary" aria-live="polite">Carregant pèrdues de senyal...</p>
+      <div class="gps-gaps-layout">
+        <div class="gps-gaps-map-wrap">
+          <div class="gps-gaps-map" id="gps-gaps-map" role="img" aria-label="Mapa de Mataró amb els punts on els autobusos perden el GPS"></div>
+          <div class="gps-gaps-empty" id="gps-gaps-empty" hidden></div>
+          <div class="gps-gaps-legend">
+            <span><i class="gps-gaps-dot recurrent"></i>Punt recurrent (3+ pèrdues, 2+ busos)</span>
+            <span><i class="gps-gaps-dot"></i>Pèrdua puntual</span>
+            <span><i class="gps-gaps-line"></i>Tram sense senyal</span>
+          </div>
+        </div>
+        <ol class="gps-gaps-list" id="gps-gaps-list" aria-label="Punts amb més pèrdues de senyal"></ol>
+      </div>
+    </section>
+
     <!-- Termòmetre Infographic Scorecard Container -->
     <div id="journalism-termometre-container" style="display:none; margin-bottom:1.5rem;"></div>
 
@@ -265,9 +310,10 @@
   </footer>
 
   <!-- Scripts -->
-  <script src="/js/utils.js?v=9.4.22"></script>
-  <script src="/js/storage.js?v=9.4.22"></script>
-  <script src="/js/pwa.js?v=9.4.22"></script>
-  <script src="/js/observatori.js?v=9.4.22"></script>
+  <script src="/js/utils.js?v=9.4.23"></script>
+  <script src="/js/storage.js?v=9.4.23"></script>
+  <script src="/js/pwa.js?v=9.4.23"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="/js/observatori.js?v=9.4.23"></script>
 </body>
 </html>

@@ -7,6 +7,7 @@ const serviceHours = require('./core/schedule/serviceHours');
 const mataroSchedules = require('./data/mataroSchedules');
 const timeEngine = require('./core/time/timeEngine');
 const siriClient = require('./mataroSiriClient');
+const { GpsGapDetector } = require('./core/geo/gpsGapDetector');
 
 class IngestionDaemon {
   constructor() {
@@ -28,6 +29,7 @@ class IngestionDaemon {
     this.scheduleDrift = null;
     this.driftTimer = null;
     this.lastDriftDate = null;
+    this.gpsGaps = new GpsGapDetector();
   }
 
   setIpcCallback(callback) {
@@ -244,6 +246,23 @@ class IngestionDaemon {
                 return null;
               };
               const observedAt = resolveObservedAt(b);
+
+              // Where buses go silent: the detector only reacts when this
+              // bus's real fix time moves forward, so re-emitted and
+              // dead-reckoned positions never count as a fix.
+              const gpsGap = this.gpsGaps.observe({
+                vehicleId: b.vehicleId,
+                lineCode: `L${lId}`,
+                direction: b.direction,
+                lat: b.lat,
+                lon: b.lon,
+                observedAt,
+                isTerminalLayover: b.isTerminalLayover,
+                toStop: b.toStop
+              });
+              if (gpsGap && !this.isOutsideRevenueService(lId, gpsGap.lostTs)) {
+                historyDb.recordGpsGap(gpsGap);
+              }
 
               // Speed: a missing measurement stays UNKNOWN (null), not 25. A real
               // measured 0 (bus stopped) stays 0 and stays distinguishable.

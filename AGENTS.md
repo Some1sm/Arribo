@@ -399,6 +399,15 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   `tripStartSource: 'timetable'`, and dead-reckoned buses keep the last match. No
   reported delay, a bus at a terminal, or two trips in one minute give none; the UI says
   "(horari)". The technical telemetry card starts folded. See `test/trip_start_test.js`.
+- **A GPS gap is a silence between two real fixes, recorded by the worker.** The feed sends
+  a fix about every 30 s; [gpsGapDetector.js](src/core/geo/gpsGapDetector.js) records a
+  silence of 90 s - 15 min (only when `observedAt` moves forward, so re-emits and
+  dead-reckoned positions never count) in `gps_gaps`: last fix before, first fix after,
+  duration. Silences at a terminal (`at_terminal`) or while no other bus reported
+  (`feed_wide`, the operator's feed stalled) are stored but kept off the /dades map;
+  longer ones and line changes are not gaps. `/api/analytics/gps-gaps` groups the rest into
+  ~150 m cells (recurrent: 3+ gaps from 2+ buses); rows are pruned with the delay logs.
+  See `test/gps_gaps_test.js`.
 
 ## 4. Runtime, configuration and privacy
 

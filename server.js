@@ -1188,6 +1188,33 @@ app.get('/api/analytics/incidents/inspect', async (req, res) => {
   }
 });
 
+// Where buses lose GPS: hotspots of the silences the worker records
+// (src/core/geo/gpsGapDetector.js). Line codes only; no rider coordinates.
+const gpsGapCache = new Map();
+const GPS_GAP_CACHE_TTL_MS = 60 * 1000;
+
+app.get('/api/analytics/gps-gaps', async (req, res) => {
+  const days = Math.max(1, Math.min(30, parseInt(req.query.days, 10) || 7));
+  const rawLine = String(req.query.line || 'all').trim().toUpperCase();
+  const lineCode = /^L?[1-8]$/.test(rawLine) ? `L${rawLine.replace(/^L/, '')}` : '';
+  const cacheKey = `${lineCode || 'ALL'}_${days}`;
+  const now = Date.now();
+  const cached = gpsGapCache.get(cacheKey);
+  if (cached && (now - cached.timestamp) < GPS_GAP_CACHE_TTL_MS) {
+    res.setHeader('X-Cache', 'HIT');
+    return res.json({ success: true, ...cached.data });
+  }
+  try {
+    const data = await workerBridge.historyQuery('getGpsGapHotspots', { days, lineCode }, { timeoutMs: 15000 });
+    gpsGapCache.set(cacheKey, { data, timestamp: now });
+    if (gpsGapCache.size > 20) gpsGapCache.delete(gpsGapCache.keys().next().value);
+    res.setHeader('X-Cache', 'MISS');
+    res.json({ success: true, ...data });
+  } catch (err) {
+    sendInternalError(req, res, err, { success: false, cells: [], gaps: [], totals: {} });
+  }
+});
+
 // Passive upstream diagnostics, served entirely from cached worker status
 app.get('/api/diagnostics/upstream', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
