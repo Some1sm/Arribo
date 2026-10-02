@@ -141,9 +141,9 @@ async function executeDbOperation(op, args = {}) {
         for (const i of order) {
           const res = gapPath(routes[i] && routes[i].coords,
             { lat: g.lostLat, lon: g.lostLon }, { lat: g.regainedLat, lon: g.regainedLon }, g.gapSec);
-          if (res) return { id: g.id, lineCode: g.lineCode, gapSec: g.gapSec, lengthM: res.lengthM, path: res.path };
+          if (res) return { id: g.id, lineCode: g.lineCode, vehicleId: g.vehicleId, lostTs: g.lostTs, gapSec: g.gapSec, lengthM: res.lengthM, path: res.path };
         }
-        return { id: g.id, lineCode: g.lineCode, gapSec: g.gapSec, lengthM: null, path: null };
+        return { id: g.id, lineCode: g.lineCode, vehicleId: g.vehicleId, lostTs: g.lostTs, gapSec: g.gapSec, lengthM: null, path: null };
       });
 
     case 'generateReport': {

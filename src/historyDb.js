@@ -829,7 +829,7 @@ class HistoryDatabase {
     if (!clean.length) return [];
     try {
       return this.db.prepare(`
-        SELECT id, vehicle_id AS vehicleId, line_code AS lineCode, direction, gap_sec AS gapSec,
+        SELECT id, vehicle_id AS vehicleId, line_code AS lineCode, direction, lost_ts AS lostTs, gap_sec AS gapSec,
                lost_lat AS lostLat, lost_lon AS lostLon, regained_lat AS regainedLat, regained_lon AS regainedLon
         FROM gps_gaps WHERE id IN (${clean.map(() => '?').join(',')})
       `).all(...clean);

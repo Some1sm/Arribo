@@ -129,6 +129,7 @@ const at = (lat, lon, dxM, dyM) => ({ lat: lat + dyM * M_LAT, lon: lon + dxM * M
     const rows = historyDb.getGpsGapsByIds([...hs.cells[0].gapIds, 'x', -1, 99999]);
     assert.equal(rows.length, 3, 'ids are validated and looked up');
     assert.equal(rows[0].direction, '1', 'with their direction');
+    assert.ok(rows.every(r => Number.isFinite(r.lostTs) && r.vehicleId), 'and the bus and time each loss began');
     historyDb.close();
 
     const root = path.join(__dirname, '..');
@@ -136,12 +137,13 @@ const at = (lat, lon, dxM, dyM) => ({ lat: lat + dyM * M_LAT, lon: lon + dxM * M
     assert.ok(/case 'getGpsGapPaths':/.test(read('src/workers/ingestionWorker.js')), 'the worker cuts paths');
     assert.ok(read('server.js').includes("app.get('/api/analytics/gps-gaps/paths'"), 'the API serves them');
     const obs = read('public/js/observatori.js');
-    assert.ok(obs.includes("on('popupopen', (e) => this.showGpsGapPaths(c, e.popup))"), 'opening a circle draws its streets');
+    assert.ok(obs.includes('this.selectGpsGapCell(i);') && obs.includes('this.showGpsGapPaths(c, detail);'), 'selecting a circle draws its streets');
     assert.ok(obs.includes('/api/analytics/gps-gaps/paths?ids='), 'from the API');
-    assert.ok(obs.includes('data-gps-route'), 'and the popup says what was drawn');
-    assert.ok(!obs.includes("on('popupclose'"), 'closing the popup keeps the streets visible');
-    assert.ok(obs.includes("map.on('click', () => this.clearGpsGapPaths())"), 'a click on the map background clears them');
-    ok('hotspots carry gap ids; worker, API and page draw the streets on click');
+    assert.ok(obs.includes('data-gps-route') && obs.includes('data-gps-path='), 'the detail lists each bus, which highlights its street');
+    assert.ok(obs.includes('vehicleId: g.vehicleId, lostTs: g.lostTs') || read('src/workers/ingestionWorker.js').includes('vehicleId: g.vehicleId, lostTs: g.lostTs'), 'paths carry the bus and the time');
+    assert.ok(obs.includes('const widthOf = (code) => [8, 4, 2]'), 'lines sharing a street are drawn as nested stripes, not over each other');
+    assert.ok(obs.includes("map.on('click', () => this.clearGpsGapSelection())"), 'a click on the map background clears them');
+    ok('hotspots carry gap ids; worker, API and page draw the street of each bus on click, lines as nested stripes');
   }
 
   console.log('🎉 ALL GPS GAP PATH ASSERTIONS PASSED!');

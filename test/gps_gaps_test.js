@@ -210,18 +210,19 @@ const bus = (vehicleId, sec, lat, lon, extra = {}) => ({ vehicleId, lineCode: 'L
     assert.ok(dades.indexOf('leaflet.js') < dades.indexOf('/js/observatori.js'), 'Leaflet loads before observatori.js');
     ok('worker op, API route and /dades map are wired');
 
-    // The map: wheel zoom on, a popup with its own width and padding, and a
-    // map box that stretches to the list's height (no empty band under it).
+    // The map: wheel zoom on, a hotspot's detail beside the map (not a popup
+    // over its streets) with padding, and a map box that stretches to the
+    // list's height (no empty band under it).
     const obs = read('public/js/observatori.js');
     const css = read('public/css/style.css');
     assert.ok(!/scrollWheelZoom:\s*false/.test(obs), 'the GPS map zooms with the mouse wheel');
-    assert.ok(obs.includes("className: 'gps-gaps-leaflet-popup'"), 'the popup has its own class');
-    assert.ok(/\.gps-gaps-leaflet-popup \.leaflet-popup-content \{[^}]*width: auto !important/.test(css), 'it is not forced to the bus popup\'s 330px');
+    assert.ok(dades.includes('id="gps-gaps-detail"') && dades.indexOf('id="gps-gaps-detail"') < dades.indexOf('id="gps-gaps-list"'), 'the detail panel sits above the list, beside the map');
+    assert.ok(!obs.slice(obs.indexOf('renderGpsGaps('), obs.indexOf('focusGpsGapCell(')).includes('bindPopup'), 'no popup covers the map');
     assert.ok(/\.gps-gaps-popup \{[^}]*padding: var\(--space-5\)/.test(css), 'its content is padded');
     assert.ok(/\.gps-gaps-layout \{[^}]*align-items: stretch/.test(css) && /\.gps-gaps-map-box \{[^}]*flex: 1 1 auto/.test(css), 'the map stretches to the list');
     assert.ok(dades.includes('<div class="gps-gaps-map-box">'), 'the map sits in its stretching box');
     assert.ok(!/observatori-line-badge" style=/.test(obs.slice(obs.indexOf('renderGpsGaps('), obs.indexOf('focusGpsGapCell('))), 'line badges use .line-chip, not inline colours');
-    ok('wheel zoom, padded popup, map as tall as the list, token line chips');
+    ok('wheel zoom, padded detail beside the map, map as tall as the list, token line chips');
   }
 
   console.log('🎉 ALL GPS GAP ASSERTIONS PASSED!');

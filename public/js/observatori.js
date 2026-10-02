@@ -184,7 +184,9 @@ class ObservatoriApp {
       const dayBtn = e.target.closest('[data-gps-days]');
       const lineBtn = e.target.closest('[data-gps-line]');
       const item = e.target.closest('[data-gps-cell]');
-      if (dayBtn) {
+      if (e.target.closest('[data-gps-close]')) {
+        this.clearGpsGapSelection();
+      } else if (dayBtn) {
         this.gpsGapDays = Number(dayBtn.dataset.gpsDays) || 7;
         section.querySelectorAll('[data-gps-days]').forEach(b => b.classList.toggle('active', b === dayBtn));
         this.loadGpsGaps();
@@ -246,9 +248,8 @@ class ObservatoriApp {
     this.gpsGapLayer = L.layerGroup().addTo(map);
     this.gpsGapPathLayer = L.layerGroup().addTo(map);
     this.gpsGapPathCache = new Map();
-    // A drawn path outlives its popup (closing it uncovers the streets); a
-    // click on the map background clears it, another circle replaces it.
-    map.on('click', () => this.clearGpsGapPaths());
+    // A click on the map background clears the selected hotspot.
+    map.on('click', () => this.clearGpsGapSelection());
     new MutationObserver(() => this.gpsGapTiles.setUrl(this.gpsGapTileUrl()))
       .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     this.gpsGapMap = map;
@@ -263,15 +264,73 @@ class ObservatoriApp {
   }
 
   /**
-   * Draws the streets a hotspot's buses drove without GPS (from the server,
-   * cut from each line's route) and states it in the popup.
+   * A selected hotspot (its circle or its row) shows its detail beside the
+   * map, never over it, and the streets its buses drove without GPS (cut
+   * from each line's route by the server). A click on the map background or
+   * the detail's close button clears both.
    */
-  clearGpsGapPaths() {
-    this._gpsGapPathReq = (this._gpsGapPathReq || 0) + 1;
-    if (this.gpsGapPathLayer) this.gpsGapPathLayer.clearLayers();
+  gpsGapMarkerStyle(c, selected) {
+    const colour = c.recurrent ? '#f43f5e' : '#f59e0b';
+    const ring = getComputedStyle(document.documentElement).getPropertyValue('--text-primary').trim() || colour;
+    return selected
+      ? { color: ring, weight: 3, fillColor: colour, fillOpacity: 0.75 }
+      : { color: colour, weight: 2, fillColor: colour, fillOpacity: c.recurrent ? 0.5 : 0.28 };
   }
 
-  async showGpsGapPaths(cell, popup) {
+  clearGpsGapSelection() {
+    this._gpsGapPathReq = (this._gpsGapPathReq || 0) + 1;
+    const was = this.gpsGapSelected;
+    this.gpsGapSelected = null;
+    if (this.gpsGapPathLayer) this.gpsGapPathLayer.clearLayers();
+    const marker = this.gpsGapMarkers && this.gpsGapMarkers[was];
+    if (marker && this.gpsGapCells && this.gpsGapCells[was]) marker.setStyle(this.gpsGapMarkerStyle(this.gpsGapCells[was], false));
+    document.querySelectorAll('#gps-gaps-list [data-gps-cell].active').forEach(b => b.classList.remove('active'));
+    const detail = document.getElementById('gps-gaps-detail');
+    if (detail && !detail.hidden) {
+      detail.hidden = true;
+      detail.innerHTML = '';
+      // The map is as tall as its column: it shrinks back with the detail.
+      if (this.gpsGapMap) this.gpsGapMap.invalidateSize({ pan: false });
+    }
+  }
+
+  selectGpsGapCell(i) {
+    const c = this.gpsGapCells && this.gpsGapCells[i];
+    const detail = document.getElementById('gps-gaps-detail');
+    if (!c || !detail) return;
+    this.clearGpsGapSelection();
+    this.gpsGapSelected = i;
+    const marker = this.gpsGapMarkers[i];
+    if (marker) marker.setStyle(this.gpsGapMarkerStyle(c, true)).bringToFront();
+    document.querySelector(`#gps-gaps-list [data-gps-cell="${i}"]`)?.classList.add('active');
+    detail.innerHTML = this.gpsGapDetailHtml(c);
+    detail.hidden = false;
+    if (this.gpsGapMap) this.gpsGapMap.invalidateSize({ pan: false });
+    this.showGpsGapPaths(c, detail);
+  }
+
+  gpsGapDetailHtml(c) {
+    const back = Math.round(L.latLng(c.lat, c.lon).distanceTo(L.latLng(c.regainedLat, c.regainedLon)));
+    const last = new Date(c.lastTs).toLocaleString('ca-ES', { timeZone: 'Europe/Madrid', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    return `<div class="gps-gaps-popup">
+      <div class="gps-gaps-popup-head">
+        <strong>${c.stopName ? `Prop de ${this.esc(c.stopName)}` : 'Punt sense parada propera'}</strong>
+        <span class="gps-gaps-popup-tag${c.recurrent ? ' recurrent' : ''}">${c.recurrent ? 'Punt recurrent' : 'Pèrdua puntual'}</span>
+      </div>
+      <button type="button" class="btn-icon gps-gaps-detail-close" data-gps-close aria-label="Tanca el detall">&times;</button>
+      <dl class="gps-gaps-popup-stats">
+        <dt>Pèrdues</dt><dd>${c.count} · ${c.vehicles} ${c.vehicles === 1 ? 'bus' : 'busos'}</dd>
+        <dt>Sense senyal</dt><dd>${this.esc(this.fmtGapDuration(c.medianGapSec))}${c.count > 1 ? ' de mediana' : ''}</dd>
+        ${c.count > 1 ? `<dt>La més llarga</dt><dd>${this.esc(this.fmtGapDuration(c.maxGapSec))}</dd>` : ''}
+        <dt>El recupera</dt><dd>a ${back} m</dd>
+        <dt>Última</dt><dd>${this.esc(last)}</dd>
+      </dl>
+      <div class="gps-gaps-popup-lines">${c.lines.map(code => this.lineChip(code)).join('')}</div>
+      <div class="gps-gaps-popup-route" data-gps-route><p>Buscant el recorregut sense GPS…</p></div>
+    </div>`;
+  }
+
+  async showGpsGapPaths(cell, detail) {
     const token = (this._gpsGapPathReq = (this._gpsGapPathReq || 0) + 1);
     this.gpsGapPathLayer.clearLayers();
     const ids = (cell.gapIds || []).filter(id => !this.gpsGapPathCache.has(id));
@@ -290,47 +349,77 @@ class ObservatoriApp {
     const stood = placed.length - paths.length;
     const css = getComputedStyle(document.documentElement);
     const casing = css.getPropertyValue('--bg-surface').trim() || '#12131a';
+    const colourOf = (code) => {
+      const n = /^L([1-8])$/.exec(code || '');
+      return (n && css.getPropertyValue(`--line-${n[1]}`).trim()) || css.getPropertyValue('--status-estimated').trim() || '#f59e0b';
+    };
+    // Lines share streets (L6 and L8 run together through Parc Central): one
+    // stripe width per line, widest underneath, so a shared street shows
+    // every line's colour instead of only the last one drawn.
+    const lineOrder = [...new Set(paths.map(p => p.lineCode))]
+      .sort((a, b) => paths.filter(p => p.lineCode === b).length - paths.filter(p => p.lineCode === a).length);
+    const widthOf = (code) => [8, 4, 2][Math.min(2, lineOrder.indexOf(code))];
+    const style = { lineCap: 'round', lineJoin: 'round', interactive: false };
+    this.gpsGapPathParts = new Map();
+    const part = (p, layer, base) => {
+      layer.gpsBase = base;
+      if (!this.gpsGapPathParts.has(p.id)) this.gpsGapPathParts.set(p.id, []);
+      this.gpsGapPathParts.get(p.id).push(layer.addTo(this.gpsGapPathLayer));
+    };
+    for (const p of paths) part(p, L.polyline(p.path, { ...style, color: casing, weight: widthOf(lineOrder[0]) + 4, opacity: 0.9 }), 0.9);
+    for (const code of lineOrder) {
+      for (const p of paths.filter(q => q.lineCode === code)) part(p, L.polyline(p.path, { ...style, color: colourOf(code), weight: widthOf(code), opacity: 0.95 }), 0.95);
+    }
+    // Where each bus's GPS came back.
     for (const p of paths) {
-      const n = /^L([1-8])$/.exec(p.lineCode || '');
-      const colour = (n && css.getPropertyValue(`--line-${n[1]}`).trim()) || css.getPropertyValue('--status-estimated').trim() || '#f59e0b';
-      L.polyline(p.path, { color: casing, weight: 9, opacity: 0.9, lineCap: 'round', lineJoin: 'round', interactive: false }).addTo(this.gpsGapPathLayer);
-      L.polyline(p.path, { color: colour, weight: 5, opacity: 0.95, lineCap: 'round', lineJoin: 'round', interactive: false }).addTo(this.gpsGapPathLayer);
+      part(p, L.circleMarker(p.path[p.path.length - 1], { radius: 5, color: casing, weight: 2, fillColor: colourOf(p.lineCode), fillOpacity: 1, interactive: false }), 1);
     }
-    const note = popup && popup.getElement && popup.getElement()?.querySelector('[data-gps-route]');
+    const note = detail && detail.querySelector('[data-gps-route]');
     if (note) {
-      const lengths = paths.map(p => p.lengthM).filter(Number.isFinite).sort((a, b) => a - b);
-      const stoodTxt = stood ? ` ${stood === 1 ? 'Un bus estava aturat' : `${stood} busos estaven aturats`} mentre no enviava posició.` : '';
-      note.textContent = (!paths.length
-        ? (stood ? '' : "No s'ha pogut situar a la ruta de la línia.")
-        : paths.length === 1
-          ? `Tram sense GPS dibuixat al mapa: ${lengths[0]} m.`
-          : `${paths.length} trams sense GPS dibuixats al mapa (${lengths[0]}-${lengths[lengths.length - 1]} m).`) + stoodTxt;
-      if (paths.length) note.textContent += " Tanca aquesta finestra per veure el recorregut; s'esborra en tocar el mapa.";
-      note.textContent = note.textContent.trim();
+      // One row per loss: which bus, when, how long, and the street it drove.
+      const rows = (cell.gapIds || []).map(id => this.gpsGapPathCache.get(id)).filter(Boolean)
+        .sort((a, b) => (b.lostTs || 0) - (a.lostTs || 0));
+      const hhmm = ts => (Number.isFinite(ts) ? new Date(ts).toLocaleTimeString('ca-ES', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit' }) : '');
+      const drawn = p => Array.isArray(p.path) && p.lengthM >= 25;
+      const what = p => (!Array.isArray(p.path) ? 'no situat' : drawn(p) ? `${p.lengthM} m` : 'aturat');
+      const row = p => {
+        const inner = `${this.lineChip(p.lineCode)}<span>${p.vehicleId ? `${this.esc(p.vehicleId)} · ` : ''}${this.esc(hhmm(p.lostTs))} · ${this.esc(this.fmtGapDuration(p.gapSec))}</span><b>${this.esc(what(p))}</b>`;
+        return drawn(p) ? `<li><button type="button" data-gps-path="${p.id}">${inner}</button></li>` : `<li><span>${inner}</span></li>`;
+      };
+      const hint = paths.length
+        ? "Toca un bus per veure només el seu tram; el punt és on torna el GPS."
+        : (stood ? '' : "No s'ha pogut situar a la ruta de la línia.");
+      note.innerHTML = rows.length
+        ? `<ul class="gps-gaps-popup-paths">${rows.map(row).join('')}</ul>${hint ? `<p>${hint}</p>` : ''}`
+        : "<p>No s'ha pogut situar a la ruta de la línia.</p>";
+      // The rows name every line: the chip row above them would repeat it.
+      const chips = detail.querySelector('.gps-gaps-popup-lines');
+      if (chips) chips.hidden = rows.length > 0;
+      this._gpsGapPathPicked = null;
+      note.onclick = (e) => {
+        const btn = e.target.closest('[data-gps-path]');
+        if (!btn) return;
+        const id = Number(btn.dataset.gpsPath);
+        const on = this._gpsGapPathPicked === id ? null : id;
+        this._gpsGapPathPicked = on;
+        note.querySelectorAll('[data-gps-path]').forEach(b => b.classList.toggle('active', Number(b.dataset.gpsPath) === on));
+        for (const [pid, layers] of this.gpsGapPathParts) {
+          const shown = on === null || pid === on;
+          for (const layer of layers) {
+            layer.setStyle(layer instanceof L.CircleMarker
+              ? { opacity: shown ? 1 : 0.12, fillOpacity: shown ? 1 : 0.12 }
+              : { opacity: shown ? layer.gpsBase : 0.12 });
+          }
+        }
+        if (on !== null) for (const layer of this.gpsGapPathParts.get(on) || []) layer.bringToFront();
+      };
     }
+    // Nothing covers the map now: fit the streets and the circle if any of
+    // them is out of view.
     const map = this.gpsGapMap;
     if (!map) return;
-    // The popup opens above the circle and grows once the note is filled in:
-    // fit the streets and the circle into the space below it, then pan until
-    // the whole popup (and its close button) is inside the map.
-    const popupEl = popup && popup.getElement && popup.getElement();
-    const size = map.getSize();
-    const top = Math.min((popupEl ? popupEl.offsetHeight : 0) + 30, Math.max(40, size.y - 140));
-    if (paths.length) {
-      const bounds = L.latLngBounds(paths.flatMap(p => p.path)).extend([cell.lat, cell.lon]);
-      const fits = [bounds.getNorthWest(), bounds.getSouthEast()].every(ll => {
-        const pt = map.latLngToContainerPoint(ll);
-        return pt.x >= 30 && pt.x <= size.x - 30 && pt.y >= top && pt.y <= size.y - 30;
-      });
-      if (!fits) map.fitBounds(bounds, { paddingTopLeft: [30, top], paddingBottomRight: [30, 30], maxZoom: 17, animate: false });
-    }
-    if (popupEl && popupEl.isConnected) {
-      const p = popupEl.getBoundingClientRect();
-      const m = map.getContainer().getBoundingClientRect();
-      const dx = p.left - m.left < 10 ? p.left - m.left - 10 : (p.right > m.right - 10 ? p.right - m.right + 10 : 0);
-      const dy = p.top - m.top < 10 ? p.top - m.top - 10 : 0;
-      if (dx || dy) map.panBy([dx, dy], { animate: false });
-    }
+    const bounds = L.latLngBounds([[cell.lat, cell.lon], ...paths.flatMap(p => p.path)]);
+    if (!map.getBounds().pad(-0.05).contains(bounds)) map.fitBounds(bounds, { padding: [40, 40], maxZoom: 17 });
   }
 
   fmtGapDuration(sec) {
@@ -347,8 +436,9 @@ class ObservatoriApp {
     const empty = document.getElementById('gps-gaps-empty');
     const map = this.ensureGpsGapMap();
     if (this.gpsGapLayer) this.gpsGapLayer.clearLayers();
-    if (this.gpsGapPathLayer) this.gpsGapPathLayer.clearLayers();
     this.gpsGapMarkers = [];
+    this.clearGpsGapSelection();
+    this.gpsGapCells = [];
     if (!summary || !list || !empty) return;
 
     if (!data) {
@@ -377,6 +467,7 @@ class ObservatoriApp {
     }
     empty.hidden = true;
 
+    this.gpsGapCells = cells;
     const recurrent = cells.filter(c => c.recurrent).length;
     summary.innerHTML = `<strong>${t.mapped}</strong> pèrdues de senyal${onLine} en ${period}, de ${t.vehicles} busos; durada mediana <strong>${this.esc(this.fmtGapDuration(t.medianGapSec))}</strong>. `
       + (recurrent
@@ -409,29 +500,14 @@ class ObservatoriApp {
       // Smallest first, so the busiest points are drawn on top.
       for (let i = cells.length - 1; i >= 0; i--) {
         const c = cells[i];
-        const colour = c.recurrent ? '#f43f5e' : '#f59e0b';
-        const back = Math.round(L.latLng(c.lat, c.lon).distanceTo(L.latLng(c.regainedLat, c.regainedLon)));
-        const last = new Date(c.lastTs).toLocaleString('ca-ES', { timeZone: 'Europe/Madrid', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-        const popup = `<div class="gps-gaps-popup">
-          <div class="gps-gaps-popup-head">
-            <strong>${c.stopName ? `Prop de ${this.esc(c.stopName)}` : 'Punt sense parada propera'}</strong>
-            <span class="gps-gaps-popup-tag${c.recurrent ? ' recurrent' : ''}">${c.recurrent ? 'Punt recurrent' : 'Pèrdua puntual'}</span>
-          </div>
-          <dl class="gps-gaps-popup-stats">
-            <dt>Pèrdues</dt><dd>${c.count} · ${c.vehicles} ${c.vehicles === 1 ? 'bus' : 'busos'}</dd>
-            <dt>Sense senyal</dt><dd>${this.esc(this.fmtGapDuration(c.medianGapSec))}${c.count > 1 ? ' de mediana' : ''}</dd>
-            ${c.count > 1 ? `<dt>La més llarga</dt><dd>${this.esc(this.fmtGapDuration(c.maxGapSec))}</dd>` : ''}
-            <dt>El recupera</dt><dd>a ${back} m</dd>
-            <dt>Última</dt><dd>${this.esc(last)}</dd>
-          </dl>
-          <div class="gps-gaps-popup-lines">${c.lines.map(code => this.lineChip(code)).join('')}</div>
-          <p class="gps-gaps-popup-route" data-gps-route>Buscant el recorregut sense GPS…</p>
-        </div>`;
         this.gpsGapMarkers[i] = L.circleMarker([c.lat, c.lon], {
           radius: Math.min(26, 6 + 4 * Math.sqrt(c.count)),
-          color: colour, weight: 2, fillColor: colour, fillOpacity: c.recurrent ? 0.5 : 0.28
-        }).bindPopup(popup, { className: 'gps-gaps-leaflet-popup', minWidth: 260, maxWidth: 300 }).addTo(this.gpsGapLayer);
-        this.gpsGapMarkers[i].on('popupopen', (e) => this.showGpsGapPaths(c, e.popup));
+          ...this.gpsGapMarkerStyle(c, false)
+        }).addTo(this.gpsGapLayer);
+        this.gpsGapMarkers[i].on('click', (e) => {
+          L.DomEvent.stopPropagation(e);
+          this.selectGpsGapCell(i);
+        });
       }
       map.invalidateSize();
       if (cells.length) map.fitBounds(cells.map(c => [c.lat, c.lon]), { padding: [30, 30], maxZoom: 16 });
@@ -443,8 +519,8 @@ class ObservatoriApp {
     const marker = this.gpsGapMarkers[i];
     if (!marker || !this.gpsGapMap) return;
     document.getElementById('gps-gaps-map')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    this.gpsGapMap.setView(marker.getLatLng(), 17);
-    marker.openPopup();
+    this.gpsGapMap.setView(marker.getLatLng(), 16);
+    this.selectGpsGapCell(i);
   }
 
   renderDataHealth(data) {
