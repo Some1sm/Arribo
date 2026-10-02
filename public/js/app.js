@@ -16,7 +16,7 @@ const MATARO_ZONES = [
   { id: 'llantia', name: 'La Llàntia / Via Europa', icon: '🏫', desc: 'Línies L1, L2, L5, L8', lat: 41.5480, lon: 2.4320 }
 ];
 
-const CANONICAL_BUS_ICON_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1.5px; margin-right:3px; display:inline-block;"><path d="M19 17h2l.64-2.54a6 6 0 0 0 .36-2V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v6.46a6 6 0 0 0 .36 2L3 17h2"/><path d="M7 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2"/><path d="M14 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2"/><circle cx="6.5" cy="12.5" r="1.5"/><circle cx="17.5" cy="12.5" r="1.5"/><line x1="2" y1="9" x2="22" y2="9"/></svg>';
+const CANONICAL_BUS_ICON_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1.5px; margin-right:3px; display:inline-block;"><path d="M4.7 17.5H3.4A1.4 1.4 0 0 1 2 16.1V6.4A1.4 1.4 0 0 1 3.4 5H17.5A4.5 4.5 0 0 1 22 9.5v6.6a1.4 1.4 0 0 1-1.4 1.4h-1.3"/><path d="M9.3 17.5h5.4"/><path d="M2 11.6h20"/><path d="M7.5 5v6.6M12.5 5v6.6M17.6 5.2v6.4"/><circle cx="7" cy="17.5" r="2.3"/><circle cx="17" cy="17.5" r="2.3"/></svg>';
 
 class TransitApp {
   constructor() {
@@ -414,12 +414,12 @@ class TransitApp {
 
     if (badge) {
       badge.innerHTML = `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M19 17h2l.64-2.54a6 6 0 0 0 .36-2V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v6.46a6 6 0 0 0 .36 2L3 17h2"/>
-        <path d="M7 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2"/>
-        <path d="M14 17v2a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-2"/>
-        <circle cx="6.5" cy="12.5" r="1.5"/>
-        <circle cx="17.5" cy="12.5" r="1.5"/>
-        <line x1="2" y1="9" x2="22" y2="9"/>
+        <path d="M4.7 17.5H3.4A1.4 1.4 0 0 1 2 16.1V6.4A1.4 1.4 0 0 1 3.4 5H17.5A4.5 4.5 0 0 1 22 9.5v6.6a1.4 1.4 0 0 1-1.4 1.4h-1.3"/>
+        <path d="M9.3 17.5h5.4"/>
+        <path d="M2 11.6h20"/>
+        <path d="M7.5 5v6.6M12.5 5v6.6M17.6 5.2v6.4"/>
+        <circle cx="7" cy="17.5" r="2.3"/>
+        <circle cx="17" cy="17.5" r="2.3"/>
       </svg>`;
       badge.removeAttribute('style');
     }

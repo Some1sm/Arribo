@@ -314,6 +314,9 @@
   --bus-tyre: #0a0c10;
   --bus-hub: #a3adba;
   --bus-outline: rgba(255, 255, 255, 0);
+  --bus-led-bg: #050806;
+  --bus-led: #c4f58a;
+  --bus-lamp: #fff3c4;
 }
 
 [data-theme="light"] {
@@ -440,6 +443,9 @@
   --bus-tyre: #0d1015;
   --bus-hub: #b3bcc7;
   --bus-outline: #b9c3cf;
+  --bus-led-bg: #050806;
+  --bus-led: #c4f58a;
+  --bus-lamp: #fff3c4;
 }
 
 /* Constants */
@@ -4894,6 +4900,26 @@ body {
   background: radial-gradient(circle, var(--c10-primary-glow) 0%, transparent 70%);
   pointer-events: none;
   opacity: 0.6;
+}
+
+/* The bus illustration (index.html hero): drives in once on load. */
+.landing-hero-bus {
+  display: block;
+  width: min(300px, 78%);
+  height: auto;
+  margin: 0 auto var(--space-5);
+  position: relative;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .landing-hero-bus {
+    animation: hero-bus-arrive 700ms var(--ease-out) both;
+  }
+}
+
+@keyframes hero-bus-arrive {
+  from { transform: translateX(-32px); opacity: 0.35; }
+  to { transform: translateX(0); opacity: 1; }
 }
 
 .landing-hero-badge {
