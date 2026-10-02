@@ -415,7 +415,10 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   `var()` must be defined; text pairs hold 4.5:1 in both themes; a component carries no
   `[data-theme="light"]` override of its own. `test/design_system_test.js` checks this and
   ratchets hard-coded colours, light overrides and inline styles: they may only go down,
-  and a change that removes some lowers its ceilings.
+  and a change that removes some lowers its ceilings. Phone-width rules that once broke
+  silently (icon-only header links, hero glow and badge, filter pill rows, the delay
+  investigation's width) are pinned by `test/mobile_layout_test.js`; check a layout change
+  at 412 px.
 
 ## 4. Runtime, configuration and privacy
 

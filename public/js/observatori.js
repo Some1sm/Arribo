@@ -2641,29 +2641,33 @@ class ObservatoriApp {
         </div>
 
         <!-- Filter Controls Row -->
-        <div style="display:flex; flex-direction:column; gap:0.65rem; margin-top:1rem; padding-top:0.85rem; border-top:1px solid var(--border-subtle);">
+        <div class="incident-filters">
           <!-- Timeframe selector -->
-          <div style="display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap;">
-            <span style="font-size:0.75rem; font-weight:700; color:var(--text-muted); min-width:60px;">Període:</span>
-            <button type="button" class="incident-filter-pill ${Number(selectedHours) === 24 ? 'active' : ''}" data-incident-hours="24">24 hores</button>
-            <button type="button" class="incident-filter-pill ${Number(selectedHours) === 48 ? 'active' : ''}" data-incident-hours="48">48 hores</button>
-            <button type="button" class="incident-filter-pill ${Number(selectedHours) === 168 ? 'active' : ''}" data-incident-hours="168">7 dies</button>
+          <div class="incident-filter-row">
+            <span class="incident-filter-label">Període:</span>
+            <div class="incident-filter-options incident-filter-options--period">
+              <button type="button" class="incident-filter-pill ${Number(selectedHours) === 24 ? 'active' : ''}" data-incident-hours="24">24 hores</button>
+              <button type="button" class="incident-filter-pill ${Number(selectedHours) === 48 ? 'active' : ''}" data-incident-hours="48">48 hores</button>
+              <button type="button" class="incident-filter-pill ${Number(selectedHours) === 168 ? 'active' : ''}" data-incident-hours="168">7 dies</button>
+            </div>
           </div>
 
           <!-- Line selector -->
-          <div style="display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap;">
-            <span style="font-size:0.75rem; font-weight:700; color:var(--text-muted); min-width:60px;">Línia:</span>
-            <button type="button" class="incident-filter-pill ${activeLineNorm === 'ALL' ? 'active' : ''}" data-incident-line="all">Totes les línies</button>
-            ${linesCatalog.map(lCode => {
-              const isActive = activeLineNorm === lCode;
-              const color = getLineColor(lCode);
-              return `
-                <button type="button" class="incident-filter-pill ${isActive ? 'active' : ''}" data-incident-line="${lCode}">
-                  <span style="width:8px; height:8px; border-radius:50%; background:${color}; display:inline-block;"></span>
-                  <span>${lCode}</span>
-                </button>
-              `;
-            }).join('')}
+          <div class="incident-filter-row">
+            <span class="incident-filter-label">Línia:</span>
+            <div class="incident-filter-options incident-filter-options--lines">
+              <button type="button" class="incident-filter-pill ${activeLineNorm === 'ALL' ? 'active' : ''}" data-incident-line="all">Totes les línies</button>
+              ${linesCatalog.map(lCode => {
+                const isActive = activeLineNorm === lCode;
+                const n = /^L([1-8])$/.exec(lCode);
+                return `
+                  <button type="button" class="incident-filter-pill ${isActive ? 'active' : ''}" data-incident-line="${lCode}">
+                    <span class="line-dot${n ? ` line-dot-${n[1]}` : ''}"></span>
+                    <span>${lCode}</span>
+                  </button>
+                `;
+              }).join('')}
+            </div>
           </div>
         </div>
       </div>
