@@ -136,7 +136,7 @@
 
       if (stops.length === 0) {
         grid.innerHTML = `
-          <div style="grid-column: 1 / -1; padding: 2rem; text-align: center; color: var(--text-muted); background:var(--bg-surface-elevated); border-radius:var(--radius-md);">
+          <div style="grid-column: 1 / -1; padding: 2rem; text-align: center; color: var(--text-muted); background:var(--bg-surface-elevated); border-radius:var(--radius-sm);">
             <div style="font-size:1.6rem; margin-bottom:0.4rem;">🚏</div>
             <div style="font-weight:700; color:var(--text-primary); margin-bottom:0.25rem;">Cap parada a menys de 800m</div>
             <div style="font-size:0.82rem;">Tria un altre barri o zona de Mataró per consultar les parades.</div>

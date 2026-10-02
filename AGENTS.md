@@ -408,6 +408,13 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   longer ones and line changes are not gaps. `/api/analytics/gps-gaps` groups the rest into
   ~150 m cells (recurrent: 3+ gaps from 2+ buses); rows are pruned with the delay logs.
   See `test/gps_gaps_test.js`.
+- **Colours, radii and spacing come from tokens.** [UI_GUIDE.md](UI_GUIDE.md) §2.0 lists the
+  design-system tokens (`--brand`, `--action`/`--on-action`, `--status-*`, `--punct-*`,
+  `--line-N`/`--on-line-N`, `--radius-xs`…`--radius-xl`, `--space-1`…`--space-8`). Every
+  `var()` must be defined; text pairs hold 4.5:1 in both themes; a component carries no
+  `[data-theme="light"]` override of its own. `test/design_system_test.js` checks this and
+  ratchets hard-coded colours, light overrides and inline styles: they may only go down,
+  and a change that removes some lowers its ceilings.
 
 ## 4. Runtime, configuration and privacy
 

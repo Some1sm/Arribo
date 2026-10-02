@@ -904,7 +904,7 @@ class PlannerPageApp {
             ${Array.isArray(it.notices) && it.notices.length > 0 ? `
               <div class="planner-itinerary-notices" style="margin-top:0.75rem;">
                 ${it.notices.map(notice => `
-                  <div class="disruption-banner-card" style="margin-bottom:0.4rem; padding:0.5rem 0.75rem; background:linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(220, 38, 38, 0.1) 100%); border:1px solid rgba(245, 158, 11, 0.35); border-radius:var(--radius-md);">
+                  <div class="disruption-banner-card" style="margin-bottom:0.4rem; padding:0.5rem 0.75rem; background:linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(220, 38, 38, 0.1) 100%); border:1px solid rgba(245, 158, 11, 0.35); border-radius:var(--radius-sm);">
                     <span class="disruption-banner-icon" style="font-size:1rem; margin-right:6px;">⚠️</span>
                     <div class="disruption-banner-content" style="flex:1;">
                       <strong style="color:#d97706; font-size:0.8rem; font-weight:700;">Avís de servei a la línia</strong>
