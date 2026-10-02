@@ -10366,6 +10366,32 @@ input#plan-max-walk:focus {
   overflow: hidden;
 }
 
+/* Observatori methodology: cards that wrap and stretch to fill each row, so
+   five blocks of uneven length leave no empty cells. */
+.methodology-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+  margin-top: 1rem;
+}
+
+.methodology-grid > div {
+  flex: 1 1 260px;
+  padding: 0.8rem 0.9rem;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--btn-radius-md);
+}
+
+.methodology-grid h5 {
+  margin-top: 0;
+}
+
+#observatori-methodology-details[open] .methodology-when-closed,
+#observatori-methodology-details:not([open]) .methodology-when-open {
+  display: none;
+}
+
 /* GPS loss map (/dades) */
 .gps-gaps-card {
   background: var(--bg-surface);

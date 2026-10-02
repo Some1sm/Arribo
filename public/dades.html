@@ -13,7 +13,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-  <link rel="stylesheet" href="/css/style.css?v=9.4.23">
+  <link rel="stylesheet" href="/css/style.css?v=9.4.24">
 </head>
 <body class="observatori-page-body observatori-page">
 
@@ -178,10 +178,10 @@
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
           <strong>Metodologia i Criteris de Càlcul de l'Observatori</strong>
         </span>
-        <span class="methodology-arrow" style="font-size:0.8rem; color:var(--brand-primary); font-weight:500;">Desplegar ▾</span>
+        <span class="methodology-arrow" style="font-size:0.8rem; color:var(--brand-primary); font-weight:500;"><span class="methodology-when-closed">Desplegar ▾</span><span class="methodology-when-open">Plegar ▴</span></span>
       </summary>
       <div style="padding:0.25rem 1.2rem 1.2rem; font-size:0.82rem; line-height:1.6; color:var(--text-secondary); border-top:1px solid var(--border-subtle);">
-        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:1.25rem; margin-top:1rem;">
+        <div class="methodology-grid">
           <div>
             <h5 style="color:var(--text-primary); margin-bottom:0.35rem; font-size:0.86rem;">📡 Font de dades i telemetria</h5>
             <p style="margin:0;">Les dades provenen del canal oficial de telemetria en temps real (SIRI) del servei de Mataró Bus Urbà ofert per Avanza. Arribo! sondeja la posició i el retard de cada autobús cada 20 segons de forma ininterrompuda.</p>
@@ -310,10 +310,10 @@
   </footer>
 
   <!-- Scripts -->
-  <script src="/js/utils.js?v=9.4.23"></script>
-  <script src="/js/storage.js?v=9.4.23"></script>
-  <script src="/js/pwa.js?v=9.4.23"></script>
+  <script src="/js/utils.js?v=9.4.24"></script>
+  <script src="/js/storage.js?v=9.4.24"></script>
+  <script src="/js/pwa.js?v=9.4.24"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="/js/observatori.js?v=9.4.23"></script>
+  <script src="/js/observatori.js?v=9.4.24"></script>
 </body>
 </html>
