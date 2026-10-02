@@ -20,6 +20,15 @@
 
 /** The feed's normal cadence is ~30 s; two missed reports is a real loss. */
 const MIN_GAP_MS = 90 * 1000;
+
+/**
+ * A fleet number names one physical bus (2651-2687 in Mataró). The SIRI client
+ * labels a fix that arrives without <VehicleRef> as 'Bus', and two such buses
+ * on one line in the same poll were seen on 2 Oct 2026: keyed together they
+ * would read as one bus jumping between them, with fake gaps. An id with no
+ * digit names no bus and is ignored.
+ */
+const isFleetId = id => /\d/.test(id);
 /** Longer than this the bus was out of service, not in a dead zone. */
 const MAX_GAP_MS = 15 * 60 * 1000;
 /** Fixes of other buses closer than this to either edge do not prove the feed was alive. */
@@ -40,7 +49,8 @@ class GpsGapDetector {
    *                        isTerminalLayover, toStop }
    */
   observe(bus) {
-    const vId = bus && bus.vehicleId ? String(bus.vehicleId) : '';
+    const vId = bus && bus.vehicleId ? String(bus.vehicleId).trim() : '';
+    if (!isFleetId(vId)) return null;
     const t = Number(bus && bus.observedAt);
     const lat = Number(bus && bus.lat);
     const lon = Number(bus && bus.lon);
@@ -113,4 +123,4 @@ class GpsGapDetector {
   }
 }
 
-module.exports = { GpsGapDetector, MIN_GAP_MS, MAX_GAP_MS };
+module.exports = { GpsGapDetector, MIN_GAP_MS, MAX_GAP_MS, isFleetId };

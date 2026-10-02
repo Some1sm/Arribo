@@ -405,7 +405,8 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   dead-reckoned positions never count) in `gps_gaps`: last fix before, first fix after,
   duration. Silences at a terminal (`at_terminal`) or while no other bus reported
   (`feed_wide`, the operator's feed stalled) are stored but kept off the /dades map;
-  longer ones and line changes are not gaps. `/api/analytics/gps-gaps` groups the rest into
+  longer ones, line changes and fixes without a fleet number (the SIRI client's placeholder
+  `Bus`, shared by every bus sent without `<VehicleRef>`) are not gaps. `/api/analytics/gps-gaps` groups the rest into
   ~150 m cells (recurrent: 3+ gaps from 2+ buses); rows are pruned with the delay logs.
   See `test/gps_gaps_test.js`.
 - **Colours, radii and spacing come from tokens.** [UI_GUIDE.md](UI_GUIDE.md) §2.0 lists the

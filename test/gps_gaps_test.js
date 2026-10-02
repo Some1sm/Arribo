@@ -15,6 +15,8 @@
  *  4. Hotspots group gaps into ~150 m cells; a cell is recurrent with 3+ gaps
  *     from 2+ buses. Line and period filters; pruning with the delay logs.
  *  5. The worker records what the detector finds during revenue service.
+ *  6. A fix without a fleet number (the SIRI client's placeholder "Bus") names
+ *     no bus and is ignored: two of them on one line looked like one bus.
  */
 
 const assert = require('node:assert/strict');
@@ -26,7 +28,7 @@ const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'arribo-gps-gaps-'));
 process.env.DB_PATH = path.join(scratch, 'history.db');
 process.env.REPORTS_DIR = path.join(scratch, 'reports');
 
-const { GpsGapDetector, MIN_GAP_MS, MAX_GAP_MS } = require('../src/core/geo/gpsGapDetector');
+const { GpsGapDetector, MIN_GAP_MS, MAX_GAP_MS, isFleetId } = require('../src/core/geo/gpsGapDetector');
 const historyDb = require('../src/historyDb');
 const ok = msg => console.log(`  ✓ ${msg}`);
 
@@ -80,10 +82,23 @@ const bus = (vehicleId, sec, lat, lon, extra = {}) => ({ vehicleId, lineCode: 'L
 
     const many = new GpsGapDetector();
     for (let i = 0; i < 50; i++) many.observe(bus(`V${i}`, i, 41.5, 2.4));
-    many.observe(bus('LATE', 3600, 41.5, 2.4));
+    many.observe(bus('2699', 3600, 41.5, 2.4));
     assert.equal(many.last.size, 1, 'vehicles not seen for 20 min are forgotten');
     assert.ok(many.fixTimes.length <= 1, 'old fix times are dropped');
     ok('memory is bounded');
+
+    // A fix without <VehicleRef> is labelled 'Bus' by the SIRI client; two of
+    // them on one line must not be read as one bus with a gap between them.
+    const anon = new GpsGapDetector();
+    const ghost = (sec, lat) => anon.observe(bus('Bus', sec, lat, 2.44));
+    anon.observe(bus('2600', 0, 41.53, 2.43));
+    for (let t = 30; t <= 300; t += 30) anon.observe(bus('2600', t, 41.53, 2.43));
+    assert.equal(ghost(0, 41.52), null);
+    assert.equal(ghost(200, 41.55), null, 'a placeholder id never opens or closes a gap');
+    assert.equal(anon.last.has('Bus'), false, 'and is not remembered');
+    for (const id of ['', '  ', 'Bus', 'bus', 'mataro_bus']) assert.equal(isFleetId(id), false, `"${id}" names no bus`);
+    for (const id of ['2679', 'mataro_8_2679', 'EST_8_1_1700']) assert.equal(isFleetId(id), true);
+    ok('fixes without a fleet number (the placeholder "Bus") are ignored');
   }
 
   // ── 4. Storage and hotspots ─────────────────────────────────────────
