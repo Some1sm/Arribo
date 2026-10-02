@@ -9,7 +9,8 @@
  *     ran through the front wheel).
  *  3. The landing hero's illustration is a 3-door Volvo 7900: rear door behind
  *     the rear axle, middle door between the axles, front door ahead of the
- *     front axle, none overlapping a wheel; a MATARÓ destination sign; colours
+ *     front axle, none overlapping a wheel, the rear one centred between the
+ *     tail and the rear wheel arch; a MATARÓ destination sign; colours
  *     only from the --bus-* tokens, defined in both themes.
  */
 
@@ -72,6 +73,10 @@ console.log('🧪 Testing the bus drawings...');
   assert.equal(doors.length, 3, 'three doors');
   const [rear, middle, front] = doors.sort((a, b) => a[0] - b[0]);
   assert.ok(rear[1] < wheels[0] - 15, 'the rear door is behind the rear axle');
+  // Midway between the tail (x 10) and the wheel arch, not against the tail.
+  const tail = 10;
+  const gapCentre = (tail + (wheels[0] - 15)) / 2;
+  assert.ok(Math.abs((rear[0] + rear[1]) / 2 - gapCentre) <= 3, `the rear door is centred between the tail and the rear wheel (${(rear[0] + rear[1]) / 2} vs ${gapCentre})`);
   assert.ok(middle[0] > wheels[0] + 15 && middle[1] < wheels[1] - 15, 'the middle door is between the axles');
   assert.ok(front[0] > wheels[1] + 15, 'the front door is ahead of the front axle');
   ok('hero: 3-door Volvo 7900 with a MATARÓ sign, doors clear of the wheels, token colours in both themes');
