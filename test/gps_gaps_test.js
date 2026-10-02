@@ -223,6 +223,19 @@ const bus = (vehicleId, sec, lat, lon, extra = {}) => ({ vehicleId, lineCode: 'L
     assert.ok(dades.includes('<div class="gps-gaps-map-box">'), 'the map sits in its stretching box');
     assert.ok(!/observatori-line-badge" style=/.test(obs.slice(obs.indexOf('renderGpsGaps('), obs.indexOf('focusGpsGapCell('))), 'line badges use .line-chip, not inline colours');
     ok('wheel zoom, padded detail beside the map, map as tall as the list, token line chips');
+
+    // Only the punctuality report shows the GPS section; the Termòmetre, Top
+    // Incidents and monthly tabs hide it.
+    const body = name => {
+      const at = obs.indexOf(`  ${name}(`) >= 0 ? obs.indexOf(`  ${name}(`) : obs.indexOf(`  async ${name}(`);
+      assert.ok(at >= 0, `${name} exists`);
+      return obs.slice(at, obs.indexOf('\n  }\n', at));
+    };
+    assert.ok(body('loadJournalismReport').includes('this.showGpsGaps(true)'), 'the 24 h / 48 h / 7 dies report shows it');
+    for (const tab of ['openDelayIncidentsTab', 'loadTermometre', 'loadMonthlyReport']) {
+      assert.ok(body(tab).includes('this.showGpsGaps(false)'), `${tab} hides it`);
+    }
+    ok('the GPS section shows with the report only, not in Top Incidents, Termòmetre or monthly');
   }
 
   console.log('🎉 ALL GPS GAP ASSERTIONS PASSED!');

@@ -1,6 +1,20 @@
 const assert = require('node:assert/strict');
 const historyDb = require('../src/historyDb');
 const reportCacheService = require('../src/reportCacheService');
+const calendarEngine = require('../src/core/time/calendarEngine');
+
+// The report counts revenue-service passages only, so samples two hours
+// before a night-time run (~23:25-05:10 Madrid) vanished. They go in the most
+// recent whole hour between 08:00 and 20:00 Madrid that began at least
+// 15 minutes ago: always in service, always inside the last 24 h.
+const serviceHour = (() => {
+  let t = Math.floor((Date.now() - 15 * 60000) / 3600000) * 3600000;
+  for (;;) {
+    const h = calendarEngine.getDateComponents(new Date(t), 'Europe/Madrid').hour;
+    if (h >= 8 && h <= 20) return t;
+    t -= 3600000;
+  }
+})();
 
 function insert(entry) {
   historyDb.db.prepare(`
@@ -20,8 +34,8 @@ async function run() {
   reportCacheService.setDatabase(historyDb);
 
   const now = Date.now();
-  // Anchor inserts inside one Madrid-local hour so bucket counts are deterministic
-  const base = Math.floor((now - 2 * 3600 * 1000) / 3600000) * 3600000 + 10 * 60000;
+  // Anchor inserts inside one Madrid-local service hour so bucket counts are deterministic
+  const base = serviceHour + 10 * 60000;
 
   // Same stop NAME on two lines sharing stop ID 1016 — identity must keep rows separate
   for (let i = 0; i < 5; i++) {

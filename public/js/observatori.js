@@ -174,6 +174,18 @@ class ObservatoriApp {
   // GPS LOSS MAP: where buses stop reporting
   // ==========================================
 
+  /**
+   * "On perden el GPS" belongs to the punctuality report (24 h / 48 h /
+   * 7 dies), not to the Termòmetre, Top Incidents or monthly tabs.
+   */
+  showGpsGaps(show) {
+    const section = document.getElementById('gps-gaps-section');
+    if (!section) return;
+    section.style.display = show ? '' : 'none';
+    // Leaflet measured the map while it was hidden: size it again.
+    if (show && this.gpsGapMap) this.gpsGapMap.invalidateSize({ pan: false });
+  }
+
   initGpsGaps() {
     const section = document.getElementById('gps-gaps-section');
     if (!section) return;
@@ -1024,6 +1036,7 @@ class ObservatoriApp {
     const searchBarWrap = document.getElementById('journalism-search-bar-wrap');
 
     if (searchBarWrap) searchBarWrap.style.display = 'block';
+    this.showGpsGaps(true);
     if (contentContainer) contentContainer.style.display = 'block';
     if (termometreContainer) termometreContainer.style.display = 'none';
     if (incidentsContainer) incidentsContainer.style.display = 'none';
@@ -2027,6 +2040,7 @@ class ObservatoriApp {
     if (monthlyContainer) monthlyContainer.style.display = 'none';
     if (termometreContainer) {
       termometreContainer.style.display = 'block';
+      this.showGpsGaps(false);
       if (!this.termometreData || force) {
         termometreContainer.innerHTML = '<div style="text-align:center; padding:3rem;"><span class="loading-spinner-inline"></span> Generant la fitxa del Termòmetre...</div>';
       }
@@ -2286,6 +2300,7 @@ class ObservatoriApp {
     const monthlyContainer = document.getElementById('journalism-monthly-container');
     if (monthlyContainer) monthlyContainer.style.display = 'none';
     if (incidentsContainer) incidentsContainer.style.display = 'block';
+    this.showGpsGaps(false);
 
     const hours = this._currentIncidentHours || 168;
     this.openDelayIncidentsView(lineCode, hours, this._currentIncidentMode || 'top', 0, force);
@@ -3499,6 +3514,7 @@ class ObservatoriApp {
     if (incidentsContainer) incidentsContainer.style.display = 'none';
     if (monthlyContainer) {
       monthlyContainer.style.display = 'block';
+      this.showGpsGaps(false);
       if (!this._monthlyData || force || (month && month !== this._currentMonthlyMonth)) {
         monthlyContainer.innerHTML = '<div style="text-align:center; padding:3rem; color:var(--text-muted);"><span class="loading-spinner-inline"></span> Carregant informe mensual per a l\'Ajuntament...</div>';
       }

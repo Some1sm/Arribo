@@ -127,9 +127,11 @@ function main() {
   const seasonsOut = formatSeasons(seasons) + '\n';
 
   for (const [file, before, after] of [[LEGACY_PATH, legacyRaw, legacyOut], [SEASONS_PATH, seasonsRaw, seasonsOut]]) {
-    if (before === after) continue;
+    // A Windows checkout (core.autocrlf) holds these files with CRLF: compare
+    // the content, and write back in the file's own line endings.
+    if (before.replace(/\r\n/g, '\n') === after) continue;
     changed++;
-    if (!check) fs.writeFileSync(file, after);
+    if (!check) fs.writeFileSync(file, before.includes('\r\n') ? after.replace(/\n/g, '\r\n') : after);
     console.log(`${check ? 'would update' : 'updated'} ${path.relative(ROOT, file)}`);
   }
   for (const line of [...new Set(report)]) console.log(`  note: ${line}`);
