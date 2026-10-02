@@ -10886,6 +10886,12 @@ input#plan-max-walk:focus {
   gap: var(--space-1);
 }
 
+.gps-gaps-popup-route {
+  margin: 0;
+  font-size: 0.74rem;
+  color: var(--text-secondary);
+}
+
 @media (max-width: 900px) {
   .gps-gaps-layout {
     grid-template-columns: minmax(0, 1fr);

@@ -1215,6 +1215,19 @@ app.get('/api/analytics/gps-gaps', async (req, res) => {
   }
 });
 
+// The streets driven without GPS for up to 12 stored gaps (ids from a
+// hotspot's gapIds), cut from each line's route by the worker.
+app.get('/api/analytics/gps-gaps/paths', async (req, res) => {
+  const ids = [...new Set(String(req.query.ids || '').split(',').map(s => Number(s.trim())).filter(n => Number.isInteger(n) && n > 0))].slice(0, 12);
+  if (!ids.length) return res.json({ success: true, paths: [] });
+  try {
+    const paths = await workerBridge.historyQuery('getGpsGapPaths', { ids }, { timeoutMs: 15000 });
+    res.json({ success: true, paths: Array.isArray(paths) ? paths : [] });
+  } catch (err) {
+    sendInternalError(req, res, err, { success: false, paths: [] });
+  }
+});
+
 // Passive upstream diagnostics, served entirely from cached worker status
 app.get('/api/diagnostics/upstream', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');

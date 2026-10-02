@@ -10,6 +10,7 @@ const reportCacheService = require('../reportCacheService');
 const flightRecorder = require('../flightRecorder');
 const mataroSiriClient = require('../mataroSiriClient');
 const mataroTracker = require('../mataroTracker');
+const { gapPath } = require('../core/geo/gapPath');
 const trackerRegistry = require('../core/TrackerRegistry');
 
 let parentPort = null;
@@ -129,6 +130,21 @@ async function executeDbOperation(op, args = {}) {
 
     case 'getGpsGapHotspots':
       return historyDb.getGpsGapHotspots({ days: args.days, lineCode: args.lineCode });
+
+    case 'getGpsGapPaths':
+      // The street each gap's bus drove without GPS, cut from its line's route
+      // (its own direction first, then the other). No plausible stretch: null.
+      return historyDb.getGpsGapsByIds(args.ids).map(g => {
+        const routes = mataroTracker.routesData[String(g.lineCode).replace(/^L/, '')] || [];
+        const pref = Number(g.direction) || 0;
+        const order = [pref, ...routes.map((_, i) => i).filter(i => i !== pref)];
+        for (const i of order) {
+          const res = gapPath(routes[i] && routes[i].coords,
+            { lat: g.lostLat, lon: g.lostLon }, { lat: g.regainedLat, lon: g.regainedLon }, g.gapSec);
+          if (res) return { id: g.id, lineCode: g.lineCode, gapSec: g.gapSec, lengthM: res.lengthM, path: res.path };
+        }
+        return { id: g.id, lineCode: g.lineCode, gapSec: g.gapSec, lengthM: null, path: null };
+      });
 
     case 'generateReport': {
       const catalog = Array.isArray(args.allLinesCatalog)

@@ -10,6 +10,20 @@ process.env.REPORTS_DIR = path.join(scratch, 'reports');
 const server = require('../server');
 const historyDb = require('../src/historyDb');
 const flightRecorder = require('../src/flightRecorder');
+const timeEngine = require('../src/core/time/timeEngine');
+const calendarEngine = require('../src/core/time/calendarEngine');
+
+// The journalism report counts revenue-service passages only, so samples
+// logged at "now" vanish when the suite runs after the last bus (~23:25-05:10
+// Madrid). Log them at the most recent 12:00 Madrid instead: always in
+// service, always inside the last 24 h. The report is built by the forked
+// worker on the real clock, so the clock itself cannot be pinned here.
+const lastMiddayMadrid = (() => {
+  const c = calendarEngine.getDateComponents(new Date(), 'Europe/Madrid');
+  let t = timeEngine.localTimeToUtcDate(c.year, c.month - 1, c.day, 12, 0, 0).getTime();
+  if (t > Date.now()) t -= 24 * 3600 * 1000;
+  return t;
+})();
 
 async function runTests() {
   console.log('🧪 Starting Centralized Flight Recorder & Journalism Server Tests...');
@@ -51,7 +65,9 @@ async function runTests() {
       delayMins: 4,
       scheduledTime: '19:30',
       actualTime: '19:34',
-      isRealTime: true
+      isRealTime: true,
+      timestamp: lastMiddayMadrid,
+      observedAt: lastMiddayMadrid
     });
 
     historyDb.recordDelayLog({
@@ -63,7 +79,9 @@ async function runTests() {
       delayMins: 12,
       scheduledTime: '19:15',
       actualTime: '19:27',
-      isRealTime: true
+      isRealTime: true,
+      timestamp: lastMiddayMadrid + 60000,
+      observedAt: lastMiddayMadrid + 60000
     });
 
     const stats = historyDb.getLineDelayStats('L1', 24);

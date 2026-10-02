@@ -33,6 +33,7 @@ const {
 const serviceHours = require('./core/schedule/serviceHours');
 const mataroSchedules = require('./data/mataroSchedules');
 const { normalizeStopName, resolveDayType } = require('./core/schedule/tripMatcher');
+const { clusterPoints } = require('./core/geo/gapClusters');
 const timeEngine = require('./core/time/timeEngine');
 const { buildIncidentRun, RUN_CONTEXT_MS, RUN_LOOKBACK_MS } = require('./core/schedule/incidentRun');
 
@@ -730,11 +731,13 @@ class HistoryDatabase {
   }
 
   /**
-   * Where buses lose GPS: gaps grouped into ~150 m cells by the point where
-   * the signal was lost. Terminal layovers and feed-wide stalls are counted
-   * but left off the map. A cell is `recurrent` when at least 3 gaps from at
-   * least 2 different buses start there: one bus's bad receiver is not a
-   * dead zone.
+   * Where buses lose GPS: gaps grouped into hotspots by distance (within
+   * 100 m of a hotspot's centre, src/core/geo/gapClusters.js) from the point
+   * where the signal was lost. Terminal layovers and feed-wide stalls are
+   * counted but left off the map. A hotspot is `recurrent` when at least 3
+   * gaps from at least 2 different buses start there: one bus's bad receiver
+   * is not a dead zone. `gapIds` (newest first, up to 12) lets the page ask
+   * for the streets driven without GPS (getGpsGapPaths).
    */
   getGpsGapHotspots({ days = 7, lineCode = '', now = Date.now() } = {}) {
     const empty = { days, lineCode: '', since: 0, until: now, totals: { gaps: 0, mapped: 0, atTerminal: 0, feedWide: 0, vehicles: 0, medianGapSec: null, recurrentShare: null }, cells: [], gaps: [] };
@@ -746,7 +749,7 @@ class HistoryDatabase {
       const lineSql = code && code !== 'ALL' ? ' AND line_code = ?' : '';
       const params = lineSql ? [since, now, code] : [since, now];
       const rows = this.db.prepare(`
-        SELECT vehicle_id AS vehicleId, line_code AS lineCode, lost_ts AS lostTs, gap_sec AS gapSec,
+        SELECT id, vehicle_id AS vehicleId, line_code AS lineCode, lost_ts AS lostTs, gap_sec AS gapSec,
                lost_lat AS lostLat, lost_lon AS lostLon, regained_lat AS regainedLat, regained_lon AS regainedLon,
                stop_name AS stopName, at_terminal AS atTerminal, feed_wide AS feedWide
         FROM gps_gaps
@@ -761,14 +764,9 @@ class HistoryDatabase {
         const m = Math.floor(s.length / 2);
         return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2);
       };
-      const CELL_LAT = 0.00135; // ~150 m
-      const CELL_LON = 0.0018;  // ~150 m at 41.5 N
-      const cellsByKey = new Map();
-      for (const r of mapped) {
-        const key = `${Math.floor(r.lostLat / CELL_LAT)}|${Math.floor(r.lostLon / CELL_LON)}`;
-        if (!cellsByKey.has(key)) cellsByKey.set(key, []);
-        cellsByKey.get(key).push(r);
-      }
+      // Oldest first, so the hotspots form in the order the losses happened.
+      const groups = clusterPoints([...mapped].reverse().map(r => ({ ...r, lat: r.lostLat, lon: r.lostLon })))
+        .map(c => c.members);
       const mode = (xs) => {
         const counts = new Map();
         for (const x of xs) if (x) counts.set(x, (counts.get(x) || 0) + 1);
@@ -777,7 +775,7 @@ class HistoryDatabase {
         for (const [k, c] of counts) if (c > n) { best = k; n = c; }
         return best;
       };
-      const cells = [...cellsByKey.values()].map(rs => {
+      const cells = groups.map(rs => {
         const vehicles = new Set(rs.map(r => r.vehicleId)).size;
         const mean = (f) => rs.reduce((s, r) => s + r[f], 0) / rs.length;
         return {
@@ -792,7 +790,8 @@ class HistoryDatabase {
           maxGapSec: Math.max(...rs.map(r => r.gapSec)),
           stopName: mode(rs.map(r => r.stopName)),
           lastTs: Math.max(...rs.map(r => r.lostTs)),
-          recurrent: rs.length >= 3 && vehicles >= 2
+          recurrent: rs.length >= 3 && vehicles >= 2,
+          gapIds: [...rs].sort((a, b) => b.lostTs - a.lostTs).slice(0, 12).map(r => r.id)
         };
       }).sort((a, b) => b.count - a.count || b.vehicles - a.vehicles || b.lastTs - a.lastTs);
 
@@ -820,6 +819,23 @@ class HistoryDatabase {
     } catch (e) {
       console.error('[HistoryDB] getGpsGapHotspots error:', e.message);
       return empty;
+    }
+  }
+
+  /** The stored gaps with these ids (at most 12), for drawing their streets. */
+  getGpsGapsByIds(ids = []) {
+    if (!this._ensureOpen()) return [];
+    const clean = [...new Set((ids || []).map(Number).filter(n => Number.isInteger(n) && n > 0))].slice(0, 12);
+    if (!clean.length) return [];
+    try {
+      return this.db.prepare(`
+        SELECT id, vehicle_id AS vehicleId, line_code AS lineCode, direction, gap_sec AS gapSec,
+               lost_lat AS lostLat, lost_lon AS lostLon, regained_lat AS regainedLat, regained_lon AS regainedLon
+        FROM gps_gaps WHERE id IN (${clean.map(() => '?').join(',')})
+      `).all(...clean);
+    } catch (e) {
+      console.error('[HistoryDB] getGpsGapsByIds error:', e.message);
+      return [];
     }
   }
 
