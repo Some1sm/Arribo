@@ -2489,6 +2489,17 @@ class TransitApp {
     }
   }
 
+  setTelemetryExpanded(open) {
+    const toggle = document.getElementById('telemetry-toggle');
+    const body = document.getElementById('telemetry-body');
+    const card = document.getElementById('telemetry-card');
+    const label = document.getElementById('telemetry-toggle-label');
+    if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (body) body.hidden = !open;
+    if (card) card.classList.toggle('is-collapsed', !open);
+    if (label) label.textContent = open ? 'Amaga detalls' : 'Mostra detalls';
+  }
+
   renderTelemetryFields(b, lineData, targetData = null) {
     const coordsEl = document.getElementById('telemetry-coords');
     const bearingEl = document.getElementById('telemetry-bearing');
@@ -2516,7 +2527,7 @@ class TransitApp {
       if (speedEl) speedEl.textContent = '0 km/h (Parat)';
       if (segmentEl) segmentEl.textContent = 'Circuit fora d\'horari';
       if (etaNextEl) etaNextEl.textContent = `Pas per ${targetName}: ${nextTime}`;
-      if (tripStartEl) tripStartEl.textContent = '--';
+      if (tripStartEl) { tripStartEl.textContent = '--'; tripStartEl.removeAttribute('title'); }
       if (progressFill) progressFill.style.width = '0%';
       if (progressText) progressText.textContent = '0%';
       if (statusBadge) { 
@@ -2544,7 +2555,23 @@ class TransitApp {
       : (cockpitHasSpeed ? `${Math.round(Number(b.speedKmh))} km/h` : '— (Sense dada)');
     if (segmentEl) segmentEl.textContent = `${b.fromStop || 'Origen'} ➔ ${b.toStop || 'Destí'}`;
     if (etaNextEl) etaNextEl.textContent = b.secondsToNextStop ? `~${Math.round(b.secondsToNextStop / 60)} min (${b.toStop})` : `${b.toStop || 'En trajecte'}`;
-    if (tripStartEl) tripStartEl.textContent = b.departureTime || b.tripStartTime || '--';
+    if (tripStartEl) {
+      // The feed never reports when a trip started. A timetable-only bus has
+      // its departure; a live one carries the trip the server matched from its
+      // reported delay. Both are timetable times, so both say so.
+      const startTime = b.departureTime || b.tripStartTime;
+      const startStop = b.tripStartStop || b.origin || '';
+      if (startTime) {
+        tripStartEl.textContent = `${startTime} (horari)`;
+        tripStartEl.title = `Sortida programada${startStop ? ` de ${startStop}` : ''} a les ${startTime}, segons l'horari oficial`;
+      } else if (b.isTerminalLayover) {
+        tripStartEl.textContent = '— (A capçalera)';
+        tripStartEl.title = 'El bus és a la capçalera: encara no se sap quina sortida farà';
+      } else {
+        tripStartEl.textContent = '— (Sense dada)';
+        tripStartEl.title = "No s'ha pogut identificar aquest viatge a l'horari";
+      }
+    }
     
     const prog = Math.min(100, Math.max(0, b.totalProgress || 0));
     if (progressFill) progressFill.style.width = `${prog}%`;
@@ -4466,6 +4493,20 @@ class TransitApp {
 
   setupEventListeners() {
     this.setupPageVisibility();
+
+    // The technical telemetry card starts folded: most riders only need the
+    // route below it. Each browser remembers whether it was opened.
+    const telemetryToggle = document.getElementById('telemetry-toggle');
+    if (telemetryToggle) {
+      let telemetryOpen = false;
+      try { telemetryOpen = localStorage.getItem('arribo_telemetry_open') === '1'; } catch { telemetryOpen = false; }
+      this.setTelemetryExpanded(telemetryOpen);
+      telemetryToggle.addEventListener('click', () => {
+        const open = telemetryToggle.getAttribute('aria-expanded') !== 'true';
+        this.setTelemetryExpanded(open);
+        try { localStorage.setItem('arribo_telemetry_open', open ? '1' : '0'); } catch { /* storage unavailable: still toggles */ }
+      });
+    }
 
     // Delegated handler replacing inline onclick attributes (CSP compliance)
     document.addEventListener('click', (e) => {

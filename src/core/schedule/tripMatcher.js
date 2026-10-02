@@ -242,8 +242,58 @@ function matchTrip({ lineId, direction, toSeq, stopName, delayMins, at = Date.no
   };
 }
 
+/**
+ * Which scheduled trip a vehicle is running, as its first stop and departure
+ * time there. matchTrip recovers the passing time at the next stop; this
+ * finds the timetable trip that passes there then and reads where it began.
+ *
+ * DERIVED, never observed: the feed reports neither the trip nor its start.
+ * A missing delay is not a delay of zero, so it refuses rather than guessing,
+ * and it refuses when two trips pass the stop in the same minute with
+ * different starts. A short-turn trip starts at its own first stop, not at
+ * the line's origin.
+ *
+ * @param {object} args  Same as matchTrip; delayMins is required.
+ * @returns {{matched: boolean, reason?: string, startTime?: string, startStopId?: string,
+ *   startStopName?: string, scheduledTime?: string, residualMinutes?: number}}
+ */
+function matchTripStart(args = {}) {
+  const d = args.delayMins;
+  if (d === null || d === undefined || d === '' || !Number.isFinite(Number(d))) {
+    return { matched: false, reason: 'no reported delay' };
+  }
+  const m = matchTrip(args);
+  if (!m.matched) return { matched: false, reason: m.reason };
+
+  const dirSched = mataroSchedules.getDirectionSchedule(args.lineId, args.direction, m.dayType);
+  const stops = (dirSched && dirSched.stops) || [];
+  const wantedSec = timeEngine.timeStringToSeconds(m.scheduledTime);
+  const starts = new Map();
+  for (const t of mataroSchedules.getTripsServingStop(args.lineId, args.direction, m.stopId, m.dayType)) {
+    const passSec = ((t.stopSec % 86400) + 86400) % 86400;
+    if (Math.floor(passSec / 60) * 60 !== wantedSec || t.firstStopIndex < 0) continue;
+    const trip = ((dirSched && dirSched.trips) || []).find(x => x.index === t.tripIndex);
+    const startSec = trip ? trip.stopSecs[t.firstStopIndex] : t.originSec;
+    if (!Number.isFinite(startSec)) continue;
+    starts.set(`${startSec}|${t.firstStopIndex}`, { startSec, stopIndex: t.firstStopIndex });
+  }
+  if (starts.size !== 1) {
+    return { matched: false, reason: starts.size ? 'two trips pass the stop in that minute' : 'trip not found' };
+  }
+  const { startSec, stopIndex } = [...starts.values()][0];
+  return {
+    matched: true,
+    startTime: timeEngine.secondsToTimeString(((startSec % 86400) + 86400) % 86400).slice(0, 5),
+    startStopId: stops[stopIndex] ? String(stops[stopIndex].id) : '',
+    startStopName: (stops[stopIndex] && stops[stopIndex].name) || '',
+    scheduledTime: m.scheduledTime,
+    residualMinutes: m.residualMinutes
+  };
+}
+
 module.exports = {
   matchTrip,
+  matchTripStart,
   resolveDayType,
   normalizeStopName,
   circularDiffSec,

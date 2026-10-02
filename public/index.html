@@ -26,7 +26,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
   
   <!-- App Styles -->
-  <link rel="stylesheet" href="/css/style.css?v=9.4.21">
+  <link rel="stylesheet" href="/css/style.css?v=9.4.22">
 </head>
 <body>
 
@@ -451,57 +451,66 @@
         </div>
 
         <!-- Dynamic Radar Telemetry Card -->
-        <div class="telemetry-card">
-          <div class="telemetry-header">
-            <div class="telemetry-title-group">
+        <div class="telemetry-card is-collapsed" id="telemetry-card">
+          <button type="button" class="telemetry-header telemetry-toggle" id="telemetry-toggle" aria-expanded="false" aria-controls="telemetry-body">
+            <span class="telemetry-title-group">
               <span class="telemetry-live-radar" id="telemetry-radar-dot"></span>
               <strong>🛰️ Telemetria GPS i Estimació en Zones de Cobertura</strong>
-            </div>
-            <span class="telemetry-status-badge" id="telemetry-status-badge">🟢 Senyal GPS Actiu</span>
-          </div>
+            </span>
+            <span class="telemetry-header-end">
+              <span class="telemetry-status-badge" id="telemetry-status-badge">🟢 Senyal GPS Actiu</span>
+              <span class="telemetry-toggle-hint">
+                <span id="telemetry-toggle-label">Mostra detalls</span>
+                <svg class="telemetry-toggle-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+              </span>
+            </span>
+          </button>
 
-          <!-- Active Vehicles Selection Bar -->
-          <div class="telemetry-vehicles-bar" id="telemetry-vehicles-bar" style="display:none;">
-            <span class="telemetry-vehicles-label">Vehicles detectats:</span>
-            <div class="telemetry-vehicles-chips" id="telemetry-vehicles-chips"></div>
-          </div>
+          <div class="telemetry-body" id="telemetry-body" hidden>
 
-          <!-- Ghost Bus Advisory Notice -->
-          <div class="telemetry-ghost-notice" id="telemetry-ghost-notice" style="display:none;">
-            <span style="font-size:1.1rem; line-height:1;">⚡</span>
-            <span><strong>Vehicle estimat segons horari oficial:</strong> Aquest autobús està programat en servei actiu però no transmet dades GPS a la xarxa SAE. La seva posició al mapa es calcula teòricament segons la sortida oficial.</span>
-          </div>
+            <!-- Active Vehicles Selection Bar -->
+            <div class="telemetry-vehicles-bar" id="telemetry-vehicles-bar" style="display:none;">
+              <span class="telemetry-vehicles-label">Vehicles detectats:</span>
+              <div class="telemetry-vehicles-chips" id="telemetry-vehicles-chips"></div>
+            </div>
 
-          <div class="telemetry-grid">
-            <div class="telemetry-item">
-              <span class="telemetry-label">📍 Coordenades GPS</span>
-              <strong class="telemetry-val" id="telemetry-coords">--</strong>
+            <!-- Ghost Bus Advisory Notice -->
+            <div class="telemetry-ghost-notice" id="telemetry-ghost-notice" style="display:none;">
+              <span style="font-size:1.1rem; line-height:1;">⚡</span>
+              <span><strong>Vehicle estimat segons horari oficial:</strong> Aquest autobús està programat en servei actiu però no transmet dades GPS a la xarxa SAE. La seva posició al mapa es calcula teòricament segons la sortida oficial.</span>
             </div>
-            <div class="telemetry-item">
-              <span class="telemetry-label">🧭 Rumb & Orientació</span>
-              <strong class="telemetry-val" id="telemetry-bearing">--</strong>
-            </div>
-            <div class="telemetry-item">
-              <span class="telemetry-label">⚡ Velocitat</span>
-              <strong class="telemetry-val" id="telemetry-speed">--</strong>
-            </div>
-            <div class="telemetry-item">
-              <span class="telemetry-label">🛣️ Tram Actual</span>
-              <strong class="telemetry-val" id="telemetry-segment">--</strong>
-            </div>
-            <div class="telemetry-item">
-              <span class="telemetry-label">⏱️ Propera Parada</span>
-              <strong class="telemetry-val" id="telemetry-eta-next">--</strong>
-            </div>
-            <div class="telemetry-item">
-              <span class="telemetry-label">🕐 Inici Trajecte</span>
-              <strong class="telemetry-val" id="telemetry-trip-start">--</strong>
-            </div>
-            <div class="telemetry-item">
-              <span class="telemetry-label">📊 Progrés Trajecte</span>
-              <div style="display:flex; align-items:center; gap:0.5rem; width:100%; margin-top:2px;">
-                <div class="telemetry-progress-track"><div class="telemetry-progress-fill" id="telemetry-progress-bar" style="width: 0%;"></div></div>
-                <span id="telemetry-progress-text" style="font-weight:700; font-size:0.8rem; color:#fff;">0%</span>
+
+            <div class="telemetry-grid">
+              <div class="telemetry-item">
+                <span class="telemetry-label">📍 Coordenades GPS</span>
+                <strong class="telemetry-val" id="telemetry-coords">--</strong>
+              </div>
+              <div class="telemetry-item">
+                <span class="telemetry-label">🧭 Rumb & Orientació</span>
+                <strong class="telemetry-val" id="telemetry-bearing">--</strong>
+              </div>
+              <div class="telemetry-item">
+                <span class="telemetry-label">⚡ Velocitat</span>
+                <strong class="telemetry-val" id="telemetry-speed">--</strong>
+              </div>
+              <div class="telemetry-item">
+                <span class="telemetry-label">🛣️ Tram Actual</span>
+                <strong class="telemetry-val" id="telemetry-segment">--</strong>
+              </div>
+              <div class="telemetry-item">
+                <span class="telemetry-label">⏱️ Propera Parada</span>
+                <strong class="telemetry-val" id="telemetry-eta-next">--</strong>
+              </div>
+              <div class="telemetry-item">
+                <span class="telemetry-label">🕐 Inici Trajecte</span>
+                <strong class="telemetry-val" id="telemetry-trip-start">--</strong>
+              </div>
+              <div class="telemetry-item">
+                <span class="telemetry-label">📊 Progrés Trajecte</span>
+                <div style="display:flex; align-items:center; gap:0.5rem; width:100%; margin-top:2px;">
+                  <div class="telemetry-progress-track"><div class="telemetry-progress-fill" id="telemetry-progress-bar" style="width: 0%;"></div></div>
+                  <span id="telemetry-progress-text" style="font-weight:700; font-size:0.8rem; color:#fff;">0%</span>
+                </div>
               </div>
             </div>
           </div>
@@ -826,15 +835,15 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   
   <!-- App Scripts -->
-  <script src="/js/utils.js?v=9.4.21"></script>
-  <script src="/js/storage.js?v=9.4.21"></script>
-  <script src="/js/requests.js?v=9.4.21"></script>
-  <script src="/js/stopFeatures.js?v=9.4.21"></script>
-  <script src="/js/journeys.js?v=9.4.21"></script>
-  <script src="/js/journeyControls.js?v=9.4.21"></script>
-  <script src="/js/pwa.js?v=9.4.21"></script>
-  <script src="/js/map.js?v=9.4.21"></script>
-  <script src="/js/networkMap.js?v=9.4.21"></script>
-  <script src="/js/app.js?v=9.4.21"></script>
+  <script src="/js/utils.js?v=9.4.22"></script>
+  <script src="/js/storage.js?v=9.4.22"></script>
+  <script src="/js/requests.js?v=9.4.22"></script>
+  <script src="/js/stopFeatures.js?v=9.4.22"></script>
+  <script src="/js/journeys.js?v=9.4.22"></script>
+  <script src="/js/journeyControls.js?v=9.4.22"></script>
+  <script src="/js/pwa.js?v=9.4.22"></script>
+  <script src="/js/map.js?v=9.4.22"></script>
+  <script src="/js/networkMap.js?v=9.4.22"></script>
+  <script src="/js/app.js?v=9.4.22"></script>
 </body>
 </html>

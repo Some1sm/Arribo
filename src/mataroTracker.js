@@ -16,6 +16,7 @@ const transitRouter = require('./core/schedule/transitRouter');
 const mataroFleet = require('./data/mataroFleet');
 const verifiedTls = require('./core/http/verifiedTls');
 const holidayCalendar = require('./core/time/holidayCalendar');
+const tripMatcher = require('./core/schedule/tripMatcher');
 
 /**
  * Resolve the timetable bucket for a moment. This is the same rule
@@ -1784,6 +1785,27 @@ class MataroTracker extends BaseTracker {
         ? (isStaleFix ? `⚡ Estimació (${Math.round(busAgeSec)}s sense GPS)` : '⚡ Estimació per pèrdua temporal de senyal')
         : (isGhostDelay ? '⏱️ Regulant a capçalera' : '🟢 Senyal GPS Actiu');
 
+      // The timetable trip this bus is running, recovered from the delay it
+      // reports. The feed never says when the trip started, so this is derived
+      // (tripStartSource 'timetable') and refused without a reported delay or
+      // at a terminal, where a bus waiting for its next trip would be matched
+      // to the trip the bus ahead of it ran.
+      const tripStart = (isTerminal || isGhostDelay || cleanDelayMins === null)
+        ? null
+        : tripMatcher.matchTripStart({
+          lineId: b.lineId,
+          direction: dirId,
+          toSeq: segInfo.toSeq,
+          stopName: segInfo.toStop,
+          delayMins: cleanDelayMins,
+          at: now
+        });
+      const tripStartTime = tripStart && tripStart.matched ? tripStart.startTime : null;
+      const tripStartStop = tripStartTime ? tripStart.startStopName : null;
+      const histEntry = this.vehicleHistory.get(String(b.vehicleId));
+      histEntry.tripStartTime = tripStartTime;
+      histEntry.tripStartStop = tripStartStop;
+
       result.push({
         tripId: `mataro_${b.vehicleId}`,
         vehicleId: b.vehicleId,
@@ -1814,6 +1836,9 @@ class MataroTracker extends BaseTracker {
         origin: b.origin || '',
         destination: b.destination || '',
         statusText,
+        tripStartTime,
+        tripStartStop,
+        tripStartSource: tripStartTime ? 'timetable' : null,
         fromStop: segInfo.fromStop,
         toStop: segInfo.toStop,
         fromSeq: segInfo.fromSeq,
@@ -1900,6 +1925,9 @@ class MataroTracker extends BaseTracker {
             origin: hist.origin || '',
             destination: hist.destination || '',
             statusText: `⚡ Estimació de posició (${elapsedText} sense GPS)`,
+            tripStartTime: hist.tripStartTime || null,
+            tripStartStop: hist.tripStartStop || null,
+            tripStartSource: hist.tripStartTime ? 'timetable' : null,
             fromStop: segInfo.fromStop,
             toStop: segInfo.toStop,
             fromSeq: segInfo.fromSeq,

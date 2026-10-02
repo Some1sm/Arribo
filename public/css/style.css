@@ -1928,6 +1928,80 @@ body {
   border-color: rgba(100, 116, 139, 0.3);
 }
 
+/* Technical telemetry is folded away by default: the header is the toggle. */
+.telemetry-card.is-collapsed {
+  padding-top: 0.85rem;
+  padding-bottom: 0.85rem;
+}
+
+.telemetry-toggle {
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.telemetry-toggle:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 4px;
+  border-radius: var(--btn-radius-md);
+}
+
+.telemetry-header-end {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-left: auto;
+}
+
+.telemetry-header-end .telemetry-status-badge {
+  white-space: nowrap;
+}
+
+.telemetry-toggle-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.5rem 0.3rem 0.75rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--btn-radius-pill);
+  background: var(--btn-secondary-bg);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: var(--btn-transition);
+}
+
+.telemetry-toggle:hover .telemetry-toggle-hint {
+  color: var(--text-primary);
+  border-color: var(--border-focus);
+  transform: translateY(-1px);
+}
+
+.telemetry-toggle-chevron {
+  transition: transform 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.telemetry-toggle[aria-expanded="true"] .telemetry-toggle-chevron {
+  transform: rotate(180deg);
+}
+
+.telemetry-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.telemetry-body[hidden] {
+  display: none;
+}
+
 /* Telemetry Vehicles Bar */
 .telemetry-vehicles-bar {
   display: flex;

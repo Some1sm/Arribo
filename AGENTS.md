@@ -391,6 +391,14 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   `cumulativeMeters` are along the drawn route and `travelSec` is the published offset
   (`node scripts/stop_route_distances.js --check`); they were straight lines and an
   8 m/s estimate. See `test/mataro_fleet_test.js` and `test/stop_route_distances_test.js`.
+- **A live bus's trip start is a timetable time, not an observation.** The SIRI feed
+  reports a delay but never the trip or when it began, so the cockpit's "Inici Trajecte"
+  read "--" for every live bus. `tripMatcher.matchTripStart` recovers the trip from the
+  next stop and the reported delay and returns its first stop and departure (a short-turn
+  starts at its own first stop); the tracker sets `tripStartTime` / `tripStartStop` /
+  `tripStartSource: 'timetable'`, and dead-reckoned buses keep the last match. No
+  reported delay, a bus at a terminal, or two trips in one minute give none; the UI says
+  "(horari)". The technical telemetry card starts folded. See `test/trip_start_test.js`.
 
 ## 4. Runtime, configuration and privacy
 
