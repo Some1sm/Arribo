@@ -237,7 +237,7 @@ class ObservatoriApp {
     if (this.gpsGapMap) return this.gpsGapMap;
     const el = document.getElementById('gps-gaps-map');
     if (!el || typeof L === 'undefined') return null;
-    const map = L.map(el, { preferCanvas: true, scrollWheelZoom: false }).setView([41.5405, 2.4445], 14);
+    const map = L.map(el, { preferCanvas: true }).setView([41.5405, 2.4445], 14);
     this.gpsGapTiles = L.tileLayer(this.gpsGapTileUrl(), {
       attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
       subdomains: 'abcd',
@@ -248,6 +248,13 @@ class ObservatoriApp {
       .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     this.gpsGapMap = map;
     return map;
+  }
+
+  lineChip(code) {
+    const n = /^L([1-8])$/.exec(String(code || '').toUpperCase());
+    return n
+      ? `<span class="line-chip line-chip-${n[1]}">L${n[1]}</span>`
+      : `<span class="line-chip">${this.esc(code)}</span>`;
   }
 
   fmtGapDuration(sec) {
@@ -300,6 +307,20 @@ class ObservatoriApp {
         : 'Cap punt es repeteix prou encara per ser recurrent.')
       + this.esc(leftTxt);
 
+    // The list first: the map column stretches to its height, so the map is
+    // sized and fitted after it.
+    list.innerHTML = cells.slice(0, 8).map((c, i) => `
+      <li>
+        <button type="button" class="gps-gaps-item" data-gps-cell="${i}">
+          <span class="gps-gaps-rank${c.recurrent ? ' recurrent' : ''}">${i + 1}</span>
+          <span class="gps-gaps-item-main">
+            <strong>${c.stopName ? `Prop de ${this.esc(c.stopName)}` : 'Sense parada propera'}</strong>
+            <span>${c.lines.map(code => this.lineChip(code)).join(' ')} ${c.vehicles} ${c.vehicles === 1 ? 'bus' : 'busos'} · mediana ${this.esc(this.fmtGapDuration(c.medianGapSec))}</span>
+          </span>
+          <span class="gps-gaps-item-count">${c.count}<small>${c.count === 1 ? 'pèrdua' : 'pèrdues'}</small></span>
+        </button>
+      </li>`).join('');
+
     if (map) {
       // Straight from where the signal went to where it came back: the bus
       // drove the street in between with no GPS.
@@ -313,36 +334,30 @@ class ObservatoriApp {
         const c = cells[i];
         const colour = c.recurrent ? '#f43f5e' : '#f59e0b';
         const back = Math.round(L.latLng(c.lat, c.lon).distanceTo(L.latLng(c.regainedLat, c.regainedLon)));
+        const last = new Date(c.lastTs).toLocaleString('ca-ES', { timeZone: 'Europe/Madrid', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
         const popup = `<div class="gps-gaps-popup">
-          <strong>${c.stopName ? `Prop de ${this.esc(c.stopName)}` : 'Punt sense parada propera'}</strong>
-          <span>${c.count} ${c.count === 1 ? 'pèrdua' : 'pèrdues'} · ${c.vehicles} ${c.vehicles === 1 ? 'bus' : 'busos'} · ${this.esc(c.lines.join(', '))}</span>
-          <span>Sense senyal: mediana ${this.esc(this.fmtGapDuration(c.medianGapSec))}, màxim ${this.esc(this.fmtGapDuration(c.maxGapSec))}</span>
-          <span>De mitjana el recupera a ${back} m d'aquí</span>
-          <span>Última: ${this.esc(new Date(c.lastTs).toLocaleString('ca-ES', { timeZone: 'Europe/Madrid', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</span>
+          <div class="gps-gaps-popup-head">
+            <strong>${c.stopName ? `Prop de ${this.esc(c.stopName)}` : 'Punt sense parada propera'}</strong>
+            <span class="gps-gaps-popup-tag${c.recurrent ? ' recurrent' : ''}">${c.recurrent ? 'Punt recurrent' : 'Pèrdua puntual'}</span>
+          </div>
+          <dl class="gps-gaps-popup-stats">
+            <dt>Pèrdues</dt><dd>${c.count} · ${c.vehicles} ${c.vehicles === 1 ? 'bus' : 'busos'}</dd>
+            <dt>Sense senyal</dt><dd>${this.esc(this.fmtGapDuration(c.medianGapSec))}${c.count > 1 ? ' de mediana' : ''}</dd>
+            ${c.count > 1 ? `<dt>La més llarga</dt><dd>${this.esc(this.fmtGapDuration(c.maxGapSec))}</dd>` : ''}
+            <dt>El recupera</dt><dd>a ${back} m</dd>
+            <dt>Última</dt><dd>${this.esc(last)}</dd>
+          </dl>
+          <div class="gps-gaps-popup-lines">${c.lines.map(code => this.lineChip(code)).join('')}</div>
         </div>`;
         this.gpsGapMarkers[i] = L.circleMarker([c.lat, c.lon], {
           radius: Math.min(26, 6 + 4 * Math.sqrt(c.count)),
           color: colour, weight: 2, fillColor: colour, fillOpacity: c.recurrent ? 0.5 : 0.28
-        }).bindPopup(popup).addTo(this.gpsGapLayer);
+        }).bindPopup(popup, { className: 'gps-gaps-leaflet-popup', minWidth: 260, maxWidth: 300 }).addTo(this.gpsGapLayer);
       }
       map.invalidateSize();
       if (cells.length) map.fitBounds(cells.map(c => [c.lat, c.lon]), { padding: [30, 30], maxZoom: 16 });
     }
 
-    list.innerHTML = cells.slice(0, 8).map((c, i) => `
-      <li>
-        <button type="button" class="gps-gaps-item" data-gps-cell="${i}">
-          <span class="gps-gaps-rank${c.recurrent ? ' recurrent' : ''}">${i + 1}</span>
-          <span class="gps-gaps-item-main">
-            <strong>${c.stopName ? `Prop de ${this.esc(c.stopName)}` : 'Sense parada propera'}</strong>
-            <span>${c.lines.map(code => {
-              const colour = this.getLineColor(code);
-              return `<span class="observatori-line-badge" style="background:${colour}; color:${this.chipInk(colour)};">${this.esc(code)}</span>`;
-            }).join('')} ${c.vehicles} ${c.vehicles === 1 ? 'bus' : 'busos'} · mediana ${this.esc(this.fmtGapDuration(c.medianGapSec))}</span>
-          </span>
-          <span class="gps-gaps-item-count">${c.count}<small>${c.count === 1 ? 'pèrdua' : 'pèrdues'}</small></span>
-        </button>
-      </li>`).join('');
   }
 
   focusGpsGapCell(i) {
