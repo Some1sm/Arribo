@@ -10891,6 +10891,110 @@ input#plan-max-walk:focus {
   background: var(--danger-tint);
 }
 
+.gps-gaps-popup-tag.calm {
+  color: var(--text-secondary);
+  background: var(--bg-surface-hover);
+}
+
+/* Which buses lose GPS the most, each against the others on its lines. */
+.gps-bus-block {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.gps-bus-block[hidden] {
+  display: none;
+}
+
+.gps-bus-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.gps-bus-intro,
+.gps-bus-foot {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.gps-bus-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gps-bus-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  width: 100%;
+  height: 100%;
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--btn-radius-md);
+  background: var(--bg-surface-elevated);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: var(--btn-transition);
+}
+
+.gps-bus-row:hover,
+.gps-bus-row.active {
+  border-color: var(--border-focus);
+}
+
+.gps-bus-row.active {
+  background: var(--bg-surface-hover);
+}
+
+.gps-bus-row:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.gps-bus-id {
+  grid-row: span 2;
+  font-family: var(--font-mono, monospace);
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.gps-bus-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+
+.gps-bus-facts {
+  font-size: 0.74rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
+.gps-bus-facts strong {
+  color: var(--text-primary);
+}
+
+.gps-bus-clear {
+  margin-right: var(--space-1);
+  vertical-align: baseline;
+}
+
 .gps-gaps-popup-stats {
   display: grid;
   grid-template-columns: auto 1fr;

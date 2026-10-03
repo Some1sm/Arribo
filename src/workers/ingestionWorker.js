@@ -129,7 +129,7 @@ async function executeDbOperation(op, args = {}) {
       return historyDb.inspectDelayIncident(args);
 
     case 'getGpsGapHotspots':
-      return historyDb.getGpsGapHotspots({ days: args.days, lineCode: args.lineCode });
+      return historyDb.getGpsGapHotspots({ days: args.days, lineCode: args.lineCode, vehicleId: args.vehicleId });
 
     case 'getGpsGapPaths':
       // The street each gap's bus drove without GPS, cut from its line's route

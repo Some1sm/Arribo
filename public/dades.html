@@ -13,7 +13,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-  <link rel="stylesheet" href="/css/style.css?v=9.4.33">
+  <link rel="stylesheet" href="/css/style.css?v=9.4.34">
 </head>
 <body class="observatori-page-body observatori-page">
 
@@ -280,6 +280,12 @@
           <ol class="gps-gaps-list" id="gps-gaps-list" aria-label="Punts amb més pèrdues de senyal"></ol>
         </div>
       </div>
+      <div class="gps-bus-block" id="gps-gaps-buses-block" hidden>
+        <h4 class="gps-bus-title">Quins busos el perden més</h4>
+        <p class="gps-bus-intro">Cada bus comparat amb els altres que fan les mateixes línies, per cada 100 parades. Si un bus el perd molt més que els companys pels mateixos carrers, apunta a l'equip del bus; si el perd on els altres també el perden, és la cobertura.</p>
+        <ol class="gps-bus-list" id="gps-gaps-buses" aria-label="Busos amb més pèrdues de senyal"></ol>
+        <p class="gps-bus-foot" id="gps-gaps-buses-foot"></p>
+      </div>
     </section>
 
     <!-- Termòmetre Infographic Scorecard Container -->
@@ -315,10 +321,10 @@
   </footer>
 
   <!-- Scripts -->
-  <script src="/js/utils.js?v=9.4.33"></script>
-  <script src="/js/storage.js?v=9.4.33"></script>
-  <script src="/js/pwa.js?v=9.4.33"></script>
+  <script src="/js/utils.js?v=9.4.34"></script>
+  <script src="/js/storage.js?v=9.4.34"></script>
+  <script src="/js/pwa.js?v=9.4.34"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="/js/observatori.js?v=9.4.33"></script>
+  <script src="/js/observatori.js?v=9.4.34"></script>
 </body>
 </html>

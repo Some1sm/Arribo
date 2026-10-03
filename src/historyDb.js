@@ -34,6 +34,7 @@ const serviceHours = require('./core/schedule/serviceHours');
 const mataroSchedules = require('./data/mataroSchedules');
 const { normalizeStopName, resolveDayType } = require('./core/schedule/tripMatcher');
 const { clusterPoints } = require('./core/geo/gapClusters');
+const { rankBuses } = require('./core/geo/gapBuses');
 const timeEngine = require('./core/time/timeEngine');
 const { buildIncidentRun, RUN_CONTEXT_MS, RUN_LOOKBACK_MS } = require('./core/schedule/incidentRun');
 
@@ -739,8 +740,8 @@ class HistoryDatabase {
    * is not a dead zone. `gapIds` (newest first, up to 12) lets the page ask
    * for the streets driven without GPS (getGpsGapPaths).
    */
-  getGpsGapHotspots({ days = 7, lineCode = '', now = Date.now() } = {}) {
-    const empty = { days, lineCode: '', since: 0, until: now, totals: { gaps: 0, mapped: 0, atTerminal: 0, feedWide: 0, vehicles: 0, medianGapSec: null, recurrentShare: null }, cells: [], gaps: [] };
+  getGpsGapHotspots({ days = 7, lineCode = '', vehicleId = '', now = Date.now() } = {}) {
+    const empty = { days, lineCode: '', vehicleId: '', since: 0, until: now, totals: { gaps: 0, mapped: 0, atTerminal: 0, feedWide: 0, vehicles: 0, medianGapSec: null, recurrentShare: null }, cells: [], gaps: [], buses: [], fleet: { inService: 0, withoutLoss: 0 } };
     if (!this._ensureOpen()) return empty;
     try {
       const d = Math.min(30, Math.max(1, Math.round(Number(days) || 7)));
@@ -757,7 +758,26 @@ class HistoryDatabase {
         ORDER BY lost_ts DESC
       `).all(...params);
 
-      const mapped = rows.filter(r => !r.atTerminal && !r.feedWide);
+      const lineMapped = rows.filter(r => !r.atTerminal && !r.feedWide);
+      // A loss is shared when another bus lost GPS at the same spot: what the
+      // per-bus comparison reads as coverage rather than equipment.
+      const sharedIds = new Set();
+      const allGroups = clusterPoints([...lineMapped].reverse().map(r => ({ ...r, lat: r.lostLat, lon: r.lostLon })));
+      for (const c of allGroups) {
+        if (new Set(c.members.map(m => m.vehicleId)).size >= 2) for (const m of c.members) sharedIds.add(m.id);
+      }
+      const visits = this.db.prepare(`
+        SELECT vehicle_id AS vehicleId, line_code AS lineCode, COUNT(*) AS n
+        FROM stop_visits
+        WHERE last_ts >= ? AND last_ts < ?${lineSql}
+        GROUP BY vehicle_id, line_code
+      `).all(...params);
+      const ranked = rankBuses(lineMapped.map(r => ({ ...r, shared: sharedIds.has(r.id) })), visits);
+
+      // One bus picked: its own losses on the map, the comparison unchanged.
+      const vehicle = /^\d{3,6}$/.test(String(vehicleId || '')) ? String(vehicleId) : '';
+      const shownRows = vehicle ? rows.filter(r => r.vehicleId === vehicle) : rows;
+      const mapped = vehicle ? lineMapped.filter(r => r.vehicleId === vehicle) : lineMapped;
       const median = (xs) => {
         if (!xs.length) return null;
         const s = [...xs].sort((a, b) => a - b);
@@ -765,7 +785,7 @@ class HistoryDatabase {
         return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2);
       };
       // Oldest first, so the hotspots form in the order the losses happened.
-      const groups = clusterPoints([...mapped].reverse().map(r => ({ ...r, lat: r.lostLat, lon: r.lostLon })))
+      const groups = (vehicle ? clusterPoints([...mapped].reverse().map(r => ({ ...r, lat: r.lostLat, lon: r.lostLon }))) : allGroups)
         .map(c => c.members);
       const mode = (xs) => {
         const counts = new Map();
@@ -799,20 +819,23 @@ class HistoryDatabase {
       return {
         days: d,
         lineCode: code && code !== 'ALL' ? code : '',
+        vehicleId: vehicle,
         since,
         until: now,
         totals: {
-          gaps: rows.length,
+          gaps: shownRows.length,
           mapped: mapped.length,
-          atTerminal: rows.filter(r => r.atTerminal).length,
-          feedWide: rows.filter(r => !r.atTerminal && r.feedWide).length,
+          atTerminal: shownRows.filter(r => r.atTerminal).length,
+          feedWide: shownRows.filter(r => !r.atTerminal && r.feedWide).length,
           vehicles: new Set(mapped.map(r => r.vehicleId)).size,
           medianGapSec: median(mapped.map(r => r.gapSec)),
           recurrentShare: mapped.length ? Math.round((inRecurrent / mapped.length) * 100) : null
         },
         cells: cells.slice(0, 80),
+        buses: ranked.buses.slice(0, 20),
+        fleet: { inService: ranked.inService, withoutLoss: ranked.withoutLoss },
         gaps: mapped.slice(0, 400).map(r => ({
-          lineCode: r.lineCode, gapSec: r.gapSec,
+          vehicleId: r.vehicleId, lineCode: r.lineCode, gapSec: r.gapSec,
           lostLat: r.lostLat, lostLon: r.lostLon, regainedLat: r.regainedLat, regainedLon: r.regainedLon
         }))
       };

@@ -191,19 +191,28 @@ class ObservatoriApp {
     if (!section) return;
     this.gpsGapDays = 7;
     this.gpsGapLine = 'all';
+    this.gpsGapVehicle = '';
     this.gpsGapMarkers = [];
     section.addEventListener('click', (e) => {
       const dayBtn = e.target.closest('[data-gps-days]');
       const lineBtn = e.target.closest('[data-gps-line]');
       const item = e.target.closest('[data-gps-cell]');
+      const busBtn = e.target.closest('[data-gps-bus]');
       if (e.target.closest('[data-gps-close]')) {
         this.clearGpsGapSelection();
+      } else if (e.target.closest('[data-gps-bus-clear]') || busBtn) {
+        // One bus's losses on the map; the same bus again (or its chip) shows all.
+        const id = busBtn ? busBtn.dataset.gpsBus : '';
+        this.gpsGapVehicle = id && id !== this.gpsGapVehicle ? id : '';
+        this.loadGpsGaps();
+        if (this.gpsGapVehicle) document.getElementById('gps-gaps-map')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       } else if (dayBtn) {
         this.gpsGapDays = Number(dayBtn.dataset.gpsDays) || 7;
         section.querySelectorAll('[data-gps-days]').forEach(b => b.classList.toggle('active', b === dayBtn));
         this.loadGpsGaps();
       } else if (lineBtn) {
         this.gpsGapLine = lineBtn.dataset.gpsLine || 'all';
+        this.gpsGapVehicle = '';
         section.querySelectorAll('[data-gps-line]').forEach(b => b.classList.toggle('active', b === lineBtn));
         this.loadGpsGaps();
       } else if (item) {
@@ -230,7 +239,8 @@ class ObservatoriApp {
     if (summary) summary.textContent = 'Carregant pèrdues de senyal...';
     let data = null;
     try {
-      const res = await fetch(`/api/analytics/gps-gaps?days=${this.gpsGapDays}&line=${encodeURIComponent(this.gpsGapLine)}`).then(r => r.json());
+      const bus = this.gpsGapVehicle ? `&vehicle=${encodeURIComponent(this.gpsGapVehicle)}` : '';
+      const res = await fetch(`/api/analytics/gps-gaps?days=${this.gpsGapDays}&line=${encodeURIComponent(this.gpsGapLine)}${bus}`).then(r => r.json());
       data = res && res.success ? res : null;
     } catch {
       data = null;
@@ -434,6 +444,47 @@ class ObservatoriApp {
     if (!map.getBounds().pad(-0.05).contains(bounds)) map.fitBounds(bounds, { padding: [40, 40], maxZoom: 17 });
   }
 
+  /**
+   * Which buses lose GPS the most (src/core/geo/gapBuses.js): each against
+   * the other buses on its lines, per 100 stops served. Far above its
+   * colleagues on the same streets points at the bus's equipment; losing it
+   * where the others lose it too points at coverage.
+   */
+  renderGpsGapBuses(data) {
+    const block = document.getElementById('gps-gaps-buses-block');
+    const list = document.getElementById('gps-gaps-buses');
+    const foot = document.getElementById('gps-gaps-buses-foot');
+    if (!block || !list) return;
+    const buses = (data && data.buses) || [];
+    block.hidden = !buses.length;
+    if (!buses.length) return;
+    const dec = x => String(x).replace('.', ',');
+    const tags = {
+      suspect: ['recurrent', 'Possible problema del bus'],
+      watch: ['', 'Per sobre, pot ser atzar'],
+      normal: ['calm', 'Com els companys'],
+      few: ['calm', 'Poques dades']
+    };
+    list.innerHTML = buses.slice(0, 10).map(b => {
+      const [cls, label] = tags[b.verdict] || tags.few;
+      const facts = [
+        `<strong>${b.gaps}</strong> ${b.gaps === 1 ? 'pèrdua' : 'pèrdues'}${b.visits ? ` en ${b.visits} parades (${dec(b.per100)} per 100)` : ''}`,
+        b.ratio !== null ? `<strong>${dec(b.ratio)}×</strong> els companys de línia` : '',
+        `${b.sharedPct}% on altres busos també el perden`
+      ].filter(Boolean).join(' · ');
+      const on = this.gpsGapVehicle === b.vehicleId;
+      return `<li><button type="button" class="gps-bus-row${on ? ' active' : ''}" data-gps-bus="${this.esc(b.vehicleId)}" aria-pressed="${on}">
+        <span class="gps-bus-id">${this.esc(b.vehicleId)}</span>
+        <span class="gps-bus-head">${b.lines.map(code => this.lineChip(code)).join('')}<span class="gps-gaps-popup-tag${cls ? ` ${cls}` : ''}">${label}</span></span>
+        <span class="gps-bus-facts">${facts}</span>
+      </button></li>`;
+    }).join('');
+    const fleet = (data && data.fleet) || {};
+    if (foot) {
+      foot.textContent = `${fleet.inService || 0} busos han fet servei en aquest període i ${fleet.withoutLoss || 0} no han perdut el senyal cap vegada. "Possible problema del bus" vol dir 4 pèrdues o més, 1,5 vegades les dels companys i poc probable per atzar (p < 0,05). Toca un bus per veure només les seves pèrdues al mapa.`;
+    }
+  }
+
   fmtGapDuration(sec) {
     if (!Number.isFinite(sec)) return '--';
     if (sec < 60) return `${sec} s`;
@@ -452,6 +503,7 @@ class ObservatoriApp {
     this.clearGpsGapSelection();
     this.gpsGapCells = [];
     if (!summary || !list || !empty) return;
+    this.renderGpsGapBuses(data);
 
     if (!data) {
       summary.textContent = "No s'han pogut carregar les pèrdues de senyal.";
@@ -470,8 +522,12 @@ class ObservatoriApp {
     if (t.feedWide) left.push(`${t.feedWide} talls de tot el canal`);
     const leftTxt = left.length ? ` No s'hi compten ${left.join(' ni ')}.` : '';
 
+    // The picked bus, as a chip that shows every bus again.
+    const busChip = data.vehicleId
+      ? `<button type="button" class="observatori-pill-btn active gps-bus-clear" data-gps-bus-clear aria-label="Mostra tots els busos">Bus ${this.esc(data.vehicleId)} ×</button> `
+      : '';
     if (!t.mapped) {
-      summary.textContent = `Cap pèrdua de senyal registrada${data.lineCode ? ` a la ${data.lineCode}` : ''} en ${period}.${leftTxt}`;
+      summary.innerHTML = busChip + this.esc(`Cap pèrdua de senyal registrada${data.lineCode ? ` a la ${data.lineCode}` : ''} en ${period}.${leftTxt}`);
       list.innerHTML = '';
       empty.textContent = "Encara no hi ha pèrdues de senyal per mostrar en aquest període.";
       empty.hidden = false;
@@ -481,8 +537,13 @@ class ObservatoriApp {
 
     this.gpsGapCells = cells;
     const recurrent = cells.filter(c => c.recurrent).length;
-    summary.innerHTML = `<strong>${t.mapped}</strong> pèrdues de senyal${onLine} en ${period}, de ${t.vehicles} busos; durada mediana <strong>${this.esc(this.fmtGapDuration(t.medianGapSec))}</strong>. `
-      + (recurrent
+    // One bus: "recurrent" needs two buses, so say where instead.
+    const picked = (data.buses || []).find(b => b.vehicleId === data.vehicleId);
+    const busWhere = `En ${cells.length} ${cells.length === 1 ? 'lloc' : 'llocs diferents'}${picked ? `; el ${picked.sharedPct}% on altres busos també el perden` : ''}.`;
+    summary.innerHTML = busChip + (data.vehicleId
+      ? `<strong>${t.mapped}</strong> pèrdues de senyal${onLine} en ${period}; durada mediana <strong>${this.esc(this.fmtGapDuration(t.medianGapSec))}</strong>. `
+      : `<strong>${t.mapped}</strong> pèrdues de senyal${onLine} en ${period}, de ${t.vehicles} busos; durada mediana <strong>${this.esc(this.fmtGapDuration(t.medianGapSec))}</strong>. `)
+      + (data.vehicleId ? busWhere : recurrent
         ? `<strong>${t.recurrentShare}%</strong> es concentren en ${recurrent} ${recurrent === 1 ? 'punt recurrent' : 'punts recurrents'}.`
         : 'Cap punt es repeteix prou encara per ser recurrent.')
       + this.esc(leftTxt);

@@ -415,7 +415,12 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   map (under it on a phone), never over its streets, with one row per bus that highlights
   its street; lines sharing a street are drawn as nested stripes, each bus's end dot is
   where its GPS came back. A click on the map background clears it. Rows are pruned with the delay logs.
-  See `test/gps_gaps_test.js` and `test/gps_gap_paths_test.js`.
+  "Quins busos el perden més" ([gapBuses.js](src/core/geo/gapBuses.js)) compares each bus with
+  the other buses on its lines per stop visit (`stop_visits`): expected losses = Σ its visits ×
+  that line's losses per visit, and a Poisson tail says whether the excess can be chance
+  (suspect: 4+ losses, 1.5×, p < 0.05). Far above its colleagues on the same streets points
+  at the bus's equipment, not coverage; a picked bus (`?vehicle=`) narrows the map only.
+  See `test/gps_gaps_test.js`, `test/gps_gap_paths_test.js` and `test/gps_gap_buses_test.js`.
 - **Colours, radii and spacing come from tokens.** [UI_GUIDE.md](UI_GUIDE.md) §2.0 lists the
   design-system tokens (`--brand`, `--action`/`--on-action`, `--status-*`, `--punct-*`,
   `--line-N`/`--on-line-N`, `--radius-xs`…`--radius-xl`, `--space-1`…`--space-8`). Every

@@ -1197,7 +1197,10 @@ app.get('/api/analytics/gps-gaps', async (req, res) => {
   const days = Math.max(1, Math.min(30, parseInt(req.query.days, 10) || 7));
   const rawLine = String(req.query.line || 'all').trim().toUpperCase();
   const lineCode = /^L?[1-8]$/.test(rawLine) ? `L${rawLine.replace(/^L/, '')}` : '';
-  const cacheKey = `${lineCode || 'ALL'}_${days}`;
+  // One bus's losses only (its fleet number), for the per-bus comparison.
+  const rawVehicle = String(req.query.vehicle || '').trim();
+  const vehicleId = /^\d{3,6}$/.test(rawVehicle) ? rawVehicle : '';
+  const cacheKey = `${lineCode || 'ALL'}_${days}_${vehicleId || 'all'}`;
   const now = Date.now();
   const cached = gpsGapCache.get(cacheKey);
   if (cached && (now - cached.timestamp) < GPS_GAP_CACHE_TTL_MS) {
@@ -1205,7 +1208,7 @@ app.get('/api/analytics/gps-gaps', async (req, res) => {
     return res.json({ success: true, ...cached.data });
   }
   try {
-    const data = await workerBridge.historyQuery('getGpsGapHotspots', { days, lineCode }, { timeoutMs: 15000 });
+    const data = await workerBridge.historyQuery('getGpsGapHotspots', { days, lineCode, vehicleId }, { timeoutMs: 15000 });
     gpsGapCache.set(cacheKey, { data, timestamp: now });
     if (gpsGapCache.size > 20) gpsGapCache.delete(gpsGapCache.keys().next().value);
     res.setHeader('X-Cache', 'MISS');
