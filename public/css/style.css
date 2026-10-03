@@ -9599,6 +9599,13 @@ body {
   color: var(--text-secondary);
 }
 
+.trajectory-note {
+  margin-top: var(--space-2);
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: var(--accent-warning);
+}
+
 .drilldown-trip-stop {
   display: inline-flex;
   align-items: center;

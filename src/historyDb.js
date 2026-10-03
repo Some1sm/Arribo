@@ -31,6 +31,12 @@ const {
   JUMP_FROM_MIN_MINS
 } = require('./core/schedule/delayJump');
 const serviceHours = require('./core/schedule/serviceHours');
+const {
+  findBackwardLegs,
+  backwardCovering,
+  backwardOverlapping,
+  BACK_MIN_DELAY_MINS
+} = require('./core/schedule/backwardLeg');
 const mataroSchedules = require('./data/mataroSchedules');
 const { normalizeStopName, resolveDayType } = require('./core/schedule/tripMatcher');
 const { clusterPoints } = require('./core/geo/gapClusters');
@@ -2160,7 +2166,9 @@ class HistoryDatabase {
       // relink stretch; trajectories that end in one end as 'deadhead_return'.
       // Impossible delay jumps: records measured against an earlier trip than
       // the bus was on (see delayJump.js). Same treatment again.
-      const { relinks, deadheads, jumps, windows } = this._findPhantomStretches(lineScope);
+      // Backward legs: records logged while a bus drove back along its route with the
+      // operator's delay frozen on (see backwardLeg.js). Same treatment once more.
+      const { relinks, deadheads, jumps, backs, windows } = this._findPhantomStretches(lineScope);
       this._setRelinkWindows(windows);
       const serviceWhere = `${sqlWhere} AND NOT ${IN_RELINK_SQL}`;
 
@@ -2340,6 +2348,18 @@ class HistoryDatabase {
           };
         }
         const rl = relinkCovering(relinks, r.vehicleId, r.lineCode, r.timestamp);
+        // The more specific finding wins: the tail of a backward leg is also a delay that
+        // collapses (+26 -> +1 when the bus is next placed on its real trip).
+        const bk = backwardCovering(backs, r.vehicleId, r.lineCode, r.timestamp);
+        if (bk) {
+          return {
+            ...r,
+            anomalyType: 'backward_leg',
+            diagnosticBadge: '⏪ Recorregut en sentit invers',
+            anomalyIcon: '⏪',
+            backwardLeg: { lastServedStop: bk.lastServedStop, lowestStop: bk.lowestStop, stepsBack: bk.stepsBack, visitCount: bk.visitCount, lastServedDelay: bk.lastServedDelay }
+          };
+        }
         const jp = rl ? null : jumpCovering(jumps, r.vehicleId, r.lineCode, r.timestamp);
         if (jp) {
           return {
@@ -2500,7 +2520,7 @@ class HistoryDatabase {
       const clusterRowsDesc = clusterStmt.all(...baseParams);
       const trajectorySamplesTruncated = clusterRowsDesc.length === 30000;
       // Records logged during a deadhead return are not part of any trip.
-      const clusterRows = clusterRowsDesc.reverse().filter(r => !deadheadCovering(deadheads, r.vehicleId, r.lineCode, r.timestamp));
+      const clusterRows = clusterRowsDesc.reverse().filter(r => !deadheadCovering(deadheads, r.vehicleId, r.lineCode, r.timestamp) && !backwardCovering(backs, r.vehicleId, r.lineCode, r.timestamp));
       clusterRows.sort((a, b) => String(a.lineCode).localeCompare(String(b.lineCode)) || a.timestamp - b.timestamp);
 
       const recoveryStmt = this.db.prepare(`
@@ -2726,6 +2746,23 @@ class HistoryDatabase {
           c.endMomentTs = c.lastTs;
           c.nextTrip = null;
         }
+        // A bus that drove back along its route with the delay frozen on did not
+        // recover either: the trajectory ends at the furthest stop it served.
+        const backward = !relink && !deadhead && c.vehicleId
+          ? backwardOverlapping(backs, c.vehicleId, c.lineCode, c.firstTs, c.lastTs + 15 * 60 * 1000)
+          : null;
+        if (backward) {
+          const progression = c.stopProgression || [];
+          const servedAt = progression.map(p => p.stopName).lastIndexOf(backward.lastServedStop);
+          c.stopProgression = (servedAt >= 0 ? progression.slice(0, servedAt + 1) : progression).map(p => ({ ...p, isRecovered: false }));
+          c.stops = c.stopProgression.map(p => p.stopName);
+          c.lastStop = backward.lastServedStop;
+          c.endReason = 'backward_leg';
+          c.endStop = backward.lastServedStop;
+          c.endMomentTs = backward.lastServedTs;
+          c.endDelayMins = backward.lastServedDelay;
+          c.nextTrip = null;
+        }
 
         const durMins = Math.round((c.lastTs - c.firstTs) / 60000);
         const h = parseInt(c.hourOfDay, 10);
@@ -2787,6 +2824,9 @@ class HistoryDatabase {
             : null,
           deadhead: deadhead
             ? { lastServedStop: deadhead.lastServedStop, resumeStop: deadhead.resumeStop, returnMinutes: deadhead.returnMinutes, oppositeTripMinutes: deadhead.oppositeTripMinutes, towards: directionTerminus(deadhead.lineCode, deadhead.oppositeDirection) }
+            : null,
+          backwardLeg: backward
+            ? { lastServedStop: backward.lastServedStop, lowestStop: backward.lowestStop, stepsBack: backward.stepsBack, visitCount: backward.visitCount, lastServedDelay: backward.lastServedDelay }
             : null
         };
       }).sort((a, b) => (a.incidentType === 'trip_relink') - (b.incidentType === 'trip_relink') || b.maxDelayMins - a.maxDelayMins || b.sampleCount - a.sampleCount);
@@ -2843,6 +2883,7 @@ class HistoryDatabase {
           tripRelinkEpisodes: relinks.length,
           deadheadReturns: deadheads.length,
           delayJumps: jumps.length,
+          backwardLegs: backs.length,
           dataQuality: this._delayDataQuality({ hours: hoursNum, lineCode: lineCode })
         },
         topIncidents: enrichedTop,
@@ -2876,7 +2917,8 @@ class HistoryDatabase {
           investigationCount: 0,
           tripRelinkEpisodes: 0,
           deadheadReturns: 0,
-          delayJumps: 0
+          delayJumps: 0,
+          backwardLegs: 0
         },
         topIncidents: [],
         investigationIncidents: [],
@@ -2976,6 +3018,23 @@ class HistoryDatabase {
    * serving, where it started again, the records logged in between, and the trip
    * it skipped.
    */
+  _describeBackwardLeg(b) {
+    const hhmm = ts => timeEngine.formatTimeToTimezone(ts, 'Europe/Madrid');
+    return {
+      vehicleId: b.vehicleId,
+      lineCode: b.lineCode,
+      lastServedStop: b.lastServedStop,
+      lastServedTime: hhmm(b.lastServedTs),
+      lastServedDelay: b.lastServedDelay,
+      lowestStop: b.lowestStop,
+      stepsBack: b.stepsBack,
+      fromTime: hhmm(b.staleFromTs),
+      toTime: hhmm(b.staleToTs),
+      visitCount: b.visitCount,
+      staleStops: b.staleStops
+    };
+  }
+
   _describeDeadhead(d) {
     const hhmm = ts => timeEngine.formatTimeToTimezone(ts, 'Europe/Madrid');
     const skipped = this._skippedTrip(d);
@@ -3152,6 +3211,22 @@ class HistoryDatabase {
   }
 
   /**
+   * Backward legs (src/core/schedule/backwardLeg.js) for identified buses from
+   * `since` to `until`. Only samples of BACK_MIN_DELAY_MINS or more can belong
+   * to one, so only those are loaded.
+   */
+  _findBackwardLegs({ since, until = Date.now(), lineWhereSql = '', lineParams = [] } = {}) {
+    const rows = this.db.prepare(`
+      SELECT vehicle_id AS vehicleId, line_code AS lineCode, direction, delay_mins AS delayMins, timestamp, stop_name AS stopName
+      FROM delay_logs
+      WHERE vehicle_id <> '' AND delay_mins >= ? AND timestamp >= ? AND timestamp <= ?${lineWhereSql}
+      ORDER BY vehicle_id, timestamp ASC
+      LIMIT 200000
+    `).all(BACK_MIN_DELAY_MINS, since, until, ...lineParams);
+    return findBackwardLegs(rows, { stopIndex: scheduleStopIndex() });
+  }
+
+  /**
    * Every stretch whose delay was measured against a trip the bus was not
    * running (trip relinks, deadhead returns, impossible delay jumps), with the
    * windows _setRelinkWindows takes. Shared by the incident tables and the
@@ -3162,12 +3237,14 @@ class HistoryDatabase {
     const relinks = this._findTripRelinks(lineScope, candidates.drops);
     const deadheads = this._findDeadheadReturns(lineScope, candidates.changes);
     const jumps = this._findDelayJumps(lineScope, candidates.rises);
+    const backs = this._findBackwardLegs(lineScope);
     const windows = [
       ...relinks,
       ...deadheads.map(d => ({ vehicleId: d.vehicleId, lineCode: d.lineCode, staleFromTs: d.phantomFromTs, staleToTs: d.phantomToTs })),
-      ...jumps
+      ...jumps,
+      ...backs.map(b => ({ vehicleId: b.vehicleId, lineCode: b.lineCode, staleFromTs: b.staleFromTs, staleToTs: b.staleToTs }))
     ];
-    return { relinks, deadheads, jumps, windows };
+    return { relinks, deadheads, jumps, backs, windows };
   }
 
   /**
@@ -3435,6 +3512,9 @@ class HistoryDatabase {
       let clickedPhantom = false;
       // An impossible delay jump covering the episode's peak (see delayJump.js).
       let delayJump = null;
+      // A backward leg touching the episode (see backwardLeg.js).
+      let backwardLeg = null;
+      let clickedBackward = false;
       // The bus's whole run around the episode (see incidentRun.js), so the
       // Investigar panel shows every stop it logged, not only the clicked one.
       let run = null;
@@ -3455,12 +3535,20 @@ class HistoryDatabase {
         const peakRow = pick.reduce((a, b) => (b.delayMins > a.delayMins ? b : a));
         clickedPhantom = Boolean(deadheadCovering(deadheadList, peakRow.vehicleId, peakRow.lineCode, peakRow.timestamp));
         delayJump = jumpCovering(findDelayJumps(vehicleRows), peakRow.vehicleId, peakRow.lineCode, peakRow.timestamp);
+        const backLegs = findBackwardLegs(vehicleRows, { stopIndex: scheduleStopIndex() });
+        backwardLeg = backwardOverlapping(backLegs, vehicleIds[0], pick[0].lineCode, pick[0].timestamp - RUN_CONTEXT_MS, pick[pick.length - 1].timestamp + RUN_CONTEXT_MS);
+        clickedBackward = Boolean(backwardCovering(backLegs, peakRow.vehicleId, peakRow.lineCode, peakRow.timestamp));
+        // The run table groups both kinds of phantom stretch the same way.
+        const phantomStretches = [
+          ...deadheadList,
+          ...backLegs.map(b => ({ lineCode: b.lineCode, phantomFromTs: b.staleFromTs, phantomToTs: b.staleToTs, kind: 'backward' }))
+        ];
         const lineUpper = String(pick[0].lineCode || '').toUpperCase();
         run = buildIncidentRun(
           vehicleRows
             .filter(r => String(r.lineCode || '').toUpperCase() === lineUpper)
             .map(r => ({ ...r, timesProvenance: classifyTimes(r) })),
-          { clickedStop: stopName, clickedFrom: pick[0].timestamp, clickedTo: pick[pick.length - 1].timestamp, towards: directionTerminus, stopIndex: scheduleStopIndex(), directionStops: directionStopNames, deadheads: deadheadList, showFrom: pick[0].timestamp - RUN_CONTEXT_MS }
+          { clickedStop: stopName, clickedFrom: pick[0].timestamp, clickedTo: pick[pick.length - 1].timestamp, towards: directionTerminus, stopIndex: scheduleStopIndex(), directionStops: directionStopNames, deadheads: phantomStretches, showFrom: pick[0].timestamp - RUN_CONTEXT_MS }
         );
       }
 
@@ -3468,6 +3556,9 @@ class HistoryDatabase {
       if (clickedPhantom && deadhead) {
         verdict = 'deadhead_return';
         verdictLabel = `Deadhead return — bus ${deadhead.vehicleId} stopped serving its trip after ${deadhead.lastServedStop} and was back at ${deadhead.resumeStop} ${deadhead.returnMinutes} min later (the opposite trip takes ${deadhead.oppositeTripMinutes} min); this record was logged while it ran without passengers and is not a stop visit`;
+      } else if (clickedBackward && backwardLeg) {
+        verdict = 'backward_leg';
+        verdictLabel = `Backward leg — bus ${backwardLeg.vehicleId} was at ${backwardLeg.lastServedStop} (+${backwardLeg.lastServedDelay}) and its next ${backwardLeg.visitCount} records run back along the route to ${backwardLeg.lowestStop} (${backwardLeg.stepsBack} stops) with the delay unchanged; this record was logged while it drove back and is not a stop visit`;
       } else if (tripRelink) {
         verdict = 'trip_relink';
         verdictLabel = `Trip relink — the operator's AVL re-attached bus ${tripRelink.vehicleId} to its real trip at ${tripRelink.relinkStop} (+${tripRelink.delayBefore} → ${tripRelink.delayAfter} min within ${Math.max(1, Math.round((tripRelink.relinkTs - tripRelink.staleToTs) / 60000))} min); the delay before it was measured against a trip the bus was not running`;
@@ -3530,6 +3621,7 @@ class HistoryDatabase {
             ? { delayBefore: tripRelink.delayBefore, delayAfter: tripRelink.delayAfter, stopName: tripRelink.relinkStop, relinkTs: tripRelink.relinkTs, staleStops: tripRelink.staleStops }
             : null,
           deadheadReturn: deadhead ? this._describeDeadhead(deadhead) : null,
+          backwardLeg: backwardLeg ? this._describeBackwardLeg(backwardLeg) : null,
           delayJump: delayJump
             ? {
               vehicleId: delayJump.vehicleId,

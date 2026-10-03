@@ -102,8 +102,9 @@ function summarise(segment) {
  * @param {function(string, string): string[]} [options.directionStops]
  *   (lineCode, direction) -> that direction's published stop names, used to name the
  *   stops a mid-route join left out.
- * @param {Array<{lineCode: string, phantomFromTs: number, phantomToTs: number}>} [options.deadheads]
- *   This bus's deadhead returns (findDeadheadReturns). Stop visits inside a phantom
+ * @param {Array<{lineCode: string, phantomFromTs: number, phantomToTs: number, kind?: string}>} [options.deadheads]
+ *   This bus's deadhead returns (findDeadheadReturns) and backward legs (findBackwardLegs, kind
+ *   'backward'; a missing kind means a deadhead). Stop visits inside a phantom
  *   stretch get `phantom: true` and form one group; the visit after it starts a trip.
  * @param {number} [options.showFrom]  Epoch ms. Stop visits that ended before it are left
  *   out, unless they are needed to show where the clicked delay came from. Without it
@@ -199,6 +200,7 @@ function buildIncidentRun(rows, { clickedStop = '', clickedFrom, clickedTo, towa
         && s.firstTs >= x.phantomFromTs && s.firstTs <= x.phantomToTs) || null;
       if (d) {
         s.phantom = true;
+        s.phantomKind = d.kind || 'deadhead';
         s.newTrip = group !== d;
       } else if (group) {
         s.newTrip = true;
@@ -291,6 +293,7 @@ function buildIncidentRun(rows, { clickedStop = '', clickedFrom, clickedTo, towa
       endIndex: t.endIndex,
       joinedMidRoute: segment[0].joinedMidRoute || null,
       isDeadhead: segment[0].phantom,
+      phantomKind: segment[0].phantom ? (segment[0].phantomKind || 'deadhead') : '',
       isClickedTrip: segment.some(v => v.isClicked)
     };
   });

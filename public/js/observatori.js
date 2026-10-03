@@ -2583,6 +2583,9 @@ class ObservatoriApp {
       const afterStop = name => (/^[aeiouàèéíïòóúüh]/i.test(String(name || '')) ? `d'${this.esc(name)}` : `de ${this.esc(name)}`);
       if (ep.verdict === 'deadhead_return' && dh) {
         headline = { tone: 'var(--accent-warning)', title: 'Tornada sense servei', text: `Aquest registre no és un pas real. Després ${afterStop(dh.lastServedStop)} (${this.esc(dh.lastServedTime)}) el bus ${this.esc(dh.vehicleId)} va deixar de fer servei i va tornar sense passatgers fins a ${this.esc(dh.resumeStop)}, on consta a les ${this.esc(dh.resumeTime)}. Mentre tornava, el sistema de l'operador va continuar anotant parades que el bus no servia.` };
+      } else if (ep.verdict === 'backward_leg' && ep.backwardLeg) {
+        const bl = ep.backwardLeg;
+        headline = { tone: 'var(--accent-warning)', title: 'Recorregut en sentit invers', text: `Aquest registre no és un pas real. Després ${afterStop(bl.lastServedStop)} (${this.esc(hhmm(bl.lastServedTime))}, ${signed(bl.lastServedDelay)} min) el bus ${this.esc(bl.vehicleId)} va anar enrere pel recorregut fins a ${this.esc(bl.lowestStop)} (${bl.stepsBack} parades enrere) i el sistema de l'operador va seguir anotant el mateix retard. Són ${bl.visitCount} registres entre les ${this.esc(hhmm(bl.fromTime))} i les ${this.esc(hhmm(bl.toTime))} que no compten en els rànquings.` };
       } else if (ep.tripRelink) {
         headline = { tone: 'var(--accent-warning)', title: 'Viatge reassignat pel SAE', text: `A ${this.esc(ep.tripRelink.stopName)} el retard passa de +${ep.tripRelink.delayBefore} a ${ep.tripRelink.delayAfter} min de cop: cap autobús pot recuperar tant de temps entre dues parades. El sistema de l'operador tenia el bus assignat a un viatge que no feia, i el retard anterior es mesurava contra aquell viatge. No és un retard real verificable.` };
       } else if (ep.verdict === 'delay_jump' && ep.delayJump) {
@@ -2631,7 +2634,7 @@ class ObservatoriApp {
       // Where the delay came from: back to the last stop without delay (often several
       // trips earlier), with the places where it grew most. Not for a record that is
       // not a real delay (deadhead return, trip relink).
-      const origin = run && run.origin && ep.verdict !== 'deadhead_return' && ep.verdict !== 'delay_jump' && !ep.tripRelink ? run.origin : null;
+      const origin = run && run.origin && ep.verdict !== 'deadhead_return' && ep.verdict !== 'delay_jump' && ep.verdict !== 'backward_leg' && !ep.tripRelink ? run.origin : null;
       const originPlace = e => {
         const span = `${this.esc(hhmm(e.fromTime))}–${this.esc(hhmm(e.toTime))}, ${signed(e.fromDelay)} → ${signed(e.toDelay)} min`;
         if (e.kind === 'between') return `entre ${this.esc(e.previousStop)} i ${this.esc(e.stopName)} (${span})`;
@@ -2660,7 +2663,8 @@ class ObservatoriApp {
         telemetry_anomaly: ['var(--text-muted)', 'Fora de servei', 'Registre de nit o a cotxeres: no és un retard de servei.'],
         trip_relink: ['var(--accent-warning)', 'Viatge reassignat pel SAE', 'El retard es mesurava contra un viatge que el bus no feia.'],
         delay_jump: ['var(--accent-warning)', 'Salt de retard impossible', 'El retard va pujar més de pressa que el rellotge: es mesurava contra una expedició que el bus no feia.'],
-        deadhead_return: ['var(--accent-warning)', 'Tornada sense servei', 'Anotat mentre el bus tornava sense passatgers: no és un pas real per aquesta parada.']
+        deadhead_return: ['var(--accent-warning)', 'Tornada sense servei', 'Anotat mentre el bus tornava sense passatgers: no és un pas real per aquesta parada.'],
+        backward_leg: ['var(--accent-warning)', 'Recorregut en sentit invers', 'Anotat mentre el bus anava enrere pel recorregut amb el retard congelat: no és un pas real per aquesta parada.']
       };
       const [vTone, vTitle, vText] = verdicts[ep.verdict] || ['var(--text-primary)', 'Sense veredicte', ''];
       const busCell = Array.isArray(ep.distinctVehicles) && ep.distinctVehicles.length
@@ -2702,9 +2706,9 @@ class ObservatoriApp {
           return `
           <tr class="drilldown-trip-row is-deadhead${t.isClickedTrip ? ' is-clicked-trip' : ''}">
             <th colspan="5" scope="colgroup">
-              <span class="drilldown-trip-name">Tornada sense servei</span>
+              <span class="drilldown-trip-name">${t.phantomKind === 'backward' ? 'Recorregut en sentit invers' : 'Tornada sense servei'}</span>
               <span class="drilldown-trip-meta">${this.esc(hhmm(t.fromTime))}–${this.esc(hhmm(t.toTime))}</span>
-              <span class="drilldown-trip-join">El bus tornava sense passatgers: aquests registres no són passos reals.</span>
+              <span class="drilldown-trip-join">${t.phantomKind === 'backward' ? "El bus anava enrere pel recorregut amb el retard congelat: aquests registres no són passos reals." : 'El bus tornava sense passatgers: aquests registres no són passos reals.'}</span>
             </th>
           </tr>`;
         }
@@ -2749,7 +2753,7 @@ class ObservatoriApp {
         ${shortTurnNote}
         ${deadheadNote}
         <p class="drilldown-context">
-          Parada consultada: <strong>${this.esc(clicked ? clicked.stopName : (data.stopName || stopName))}</strong>${clicked && clicked.time ? ` a les ${this.esc(hhmm(clicked.time))}` : ''} · ${ep.verdict === 'deadhead_return' ? `retard anotat: ${signed(ep.peakDelayMins)} min, que no és un pas real` : ep.verdict === 'delay_jump' ? `retard anotat: ${signed(ep.peakDelayMins)} min, mesurat contra una expedició que el bus no feia` : `retard màxim en aquesta parada: ${signed(ep.peakDelayMins)} min`}.${run ? ` A sota, tot el que va registrar aquest bus entre les ${this.esc(hhmm(runRows[0].time))} i les ${this.esc(hhmm(runRows[runRows.length - 1].time))}.` : ''}
+          Parada consultada: <strong>${this.esc(clicked ? clicked.stopName : (data.stopName || stopName))}</strong>${clicked && clicked.time ? ` a les ${this.esc(hhmm(clicked.time))}` : ''} · ${ep.verdict === 'deadhead_return' ? `retard anotat: ${signed(ep.peakDelayMins)} min, que no és un pas real` : ep.verdict === 'delay_jump' ? `retard anotat: ${signed(ep.peakDelayMins)} min, mesurat contra una expedició que el bus no feia` : ep.verdict === 'backward_leg' ? `retard anotat: ${signed(ep.peakDelayMins)} min, mentre el bus anava enrere pel recorregut` : `retard màxim en aquesta parada: ${signed(ep.peakDelayMins)} min`}.${run ? ` A sota, tot el que va registrar aquest bus entre les ${this.esc(hhmm(runRows[0].time))} i les ${this.esc(hhmm(runRows[runRows.length - 1].time))}.` : ''}
         </p>
         ${tripLink}
         <div class="drilldown-table-scroll">
@@ -2887,6 +2891,8 @@ class ObservatoriApp {
         return "El sistema de l'operador va reassignar el bus a un altre viatge: el retard no es va recuperar.";
       case 'deadhead_return':
         return 'El bus va deixar de servir el viatge: el retard no es va recuperar.';
+      case 'backward_leg':
+        return `El bus va tornar enrere pel recorregut sense servir-lo (darrer pas: ${stop}${end ? ` a les ${end}` : ''}): el retard no es va recuperar.`;
       default:
         return '';
     }
@@ -3315,7 +3321,7 @@ class ObservatoriApp {
                 Anomalies de Telemetria SAE &amp; Sortida de Cotxeres (${anomaliesList.length})
               </h4>
               <p style="font-size:0.78rem; color:var(--text-muted); margin:0; max-width:740px; line-height:1.45;">
-                Aquests registres no corresponen a retencions de trànsit de la ciutat, sinó a <strong>desfasaments de telemetria generats pel sistema SAE (CAD/AVL) d'Avanza</strong> fora de l'horari publicat de cada línia (sortides i tornades a cotxeres) o amb 10 min o més durant la primera mitja hora de servei de la línia (un bus que comença torn assignat a una expedició anterior). També hi apareixen els <strong>viatges reassignats pel SAE</strong> (🔀): trams on el retard desapareix de cop perquè el sistema tenia el bus assignat a un viatge que no feia, i els <strong>salts de retard impossibles</strong> (⏫): el retard puja més de pressa que passa el temps perquè el sistema passa el bus a una expedició anterior. Es publiquen aquí per facilitar l'auditoria i la seva correcció per part de l'Ajuntament de Mataró.
+                Aquests registres no corresponen a retencions de trànsit de la ciutat, sinó a <strong>desfasaments de telemetria generats pel sistema SAE (CAD/AVL) d'Avanza</strong> fora de l'horari publicat de cada línia (sortides i tornades a cotxeres) o amb 10 min o més durant la primera mitja hora de servei de la línia (un bus que comença torn assignat a una expedició anterior). També hi apareixen els <strong>viatges reassignats pel SAE</strong> (🔀): trams on el retard desapareix de cop perquè el sistema tenia el bus assignat a un viatge que no feia, i els <strong>salts de retard impossibles</strong> (⏫): el retard puja més de pressa que passa el temps perquè el sistema passa el bus a una expedició anterior. També els <strong>recorreguts en sentit invers</strong> (⏪): el bus torna enrere pel recorregut mentre el sistema segueix anotant el mateix retard. Es publiquen aquí per facilitar l'auditoria i la seva correcció per part de l'Ajuntament de Mataró.
               </p>
             </div>
             ${anomaliesList.length > 0 ? `
@@ -3349,7 +3355,7 @@ class ObservatoriApp {
                   ${anomaliesList.map((inc, i) => {
                     const lColor = getLineColor(inc.lineCode);
                     const isStartup = inc.anomalyType === 'startup_sae';
-                    const isRelink = inc.anomalyType === 'trip_relink' || inc.anomalyType === 'deadhead_return' || inc.anomalyType === 'delay_jump';
+                    const isRelink = inc.anomalyType === 'trip_relink' || inc.anomalyType === 'deadhead_return' || inc.anomalyType === 'delay_jump' || inc.anomalyType === 'backward_leg';
                     const isMaintenance = inc.anomalyType === 'maintenance' || (!isStartup && !isRelink);
                     const badgeBg = (isStartup || isRelink) ? 'rgba(245, 158, 11, 0.15)' : 'rgba(147, 51, 234, 0.15)';
                     const badgeColor = (isStartup || isRelink) ? 'var(--accent-warning)' : 'var(--accent-regulating)';
@@ -3605,6 +3611,7 @@ class ObservatoriApp {
                       trip_change: `<span class="trajectory-end">🔀 Canvi de viatge</span>`,
                       relinked: `<span class="trajectory-end">🔀 Viatge reassignat pel SAE</span>`,
                       deadhead_return: `<span class="trajectory-end">↩️ Tornada sense servei</span>`,
+                      backward_leg: `<span class="trajectory-end">⏪ En sentit invers</span>`,
                       signal_lost: `<span class="trajectory-end">📡 Sense més dades</span>`,
                       ongoing: `<span class="trajectory-end">⏳ En curs</span>`
                     })[trip.endReason] || ''}
@@ -3613,6 +3620,11 @@ class ObservatoriApp {
                   ${trip.relink ? `
                   <div style="margin-top:0.5rem; font-size:0.76rem; color:var(--accent-warning); line-height:1.45;">
                     El sistema de l'operador tenia aquest bus assignat a un viatge anterior: a ${this.esc(trip.relink.stopName)} el retard passa de +${trip.relink.delayBefore} a ${trip.relink.delayAfter} min de cop, cosa físicament impossible. No és un retard real verificable.
+                  </div>` : ''}
+
+                  ${trip.backwardLeg ? `
+                  <div class="trajectory-note">
+                    Després ${/^[aeiouàèéíïòóúüh]/i.test(trip.backwardLeg.lastServedStop) ? 'd\'' : 'de '}${this.esc(trip.backwardLeg.lastServedStop)} el sistema de l'operador va situar el bus ${trip.backwardLeg.stepsBack} parades enrere, fins a ${this.esc(trip.backwardLeg.lowestStop)}, amb el mateix retard. El bus tornava enrere pel recorregut: el retard no es va recuperar i aquests registres no són passos reals.
                   </div>` : ''}
 
                   ${trip.deadhead ? `
@@ -3650,12 +3662,12 @@ class ObservatoriApp {
     text += `Període: Darreres ${this._currentIncidentHours || 168}h | Línia: ${this._currentIncidentLine || 'Totes'}\n`;
     text += `Data d'extracció: ${new Date().toLocaleString('ca-ES')}\n`;
     text += `Total anomalies detectades: ${list.length}\n\n`;
-    text += `Descripció: Aquests registres corresponen a desfasaments transmesos pel sistema SAE (CAD/AVL) d'Avanza (habitualment per assignació d'autobusos que inicien torn a expedicions anteriors no cobertes o arrencada a cotxeres amb consola encesa abans de sortida). No reflecteixen retencions de trànsit reals a la ciutat. També inclou els viatges reassignats pel SAE: trams on el retard desapareix de cop perquè el sistema tenia el bus assignat a un viatge que no feia. I les tornades sense servei: parades anotades mentre un bus tornava sense passatgers a l'inici de la línia després de saltar-se un viatge. I els salts de retard impossibles: el retard puja més de pressa que passa el temps perquè el sistema passa el bus a una expedició anterior.\n\n`;
+    text += `Descripció: Aquests registres corresponen a desfasaments transmesos pel sistema SAE (CAD/AVL) d'Avanza (habitualment per assignació d'autobusos que inicien torn a expedicions anteriors no cobertes o arrencada a cotxeres amb consola encesa abans de sortida). No reflecteixen retencions de trànsit reals a la ciutat. També inclou els viatges reassignats pel SAE: trams on el retard desapareix de cop perquè el sistema tenia el bus assignat a un viatge que no feia. I les tornades sense servei: parades anotades mentre un bus tornava sense passatgers a l'inici de la línia després de saltar-se un viatge. I els salts de retard impossibles: el retard puja més de pressa que passa el temps perquè el sistema passa el bus a una expedició anterior. I els recorreguts en sentit invers: el bus torna enrere pel recorregut mentre el sistema segueix anotant el mateix retard.\n\n`;
     text += `Llistat d'incidències per auditar amb Avanza / Ajuntament de Mataró:\n`;
 
     list.forEach((item, idx) => {
       const sig = item.isRealTime ? 'GPS' : 'Estimat (dead-reckoning)';
-      const isMaint = item.anomalyType === 'maintenance' || (item.anomalyType !== 'startup_sae' && item.anomalyType !== 'trip_relink' && item.anomalyType !== 'deadhead_return' && item.anomalyType !== 'delay_jump');
+      const isMaint = item.anomalyType === 'maintenance' || (item.anomalyType !== 'startup_sae' && item.anomalyType !== 'trip_relink' && item.anomalyType !== 'deadhead_return' && item.anomalyType !== 'delay_jump' && item.anomalyType !== 'backward_leg');
       const stopInfo = isMaint ? 'Cotxeres / Manteniment' : `Parada: "${item.stopName}"`;
       const busTag = item.vehicleId && !item.vehicleId.toLowerCase().endsWith('bus') ? ` | Bus #${item.vehicleId.replace(/^mataro_\w+_/i, '')}` : '';
       text += `${idx + 1}. [${item.lineCode}] ${item.formattedDate} — ${stopInfo} | Retard transmès: +${item.delayMins} min | Causa: ${item.trafficTag || item.diagnosticBadge || 'Anomalia'}${busTag} | Senyal: ${sig}\n`;

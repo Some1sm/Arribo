@@ -443,6 +443,20 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   samples on both sides of 25 min is one row in Top Incidents and one under "En investigació". Rows with no vehicle id keep the window. A bus that carries its delay across trips is still
   one row per trip, which is honest: the delay is real (L3 and L2 buses on 2 Oct had 30-39 min gaps in service
   against 13-19 min headways). See `test/incident_trip_outcome_test.js`.
+- **A bus driving BACK along its route with the delay frozen on is a phantom stretch, not a delay.**
+  L8 bus 2679 (2 Oct 2026): +26 at Ronda Barceló (10:07, stop 12 of 13), then from 10:13 to 10:30 the feed placed it at
+  Edif. Vidre, Institut Català Salut, Gatassa, Pl. Gatassa, Tarragona, Parc Cerdanyola, Roca Blanca, Tarragona and Roca Blanca
+  again, all "direction 0" and all +26, and at 10:32 Tarragona +1 on the next trip. The bus had abandoned its late trip and
+  driven back to the start of the line. The deadhead rule never saw it because the direction flag did not change.
+  [backwardLeg.js](src/core/schedule/backwardLeg.js) finds it: delay >= 15 min, the stop order 4+ places behind the furthest
+  stop reached, the delay within 3 min of the one at that stop, 3+ stop visits, and the bus never comes back to the
+  furthest stop (L3 runs out to Caldes d'Estrac and returns through the same stops, which looks backwards by the
+  published list; a stop name that appears twice in a direction is skipped for the same reason). Measured on 48 h of
+  production (20,540 stop visits) it finds exactly that one stretch. It is handled like the other phantom stretches:
+  `_findPhantomStretches` returns `backs` and adds their windows, so the service KPIs, rankings, termòmetre and visits leave
+  it out; it is listed with the SAE anomalies as `backward_leg` (and wins over the relink that its tail also forms); a
+  trajectory that reaches it ends as `backward_leg` at the furthest stop served; Investigar returns the `backward_leg`
+  verdict and groups its visits as one phantom group (`phantomKind: 'backward'`). See `test/backward_leg_test.js`.
 - **Colours, radii and spacing come from tokens.** [UI_GUIDE.md](UI_GUIDE.md) §2.0 lists the
   design-system tokens (`--brand`, `--action`/`--on-action`, `--status-*`, `--punct-*`,
   `--line-N`/`--on-line-N`, `--radius-xs`…`--radius-xl`, `--space-1`…`--space-8`). Every
