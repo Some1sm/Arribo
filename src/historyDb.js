@@ -218,6 +218,8 @@ function scheduleTripMinutes(lineCode, direction) {
 const SNAPSHOT_CONTEXT_MS = 5 * 60 * 1000;
 // Rows of the /dades edge-case debug table (see _buildEdgeCases).
 const EDGE_CASE_LIMIT = 150;
+// A GPS silence counts for a window of records when it overlaps the window within this margin.
+const SIGNAL_MARGIN_MS = 60 * 1000;
 
 let cachedDataVersion = null;
 function getDataVersion() {
@@ -3555,6 +3557,15 @@ class HistoryDatabase {
             .map(r => ({ ...r, timesProvenance: classifyTimes(r) })),
           { clickedStop: stopName, clickedFrom: pick[0].timestamp, clickedTo: pick[pick.length - 1].timestamp, towards: directionTerminus, stopIndex: scheduleStopIndex(), directionStops: directionStopNames, deadheads: phantomStretches, showFrom: pick[0].timestamp - RUN_CONTEXT_MS }
         );
+        // A bus that joins a trip mid-route is "a short-turn" only if it kept reporting
+        // GPS while its first stops went unrecorded. Check the silence between the two trips.
+        for (const t of run.trips) {
+          if (!t.joinedMidRoute) continue;
+          const first = run.stops[t.startIndex];
+          const before = run.stops[t.startIndex - 1];
+          const from = before ? before.lastTs : first.firstTs - 10 * 60 * 1000;
+          t.joinedMidRoute.evidence = this._signalEvidence(vehicleIds[0], from, first.firstTs);
+        }
       }
 
       let verdict, verdictLabel;
@@ -3701,6 +3712,45 @@ class HistoryDatabase {
   }
 
   /**
+   * Did the bus lose GPS signal between two of its records? Looks at the GPS
+   * silences the worker recorded (gps_gaps: 90 s - 15 min between two real fixes) and
+   * at the stored GPS positions of the bus in [fromTs, toTs]:
+   *  - 'lost'         a silence of this bus overlaps the window (not at a terminal, not feed-wide);
+   *  - 'feed_stalled' the silence was feed-wide: no bus reported, the operator's feed stalled;
+   *  - 'terminal'     the silence was at a terminal (a parked bus);
+   *  - 'kept'         no silence and 2+ real GPS positions were stored in the window;
+   *  - 'unknown'      anything else, e.g. an old window whose positions were pruned. Absence of
+   *                   evidence is never reported as evidence.
+   * @returns {{signal: string, gaps: Array<{lostTs: number, regainedTs: number, gapSec: number, stopName: string, atTerminal: boolean, feedWide: boolean}>, snapshots: number, fromTs: number, toTs: number}}
+   */
+  _signalEvidence(vehicleId, fromTs, toTs) {
+    const empty = { signal: 'unknown', gaps: [], snapshots: 0, fromTs, toTs };
+    if (!vehicleId || !Number.isFinite(Number(fromTs)) || !Number.isFinite(Number(toTs)) || Number(toTs) < Number(fromTs)) return empty;
+    try {
+      const gaps = this.db.prepare(`
+        SELECT lost_ts AS lostTs, regained_ts AS regainedTs, gap_sec AS gapSec, stop_name AS stopName,
+               at_terminal AS atTerminal, feed_wide AS feedWide
+        FROM gps_gaps
+        WHERE vehicle_id = ? AND lost_ts <= ? AND regained_ts >= ?
+        ORDER BY lost_ts ASC
+        LIMIT 5
+      `).all(String(vehicleId), Number(toTs) + SIGNAL_MARGIN_MS, Number(fromTs) - SIGNAL_MARGIN_MS)
+        .map(g => ({ ...g, atTerminal: Boolean(g.atTerminal), feedWide: Boolean(g.feedWide) }));
+      const snapshots = this.db.prepare(
+        'SELECT COUNT(*) AS c FROM vehicle_snapshots WHERE vehicle_id = ? AND is_realtime = 1 AND timestamp >= ? AND timestamp <= ?'
+      ).get(String(vehicleId), Number(fromTs), Number(toTs)).c;
+      let signal = 'unknown';
+      if (gaps.some(g => !g.feedWide && !g.atTerminal)) signal = 'lost';
+      else if (gaps.some(g => g.feedWide)) signal = 'feed_stalled';
+      else if (gaps.some(g => g.atTerminal)) signal = 'terminal';
+      else if (snapshots >= 2) signal = 'kept';
+      return { signal, gaps, snapshots, fromTs, toTs };
+    } catch {
+      return empty;
+    }
+  }
+
+  /**
    * One row per moment where the operator's data does not fit what a bus can do:
    * trip relinks, deadhead returns, impossible delay jumps, backward legs and
    * trajectories that ended as a trip change. It feeds the debug table at the
@@ -3724,12 +3774,15 @@ class HistoryDatabase {
       delayAfter: Number.isFinite(Number(o.delayAfter)) ? Number(o.delayAfter) : null,
       stop: String(o.stop || o.fromStop || ''),
       at: o.at,
+      // The window of records whose silence needs explaining (see _signalEvidence).
+      sigFromTs: o.sigFromTs === undefined ? o.fromTs : o.sigFromTs,
+      sigToTs: o.sigToTs === undefined ? o.toTs : o.sigToTs,
       detail: o.detail || {}
     });
     for (const r of relinks) {
       cases.push(base('relink', {
         ...r, fromTs: r.staleFromTs, toTs: r.relinkTs, fromStop: (r.staleStops && r.staleStops[0]) || r.relinkStop, toStop: r.relinkStop,
-        stop: (r.staleStops && r.staleStops[0]) || r.relinkStop, at: r.staleFromTs,
+        stop: (r.staleStops && r.staleStops[0]) || r.relinkStop, at: r.staleFromTs, sigFromTs: r.staleToTs, sigToTs: r.relinkTs,
         detail: { samples: r.staleSampleCount, stops: (r.staleStops || []).length }
       }));
     }
@@ -3743,7 +3796,7 @@ class HistoryDatabase {
     for (const j of jumps) {
       cases.push(base('delay_jump', {
         ...j, fromTs: j.beforeTs, toTs: j.staleToTs, fromStop: j.beforeStop, toStop: j.jumpStop,
-        stop: j.jumpStop, at: j.jumpTs,
+        stop: j.jumpStop, at: j.jumpTs, sigFromTs: j.beforeTs, sigToTs: j.jumpTs,
         detail: { elapsedMins: j.elapsedMins, samples: j.staleSampleCount }
       }));
     }
@@ -3773,6 +3826,9 @@ class HistoryDatabase {
         : [];
       c.gpsPoints = rows.length;
       c.gpsExpired = rows.length === 0 && (c.toTs + SNAPSHOT_CONTEXT_MS) < now - keptMs;
+      const ev = this._signalEvidence(c.vehicleId, c.sigFromTs, c.sigToTs);
+      c.signal = ev.signal;
+      c.signalGapSec = ev.gaps.reduce((m, g) => Math.max(m, g.gapSec), 0);
     }
     return shown;
   }

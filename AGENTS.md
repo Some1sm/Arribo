@@ -463,6 +463,15 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   (`gpsPoints`; `gpsExpired` when there are none because they were pruned) and an Investigar button. Positions are
   kept 6 h, so open a case within that time to look at where the bus really was. "Copiar taula" copies it as
   tab-separated text. See `test/edge_cases_test.js`.
+- **"No records for the first stops" is not proof of a short-turn: check the signal.** A bus that joins its next trip
+  mid-route (`joinedMidRoute`) was explained as "it skipped part of the route". The same gap appears when the bus lost
+  GPS and the operator's system reassigned it (L1 bus 2684, 26 Sep 2026: relink at Parc Central +12 -> 0 after a 7-minute silence),
+  when the operator's feed stalled, or when the bus waited at a terminal (not logged). `_signalEvidence(vehicleId, fromTs, toTs)`
+  looks at the `gps_gaps` silences and the stored real GPS positions in the silent window and returns `lost`,
+  `feed_stalled`, `terminal`, `kept` (2+ real positions, no silence) or `unknown`. Investigar's "Per què el retard desapareix
+  després?" says only what that found, and `unknown` says it cannot tell (positions are kept 6 h, silences are recorded
+  only since they were introduced). The edge-case table carries the same `signal` per case. Absence of evidence is never
+  worded as evidence. See `test/signal_evidence_test.js`.
 - **Colours, radii and spacing come from tokens.** [UI_GUIDE.md](UI_GUIDE.md) §2.0 lists the
   design-system tokens (`--brand`, `--action`/`--on-action`, `--status-*`, `--punct-*`,
   `--line-N`/`--on-line-N`, `--radius-xs`…`--radius-xl`, `--space-1`…`--space-8`). Every

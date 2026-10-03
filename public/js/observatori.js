@@ -2618,14 +2618,7 @@ class ObservatoriApp {
       const clickedTripIdx = trips.findIndex(t => t.isClickedTrip);
       const nextTrip = clickedTripIdx >= 0 ? trips[clickedTripIdx + 1] : null;
       const shortTurn = nextTrip && nextTrip.joinedMidRoute ? nextTrip : null;
-      const shortTurnNote = shortTurn
-        ? `<div class="drilldown-callout">
-            <strong>Per què el retard desapareix després?</strong>
-            En girar, el bus no va començar el viatge següent${shortTurn.towards ? ` cap a ${this.esc(shortTurn.towards)}` : ''} des de l'inici: la primera parada on consta és <strong>${this.esc(run.stops[shortTurn.startIndex].stopName)}</strong>.
-            Les ${shortTurn.joinedMidRoute.skippedCount} parades anteriors d'aquell viatge${shortTurn.joinedMidRoute.firstSkipped ? ` (${this.esc(shortTurn.joinedMidRoute.firstSkipped)} → ${this.esc(shortTurn.joinedMidRoute.lastSkipped)})` : ''} no consten servides per aquest bus.
-            Això apunta a un escurçament del recorregut per recuperar l'horari: el retard no es va recuperar, el bus es va saltar part del trajecte.
-          </div>`
-        : '';
+      const shortTurnNote = shortTurn ? this._shortTurnNote(shortTurn, run.stops[shortTurn.startIndex].stopName) : '';
 
       // A deadhead return in the shown run: why the bus starts again so soon, why the
       // records in between do not count, and the wait it left on the skipped trip.
@@ -2904,6 +2897,43 @@ class ObservatoriApp {
       default:
         return '';
     }
+  }
+
+  /**
+   * "Per què el retard desapareix després?": a bus that joins its next trip mid-route has no
+   * records for that trip's first stops. That alone does not say why: a short-turn, a GPS
+   * signal loss that made the operator's system reassign the bus, and a stalled operator
+   * feed all look the same. The server checks the silence between the two trips
+   * (joinedMidRoute.evidence) and this says only what that found.
+   */
+  _shortTurnNote(trip, firstStop) {
+    const j = trip.joinedMidRoute;
+    const ev = j.evidence || { signal: 'unknown', gaps: [], snapshots: 0 };
+    const skipped = `Les ${j.skippedCount} parades anteriors d'aquell viatge${j.firstSkipped ? ` (${this.esc(j.firstSkipped)} → ${this.esc(j.lastSkipped)})` : ''} no tenen cap registre d'aquest bus.`;
+    const range = this._clockOf(ev.fromTs) && this._clockOf(ev.toTs) ? `entre les ${this._clockOf(ev.fromTs)} i les ${this._clockOf(ev.toTs)}` : 'en aquest tram';
+    const gap = (ev.gaps || []).find(g => !g.feedWide && !g.atTerminal) || (ev.gaps || [])[0];
+    let why;
+    switch (ev.signal) {
+      case 'lost':
+        why = `El bus va perdre el senyal GPS ${range}${gap ? ` (${gap.gapSec} s${gap.stopName ? `, a prop de ${this.esc(gap.stopName)}` : ''})` : ''}. El més probable és que el sistema de l'operador el tornés a assignar quan el va recuperar: que faltin registres no vol dir que el bus es saltés el recorregut. No es pot saber si el retard es va recuperar.`;
+        break;
+      case 'feed_stalled':
+        why = `${range.charAt(0).toUpperCase()}${range.slice(1)} cap bus va enviar posicions: l'operador va deixar d'enviar dades. Els registres que falten són un tall de dades, no un recorregut saltat.`;
+        break;
+      case 'terminal':
+        why = `El bus era aturat a la capçalera ${range} (sense senyal mentre esperava). Els registres que falten són de la seva espera, no un recorregut saltat.`;
+        break;
+      case 'kept':
+        why = `El bus va continuar enviant posicions GPS ${range} (${ev.snapshots} guardades), així que no és un tall de senyal. Que no hi hagi registres de retard a les parades anteriors encaixa amb un escurçament del recorregut o amb una reassignació del sistema de l'operador; amb aquestes dades no es pot distingir. El retard no es va recuperar en ruta.`;
+        break;
+      default:
+        why = `No hi ha dades de senyal d'aquest tram (les posicions només es guarden unes hores i els talls de GPS només es registren des que existeix aquest control), així que no es pot saber si és un escurçament del recorregut, una pèrdua de senyal o una reassignació del sistema. El retard no es va recuperar en ruta.`;
+    }
+    return `<div class="drilldown-callout">
+            <strong>Per què el retard desapareix després?</strong>
+            En girar, el bus no va començar el viatge següent${trip.towards ? ` cap a ${this.esc(trip.towards)}` : ''} des de l'inici: la primera parada on consta és <strong>${this.esc(firstStop)}</strong>. ${skipped}
+            ${why}
+          </div>`;
   }
 
   /** Plain-Catalan label for the server-side times_provenance classification. */
@@ -3695,6 +3725,17 @@ class ObservatoriApp {
     }
   }
 
+  /** The signal column: did the bus lose GPS in the silence that needs explaining? */
+  _edgeCaseSignal(c) {
+    switch (c.signal) {
+      case 'lost': return `va perdre el GPS (${c.signalGapSec} s)`;
+      case 'feed_stalled': return "feed de l'operador aturat";
+      case 'terminal': return 'aturat a la capçalera';
+      case 'kept': return 'va seguir amb GPS';
+      default: return 'sense dades';
+    }
+  }
+
   /** The GPS column: positions stored around the case, or why there are none. */
   _edgeCaseGps(c, keptHours) {
     if (c.gpsPoints > 0) return `${c.gpsPoints} posicions`;
@@ -3726,6 +3767,7 @@ class ObservatoriApp {
           <td class="edge-delay">${this.esc(delay)} min</td>
           <td>${this.esc(this._edgeCaseDetail(c))}</td>
           <td class="edge-gps ${c.gpsPoints > 0 ? 'has-gps' : ''}">${this.esc(this._edgeCaseGps(c, keptHours))}</td>
+          <td class="edge-signal edge-signal-${this.esc(c.signal || 'unknown')}">${this.esc(this._edgeCaseSignal(c))}</td>
           <td>
             <button type="button" class="btn-investigate-incident" data-investigate-line="${this.esc(c.lineCode)}" data-investigate-stop="${this.esc(c.stop)}" data-investigate-vehicle="${this.esc(c.vehicleId)}" data-investigate-at="${c.at || ''}" title="Investigar aquest cas">
               <span>Investigar</span>
@@ -3747,7 +3789,7 @@ class ObservatoriApp {
         <div class="observatori-table-wrapper">
           <table class="observatori-table edge-cases-table">
             <thead>
-              <tr><th scope="col">Cas</th><th scope="col">Línia</th><th scope="col">Bus</th><th scope="col">Quan</th><th scope="col">Parades</th><th scope="col">Retard</th><th scope="col">Detall</th><th scope="col">GPS</th><th scope="col"></th></tr>
+              <tr><th scope="col">Cas</th><th scope="col">Línia</th><th scope="col">Bus</th><th scope="col">Quan</th><th scope="col">Parades</th><th scope="col">Retard</th><th scope="col">Detall</th><th scope="col">GPS</th><th scope="col">Senyal</th><th scope="col"></th></tr>
             </thead>
             <tbody>${rows}</tbody>
           </table>
@@ -3761,11 +3803,11 @@ class ObservatoriApp {
     if (!list.length) return;
     const kinds = this._edgeCaseKinds();
     const keptHours = Number(this.lastIncidentData.snapshotRetentionHours) || 6;
-    const lines = [['Cas', 'Línia', 'Bus', 'Des de', 'Fins a', 'Parada inicial', 'Parada final', 'Retard abans', 'Retard després', 'Detall', 'GPS'].join('\t')];
+    const lines = [['Cas', 'Línia', 'Bus', 'Des de', 'Fins a', 'Parada inicial', 'Parada final', 'Retard abans', 'Retard després', 'Detall', 'GPS', 'Senyal'].join('\t')];
     for (const c of list) {
       lines.push([
         (kinds[c.kind] || [c.kind])[0], c.lineCode, c.vehicleId, this._stampOf(c.fromTs), this._stampOf(c.toTs), c.fromStop, c.toStop,
-        c.delayBefore === null ? '' : c.delayBefore, c.delayAfter === null ? '' : c.delayAfter, this._edgeCaseDetail(c), this._edgeCaseGps(c, keptHours)
+        c.delayBefore === null ? '' : c.delayBefore, c.delayAfter === null ? '' : c.delayAfter, this._edgeCaseDetail(c), this._edgeCaseGps(c, keptHours), this._edgeCaseSignal(c)
       ].join('\t'));
     }
     const text = lines.join('\n');

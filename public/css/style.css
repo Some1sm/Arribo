@@ -9658,6 +9658,21 @@ body {
   color: var(--text-muted);
 }
 
+.edge-signal {
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+.edge-signal-lost {
+  color: var(--accent-warning);
+  font-weight: 700;
+}
+
+.edge-signal-kept {
+  color: var(--accent-live);
+  font-weight: 700;
+}
+
 .edge-gps.has-gps {
   color: var(--accent-live);
   font-weight: 700;
