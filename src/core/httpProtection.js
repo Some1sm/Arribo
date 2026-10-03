@@ -40,6 +40,10 @@ function createApiLimiter({
   windowMs = 60000,
   limit = 120,
   analyticsLimit = Number(process.env.RATE_LIMIT_ANALYTICS_MAX) || (process.env.BENCHMARK_MODE === 'true' ? 120 : 12),
+  // The /dades GPS-loss map answers clicks (a bus, a point, a filter) from
+  // small indexed queries and a 60 s cache: its own budget, so a few quick
+  // clicks no longer use up the 12 heavy-report requests a minute.
+  mapLimit = Number(process.env.RATE_LIMIT_MAP_MAX) || 60,
   maxClients = 10000
 } = {}) {
   const clients = new Map();
@@ -65,13 +69,15 @@ function createApiLimiter({
     };
     if (!state || state.until <= time) {
       if (!state && clients.size >= maxClients) return reject(time + windowMs);
-      state = { until: time + windowMs, total: 0, analytics: 0 };
+      state = { until: time + windowMs, total: 0, analytics: 0, map: 0 };
       clients.set(key, state);
     }
-    const analytics = /^\/(api\/)?(analytics|retards)(\/|$)/i.test(pathname);
-    if (state.total >= limit || (analytics && state.analytics >= analyticsLimit)) return reject(state.until);
+    const map = /^\/(api\/)?analytics\/gps-gaps(\/|$)/i.test(pathname);
+    const analytics = !map && /^\/(api\/)?(analytics|retards)(\/|$)/i.test(pathname);
+    if (state.total >= limit || (analytics && state.analytics >= analyticsLimit) || (map && state.map >= mapLimit)) return reject(state.until);
     state.total++;
     if (analytics) state.analytics++;
+    if (map) state.map++;
     next();
   };
 }

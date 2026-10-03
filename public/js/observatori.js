@@ -202,6 +202,8 @@ class ObservatoriApp {
       const hideBtn = e.target.closest('[data-gps-hide]');
       if (e.target.closest('[data-gps-close]')) {
         this.clearGpsGapSelection();
+      } else if (e.target.closest('[data-gps-retry]')) {
+        this.loadGpsGaps();
       } else if (hideBtn) {
         // The map without the buses the ranking flags, to see the places alone.
         this.gpsGapHide = hideBtn.dataset.gpsHide || '';
@@ -243,18 +245,53 @@ class ObservatoriApp {
 
   async loadGpsGaps() {
     const reqId = (this._gpsGapReq = (this._gpsGapReq || 0) + 1);
+    clearTimeout(this._gpsGapRetry);
     const summary = document.getElementById('gps-gaps-summary');
+    const bus = this.gpsGapVehicle ? `&vehicle=${encodeURIComponent(this.gpsGapVehicle)}` : (this.gpsGapHide ? `&hide=${this.gpsGapHide}` : '');
+    const url = `/api/analytics/gps-gaps?days=${this.gpsGapDays}&line=${encodeURIComponent(this.gpsGapLine)}${bus}`;
+    // A choice seen in the last minute (the server caches as long) is redrawn
+    // without asking again: going back and forth between buses costs nothing.
+    if (!this.gpsGapResponses) this.gpsGapResponses = new Map();
+    const seen = this.gpsGapResponses.get(url);
+    if (seen && Date.now() - seen.at < 60000) {
+      this.renderGpsGaps(seen.data);
+      return;
+    }
     if (summary) summary.textContent = 'Carregant pèrdues de senyal...';
+    // Quick clicks send one request, for the last choice.
+    await new Promise(resolve => setTimeout(resolve, 200));
+    if (reqId !== this._gpsGapReq) return;
     let data = null;
+    let retryAfter = 0;
     try {
-      const bus = this.gpsGapVehicle ? `&vehicle=${encodeURIComponent(this.gpsGapVehicle)}` : (this.gpsGapHide ? `&hide=${this.gpsGapHide}` : '');
-      const res = await fetch(`/api/analytics/gps-gaps?days=${this.gpsGapDays}&line=${encodeURIComponent(this.gpsGapLine)}${bus}`).then(r => r.json());
+      const r = await fetch(url);
+      if (r.status === 429) retryAfter = Math.min(60, Math.max(1, Number(r.headers.get('Retry-After')) || 10));
+      const res = await r.json();
       data = res && res.success ? res : null;
     } catch {
       data = null;
     }
     if (reqId !== this._gpsGapReq) return; // a newer filter choice superseded this one
-    this.renderGpsGaps(data);
+    if (data) {
+      this.gpsGapResponses.set(url, { data, at: Date.now() });
+      if (this.gpsGapResponses.size > 24) this.gpsGapResponses.delete(this.gpsGapResponses.keys().next().value);
+      this.renderGpsGaps(data);
+      return;
+    }
+    // A refused or failed request keeps what is on screen (the map, the list
+    // and the buses to click), says so, and tries again.
+    if (!this._gpsGapShown) this.renderGpsGaps(null);
+    const kept = this._gpsGapShown ? ' El mapa encara mostra la consulta anterior.' : '';
+    if (summary) {
+      summary.innerHTML = retryAfter
+        ? this.esc(`Massa consultes seguides: es torna a carregar sol en ${retryAfter} s.${kept}`)
+        : `${this.esc(`No s'han pogut carregar les pèrdues de senyal.${kept}`)} <button type="button" class="observatori-pill-btn gps-bus-clear" data-gps-retry>Torna-ho a provar</button>`;
+    }
+    if (retryAfter) {
+      this._gpsGapRetry = setTimeout(() => {
+        if (reqId === this._gpsGapReq) this.loadGpsGaps();
+      }, retryAfter * 1000);
+    }
   }
 
   gpsGapTileUrl() {
@@ -388,7 +425,11 @@ class ObservatoriApp {
       }
     }
     if (!box.isConnected) return; // another hotspot was picked meanwhile
-    const t = data && data.totals;
+    if (!data) {
+      box.innerHTML = "<p>No s'ha pogut carregar qui més hi passa ara mateix: torna a tocar el punt d'aquí a uns segons.</p>";
+      return;
+    }
+    const t = data.totals;
     if (!t || !t.buses) {
       box.innerHTML = "<p>No hi ha altres passades registrades per comparar.</p>";
       return;
@@ -425,12 +466,14 @@ class ObservatoriApp {
     const token = (this._gpsGapPathReq = (this._gpsGapPathReq || 0) + 1);
     this.gpsGapPathLayer.clearLayers();
     const ids = (cell.gapIds || []).filter(id => !this.gpsGapPathCache.has(id));
+    let failed = false;
     if (ids.length) {
       try {
         const res = await fetch(`/api/analytics/gps-gaps/paths?ids=${ids.join(',')}`).then(r => r.json());
+        failed = !(res && res.success);
         for (const p of (res && res.paths) || []) this.gpsGapPathCache.set(p.id, p);
       } catch {
-        // The note below says the route could not be placed.
+        failed = true;
       }
     }
     if (token !== this._gpsGapPathReq) return;
@@ -482,7 +525,9 @@ class ObservatoriApp {
         : (stood ? '' : "No s'ha pogut situar a la ruta de la línia.");
       note.innerHTML = rows.length
         ? `<ul class="gps-gaps-popup-paths">${rows.map(row).join('')}</ul>${hint ? `<p>${hint}</p>` : ''}`
-        : "<p>No s'ha pogut situar a la ruta de la línia.</p>";
+        : failed
+          ? "<p>No s'ha pogut carregar el recorregut ara mateix: torna a tocar el punt d'aquí a uns segons.</p>"
+          : "<p>No s'ha pogut situar a la ruta de la línia.</p>";
       // The rows name every line: the chip row above them would repeat it.
       const chips = detail.querySelector('.gps-gaps-popup-lines');
       if (chips) chips.hidden = rows.length > 0;
@@ -583,6 +628,7 @@ class ObservatoriApp {
       return;
     }
 
+    this._gpsGapShown = true;
     const t = data.totals || {};
     const cells = Array.isArray(data.cells) ? data.cells : [];
     const period = data.days === 1 ? 'les últimes 24 h' : `els últims ${data.days} dies`;

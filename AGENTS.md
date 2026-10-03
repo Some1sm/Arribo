@@ -424,6 +424,9 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   A selected hotspot also says who else drove past (`/api/analytics/gps-gaps/passes`,
   `getGpsGapPasses`): a stop visit to the stop its losses were heading to is a pass with GPS
   unless that bus lost GPS on its way there (20 min before to 1 min after the visit).
+  `/api/analytics/gps-gaps*` has its own rate budget (60/min, `RATE_LIMIT_MAP_MAX`) apart
+  from the 12/min heavy reports; the page reuses answers for 60 s, sends one request for
+  quick clicks, and on a 429 keeps the map on screen and retries after `Retry-After`.
   See `test/gps_gaps_test.js`, `test/gps_gap_paths_test.js` and `test/gps_gap_buses_test.js`.
 - **Colours, radii and spacing come from tokens.** [UI_GUIDE.md](UI_GUIDE.md) §2.0 lists the
   design-system tokens (`--brand`, `--action`/`--on-action`, `--status-*`, `--punct-*`,

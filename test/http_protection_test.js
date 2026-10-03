@@ -61,6 +61,19 @@ test('limiter enforces analytics budget separately and health is exempt', () => 
   assert.equal(run('/api/retards/termometre').passed, true, 'analytics budget also resets');
 });
 
+test('the GPS-loss map has its own budget, apart from the heavy reports', () => {
+  const limiter = createApiLimiter({ now: () => 7000, limit: 100, analyticsLimit: 2, mapLimit: 3 });
+  const run = path => runMiddleware(limiter, mockReq({ path, ip: '10.2.0.1' }));
+  assert.equal(run('/api/analytics/journalism').passed, true);
+  assert.equal(run('/api/analytics/journalism').passed, true);
+  assert.equal(run('/api/analytics/journalism').passed, false, 'report budget used up');
+  assert.equal(run('/api/analytics/gps-gaps?days=7').passed, true, 'the map still answers');
+  assert.equal(run('/api/analytics/gps-gaps/paths?ids=1').passed, true);
+  assert.equal(run('/api/analytics/gps-gaps/passes?ids=1').passed, true);
+  assert.equal(run('/api/analytics/gps-gaps').status, 429, 'until its own budget is used up');
+  assert.equal(run('/api/analytics/gps-gapsX').status, 429, 'a lookalike path is a report');
+});
+
 test('limiter normalizes IPv6-mapped clients and isolates distinct IPs', () => {
   const limiter = createApiLimiter({ limit: 1, analyticsLimit: 1, now: () => 5000 });
   assert.equal(runMiddleware(limiter, mockReq({ ip: '::ffff:10.1.1.5' })).passed, true);
