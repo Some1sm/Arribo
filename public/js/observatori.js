@@ -192,14 +192,22 @@ class ObservatoriApp {
     this.gpsGapDays = 7;
     this.gpsGapLine = 'all';
     this.gpsGapVehicle = '';
+    this.gpsGapHide = '';
     this.gpsGapMarkers = [];
     section.addEventListener('click', (e) => {
       const dayBtn = e.target.closest('[data-gps-days]');
       const lineBtn = e.target.closest('[data-gps-line]');
       const item = e.target.closest('[data-gps-cell]');
       const busBtn = e.target.closest('[data-gps-bus]');
+      const hideBtn = e.target.closest('[data-gps-hide]');
       if (e.target.closest('[data-gps-close]')) {
         this.clearGpsGapSelection();
+      } else if (hideBtn) {
+        // The map without the buses the ranking flags, to see the places alone.
+        this.gpsGapHide = hideBtn.dataset.gpsHide || '';
+        this.gpsGapVehicle = '';
+        section.querySelectorAll('[data-gps-hide]').forEach(b => b.classList.toggle('active', b === hideBtn));
+        this.loadGpsGaps();
       } else if (e.target.closest('[data-gps-bus-clear]') || busBtn) {
         // One bus's losses on the map; the same bus again (or its chip) shows all.
         const id = busBtn ? busBtn.dataset.gpsBus : '';
@@ -239,7 +247,7 @@ class ObservatoriApp {
     if (summary) summary.textContent = 'Carregant pèrdues de senyal...';
     let data = null;
     try {
-      const bus = this.gpsGapVehicle ? `&vehicle=${encodeURIComponent(this.gpsGapVehicle)}` : '';
+      const bus = this.gpsGapVehicle ? `&vehicle=${encodeURIComponent(this.gpsGapVehicle)}` : (this.gpsGapHide ? `&hide=${this.gpsGapHide}` : '');
       const res = await fetch(`/api/analytics/gps-gaps?days=${this.gpsGapDays}&line=${encodeURIComponent(this.gpsGapLine)}${bus}`).then(r => r.json());
       data = res && res.success ? res : null;
     } catch {
@@ -270,6 +278,7 @@ class ObservatoriApp {
     this.gpsGapLayer = L.layerGroup().addTo(map);
     this.gpsGapPathLayer = L.layerGroup().addTo(map);
     this.gpsGapPathCache = new Map();
+    this.gpsGapPassCache = new Map();
     // A click on the map background clears the selected hotspot.
     map.on('click', () => this.clearGpsGapSelection());
     new MutationObserver(() => this.gpsGapTiles.setUrl(this.gpsGapTileUrl()))
@@ -329,6 +338,7 @@ class ObservatoriApp {
     detail.hidden = false;
     if (this.gpsGapMap) this.gpsGapMap.invalidateSize({ pan: false });
     this.showGpsGapPaths(c, detail);
+    this.showGpsGapPasses(c, detail);
   }
 
   gpsGapDetailHtml(c) {
@@ -349,7 +359,66 @@ class ObservatoriApp {
       </dl>
       <div class="gps-gaps-popup-lines">${c.lines.map(code => this.lineChip(code)).join('')}</div>
       <div class="gps-gaps-popup-route" data-gps-route><p>Buscant el recorregut sense GPS…</p></div>
+      <div class="gps-gaps-popup-route gps-gaps-passes" data-gps-passes><p>Buscant qui més hi passa…</p></div>
     </div>`;
+  }
+
+  /**
+   * Who else drove past the selected hotspot, and whether they kept GPS
+   * (historyDb.getGpsGapPasses). Most passes with signal means the place
+   * has coverage and the losses belong to the buses that had them; most
+   * passes without it, from different buses, means the place.
+   */
+  async showGpsGapPasses(cell, detail) {
+    const box = detail && detail.querySelector('[data-gps-passes]');
+    const ids = cell.gapIds || [];
+    if (!box || !ids.length) return;
+    const key = `${this.gpsGapDays}|${ids.join(',')}`;
+    let data = this.gpsGapPassCache.get(key);
+    if (!data) {
+      try {
+        const res = await fetch(`/api/analytics/gps-gaps/passes?days=${this.gpsGapDays}&ids=${ids.join(',')}`).then(r => r.json());
+        data = res && res.success ? res : null;
+      } catch {
+        data = null;
+      }
+      if (data) {
+        this.gpsGapPassCache.set(key, data);
+        if (this.gpsGapPassCache.size > 40) this.gpsGapPassCache.delete(this.gpsGapPassCache.keys().next().value);
+      }
+    }
+    if (!box.isConnected) return; // another hotspot was picked meanwhile
+    const t = data && data.totals;
+    if (!t || !t.buses) {
+      box.innerHTML = "<p>No hi ha altres passades registrades per comparar.</p>";
+      return;
+    }
+    const passes = t.lost + t.gpsPasses;
+    const losers = data.buses.filter(b => b.lost);
+    const clean = data.buses.filter(b => !b.lost && b.gpsPasses);
+    const cleanPasses = clean.reduce((s, b) => s + b.gpsPasses, 0);
+    const period = this.gpsGapDays === 1 ? 'les últimes 24 h' : `${this.gpsGapDays} dies`;
+    const repeat = losers.find(b => b.lost >= 2 && b.lost / (b.lost + b.gpsPasses) >= 0.5);
+    let verdict;
+    if (passes < 8) {
+      verdict = 'Encara hi ha poques passades per saber si és el lloc o els busos.';
+    } else if (t.lost / passes >= 0.5 && t.lossBuses >= 2) {
+      verdict = 'La majoria de passades hi perden el senyal, i de busos diferents: apunta a la cobertura del lloc.';
+    } else if (t.lost / passes <= 0.25 && t.cleanBuses >= 3) {
+      verdict = `${t.gpsPasses} de ${passes} passades hi tenen senyal: no és un lloc sense cobertura. `
+        + (repeat
+          ? `El bus ${repeat.vehicleId} l'hi perd ${repeat.lost} de ${repeat.lost + repeat.gpsPasses} vegades: apunta a l'equip del bus.`
+          : 'Les pèrdues són puntuals, de busos que normalment hi passen amb senyal.');
+    } else {
+      verdict = 'Hi ha passades amb senyal i sense: pot ser el lloc o els busos.';
+    }
+    const cleanList = clean.slice(0, 10).map(b => `${this.esc(b.vehicleId)} (${b.gpsPasses})`).join(', ');
+    box.innerHTML = `<h5>Qui més hi passa</h5>
+      <p>En ${period} hi han passat <strong>${t.buses}</strong> busos: <strong>${t.cleanBuses}</strong> sempre amb senyal (${cleanPasses} passades)${t.lossBuses ? ` i ${t.lossBuses} l'hi han perdut` : ''}.</p>
+      ${losers.length ? `<ul class="gps-gaps-popup-paths">${losers.map(b => `<li><span>${b.lines.slice(0, 2).map(code => this.lineChip(code)).join('')}<span>${this.esc(b.vehicleId)}</span><b>sense senyal ${b.lost} de ${b.lost + b.gpsPasses}</b></span></li>`).join('')}</ul>` : ''}
+      ${clean.length ? `<p>Sempre amb senyal: ${cleanList}${clean.length > 10 ? ` i ${clean.length - 10} més` : ''}.</p>` : ''}
+      <p class="gps-gaps-passes-verdict">${this.esc(verdict)}</p>
+      ${(cell.count || 0) > ids.length ? `<p>Es compten les ${ids.length} pèrdues més recents d'aquest punt.</p>` : ''}`;
   }
 
   async showGpsGapPaths(cell, detail) {
@@ -473,7 +542,8 @@ class ObservatoriApp {
         `${b.sharedPct}% on altres busos també el perden`
       ].filter(Boolean).join(' · ');
       const on = this.gpsGapVehicle === b.vehicleId;
-      return `<li><button type="button" class="gps-bus-row${on ? ' active' : ''}" data-gps-bus="${this.esc(b.vehicleId)}" aria-pressed="${on}">
+      const off = (data.hidden || []).includes(b.vehicleId);
+      return `<li><button type="button" class="gps-bus-row${on ? ' active' : ''}${off ? ' is-hidden' : ''}" data-gps-bus="${this.esc(b.vehicleId)}" aria-pressed="${on}"${off ? ' title="Amagat del mapa"' : ''}>
         <span class="gps-bus-id">${this.esc(b.vehicleId)}</span>
         <span class="gps-bus-head">${b.lines.map(code => this.lineChip(code)).join('')}<span class="gps-gaps-popup-tag${cls ? ` ${cls}` : ''}">${label}</span></span>
         <span class="gps-bus-facts">${facts}</span>
@@ -546,7 +616,10 @@ class ObservatoriApp {
       + (data.vehicleId ? busWhere : recurrent
         ? `<strong>${t.recurrentShare}%</strong> es concentren en ${recurrent} ${recurrent === 1 ? 'punt recurrent' : 'punts recurrents'}.`
         : 'Cap punt es repeteix prou encara per ser recurrent.')
-      + this.esc(leftTxt);
+      + this.esc(leftTxt)
+      + ((data.hidden || []).length
+        ? ` Amagats del mapa: ${data.hidden.length} ${data.hidden.length === 1 ? 'bus' : 'busos'} (${data.hidden.map(id => this.esc(id)).join(', ')}).`
+        : '');
 
     // The list first: the map column stretches to its height, so the map is
     // sized and fitted after it.

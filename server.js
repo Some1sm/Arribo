@@ -1200,7 +1200,9 @@ app.get('/api/analytics/gps-gaps', async (req, res) => {
   // One bus's losses only (its fleet number), for the per-bus comparison.
   const rawVehicle = String(req.query.vehicle || '').trim();
   const vehicleId = /^\d{3,6}$/.test(rawVehicle) ? rawVehicle : '';
-  const cacheKey = `${lineCode || 'ALL'}_${days}_${vehicleId || 'all'}`;
+  // Or the flagged buses left off the map (suspect, or suspect and watch).
+  const hide = ['suspect', 'watch'].includes(String(req.query.hide || '')) ? String(req.query.hide) : '';
+  const cacheKey = `${lineCode || 'ALL'}_${days}_${vehicleId || 'all'}_${hide || 'none'}`;
   const now = Date.now();
   const cached = gpsGapCache.get(cacheKey);
   if (cached && (now - cached.timestamp) < GPS_GAP_CACHE_TTL_MS) {
@@ -1208,7 +1210,7 @@ app.get('/api/analytics/gps-gaps', async (req, res) => {
     return res.json({ success: true, ...cached.data });
   }
   try {
-    const data = await workerBridge.historyQuery('getGpsGapHotspots', { days, lineCode, vehicleId }, { timeoutMs: 15000 });
+    const data = await workerBridge.historyQuery('getGpsGapHotspots', { days, lineCode, vehicleId, hide }, { timeoutMs: 15000 });
     gpsGapCache.set(cacheKey, { data, timestamp: now });
     if (gpsGapCache.size > 20) gpsGapCache.delete(gpsGapCache.keys().next().value);
     res.setHeader('X-Cache', 'MISS');
@@ -1228,6 +1230,20 @@ app.get('/api/analytics/gps-gaps/paths', async (req, res) => {
     res.json({ success: true, paths: Array.isArray(paths) ? paths : [] });
   } catch (err) {
     sendInternalError(req, res, err, { success: false, paths: [] });
+  }
+});
+
+// Who else drove past a hotspot (ids from its gapIds, at most 12) and
+// whether they kept GPS there.
+app.get('/api/analytics/gps-gaps/passes', async (req, res) => {
+  const ids = [...new Set(String(req.query.ids || '').split(',').map(s => Number(s.trim())).filter(n => Number.isInteger(n) && n > 0))].slice(0, 12);
+  const days = Math.max(1, Math.min(30, parseInt(req.query.days, 10) || 7));
+  if (!ids.length) return res.json({ success: true, stops: [], buses: [], totals: null });
+  try {
+    const data = await workerBridge.historyQuery('getGpsGapPasses', { ids, days }, { timeoutMs: 15000 });
+    res.json({ success: true, ...data });
+  } catch (err) {
+    sendInternalError(req, res, err, { success: false, buses: [] });
   }
 });
 

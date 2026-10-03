@@ -419,7 +419,11 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   the other buses on its lines per stop visit (`stop_visits`): expected losses = Σ its visits ×
   that line's losses per visit, and a Poisson tail says whether the excess can be chance
   (suspect: 4+ losses, 1.5×, p < 0.05). Far above its colleagues on the same streets points
-  at the bus's equipment, not coverage; a picked bus (`?vehicle=`) narrows the map only.
+  at the bus's equipment, not coverage; a picked bus (`?vehicle=`) narrows the map only, and
+  `?hide=suspect|watch` leaves the flagged buses off the map (the ranking still lists them).
+  A selected hotspot also says who else drove past (`/api/analytics/gps-gaps/passes`,
+  `getGpsGapPasses`): a stop visit to the stop its losses were heading to is a pass with GPS
+  unless that bus lost GPS on its way there (20 min before to 1 min after the visit).
   See `test/gps_gaps_test.js`, `test/gps_gap_paths_test.js` and `test/gps_gap_buses_test.js`.
 - **Colours, radii and spacing come from tokens.** [UI_GUIDE.md](UI_GUIDE.md) §2.0 lists the
   design-system tokens (`--brand`, `--action`/`--on-action`, `--status-*`, `--punct-*`,

@@ -10990,6 +10990,27 @@ input#plan-max-walk:focus {
   color: var(--text-primary);
 }
 
+.gps-bus-row.is-hidden {
+  opacity: 0.55;
+}
+
+.gps-gaps-passes {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.gps-gaps-passes h5 {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.gps-gaps-passes-verdict {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
 .gps-bus-clear {
   margin-right: var(--space-1);
   vertical-align: baseline;

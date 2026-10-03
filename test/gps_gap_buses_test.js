@@ -10,7 +10,9 @@
  *     buses without a fleet number are left out.
  *  3. getGpsGapHotspots returns the ranking and the fleet in service, and
  *     one picked bus narrows the map but not the ranking.
- *  4. Wiring: worker, API and page.
+ *  4. Who else drives past a hotspot with GPS (getGpsGapPasses), and the
+ *     map with the flagged buses hidden.
+ *  5. Wiring: worker, API and page.
  */
 
 const assert = require('node:assert/strict');
@@ -111,22 +113,58 @@ const ok = msg => console.log(`  ✓ ${msg}`);
     assert.ok(one.cells.every(c => c.vehicles === 1));
     assert.deepEqual(one.buses, all.buses, 'the ranking still compares every bus');
     assert.equal(historyDb.getGpsGapHotspots({ days: 7, vehicleId: "1' OR 1=1", now: now + 1000 }).vehicleId, '', 'only a fleet number narrows the map');
-    historyDb.close();
     ok('the hotspots answer carries the ranking; one bus narrows the map only');
+
+    // ── 4. Who else passes, and the map without the flagged buses ─────
+    // Pont: 2687 lost GPS twice on its way there and passed once with it;
+    // 2690 and 2691 passed five times each with GPS.
+    const t0 = now - 2000000;
+    for (let k = 0; k < 2; k++) {
+      historyDb.recordGpsGap({ vehicleId: '2687', lineCode: 'L3', direction: '0', lostTs: t0 + k * 600000, regainedTs: t0 + k * 600000 + 120000, gapSec: 120,
+        lostLat: 41.55, lostLon: 2.45, regainedLat: 41.551, regainedLon: 2.45, stopName: 'Pont' });
+      visit.run('2687', 'L3', 'Pont', t0 + k * 600000 + 100000, t0 + k * 600000 + 100000);
+    }
+    visit.run('2687', 'L3', 'Pont', t0 + 1900000, t0 + 1900000);
+    for (const v of ['2690', '2691']) for (let k = 0; k < 5; k++) visit.run(v, 'L5', 'Pont', t0 + k * 120000, t0 + k * 120000);
+    visit.run('Bus', 'L5', 'Pont', t0, t0);
+    const pontIds = historyDb.db.prepare("SELECT id FROM gps_gaps WHERE stop_name = 'Pont'").all().map(r => r.id);
+    const p = historyDb.getGpsGapPasses(pontIds, { days: 7, now: now + 1000 });
+    assert.deepEqual(p.stops, ['Pont']);
+    const b87 = p.buses.find(b => b.vehicleId === '2687');
+    assert.deepEqual([b87.lost, b87.gpsPasses], [2, 1], 'its visits right after a loss are not passes with GPS');
+    assert.deepEqual(p.totals, { buses: 3, lossBuses: 1, cleanBuses: 2, gpsPasses: 11, lost: 2 }, '2690 and 2691 passed 10 times with GPS');
+    assert.ok(!p.buses.some(b => b.vehicleId === 'Bus'), 'no fleet number, not counted');
+    assert.deepEqual(historyDb.getGpsGapPasses([], { now }).buses, [], 'no ids, no passes');
+
+    const every = historyDb.getGpsGapHotspots({ days: 7, now: now + 1000 });
+    const flagged = every.buses.filter(b => b.verdict === 'suspect').map(b => b.vehicleId);
+    assert.ok(flagged.includes('2687'), `2687 is flagged (${JSON.stringify(every.buses[0])})`);
+    const hidden = historyDb.getGpsGapHotspots({ days: 7, hide: 'suspect', now: now + 1000 });
+    assert.deepEqual(hidden.hidden, flagged, 'the flagged buses are hidden');
+    assert.equal(hidden.totals.mapped, every.totals.mapped - every.buses.filter(b => flagged.includes(b.vehicleId)).reduce((s, b) => s + b.gaps, 0), 'with their losses');
+    assert.ok(hidden.gaps.every(g => !flagged.includes(g.vehicleId)), 'none of their lines stay on the map');
+    assert.deepEqual(hidden.buses, every.buses, 'the ranking still lists them');
+    assert.deepEqual(historyDb.getGpsGapHotspots({ days: 7, hide: 'everything', now: now + 1000 }).hidden, [], 'an unknown filter hides nothing');
+    assert.deepEqual(historyDb.getGpsGapHotspots({ days: 7, hide: 'suspect', vehicleId: '2687', now: now + 1000 }).hidden, [], 'a picked bus is shown even if flagged');
+    historyDb.close();
+    ok('who else passes with GPS; the map without the flagged buses');
   }
 
-  // ── 4. Wiring ──────────────────────────────────────────────────────
+  // ── 5. Wiring ──────────────────────────────────────────────────────
   {
     const read = f => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
     assert.ok(read('src/workers/ingestionWorker.js').includes('vehicleId: args.vehicleId'), 'the worker passes the bus');
     const server = read('server.js');
     assert.ok(/const vehicleId = \/\^\\d\{3,6\}\$\/\.test\(rawVehicle\)/.test(server), 'the API takes a fleet number only');
-    assert.ok(server.includes("historyQuery('getGpsGapHotspots', { days, lineCode, vehicleId }"), 'and asks the worker for it');
+    assert.ok(server.includes("historyQuery('getGpsGapHotspots', { days, lineCode, vehicleId, hide }"), 'and asks the worker for it');
     const dades = read('public/dades.html');
     assert.ok(dades.includes('id="gps-gaps-buses"') && dades.indexOf('id="gps-gaps-buses"') > dades.indexOf('id="gps-gaps-list"'), 'the bus block sits under the map');
     const obs = read('public/js/observatori.js');
     assert.ok(obs.includes('renderGpsGapBuses(data) {') && obs.includes('data-gps-bus="') && obs.includes('&vehicle='), 'the page lists the buses and narrows the map to one');
-    ok('worker, API and page carry the per-bus comparison');
+    assert.ok(server.includes("app.get('/api/analytics/gps-gaps/passes'") && server.includes("{ days, lineCode, vehicleId, hide }"), 'the API serves passes and the hide filter');
+    assert.ok(read('src/workers/ingestionWorker.js').includes("case 'getGpsGapPasses':"), 'the worker counts passes');
+    assert.ok(dades.includes('data-gps-hide="watch"') && obs.includes('data-gps-passes') && obs.includes('this.showGpsGapPasses(c, detail);'), 'the page has the filter and the passes');
+    ok('worker, API and page carry the per-bus comparison, the passes and the filter');
   }
 
   console.log('🎉 ALL GPS GAP BUS ASSERTIONS PASSED!');

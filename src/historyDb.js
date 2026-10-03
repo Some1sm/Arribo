@@ -740,8 +740,8 @@ class HistoryDatabase {
    * is not a dead zone. `gapIds` (newest first, up to 12) lets the page ask
    * for the streets driven without GPS (getGpsGapPaths).
    */
-  getGpsGapHotspots({ days = 7, lineCode = '', vehicleId = '', now = Date.now() } = {}) {
-    const empty = { days, lineCode: '', vehicleId: '', since: 0, until: now, totals: { gaps: 0, mapped: 0, atTerminal: 0, feedWide: 0, vehicles: 0, medianGapSec: null, recurrentShare: null }, cells: [], gaps: [], buses: [], fleet: { inService: 0, withoutLoss: 0 } };
+  getGpsGapHotspots({ days = 7, lineCode = '', vehicleId = '', hide = '', now = Date.now() } = {}) {
+    const empty = { days, lineCode: '', vehicleId: '', hide: '', hidden: [], since: 0, until: now, totals: { gaps: 0, mapped: 0, atTerminal: 0, feedWide: 0, vehicles: 0, medianGapSec: null, recurrentShare: null }, cells: [], gaps: [], buses: [], fleet: { inService: 0, withoutLoss: 0 } };
     if (!this._ensureOpen()) return empty;
     try {
       const d = Math.min(30, Math.max(1, Math.round(Number(days) || 7)));
@@ -776,8 +776,14 @@ class HistoryDatabase {
 
       // One bus picked: its own losses on the map, the comparison unchanged.
       const vehicle = /^\d{3,6}$/.test(String(vehicleId || '')) ? String(vehicleId) : '';
-      const shownRows = vehicle ? rows.filter(r => r.vehicleId === vehicle) : rows;
-      const mapped = vehicle ? lineMapped.filter(r => r.vehicleId === vehicle) : lineMapped;
+      // Or the flagged buses hidden, to see the places without them.
+      const hideVerdicts = hide === 'watch' ? ['suspect', 'watch'] : hide === 'suspect' ? ['suspect'] : [];
+      const hidden = vehicle ? [] : ranked.buses.filter(b => hideVerdicts.includes(b.verdict)).map(b => b.vehicleId);
+      const hiddenSet = new Set(hidden);
+      const keep = r => (vehicle ? r.vehicleId === vehicle : !hiddenSet.has(r.vehicleId));
+      const narrowed = Boolean(vehicle || hidden.length);
+      const shownRows = narrowed ? rows.filter(keep) : rows;
+      const mapped = narrowed ? lineMapped.filter(keep) : lineMapped;
       const median = (xs) => {
         if (!xs.length) return null;
         const s = [...xs].sort((a, b) => a - b);
@@ -785,7 +791,7 @@ class HistoryDatabase {
         return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2);
       };
       // Oldest first, so the hotspots form in the order the losses happened.
-      const groups = (vehicle ? clusterPoints([...mapped].reverse().map(r => ({ ...r, lat: r.lostLat, lon: r.lostLon }))) : allGroups)
+      const groups = (narrowed ? clusterPoints([...mapped].reverse().map(r => ({ ...r, lat: r.lostLat, lon: r.lostLon }))) : allGroups)
         .map(c => c.members);
       const mode = (xs) => {
         const counts = new Map();
@@ -820,6 +826,8 @@ class HistoryDatabase {
         days: d,
         lineCode: code && code !== 'ALL' ? code : '',
         vehicleId: vehicle,
+        hide: hideVerdicts.length ? hide : '',
+        hidden,
         since,
         until: now,
         totals: {
@@ -845,6 +853,78 @@ class HistoryDatabase {
     }
   }
 
+  /**
+   * Who else drove past a hotspot, and whether they kept GPS. Every loss
+   * stores the stop the bus was heading to; every stop a bus serves is a
+   * stop visit. A visit is a pass with GPS when that bus has no recorded loss
+   * on its way to that stop (lost from 20 min before the visit to 1 min
+   * after); the hotspot's own gaps (ids, at most 12) are the passes without.
+   * Buses on any line count: the street is what matters.
+   */
+  getGpsGapPasses(ids = [], { days = 7, now = Date.now() } = {}) {
+    const empty = { stops: [], buses: [], totals: { buses: 0, lossBuses: 0, cleanBuses: 0, gpsPasses: 0, lost: 0 } };
+    if (!this._ensureOpen()) return empty;
+    try {
+      const here = this.getGpsGapsByIds(ids);
+      const stops = [...new Set(here.map(g => g.stopName).filter(Boolean))];
+      if (!stops.length) return empty;
+      const d = Math.min(30, Math.max(1, Math.round(Number(days) || 7)));
+      const since = now - d * 86400 * 1000;
+      const marks = stops.map(() => '?').join(',');
+      const isFleet = id => /\d/.test(String(id || ''));
+      const visits = this.db.prepare(`
+        SELECT vehicle_id AS vehicleId, line_code AS lineCode, stop_name AS stopName, first_ts AS firstTs, last_ts AS lastTs
+        FROM stop_visits WHERE stop_name IN (${marks}) AND last_ts >= ? AND last_ts < ?
+      `).all(...stops, since, now).filter(v => isFleet(v.vehicleId));
+      const onTheWay = new Map();
+      for (const g of this.db.prepare(`
+        SELECT vehicle_id AS vehicleId, stop_name AS stopName, lost_ts AS lostTs
+        FROM gps_gaps WHERE stop_name IN (${marks}) AND lost_ts >= ? AND lost_ts < ?
+      `).all(...stops, since - 20 * 60000, now)) {
+        const k = `${g.vehicleId}|${g.stopName}`;
+        if (!onTheWay.has(k)) onTheWay.set(k, []);
+        onTheWay.get(k).push(g.lostTs);
+      }
+      const lostBefore = v => (onTheWay.get(`${v.vehicleId}|${v.stopName}`) || [])
+        .some(t => t >= v.firstTs - 20 * 60000 && t <= v.lastTs + 60000);
+
+      const byBus = new Map();
+      const bus = (id) => {
+        if (!byBus.has(id)) byBus.set(id, { vehicleId: id, lines: new Set(), gpsPasses: 0, lost: 0 });
+        return byBus.get(id);
+      };
+      for (const v of visits) {
+        if (lostBefore(v)) continue;
+        const b = bus(v.vehicleId);
+        b.gpsPasses++;
+        b.lines.add(v.lineCode);
+      }
+      for (const g of here) {
+        if (!isFleet(g.vehicleId)) continue;
+        const b = bus(g.vehicleId);
+        b.lost++;
+        b.lines.add(g.lineCode);
+      }
+      const buses = [...byBus.values()]
+        .map(b => ({ ...b, lines: [...b.lines].sort() }))
+        .sort((a, b) => b.lost - a.lost || b.gpsPasses - a.gpsPasses);
+      return {
+        stops,
+        buses,
+        totals: {
+          buses: buses.length,
+          lossBuses: buses.filter(b => b.lost).length,
+          cleanBuses: buses.filter(b => !b.lost && b.gpsPasses).length,
+          gpsPasses: buses.reduce((s, b) => s + b.gpsPasses, 0),
+          lost: buses.reduce((s, b) => s + b.lost, 0)
+        }
+      };
+    } catch (e) {
+      console.error('[HistoryDB] getGpsGapPasses error:', e.message);
+      return empty;
+    }
+  }
+
   /** The stored gaps with these ids (at most 12), for drawing their streets. */
   getGpsGapsByIds(ids = []) {
     if (!this._ensureOpen()) return [];
@@ -852,7 +932,7 @@ class HistoryDatabase {
     if (!clean.length) return [];
     try {
       return this.db.prepare(`
-        SELECT id, vehicle_id AS vehicleId, line_code AS lineCode, direction, lost_ts AS lostTs, gap_sec AS gapSec,
+        SELECT id, vehicle_id AS vehicleId, line_code AS lineCode, direction, lost_ts AS lostTs, gap_sec AS gapSec, stop_name AS stopName,
                lost_lat AS lostLat, lost_lon AS lostLon, regained_lat AS regainedLat, regained_lon AS regainedLon
         FROM gps_gaps WHERE id IN (${clean.map(() => '?').join(',')})
       `).all(...clean);
