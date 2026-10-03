@@ -335,7 +335,7 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   isolated summary for the clicked trip only: a direction change or a jump back
   along the route starts a new trip), and looks for GPS positions 5 min
   either side of the episode. Positions are kept only SNAPSHOT_RETENTION_HOURS
-  (2 h in Compose), so their absence on an older episode is not evidence.
+  (6 h in Compose and by default), so their absence on an older episode is not evidence.
 - **A large delay that vanishes at a new trip can be a short-turn, not a recovery.**
   L2 bus 2679 (29 Sep 2026) was +26 at Mataró Parc, then ran the next trip on time
   from Edif. Vidre - TecnoCampus, the 15th stop of that trip; La Llàntia and
@@ -457,6 +457,12 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   it out; it is listed with the SAE anomalies as `backward_leg` (and wins over the relink that its tail also forms); a
   trajectory that reaches it ends as `backward_leg` at the furthest stop served; Investigar returns the `backward_leg`
   verdict and groups its visits as one phantom group (`phantomKind: 'backward'`). See `test/backward_leg_test.js`.
+- **The edge-case debug table is the way to find out what a phantom stretch really was.** The bottom of /dades
+  Top Incidents lists one row per relink, deadhead return, delay jump, backward leg and `trip_change` trajectory
+  (`_buildEdgeCases`, newest first, 150 at most), each with the number of stored GPS positions around it
+  (`gpsPoints`; `gpsExpired` when there are none because they were pruned) and an Investigar button. Positions are
+  kept 6 h, so open a case within that time to look at where the bus really was. "Copiar taula" copies it as
+  tab-separated text. See `test/edge_cases_test.js`.
 - **Colours, radii and spacing come from tokens.** [UI_GUIDE.md](UI_GUIDE.md) §2.0 lists the
   design-system tokens (`--brand`, `--action`/`--on-action`, `--status-*`, `--punct-*`,
   `--line-N`/`--on-line-N`, `--radius-xs`…`--radius-xl`, `--space-1`…`--space-8`). Every

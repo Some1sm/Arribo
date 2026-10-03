@@ -103,7 +103,7 @@ The repository targets a long-running Node/Docker deployment; retired serverless
 | `ORS_BASE_URL` / `ORS_API_KEY` | Unset | Optional existing foot-walking endpoint; approximate fallback without it |
 | `DB_PATH` | `transit_history.db` under `DATA_DIR` | Explicit history database path |
 | `VEHICLE_SNAPSHOT_INTERVAL_MS` | `60000` | Minimum interval between stored snapshots per vehicle |
-| `SNAPSHOT_RETENTION_HOURS` | `2` | Raw vehicle snapshot retention |
+| `SNAPSHOT_RETENTION_HOURS` | `6` | Raw vehicle snapshot retention (GPS positions behind the /dades edge-case table) |
 | `DELAY_RETENTION_DAYS` | `30` | Delay-log retention |
 
 Storage sampling does not reduce live polling frequency. The ingestion daemon polls Mataró vehicles every 20 seconds, refreshes notices every five minutes, and schedules analytics reports every 30 minutes.

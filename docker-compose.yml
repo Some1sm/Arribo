@@ -14,7 +14,7 @@ services:
       - ORS_API_KEY=${ORS_API_KEY:-}
       - NODE_OPTIONS=--max-old-space-size=160 --expose-gc
       # Storage controls for the persistent SQLite flight recorder
-      - SNAPSHOT_RETENTION_HOURS=2
+      - SNAPSHOT_RETENTION_HOURS=6
       - VEHICLE_SNAPSHOT_INTERVAL_MS=60000
       - DELAY_RETENTION_DAYS=30
     ulimits:

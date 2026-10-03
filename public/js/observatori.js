@@ -1051,6 +1051,14 @@ class ObservatoriApp {
         return;
       }
 
+      // Copy the edge-case debug table as tab-separated text
+      const copyEdgeBtn = e.target.closest('#btn-copy-edge-cases');
+      if (copyEdgeBtn) {
+        e.preventDefault();
+        this.copyEdgeCases();
+        return;
+      }
+
       // Copy investigation report to clipboard
       const copyInvBtn = e.target.closest('#btn-copy-investigation-report');
       if (copyInvBtn) {
@@ -3650,7 +3658,129 @@ class ObservatoriApp {
           </div>
         `}
       `}
+
+      ${this._renderEdgeCaseTable(data)}
     `;
+  }
+
+  /** "02/10 18:23" (Madrid) of an epoch-ms timestamp, '' when it is not one. */
+  _stampOf(ts) {
+    const n = Number(ts);
+    return Number.isFinite(n) && n > 0
+      ? new Date(n).toLocaleString('ca-ES', { timeZone: 'Europe/Madrid', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).replace(',', '')
+      : '';
+  }
+
+  /** The kinds in the edge-case table: label and one-line meaning. */
+  _edgeCaseKinds() {
+    return {
+      relink: ['Viatge reassignat', 'El retard cau de cop a mig recorregut: el SAE tenia el bus en un viatge que no feia.'],
+      deadhead_return: ['Tornada sense servei', "El bus es salta un viatge i torna a l'inici; el SAE segueix anotant parades."],
+      delay_jump: ['Salt de retard', 'El retard puja més de pressa que passa el temps.'],
+      backward_leg: ['Sentit invers', 'Les parades van enrere pel recorregut amb el retard congelat.'],
+      trip_change: ['Canvi de viatge', 'Un retard gran desapareix en un viatge nou, sense recuperar-se en ruta.']
+    };
+  }
+
+  /** The detail column of one edge case, as plain text. */
+  _edgeCaseDetail(c) {
+    const d = c.detail || {};
+    switch (c.kind) {
+      case 'relink': return `${d.samples || 0} registres, ${d.stops || 0} parades afectades`;
+      case 'deadhead_return': return `torna en ${d.returnMinutes} min; el viatge oposat en dura ${d.oppositeTripMinutes}; ${d.records || 0} registres fantasma`;
+      case 'delay_jump': return `puja en ${d.elapsedMins} min; ${d.samples || 0} registres afectats`;
+      case 'backward_leg': return `${d.stepsBack} parades enrere, ${d.visits} visites`;
+      case 'trip_change': return `${d.silentMinutes} min sense registres abans del viatge nou`;
+      default: return '';
+    }
+  }
+
+  /** The GPS column: positions stored around the case, or why there are none. */
+  _edgeCaseGps(c, keptHours) {
+    if (c.gpsPoints > 0) return `${c.gpsPoints} posicions`;
+    return c.gpsExpired ? `caducades (només ${keptHours} h)` : 'cap';
+  }
+
+  /**
+   * The debug table at the bottom of the incidents view: every moment where the
+   * operator's data does not fit what a bus can do, one row each, with how many
+   * stored GPS positions surround it and a button to investigate. Styles live in
+   * classes (the design-system ratchet counts inline styles).
+   */
+  _renderEdgeCaseTable(data) {
+    const list = Array.isArray(data && data.edgeCases) ? data.edgeCases : [];
+    const kinds = this._edgeCaseKinds();
+    const keptHours = Number(data && data.snapshotRetentionHours) || 6;
+    const counts = Object.keys(kinds).map(k => [k, list.filter(c => c.kind === k).length]);
+    const chips = counts.map(([k, n]) => `<span class="edge-kind edge-kind-${k}" title="${this.esc(kinds[k][1])}">${this.esc(kinds[k][0])} <strong>${n}</strong></span>`).join('');
+    const rows = list.map(c => {
+      const [label, meaning] = kinds[c.kind] || [c.kind, ''];
+      const delay = c.delayBefore === null ? '—' : (c.delayAfter === null || c.delayAfter === c.delayBefore ? `+${c.delayBefore}` : `+${c.delayBefore} → ${c.delayAfter > 0 ? '+' : ''}${c.delayAfter}`);
+      return `
+        <tr>
+          <td><span class="edge-kind edge-kind-${this.esc(c.kind)}" title="${this.esc(meaning)}">${this.esc(label)}</span></td>
+          <td>${this.esc(c.lineCode)}</td>
+          <td>${this.esc(c.vehicleId || '—')}</td>
+          <td class="edge-when">${this.esc(this._stampOf(c.fromTs))} → ${this.esc(this._stampOf(c.toTs))}</td>
+          <td>${this.esc(c.fromStop || '—')} → ${this.esc(c.toStop || '—')}</td>
+          <td class="edge-delay">${this.esc(delay)} min</td>
+          <td>${this.esc(this._edgeCaseDetail(c))}</td>
+          <td class="edge-gps ${c.gpsPoints > 0 ? 'has-gps' : ''}">${this.esc(this._edgeCaseGps(c, keptHours))}</td>
+          <td>
+            <button type="button" class="btn-investigate-incident" data-investigate-line="${this.esc(c.lineCode)}" data-investigate-stop="${this.esc(c.stop)}" data-investigate-vehicle="${this.esc(c.vehicleId)}" data-investigate-at="${c.at || ''}" title="Investigar aquest cas">
+              <span>Investigar</span>
+            </button>
+          </td>
+        </tr>`;
+    }).join('');
+    return `
+      <section class="edge-cases" id="edge-cases-table" aria-labelledby="edge-cases-title">
+        <div class="edge-cases-head">
+          <div>
+            <h4 id="edge-cases-title">Casos límit (taula de depuració)</h4>
+            <p class="edge-cases-note">Cada fila és un moment en què les dades de l'operador no encaixen amb el que pot fer un bus. Serveix per mirar què va passar de veritat: la columna GPS diu quantes posicions guardades hi ha al voltant (es guarden ${this.esc(keptHours)} h; obre Investigar abans que caduquin). Més nous primer${list.length >= 150 ? ', els 150 últims' : ''}.</p>
+          </div>
+          ${list.length ? '<button type="button" class="btn-secondary btn-sm" id="btn-copy-edge-cases" title="Copia la taula com a text per enganxar-la en un full de càlcul">Copiar taula</button>' : ''}
+        </div>
+        <div class="edge-kinds">${chips}</div>
+        ${list.length === 0 ? '<p class="edge-cases-note">Cap cas límit en el període seleccionat.</p>' : `
+        <div class="observatori-table-wrapper">
+          <table class="observatori-table edge-cases-table">
+            <thead>
+              <tr><th scope="col">Cas</th><th scope="col">Línia</th><th scope="col">Bus</th><th scope="col">Quan</th><th scope="col">Parades</th><th scope="col">Retard</th><th scope="col">Detall</th><th scope="col">GPS</th><th scope="col"></th></tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`}
+      </section>`;
+  }
+
+  /** Copy the edge-case table as tab-separated text. */
+  copyEdgeCases() {
+    const list = this.lastIncidentData && Array.isArray(this.lastIncidentData.edgeCases) ? this.lastIncidentData.edgeCases : [];
+    if (!list.length) return;
+    const kinds = this._edgeCaseKinds();
+    const keptHours = Number(this.lastIncidentData.snapshotRetentionHours) || 6;
+    const lines = [['Cas', 'Línia', 'Bus', 'Des de', 'Fins a', 'Parada inicial', 'Parada final', 'Retard abans', 'Retard després', 'Detall', 'GPS'].join('\t')];
+    for (const c of list) {
+      lines.push([
+        (kinds[c.kind] || [c.kind])[0], c.lineCode, c.vehicleId, this._stampOf(c.fromTs), this._stampOf(c.toTs), c.fromStop, c.toStop,
+        c.delayBefore === null ? '' : c.delayBefore, c.delayAfter === null ? '' : c.delayAfter, this._edgeCaseDetail(c), this._edgeCaseGps(c, keptHours)
+      ].join('\t'));
+    }
+    const text = lines.join('\n');
+    const btn = document.getElementById('btn-copy-edge-cases');
+    const done = () => {
+      if (!btn) return;
+      const orig = btn.textContent;
+      btn.textContent = 'Copiat!';
+      setTimeout(() => { btn.textContent = orig; }, 2500);
+    };
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      navigator.clipboard.writeText(text).then(done).catch(() => prompt('Copia aquesta taula:', text));
+    } else {
+      prompt('Copia aquesta taula:', text);
+    }
   }
 
   copyAnomaliesReport() {

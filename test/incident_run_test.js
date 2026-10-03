@@ -167,7 +167,7 @@ const row = (stopName, delayMins, h, m, s = 0, direction = '1') =>
   assert.equal(ep.run.trips[0].stopCount, 10);
   assert.equal(ep.run.trips[1].joinedMidRoute, null, 'a same-direction jump back is never called a mid-route join');
   assert.equal(ep.evidence.snapshotTrailPoints, 2, 'positions two minutes either side of a single-sample episode are found');
-  assert.equal(ep.evidence.snapshotRetentionHours, 2);
+  assert.equal(ep.evidence.snapshotRetentionHours, 6);
   assert.equal(ep.verdict, 'corroborated');
   console.log(`  ✓ Bus 2669: ${ep.run.stops.length} stop visits around 1 clicked sample, pattern "${ep.run.summary.pattern}" (+${ep.run.summary.minDelay}..+${ep.run.summary.maxDelay}), verdict "${ep.verdict}".`);
 

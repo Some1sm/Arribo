@@ -216,6 +216,8 @@ function scheduleTripMinutes(lineCode, direction) {
 // GPS positions are stored about once a minute, so a single-sample episode
 // needs a margin on each side to find the two positions that corroborate it.
 const SNAPSHOT_CONTEXT_MS = 5 * 60 * 1000;
+// Rows of the /dades edge-case debug table (see _buildEdgeCases).
+const EDGE_CASE_LIMIT = 150;
 
 let cachedDataVersion = null;
 function getDataVersion() {
@@ -268,10 +270,10 @@ class HistoryDatabase {
     this.dbPath = process.env.DB_PATH || path.join(customDataDir, 'transit_history.db');
     // Raw vehicle positions are only needed for the recent trail endpoint. Keep
     // this configurable so deployments can trade trail history for disk usage.
-    const snapshotRetentionHours = Number.parseFloat(process.env.SNAPSHOT_RETENTION_HOURS || '2');
+    const snapshotRetentionHours = Number.parseFloat(process.env.SNAPSHOT_RETENTION_HOURS || '6');
     this.snapshotRetentionHours = Number.isFinite(snapshotRetentionHours) && snapshotRetentionHours > 0
       ? snapshotRetentionHours
-      : 2;
+      : 6;
     const delayRetentionDays = Number.parseInt(process.env.DELAY_RETENTION_DAYS || '30', 10);
     this.delayRetentionDays = Number.isFinite(delayRetentionDays) && delayRetentionDays > 0
       ? delayRetentionDays
@@ -2831,6 +2833,7 @@ class HistoryDatabase {
         };
       }).sort((a, b) => (a.incidentType === 'trip_relink') - (b.incidentType === 'trip_relink') || b.maxDelayMins - a.maxDelayMins || b.sampleCount - a.sampleCount);
 
+      const edgeCases = this._buildEdgeCases({ relinks, deadheads, jumps, backs, clusters: enrichedClusters });
       const movingCount = enrichedClusters.filter(c => c.incidentType === 'traffic').length;
       const stationaryCount = enrichedClusters.filter(c => c.incidentType === 'layover').length;
       const maintenanceCount = enrichedClusters.filter(c => c.incidentType === 'maintenance').length;
@@ -2889,7 +2892,9 @@ class HistoryDatabase {
         topIncidents: enrichedTop,
         investigationIncidents: enrichedInvestigation,
         telemetryAnomalies: enrichedAnomalies,
-        incidentTrips: enrichedClusters.slice(0, limitNum)
+        incidentTrips: enrichedClusters.slice(0, limitNum),
+        edgeCases,
+        snapshotRetentionHours: this.snapshotRetentionHours
       };
     } catch (e) {
       console.error('[HistoryDB] getDelayIncidents error:', e.message);
@@ -3693,6 +3698,83 @@ class HistoryDatabase {
       console.error('[HistoryDB] inspectDelayIncident error:', e.message);
       return { found: false, error: e.message, episode: null, dataQuality: {} };
     }
+  }
+
+  /**
+   * One row per moment where the operator's data does not fit what a bus can do:
+   * trip relinks, deadhead returns, impossible delay jumps, backward legs and
+   * trajectories that ended as a trip change. It feeds the debug table at the
+   * bottom of /dades Top Incidents. `gpsPoints` is how many stored GPS positions
+   * lie around the case (SNAPSHOT_CONTEXT_MS each side); with 0 and an old case,
+   * `gpsExpired` says the positions were pruned (SNAPSHOT_RETENTION_HOURS).
+   * Newest first, at most EDGE_CASE_LIMIT rows.
+   */
+  _buildEdgeCases({ relinks = [], deadheads = [], jumps = [], backs = [], clusters = [] } = {}) {
+    const cases = [];
+    const base = (kind, o) => ({
+      kind,
+      lineCode: String(o.lineCode || '').toUpperCase(),
+      vehicleId: String(o.vehicleId || ''),
+      direction: o.direction === undefined || o.direction === null ? '' : String(o.direction),
+      fromTs: o.fromTs,
+      toTs: o.toTs,
+      fromStop: String(o.fromStop || ''),
+      toStop: String(o.toStop || ''),
+      delayBefore: Number.isFinite(Number(o.delayBefore)) ? Number(o.delayBefore) : null,
+      delayAfter: Number.isFinite(Number(o.delayAfter)) ? Number(o.delayAfter) : null,
+      stop: String(o.stop || o.fromStop || ''),
+      at: o.at,
+      detail: o.detail || {}
+    });
+    for (const r of relinks) {
+      cases.push(base('relink', {
+        ...r, fromTs: r.staleFromTs, toTs: r.relinkTs, fromStop: (r.staleStops && r.staleStops[0]) || r.relinkStop, toStop: r.relinkStop,
+        stop: (r.staleStops && r.staleStops[0]) || r.relinkStop, at: r.staleFromTs,
+        detail: { samples: r.staleSampleCount, stops: (r.staleStops || []).length }
+      }));
+    }
+    for (const d of deadheads) {
+      cases.push(base('deadhead_return', {
+        ...d, fromTs: d.lastServedTs, toTs: d.resumeTs, fromStop: d.lastServedStop, toStop: d.resumeStop, delayBefore: d.lastServedDelay,
+        stop: d.lastServedStop, at: d.lastServedTs,
+        detail: { returnMinutes: d.returnMinutes, oppositeTripMinutes: d.oppositeTripMinutes, records: (d.phantoms || []).length }
+      }));
+    }
+    for (const j of jumps) {
+      cases.push(base('delay_jump', {
+        ...j, fromTs: j.beforeTs, toTs: j.staleToTs, fromStop: j.beforeStop, toStop: j.jumpStop,
+        stop: j.jumpStop, at: j.jumpTs,
+        detail: { elapsedMins: j.elapsedMins, samples: j.staleSampleCount }
+      }));
+    }
+    for (const b of backs) {
+      cases.push(base('backward_leg', {
+        ...b, fromTs: b.lastServedTs, toTs: b.staleToTs, fromStop: b.lastServedStop, toStop: b.lowestStop,
+        delayBefore: b.lastServedDelay, delayAfter: b.lastServedDelay,
+        stop: (b.staleStops && b.staleStops[0]) || b.lowestStop, at: b.staleFromTs,
+        detail: { stepsBack: b.stepsBack, visits: b.visitCount }
+      }));
+    }
+    for (const c of clusters) {
+      if (c.endReason !== 'trip_change' || !c.nextTrip) continue;
+      cases.push(base('trip_change', {
+        ...c, fromTs: c.endMomentTs, toTs: c.nextTrip.ts, fromStop: c.endStop, toStop: c.nextTrip.stopName,
+        delayBefore: c.endDelayMins, delayAfter: c.nextTrip.delayMins, stop: c.endStop, at: c.endMomentTs,
+        detail: { silentMinutes: Math.round((c.nextTrip.ts - c.endMomentTs) / 60000) }
+      }));
+    }
+    cases.sort((a, b) => b.fromTs - a.fromTs);
+    const shown = cases.slice(0, EDGE_CASE_LIMIT);
+    const now = Date.now();
+    const keptMs = this.snapshotRetentionHours * 3600 * 1000;
+    for (const c of shown) {
+      const rows = c.vehicleId
+        ? this._snapshotTrail(c.vehicleId, c.fromTs - SNAPSHOT_CONTEXT_MS, c.toTs + SNAPSHOT_CONTEXT_MS)
+        : [];
+      c.gpsPoints = rows.length;
+      c.gpsExpired = rows.length === 0 && (c.toTs + SNAPSHOT_CONTEXT_MS) < now - keptMs;
+    }
+    return shown;
   }
 
   _snapshotTrail(vehicleId, from, to) {

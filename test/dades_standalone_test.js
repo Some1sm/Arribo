@@ -63,9 +63,9 @@ let appServer;
   assert.ok(obsCode.includes('class ObservatoriApp'), 'observatori.js must define ObservatoriApp');
   assert.ok(obsCode.includes('renderJournalismReport'), 'observatori.js must have renderJournalismReport');
   assert.ok(obsCode.includes("comp.method !== 'operator_trip'"), 'the comparison panel must skip a report cached by an older build');
-  // Every incident table (top, both 'Horaris no habituals' copies, SAE anomalies) offers Investigar, and the
+  // Every incident table (top, both 'Horaris no habituals' copies, SAE anomalies, edge cases) offers Investigar, and the
   // 'Horaris no habituals' tab has its own drill-down panel for it to open.
-  assert.equal((obsCode.match(/class="btn-investigate-incident"/g) || []).length, 4, 'all four incident tables must render the Investigar button');
+  assert.equal((obsCode.match(/class="btn-investigate-incident"/g) || []).length, 5, 'all five incident tables must render the Investigar button');
   assert.equal((obsCode.match(/id="incident-drilldown-panel"/g) || []).length, 2, 'the top and investigation tabs must each render a drill-down panel');
   assert.ok(obsCode.includes('renderStopHeatmap'), 'observatori.js must have renderStopHeatmap');
   assert.ok(obsCode.includes('renderTermometreScorecard'), 'observatori.js must have renderTermometreScorecard');
