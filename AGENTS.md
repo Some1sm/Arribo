@@ -428,6 +428,21 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   from the 12/min heavy reports; the page reuses answers for 60 s, sends one request for
   quick clicks, and on a 429 keeps the map on screen and retries after `Retry-After`.
   See `test/gps_gaps_test.js`, `test/gps_gap_paths_test.js` and `test/gps_gap_buses_test.js`.
+- **The Investigar "Pas" is the last sample before the stop, a trajectory card says how it ended, and an incident is one bus trip.**
+  The run table's first column used to show the FIRST sample logged while the bus was heading to a stop, which
+  is when it left the previous stop: on L2 bus 2684 (2 Oct 2026) the row read 17:17 beside "17:06 → 17:23", and 17:17 was the previous
+  stop's "Real". "Pas" is `lastTime` (the last sample before the stop, within about 2 min of the projected "Real");
+  the first sample stays as a tooltip. The trajectory card (`_matchIncidentTrip`) now shows `fi HH:MM` and
+  one sentence from `endReason`: `recovered`, `end_of_line` (with the next trip's first record), `signal_lost`,
+  `ongoing`, `relinked`, `deadhead_return` and `trip_change`. **A delay that falls by 10+ min at once, or a record
+  at a stop 3+ places behind the last delayed one, is the bus on another trip, not a recovery**
+  (`_buildVehicleTrajectory`; L2 bus 2684: Cirera +28 at 18:23, nine minutes with no record, then Parc Central +0 nine
+  stops back, which the card called "recovered"). Such a card ends at its last delayed stop and carries
+  `nextTrip`. `getDelayIncidents` lists ONE row per bus trip (consecutive samples, one direction, no gap over
+  12 min), not one per 20-minute window: a 24-minute trip was three rows. The two tiers stay separate: a trip with
+  samples on both sides of 25 min is one row in Top Incidents and one under "En investigació". Rows with no vehicle id keep the window. A bus that carries its delay across trips is still
+  one row per trip, which is honest: the delay is real (L3 and L2 buses on 2 Oct had 30-39 min gaps in service
+  against 13-19 min headways). See `test/incident_trip_outcome_test.js`.
 - **Colours, radii and spacing come from tokens.** [UI_GUIDE.md](UI_GUIDE.md) §2.0 lists the
   design-system tokens (`--brand`, `--action`/`--on-action`, `--status-*`, `--punct-*`,
   `--line-N`/`--on-line-N`, `--radius-xs`…`--radius-xl`, `--space-1`…`--space-8`). Every

@@ -2731,7 +2731,7 @@ class ObservatoriApp {
         const rowClass = [s.isClicked ? 'is-clicked' : '', s.phantom ? 'is-phantom' : '', s.originStart ? 'is-origin-start' : ''].filter(Boolean).join(' ');
         return `${header}
           <tr class="${rowClass}">
-            <td class="drilldown-cell-time">${this.esc(hhmm(s.time))}</td>
+            <td class="drilldown-cell-time"${s.lastTime && s.lastTime !== s.time ? ` title="Primer registre camí d'aquesta parada: ${this.esc(hhmm(s.time))}"` : ''}>${this.esc(hhmm(s.lastTime || s.time))}</td>
             <td class="drilldown-cell-delay"><span class="drilldown-delay ${delayClass}">${signed(s.delayMins)} min</span>${s.delayGrowth ? ` <span class="drilldown-growth" title="El retard va créixer ${s.delayGrowth} min en aquest punt">▲${s.delayGrowth}</span>` : ''}</td>
             <td class="drilldown-cell-stop">${this.esc(s.stopName || '—')}${s.isClicked ? ' <span class="drilldown-clicked-tag">consultada</span>' : ''}${s.originStart ? ' <span class="drilldown-origin-tag">sense retard</span>' : ''}</td>
             <td class="drilldown-cell-times">${times}</td>
@@ -2756,7 +2756,7 @@ class ObservatoriApp {
           <table class="drilldown-samples-table">
             <thead>
               <tr>
-                <th scope="col">Hora</th>
+                <th scope="col">Pas</th>
                 <th scope="col">Retard</th>
                 <th scope="col">Parada</th>
                 <th scope="col">Teòric → Real</th>
@@ -2766,7 +2766,7 @@ class ObservatoriApp {
             <tbody>${rowsHtml || '<tr><td colspan="5" style="color:var(--text-muted);">Cap mostra</td></tr>'}</tbody>
           </table>
         </div>
-        <p class="drilldown-legend">El retard es mesura per viatge: quan el bus comença un viatge nou es torna a comptar. «Teòric → Real»: l'operador només envia el retard; l'hora teòrica és la de l'horari publicat per a aquell viatge i la real és la teòrica més el retard. «Senyal»: GPS si la posició era recent, Estimat si el bus havia perdut el senyal uns segons. «▲»: minuts de retard que el bus va guanyar en aquell punt.</p>
+        <p class="drilldown-legend">El retard es mesura per viatge: quan el bus comença un viatge nou es torna a comptar. «Pas»: l'hora del darrer registre del bus abans de passar per la parada, és a dir, quan hi va arribar (el primer registre, camí de la parada, és a l'indicador en passar-hi el ratolí). «Teòric → Real»: l'operador només envia el retard; l'hora teòrica és la de l'horari publicat per a aquell viatge i la real és la teòrica més el retard. «Senyal»: GPS si la posició era recent, Estimat si el bus havia perdut el senyal uns segons. «▲»: minuts de retard que el bus va guanyar en aquell punt.</p>
       `;
       // Show the clicked trip from its header row, directly under the sticky column header.
       const scroller = content.querySelector('.drilldown-table-scroll');
@@ -2841,13 +2841,55 @@ class ObservatoriApp {
       <div class="drilldown-trip-card">
         <div class="drilldown-trip-head">
           <span class="drilldown-trip-label">Expedició &amp; trajectòria corresponent</span>
-          <span class="drilldown-trip-meta">${this.esc(match.lineCode || '')} · bus ${this.esc(match.vehicleId)} · inici ${this.esc(match.startTime || '')} · ${match.sampleCount || 0} mostres</span>
+          <span class="drilldown-trip-meta">${this.esc(match.lineCode || '')} · bus ${this.esc(match.vehicleId)} · inici ${this.esc(match.startTime || '')}${this._clockOf(match.endMomentTs) ? ` · fi ${this._clockOf(match.endMomentTs)}` : ''} · ${match.sampleCount || 0} mostres</span>
         </div>
         <div class="drilldown-trip-flow">${flow || '<span style="color:var(--text-muted);">Sense parades reconstruïdes</span>'}</div>
+        ${this._trajectoryOutcome(match) ? `<p class="drilldown-trip-outcome">${this._trajectoryOutcome(match)}</p>` : ''}
         <button type="button" class="btn-locate-incident-stop" data-incident-tab="trips" title="Obre la pestanya Expedicions &amp; Trajectòries">
           <span>Veure a Expedicions &amp; Trajectòries</span>
         </button>
       </div>`;
+  }
+
+  /** HH:MM (Madrid) of an epoch-ms timestamp, '' when it is not one. */
+  _clockOf(ts) {
+    const n = Number(ts);
+    return Number.isFinite(n) && n > 0
+      ? new Date(n).toLocaleTimeString('ca-ES', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+      : '';
+  }
+
+  /**
+   * How a delayed trip's trajectory ended, in one sentence. The card used to show
+   * only where the delay started; a trajectory that stops (end of line, signal
+   * lost) looked like a recovery nobody had drawn, and a trip change was drawn
+   * as a recovery.
+   */
+  _trajectoryOutcome(t) {
+    const sg = n => (Number(n) > 0 ? `+${Number(n)}` : String(Number(n)));
+    const stop = this.esc(t.endStop || t.lastStop || '');
+    const end = this._clockOf(t.endMomentTs);
+    const next = t.nextTrip && Number.isFinite(Number(t.nextTrip.ts)) ? t.nextTrip : null;
+    switch (t.endReason) {
+      case 'recovered':
+        return `Recuperat a ${stop}${end ? ` a les ${end}` : ''}: ${sg(t.endDelayMins)} min.`;
+      case 'trip_change': {
+        const gap = next && Number.isFinite(Number(t.endMomentTs)) ? Math.round((Number(next.ts) - Number(t.endMomentTs)) / 60000) : null;
+        return `El retard no es va recuperar en ruta. Després de ${stop}${end ? ` (${end}, ${sg(t.endDelayMins)} min)` : ''}${gap !== null && gap >= 2 ? ` hi ha ${gap} min sense registres i` : ''} el bus consta ja en un altre viatge${next ? `, a ${this.esc(next.stopName)} a les ${this._clockOf(next.ts)} amb ${sg(next.delayMins)} min` : ''}.`;
+      }
+      case 'end_of_line':
+        return `Arriba a ${stop} (final de línia)${end ? ` a les ${end}` : ''} amb ${sg(t.endDelayMins)} min de retard.${next ? ` Torna a sortir a les ${this._clockOf(next.ts)} des de ${this.esc(next.stopName)} amb ${sg(next.delayMins)} min.` : ''}`;
+      case 'signal_lost':
+        return `Sense registres des de les ${end || '--:--'} (darrera parada: ${stop}, ${sg(t.endDelayMins)} min): no se sap si el bus va recuperar el retard.`;
+      case 'ongoing':
+        return 'Encara en curs.';
+      case 'relinked':
+        return "El sistema de l'operador va reassignar el bus a un altre viatge: el retard no es va recuperar.";
+      case 'deadhead_return':
+        return 'El bus va deixar de servir el viatge: el retard no es va recuperar.';
+      default:
+        return '';
+    }
   }
 
   /** Plain-Catalan label for the server-side times_provenance classification. */
@@ -3560,6 +3602,7 @@ class ObservatoriApp {
                     }).join('')}${({
                       end_of_line: `<span class="trajectory-end">🏁 Final de línia</span>`,
                       recovered: `<span class="trajectory-end is-recovered">✅ Recuperat</span>`,
+                      trip_change: `<span class="trajectory-end">🔀 Canvi de viatge</span>`,
                       relinked: `<span class="trajectory-end">🔀 Viatge reassignat pel SAE</span>`,
                       deadhead_return: `<span class="trajectory-end">↩️ Tornada sense servei</span>`,
                       signal_lost: `<span class="trajectory-end">📡 Sense més dades</span>`,

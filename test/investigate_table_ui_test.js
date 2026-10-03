@@ -157,8 +157,8 @@ check(drilldownBody.includes('<thead>') && drilldownBody.includes('<tbody>'),
 
 const headers = [...drilldownBody.matchAll(/<th scope="col">([^<]+)<\/th>/g)].map(m => m[1].trim());
 check(headers.length === 5, `every column is labelled, found ${headers.length}: ${JSON.stringify(headers)}`);
-check(headers.join('|') === 'Hora|Retard|Parada|Teòric → Real|Senyal',
-  `headers are the expected six, got ${JSON.stringify(headers)}`);
+check(headers.join('|') === 'Pas|Retard|Parada|Teòric → Real|Senyal',
+  `headers are the expected five, got ${JSON.stringify(headers)}`);
 
 // One <td> per column per row, or the cells drift out of alignment again.
 const rowHtml = drilldownBody.slice(drilldownBody.indexOf('return `'), drilldownBody.indexOf('}).join(\'\');'));

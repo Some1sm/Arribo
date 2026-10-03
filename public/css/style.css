@@ -9592,6 +9592,13 @@ body {
   margin-bottom: 0.55rem;
 }
 
+.drilldown-trip-outcome {
+  margin: 0 0 var(--space-2);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
 .drilldown-trip-stop {
   display: inline-flex;
   align-items: center;
