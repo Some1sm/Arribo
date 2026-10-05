@@ -193,6 +193,7 @@ class ObservatoriApp {
     this.gpsGapLine = 'all';
     this.gpsGapVehicle = '';
     this.gpsGapHide = '';
+    this.gpsGapMin = 1;
     this.gpsGapMarkers = [];
     section.addEventListener('click', (e) => {
       const dayBtn = e.target.closest('[data-gps-days]');
@@ -229,6 +230,18 @@ class ObservatoriApp {
         this.focusGpsGapCell(Number(item.dataset.gpsCell));
       }
     });
+    // Minimum losses at one spot: filters the loaded answer, no new request.
+    // Dragging redraws; letting go also refits the map to what is left.
+    const minInput = document.getElementById('gps-gaps-min');
+    if (minInput) {
+      minInput.addEventListener('input', () => {
+        this.gpsGapMin = Number(minInput.value) || 1;
+        if (this._gpsGapData) this.renderGpsGaps(this._gpsGapData, { fit: false });
+      });
+      minInput.addEventListener('change', () => {
+        if (this._gpsGapData) this.renderGpsGaps(this._gpsGapData);
+      });
+    }
     // The map and its tiles load only once the section is about to be seen.
     if ('IntersectionObserver' in window) {
       const io = new IntersectionObserver((entries) => {
@@ -608,7 +621,26 @@ class ObservatoriApp {
     return s ? `${m} min ${s} s` : `${m} min`;
   }
 
-  renderGpsGaps(data) {
+  /**
+   * The minimum-losses slider runs from 1 to the busiest point of the loaded
+   * answer, so its range follows the period, line and bus filters. A choice
+   * above the new maximum is lowered to it; hidden while no point repeats.
+   */
+  syncGpsGapMin(cells) {
+    const group = document.getElementById('gps-gaps-min-group');
+    const input = document.getElementById('gps-gaps-min');
+    const out = document.getElementById('gps-gaps-min-value');
+    const max = cells.reduce((m, c) => Math.max(m, c.count || 0), 1);
+    this.gpsGapMin = Math.min(Math.max(1, this.gpsGapMin || 1), max);
+    if (!group || !input) return;
+    group.hidden = max < 2;
+    input.max = String(max);
+    input.value = String(this.gpsGapMin);
+    if (out) out.textContent = `${this.gpsGapMin}+`;
+    input.setAttribute('aria-valuetext', `${this.gpsGapMin} pèrdues o més`);
+  }
+
+  renderGpsGaps(data, { fit = true } = {}) {
     const summary = document.getElementById('gps-gaps-summary');
     const list = document.getElementById('gps-gaps-list');
     const empty = document.getElementById('gps-gaps-empty');
@@ -618,7 +650,10 @@ class ObservatoriApp {
     this.clearGpsGapSelection();
     this.gpsGapCells = [];
     if (!summary || !list || !empty) return;
-    this.renderGpsGapBuses(data);
+    // The slider only refilters: the bus ranking does not depend on it.
+    if (data !== this._gpsGapData) this.renderGpsGapBuses(data);
+    this._gpsGapData = data;
+    this.syncGpsGapMin(data && Array.isArray(data.cells) ? data.cells : []);
 
     if (!data) {
       summary.textContent = "No s'han pogut carregar les pèrdues de senyal.";
@@ -630,7 +665,9 @@ class ObservatoriApp {
 
     this._gpsGapShown = true;
     const t = data.totals || {};
-    const cells = Array.isArray(data.cells) ? data.cells : [];
+    const allCells = Array.isArray(data.cells) ? data.cells : [];
+    const min = this.gpsGapMin || 1;
+    const cells = min > 1 ? allCells.filter(c => c.count >= min) : allCells;
     const period = data.days === 1 ? 'les últimes 24 h' : `els últims ${data.days} dies`;
     const onLine = data.lineCode ? ` a la ${this.esc(data.lineCode)}` : '';
     const left = [];
@@ -652,10 +689,10 @@ class ObservatoriApp {
     empty.hidden = true;
 
     this.gpsGapCells = cells;
-    const recurrent = cells.filter(c => c.recurrent).length;
+    const recurrent = allCells.filter(c => c.recurrent).length;
     // One bus: "recurrent" needs two buses, so say where instead.
     const picked = (data.buses || []).find(b => b.vehicleId === data.vehicleId);
-    const busWhere = `En ${cells.length} ${cells.length === 1 ? 'lloc' : 'llocs diferents'}${picked ? `; el ${picked.sharedPct}% on altres busos també el perden` : ''}.`;
+    const busWhere = `En ${allCells.length} ${allCells.length === 1 ? 'lloc' : 'llocs diferents'}${picked ? `; el ${picked.sharedPct}% on altres busos també el perden` : ''}.`;
     summary.innerHTML = busChip + (data.vehicleId
       ? `<strong>${t.mapped}</strong> pèrdues de senyal${onLine} en ${period}; durada mediana <strong>${this.esc(this.fmtGapDuration(t.medianGapSec))}</strong>. `
       : `<strong>${t.mapped}</strong> pèrdues de senyal${onLine} en ${period}, de ${t.vehicles} busos; durada mediana <strong>${this.esc(this.fmtGapDuration(t.medianGapSec))}</strong>. `)
@@ -663,6 +700,9 @@ class ObservatoriApp {
         ? `<strong>${t.recurrentShare}%</strong> es concentren en ${recurrent} ${recurrent === 1 ? 'punt recurrent' : 'punts recurrents'}.`
         : 'Cap punt es repeteix prou encara per ser recurrent.')
       + this.esc(leftTxt)
+      + (min > 1
+        ? ` Al mapa, només ${cells.length === 1 ? 'el punt' : `els ${cells.length} punts`} amb ${min} pèrdues o més (de ${allCells.length}).`
+        : '')
       + ((data.hidden || []).length
         ? ` Amagats del mapa: ${data.hidden.length} ${data.hidden.length === 1 ? 'bus' : 'busos'} (${data.hidden.map(id => this.esc(id)).join(', ')}).`
         : '');
@@ -684,7 +724,10 @@ class ObservatoriApp {
     if (map) {
       // Straight from where the signal went to where it came back: the bus
       // drove the street in between with no GPS.
+      // With the slider up, only the streets of the points still shown.
+      const shown = new Set(cells.map(c => allCells.indexOf(c)));
       for (const g of (data.gaps || [])) {
+        if (min > 1 && !shown.has(g.cell)) continue;
         L.polyline([[g.lostLat, g.lostLon], [g.regainedLat, g.regainedLon]], {
           color: '#fbbf24', weight: 2.5, opacity: 0.7, dashArray: '4 6', interactive: false
         }).addTo(this.gpsGapLayer);
@@ -702,7 +745,7 @@ class ObservatoriApp {
         });
       }
       map.invalidateSize();
-      if (cells.length) map.fitBounds(cells.map(c => [c.lat, c.lon]), { padding: [30, 30], maxZoom: 16 });
+      if (fit && cells.length) map.fitBounds(cells.map(c => [c.lat, c.lon]), { padding: [30, 30], maxZoom: 16 });
     }
 
   }

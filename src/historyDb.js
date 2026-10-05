@@ -827,11 +827,17 @@ class HistoryDatabase {
           stopName: mode(rs.map(r => r.stopName)),
           lastTs: Math.max(...rs.map(r => r.lostTs)),
           recurrent: rs.length >= 3 && vehicles >= 2,
+          memberIds: rs.map(r => r.id),
           gapIds: [...rs].sort((a, b) => b.lostTs - a.lostTs).slice(0, 12).map(r => r.id)
         };
       }).sort((a, b) => b.count - a.count || b.vehicles - a.vehicles || b.lastTs - a.lastTs);
 
       const inRecurrent = cells.filter(c => c.recurrent).reduce((s, c) => s + c.count, 0);
+      // Each drawn loss names its hotspot (index into the cells sent), so the
+      // map can filter the dashed streets with the circles.
+      const cellOf = new Map();
+      cells.slice(0, 80).forEach((c, i) => { for (const id of c.memberIds) cellOf.set(id, i); });
+      for (const c of cells) delete c.memberIds;
       return {
         days: d,
         lineCode: code && code !== 'ALL' ? code : '',
@@ -853,6 +859,7 @@ class HistoryDatabase {
         buses: ranked.buses.slice(0, 20),
         fleet: { inService: ranked.inService, withoutLoss: ranked.withoutLoss },
         gaps: mapped.slice(0, 400).map(r => ({
+          cell: cellOf.has(r.id) ? cellOf.get(r.id) : null,
           vehicleId: r.vehicleId, lineCode: r.lineCode, gapSec: r.gapSec,
           lostLat: r.lostLat, lostLon: r.lostLon, regainedLat: r.regainedLat, regainedLon: r.regainedLon
         }))
