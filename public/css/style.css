@@ -10665,11 +10665,6 @@ input#plan-max-walk:focus {
     width: 100%;
   }
 
-  #gps-gaps-days {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
   #gps-gaps-lines {
     display: grid;
     grid-template-columns: auto repeat(8, minmax(0, 1fr));

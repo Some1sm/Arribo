@@ -176,9 +176,12 @@ class ObservatoriApp {
 
   /**
    * "On perden el GPS" belongs to the punctuality report (24 h / 48 h /
-   * 7 dies), not to the Termòmetre, Top Incidents or monthly tabs.
+   * 7 dies), not to the Termòmetre, Top Incidents or monthly tabs. It sits
+   * below the delays and above the operator comparison, which hides with it.
    */
   showGpsGaps(show) {
+    const operators = document.getElementById('journalism-operators-container');
+    if (operators) operators.style.display = show ? '' : 'none';
     const section = document.getElementById('gps-gaps-section');
     if (!section) return;
     section.style.display = show ? '' : 'none';
@@ -186,17 +189,29 @@ class ObservatoriApp {
     if (show && this.gpsGapMap) this.gpsGapMap.invalidateSize({ pan: false });
   }
 
+  /**
+   * The map has no period buttons of its own: it follows the report's
+   * 24 h / 48 h / 7 dies tab (1, 2 or 7 days). A change reloads it only once
+   * it has been loaded; before that the first load picks the period up.
+   */
+  setGpsGapPeriod(hours) {
+    const days = Math.min(30, Math.max(1, Math.round((Number(hours) || 24) / 24)));
+    if (days === this.gpsGapDays) return;
+    this.gpsGapDays = days;
+    this.gpsGapVehicle = '';
+    if (this._gpsGapReq) this.loadGpsGaps();
+  }
+
   initGpsGaps() {
     const section = document.getElementById('gps-gaps-section');
     if (!section) return;
-    this.gpsGapDays = 7;
+    this.gpsGapDays = Math.min(30, Math.max(1, Math.round((Number(this.currentHours) || 24) / 24)));
     this.gpsGapLine = 'all';
     this.gpsGapVehicle = '';
     this.gpsGapHide = '';
     this.gpsGapMin = 1;
     this.gpsGapMarkers = [];
     section.addEventListener('click', (e) => {
-      const dayBtn = e.target.closest('[data-gps-days]');
       const lineBtn = e.target.closest('[data-gps-line]');
       const item = e.target.closest('[data-gps-cell]');
       const busBtn = e.target.closest('[data-gps-bus]');
@@ -217,10 +232,6 @@ class ObservatoriApp {
         this.gpsGapVehicle = id && id !== this.gpsGapVehicle ? id : '';
         this.loadGpsGaps();
         if (this.gpsGapVehicle) document.getElementById('gps-gaps-map')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-      } else if (dayBtn) {
-        this.gpsGapDays = Number(dayBtn.dataset.gpsDays) || 7;
-        section.querySelectorAll('[data-gps-days]').forEach(b => b.classList.toggle('active', b === dayBtn));
-        this.loadGpsGaps();
       } else if (lineBtn) {
         this.gpsGapLine = lineBtn.dataset.gpsLine || 'all';
         this.gpsGapVehicle = '';
@@ -1268,6 +1279,7 @@ class ObservatoriApp {
 
     if (searchBarWrap) searchBarWrap.style.display = 'block';
     this.showGpsGaps(true);
+    this.setGpsGapPeriod(hours);
     if (contentContainer) contentContainer.style.display = 'block';
     if (termometreContainer) termometreContainer.style.display = 'none';
     if (incidentsContainer) incidentsContainer.style.display = 'none';
@@ -1291,11 +1303,13 @@ class ObservatoriApp {
         this.currentReport = journalismData;
         this.renderJournalismReport(journalismData);
       } else {
+        this.clearOperatorComparison();
         if (contentContainer) {
           contentContainer.innerHTML = '<div style="text-align:center; padding:3rem; color:var(--text-muted);">No hi ha prou dades de retards registrades encara. El servidor està capturant la telemetria contínua.</div>';
         }
       }
     } catch (err) {
+      this.clearOperatorComparison();
       if (contentContainer) {
         contentContainer.innerHTML = `<div style="text-align:center; padding:3rem; color:var(--danger);">Error en carregar informe de periodisme: ${this.esc(err.message)}</div>`;
       }
@@ -1322,6 +1336,11 @@ class ObservatoriApp {
     if (this.currentReport) {
       this.renderJournalismReport(this.currentReport);
     }
+  }
+
+  clearOperatorComparison() {
+    const operators = document.getElementById('journalism-operators-container');
+    if (operators) operators.innerHTML = '';
   }
 
   renderJournalismReport(report) {
@@ -1970,6 +1989,13 @@ class ObservatoriApp {
 
     `;
 
+    // The operator comparison goes below the GPS map, in its own container.
+    const operatorsAt = html.indexOf('<!-- Ranking: Operators Performance -->');
+    const operators = document.getElementById('journalism-operators-container');
+    if (operators && operatorsAt >= 0) {
+      operators.innerHTML = html.slice(operatorsAt);
+      html = html.slice(0, operatorsAt);
+    }
     container.innerHTML = html;
     this.initObservatoriTableScrolls();
   }

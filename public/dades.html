@@ -13,7 +13,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-  <link rel="stylesheet" href="/css/style.css?v=9.4.41">
+  <link rel="stylesheet" href="/css/style.css?v=9.4.42">
 </head>
 <body class="observatori-page-body observatori-page">
 
@@ -233,6 +233,23 @@
       </div>
     </section>
 
+    <!-- Termòmetre Infographic Scorecard Container -->
+    <div id="journalism-termometre-container" style="display:none; margin-bottom:1.5rem;"></div>
+
+    <!-- Incident Deep-Dive Inspector Container -->
+    <div id="journalism-incidents-container" style="display:none; margin-bottom:1.5rem;"></div>
+
+    <!-- Monthly Report Container (Plan 9.4) -->
+    <div id="journalism-monthly-container" class="journalism-monthly-section" style="display:none; margin-bottom:1.5rem;"></div>
+
+    <!-- Main Dynamic Analytics Container -->
+    <div id="journalism-content-container" style="min-height:320px;">
+      <div style="text-align:center; padding:3rem; color:var(--text-muted);">
+        <span class="loading-spinner-inline"></span> Carregant informe de retards i puntualitat...
+      </div>
+    </div>
+
+    <!-- After the delays: the GPS loss map uses the report's period (24 h / 48 h / 7 dies) -->
     <!-- Where buses lose GPS (gps_gaps, recorded by the ingestion worker) -->
     <section class="gps-gaps-card" id="gps-gaps-section" aria-labelledby="gps-gaps-title">
       <div class="gps-gaps-head">
@@ -244,11 +261,6 @@
           </div>
         </div>
         <div class="gps-gaps-filters">
-          <div class="observatori-mode-toggle-group" id="gps-gaps-days" role="group" aria-label="Període">
-            <button type="button" class="observatori-pill-btn" data-gps-days="1">24 h</button>
-            <button type="button" class="observatori-pill-btn active" data-gps-days="7">7 dies</button>
-            <button type="button" class="observatori-pill-btn" data-gps-days="30">30 dies</button>
-          </div>
           <div class="observatori-mode-toggle-group" id="gps-gaps-lines" role="group" aria-label="Línia">
             <button type="button" class="observatori-pill-btn active" data-gps-line="all">Totes</button>
             <button type="button" class="observatori-pill-btn" data-gps-line="L1">L1</button>
@@ -298,21 +310,8 @@
       </div>
     </section>
 
-    <!-- Termòmetre Infographic Scorecard Container -->
-    <div id="journalism-termometre-container" style="display:none; margin-bottom:1.5rem;"></div>
-
-    <!-- Incident Deep-Dive Inspector Container -->
-    <div id="journalism-incidents-container" style="display:none; margin-bottom:1.5rem;"></div>
-
-    <!-- Monthly Report Container (Plan 9.4) -->
-    <div id="journalism-monthly-container" class="journalism-monthly-section" style="display:none; margin-bottom:1.5rem;"></div>
-
-    <!-- Main Dynamic Analytics Container -->
-    <div id="journalism-content-container" style="min-height:320px;">
-      <div style="text-align:center; padding:3rem; color:var(--text-muted);">
-        <span class="loading-spinner-inline"></span> Carregant informe de retards i puntualitat...
-      </div>
-    </div>
+    <!-- Operator comparison (rendered with the report, below the GPS map) -->
+    <div id="journalism-operators-container"></div>
 
   </main>
 
@@ -331,10 +330,10 @@
   </footer>
 
   <!-- Scripts -->
-  <script src="/js/utils.js?v=9.4.41"></script>
-  <script src="/js/storage.js?v=9.4.41"></script>
-  <script src="/js/pwa.js?v=9.4.41"></script>
+  <script src="/js/utils.js?v=9.4.42"></script>
+  <script src="/js/storage.js?v=9.4.42"></script>
+  <script src="/js/pwa.js?v=9.4.42"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="/js/observatori.js?v=9.4.41"></script>
+  <script src="/js/observatori.js?v=9.4.42"></script>
 </body>
 </html>
