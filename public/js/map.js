@@ -1366,6 +1366,12 @@ class TransitMap {
           <span><strong>Vehicle estimat segons horari oficial (sense GPS):</strong> Aquest autobús està programat en servei actiu${bus.departureTime ? ` (sortida <strong>${escHtml(bus.departureTime)}</strong>)` : ''}, però no transmet dades GPS en directe a la xarxa SAE. La seva posició al mapa es calcula teòricament segons la sortida oficial.</span>
         </div>` : ''}
 
+        ${bus.offRoute ? `
+        <div class="map-popup-offroute-notice">
+          <span class="ghost-icon">↯</span>
+          <span><strong>Fora del recorregut:</strong> el GPS el situa a ${Number(bus.offRouteM) || 'més de 75'} m de la ruta de la línia (desviament, drecera o obres). Es mostra on és, no sobre la ruta.</span>
+        </div>` : ''}
+
         ${(fromStop && toStop) ? `
         <div class="map-popup-route-ribbon">
           <div class="map-popup-route-stop from">
@@ -1582,15 +1588,18 @@ class TransitMap {
       const targetPolyline = isSecDir ? secondaryCoords : (this.activePolylineCoords || []);
       const busColor = isSecDir ? secondaryColor : lineColor;
 
-      // 1. Street-Snapping: Snap raw GPS strictly to the target road polyline
+      // 1. Street-Snapping: Snap raw GPS strictly to the target road polyline,
+      // except a bus the server found off its route (bus.offRoute): it stays
+      // where its GPS puts it, and its glide does not follow the route either.
+      const followRoute = !bus.offRoute && targetPolyline && targetPolyline.length > 1;
       let snapped = { lat: bus.lat, lon: bus.lon, bearing: bus.bearing || 0 };
-      if (targetPolyline && targetPolyline.length > 1) {
+      if (followRoute) {
         snapped = this.snapToPolyline(bus.lat, bus.lon, targetPolyline);
       }
 
       // 2. Extract road subpath between fromCoords and toCoords
       let subpath = null;
-      if (bus.fromCoords && bus.toCoords && targetPolyline && targetPolyline.length > 1) {
+      if (followRoute && bus.fromCoords && bus.toCoords) {
         subpath = this.extractSubpath(targetPolyline, bus.fromCoords.lat, bus.fromCoords.lon, bus.toCoords.lat, bus.toCoords.lon);
       }
 
@@ -1656,7 +1665,7 @@ class TransitMap {
         obj.targetBearing = bearingAngle;
         obj.reportedBearing = reportedBearing;
         obj.subpath = subpath;
-        obj.targetPolyline = targetPolyline;
+        obj.targetPolyline = followRoute ? targetPolyline : null;
         obj.lastUpdated = now;
         obj.marker.setPopupContent(popupHtml);
 
@@ -1752,7 +1761,7 @@ class TransitMap {
           isFacingWest: isHeadingWest,
           lastUpdated: now,
           subpath,
-          targetPolyline,
+          targetPolyline: followRoute ? targetPolyline : null,
           wrapEl: busRoot ? busRoot.querySelector('.live-bus-marker-wrap') : null,
           ringEl: busRoot ? busRoot.querySelector('.bus-selection-ring') : null,
           pinEl: busRoot ? busRoot.querySelector('.live-bus-pin') : null,

@@ -304,6 +304,8 @@ class IngestionDaemon {
                 observedAt,
                 serviceableMs: 90 * 1000,
                 isTerminalLayover: Boolean(b.isTerminalLayover),
+                offRoute: Boolean(b.offRoute),
+                offRouteM: b.offRoute ? b.offRouteM : null,
                 fromStop: b.fromStop !== undefined ? b.fromStop : undefined,
                 toStop: b.toStop !== undefined ? b.toStop : undefined,
                 fromSeq: b.fromSeq !== undefined ? b.fromSeq : undefined,

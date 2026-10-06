@@ -383,8 +383,10 @@ class NetworkMap extends TransitMap {
         ? geom.secondary
         : (geom.primary && geom.primary.length > 1 ? geom.primary : []);
 
+      // A bus the server found off its route stays where its GPS puts it.
+      const followRoute = !bus.offRoute && targetPolyline.length > 1;
       let snapped = { lat, lon, bearing: bus.bearing || 0 };
-      if (targetPolyline.length > 1) {
+      if (followRoute) {
         snapped = this.snapToPolyline(lat, lon, targetPolyline);
       }
 
@@ -425,7 +427,7 @@ class NetworkMap extends TransitMap {
         existing.targetLon = snapped.lon;
         existing.targetBearing = bearingAngle;
         existing.reportedBearing = reportedBearing;
-        existing.targetPolyline = targetPolyline;
+        existing.targetPolyline = followRoute ? targetPolyline : null;
         existing.lastUpdated = now;
         existing.marker.setPopupContent(popupHtml);
         if (bus.isTerminalLayover) {
@@ -494,7 +496,7 @@ class NetworkMap extends TransitMap {
         isFacingWest: isHeadingWest,
         lastUpdated: now,
         subpath: null,
-        targetPolyline,
+        targetPolyline: followRoute ? targetPolyline : null,
         wrapEl: busRoot ? busRoot.querySelector('.live-bus-marker-wrap') : null,
         ringEl: busRoot ? busRoot.querySelector('.bus-selection-ring') : null,
         pinEl: busRoot ? busRoot.querySelector('.live-bus-pin') : null,

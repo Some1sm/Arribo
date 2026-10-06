@@ -268,6 +268,12 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   no identity, and it arrives carrying `isRealTime: true`, claiming identified
   telemetry the operator never provided. Dropping must not break stitching — a
   report that *can* be tied to a recently-seen bus is still recovered.
+- **A live bus off its route is drawn where it is.** Live fixes are snapped to the line's
+  drawn route, except when a fresh fix is more than `OFF_ROUTE_M` (75 m) from every direction
+  of the line twice in a row (`processBusesWithDeadReckoning`, `lineRoutes`): then it keeps its
+  real position and carries `offRoute` / `offRouteM` through the daemon and flightRecorder, and
+  neither map snaps it or glides it along the route (`followRoute`). Measured on 174 live fixes
+  (6 Oct 2026, 20:30): median 8 m, p99 46 m, max 68 m. See `test/off_route_test.js`.
 - Exclude EST_, isGhostVehicle and isTheoretical vehicles from flightRecorder.
   Freshness is subsystem-specific, not one universal 90-second cutoff. Estimated
   markers do not prove observed GPS.

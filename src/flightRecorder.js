@@ -139,6 +139,8 @@ class FlightRecorder {
         lastPersistedAt: 0,
         history: [],
         isTerminalLayover: Boolean(snap.isTerminalLayover),
+        offRoute: Boolean(snap.offRoute),
+        offRouteM: snap.offRoute ? snap.offRouteM : null,
         fromStop: snap.fromStop !== undefined ? snap.fromStop : undefined,
         toStop: snap.toStop !== undefined ? snap.toStop : undefined,
         fromSeq: snap.fromSeq !== undefined ? snap.fromSeq : undefined,
@@ -176,6 +178,8 @@ class FlightRecorder {
       v.lastSeen = now;
       if (lineCode) v.lineCode = lineCode;
       v.isTerminalLayover = Boolean(snap.isTerminalLayover);
+      v.offRoute = Boolean(snap.offRoute);
+      v.offRouteM = snap.offRoute ? snap.offRouteM : null;
       if (snap.fromStop !== undefined) v.fromStop = snap.fromStop;
       if (snap.toStop !== undefined) v.toStop = snap.toStop;
       if (snap.fromSeq !== undefined) v.fromSeq = snap.fromSeq;
@@ -428,6 +432,8 @@ class FlightRecorder {
         extrapolatedMs: v.extrapolatedMs || (existing ? existing.extrapolatedMs : 0),
         history: history,
         isTerminalLayover: Boolean(v.isTerminalLayover),
+        offRoute: Boolean(v.offRoute),
+        offRouteM: v.offRoute ? v.offRouteM : null,
         fromStop: v.fromStop !== undefined ? v.fromStop : (existing ? existing.fromStop : undefined),
         toStop: v.toStop !== undefined ? v.toStop : (existing ? existing.toStop : undefined),
         fromSeq: v.fromSeq !== undefined ? v.fromSeq : (existing ? existing.fromSeq : undefined),

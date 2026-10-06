@@ -4262,6 +4262,21 @@ body {
   color: #fbbf24;
 }
 
+/* A live bus the GPS puts away from its line's route (detour, shortcut). */
+.map-popup-offroute-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px dashed currentColor;
+  border-radius: 8px;
+  background: var(--status-scheduled-tint);
+  color: var(--status-scheduled);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.map-popup-offroute-notice .ghost-icon,
 .map-popup-ghost-notice .ghost-icon {
   font-size: 1rem;
   line-height: 1;

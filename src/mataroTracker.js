@@ -2,6 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const siriClient = require('./mataroSiriClient');
 const geoEngine = require('./core/geo/geoEngine');
+// A live fix farther than this from every direction of its line (two fixes in
+// a row) is off its route: drawn where it is, not snapped (GPS noise plus the
+// drawn route's own error stay well under it).
+const OFF_ROUTE_M = 75;
 const timeEngine = require('./core/time/timeEngine');
 const calendarEngine = require('./core/time/calendarEngine');
 const scheduleSynthesizer = require('./core/schedule/scheduleSynthesizer');
@@ -1557,8 +1561,8 @@ class MataroTracker extends BaseTracker {
     const stops0 = (allDirections && allDirections[0]?.stops) || routes[0]?.stops || stops;
     const stops1 = (allDirections && allDirections[1]?.stops) || routes[1]?.stops || stops;
 
-    const buses0 = this.processBusesWithDeadReckoning(vehs0, routes[0] || selectedRoute, stops0, '0', liveVehicles, targetDate);
-    const buses1 = isMultiDir ? this.processBusesWithDeadReckoning(vehs1, routes[1], stops1, '1', liveVehicles, targetDate) : [];
+    const buses0 = this.processBusesWithDeadReckoning(vehs0, routes[0] || selectedRoute, stops0, '0', liveVehicles, targetDate, routes);
+    const buses1 = isMultiDir ? this.processBusesWithDeadReckoning(vehs1, routes[1], stops1, '1', liveVehicles, targetDate, routes) : [];
 
     let allLineProcessedBuses = [...buses0, ...buses1];
 
@@ -1710,18 +1714,39 @@ class MataroTracker extends BaseTracker {
   }
 
   // Dead-Zone Position Estimation (Dead-Reckoning along Polyline)
-  processBusesWithDeadReckoning(liveBuses, route, stops, dirId = '0', allLineLiveVehicles = liveBuses, targetDate = new Date()) {
+  processBusesWithDeadReckoning(liveBuses, route, stops, dirId = '0', allLineLiveVehicles = liveBuses, targetDate = new Date(), lineRoutes = null) {
     const now = (targetDate && typeof targetDate.getTime === 'function') ? targetDate.getTime() : Date.now();
     const result = [];
     const polyCoords = (route.coords || []).map(c => ({ lat: parseFloat(c.Latitude), lon: parseFloat(c.Longitude) }));
+    // Every direction of the line: a bus is off its route only when it is far
+    // from all of them (the direction picked from its destination is not
+    // always the nearest drawn one).
+    const linePolys = (Array.isArray(lineRoutes) && lineRoutes.length ? lineRoutes : [route])
+      .map(r => ((r && r.coords) || []).map(c => ({ lat: parseFloat(c.Latitude), lon: parseFloat(c.Longitude) }))
+        .filter(c => Number.isFinite(c.lat) && Number.isFinite(c.lon)))
+      .filter(p => p.length > 1);
 
     // 1. Process active live buses
     liveBuses.forEach(b => {
-      // Snap raw GPS strictly to road polyline
+      // Snap raw GPS to the road polyline, unless the bus is off its route: a
+      // fresh fix more than OFF_ROUTE_M from every direction of its line, two
+      // fixes in a row (one GPS jump is not a detour). A late bus taking a
+      // shortcut, a diversion or a works detour is then shown where it is,
+      // not pulled back onto the drawn route.
       const snapped = geoEngine.snapPointToPolyline(b.lat, b.lon, polyCoords);
-      const roadLat = Math.round(snapped.lat * 1000000) / 1000000;
-      const roadLon = Math.round(snapped.lon * 1000000) / 1000000;
-      const roadBearing = snapped.bearing || b.bearing || 0;
+      const prevHist = this.vehicleHistory.get(String(b.vehicleId));
+      const fixAt = (b.freshness && Number(b.freshness.observedAt)) || Number(b.observedAt) || Number(b.timestamp) || null;
+      const lineDist = linePolys.length
+        ? Math.min(...linePolys.map(p => geoEngine.snapPointToPolyline(b.lat, b.lon, p).dist))
+        : snapped.dist;
+      const farNow = !b.isEstimated && Number.isFinite(lineDist) && lineDist > OFF_ROUTE_M;
+      const prevStreak = (prevHist && prevHist.offRouteStreak) || 0;
+      const newFix = !prevHist || !fixAt || prevHist.offRouteFixAt !== fixAt;
+      const offRouteStreak = farNow ? (newFix ? prevStreak + 1 : prevStreak) : 0;
+      const offRoute = offRouteStreak >= 2;
+      const roadLat = Math.round((offRoute ? b.lat : snapped.lat) * 1000000) / 1000000;
+      const roadLon = Math.round((offRoute ? b.lon : snapped.lon) * 1000000) / 1000000;
+      const roadBearing = offRoute ? (b.bearing || snapped.bearing || 0) : (snapped.bearing || b.bearing || 0);
 
       // Speed: a missing measurement stays UNKNOWN (null). A measured 0 (bus
       // genuinely stopped) stays 0 and remains distinguishable from "no data".
@@ -1746,7 +1771,9 @@ class MataroTracker extends BaseTracker {
         observedAt: (b.freshness && Number(b.freshness.observedAt)) || Number(b.observedAt) || null,
         directionName: b.directionName,
         origin: b.origin,
-        destination: b.destination
+        destination: b.destination,
+        offRouteStreak,
+        offRouteFixAt: fixAt
       });
 
       // Calculate progress and segment along stops
@@ -1813,6 +1840,8 @@ class MataroTracker extends BaseTracker {
         lineName: b.lineName || (route && route.name) || `Línia ${b.lineId}`,
         direction: dirId,
         _snapDist: snapped.dist,
+        offRoute,
+        offRouteM: offRoute ? Math.round(lineDist) : null,
         lat: roadLat,
         lon: roadLon,
         latitude: roadLat,
