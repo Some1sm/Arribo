@@ -885,6 +885,8 @@ class ObservatoriApp {
     // 5. Deriva horària (scheduleDrift)
     if (!data || data.scheduleDrift === null || data.scheduleDrift === undefined) {
       items.push(makeItem('Deriva horària', 'status-neutral', 'Sense dades', 'Sense comprovació de deriva entre operador i graella.'));
+    } else if (data.scheduleDrift.drift === true && data.scheduleDrift.layoutError) {
+      items.push(makeItem('Deriva horària', 'status-warning', 'Graella canviada', `L&#039;operador ha canviat la forma de la graella (sovint una parada nova o suprimida): cal tornar a extreure els horaris. ${this.esc(data.scheduleDrift.layoutError)}`));
     } else if (data.scheduleDrift.drift === true) {
       items.push(makeItem('Deriva horària', 'status-warning', 'Desviació', `Detectada diferència de ${data.scheduleDrift.differencesCount || 1} sortides respecte a la graella.`));
     } else {

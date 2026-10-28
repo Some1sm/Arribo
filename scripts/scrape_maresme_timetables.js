@@ -474,30 +474,33 @@ function diffAgainstShipped(shippedSeasons, freshSeasons) {
 }
 
 // ---------------------------------------------------------------------------
-// Main
+// Scrape both seasons
 // ---------------------------------------------------------------------------
 
-async function main() {
-  const diffOnly = process.argv.includes('--diff');
-  const legacyDiff = process.argv.includes('--diff-legacy');
-  const checkOnly = process.argv.includes('--check');
-
-  const current = JSON.parse(fs.readFileSync(CURRENT_PATH, 'utf8'));
-  const notes = [];
+/**
+ * Fetches and builds every line of both seasons against the stop lists in
+ * `current` (mataro_schedules.json). Shared by this CLI and the ingestion
+ * worker's nightly drift check, so the two cannot disagree on what was scraped.
+ *
+ * Returns { seasons, orders } or, on the first page that cannot be mapped onto
+ * our stop lists, { error }. That error is itself news: the operator changed
+ * the shape of a grid (typically a stop added or removed, which changes the
+ * column count), so the shipped file can no longer be compared column by column.
+ * A network failure is thrown instead, because it says nothing about the grid.
+ *
+ * `fetch` is injectable so the drift check can be tested offline.
+ */
+async function scrapeSeasons(current, notes = [], fetch = fetchPage) {
   const seasons = {};
-
+  const orders = {};
   for (const [urlSeason, seasonName] of Object.entries(SEASONS)) {
     seasons[seasonName] = {};
     for (let L = 1; L <= 8; L++) {
       const url = `https://maresme.net/matarobus/${urlSeason}/index.php?l=es&id=${L}`;
-      const html = await fetchPage(url);
+      const html = await fetch(url);
       const line = current[String(L)];
       const built = buildSeason(html, line, seasonName, notes);
-      if (built.error) {
-        console.error(`✗ L${L} ${seasonName}: ${built.error}`);
-        process.exitCode = 1;
-        return;
-      }
+      if (built.error) return { error: `L${L} ${seasonName}: ${built.error}` };
       seasons[seasonName][String(L)] = {
         lineId: line.lineId, code: line.code, lineName: line.lineName, color: line.color,
         agency: line.agency, operator: line.operator, mode: line.mode,
@@ -509,10 +512,37 @@ async function main() {
         // would silently reverse every direction in the app.
         directionIndexOrder: line.directionIndexOrder
       };
-      if (!checkOnly) {
-        const counts = built.order.map((k) => `d${k}=${built.data[k].schedules.weekday.length}`).join(' ');
-        console.log(`  ${seasonName} L${L}: ${counts} (order ${built.order.join(',')})`);
-      }
+      orders[`${seasonName} L${L}`] = built.order;
+    }
+  }
+  return { seasons, orders };
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+
+async function main() {
+  const diffOnly = process.argv.includes('--diff');
+  const legacyDiff = process.argv.includes('--diff-legacy');
+  const checkOnly = process.argv.includes('--check');
+
+  const current = JSON.parse(fs.readFileSync(CURRENT_PATH, 'utf8'));
+  const notes = [];
+
+  const scraped = await scrapeSeasons(current, notes);
+  if (scraped.error) {
+    console.error(`✗ ${scraped.error}`);
+    process.exitCode = 1;
+    return;
+  }
+  const { seasons } = scraped;
+  if (!checkOnly) {
+    for (const [key, order] of Object.entries(scraped.orders)) {
+      const [seasonName, lineKey] = key.split(' ');
+      const dirs = seasons[seasonName][lineKey.slice(1)].directions;
+      const counts = order.map((k) => `d${k}=${dirs[k].schedules.weekday.length}`).join(' ');
+      console.log(`  ${key}: ${counts} (order ${order.join(',')})`);
     }
   }
 
@@ -604,7 +634,7 @@ if (require.main === module) {
 
 module.exports = {
   fetchPage, parseSlotArrays, parseColumnNames, parseFirstOriginName, resolveBlocks,
-  buildSeason, medianOffsetSec, toSec, isTime, pad2, normName, realDirectionKeys,
-  diffAgainstShipped, OUTPUT_PATH,
+  buildSeason, scrapeSeasons, medianOffsetSec, toSec, isTime, pad2, normName, realDirectionKeys,
+  diffAgainstShipped, OUTPUT_PATH, CURRENT_PATH,
   SEASONS, DAY_KEYS
 };

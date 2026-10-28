@@ -533,26 +533,28 @@ class IngestionDaemon {
     }
   }
 
-  async checkScheduleDrift() {
+  // Compares the published grids on maresme.net with the shipped seasons file.
+  // A grid whose shape changed (a stop added or removed) cannot be compared
+  // column by column; that is reported as drift with `layoutError`, because it
+  // is exactly the change that most needs a re-scrape. A fetch failure throws
+  // and leaves the last result in place: it says nothing about the grid.
+  async checkScheduleDrift({ fetchPage } = {}) {
     try {
       const scraper = require('../scripts/scrape_maresme_timetables');
       const fs = require('fs');
-      const path = require('path');
-      const shippedPath = path.resolve(__dirname, 'data/mataro_schedules.seasons.json');
+      const shippedPath = scraper.OUTPUT_PATH;
       if (!fs.existsSync(shippedPath)) {
         return null;
       }
       const shipped = JSON.parse(fs.readFileSync(shippedPath, 'utf8'));
-      const freshSeasons = {};
-      const notes = [];
-      for (const season of scraper.SEASONS) {
-        freshSeasons[season] = await scraper.buildSeason(season, notes);
-      }
-      const differences = scraper.diffAgainstShipped(shipped.seasons, freshSeasons);
+      const current = JSON.parse(fs.readFileSync(scraper.CURRENT_PATH, 'utf8'));
+      const fresh = await scraper.scrapeSeasons(current, [], fetchPage);
+      const differences = fresh.error ? [] : scraper.diffAgainstShipped(shipped.seasons, fresh.seasons);
       this.scheduleDrift = {
-        drift: differences.length > 0,
+        drift: Boolean(fresh.error) || differences.length > 0,
         checkedAt: new Date().toISOString(),
-        differencesCount: differences.length
+        differencesCount: differences.length,
+        ...(fresh.error ? { layoutError: fresh.error } : {})
       };
       this.emitIpc('SCHEDULE_DRIFT_UPDATE', this.scheduleDrift);
       return this.scheduleDrift;
