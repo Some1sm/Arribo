@@ -19,6 +19,7 @@ const BaseTracker = require('./core/BaseTracker');
 const transitRouter = require('./core/schedule/transitRouter');
 const mataroFleet = require('./data/mataroFleet');
 const verifiedTls = require('./core/http/verifiedTls');
+const { readBoundedBody } = require('./core/http/boundedBody');
 const holidayCalendar = require('./core/time/holidayCalendar');
 const tripMatcher = require('./core/schedule/tripMatcher');
 
@@ -199,9 +200,7 @@ class MataroTracker extends BaseTracker {
         // unauthenticated response would let a third party publish them.
         agent: verifiedTls.agentFor('mataro.avanzagrupo.com')
       }, (res) => {
-        let data = '';
-        res.on('data', chunk => data += chunk);
-        res.on('end', () => {
+        readBoundedBody(res).then((data) => {
           const avisos = [];
           const panes = data.split(/<div class=\"tab-pane/i).slice(1);
           panes.forEach((pane, idx) => {
@@ -257,6 +256,9 @@ class MataroTracker extends BaseTracker {
           });
 
           resolve(avisos);
+        }, (err) => {
+          console.warn(`[MataroTracker] Avisos fetch failed — ${err.message}`);
+          resolve(null);
         });
       });
       // A TLS failure here means the portal's certificate chain no longer

@@ -35,6 +35,14 @@ function trustedProxies(value = '') {
   });
 }
 
+/** One key per client address (IPv4-mapped IPv6 folded to IPv4, IPv6 canonicalised). */
+function clientKey(req) {
+  let key = req.ip || req.socket.remoteAddress || 'unknown';
+  if (key.startsWith('::ffff:') && net.isIP(key.slice(7)) === 4) key = key.slice(7);
+  if (net.isIP(key) === 6) key = new URL(`http://[${key}]/`).hostname;
+  return key;
+}
+
 function createApiLimiter({
   now = Date.now,
   windowMs = 60000,
@@ -58,9 +66,7 @@ function createApiLimiter({
       for (const [key, state] of clients) if (state.until <= time) clients.delete(key);
       lastSweep = time;
     }
-    let key = req.ip || req.socket.remoteAddress || 'unknown';
-    if (key.startsWith('::ffff:') && net.isIP(key.slice(7)) === 4) key = key.slice(7);
-    if (net.isIP(key) === 6) key = new URL(`http://[${key}]/`).hostname;
+    const key = clientKey(req);
     let state = clients.get(key);
     const reject = until => {
       res.setHeader('Retry-After', String(Math.max(1, Math.ceil((until - time) / 1000))));
@@ -82,4 +88,4 @@ function createApiLimiter({
   };
 }
 
-module.exports = { securityHeaders, createApiLimiter, trustedProxies };
+module.exports = { securityHeaders, createApiLimiter, trustedProxies, clientKey };

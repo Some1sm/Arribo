@@ -296,7 +296,8 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   removed it. Report the count. See `test/fleet_status_accounting_test.js`.
 - Preserve visibility deep sleep, bounded caches, Leaflet canvas, event delegation,
   async state guards and full scrollable departure boards.
-- Preserve unbuffered SSE and close its clients/timers on shutdown. Dynamic arrivals,
+- Preserve unbuffered SSE (200 streams, 8 per client address; a refused browser
+  polls) and close its clients/timers on shutdown. Dynamic arrivals,
   fleet and planner responses stay out of offline caches.
 - Keep both HTML script order/versions aligned with the service-worker shell.
 - **Three things move together for any shell asset change** (`css/style.css`, any
@@ -491,7 +492,8 @@ setup and contracts; verify disagreements against source, not fixed source-line 
 
 ## 4. Runtime, configuration and privacy
 
-Compose retains 400 MB limit, 80 MB reservation, 160 MB V8 heap, non-root execution,
+Compose retains 400 MB limit, 80 MB reservation, 160 MB V8 heap, non-root execution
+with all capabilities dropped and no-new-privileges,
 15-second stop grace and the data volume. DATA_DIR controls history placement, not
 all caches; REPORTS_DIR independently controls reports. Node >=22.5 is required.
 

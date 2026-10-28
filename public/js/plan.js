@@ -909,7 +909,7 @@ class PlannerPageApp {
                     <div class="disruption-banner-content" style="flex:1;">
                       <strong style="color:#d97706; font-size:0.8rem; font-weight:700;">Avís de servei a la línia</strong>
                       <span style="font-size:0.75rem; line-height:1.3;">
-                        <a href="${this.esc(notice.url || 'https://mataro.avanzagrupo.com/ca/avisos')}" target="_blank" rel="noopener noreferrer" style="color:inherit; text-decoration:underline; font-weight:600;">
+                        <a href="${this.safeUrl(notice.url || 'https://mataro.avanzagrupo.com/ca/avisos')}" target="_blank" rel="noopener noreferrer" style="color:inherit; text-decoration:underline; font-weight:600;">
                           ${this.esc(notice.title)}
                         </a>
                       </span>
@@ -1175,6 +1175,15 @@ class PlannerPageApp {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
+  }
+
+  // Same rule as TransitApp.safeUrl: only http(s) or a same-site path, so a
+  // notice link from upstream can never be a javascript: URL.
+  safeUrl(value) {
+    const str = String(value || '').trim();
+    if (/^https?:\/\//i.test(str)) return this.esc(str);
+    if (/^\//.test(str) && !str.startsWith('//')) return this.esc(str);
+    return '#';
   }
 }
 

@@ -1,5 +1,6 @@
 const https = require('https');
 const timeUtils = require('./timeUtils');
+const { readBoundedBody } = require('./core/http/boundedBody');
 
 class MataroSiriClient {
   constructor() {
@@ -140,9 +141,7 @@ class MataroSiriClient {
       };
 
       const req = https.request(options, (res) => {
-        let data = '';
-        res.on('data', chunk => data += chunk);
-        res.on('end', () => resolve({ status: res.statusCode, bodyText: data }));
+        readBoundedBody(res).then((bodyText) => resolve({ status: res.statusCode, bodyText }), reject);
       });
 
       req.on('error', reject);
@@ -236,9 +235,12 @@ class MataroSiriClient {
 
   // Decode XML entities (&amp; &lt; &gt; &quot; &apos; and numeric refs) in extracted values
   decodeXmlEntities(str) {
+    // An out-of-range reference (&#99999999;) is left as written: fromCodePoint
+    // would throw and take the whole response down with one bad character.
+    const fromCode = (code, raw) => (code <= 0x10FFFF ? String.fromCodePoint(code) : raw);
     return str
-      .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
-      .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(parseInt(d, 10)))
+      .replace(/&#x([0-9a-fA-F]+);/g, (raw, h) => fromCode(parseInt(h, 16), raw))
+      .replace(/&#(\d+);/g, (raw, d) => fromCode(parseInt(d, 10), raw))
       .replace(/&lt;/g, '<')
       .replace(/&gt;/g, '>')
       .replace(/&quot;/g, '"')

@@ -2012,7 +2012,7 @@ class TransitApp {
     if (codeEl) codeEl.textContent = stop.code || stop.id || '--';
     if (dirSubEl) {
       if (data.calendarInfo?.calendarTag) {
-        dirSubEl.innerHTML = `${data.directionName || 'En servei'} • <span style="color:#38bdf8; font-weight:600;">📅 ${data.calendarInfo.calendarTag}</span>`;
+        dirSubEl.innerHTML = `${this.esc(data.directionName || 'En servei')} • <span style="color:#38bdf8; font-weight:600;">📅 ${this.esc(data.calendarInfo.calendarTag)}</span>`;
       } else {
         dirSubEl.textContent = data.directionName || 'En servei';
       }
@@ -2459,10 +2459,10 @@ class TransitApp {
           const isParked = b.isTerminalLayover;
           const chipClass = `telemetry-bus-chip ${isSelected ? 'active' : ''} ${isGhost ? 'ghost-chip' : ''}`;
           return `
-            <button type="button" class="${chipClass}" data-bus-trip="${b.tripId || b.vehicleId}">
+            <button type="button" class="${chipClass}" data-bus-trip="${this.esc(b.tripId || b.vehicleId)}">
               <span>${isGhost ? '⚡' : (isParked ? '🅿️' : '🚌')}</span>
-              <span>${label}</span>
-              <span style="font-size:0.68rem; opacity:0.8;">(${b.toStop || b.destination || 'En línia'})</span>
+              <span>${this.esc(label)}</span>
+              <span style="font-size:0.68rem; opacity:0.8;">(${this.esc(b.toStop || b.destination || 'En línia')})</span>
             </button>
           `;
         }).join('');

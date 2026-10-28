@@ -49,12 +49,23 @@ if (typeof global.gc === 'function') {
 }
 
 const app = express();
+// Express 4 ignores the promise an async handler returns, so a handler that
+// throws leaves the request with no response at all: it hangs until the client
+// gives up. Every async GET handler's rejection goes to the error handler at
+// the end of this file instead. app.get(name) with one argument stays the
+// settings getter.
+const expressGet = app.get.bind(app);
+app.get = (route, ...handlers) => (handlers.length === 0
+  ? expressGet(route)
+  : expressGet(route, ...handlers.map(h => (h && h.constructor && h.constructor.name === 'AsyncFunction'
+    ? (req, res, next) => h(req, res, next).catch(next)
+    : h))));
 let shuttingDown = false;
 let httpServer = null;
 let shutdownPromise = null;
 const PORT = process.env.PORT || 3000;
 
-const { securityHeaders, createApiLimiter, trustedProxies } = require('./src/core/httpProtection');
+const { securityHeaders, createApiLimiter, trustedProxies, clientKey } = require('./src/core/httpProtection');
 app.disable('x-powered-by');
 const proxyAddresses = trustedProxies(process.env.TRUSTED_PROXIES);
 if (proxyAddresses.length) app.set('trust proxy', proxyAddresses);
@@ -325,7 +336,13 @@ function harmonizeTargetEta(data, tracker, lineId, direction) {
 // ==========================================
 const fleetBroadcaster = (() => {
   const MAX_CLIENTS = 200;
+  // Without a per-client cap one address could hold all 200 streams and the
+  // live map would refuse everyone else. A refused browser falls back to
+  // polling /api/fleet/live, so a household or carrier NAT past the cap still
+  // sees the buses, a little later.
+  const MAX_PER_CLIENT = 8;
   const clients = new Set();
+  const perClient = new Map();
   let latestSnapshot = null;
   let heartbeatTimer = null;
 
@@ -344,6 +361,8 @@ const fleetBroadcaster = (() => {
   function removeClient(client) {
     if (!clients.has(client)) return;
     clients.delete(client);
+    const left = (perClient.get(client.key) || 1) - 1;
+    if (left > 0) perClient.set(client.key, left); else perClient.delete(client.key);
     try { client.res.end(); } catch {}
   }
 
@@ -367,6 +386,11 @@ const fleetBroadcaster = (() => {
       res.status(503).json({ success: false, error: 'Too many fleet stream clients.' });
       return;
     }
+    const key = clientKey(req);
+    if ((perClient.get(key) || 0) >= MAX_PER_CLIENT) {
+      res.status(429).json({ success: false, error: 'Too many fleet streams from this client.' });
+      return;
+    }
     res.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache, no-store, no-transform',
@@ -374,8 +398,9 @@ const fleetBroadcaster = (() => {
       'X-Accel-Buffering': 'no'
     });
     res.flushHeaders?.();
-    const client = { res };
+    const client = { res, key };
     clients.add(client);
+    perClient.set(key, (perClient.get(key) || 0) + 1);
     req.on('close', () => removeClient(client));
     writeSnapshot(client);
   }
@@ -584,7 +609,8 @@ app.get('/api/lines', (req, res) => {
 
 // Universal Search across Mataró stops, lines, and street names
 app.get('/api/search/stops', async (req, res) => {
-  const q = req.query.q || '';
+  // ?q[]=x arrives as an array; only a string is a search.
+  const q = typeof req.query.q === 'string' ? req.query.q : '';
   if (!q.trim()) {
     return res.json({ success: true, query: '', results: [], stops: [], streets: [] });
   }
@@ -1320,6 +1346,9 @@ app.get('/api/diagnostics/test', async (req, res) => {
       testedAt: new Date().toLocaleTimeString('ca-ES', { timeZone: 'Europe/Madrid' })
     });
   } catch (err) {
+    // The raw message can carry internal detail (paths, upstream text); the
+    // log keeps the type, the client gets a fixed sentence.
+    console.error(JSON.stringify({ event: 'diagnostics_test_failed', requestId: req.requestId, errorType: err?.name || 'Error' }));
     res.json({
       success: false,
       lineId,
@@ -1327,7 +1356,7 @@ app.get('/api/diagnostics/test', async (req, res) => {
       host: 'sirimataro.avanzagrupo.com',
       status: 'offline',
       statusCode: 502,
-      error: err.message
+      error: 'Upstream check failed'
     });
   }
 });
@@ -1367,6 +1396,16 @@ app.get('*', (req, res) => {
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Last stop for errors: always a JSON answer, never Express's HTML page (which
+// prints a stack trace outside production). A client error such as an
+// undecodable path parameter keeps its 4xx status.
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  const status = Number(err?.status || err?.statusCode);
+  if (status >= 400 && status < 500) return res.status(status).json({ success: false, error: 'Bad request' });
+  sendInternalError(req, res, err);
 });
 
 // Start Server

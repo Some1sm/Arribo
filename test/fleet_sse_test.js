@@ -74,9 +74,23 @@ function waitFor(res, substring, timeoutMs = 4000) {
     // 5. Empty fleet update reaches clients (removals must propagate)
     workerBridge.emit('fleet_update', { timestamp: 12346, vehicles: [] });
     await waitFor(late, '"vehicles":[]');
+
+    // 6. One client cannot hold every stream: 8 per address, then 429, and a
+    //    closed stream frees its slot.
+    const more = [];
+    for (let i = 0; i < 6; i++) more.push(await getStream(port));
+    assert(more.every(r => r.statusCode === 200), 'streams up to the per-client cap are accepted');
+    const refused = await getStream(port);
+    assert.equal(refused.statusCode, 429, 'the 9th stream from one client is refused');
+    more.pop().destroy();
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const again = await getStream(port);
+    assert.equal(again.statusCode, 200, 'a closed stream frees its slot');
+    [...more, again].forEach(r => r.destroy());
+
     res.destroy();
     late.destroy();
-    console.log('PASS: SSE snapshots, late-join replay, waiting state, HEAD rejection all verified');
+    console.log('PASS: SSE snapshots, late-join replay, waiting state, HEAD rejection, per-client cap all verified');
   } finally {
     workerBridge.removeAllListeners('fleet_update');
     server.closeAllConnections?.();

@@ -121,10 +121,10 @@ Plain `npm start` does **not** load `.env` — set real environment variables (o
 ## Health, logging, privacy
 
 - `/api/health` = liveness (always the Docker healthcheck target). `/api/ready` = 503 during startup/shutdown, else 200 with `ready` or `degraded`; **probes must never query providers or SQLite**. An empty overnight fleet alone is not degraded; fleet fetch age >60 s or unknown is.
-- SSE (`/api/fleet/events`) is unbuffered; its clients and timers must be closed on shutdown.
+- SSE (`/api/fleet/events`) is unbuffered, capped at 200 streams and 8 per client address (a refused browser falls back to polling); its clients and timers must be closed on shutdown.
 - Never log or return endpoint queries, coordinates, or key values. Planner requests may carry home/workplace coordinates — do not log them.
 - SIGINT/SIGTERM: mark not-ready → close SSE → drain HTTP ≤5 s → await worker shutdown ≤5 s, inside a 12 s outer deadline under Compose's 15 s grace. Windows child termination does not exercise POSIX signal delivery — validate that on Linux/container.
-- Compose: 400 MB limit, 80 MB reservation, 160 MB V8 heap, non-root, `Europe/Madrid`, digest-pinned `node:22.19.0-alpine`.
+- Compose: 400 MB limit, 80 MB reservation, 160 MB V8 heap, non-root with all capabilities dropped and no-new-privileges, `Europe/Madrid`, digest-pinned `node:22.23.4-alpine`.
 
 ## Delivery
 

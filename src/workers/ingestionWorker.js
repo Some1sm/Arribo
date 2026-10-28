@@ -55,27 +55,6 @@ function sendToMaster(type, payload = {}) {
 }
 
 /**
- * Worker-owned upstream HTTP fetch used by proxyUpstreamHttp
- */
-async function proxyUpstreamFetch(args = {}) {
-  const url = String(args.url || '');
-  if (!/^https?:\/\//.test(url)) {
-    throw new Error('proxyUpstreamHttp: invalid url');
-  }
-  const options = (args.options && typeof args.options === 'object') ? { ...args.options } : {};
-  if (typeof args.body === 'string' && !options.body) options.body = args.body;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), Number(args.timeoutMs) || 6000);
-  try {
-    const res = await fetch(url, { ...options, signal: controller.signal });
-    const bodyText = await res.text();
-    return { status: res.status, bodyText };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-/**
  * Single dispatch table for DB RPC operations.
  */
 async function executeDbOperation(op, args = {}) {
@@ -106,9 +85,6 @@ async function executeDbOperation(op, args = {}) {
       }
       return res;
     }
-
-    case 'proxyUpstreamHttp':
-      return proxyUpstreamFetch(args);
 
     case 'getJournalismReport':
       return historyDb.getJournalismReport(args.hours, args.allLinesCatalog || trackerRegistry.getAllLines());

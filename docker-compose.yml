@@ -4,6 +4,12 @@ services:
     container_name: arribo
     restart: unless-stopped
     stop_grace_period: 15s
+    # The app runs as the non-root node user on port 3000 and needs no Linux
+    # capabilities; nothing in the container may regain privileges either.
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     ports:
       - "3000:3000"
     environment:

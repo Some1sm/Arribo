@@ -117,11 +117,12 @@ alongside calling `app.shutdown()` for worker cleanup.
 ## Reproducible installation
 
 Docker uses locked `npm ci --omit=dev`, with no install fallback. Dockerfile pins the
-verified official `node:22.19.0-alpine` manifest digest. This ensures repeatability,
+verified official `node:22.23.4-alpine` manifest digest. This ensures repeatability,
 not that the image is the latest security patch. For updates, verify an existing
 official tag/digest, review security fixes, run syntax/full tests and container
 boot/shutdown checks, then update the pin. A registry lookup is not a Docker build.
-Non-root operation, 160 MB V8 heap and 400 MB Compose limit remain.
+Non-root operation (all capabilities dropped, no-new-privileges), 160 MB V8 heap and
+400 MB Compose limit remain.
 
 The image is built in two stages. The `assets` stage runs a full locked `npm ci` (dev dependencies included) and minifies copies of `public/js/*.js` and `public/css/*.css` with esbuild (`scripts/minify_public.js`); the runtime stage copies only those minified files over the readable sources. HTML, `sw.js` and the manifest are served unchanged. To debug a browser error with readable stack traces, reproduce it with `npm start`, which serves the sources.
 
