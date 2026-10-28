@@ -2,7 +2,7 @@
  * test/avanza_full_network_timetable_test.js
  * 
  * Verifies full network schedule calibration across all 8 Mataró urban lines (L1–L8),
- * 153 indexed stops, and 3 day types (weekday, Saturday, Sunday/holiday).
+ * 155 indexed stops, and 3 day types (weekday, Saturday, Sunday/holiday).
  */
 
 const assert = require('node:assert');

@@ -7,7 +7,7 @@
 ## 1. Context and Current Boundaries
 
 As established in [`AGENTS.md §1`](file:///h:/Coding/Arribo!/AGENTS.md):
-- **Current Scope:** Arribo! serves strictly **Mataró Bus Urbà (Lines L1–L8)** with 153 indexed stops.
+- **Current Scope:** Arribo! serves strictly **Mataró Bus Urbà (Lines L1–L8)** with 155 indexed stops.
 - `TrackerRegistry` registers only Mataró. No other transit providers or municipalities are currently active.
 - Current authoritative timetable: `maresme.net` per-trip matrix with seasonal provenance (`mataro_schedules.seasons.json`).
 

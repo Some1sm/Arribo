@@ -192,7 +192,7 @@ Other open-source tools and community transit projects can query these endpoints
 
 ### Automated Scraper Script
 
-Arribo! includes a scraper script to automate extraction and calibration across all 8 lines and 153 stops:
+Arribo! includes a scraper script to automate extraction and calibration across all 8 lines and 155 stops:
 
 ```bash
 node scripts/scrape_avanza_schedules.js

@@ -55,7 +55,7 @@ structured output printed directly to the user:
 
 ## 1. Current scope
 
-Arribo! serves Mataró Bus Urbà **L1–L8**, eight lines and 153 indexed stops.
+Arribo! serves Mataró Bus Urbà **L1–L8**, eight lines and 155 indexed stops.
 TrackerRegistry registers only Mataró. The Catalonia-wide trackers and their
 GTFS/indexer helpers have been deleted, not left dormant; there is nothing to
 re-enable. [docs/history/ARCHITECTURE.md](docs/history/ARCHITECTURE.md)

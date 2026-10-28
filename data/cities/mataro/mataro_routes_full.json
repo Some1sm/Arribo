@@ -5029,6 +5029,19 @@
           ]
         },
         {
+          "id": "1180",
+          "name": "CPAC - 1180",
+          "latitude": 41.5526,
+          "longitude": 2.42606,
+          "lineas": [
+            {
+              "id": "1",
+              "name": "Circular ",
+              "color": "#ff00ff"
+            }
+          ]
+        },
+        {
           "id": "1036",
           "name": "Cementiri Les Valls - 1036",
           "latitude": 41.5569,
@@ -7210,10 +7223,23 @@
           ]
         },
         {
+          "id": "1178",
+          "name": "El Sorrall - 1178",
+          "latitude": 41.5408,
+          "longitude": 2.42079,
+          "lineas": [
+            {
+              "id": "2",
+              "name": "Circular ",
+              "color": "#804000"
+            }
+          ]
+        },
+        {
           "id": "1047",
           "name": "Pres.Tarradellas - 1047",
-          "latitude": 41.5382,
-          "longitude": 2.42089,
+          "latitude": 41.5375,
+          "longitude": 2.42095,
           "lineas": [
             {
               "id": "2",
