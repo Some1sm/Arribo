@@ -419,5 +419,175 @@ for (let i = 0; i < N; i++) {
   run('serviceHoursOnDate', [c.year, c.month, c.day], () => [...serviceHours.serviceHoursOnDate(c.year, c.month, c.day)].sort((a, b) => a - b));
 }
 
+// ---------------------------------------------------------------- synthesizer
+const synth = req('src/core/schedule/scheduleSynthesizer');
+for (let i = 0; i < N; i++) {
+  const l = pick(['1', '2', '3', '4', '5', '6', '7', '8']);
+  const ds = sched.getDirectionSchedule(l, pick(['0', '1']), 'weekday');
+  if (!ds) continue;
+  const stops = ds.stops.map((s) => ({ ...s }));
+  if (rand() < 0.2 && stops.length > 2) { stops[1].lat = 0; delete stops[2].lon; }
+  if (rand() < 0.1 && stops.length) stops[0].latitude = stops[0].lat, delete stops[0].lat;
+  const opts = rand() < 0.7 ? { speedMps: 4.8, dwellSecPerStop: 25, defaultSegmentMeters: 300 } : pick([{}, { speedKmh: 20 }, { avgSpeedKmh: '18' }, { dwellSecPerStop: 0 }]);
+  const rows = synth.estimateStopTravelTimes(stops, opts);
+  run('estimateStopTravelTimes', [stops, opts], () => rows);
+  const id = rand() < 0.8 && stops.length ? String(pick(stops).id) : pick(['0', '3', 'x', '']);
+  run('getTravelTimeToStop', [stops, opts, id], () => synth.getTravelTimeToStop(rows, id));
+}
+for (let i = 0; i < N * 2; i++) {
+  const l = pick(['1', '2', '3', '4', '5', '6', '7', '8']);
+  const dir = pick(['0', '1']);
+  const ds = sched.getDirectionSchedule(l, dir, 'weekday');
+  if (!ds || !ds.stops.length) continue;
+  const st = pick(ds.stops);
+  const perTrip = rand() < 0.7;
+  const today = perTrip ? sched.getDeparturesForStop(l, dir, String(st.id), 'weekday') : ds.departures;
+  const tomorrow = perTrip ? sched.getDeparturesForStop(l, dir, String(st.id), pick(['weekday', 'saturday', 'sunday'])) : ds.departures;
+  const ts = rTs();
+  const live = [];
+  for (let k = ri(0, 5); k > 0; k--) {
+    const d = {};
+    const hh = String(ri(0, 23)).padStart(2, '0'), mm = String(ri(0, 59)).padStart(2, '0');
+    if (rand() < 0.9) d.departureTime = pick([`${hh}:${mm}`, `${hh}:${mm}:30`, '--:--', '', 'x:y']);
+    if (rand() < 0.7) d.minutesAway = rand() < 0.9 ? ri(-2, 90) : pick(['5', null, 'x']);
+    if (rand() < 0.5) d.isRealTime = rand() < 0.7;
+    if (rand() < 0.2) d.isRealtime = rand() < 0.5;
+    if (rand() < 0.3) d.isEstimated = rand() < 0.5;
+    if (rand() < 0.4) d.scheduledTime = pick([`${hh}:${String(ri(0, 59)).padStart(2, '0')}`, '', 'abc']);
+    if (rand() < 0.3) d.aimedIso = pick([new Date(ts + ri(-30, 120) * 60000).toISOString(), '0001-01-01T00:00:00Z', '1970-01-01T00:00:00Z', 'bad']);
+    if (rand() < 0.4) d.delayMinutes = ri(-3, 15);
+    if (rand() < 0.4) d.vehicleId = pick(['2670', 'EST_1_2', ' EST_x', '', '2681']);
+    if (rand() < 0.1) d.isTheoretical = true;
+    if (rand() < 0.1) d.isGhostVehicle = true;
+    if (rand() < 0.2) d.delayBadgeText = pick(['X', '']);
+    if (rand() < 0.2) d.isRegulating = true;
+    if (rand() < 0.2) d.arrivalTime = `${hh}:${mm}`;
+    live.push(d);
+  }
+  if (rand() < 0.1) live.push(null);
+  const o = {
+    baseDeparturesToday: today,
+    baseDeparturesTomorrow: rand() < 0.9 ? tomorrow : [],
+    stopDeparturesToday: perTrip ? today : undefined,
+    stopTravelSec: perTrip ? 0 : ri(0, 1800),
+    liveDepartures: live,
+    limit: rand() < 0.8 ? pick([10, 5, 20, 3]) : pick([0, -1, 2.5]),
+    minCountBeforeMorning: rand() < 0.8 ? 5 : ri(0, 12),
+    maxMorningCount: rand() < 0.8 ? 10 : ri(0, 4),
+    duplicateWindowMinutes: rand() < 0.8 ? 8 : 3,
+    dateObj: ts,
+    timezone: 'Europe/Madrid',
+    lineId: l, lineCode: l, lineName: `Línia ${l}`, destination: ds.directionName,
+    directionId: dir, isTrain: false
+  };
+  if (rand() < 0.1) { o.serviceStartSec = 6 * 3600; o.serviceEndSec = 20 * 3600; }
+  run('compileStopDepartures', [o], () => synth.compileStopDepartures(o));
+}
+
+// ---------------------------------------------------------------- anomaly detectors
+const dj = req('src/core/schedule/delayJump');
+const trl = req('src/core/schedule/tripRelink');
+const bkl = req('src/core/schedule/backwardLeg');
+const dhr = req('src/core/schedule/deadheadReturn');
+const punct = req('src/core/punctuality');
+// Same code as historyDb.js scheduleStopIndex / scheduleTripMinutes (not exported there).
+function scheduleStopIndex() {
+  const cache = new Map();
+  return (lineCode, direction, stopName) => {
+    const key = `${lineCode}|${direction}`;
+    if (!cache.has(key)) {
+      const ds = sched.getDirectionSchedule(String(lineCode || '').replace(/^L/i, ''), direction, 'weekday');
+      cache.set(key, ds && Array.isArray(ds.stops) && ds.stops.length ? ds.stops.map(s => tripMatcher.normalizeStopName(s.name)) : null);
+    }
+    const names = cache.get(key);
+    if (!names) return null;
+    const wanted = tripMatcher.normalizeStopName(stopName);
+    const indexes = [];
+    names.forEach((name, idx) => { if (name === wanted) indexes.push(idx); });
+    return indexes.length ? { indexes, lastIndex: names.length - 1 } : null;
+  };
+}
+function scheduleTripMinutes(lineCode, direction) {
+  const ds = sched.getDirectionSchedule(String(lineCode || '').replace(/^L/i, ''), direction, 'weekday');
+  const mins = ds ? Number(ds.totalTravelMinutes) : NaN;
+  return Number.isFinite(mins) && mins > 0 ? mins : null;
+}
+function genSamples() {
+  const samples = [];
+  const vehicles = ['2653', '2670', '2681', 'EST_1', '2700', 'a1', 'B2'];
+  for (const v of vehicles.slice(0, ri(1, vehicles.length))) {
+    let ts = Date.UTC(2026, 9, 1, 6, 0, 0) + ri(0, 3600) * 1000;
+    let line = String(ri(1, 8));
+    let dir = pick(['0', '1']);
+    let idx = 0;
+    let delay = ri(-2, 8);
+    for (let k = ri(5, 80); k > 0; k--) {
+      const ds = sched.getDirectionSchedule(line, dir, 'weekday');
+      if (!ds || !ds.stops.length) break;
+      const r = rand();
+      if (r < 0.06) delay += ri(10, 30);                 // jump
+      else if (r < 0.12) delay -= ri(10, 25);            // relink drop
+      else if (r < 0.18) idx = Math.max(0, idx - ri(3, 8)); // backwards
+      else if (r < 0.22) { dir = dir === '0' ? '1' : '0'; idx = ri(0, 3); } // turn
+      else if (r < 0.25) { line = String(ri(1, 8)); idx = 0; }
+      else idx += pick([0, 1, 1, 1, 2]);
+      if (idx >= ds.stops.length) { idx = 0; dir = dir === '0' ? '1' : '0'; }
+      delay += ri(-1, 1);
+      ts += ri(30, rand() < 0.05 ? 3000 : 240) * 1000;
+      const st = ds.stops[Math.min(idx, ds.stops.length - 1)];
+      samples.push({
+        vehicleId: rand() < 0.02 ? '' : v,
+        lineCode: pick([`L${line}`, `l${line}`, `L${line}`, line]),
+        direction: rand() < 0.05 ? pick([null, undefined, '', Number(dir)]) : dir,
+        delayMins: rand() < 0.02 ? pick(['x', null, '7']) : delay,
+        timestamp: rand() < 0.01 ? 'bad' : ts,
+        stopName: rand() < 0.1 ? `${st.name} - ${st.id}` : (rand() < 0.03 ? '' : st.name),
+        scheduledTime: rand() < 0.5 ? `${String(ri(6, 22)).padStart(2, '0')}:${String(ri(0, 59)).padStart(2, '0')}` : undefined,
+        id: k
+      });
+    }
+  }
+  // A deadhead return: serve most of a direction, one phantom stop on the
+  // opposite direction, then restart the first direction near its start.
+  if (rand() < 0.6) {
+    const line = String(ri(1, 8));
+    const a = pick(['0', '1']), b = a === '0' ? '1' : '0';
+    const dsA = sched.getDirectionSchedule(line, a, 'weekday'), dsB = sched.getDirectionSchedule(line, b, 'weekday');
+    if (dsA && dsB && dsA.stops.length > 8 && dsB.stops.length) {
+      let ts = Date.UTC(2026, 9, 1, 9, 0, 0) + ri(0, 3600) * 1000;
+      const v = pick(['2653', '2711']);
+      const delay = ri(0, 10);
+      const upto = ri(6, dsA.stops.length - 1);
+      for (let k = 0; k <= upto; k++) { ts += ri(60, 120) * 1000; samples.push({ vehicleId: v, lineCode: `L${line}`, direction: a, delayMins: delay + ri(-1, 1), timestamp: ts, stopName: dsA.stops[k].name, scheduledTime: '10:00' }); }
+      const ph = pick(dsB.stops);
+      for (let k = ri(1, 4); k > 0; k--) { ts += ri(30, 90) * 1000; samples.push({ vehicleId: v, lineCode: `L${line}`, direction: rand() < 0.9 ? b : a, delayMins: delay + ri(0, 20), timestamp: ts, stopName: rand() < 0.9 ? ph.name : pick(dsB.stops).name, scheduledTime: rand() < 0.5 ? '10:30' : undefined }); }
+      ts += ri(60, 600) * 1000;
+      for (let k = ri(0, 3), n = ri(3, 6); n > 0 && k < dsA.stops.length; k++, n--) { ts += ri(60, 120) * 1000; samples.push({ vehicleId: v, lineCode: `L${line}`, direction: a, delayMins: delay, timestamp: ts, stopName: dsA.stops[k].name }); }
+    }
+  }
+  // shuffle: the detectors must not depend on input order
+  for (let i = samples.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [samples[i], samples[j]] = [samples[j], samples[i]]; }
+  return samples;
+}
+for (let i = 0; i < N; i++) {
+  const s = genSamples();
+  run('findDelayJumps', [s], () => dj.findDelayJumps(s));
+  run('findTripRelinks', [s, false], () => trl.findTripRelinks(s));
+  run('findTripRelinks', [s, true], () => trl.findTripRelinks(s, { stopIndex: scheduleStopIndex() }));
+  run('findBackwardLegs', [s], () => bkl.findBackwardLegs(s, { stopIndex: scheduleStopIndex() }));
+  run('findDeadheadReturns', [s], () => dhr.findDeadheadReturns(s, { stopIndex: scheduleStopIndex(), tripMinutes: scheduleTripMinutes }));
+  const jumps = dj.findDelayJumps(s);
+  const q = s.length ? pick(s) : { vehicleId: '2653', lineCode: 'L1', timestamp: 0 };
+  run('jumpCovering', [s, q.vehicleId, q.lineCode, q.timestamp], () => dj.jumpCovering(jumps, q.vehicleId, q.lineCode, q.timestamp));
+  run('jumpOverlapping', [s, q.vehicleId, q.lineCode, q.timestamp, Number(q.timestamp) + 600000], () => dj.jumpOverlapping(jumps, q.vehicleId, q.lineCode, q.timestamp, Number(q.timestamp) + 600000));
+}
+for (const id of ['2653', '2670', '100', '99', 'a1', 'B2', 'b1', 'A1', 'EST_1', 'EST-1', 'x y', 'L10', 'L9', 'L1', 'l2', '_a', '-a', 'a_b', 'ab', '2653a', '']) {
+  for (const id2 of ['2653', '99', 'A1', 'b1', 'L10', 'L9', 'EST_1', 'a_b', '', '2653A']) {
+    run('localeCompare', [id, id2, false], () => Math.sign(id.localeCompare(id2)));
+    run('localeCompare', [id, id2, true], () => Math.sign(id.localeCompare(id2, undefined, { numeric: true })));
+  }
+}
+for (const d of [-20, -15, -2, -1.5, -1, 0, 3, 3.5, 4, 5, NaN, Infinity]) run('classifyDelay', [d], () => punct.classify(d));
+
 process.stdout.write(out.join('\n') + '\n');
 process.stderr.write(`wrote ${out.length} cases\n`);

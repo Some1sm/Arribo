@@ -628,6 +628,74 @@ func difftestCall(fn string, a []any) (res string) {
 		}
 		sort.Ints(hs)
 		r = hs
+	case "estimateStopTravelTimes", "getTravelTimeToStop":
+		var stops []*Obj
+		for _, x := range arg(0).([]any) {
+			o, _ := x.(*Obj)
+			stops = append(stops, o)
+		}
+		opt, _ := arg(1).(*Obj)
+		rows := estimateStopTravelTimes(stops, opt)
+		if fn == "getTravelTimeToStop" {
+			r = getTravelTimeToStop(rows, s(2))
+		} else {
+			out := make([]any, len(rows))
+			for i, row := range rows {
+				out[i] = row.toObj()
+			}
+			r = out
+		}
+	case "compileStopDepartures":
+		o, _ := arg(0).(*Obj)
+		list := compileStopDepartures(o)
+		out := make([]any, len(list))
+		for i, d := range list {
+			out[i] = d
+		}
+		r = out
+	case "findDelayJumps", "findTripRelinks", "findBackwardLegs", "findDeadheadReturns", "jumpCovering", "jumpOverlapping":
+		var samples []*Obj
+		for _, x := range arg(0).([]any) {
+			o, _ := x.(*Obj)
+			samples = append(samples, o)
+		}
+		objs := func(l []*Obj) []any {
+			out := make([]any, len(l))
+			for i, o := range l {
+				out[i] = o
+			}
+			return out
+		}
+		switch fn {
+		case "findDelayJumps":
+			r = objs(findDelayJumps(samples))
+		case "findTripRelinks":
+			var si StopIndexFn
+			if truthy(arg(1)) {
+				si = scheduleStopIndex()
+			}
+			r = objs(findTripRelinks(samples, si))
+		case "findBackwardLegs":
+			r = objs(findBackwardLegs(samples, scheduleStopIndex()))
+		case "findDeadheadReturns":
+			r = objs(findDeadheadReturns(samples, scheduleStopIndex(), scheduleTripMinutes))
+		case "jumpCovering":
+			if j := jumpCovering(findDelayJumps(samples), arg(1), arg(2), arg(3)); j != nil {
+				r = j
+			} else {
+				r = nil
+			}
+		case "jumpOverlapping":
+			if j := jumpOverlapping(findDelayJumps(samples), arg(1), arg(2), arg(3), arg(4)); j != nil {
+				r = j
+			} else {
+				r = nil
+			}
+		}
+	case "localeCompare":
+		r = localeCompareJS(s(0), s(1), truthy(arg(2)))
+	case "classifyDelay":
+		r = classifyDelay(n(0))
 	default:
 		return "UNKNOWN FN"
 	}
