@@ -107,7 +107,10 @@ func reportEntryFromJSON(b []byte) (*reportEntry, error) {
 		if err := dec.Decode(&raw); err != nil {
 			return nil, err
 		}
-		e.fields = append(e.fields, rawField{k, []byte(raw)})
+		// Exact-size copy: the decoder's buffer can be twice as large.
+		v := make([]byte, len(raw))
+		copy(v, raw)
+		e.fields = append(e.fields, rawField{k, v})
 	}
 	if _, err := dec.Token(); err != nil {
 		return nil, err
@@ -135,7 +138,9 @@ type ReportCache struct {
 	db                  *HistoryDB
 }
 
-// Both instances read the same files at start-up; one parse serves both.
+// Both instances (worker and server) read the same files at start-up; one
+// parse serves both. The second read takes the entry out, so the start-up
+// reports are not kept once newer ones replace them.
 var (
 	reportFileMu    sync.Mutex
 	reportFileCache = map[string]*reportEntry{}
@@ -258,6 +263,7 @@ func loadReportFile(f reportFile) (*reportEntry, error) {
 	key := f.fullPath + "|" + numToString(f.mtime)
 	reportFileMu.Lock()
 	if e, ok := reportFileCache[key]; ok {
+		delete(reportFileCache, key)
 		reportFileMu.Unlock()
 		return e, nil
 	}

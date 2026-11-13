@@ -758,37 +758,55 @@ func (h *HistoryDB) all(q string, args ...any) ([]*Obj, error) {
 // object keyed by column name; a repeated column name keeps its first
 // position and takes the last value, as in better-sqlite3.
 func (h *HistoryDB) rows(q string, max int, args ...any) ([]*Obj, error) {
-	b, err := bindArgs(args)
+	out := []*Obj{}
+	err := h.each(q, args, func(cols []string, vals []any) bool {
+		o := &Obj{kvs: make([]objKV, 0, len(cols))}
+		for i, c := range cols {
+			o.Set(c, vals[i])
+		}
+		out = append(out, o)
+		return max < 0 || len(out) < max
+	})
 	if err != nil {
 		return nil, err
 	}
+	return out, nil
+}
+
+// each runs q and calls fn with every row's values (converted as in rows)
+// until fn returns false; vals is reused between calls. It lets a large
+// result be reduced as it is read instead of being held as objects.
+func (h *HistoryDB) each(q string, args []any, fn func(cols []string, vals []any) bool) error {
+	b, err := bindArgs(args)
+	if err != nil {
+		return err
+	}
 	rows, err := h.conn.QueryContext(context.Background(), q, b...)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer rows.Close()
 	cols, err := rows.Columns()
 	if err != nil {
-		return nil, err
+		return err
 	}
-	out := []*Obj{}
-	vals := make([]any, len(cols))
+	raw := make([]any, len(cols))
 	ptrs := make([]any, len(cols))
-	for i := range vals {
-		ptrs[i] = &vals[i]
+	for i := range raw {
+		ptrs[i] = &raw[i]
 	}
+	vals := make([]any, len(cols))
 	// Short text values (line codes, vehicle and stop ids, enum-like flags)
 	// repeat on most rows; keeping one copy each makes a large result much
 	// smaller while it is held. The map keeps the boxed value, so a repeat
 	// is not boxed again.
 	intern := map[string]any{}
-	for (max < 0 || len(out) < max) && rows.Next() {
+	for rows.Next() {
 		if err := rows.Scan(ptrs...); err != nil {
-			return nil, err
+			return err
 		}
-		o := &Obj{kvs: make([]objKV, 0, len(cols))}
-		for i, c := range cols {
-			v := sqlValueToJS(vals[i])
+		for i := range raw {
+			v := sqlValueToJS(raw[i])
 			if str, ok := v.(string); ok && len(str) <= internMaxLen {
 				if kept, ok := intern[str]; ok {
 					v = kept
@@ -796,11 +814,13 @@ func (h *HistoryDB) rows(q string, max int, args ...any) ([]*Obj, error) {
 					intern[str] = v
 				}
 			}
-			o.Set(c, v)
+			vals[i] = v
 		}
-		out = append(out, o)
+		if !fn(cols, vals) {
+			break
+		}
 	}
-	return out, rows.Err()
+	return rows.Err()
 }
 
 // get is stmt.get(...): the first row, or nil where the source gets undefined.

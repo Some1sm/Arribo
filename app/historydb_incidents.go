@@ -7,6 +7,7 @@ import (
 	"log"
 	"math"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -152,6 +153,44 @@ type incTrack struct {
 	endMomentTs  any
 	endDelayMins any
 	nextTrip     any
+}
+
+// incRow is one clustering sample from an incidentColumns query: the
+// values the clustering reads, as the row object would have returned them.
+type incRow struct {
+	vehicleID, lineCode, agency, stopName, direction any
+	delayMins, timestamp, formattedDate, hourOfDay   any
+	ts, delay                                        float64
+}
+
+func newIncRow(cols []string, vals []any) *incRow {
+	r := &incRow{}
+	// A repeated column name takes the last value, as in rows.
+	for i, c := range cols {
+		switch c {
+		case "vehicleId":
+			r.vehicleID = vals[i]
+		case "lineCode":
+			r.lineCode = vals[i]
+		case "agency":
+			r.agency = vals[i]
+		case "stopName":
+			r.stopName = vals[i]
+		case "direction":
+			r.direction = vals[i]
+		case "delayMins":
+			r.delayMins = vals[i]
+		case "timestamp":
+			r.timestamp = vals[i]
+		case "formattedDate":
+			r.formattedDate = vals[i]
+		case "hourOfDay":
+			r.hourOfDay = vals[i]
+		}
+	}
+	r.ts = jsNumber(r.timestamp)
+	r.delay = jsNumber(r.delayMins)
+	return r
 }
 
 const incidentColumns = `
@@ -535,52 +574,60 @@ func (h *HistoryDB) delayIncidents(lineCode, hours, limit, minDelay any) (*Obj, 
 		enrichedAnomalies = append(enrichedAnomalies, o)
 	}
 
-	clusterRowsDesc, err := h.all(`
+	// Up to 30 000 samples feed the clustering; each is kept as a small
+	// record of the columns it reads instead of a full row object.
+	var clusterRowsDesc []*incRow
+	err = h.each(`
         SELECT `+incidentColumns+`
         FROM delay_logs
         WHERE `+sqlWhere+`
         ORDER BY timestamp DESC
         LIMIT 30000
-      `, baseParams...)
+      `, baseParams, func(cols []string, vals []any) bool {
+		clusterRowsDesc = append(clusterRowsDesc, newIncRow(cols, vals))
+		return len(clusterRowsDesc) < 30000
+	})
 	if err != nil {
 		return nil, err
 	}
 	trajectorySamplesTruncated := len(clusterRowsDesc) == 30000
-	var clusterRows []*Obj
+	var clusterRows []*incRow
 	for i := len(clusterRowsDesc) - 1; i >= 0; i-- {
 		r := clusterRowsDesc[i]
-		if deadheadCovering(deadheads, r.Get("vehicleId"), r.Get("lineCode"), r.Get("timestamp")) == nil &&
-			backwardCovering(backs, r.Get("vehicleId"), r.Get("lineCode"), r.Get("timestamp")) == nil {
+		if deadheadCovering(deadheads, r.vehicleID, r.lineCode, r.timestamp) == nil &&
+			backwardCovering(backs, r.vehicleID, r.lineCode, r.timestamp) == nil {
 			clusterRows = append(clusterRows, r)
 		}
 	}
-	sortObjs(clusterRows, func(a, b *Obj) float64 {
-		return orF(float64(localeCompareJS(jsString(a.Get("lineCode")), jsString(b.Get("lineCode")), false)), a.Num("timestamp")-b.Num("timestamp"))
+	clusterRowsDesc = nil
+	sort.SliceStable(clusterRows, func(i, j int) bool {
+		a, b := clusterRows[i], clusterRows[j]
+		return orF(float64(localeCompareJS(jsString(a.lineCode), jsString(b.lineCode), false)), a.ts-b.ts) < 0
 	})
 
 	byLine := newJSMap()
 	for _, r := range clusterRows {
-		k := valueKey(r.Get("lineCode"))
+		k := valueKey(r.lineCode)
 		cur, _ := byLine.Get(k)
-		list, _ := cur.([]*Obj)
+		list, _ := cur.([]*incRow)
 		byLine.Set(k, append(list, r))
 	}
 	var allClusters []*incTrack
 	for _, key := range byLine.Keys() {
 		cur, _ := byLine.Get(key)
-		rows := cur.([]*Obj)
-		lk := rows[0].Get("lineCode")
+		rows := cur.([]*incRow)
+		lk := rows[0].lineCode
 		var activeTracks []*incTrack
 		for _, r := range rows {
-			rts := r.Num("timestamp")
-			rDelay := r.Num("delayMins")
-			isDepotHour := isOutsideRevenueService(r.Get("lineCode"), rts)
+			rts := r.ts
+			rDelay := r.delay
+			isDepotHour := isOutsideRevenueService(r.lineCode, rts)
 			for i := len(activeTracks) - 1; i >= 0; i-- {
 				t := activeTracks[i]
 				gap := rts - t.lastTs
 				dur := rts - t.firstTs
-				newTrip := truthy(t.vehicleID) && truthy(r.Get("vehicleId")) && strictEq(t.vehicleID, r.Get("vehicleId")) &&
-					truthy(t.direction) && truthy(r.Get("direction")) && jsString(t.direction) != jsString(r.Get("direction"))
+				newTrip := truthy(t.vehicleID) && truthy(r.vehicleID) && strictEq(t.vehicleID, r.vehicleID) &&
+					truthy(t.direction) && truthy(r.direction) && jsString(t.direction) != jsString(r.direction)
 				capped := !truthy(t.vehicleID) && dur > 45*60*1000
 				if gap > 12*60*1000 || capped || newTrip {
 					switch {
@@ -601,8 +648,8 @@ func (h *HistoryDB) delayIncidents(lineCode, hours, limit, minDelay any) (*Obj, 
 				if isDepotHour != t.isDepot {
 					continue
 				}
-				if truthy(r.Get("vehicleId")) && truthy(t.vehicleID) {
-					if strictEq(r.Get("vehicleId"), t.vehicleID) {
+				if truthy(r.vehicleID) && truthy(t.vehicleID) {
+					if strictEq(r.vehicleID, t.vehicleID) {
 						bestTrack = t
 						break
 					}
@@ -613,7 +660,7 @@ func (h *HistoryDB) delayIncidents(lineCode, hours, limit, minDelay any) (*Obj, 
 				if dtSec < 180 && dDelay > 6 {
 					continue
 				}
-				if dv := h.stopDistanceAny(t.lastStop, r.Get("stopName")); dv != nil {
+				if dv := h.stopDistanceAny(t.lastStop, r.stopName); dv != nil {
 					distMeters := dv.(float64)
 					impliedSpeed := distMeters / dtSec
 					isSyncTestFixture := dtSec <= 2 && dDelay <= 3
@@ -634,49 +681,49 @@ func (h *HistoryDB) delayIncidents(lineCode, hours, limit, minDelay any) (*Obj, 
 			}
 			if bestTrack != nil {
 				bestTrack.lastTs = rts
-				if !truthy(bestTrack.direction) && truthy(r.Get("direction")) {
-					bestTrack.direction = r.Get("direction")
+				if !truthy(bestTrack.direction) && truthy(r.direction) {
+					bestTrack.direction = r.direction
 				}
-				bestTrack.endTime = r.Get("formattedDate")
+				bestTrack.endTime = r.formattedDate
 				bestTrack.sampleCount++
 				bestTrack.delaySum += rDelay
-				bestTrack.lastDelay = r.Get("delayMins")
-				if truthy(r.Get("vehicleId")) && !truthy(bestTrack.vehicleID) {
-					bestTrack.vehicleID = r.Get("vehicleId")
+				bestTrack.lastDelay = r.delayMins
+				if truthy(r.vehicleID) && !truthy(bestTrack.vehicleID) {
+					bestTrack.vehicleID = r.vehicleID
 				}
 				if rDelay > bestTrack.maxDelay {
 					bestTrack.maxDelay = rDelay
 				}
-				if !includesAny(bestTrack.stops, r.Get("stopName")) {
-					bestTrack.stops = append(bestTrack.stops, r.Get("stopName"))
-					bestTrack.stopProgression = append(bestTrack.stopProgression, O("stopName", r.Get("stopName"), "delayMins", r.Get("delayMins"), "isRecovered", false))
+				if !includesAny(bestTrack.stops, r.stopName) {
+					bestTrack.stops = append(bestTrack.stops, r.stopName)
+					bestTrack.stopProgression = append(bestTrack.stopProgression, O("stopName", r.stopName, "delayMins", r.delayMins, "isRecovered", false))
 				} else if n := len(bestTrack.stopProgression); n > 0 {
 					lastEntry := bestTrack.stopProgression[n-1]
-					if strictEq(lastEntry.Get("stopName"), r.Get("stopName")) && rDelay > lastEntry.Num("delayMins") {
-						lastEntry.Set("delayMins", r.Get("delayMins"))
+					if strictEq(lastEntry.Get("stopName"), r.stopName) && rDelay > lastEntry.Num("delayMins") {
+						lastEntry.Set("delayMins", r.delayMins)
 					}
 				}
-				bestTrack.lastStop = r.Get("stopName")
+				bestTrack.lastStop = r.stopName
 			} else {
 				activeTracks = append(activeTracks, &incTrack{
-					vehicleID:       or(r.Get("vehicleId"), ""),
+					vehicleID:       or(r.vehicleID, ""),
 					lineCode:        lk,
-					agency:          r.Get("agency"),
-					direction:       or(r.Get("direction"), ""),
+					agency:          r.agency,
+					direction:       or(r.direction, ""),
 					closeReason:     nil,
 					firstTs:         rts,
 					lastTs:          rts,
-					startTime:       r.Get("formattedDate"),
-					endTime:         r.Get("formattedDate"),
-					hourOfDay:       r.Get("hourOfDay"),
+					startTime:       r.formattedDate,
+					endTime:         r.formattedDate,
+					hourOfDay:       r.hourOfDay,
 					maxDelay:        rDelay,
 					delaySum:        rDelay,
-					lastDelay:       r.Get("delayMins"),
+					lastDelay:       r.delayMins,
 					sampleCount:     1,
-					stops:           []any{r.Get("stopName")},
-					stopProgression: []*Obj{O("stopName", r.Get("stopName"), "delayMins", r.Get("delayMins"), "isRecovered", false)},
-					firstStop:       r.Get("stopName"),
-					lastStop:        r.Get("stopName"),
+					stops:           []any{r.stopName},
+					stopProgression: []*Obj{O("stopName", r.stopName, "delayMins", r.delayMins, "isRecovered", false)},
+					firstStop:       r.stopName,
+					lastStop:        r.stopName,
 					isDepot:         isDepotHour,
 				})
 			}
