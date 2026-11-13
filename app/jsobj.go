@@ -170,13 +170,13 @@ func isArrayIndex(k string) bool {
 // ---------------------------------------------------------------------------
 // Typed reads with JavaScript coercion.
 
-func (o *Obj) Str(k string) string   { return jsString(o.Get(k)) }
-func (o *Obj) Num(k string) float64  { return jsNumber(o.Get(k)) }
-func (o *Obj) Bool(k string) bool    { return truthy(o.Get(k)) }
-func (o *Obj) ObjAt(k string) *Obj   { v, _ := o.Get(k).(*Obj); return v }
-func (o *Obj) Arr(k string) []any    { v, _ := o.Get(k).([]any); return v }
+func (o *Obj) Str(k string) string     { return jsString(o.Get(k)) }
+func (o *Obj) Num(k string) float64    { return jsNumber(o.Get(k)) }
+func (o *Obj) Bool(k string) bool      { return truthy(o.Get(k)) }
+func (o *Obj) ObjAt(k string) *Obj     { v, _ := o.Get(k).(*Obj); return v }
+func (o *Obj) Arr(k string) []any      { v, _ := o.Get(k).([]any); return v }
 func (o *Obj) IsNullish(k string) bool { return isNullish(o.Get(k)) }
-func (o *Obj) IsUndef(k string) bool { _, u := o.Get(k).(undefinedT); return u }
+func (o *Obj) IsUndef(k string) bool   { _, u := o.Get(k).(undefinedT); return u }
 
 func isNullish(v any) bool {
 	if v == nil {

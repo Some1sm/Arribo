@@ -384,6 +384,7 @@ func dateKeyOf(v any) string {
 // getStopDepartures builds a stop's board: live SIRI, position estimates,
 // terminal regulation and the day's timetable. nil where the source rejects.
 func (t *MataroTracker) getStopDepartures(stopID, lineID, direction any, opts *Obj) *Obj {
+	direction, opts, _ = directionAsOptions(direction, opts)
 	if opts == nil {
 		opts = O()
 	}

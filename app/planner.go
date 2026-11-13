@@ -368,11 +368,11 @@ func (r *TransitRouter) findNearestStop(lat, lon, maxD float64) (*stopCand, erro
 
 // planOptions are the options server.js passes to planJourney.
 type planOptions struct {
-	originName, destName           any
-	preference                     any
-	walkingSpeed, maxWalkingDist   any
-	departureTime, departureDate   any
-	avisos                         any
+	originName, destName         any
+	preference                   any
+	walkingSpeed, maxWalkingDist any
+	departureTime, departureDate any
+	avisos                       any
 }
 
 var errTrim = errors.New("trim is not a function")
@@ -395,7 +395,7 @@ func stopIndexIn(stops []*graphStop, id string) int {
 	return -1
 }
 
-func latLonOf(o *Obj) []float64 { return []float64{o.Num("lat"), o.Num("lon")} }
+func latLonOf(o *Obj) []float64       { return []float64{o.Num("lat"), o.Num("lon")} }
 func gsLatLon(s *graphStop) []float64 { return []float64{s.lat, s.lon} }
 
 // walkTo builds walkToFirstStop for candidate o boarding at first.
@@ -805,10 +805,10 @@ func requestedInstant(depDate, depTime any, now float64) (float64, error) {
 }
 
 type timelineDep struct {
-	at         float64
-	live       bool
-	dayType    string // "" for a live observation
-	duration   float64
+	at          float64
+	live        bool
+	dayType     string // "" for a live observation
+	duration    float64
 	hasDuration bool
 }
 

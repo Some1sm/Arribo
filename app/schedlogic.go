@@ -17,8 +17,8 @@ import (
 // tripMatcher
 
 const (
-	maxResidualMinutes            = 30.0
-	headwayToleranceFloorMinutes  = 5.0
+	maxResidualMinutes           = 30.0
+	headwayToleranceFloorMinutes = 5.0
 )
 
 var (
@@ -46,7 +46,6 @@ func normalizeStopName(name string) string {
 // jsLower is String.prototype.toLowerCase for the characters that occur in
 // stop and street names (Go's ToLower agrees except for a few special cases
 // that do not appear after NFD stripping).
-func jsLower(s string) string { return strings.ToLower(s) }
 
 func circularDiffSec(a, b float64) float64 {
 	d := a - b
@@ -259,7 +258,7 @@ func matchTrip(a MatchArgs) *Obj {
 }
 
 // dirArg converts a JavaScript direction argument as resolveDirectionKey's
-// String(direction ?? '') would; getDirectionSchedule's default '0' applies
+// String(direction ?? ”) would; getDirectionSchedule's default '0' applies
 // only to undefined.
 func dirArg(v any) string {
 	if isUndef(v) {
@@ -699,12 +698,12 @@ const (
 var lineIDs = []string{"1", "2", "3", "4", "5", "6", "7", "8"}
 
 var (
-	shMu           sync.Mutex
-	offsetByHour   = map[int64]int64{}
-	dayByNumber    = map[int64]struct{ dayType, season string }{}
-	windowByKey    = map[string]*ServiceWindow{}
-	windowKnown    = map[string]bool{}
-	shNoticeCount  = -1
+	shMu          sync.Mutex
+	offsetByHour  = map[int64]int64{}
+	dayByNumber   = map[int64]struct{ dayType, season string }{}
+	windowByKey   = map[string]*ServiceWindow{}
+	windowKnown   = map[string]bool{}
+	shNoticeCount = -1
 )
 
 func floorDiv(a, b int64) int64 {

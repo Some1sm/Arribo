@@ -44,7 +44,7 @@ func valueKey(v any) string {
 var reNonAZ09 = regexp.MustCompile(`[^A-Z0-9]`)
 
 func normKey(s any) string {
-	return reNonAZ09.ReplaceAllLiteralString(strings.ToUpper(jsString(or(s, ""))), "")
+	return reNonAZ09.ReplaceAllLiteralString(jsUpper(jsString(or(s, ""))), "")
 }
 
 type trafficContext struct {
@@ -113,8 +113,8 @@ func buildCatalogIndex(catalog []any) catalogIndex {
 		}
 		line := asObj(x)
 		kCode, kID := normKey(line.Get("code")), normKey(line.Get("id"))
-		rawCode := strings.ToUpper(jsString(or(line.Get("code"), "")))
-		rawID := strings.ToUpper(jsString(or(line.Get("id"), "")))
+		rawCode := jsUpper(jsString(or(line.Get("code"), "")))
+		rawID := jsUpper(jsString(or(line.Get("id"), "")))
 		if kCode != "" {
 			m[kCode] = line
 		}
@@ -135,12 +135,12 @@ func (c catalogIndex) lookup(lineCode any) *Obj {
 	if l, ok := c[normKey(lineCode)]; ok {
 		return l
 	}
-	return c[strings.ToUpper(jsString(or(lineCode, "")))]
+	return c[jsUpper(jsString(or(lineCode, "")))]
 }
 
 func (c catalogIndex) has(lineCode any) bool {
 	_, a := c[normKey(lineCode)]
-	_, b := c[strings.ToUpper(jsString(or(lineCode, "")))]
+	_, b := c[jsUpper(jsString(or(lineCode, "")))]
 	return a || b
 }
 
@@ -425,7 +425,7 @@ func (h *HistoryDB) journalismReport(hoursBack any, catalog []any) (*Obj, error)
 			continue
 		}
 		cleanKey := normKey(r.Get("lineCode"))
-		rawKey := strings.ToUpper(jsString(or(r.Get("lineCode"), "")))
+		rawKey := jsUpper(jsString(or(r.Get("lineCode"), "")))
 		cl := idx.lookup(r.Get("lineCode"))
 		sk := stopKey(r)
 		hoursForStop := stopHoursMap[sk]
@@ -785,7 +785,6 @@ func (h *HistoryDB) journalismReport(hoursBack any, catalog []any) (*Obj, error)
 		"agencyStats", objsToAny(agencyStats),
 	), nil
 }
-
 
 // delayMeasurementComparison returns (nil, nil) when nothing was compared;
 // any error leaves the caller's default in place (the JS swallows it).

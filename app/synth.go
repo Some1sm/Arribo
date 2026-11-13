@@ -126,7 +126,7 @@ func isSyntheticDeparture(d *Obj) bool {
 	return strings.HasPrefix(id, "EST_")
 }
 
-// itemTimeStr: typeof item === 'string' ? item : (item ? (item.dep || item.arr || item.departureTime || item.time || '') : '')
+// itemTimeStr: typeof item === 'string' ? item : (item ? (item.dep || item.arr || item.departureTime || item.time || ”) : ”)
 func itemTimeStr(item any) any {
 	switch x := item.(type) {
 	case string:

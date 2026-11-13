@@ -39,15 +39,15 @@ type walkCacheEntry struct {
 }
 
 type pedestrianRouter struct {
-	url, key  string
-	timeout   time.Duration
-	maxEntry  int
-	mu        sync.Mutex
-	cache     map[string]*walkCacheEntry
-	order     []string
-	pending   map[string]chan struct{}
-	pendingV  map[string]*walkResult
-	active    int
+	url, key string
+	timeout  time.Duration
+	maxEntry int
+	mu       sync.Mutex
+	cache    map[string]*walkCacheEntry
+	order    []string
+	pending  map[string]chan struct{}
+	pendingV map[string]*walkResult
+	active   int
 }
 
 var walkRouter = &pedestrianRouter{
@@ -238,11 +238,11 @@ func (pr *pedestrianRouter) fetchRoute(from, to []float64) (*walkResult, error) 
 // ---------------------------------------------------------------- street geocoder
 
 const (
-	mataroLat          = 41.5388
-	mataroLon          = 2.4445
-	geocodeMaxRadiusM  = 12000.0
-	geocodeCacheMax    = 250
-	geocodeCacheTTLms  = 3600 * 1000.0
+	mataroLat         = 41.5388
+	mataroLon         = 2.4445
+	geocodeMaxRadiusM = 12000.0
+	geocodeCacheMax   = 250
+	geocodeCacheTTLms = 3600 * 1000.0
 )
 
 type geocodeEntry struct {
@@ -275,7 +275,7 @@ func (g *streetGeocoderT) hasCatalog() bool {
 
 var reStopSuffix = jsRe(` - \d+$`)
 
-// cleanStopName: (name || '').replace(/ - \d+$/, '').trim()
+// cleanStopName: (name || ”).replace(/ - \d+$/, ”).trim()
 func cleanStopName(v any) string {
 	return jsTrim(reStopSuffix.ReplaceAllString(strOr(v, ""), ""))
 }

@@ -60,7 +60,9 @@ func (t *MataroTracker) syncAvisos(avisos any, timestamp float64) {
 
 // detectAffectedLines returns the lines ('1'..'8') a notice names explicitly.
 // It reproduces
-//   /\b(?:linies|linias|lineas|linia|linea|l)\s*-?\s*([1-8](?:\s*(?:,|\bi\b|\by\b)\s*[1-8])*)(?![0-9])/g
+//
+//	/\b(?:linies|linias|lineas|linia|linea|l)\s*-?\s*([1-8](?:\s*(?:,|\bi\b|\by\b)\s*[1-8])*)(?![0-9])/g
+//
 // by hand, because Go's regexp has no lookahead.
 func detectAffectedLines(text any) []string {
 	s := jsLower(stripMarks(strOr(jsStringOrEmpty(text), "")))
@@ -502,12 +504,12 @@ var avisoMonths = map[string]int{
 	"febrer": 2, "febrero": 2,
 	"marc": 3, "març": 3, "marzo": 3,
 	"abril": 4,
-	"maig": 5, "mayo": 5,
+	"maig":  5, "mayo": 5,
 	"juny": 6, "junio": 6,
 	"juliol": 7, "julio": 7,
 	"agost": 8, "agosto": 8,
 	"setembre": 9, "septiembre": 9,
-	"octubre": 10,
+	"octubre":  10,
 	"novembre": 11, "noviembre": 11,
 	"desembre": 12, "diciembre": 12,
 }
@@ -542,7 +544,7 @@ func ongoingValidity() *AvisoValidity {
 }
 
 // parseAvisoValidity reads the service windows a notice states. title and
-// description default to '' when undefined, like the source's parameters.
+// description default to ” when undefined, like the source's parameters.
 func parseAvisoValidity(title, description any, refMs int64) *AvisoValidity {
 	if isUndef(title) {
 		title = ""

@@ -30,9 +30,9 @@ type openVisit struct {
 }
 
 type IngestionDaemon struct {
-	w        *World
-	db       *HistoryDB
-	reports  *ReportCache
+	w         *World
+	db        *HistoryDB
+	reports   *ReportCache
 	isRunning bool
 	stopping  bool
 
@@ -40,16 +40,16 @@ type IngestionDaemon struct {
 	stopCh     chan struct{}
 	timersMu   sync.Mutex
 
-	ipc            func(typ string, payload any)
-	lastFleetEmit  float64
-	lastWarnAt     map[string]float64
-	upstreamCanary any // *Obj or nil
-	fleetAnomaly   any // string or nil
-	zeroFleetSince float64
-	scheduleDrift  any // *Obj or nil
-	lastDriftDate  string
+	ipc              func(typ string, payload any)
+	lastFleetEmit    float64
+	lastWarnAt       map[string]float64
+	upstreamCanary   any // *Obj or nil
+	fleetAnomaly     any // string or nil
+	zeroFleetSince   float64
+	scheduleDrift    any // *Obj or nil
+	lastDriftDate    string
 	noticesUpdatedAt any
-	gpsGaps        *GpsGapDetector
+	gpsGaps          *GpsGapDetector
 
 	// fetchPage replaces the timetable download in tests.
 	fetchPage func(url string) (string, error)

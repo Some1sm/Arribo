@@ -16,15 +16,15 @@ import (
 // ---------------------------------------------------------------- punctuality
 
 const (
-	earlyLimitMin  = -1.0
-	lateLimitMin   = 3.0
-	severeLateMin  = 5.0
-	validDelayMin  = -15.0
-	validDelaySQL  = "delay_mins > -15"
-	onTimeSQL      = "(delay_mins >= -1 AND delay_mins <= 3)"
-	earlySQL       = "(delay_mins < -1 AND delay_mins > -15)"
-	lateSQL        = "(delay_mins > 3)"
-	severeLateSQL  = "(delay_mins >= 5)"
+	earlyLimitMin = -1.0
+	lateLimitMin  = 3.0
+	severeLateMin = 5.0
+	validDelayMin = -15.0
+	validDelaySQL = "delay_mins > -15"
+	onTimeSQL     = "(delay_mins >= -1 AND delay_mins <= 3)"
+	earlySQL      = "(delay_mins < -1 AND delay_mins > -15)"
+	lateSQL       = "(delay_mins > 3)"
+	severeLateSQL = "(delay_mins >= 5)"
 )
 
 func classifyDelay(d float64) string {
@@ -166,9 +166,9 @@ func intsToAny(xs []int) []any {
 	return out
 }
 
-func upperLine(v any) string { return strings.ToUpper(strOr(v, "")) }
+func upperLine(v any) string { return jsUpper(strOr(v, "")) }
 
-// dirString: s.direction === undefined || s.direction === null ? '' : String(s.direction)
+// dirString: s.direction === undefined || s.direction === null ? ” : String(s.direction)
 func dirString(v any) string {
 	if isNullish(v) {
 		return ""
@@ -326,7 +326,9 @@ func overlappingFind(list []*Obj, vehicleID, lineCode, fromTs, toTs any, fromKey
 	return nil
 }
 
-func jumpCovering(j []*Obj, v, l, ts any) *Obj { return coveringFind(j, v, l, ts, "staleFromTs", "staleToTs") }
+func jumpCovering(j []*Obj, v, l, ts any) *Obj {
+	return coveringFind(j, v, l, ts, "staleFromTs", "staleToTs")
+}
 func jumpOverlapping(j []*Obj, v, l, f, t any) *Obj {
 	return overlappingFind(j, v, l, f, t, "staleFromTs", "staleToTs")
 }
@@ -430,7 +432,9 @@ func findTripRelinks(samples []*Obj, stopIndex StopIndexFn) []*Obj {
 	return relinks
 }
 
-func relinkCovering(r []*Obj, v, l, ts any) *Obj { return coveringFind(r, v, l, ts, "staleFromTs", "staleToTs") }
+func relinkCovering(r []*Obj, v, l, ts any) *Obj {
+	return coveringFind(r, v, l, ts, "staleFromTs", "staleToTs")
+}
 func relinkOverlapping(r []*Obj, v, l, f, t any) *Obj {
 	return overlappingFind(r, v, l, f, t, "staleFromTs", "staleToTs")
 }
@@ -449,9 +453,9 @@ const (
 
 type backVisit struct {
 	lineCode, direction, stopName string
-	firstTs, lastTs, delay         float64
-	known                          bool
-	low, high                      int
+	firstTs, lastTs, delay        float64
+	known                         bool
+	low, high                     int
 }
 
 func findBackwardLegs(samples []*Obj, stopIndex StopIndexFn) []*Obj {
@@ -769,7 +773,6 @@ func deadheadTouching(list []*Obj, vehicleID, lineCode, fromTs, toTs any) *Obj {
 }
 
 // ---------------------------------------------------------------- schedule lookups (historyDb helpers)
-
 
 func lineIDFromCode(lineCode any) string {
 	return reLeadingL.ReplaceAllString(strOr(lineCode, ""), "")

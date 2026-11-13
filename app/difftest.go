@@ -208,7 +208,7 @@ func resultString(r any) string {
 
 func argTs(v any) int64 { return int64(jsNumber(v)) }
 
-// seasonArg maps undefined/null/'' to "" (the season in force).
+// seasonArg maps undefined/null/” to "" (the season in force).
 func seasonArg(v any) string {
 	if isNullish(v) {
 		return ""

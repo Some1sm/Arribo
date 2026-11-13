@@ -33,31 +33,31 @@ type dayStats struct {
 }
 
 type SchedDirection struct {
-	DirID              string
-	PathID             string
-	Direction          string
-	DirectionName      string
-	OriginStop         *Obj
-	TerminalStop       *Obj
-	StopsCount         any
+	DirID               string
+	PathID              string
+	Direction           string
+	DirectionName       string
+	OriginStop          *Obj
+	TerminalStop        *Obj
+	StopsCount          any
 	TotalDistanceMeters float64
-	TotalDistanceKm    float64
-	TotalTravelSec     float64
-	TotalTravelMinutes float64
-	AfternoonOnly      map[string]bool
-	Schedules          map[string][]string
-	ScheduleStats      map[string]dayStats
-	StopTravelSecMap   *Obj // integer-like keys -> seconds
-	HasStopTravelMap   bool
-	Stops              []*SchedStop
-	StopsRaw           []any
-	DayStopTravelSec   map[string]*Obj
-	DayTravelSec       map[string]float64
-	EstimatedStops     []any
-	HasEstimated       bool
-	DayTrips           map[string][]tripRow
-	HasDayTrips        bool
-	Invalid            string
+	TotalDistanceKm     float64
+	TotalTravelSec      float64
+	TotalTravelMinutes  float64
+	AfternoonOnly       map[string]bool
+	Schedules           map[string][]string
+	ScheduleStats       map[string]dayStats
+	StopTravelSecMap    *Obj // integer-like keys -> seconds
+	HasStopTravelMap    bool
+	Stops               []*SchedStop
+	StopsRaw            []any
+	DayStopTravelSec    map[string]*Obj
+	DayTravelSec        map[string]float64
+	EstimatedStops      []any
+	HasEstimated        bool
+	DayTrips            map[string][]tripRow
+	HasDayTrips         bool
+	Invalid             string
 }
 
 type SchedLine struct {
@@ -80,11 +80,11 @@ type schedGrid struct {
 }
 
 var (
-	seasonGrids   map[string]*schedGrid
-	seasonKeys    []string
-	seasonsMeta   *Obj
-	legacyGrid    *schedGrid
-	scheduleMu    sync.Mutex
+	seasonGrids map[string]*schedGrid
+	seasonKeys  []string
+	seasonsMeta *Obj
+	legacyGrid  *schedGrid
+	scheduleMu  sync.Mutex
 )
 
 // loadSchedules reads the seasons file (and the legacy file, which is only
@@ -168,7 +168,7 @@ func buildDirection(d *Obj) *SchedDirection {
 		DirID: d.Str("dirId"), PathID: d.Str("pathId"), Direction: d.Str("direction"),
 		DirectionName: d.Str("directionName"),
 		OriginStop:    d.ObjAt("originStop"), TerminalStop: d.ObjAt("terminalStop"),
-		StopsCount:    d.Get("stopsCount"),
+		StopsCount:          d.Get("stopsCount"),
 		TotalDistanceMeters: numOrZero(d.Get("totalDistanceMeters")),
 		TotalDistanceKm:     numOrZero(d.Get("totalDistanceKm")),
 		TotalTravelSec:      numOrZero(d.Get("totalTravelSec")),
@@ -280,11 +280,11 @@ func numOrZero(v any) float64 {
 
 // activeGrid is cached per (season, known, source).
 type activeGridT struct {
-	key            string
-	res            SeasonResolution
-	grid           *schedGrid
-	usingSeasons   bool
-	meta           *Obj
+	key          string
+	res          SeasonResolution
+	grid         *schedGrid
+	usingSeasons bool
+	meta         *Obj
 }
 
 var activeCache *activeGridT
@@ -322,7 +322,7 @@ func normalizeSeason(season string) string {
 	if season == "" {
 		return activeGrid().res.Season
 	}
-	s := strings.ToLower(jsTrim(season))
+	s := jsLower(jsTrim(season))
 	switch s {
 	case "hivern", "invierno", "winter":
 		return "winter"
@@ -357,7 +357,7 @@ var (
 
 // normalizeLineId: '1', 'mataro_1', 'L1', 'Line 1' -> '1'..'8'.
 func normalizeLineId(lineID string) string {
-	clean := strings.ToLower(jsTrim(lineID))
+	clean := jsLower(jsTrim(lineID))
 	clean = reMataroPrefix.ReplaceAllString(clean, "")
 	clean = reLinePrefix.ReplaceAllString(clean, "")
 	clean = reLiniaPrefix.ReplaceAllString(clean, "")
@@ -373,7 +373,7 @@ func normalizeDayType(dayType string) string {
 	if dayType == "" {
 		return "weekday"
 	}
-	s := strings.ToLower(jsTrim(dayType))
+	s := jsLower(jsTrim(dayType))
 	if strings.Contains(s, "dissabte") || strings.Contains(s, "sat") || s == "6" {
 		return "saturday"
 	}
@@ -447,30 +447,30 @@ func isDirectionUsable(lineID, direction, season string) bool {
 
 // DirSchedule is the object getDirectionSchedule returns.
 type DirSchedule struct {
-	LineID             string
-	Code               string
-	LineName           string
-	Color              string
-	DirID              string
-	PathID             string
-	Direction          string
-	DirectionName      string
-	OriginStop         *Obj
-	TerminalStop       *Obj
-	Departures         []string
-	Trips              []tripRow // index = position
-	Stops              []*SchedStop
-	StopsRaw           []any
-	StopTravelSecMap   *Obj
-	EstimatedStopIDs   []any
-	TotalTravelSec     float64
-	TotalTravelMinutes float64
+	LineID              string
+	Code                string
+	LineName            string
+	Color               string
+	DirID               string
+	PathID              string
+	Direction           string
+	DirectionName       string
+	OriginStop          *Obj
+	TerminalStop        *Obj
+	Departures          []string
+	Trips               []tripRow // index = position
+	Stops               []*SchedStop
+	StopsRaw            []any
+	StopTravelSecMap    *Obj
+	EstimatedStopIDs    []any
+	TotalTravelSec      float64
+	TotalTravelMinutes  float64
 	TotalDistanceMeters float64
-	TotalDistanceKm    float64
-	AfternoonOnly      bool
-	FirstTrip          any
-	LastTrip           any
-	TripsCount         int
+	TotalDistanceKm     float64
+	AfternoonOnly       bool
+	FirstTrip           any
+	LastTrip            any
+	TripsCount          int
 }
 
 func getDirectionSchedule(lineID, direction, dayType, season string) *DirSchedule {

@@ -100,7 +100,7 @@ func incidentsShell(lineCode, hours, minDelay any, full bool) *Obj {
 		summary.Set("backwardLegs", 0.0)
 	}
 	o := O(
-		"lineCode", strings.ToUpper(jsString(or(lineCode, "all"))),
+		"lineCode", jsUpper(jsString(or(lineCode, "all"))),
 		"hoursAnalyzed", orF(jsNumber(hours), 168),
 		"minDelayThreshold", orF(jsNumber(minDelay), 5),
 		"summary", summary,
@@ -192,7 +192,7 @@ func (h *HistoryDB) delayIncidents(lineCode, hours, limit, minDelay any) (*Obj, 
 	now := float64(nowMs())
 	cutoff := now - hoursNum*3600*1000
 
-	cleanCode := jsTrim(strings.ToUpper(jsString(or(lineCode, ""))))
+	cleanCode := jsTrim(jsUpper(jsString(or(lineCode, ""))))
 	isAll := cleanCode == "" || cleanCode == "ALL" || cleanCode == "TOTES"
 	codeWithL := cleanCode
 	if !strings.HasPrefix(cleanCode, "L") {
@@ -1178,7 +1178,7 @@ func edgeBase(kind string, o *Obj) *Obj {
 	}
 	return O(
 		"kind", kind,
-		"lineCode", strings.ToUpper(jsString(or(o.Get("lineCode"), ""))),
+		"lineCode", jsUpper(jsString(or(o.Get("lineCode"), ""))),
 		"vehicleId", jsString(or(o.Get("vehicleId"), "")),
 		"direction", dir,
 		"fromTs", o.Get("fromTs"),
@@ -1289,7 +1289,7 @@ func (h *HistoryDB) delayDataQuality(hours, lineCode any) *Obj {
 	}
 	res, err := func() (*Obj, error) {
 		cutoff := float64(nowMs()) - math.Max(1, math.Min(720, orF(jsNumber(hours), 168)))*3600*1000
-		cleanCode := jsTrim(strings.ToUpper(jsString(or(lineCode, ""))))
+		cleanCode := jsTrim(jsUpper(jsString(or(lineCode, ""))))
 		isAll := cleanCode == "" || cleanCode == "ALL" || cleanCode == "TOTES"
 		codeWithL := cleanCode
 		if !strings.HasPrefix(cleanCode, "L") {

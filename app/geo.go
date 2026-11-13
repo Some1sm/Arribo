@@ -196,7 +196,7 @@ func calculateRouteTotalDistance(coords []LatLon) float64 {
 // ExtrapResult is extrapolatePolylinePosition's result.
 type ExtrapResult struct {
 	Lat, Lon, Bearing, Progress float64
-	BearingRaw              any // currentPos.bearing || 0 when it came from the input
+	BearingRaw                  any // currentPos.bearing || 0 when it came from the input
 }
 
 // extrapolatePolylinePosition: posBearing is `currentPos.bearing || 0`.

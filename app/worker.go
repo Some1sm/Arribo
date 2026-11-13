@@ -476,4 +476,3 @@ func (k *Worker) gpsGapPaths(ids any) []any {
 	}
 	return out
 }
-

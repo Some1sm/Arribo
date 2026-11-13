@@ -98,7 +98,7 @@ func (h *HistoryDB) getGpsGapHotspots(o gapOpts) *Obj {
 			d = math.Min(30, math.Max(1, 7))
 		}
 		since := now - d*86400*1000
-		code := reSingleDigit.ReplaceAllString(strings.ToUpper(jsTrim(jsString(or(o.lineCode, "")))), "L$1")
+		code := reSingleDigit.ReplaceAllString(jsUpper(jsTrim(jsString(or(o.lineCode, "")))), "L$1")
 		lineSQL := ""
 		params := []any{since, now}
 		if code != "" && code != "ALL" {
@@ -589,7 +589,7 @@ func (h *HistoryDB) getLineDelayStats(lineCode, hoursBack, lineID any) *Obj {
 	res, err := func() (*Obj, error) {
 		cutoff := float64(nowMs()) - jsNumber(hoursBack)*3600*1000
 		raw := jsTrim(jsString(or(lineCode, "")))
-		codeUpper := strings.ToUpper(raw)
+		codeUpper := jsUpper(raw)
 		codeNoHyphen := reHyphenWS.ReplaceAllLiteralString(codeUpper, "")
 		codeWithL, codeWithoutL := "L"+codeUpper, codeUpper
 		if strings.HasPrefix(codeUpper, "L") {
@@ -597,7 +597,7 @@ func (h *HistoryDB) getLineDelayStats(lineCode, hoursBack, lineID any) *Obj {
 		}
 		idUpper := codeUpper
 		if truthy(lineID) {
-			idUpper = jsTrim(strings.ToUpper(jsString(lineID)))
+			idUpper = jsTrim(jsUpper(jsString(lineID)))
 		}
 		idClean := reUpToUnderscore.ReplaceAllLiteralString(strings.Replace(idUpper, "CAT_GEN_", "", 1), "")
 		service, err := h.serviceFilter(serviceFilterOpts{since: cutoff, until: float64(nowMs()), lineCode: codeWithL})

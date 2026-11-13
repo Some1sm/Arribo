@@ -30,7 +30,7 @@ type rawField struct {
 type reportEntry struct {
 	fields []rawField
 	// metaTs is report.meta.generatedTimestamp when it is a number.
-	metaTs   float64
+	metaTs    float64
 	hasMetaTs bool
 }
 
@@ -158,7 +158,7 @@ func newReportCache(w *World) *ReportCache {
 	return c
 }
 
-func (c *ReportCache) setDatabase(db *HistoryDB)                    { c.db = db }
+func (c *ReportCache) setDatabase(db *HistoryDB)                       { c.db = db }
 func (c *ReportCache) setIpcCallback(fn func(typ string, payload any)) { c.ipc = fn }
 
 func (c *ReportCache) emitIpc(typ string, payload any) {

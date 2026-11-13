@@ -969,11 +969,12 @@ func (t *MataroTracker) getLineDetails(lineID any, direction any, opts *Obj) *Ob
 	if isUndef(direction) {
 		direction = "0"
 	}
+	direction, opts, notPlain := directionAsOptions(direction, opts)
 	lID := t.normalizeLineId(lineID)
 	if lID == "" {
 		lID = "1"
 	}
-	if !reLineID18Tracker.MatchString(lID) || (opts != nil && opts.Len() > 0) {
+	if !reLineID18Tracker.MatchString(lID) || notPlain || (opts != nil && opts.Len() > 0) {
 		return t.computeLineDetails(lineID, direction, opts)
 	}
 	dirKey := "both"
@@ -1015,6 +1016,25 @@ func (t *MataroTracker) getLineDetails(lineID any, direction any, opts *Obj) *Ob
 	p := pending
 	t.w.await(func() { <-p.done })
 	return deepClone(p.val).(*Obj)
+}
+
+// directionAsOptions is the source's
+//
+//	if (typeof direction === 'object' && direction !== null) { options = direction; direction = '0'; }
+//
+// A query string can make direction an array or an object. An array read
+// as options has no named fields (an empty options object here) but is not
+// a plain object, which getLineDetails treats as "do not cache".
+func directionAsOptions(direction any, opts *Obj) (any, *Obj, bool) {
+	switch d := direction.(type) {
+	case *Obj:
+		if d != nil {
+			return "0", d, false
+		}
+	case []any:
+		return "0", O(), true
+	}
+	return direction, opts, false
 }
 
 func (t *MataroTracker) invalidateLineDetailsCache() {

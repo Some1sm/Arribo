@@ -98,7 +98,9 @@ func (f *FlightRecorder) setAutoExtrapolation(enabled bool) {
 
 func (f *FlightRecorder) enablePersistence(db frPersistence) { f.db = db }
 
-func (f *FlightRecorder) setHistoryGateway(fn func(op string, args *Obj) (any, error)) { f.gateway = fn }
+func (f *FlightRecorder) setHistoryGateway(fn func(op string, args *Obj) (any, error)) {
+	f.gateway = fn
+}
 
 // callGateway awaits the gateway with the world unlocked.
 func (f *FlightRecorder) callGateway(op string, args *Obj) (any, error) {
@@ -140,7 +142,7 @@ func (f *FlightRecorder) ingestVehicle(snap *Obj) {
 	if strings.HasPrefix(vID, "EST_") || truthy(snap.Get("isGhostVehicle")) || truthy(snap.Get("isTheoretical")) {
 		return
 	}
-	lineCode := strings.ToUpper(jsString(or(snap.Get("lineCode"), "")))
+	lineCode := jsUpper(jsString(or(snap.Get("lineCode"), "")))
 	now := float64(nowMs())
 	fresh := !truthy(snap.Get("isEstimated")) && !truthy(snap.Get("isDeadReckoned"))
 	snapObs := jsNumber(snap.Get("observedAt"))
@@ -354,7 +356,7 @@ func (f *FlightRecorder) getLineVehicles(lineCode string) []any {
 	if lineCode == "" {
 		return []any{}
 	}
-	sv, ok := f.lineIndex.Get(jsTrim(strings.ToUpper(lineCode)))
+	sv, ok := f.lineIndex.Get(jsTrim(jsUpper(lineCode)))
 	if !ok || sv.(*JSMap).Len() == 0 {
 		return []any{}
 	}
@@ -391,7 +393,7 @@ func (f *FlightRecorder) getVehicleTrail(vehicleID any) (any, error) {
 }
 
 func (f *FlightRecorder) getLineStats(lineCode, lineID any) any {
-	key := strings.ToUpper(jsString(or(lineCode, ""))) + "|" + jsString(or(lineID, ""))
+	key := jsUpper(jsString(or(lineCode, ""))) + "|" + jsString(or(lineID, ""))
 	now := float64(nowMs())
 	if cv, ok := f.statsCache.Get(key); ok {
 		c := cv.(*statsEntry)
@@ -459,7 +461,7 @@ func (f *FlightRecorder) syncFleetFromWorker(vehicles any) {
 			continue
 		}
 		vID := jsString(v.Get("vehicleId"))
-		lineCode := strings.ToUpper(jsString(or(v.Get("lineCode"), "")))
+		lineCode := jsUpper(jsString(or(v.Get("lineCode"), "")))
 		var existing *Obj
 		if ev, ok := f.vehicles.Get(vID); ok {
 			existing = ev.(*Obj)

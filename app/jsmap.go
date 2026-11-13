@@ -105,7 +105,7 @@ func jsonRoundTrip(v any) any {
 	return out
 }
 
-// stripMarks is s.normalize('NFD').replace(/[̀-ͯ]/g, '').
+// stripMarks is s.normalize('NFD').replace(/[̀-ͯ]/g, ”).
 func stripMarks(s string) string {
 	s = norm.NFD.String(s)
 	return strings.Map(func(r rune) rune {

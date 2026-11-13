@@ -84,7 +84,7 @@ func (r *TrackerRegistry) getAllLines() []any {
 		cleanID := jsLower(jsString(l.Get("id")))
 		routeID := ""
 		if truthy(l.Get("routeId")) {
-			routeID = strings.ToUpper(jsString(l.Get("routeId")))
+			routeID = jsUpper(jsString(l.Get("routeId")))
 		}
 		normCode := reRegNonAlnum.ReplaceAllLiteralString(jsLower(jsString(or(l.Get("code"), ""))), "")
 		if seenIDs[cleanID] {

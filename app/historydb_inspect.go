@@ -74,7 +74,7 @@ func (h *HistoryDB) inspectIncident(opts *Obj) (*Obj, error) {
 	to := math.Floor(center + windowMs/2)
 	minDelayNum := math.Max(1, orF(jsNumber(minDelay), 5))
 
-	cleanCode := jsTrim(strings.ToUpper(jsString(or(lineCode, ""))))
+	cleanCode := jsTrim(jsUpper(jsString(or(lineCode, ""))))
 	isAll := cleanCode == "" || cleanCode == "ALL" || cleanCode == "TOTES"
 	codeWithL := cleanCode
 	if !strings.HasPrefix(cleanCode, "L") {
@@ -263,10 +263,10 @@ func (h *HistoryDB) inspectIncident(opts *Obj) (*Obj, error) {
 		for _, b := range backLegs {
 			phantomStretches = append(phantomStretches, O("lineCode", b.Get("lineCode"), "phantomFromTs", b.Get("staleFromTs"), "phantomToTs", b.Get("staleToTs"), "kind", "backward"))
 		}
-		lineUpper := strings.ToUpper(jsString(or(first.Get("lineCode"), "")))
+		lineUpper := jsUpper(jsString(or(first.Get("lineCode"), "")))
 		var runRows []*Obj
 		for _, r := range vehicleRows {
-			if strings.ToUpper(jsString(or(r.Get("lineCode"), ""))) == lineUpper {
+			if jsUpper(jsString(or(r.Get("lineCode"), ""))) == lineUpper {
 				runRows = append(runRows, r.Clone().Set("timesProvenance", classifyTimes(r)))
 			}
 		}

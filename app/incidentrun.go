@@ -13,16 +13,16 @@ import (
 )
 
 const (
-	runContextMs          = 30 * 60 * 1000.0
-	runLookbackMs         = 4 * 60 * 60 * 1000.0
-	originGrowthMins      = 3.0
-	maxOriginEvents       = 3
-	sustainedSpreadMins   = 5.0
-	trendMins             = 5.0
-	serviceDelayMins      = 5.0
-	maxRunStops           = 150
-	midRouteJoinMinIndex  = 3.0
-	runJumpBackMinStops   = 3.0
+	runContextMs         = 30 * 60 * 1000.0
+	runLookbackMs        = 4 * 60 * 60 * 1000.0
+	originGrowthMins     = 3.0
+	maxOriginEvents      = 3
+	sustainedSpreadMins  = 5.0
+	trendMins            = 5.0
+	serviceDelayMins     = 5.0
+	maxRunStops          = 150
+	midRouteJoinMinIndex = 3.0
+	runJumpBackMinStops  = 3.0
 )
 
 // jsSlice is String.prototype.slice(start, end) on UTF-16 code units
@@ -60,7 +60,7 @@ func jsSlice(s string, start, end int) string {
 	return string(utf16.Decode(u[start:end]))
 }
 
-// foldAccents: String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
+// foldAccents: String(v || ”).normalize('NFD').replace(/[̀-ͯ]/g, ”).toLowerCase().trim()
 func foldAccents(v any) string {
 	s := norm.NFD.String(strOr(v, ""))
 	s = strings.Map(func(r rune) rune {
@@ -292,7 +292,7 @@ func buildIncidentRun(rows []*Obj, opt IncidentRunOpts) *IncidentRun {
 	if len(opt.Deadheads) > 0 {
 		var group *Obj
 		for _, s := range stops {
-			code := strings.ToUpper(s.lineCode)
+			code := jsUpper(s.lineCode)
 			var d *Obj
 			for _, x := range opt.Deadheads {
 				if upperLine(x.Get("lineCode")) == code && s.firstTs >= x.Num("phantomFromTs") && s.firstTs <= x.Num("phantomToTs") {
@@ -496,10 +496,10 @@ func traceDelayOrigin(stops []*runStop, clickedIdx, clickedTripStart int) (*Obj,
 		return nil, 0
 	}
 	type event struct {
-		index                         int
-		kind, stopName, previousStop  string
-		fromTime, toTime              string
-		fromDelay, toDelay, growth    float64
+		index                        int
+		kind, stopName, previousStop string
+		fromTime, toTime             string
+		fromDelay, toDelay, growth   float64
 	}
 	var events []event
 	var prev *runStop

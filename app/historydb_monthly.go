@@ -294,7 +294,7 @@ func csvPaging(page, pageSize any) (pageNum, limit, offset float64) {
 	return
 }
 
-// csvClean is `(v || '').replace(/"/g, '""')`.
+// csvClean is `(v || ”).replace(/"/g, '""')`.
 func csvClean(v any) string {
 	return strings.ReplaceAll(jsString(or(v, "")), `"`, `""`)
 }

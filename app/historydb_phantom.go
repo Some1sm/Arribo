@@ -7,7 +7,6 @@ package main
 import (
 	"math"
 	"sort"
-	"strings"
 )
 
 type lineScope struct {
@@ -261,7 +260,7 @@ func (h *HistoryDB) skippedTrip(d *Obj) (*Obj, error) {
       FROM delay_logs
       WHERE UPPER(line_code) = ? AND direction = ? AND vehicle_id <> '' AND timestamp >= ? AND timestamp <= ?
       ORDER BY timestamp ASC
-    `, strings.ToUpper(jsString(or(d.Get("lineCode"), ""))), jsString(closed.Get("direction")), due-3*3600*1000, due+3*3600*1000)
+    `, jsUpper(jsString(or(d.Get("lineCode"), ""))), jsString(closed.Get("direction")), due-3*3600*1000, due+3*3600*1000)
 	if err != nil {
 		return nil, err
 	}
@@ -497,7 +496,7 @@ type serviceSQL struct{ visits, logs string }
 func (h *HistoryDB) serviceFilter(o serviceFilterOpts) (serviceSQL, error) {
 	code := ""
 	if truthy(o.lineCode) {
-		code = strings.ToUpper(jsString(o.lineCode))
+		code = jsUpper(jsString(o.lineCode))
 	}
 	if o.tables == nil {
 		o.tables = []string{"visits", "logs"}

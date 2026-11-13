@@ -117,6 +117,7 @@ func stopsList(v any) []*Obj { return objList(v) }
 // computeLineDetails is _computeLineDetails. nil means the source would
 // have rejected (an unparseable date).
 func (t *MataroTracker) computeLineDetails(lineID any, direction any, opts *Obj) *Obj {
+	direction, opts, _ = directionAsOptions(direction, opts)
 	lID := t.normalizeLineId(lineID)
 	if lID == "" {
 		lID = "1"
@@ -1216,14 +1217,14 @@ func (t *MataroTracker) synthesizeMissingScheduledBuses(lID string, direction an
 	}
 
 	type candidate struct {
-		trip       *activeTrip
-		dirKey     string
-		dirIndex   int
-		sched      *DirSchedule
-		raw        []LatLon
-		table      PolyTable
-		maxForDir  float64
-		origin     LatLon
+		trip      *activeTrip
+		dirKey    string
+		dirIndex  int
+		sched     *DirSchedule
+		raw       []LatLon
+		table     PolyTable
+		maxForDir float64
+		origin    LatLon
 	}
 	var cands []candidate
 	for _, dk := range allDirKeys {
