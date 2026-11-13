@@ -307,7 +307,7 @@ func readBoundedBody(r io.Reader, maxBytes int64) (string, error) {
 	if int64(len(b)) > maxBytes {
 		return "", fmt.Errorf("upstream response larger than %d bytes", maxBytes)
 	}
-	return string(b), nil
+	return nodeUTF8(b), nil
 }
 
 // ---------------------------------------------------------------- outbound TLS
