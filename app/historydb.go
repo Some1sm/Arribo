@@ -22,6 +22,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	sqlite "modernc.org/sqlite"
 )
@@ -238,9 +239,8 @@ func newHistoryDB() *HistoryDB {
 
 var sqlFuncsOnce sync.Once
 
-// jsDateMs is new Date(Number(v)).getTime(), ok=false for an Invalid Date.
-func jsDateMs(v any) (int64, bool) {
-	n := jsNumber(v)
+// jsDateMs is new Date(n).getTime(), ok=false for an Invalid Date.
+func jsDateMs(n float64) (int64, bool) {
 	if !isFinite(n) || math.Abs(n) > 8.64e15 {
 		return 0, false
 	}
@@ -270,6 +270,62 @@ func sqlArgToJS(v driver.Value) any {
 	return v
 }
 
+// argTruthy and argNum are truthy / Number() of a SQL function argument as
+// the JS callback sees it (sqlArgToJS), without boxing the common numbers.
+func argTruthy(v driver.Value) bool {
+	switch x := v.(type) {
+	case nil:
+		return false
+	case int64:
+		return x != 0
+	case float64:
+		return truthyNum(x)
+	}
+	return truthy(sqlArgToJS(v))
+}
+
+func argNum(v driver.Value) float64 {
+	switch x := v.(type) {
+	case int64:
+		return float64(x)
+	case float64:
+		return x
+	}
+	return jsNumber(sqlArgToJS(v))
+}
+
+// depotName is /cotxeres|depot|taller/ on the lower-cased name. For ASCII
+// names it compares without building the lower-cased copy.
+func depotName(name string) bool {
+	for i := 0; i < len(name); i++ {
+		if name[i] >= utf8.RuneSelf {
+			l := jsLower(name)
+			return strings.Contains(l, "cotxeres") || strings.Contains(l, "depot") || strings.Contains(l, "taller")
+		}
+	}
+	return asciiContainsFold(name, "cotxeres") || asciiContainsFold(name, "depot") || asciiContainsFold(name, "taller")
+}
+
+// asciiContainsFold: ASCII s contains lower-case ASCII pat, ignoring case.
+func asciiContainsFold(s, pat string) bool {
+	for i := 0; i+len(pat) <= len(s); i++ {
+		j := 0
+		for ; j < len(pat); j++ {
+			c := s[i+j]
+			if c >= 'A' && c <= 'Z' {
+				c += 'a' - 'A'
+			}
+			if c != pat[j] {
+				break
+			}
+		}
+		if j == len(pat) {
+			return true
+		}
+	}
+	return false
+}
+
 var errInvalidTime = errors.New("Invalid time value")
 
 func registerSQLFunctions() {
@@ -280,42 +336,44 @@ func registerSQLFunctions() {
 			}
 		}
 		must(sqlite.RegisterDeterministicScalarFunction("madrid_hour", 1, func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
-			ts := sqlArgToJS(args[0])
-			if !truthy(ts) {
+			if !argTruthy(args[0]) {
 				return "00", nil
 			}
-			ms, ok := jsDateMs(ts)
+			ms, ok := jsDateMs(argNum(args[0]))
 			if !ok {
 				return nil, errInvalidTime
 			}
 			return pad2(madridTime(ms).Hour()), nil
 		}))
 		must(sqlite.RegisterDeterministicScalarFunction("madrid_datetime", 1, func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
-			ts := sqlArgToJS(args[0])
-			if !truthy(ts) {
+			if !argTruthy(args[0]) {
 				return "", nil
 			}
-			ms, ok := jsDateMs(ts)
+			ms, ok := jsDateMs(argNum(args[0]))
 			if !ok {
 				return nil, errInvalidTime
 			}
 			return madridTime(ms).Format("2006-01-02 15:04:05"), nil
 		}))
 		must(sqlite.RegisterDeterministicScalarFunction("is_telemetry_anomaly", 4, func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
-			ts := sqlArgToJS(args[0])
-			if !truthy(ts) {
+			if !argTruthy(args[0]) {
 				return 0.0, nil
 			}
-			name := jsLower(jsString(or(sqlArgToJS(args[2]), "")))
-			if strings.Contains(name, "cotxeres") || strings.Contains(name, "depot") || strings.Contains(name, "taller") {
+			name := ""
+			if nv, ok := args[2].(string); ok {
+				name = nv
+			} else {
+				name = jsString(or(sqlArgToJS(args[2]), ""))
+			}
+			if depotName(name) {
 				return 1.0, nil
 			}
-			t := jsNumber(ts)
+			t := argNum(args[0])
 			line := sqlArgToJS(args[3])
 			if isOutsideRevenueService(line, t) {
 				return 1.0, nil
 			}
-			d := jsNumber(sqlArgToJS(args[1]))
+			d := argNum(args[1])
 			if isFinite(d) && d >= 10 && isServiceStartup(line, t, float64(startupWindowMin)) {
 				return 1.0, nil
 			}
@@ -693,6 +751,13 @@ func sqlValueToJS(v any) any {
 
 // all is stmt.all(...): every row as an object keyed by column name.
 func (h *HistoryDB) all(q string, args ...any) ([]*Obj, error) {
+	return h.rows(q, -1, args...)
+}
+
+// rows runs q and returns up to max rows (all when max < 0). Each row is an
+// object keyed by column name; a repeated column name keeps its first
+// position and takes the last value, as in better-sqlite3.
+func (h *HistoryDB) rows(q string, max int, args ...any) ([]*Obj, error) {
 	b, err := bindArgs(args)
 	if err != nil {
 		return nil, err
@@ -712,11 +777,11 @@ func (h *HistoryDB) all(q string, args ...any) ([]*Obj, error) {
 	for i := range vals {
 		ptrs[i] = &vals[i]
 	}
-	for rows.Next() {
+	for (max < 0 || len(out) < max) && rows.Next() {
 		if err := rows.Scan(ptrs...); err != nil {
 			return nil, err
 		}
-		o := O()
+		o := &Obj{kvs: make([]objKV, 0, len(cols))}
 		for i, c := range cols {
 			o.Set(c, sqlValueToJS(vals[i]))
 		}
@@ -726,8 +791,9 @@ func (h *HistoryDB) all(q string, args ...any) ([]*Obj, error) {
 }
 
 // get is stmt.get(...): the first row, or nil where the source gets undefined.
+// Like better-sqlite3 it stops stepping after that row.
 func (h *HistoryDB) get(q string, args ...any) (*Obj, error) {
-	rows, err := h.all(q, args...)
+	rows, err := h.rows(q, 1, args...)
 	if err != nil || len(rows) == 0 {
 		return nil, err
 	}

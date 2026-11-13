@@ -66,15 +66,18 @@ func primaryOf(r rune) int {
 // localeCompareJS is a.localeCompare(b) (root locale, tertiary strength).
 // Exact for ASCII; other characters order after ASCII letters by code point.
 func localeCompareJS(a, b string, numeric bool) int {
-	pa, ta := collationWeights(a, numeric)
-	pb, tb := collationWeights(b, numeric)
+	// Weights go into stack buffers: sorts call this O(n log n) times.
+	var bufA, bufB [2][48]int
+	pa, ta := collationWeightsInto(a, numeric, bufA[0][:0], bufA[1][:0])
+	pb, tb := collationWeightsInto(b, numeric, bufB[0][:0], bufB[1][:0])
 	if c := cmpInts(pa, pb); c != 0 {
 		return c
 	}
 	return cmpInts(ta, tb)
 }
 
-func collationWeights(s string, numeric bool) (prim []int, tert []int) {
+// collationWeightsInto appends the weights of s to prim and tert.
+func collationWeightsInto(s string, numeric bool, prim, tert []int) ([]int, []int) {
 	rs := []rune(s)
 	for i := 0; i < len(rs); i++ {
 		r := rs[i]
@@ -107,7 +110,7 @@ func collationWeights(s string, numeric bool) (prim []int, tert []int) {
 			tert = append(tert, 0)
 		}
 	}
-	return
+	return prim, tert
 }
 
 func cmpInts(a, b []int) int {

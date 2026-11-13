@@ -416,17 +416,19 @@ func fetchAvisosOnline() []any {
 	req.Header.Set("Cookie", "GUEST_LANGUAGE_ID=ca_ES")
 	resp, err := client.Do(req)
 	if err != nil {
-		var ne interface{ Timeout() bool }
-		if errors.As(err, &ne) && ne.Timeout() {
-			return nil
-		}
-		log.Printf("[MataroTracker] Avisos fetch failed — %s", describeChainFailure("mataro.avanzagrupo.com", err))
+		// A timeout is req.destroy() in Node, which still emits "socket hang up".
+		log.Printf("[MataroTracker] Avisos fetch failed — %s", describeChainFailure(err))
 		return nil
 	}
 	defer resp.Body.Close()
 	data, err := readBoundedBody(resp.Body, defaultMaxBodyBytes)
 	if err != nil {
-		log.Printf("[MataroTracker] Avisos fetch failed — %s", err.Error())
+		msg := err.Error()
+		var ne interface{ Timeout() bool }
+		if errors.As(err, &ne) && ne.Timeout() {
+			msg = "aborted" // the response stream after req.destroy()
+		}
+		log.Printf("[MataroTracker] Avisos fetch failed — %s", msg)
 		return nil
 	}
 	return parseAvisosHTML(data)

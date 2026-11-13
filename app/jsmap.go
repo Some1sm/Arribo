@@ -70,10 +70,12 @@ func deepClone(v any) any {
 		if x == nil {
 			return x
 		}
-		c := &Obj{vals: make(map[string]any, len(x.keys))}
-		for _, k := range x.keys {
-			c.Set(k, deepClone(x.vals[k]))
+		// Same insertion order as x.
+		c := &Obj{kvs: make([]objKV, len(x.kvs)), nIdx: x.nIdx}
+		for i, e := range x.kvs {
+			c.kvs[i] = objKV{e.k, deepClone(e.v)}
 		}
+		c.buildIndex()
 		return c
 	case []any:
 		if x == nil {

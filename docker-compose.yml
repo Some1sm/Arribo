@@ -4,7 +4,7 @@ services:
     container_name: arribo
     restart: unless-stopped
     stop_grace_period: 15s
-    # The app runs as the non-root node user on port 3000 and needs no Linux
+    # The app runs as a non-root user (uid 1000) on port 3000 and needs no Linux
     # capabilities; nothing in the container may regain privileges either.
     cap_drop:
       - ALL
@@ -13,12 +13,15 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NODE_ENV=production
       - PORT=3000
       - TZ=Europe/Madrid
       - ORS_BASE_URL=${ORS_BASE_URL:-}
       - ORS_API_KEY=${ORS_API_KEY:-}
-      - NODE_OPTIONS=--max-old-space-size=160 --expose-gc
+      # Go runtime memory: collect when the heap grows 50% past the live data
+      # (the default is 100%; CPU is cheap here, RAM is not), and treat 128 MiB
+      # as a soft ceiling. Measured: ~55 MiB idle, ~120 MiB with every cache full.
+      - GOGC=50
+      - GOMEMLIMIT=128MiB
       # Storage controls for the persistent SQLite flight recorder
       - SNAPSHOT_RETENTION_HOURS=6
       - VEHICLE_SNAPSHOT_INTERVAL_MS=60000
@@ -34,7 +37,7 @@ services:
         reservations:
           memory: 80M
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      test: ["CMD", "/app/arribo", "healthcheck"]
       interval: 30s
       timeout: 5s
       retries: 3

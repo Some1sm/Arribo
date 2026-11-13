@@ -30,15 +30,71 @@ type undefinedT struct{}
 // JSON.stringify, and inside an array it serializes as null.
 var Undefined = undefinedT{}
 
-// Obj is an insertion-ordered JavaScript object.
+// Obj is an insertion-ordered JavaScript object. Entries live in one slice:
+// most objects have a handful of keys, where a scan beats a map and costs a
+// fraction of the memory. Objects past objIndexMin keys also get a map index.
 type Obj struct {
-	keys []string
-	vals map[string]any
+	kvs   []objKV
+	index map[string]int32
+	nIdx  int32 // keys that are array indices (they enumerate first)
+}
+
+type objKV struct {
+	k string
+	v any
+}
+
+const objIndexMin = 16
+
+func (o *Obj) find(k string) int {
+	if o.index != nil {
+		if i, ok := o.index[k]; ok {
+			return int(i)
+		}
+		return -1
+	}
+	for i := range o.kvs {
+		if o.kvs[i].k == k {
+			return i
+		}
+	}
+	return -1
+}
+
+func (o *Obj) buildIndex() {
+	if len(o.kvs) <= objIndexMin {
+		o.index = nil
+		return
+	}
+	o.index = make(map[string]int32, len(o.kvs))
+	for i := range o.kvs {
+		o.index[o.kvs[i].k] = int32(i)
+	}
+}
+
+// each visits own entries in ECMAScript order (as Keys), without allocating
+// when no key is an array index.
+func (o *Obj) each(f func(k string, v any)) {
+	if o == nil {
+		return
+	}
+	if o.nIdx == 0 {
+		for i := range o.kvs {
+			f(o.kvs[i].k, o.kvs[i].v)
+		}
+		return
+	}
+	for _, k := range o.Keys() {
+		f(k, o.kvs[o.find(k)].v)
+	}
 }
 
 // O builds an object from key/value pairs: O("a", 1, "b", "x").
 func O(kv ...any) *Obj {
-	o := &Obj{vals: make(map[string]any, len(kv)/2)}
+	o := &Obj{}
+	if len(kv) > 1 {
+		o.kvs = make([]objKV, 0, len(kv)/2)
+	}
 	for i := 0; i+1 < len(kv); i += 2 {
 		o.Set(kv[i].(string), kv[i+1])
 	}
@@ -46,13 +102,20 @@ func O(kv ...any) *Obj {
 }
 
 func (o *Obj) Set(k string, v any) *Obj {
-	if o.vals == nil {
-		o.vals = map[string]any{}
+	v = canonNumber(v)
+	if i := o.find(k); i >= 0 {
+		o.kvs[i].v = v
+		return o
 	}
-	if _, ok := o.vals[k]; !ok {
-		o.keys = append(o.keys, k)
+	o.kvs = append(o.kvs, objKV{k, v})
+	if isArrayIndex(k) {
+		o.nIdx++
 	}
-	o.vals[k] = v
+	if o.index != nil {
+		o.index[k] = int32(len(o.kvs) - 1)
+	} else if len(o.kvs) > objIndexMin {
+		o.buildIndex()
+	}
 	return o
 }
 
@@ -61,34 +124,33 @@ func (o *Obj) Get(k string) any {
 	if o == nil {
 		return Undefined
 	}
-	v, ok := o.vals[k]
-	if !ok {
-		return Undefined
+	if i := o.find(k); i >= 0 {
+		return o.kvs[i].v
 	}
-	return v
+	return Undefined
 }
 
 func (o *Obj) Has(k string) bool {
 	if o == nil {
 		return false
 	}
-	_, ok := o.vals[k]
-	return ok
+	return o.find(k) >= 0
 }
 
 func (o *Obj) Delete(k string) {
 	if o == nil {
 		return
 	}
-	if _, ok := o.vals[k]; !ok {
+	i := o.find(k)
+	if i < 0 {
 		return
 	}
-	delete(o.vals, k)
-	for i, key := range o.keys {
-		if key == k {
-			o.keys = append(o.keys[:i:i], o.keys[i+1:]...)
-			break
-		}
+	o.kvs = append(o.kvs[:i:i], o.kvs[i+1:]...)
+	if isArrayIndex(k) {
+		o.nIdx--
+	}
+	if o.index != nil {
+		o.buildIndex()
 	}
 }
 
@@ -98,17 +160,21 @@ func (o *Obj) Keys() []string {
 	if o == nil {
 		return nil
 	}
+	if o.nIdx == 0 {
+		ks := make([]string, len(o.kvs))
+		for i := range o.kvs {
+			ks[i] = o.kvs[i].k
+		}
+		return ks
+	}
 	var ints []string
 	var strs []string
-	for _, k := range o.keys {
-		if isArrayIndex(k) {
+	for i := range o.kvs {
+		if k := o.kvs[i].k; isArrayIndex(k) {
 			ints = append(ints, k)
 		} else {
 			strs = append(strs, k)
 		}
-	}
-	if len(ints) == 0 {
-		return append([]string(nil), strs...)
 	}
 	sort.Slice(ints, func(i, j int) bool {
 		a, _ := strconv.ParseUint(ints[i], 10, 64)
@@ -122,18 +188,19 @@ func (o *Obj) Len() int {
 	if o == nil {
 		return 0
 	}
-	return len(o.keys)
+	return len(o.kvs)
 }
 
-// Clone is a shallow copy: { ...o }.
+// Clone is a shallow copy: { ...o } (its insertion order is o's key order).
 func (o *Obj) Clone() *Obj {
-	c := &Obj{vals: make(map[string]any, o.Len())}
+	c := &Obj{}
 	if o == nil {
 		return c
 	}
-	for _, k := range o.Keys() {
-		c.Set(k, o.vals[k])
-	}
+	c.kvs = make([]objKV, 0, len(o.kvs))
+	o.each(func(k string, v any) { c.kvs = append(c.kvs, objKV{k, v}) })
+	c.nIdx = o.nIdx
+	c.buildIndex()
 	return c
 }
 
@@ -142,9 +209,7 @@ func (o *Obj) Spread(src *Obj) *Obj {
 	if src == nil {
 		return o
 	}
-	for _, k := range src.Keys() {
-		o.Set(k, src.vals[k])
-	}
+	src.each(func(k string, v any) { o.Set(k, v) })
 	return o
 }
 
@@ -633,10 +698,9 @@ func writeJSON(b *bytes.Buffer, v any) {
 		}
 		b.WriteByte('{')
 		first := true
-		for _, k := range x.Keys() {
-			val := x.vals[k]
+		x.each(func(k string, val any) {
 			if isUndef(val) {
-				continue
+				return
 			}
 			if !first {
 				b.WriteByte(',')
@@ -645,7 +709,7 @@ func writeJSON(b *bytes.Buffer, v any) {
 			writeJSONString(b, k)
 			b.WriteByte(':')
 			writeJSON(b, val)
-		}
+		})
 		b.WriteByte('}')
 	case []any:
 		if x == nil {

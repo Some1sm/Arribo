@@ -6,6 +6,7 @@ package main
 // key order follows from that.
 
 import (
+	"bytes"
 	"errors"
 	"math"
 	"regexp"
@@ -18,6 +19,7 @@ type graphStop struct {
 	obj      *Obj
 	id, sh   string
 	name     string
+	lname    string // jsLower(name), compared per stop pair in buildCandidates
 	lat, lon float64
 }
 
@@ -100,7 +102,8 @@ func (r *TransitRouter) buildGraph() {
 				coords := s.Get("coords")
 				lat := parseFloatJS(coalesce(coalesce(s.Get("latitude"), andJS(coords, fieldOf(coords, "lat"))), 0.0))
 				lon := parseFloatJS(coalesce(coalesce(s.Get("longitude"), andJS(coords, fieldOf(coords, "lon"))), 0.0))
-				gs := &graphStop{id: id, sh: reShorthand.ReplaceAllString(id, ""), name: cleanName(s.Get("name")), lat: lat, lon: lon}
+				name := cleanName(s.Get("name"))
+				gs := &graphStop{id: id, sh: reShorthand.ReplaceAllString(id, ""), name: name, lname: jsLower(name), lat: lat, lon: lon}
 				gs.obj = O("seq", float64(idx), "id", gs.id, "shorthandId", gs.sh, "name", gs.name, "lat", lat, "lon", lon)
 				stops = append(stops, gs)
 			}
@@ -133,7 +136,55 @@ func (r *TransitRouter) buildGraph() {
 	r.isBuilt = true
 }
 
-func (r *TransitRouter) sliceRoutePolyline(raw [][]float64, from, to *graphStop) [][]float64 {
+// routeSlice is a leg polyline: raw[i:j] of a route's coordinates with the
+// first and last points replaced by the stops'. It serializes exactly as the
+// [][]float64 it stands for, without copying the route's points (cached
+// plans hold many legs; the route coordinates are never modified).
+type routeSlice struct {
+	raw         [][]float64
+	i, j        int // raw[i:j], at least two points
+	first, last [2]float64
+}
+
+func (rs *routeSlice) Len() int { return rs.j - rs.i }
+
+func (rs *routeSlice) At(k int) []float64 {
+	switch k {
+	case 0:
+		return rs.first[:]
+	case rs.Len() - 1:
+		return rs.last[:]
+	}
+	return rs.raw[rs.i+k]
+}
+
+func (rs *routeSlice) WriteJSON(b *bytes.Buffer) {
+	b.WriteByte('[')
+	for k := 0; k < rs.Len(); k++ {
+		if k > 0 {
+			b.WriteByte(',')
+		}
+		writeJSON(b, rs.At(k))
+	}
+	b.WriteByte(']')
+}
+
+// polylineMeters sums the segment lengths of n points (at(k) is point k),
+// skipping segments with a missing or non-finite latitude.
+func polylineMeters(n int, at func(int) []float64) float64 {
+	m := 0.0
+	for p := 0; p < n-1; p++ {
+		p1, p2 := at(p), at(p+1)
+		if len(p1) > 0 && len(p2) > 0 && isFinite(p1[0]) && isFinite(p2[0]) {
+			m += distM(p1[0], p1[1], p2[0], p2[1])
+		}
+	}
+	return m
+}
+
+// sliceRoutePolyline returns a *routeSlice, or a two-point [][]float64 when
+// the route has no usable stretch between the stops.
+func (r *TransitRouter) sliceRoutePolyline(raw [][]float64, from, to *graphStop) any {
 	fallback := [][]float64{{from.lat, from.lon}, {to.lat, to.lon}}
 	if len(raw) < 2 {
 		return fallback
@@ -154,16 +205,11 @@ func (r *TransitRouter) sliceRoutePolyline(raw [][]float64, from, to *graphStop)
 	}
 	iStart := closest(from.lat, from.lon, 0)
 	iEnd := closest(to.lat, to.lon, iStart)
-	var sliced [][]float64
-	if iEnd+1 > iStart {
-		sliced = append(sliced, raw[iStart:iEnd+1]...)
-	}
-	if len(sliced) < 2 {
+	if iEnd+1-iStart < 2 {
 		return fallback
 	}
-	sliced[0] = []float64{from.lat, from.lon}
-	sliced[len(sliced)-1] = []float64{to.lat, to.lon}
-	return sliced
+	return &routeSlice{raw: raw, i: iStart, j: iEnd + 1,
+		first: [2]float64{from.lat, from.lon}, last: [2]float64{to.lat, to.lon}}
 }
 
 // stopCand is one origin/destination candidate: its JSON object plus the
@@ -459,7 +505,7 @@ func walkFrom(d *stopCand, last *graphStop, opt planOptions, destination any) (a
 	return nil, nil
 }
 
-// objectName is (typeof x === 'object' ? x.name : '').
+// objectName is (typeof x === 'object' ? x.name : ”).
 func objectName(x any) any {
 	switch v := x.(type) {
 	case *Obj:
@@ -584,13 +630,11 @@ func (r *TransitRouter) planJourney(w *World, origin, destination any, opt planO
 		for _, l := range itin.Arr("legs") {
 			leg := l.(*Obj)
 			m := 0.0
-			if pl, ok := leg.Get("polyline").([][]float64); ok && len(pl) >= 2 {
-				for p := 0; p < len(pl)-1; p++ {
-					p1, p2 := pl[p], pl[p+1]
-					if len(p1) > 0 && len(p2) > 0 && isFinite(p1[0]) && isFinite(p2[0]) {
-						m += distM(p1[0], p1[1], p2[0], p2[1])
-					}
-				}
+			switch pl := leg.Get("polyline").(type) {
+			case *routeSlice:
+				m = polylineMeters(pl.Len(), pl.At)
+			case [][]float64:
+				m = polylineMeters(len(pl), func(k int) []float64 { return pl[k] })
 			}
 			if m < 100 && truthy(leg.Get("stopsCount")) {
 				m = leg.Num("stopsCount") * 400
@@ -700,7 +744,7 @@ func (r *TransitRouter) buildCandidates(orig, dest []*stopCand, opt planOptions,
 						for i, s2 := range r2.stops {
 							if s2.id == ts.id || s2.sh == ts.id {
 								possible = append(possible, pt2{i, s2, 0})
-							} else if jsLower(s2.name) == jsLower(ts.name) {
+							} else if s2.lname == ts.lname {
 								possible = append(possible, pt2{i, s2, distM(ts.lat, ts.lon, s2.lat, s2.lon)})
 							} else if dist := distM(ts.lat, ts.lon, s2.lat, s2.lon); dist <= 160 {
 								possible = append(possible, pt2{i, s2, dist})
@@ -806,9 +850,9 @@ func requestedInstant(depDate, depTime any, now float64) (float64, error) {
 
 type timelineDep struct {
 	at          float64
-	live        bool
-	dayType     string // "" for a live observation
 	duration    float64
+	dayType     string // "" for a live observation
+	live        bool
 	hasDuration bool
 }
 
@@ -1040,6 +1084,8 @@ func evaluateJourneys(w *World, candidates []*Obj, trk *MataroTracker, opt planO
 				scheduleBoards[schedKey] = scheduled
 			}
 			observed := deps
+			deps = make([]timelineDep, len(observed), len(observed)+len(scheduled))
+			copy(deps, observed)
 			for _, dep := range scheduled {
 				dup := false
 				for _, o := range observed {
@@ -1105,7 +1151,7 @@ func evaluateJourneys(w *World, candidates []*Obj, trk *MataroTracker, opt planO
 				}
 				return cancelledAt(dep.at+est*1000, toID)
 			}
-			var cands []timelineDep
+			cands := make([]timelineDep, 0, len(deps))
 			for _, dep := range deps {
 				if isFinite(dep.at) && dep.at >= ready && dep.at <= horizon {
 					cands = append(cands, dep)

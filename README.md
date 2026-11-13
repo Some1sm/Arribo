@@ -89,7 +89,7 @@ docker compose up -d --build
 docker compose logs -f arribo
 ```
 
-The Compose service exposes port 3000 and mounts `./data:/app/data` for persistent storage. It uses a digest-pinned Node 22.23.4 Alpine image, `Europe/Madrid`, a 400 MB container memory limit, and a 160 MB V8 heap setting. See [docker-compose.yml](docker-compose.yml) and [Dockerfile](Dockerfile) for exact settings.
+The Compose service exposes port 3000 and mounts `./data:/app/data` for persistent storage. The image runs the Go port of the server ([app/](app/README.md)): one static binary on a `scratch` base, serving the same `public/` (minified with Node at build time), the same `src/data/` files and the same SQLite database. It uses `Europe/Madrid`, a 400 MB container memory limit and a `GOMEMLIMIT` soft heap target. See [docker-compose.yml](docker-compose.yml) and [Dockerfile](Dockerfile) for exact settings. `npm start` still runs the Node implementation, which remains the reference the Go port is tested against.
 
 The repository targets a long-running Node/Docker deployment; retired serverless configuration has been removed.
 

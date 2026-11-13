@@ -15,6 +15,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"sort"
@@ -163,18 +164,42 @@ func (c *SiriClient) recordFailure(errMsg string) {
 var errSiriTimeout = errors.New("SIRI request timeout")
 
 // nodeErrMessage gives a Go network error the wording Node would use for
-// the cases the client tells apart (timeout / ECONNRESET / ECONNREFUSED).
+// a transport failure (getaddrinfo / connect / read codes, never the URL).
 func nodeErrMessage(err error) string {
 	var ne net.Error
+	var dns *net.DNSError
 	switch {
 	case errors.Is(err, errSiriTimeout):
 		return err.Error()
+	case errors.As(err, &dns):
+		// Node resolves through getaddrinfo: a missing name is ENOTFOUND,
+		// anything else (no server, SERVFAIL) is EAI_AGAIN.
+		if dns.IsNotFound {
+			return "getaddrinfo ENOTFOUND " + dns.Name
+		}
+		return "getaddrinfo EAI_AGAIN " + dns.Name
 	case errors.As(err, &ne) && ne.Timeout():
 		return "SIRI request timeout"
 	case errors.Is(err, syscall.ECONNRESET):
 		return "read ECONNRESET"
-	case errors.Is(err, syscall.ECONNREFUSED):
-		return "connect ECONNREFUSED"
+	}
+	for _, c := range []struct {
+		errno syscall.Errno
+		code  string
+	}{{syscall.ECONNREFUSED, "ECONNREFUSED"}, {syscall.ENETUNREACH, "ENETUNREACH"}, {syscall.EHOSTUNREACH, "EHOSTUNREACH"}, {syscall.ETIMEDOUT, "ETIMEDOUT"}} {
+		if errors.Is(err, c.errno) {
+			msg := "connect " + c.code
+			var op *net.OpError
+			if errors.As(err, &op) && op.Addr != nil {
+				msg += " " + op.Addr.String()
+			}
+			return msg
+		}
+	}
+	// Without the url.Error wrapper: Node's message never names the URL.
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		return ue.Err.Error()
 	}
 	return err.Error()
 }
@@ -324,7 +349,7 @@ func (c *SiriClient) extractTag(xml, tag string) (string, bool) {
 	return decodeXMLEntities(jsTrim(m.g(1))), true
 }
 
-// tagS is extractTag(...) || '' (null and "" both read as "").
+// tagS is extractTag(...) || ” (null and "" both read as "").
 func tagS(v string, _ bool) string { return v }
 
 func decodeXMLEntities(s string) string {

@@ -35,16 +35,32 @@ func srcDataDir() string { return filepath.Join(appRoot, "src", "data") }
 
 // World is one of the two Node processes.
 type World struct {
-	name    string
-	mu      sync.Mutex
-	tracker *MataroTracker
-	siri    *SiriClient
-	fr      *FlightRecorder
+	name string
+	mu   sync.Mutex
+	// handoffs holds, innermost last, the spawners waiting for their async
+	// function to reach its first await (guarded by mu itself).
+	handoffs []chan struct{}
+	tracker  *MataroTracker
+	siri     *SiriClient
+	fr       *FlightRecorder
 }
 
-// await runs f with the world unlocked, like an await on real I/O.
-func (w *World) await(f func()) {
+// release ends the running synchronous stretch. As on Node's event loop, a
+// spawner waiting for its async function goes on before any other task: the
+// lock passes straight to it. Only with no spawner waiting is it unlocked.
+func (w *World) release() {
+	if n := len(w.handoffs); n > 0 {
+		ch := w.handoffs[n-1]
+		w.handoffs = w.handoffs[:n-1]
+		close(ch)
+		return
+	}
 	w.mu.Unlock()
+}
+
+// await runs f with the world released, like an await on real I/O.
+func (w *World) await(f func()) {
+	w.release()
 	defer w.mu.Lock()
 	f()
 }

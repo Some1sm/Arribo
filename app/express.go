@@ -732,7 +732,7 @@ func parseRange(size int64, str string) ([][2]int64, int) {
 // directoryRedirect is serve-static's redirect listener.
 func directoryRedirect(res *xres) {
 	pathname, query, hasQuery := splitTarget(res.req.url)
-	loc := collapseLeadingSlashes(pathname + "/")
+	loc := absoluteOrigin(res.req.url) + collapseLeadingSlashes(pathname+"/")
 	if hasQuery {
 		loc += "?" + query
 	}
@@ -745,6 +745,24 @@ func directoryRedirect(res *xres) {
 	res.h.Set("X-Content-Type-Options", "nosniff")
 	res.h.Set("Location", loc)
 	res.end([]byte(doc))
+}
+
+// absoluteOrigin is the "scheme://host" an absolute-form target keeps when
+// serve-static url.format()s it back (url.parse lowercases both); "" for the
+// usual origin-form target.
+func absoluteOrigin(target string) string {
+	if strings.HasPrefix(target, "/") {
+		return ""
+	}
+	i := strings.Index(target, "://")
+	if i < 0 {
+		return ""
+	}
+	host := target[i+3:]
+	if j := strings.IndexAny(host, "/?#"); j >= 0 {
+		host = host[:j]
+	}
+	return strings.ToLower(target[:i]) + "://" + strings.ToLower(host)
 }
 
 func collapseLeadingSlashes(s string) string {

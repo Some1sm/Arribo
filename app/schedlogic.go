@@ -701,8 +701,7 @@ var (
 	shMu          sync.Mutex
 	offsetByHour  = map[int64]int64{}
 	dayByNumber   = map[int64]struct{ dayType, season string }{}
-	windowByKey   = map[string]*ServiceWindow{}
-	windowKnown   = map[string]bool{}
+	windowByKey   = map[windowKey]*ServiceWindow{} // nil values are cached too
 	shNoticeCount = -1
 )
 
@@ -752,24 +751,29 @@ func serviceDay(dayNumber int64) (string, string) {
 	return d.dayType, d.season
 }
 
+type windowKey struct{ line, dayType, season string }
+
 func lineWindow(lineID string, dayNumber int64) *ServiceWindow {
 	dayType, season := serviceDay(dayNumber)
-	key := lineID + "|" + dayType + "|" + season
-	if !windowKnown[key] {
-		windowByKey[key] = getServiceWindow(lineID, dayType, season)
-		windowKnown[key] = true
+	key := windowKey{lineID, dayType, season}
+	w, ok := windowByKey[key]
+	if !ok {
+		w = getServiceWindow(lineID, dayType, season)
+		windowByKey[key] = w
 	}
-	return windowByKey[key]
+	return w
 }
-
-var reLeadingLUpper = jsRe(`(?i)^L`)
 
 func lineIdOf(lineCode any) string {
 	s := ""
 	if !isNullish(lineCode) {
 		s = jsString(lineCode)
 	}
-	id := reLeadingLUpper.ReplaceAllString(jsTrim(s), "")
+	// .replace(/^L/i, ''): only "L" and "l" fold to L.
+	id := jsTrim(s)
+	if id != "" && (id[0] == 'L' || id[0] == 'l') {
+		id = id[1:]
+	}
 	for _, l := range lineIDs {
 		if l == id {
 			return id

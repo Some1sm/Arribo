@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -412,25 +413,58 @@ func nodeRequestClient(host, dataDir string, idle time.Duration) *http.Client {
 	}
 }
 
-// describeChainFailure turns a TLS failure into an actionable log line.
-func describeChainFailure(host string, err error) string {
-	if host == "" {
-		host = "the portal"
-	}
+// describeChainFailure turns a request failure into the log line Node writes.
+// Node names a host only when the error object carries one: getaddrinfo
+// errors (hostname) and certificate name mismatches (host); everything else
+// is "the portal". A request timeout is req.destroy(), which Node reports as
+// ECONNRESET ("socket hang up").
+func describeChainFailure(err error) string {
+	host := "the portal"
+	code := "UNKNOWN"
+	var dns *net.DNSError
+	var hn x509.HostnameError
 	var ua x509.UnknownAuthorityError
 	var inv x509.CertificateInvalidError
-	switch {
-	case errors.As(err, &ua):
-		return host + ": certificate is no longer issued by the vendored Sectigo root (UNABLE_TO_GET_ISSUER_CERT_LOCALLY). The portal has likely rotated to a new CA — re-vendor the chain."
-	case errors.As(err, &inv) && inv.Reason == x509.Expired:
-		return host + ": certificate is outside its validity window (CERT_HAS_EXPIRED). Check whether a vendored CA in src/data/certs/ has expired."
-	}
-	code := "UNKNOWN"
 	var ne net.Error
-	if errors.As(err, &ne) && ne.Timeout() {
+	switch {
+	case errors.As(err, &dns):
+		if dns.Name != "" {
+			host = dns.Name
+		}
+		code = "EAI_AGAIN"
+		if dns.IsNotFound {
+			code = "ENOTFOUND"
+		}
+	case errors.As(err, &hn):
+		if hn.Host != "" {
+			host = hn.Host
+		}
+		code = "ERR_TLS_CERT_ALTNAME_INVALID"
+	case errors.As(err, &ua):
+		code = "UNABLE_TO_GET_ISSUER_CERT_LOCALLY"
+	case errors.As(err, &inv) && inv.Reason == x509.Expired:
+		code = "CERT_HAS_EXPIRED"
+		if inv.Cert != nil && time.Now().Before(inv.Cert.NotBefore) {
+			code = "CERT_NOT_YET_VALID"
+		}
+	case errors.As(err, &ne) && ne.Timeout(), errors.Is(err, context.DeadlineExceeded), errors.Is(err, syscall.ECONNRESET):
+		code = "ECONNRESET"
+	case errors.Is(err, syscall.ECONNREFUSED):
+		code = "ECONNREFUSED"
+	case errors.Is(err, syscall.ENETUNREACH):
+		code = "ENETUNREACH"
+	case errors.Is(err, syscall.EHOSTUNREACH):
+		code = "EHOSTUNREACH"
+	case errors.Is(err, syscall.ETIMEDOUT):
 		code = "ETIMEDOUT"
-	} else if err != nil {
-		code = err.Error()
+	case errors.Is(err, syscall.EPIPE):
+		code = "EPIPE"
+	}
+	switch code {
+	case "UNABLE_TO_GET_ISSUER_CERT_LOCALLY":
+		return host + ": certificate is no longer issued by the vendored Sectigo root (" + code + "). The portal has likely rotated to a new CA — re-vendor the chain."
+	case "CERT_HAS_EXPIRED", "CERT_NOT_YET_VALID":
+		return host + ": certificate is outside its validity window (" + code + "). Check whether a vendored CA in src/data/certs/ has expired."
 	}
 	return host + ": TLS request failed (" + code + ")."
 }

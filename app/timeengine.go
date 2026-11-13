@@ -69,23 +69,35 @@ func timeStringToMinutes(s string) float64 {
 	if s == "" {
 		return 0
 	}
-	p := strings.Split(s, ":")
-	return numOr0(partNum(p, 0))*60 + numOr0(partNum(p, 1))
+	h, rest, ok := strings.Cut(s, ":")
+	m := colonPart(rest, ok)
+	return numOr0(stringToNumber(h))*60 + numOr0(m)
 }
 
 func timeStringToSeconds(s string) float64 {
 	if s == "" {
 		return 0
 	}
-	p := strings.Split(s, ":")
-	return numOr0(partNum(p, 0))*3600 + numOr0(partNum(p, 1))*60 + numOr0(partNum(p, 2))
+	// s.split(":") without the slice: the planner calls this per departure.
+	h, rest, ok := strings.Cut(s, ":")
+	m := colonPart(rest, ok)
+	var sec float64 = math.NaN()
+	if ok {
+		if _, r2, ok2 := strings.Cut(rest, ":"); ok2 {
+			sec = colonPart(r2, true)
+		}
+	}
+	return numOr0(stringToNumber(h))*3600 + numOr0(m)*60 + numOr0(sec)
 }
 
-func partNum(p []string, i int) float64 {
-	if i >= len(p) {
-		return math.NaN() // undefined || 0
+// colonPart: the number before the next ':' in rest (the next element of a
+// split), NaN when there is no such element (present is false).
+func colonPart(rest string, present bool) float64 {
+	if !present {
+		return math.NaN()
 	}
-	return stringToNumber(p[i])
+	part, _, _ := strings.Cut(rest, ":")
+	return stringToNumber(part)
 }
 
 func numOr0(f float64) float64 {

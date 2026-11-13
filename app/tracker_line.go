@@ -66,8 +66,9 @@ func fixAtOf(b *Obj, withTimestamp bool) any {
 }
 
 // rawFilteredCoords is the source's
-//   (r.coords || []).map(c => ({lat: parseFloat(c.Latitude ?? c.lat || 0), ...}))
-//     .filter(c => !isNaN(c.lat) && !isNaN(c.lon) && (c.lat !== 0 || c.lon !== 0))
+//
+//	(r.coords || []).map(c => ({lat: parseFloat(c.Latitude ?? c.lat || 0), ...}))
+//	  .filter(c => !isNaN(c.lat) && !isNaN(c.lon) && (c.lat !== 0 || c.lon !== 0))
 func rawFilteredCoords(r *Obj) []LatLon {
 	var out []LatLon
 	for _, c := range objList(r.Get("coords")) {

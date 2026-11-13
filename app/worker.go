@@ -45,11 +45,13 @@ func newWorld(name string) *World {
 // spawn calls an async function: f runs at once, holding the lock the caller
 // holds, until its first await or its end; then the caller carries on.
 func (w *World) spawn(f func()) {
+	ch := make(chan struct{})
+	w.handoffs = append(w.handoffs, ch)
 	go func() {
-		defer w.mu.Unlock()
+		defer w.release()
 		f()
 	}()
-	w.mu.Lock()
+	<-ch
 }
 
 // msgQueue is an unbounded FIFO: senders never block, as process.send does
