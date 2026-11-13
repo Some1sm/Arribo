@@ -571,3 +571,9 @@ func jsMin(a, b float64) float64 {
 	}
 	return math.Min(a, b)
 }
+
+// listOf is anyList without the ok flag (nil for a non-array).
+func listOf(v any) []any {
+	l, _ := anyList(v)
+	return l
+}
