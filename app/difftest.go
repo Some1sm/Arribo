@@ -696,6 +696,36 @@ func difftestCall(fn string, a []any) (res string) {
 		r = localeCompareJS(s(0), s(1), truthy(arg(2)))
 	case "classifyDelay":
 		r = classifyDelay(n(0))
+	case "buildIncidentRun":
+		var rows []*Obj
+		for _, x := range arg(0).([]any) {
+			o, _ := x.(*Obj)
+			rows = append(rows, o)
+		}
+		o := arg(1).(*Obj)
+		si := scheduleStopIndex()
+		var phantom []*Obj
+		phantom = append(phantom, findDeadheadReturns(rows, si, scheduleTripMinutes)...)
+		for _, b := range findBackwardLegs(rows, scheduleStopIndex()) {
+			phantom = append(phantom, O("lineCode", b.Get("lineCode"), "phantomFromTs", b.Get("staleFromTs"), "phantomToTs", b.Get("staleToTs"), "kind", "backward"))
+		}
+		opt := IncidentRunOpts{
+			ClickedStop: strOr(o.Get("clickedStop"), ""),
+			ClickedFrom: o.Get("clickedFrom"),
+			ClickedTo:   o.Get("clickedTo"),
+			ShowFrom:    o.Get("showFrom"),
+		}
+		if truthy(o.Get("useTowards")) {
+			opt.Towards = func(l, d any) string { return directionTerminus(l, d) }
+		}
+		if truthy(o.Get("useIdx")) {
+			opt.StopIndex = scheduleStopIndex()
+			opt.DirectionStops = directionStopNames
+		}
+		if truthy(o.Get("useDH")) {
+			opt.Deadheads = phantom
+		}
+		r = buildIncidentRun(rows, opt).toObj()
 	default:
 		return "UNKNOWN FN"
 	}

@@ -589,5 +589,67 @@ for (const id of ['2653', '2670', '100', '99', 'a1', 'B2', 'b1', 'A1', 'EST_1', 
 }
 for (const d of [-20, -15, -2, -1.5, -1, 0, 3, 3.5, 4, 5, NaN, Infinity]) run('classifyDelay', [d], () => punct.classify(d));
 
+// ---------------------------------------------------------------- incidentRun
+const irun = req('src/core/schedule/incidentRun');
+function directionTerminus(lineCode, direction) {
+  const ds = sched.getDirectionSchedule(String(lineCode || '').replace(/^L/i, ''), direction, 'weekday');
+  const stops = ds && Array.isArray(ds.stops) ? ds.stops : [];
+  return stops.length ? String(stops[stops.length - 1].name || '') : '';
+}
+function directionStopNames(lineCode, direction) {
+  const ds = sched.getDirectionSchedule(String(lineCode || '').replace(/^L/i, ''), direction, 'weekday');
+  return ds && Array.isArray(ds.stops) ? ds.stops.map(s => String(s.name || '')) : [];
+}
+function longRows() {
+  const rows = [];
+  const line = String(ri(1, 8));
+  let dir = pick(['0', '1']);
+  let idx = 0;
+  let delay = ri(0, 6);
+  let ts = Date.UTC(2026, 9, 2, 5, 0, 0) + ri(0, 3600) * 1000;
+  for (let k = ri(150, 420); k > 0; k--) {
+    const ds = sched.getDirectionSchedule(line, dir, 'weekday');
+    if (!ds || !ds.stops.length) break;
+    if (idx >= ds.stops.length) { idx = 0; dir = dir === '0' ? '1' : '0'; continue; }
+    const r = rand();
+    delay += r < 0.05 ? ri(3, 9) : (r < 0.08 ? -ri(3, 9) : ri(-1, 1));
+    ts += ri(20, 200) * 1000;
+    rows.push({ vehicleId: '2653', lineCode: `L${line}`, direction: dir, delayMins: delay, timestamp: ts, stopName: ds.stops[idx].name, scheduledTime: rand() < 0.4 ? '11:00' : '' });
+    if (rand() < 0.7) idx += 1;
+  }
+  return rows;
+}
+for (let i = 0; i < N; i++) {
+  const s = (rand() < 0.15 ? longRows() : genSamples()).filter(r => Number.isFinite(Number(r.timestamp)));
+  const vid = s.length ? pick(s).vehicleId : '2653';
+  const line = s.length ? String(pick(s).lineCode || '').toUpperCase() : 'L1';
+  const rows = s.filter(r => r.vehicleId === vid && String(r.lineCode || '').toUpperCase() === line).map(r => ({
+    ...r,
+    formattedDate: new Date(Number(r.timestamp)).toISOString().replace('T', ' ').slice(0, 19),
+    isRealTime: rand() < 0.7 ? 1 : 0,
+    actualTime: rand() < 0.5 ? '10:01' : undefined,
+    timesProvenance: pick(['observed', 'derived', 'backfill', 'none', undefined, ''])
+  }));
+  const c = rows.length ? pick(rows) : null;
+  const clickedFrom = c ? Number(c.timestamp) - ri(0, 300000) : pick([undefined, 0]);
+  const clickedTo = c ? Number(c.timestamp) + ri(0, 300000) : pick([undefined, 1]);
+  const clickedStop = c ? pick([c.stopName, '', String(c.stopName || '').slice(0, 4).toUpperCase(), 'zzz']) : '';
+  const showFrom = pick([undefined, null, Number(clickedFrom) - 1800000, 'x', Number(clickedFrom) + 7200000]);
+  const opts = { clickedStop, clickedFrom, clickedTo, showFrom, useIdx: rand() < 0.85, useTowards: rand() < 0.8, useDH: rand() < 0.85 };
+  run('buildIncidentRun', [rows, opts], () => {
+    const dh = dhr.findDeadheadReturns(rows, { stopIndex: scheduleStopIndex(), tripMinutes: scheduleTripMinutes });
+    const bk = bkl.findBackwardLegs(rows, { stopIndex: scheduleStopIndex() });
+    const phantom = [...dh, ...bk.map(b => ({ lineCode: b.lineCode, phantomFromTs: b.staleFromTs, phantomToTs: b.staleToTs, kind: 'backward' }))];
+    return irun.buildIncidentRun(rows, {
+      clickedStop, clickedFrom, clickedTo,
+      towards: opts.useTowards ? directionTerminus : undefined,
+      stopIndex: opts.useIdx ? scheduleStopIndex() : undefined,
+      directionStops: opts.useIdx ? directionStopNames : undefined,
+      deadheads: opts.useDH ? phantom : undefined,
+      showFrom
+    });
+  });
+}
+
 process.stdout.write(out.join('\n') + '\n');
 process.stderr.write(`wrote ${out.length} cases\n`);

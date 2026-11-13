@@ -153,6 +153,10 @@ func getNetworkTime(ms int64) NetworkTime {
 
 // dateUTC is Date.UTC(y, monthIndex, d, h, mi, s) with overflow normalization.
 func dateUTC(y, mon, d, h, mi, s int) int64 {
+	// Date.UTC reads a year of 0..99 as 1900..1999.
+	if y >= 0 && y <= 99 {
+		y += 1900
+	}
 	return time.Date(y, time.Month(mon+1), d, h, mi, s, 0, time.UTC).UnixMilli()
 }
 
