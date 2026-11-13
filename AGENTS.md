@@ -64,21 +64,28 @@ setup and contracts; verify disagreements against source, not fixed source-line 
 
 ## 2. Ownership and boundaries
 
-- [server.js](server.js): Express, compatibility APIs, fleet SSE, readiness, shutdown.
-- [WorkerBridge](src/core/WorkerBridge.js): worker supervisor and historical RPC.
-- [ingestionWorker](src/workers/ingestionWorker.js) and
-  [ingestionDaemon](src/ingestionDaemon.js): SIRI polling, notices, reports, persistence.
-- [historyDb](src/historyDb.js): SQLite WAL, worker-owned during service. The HTTP
-  process never opens SQLite; DB_REQUEST/DB_RESPONSE proxy historical operations.
-  FlightRecorder is a main-side memory replica, with persistence only in the worker.
+The server is the Go program in [app/](app/README.md) (one binary; the former Node
+backend was removed on 2026-11-13 after the port was verified against it).
+
+- [server.go](app/server.go) (+ [express.go](app/express.go), [qs.go](app/qs.go)):
+  routes, compatibility APIs, fleet SSE, readiness, shutdown.
+- [bridge.go](app/bridge.go): worker supervisor and historical RPC.
+- [worker.go](app/worker.go) and [ingestion.go](app/ingestion.go): SIRI polling,
+  notices, reports, persistence. The worker is a second *world* in the same process.
+- [historydb.go](app/historydb.go) and `app/historydb_*.go`: SQLite WAL, worker-owned
+  during service. The server world never opens SQLite; DB_REQUEST/DB_RESPONSE proxy
+  historical operations, and the HTTP side never blocks on SQLite.
+  The flight recorder is a server-side memory replica, with persistence only in the worker.
   Administrative backup is a separate local CLI, never an HTTP endpoint.
 - SIRI requests use worker IPC. Geocoding and optional ORS walking have separate
   request-time clients; these do not change database or ingestion ownership.
-- [transitRouter](src/core/schedule/transitRouter.js) generates direct/one-transfer
-  candidates; [journeyTimeline](src/core/schedule/journeyTimeline.js) resolves walks,
+- [planner.go](app/planner.go) generates direct/one-transfer candidates, resolves walks,
   checks catchable departures, calculates absolute times, ranks and deduplicates.
-- [pedestrianRouter](src/core/geo/pedestrianRouter.js): configured ORS foot-walking
-  or labeled approximate fallback. Never substitute driving routes.
+- [walkgeo.go](app/walkgeo.go): configured ORS foot-walking or labeled approximate
+  fallback. Never substitute driving routes.
+- Responses are built with the JavaScript value types in [jsobj.go](app/jsobj.go)
+  (ordered `Obj`, `JSON.stringify` number formatting) so key order and numbers stay
+  what the browser code expects; do not switch a route to Go maps or `encoding/json`.
 - [app.js](public/js/app.js) coordinates the main UI; [stopFeatures.js](public/js/stopFeatures.js)
   extracts favorite/nearby behavior behind existing app delegates.
 - [dades.html](public/dades.html) and [observatori.js](public/js/observatori.js) own
@@ -96,20 +103,21 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   dates across midnight and DST. No non-Mataró night providers remain in the tree.
 - Internal/Leaflet geometry is [lat,lon]; GeoJSON/ORS is [lon,lat]. Preserve zero
   coordinates and lat/lon plus latitude/longitude vehicle compatibility fields.
-- Reuse geoEngine, calendarEngine, timeEngine, delayEngine and scheduleSynthesizer.
+- Reuse the shared engines: geometry (`geo.go`), calendar and time (`calendar.go`,
+  `timeengine.go`), delays and trip matching (`schedlogic.go`), schedule synthesis (`synth.go`).
   Missing cumulative offsets differ from zero; heuristic times must be labeled.
 - **A timetable grid is season-scoped and must be internally consistent.** The
   operator publishes a different grid per season at maresme.net. The file that used
   to ship held a *mixture* — L1/L2/L4/L6/L8 were winter outbound and summer
   inbound — so a rider got correct times one way and wrong times back, and nothing
-  could detect it. `src/data/seasonCalendar.js` resolves the season (a live operator
-  notice outranks the static config in `SUMMER_WINDOWS`) and `mataroSchedules.js`
-  applies it **at the module boundary**, so call sites never pass a season. Do not
+  could detect it. `app/calendar.go` resolves the season (a live operator
+  notice outranks the static summer windows) and `app/schedules.go`
+  applies it **at the loader boundary**, so call sites never pass a season. Do not
   hand a caller a different season than the one it asked for: an unrecognised season
   returns nothing rather than silently substituting. Outside the period the data
-  covers, report the grid as unverified — never assert it. `test/season_provenance_test.js`
-  is the standing guard; it fails on any line that is winter in one direction and
-  summer in the other.
+  covers, report the grid as unverified — never assert it. No line may be winter in one
+  direction and summer in the other (a test guarded this until the Node code was
+  removed; check `node scripts/scrape_maresme_timetables.js --diff` after a refresh).
 - Times come from maresme.net (the grid riders are held to); stop geometry, coordinates
   and distances come from the Avanza scrape. `scripts/scrape_maresme_timetables.js --diff`
   is the audit for grid provenance.
@@ -117,7 +125,7 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   The median profile (`dayStopTravelSec`) is for position interpolation only. Call sites
   displaying or planning arrivals must query per-trip times (`getDeparturesForStop`,
   `getTripsServingStop`, `getTripStopTime`) rather than adding median cumulative offsets to
-  origin departure times. See `test/timetable_per_trip_test.js`.
+  origin departure times.
 - **A live bus may hide its own trip on the board, never a neighbour's.**
   `compileStopDepartures` merges real vehicles into the published grid, and that
   merge is a deletion mechanism, so its scope must stay tight. When a bus names
@@ -129,7 +137,7 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   interpolated from position, never observed. They may fill an empty board, but
   they yield to a published trip. Getting this wrong is silent and looks like a
   timetable error, which is how a rider reported a missing 11:03 that was in the
-  data all along. See `test/stop_departures_dedup_test.js`.
+  data all along.
 - **A stop board never lists a bus that has already served that stop.** "Has this bus
   passed?" must be decided by *signed progress along the route* — metres from the start
   of the direction, positive while the stop is still ahead. It must NOT be decided by the
@@ -142,7 +150,7 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   next stop along the road. Keep a small tolerance (`PASSED_STOP_TOLERANCE_M`, 30 m —
   polyline snapping errs under 10 m) so a bus standing AT a stop still reads as imminent
   rather than vanishing. The old index test also dropped buses that were legitimately
-  still approaching. See `test/stop_passed_estimation_test.js`.
+  still approaching.
 - **A forensic episode is one bus, and its identity must be carried end to end.**
   `inspectDelayIncident` groups raw `delay_logs` samples into episodes using the
   5-minute `EPISODE_GAP_MS` boundary, so the grouping key must include the vehicle
@@ -157,7 +165,6 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   time-only rule reduced 744 rows to 2 "episodes", both multi-bus. An episode
   with no stored id on its opening row but ids on later rows is genuinely
   ambiguous and must say so (`vehicleAmbiguous`) rather than look like one trip.
-  See `test/incident_drilldown_single_bus_test.js`.
 - **The episode KPI and the episode table must count the same way.**
   `_delayDataQuality.distinctEpisodes` is displayed beside the drill-down, so it
   partitions on the same `episodeKey()` (line+vehicle, id-less falling back to
@@ -176,9 +183,9 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   `table-layout: auto` still gave 0px drift, and `fixed` is kept only to stop a
   long value widening the table past its container. The regression that *does*
   break alignment is taking cells out of table layout (`display:block` on `td`),
-  which measured as a 0px column offset. `scripts/investigate_table_cdp_check.js`
-  renders the real renderer with adversarial text lengths and asserts measured
-  x-positions; `test/investigate_table_ui_test.js` guards markup and stylesheet.
+  which measured as a 0px column offset. A CDP check that rendered the real
+  renderer with adversarial text lengths confirmed this (it was removed with the Node
+  server it launched); `test/investigate_table_ui_test.js` guards markup and stylesheet.
   Do not assert a fix works by scanning source for a string a COMMENT may quote —
   that trap has already bitten this repo once here, and in the TLS sweep.
 - **Never match on a localized display string.** `startTime` is an en-GB
@@ -207,8 +214,7 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   CO-LOCATION only: 100 m same-direction, 250 m cross-direction, both named
   constants. It once ran at service-headway scale instead (18% route progress OR
   700 m), which is a different question and the wrong one — see the next
-  invariant. See `test/fleet_direction_balance_test.js` for L1, and
-  `test/fleet_all_lines_test.js` for the whole network. All eight lines are
+  invariant. All eight lines are
   asymmetric and all eight were losing buses; L2, L3 and L5 are asymmetric the
   *other* way round, so a fix verified only on L1 can still be wrong. Do not
   derive a per-direction budget by division, and note that a count-based test
@@ -273,7 +279,7 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   of the line twice in a row (`processBusesWithDeadReckoning`, `lineRoutes`): then it keeps its
   real position and carries `offRoute` / `offRouteM` through the daemon and flightRecorder, and
   neither map snaps it or glides it along the route (`followRoute`). Measured on 174 live fixes
-  (6 Oct 2026, 20:30): median 8 m, p99 46 m, max 68 m. See `test/off_route_test.js`.
+  (6 Oct 2026, 20:30): median 8 m, p99 46 m, max 68 m.
 - Exclude EST_, isGhostVehicle and isTheoretical vehicles from flightRecorder.
   Freshness is subsystem-specific, not one universal 90-second cutoff. Estimated
   markers do not prove observed GPS.
@@ -293,7 +299,7 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   an inferred position as coverage would make the number mean less.
   Never let a display total paper over this with `Math.max(live + est, scheduled)`
   — that exact clamp is what made a 5-bus fleet read "6 en servei" until 0a23eee
-  removed it. Report the count. See `test/fleet_status_accounting_test.js`.
+  removed it. Report the count.
 - Preserve visibility deep sleep, bounded caches, Leaflet canvas, event delegation,
   async state guards and full scrollable departure boards.
 - Preserve unbuffered SSE (200 streams, 8 per client address; a refused browser
@@ -307,13 +313,13 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   copy and the fix appears to do nothing in the browser. The `CACHE_NAME` bump is what
   evicts the old shell on activate; `VERSION` alone does not. When a CSS/JS change
   mysteriously has no effect locally, check for a precached shell before re-debugging.
-- **Observatori rates are per stop visit (one bus, one stop), use `src/core/punctuality.js`, and report early running separately. Raw sample counts are only ever labelled as samples.** Consolidated stop visits (`stop_visits`) eliminate dwell/congestion sampling bias. The platform punctuality contract is: early (< -1 min), on-time (-1..+3 min), late (> 3 min), severe late (>= 5 min). Delays <= -15 min are sentinels, not genuine time-travel.
+- **Observatori rates are per stop visit (one bus, one stop), use the shared punctuality bands (`anomalies.go`), and report early running separately. Raw sample counts are only ever labelled as samples.** Consolidated stop visits (`stop_visits`) eliminate dwell/congestion sampling bias. The platform punctuality contract is: early (< -1 min), on-time (-1..+3 min), late (> 3 min), severe late (>= 5 min). Delays <= -15 min are sentinels, not genuine time-travel.
 - The planner is a full-bleed app shell: `body.planner-page-body .header-container`
   spans the viewport while the map and Observatori pages keep a centred
   `max-width` container. Do not unify these — the centred layout is correct for the
   document pages.
 - **A measured delay is timed on the trip the operator's delay points to, never on the
-  nearest departure.** `flushVisit` in [ingestionDaemon.js](src/ingestionDaemon.js) subtracts
+  nearest departure.** `flushVisit` in [ingestion.go](app/ingestion.go) subtracts
   the published time of `visit.scheduledTime` (recovered by `tripMatcher.matchTrip` WITH the
   feed delay) from our own passing time. Matching the passing time to the nearest departure
   caps every delay at half a headway: on 29 Sep 2026 production it turned 662 visits with an
@@ -327,7 +333,7 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   neighbouring stops. On 25 Sep 2026 L8 bus 2675 showed +50 at La Coma, La Riera and
   Parc Central while running the 15:30 trip on time, then 0 at O´ Donnell: the
   operator's AVL had kept it on the 14:41 trip (run by bus 2677) after a long stop.
-  [tripRelink.js](src/core/schedule/tripRelink.js) detects the stale stretch;
+  `findTripRelinks` ([anomalies.go](app/anomalies.go)) detects the stale stretch;
   `getDelayIncidents` lists it with the SAE anomalies, keeps it out of the service
   KPIs and rankings and ends its trajectory as `relinked`, and
   `inspectDelayIncident` returns the `trip_relink` verdict. A direction change, a
@@ -337,7 +343,7 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   holds a single sample of a bus that reported all along its route (L8 bus 2669,
   29 Sep 2026: one sample at Escola El Turó inside a +23..+27 run over 10 stops),
   and on its own it read as "one GPS ping". `inspectDelayIncident` returns
-  `episode.run` ([incidentRun.js](src/core/schedule/incidentRun.js): every stop
+  `episode.run` ([incidentrun.go](app/incidentrun.go): every stop
   visit 30 min either side, with a sustained / building / recovering / variable /
   isolated summary for the clicked trip only: a direction change or a jump back
   along the route starts a new trip), and looks for GPS positions 5 min
@@ -355,7 +361,7 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   Rodalies -> Galícia trip at 14:57: it never ran the 14:24 Galícia -> Rodalies trip
   (21 min). Meanwhile the feed re-logged Biblioteca Pompeu Fabra at +49 (already
   served at 14:29) and "arrived" at Rodalies at +10. `findDeadheadReturns`
-  (src/core/schedule/deadheadReturn.js) detects this; those records stay out of the
+  (`anomalies.go`) detects this; those records stay out of the
   rankings and Investigar groups them as "Tornada sense servei". Say "no bus in the
   operator's data", never "no bus": a bus without tracking would not appear.
 - **A delay often starts trips earlier.** L8 bus 2667 (29 Sep 2026) started a trip
@@ -371,33 +377,33 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   the operator's notice ("Del 27 de juliol fins al 23 d'agost"), so month patterns accept
   "de " and "d'" (abril, agost, octubre) and its bounds are Madrid dates on any host. A
   notice names a line only as "Línia N", "línies N i M" or "LN"; "(L5)" after a stop name is
-  the line serving that stop. See `test/calendar_and_notices_test.js`.
+  the line serving that stop.
 - **A delay cannot rise faster than the clock.** A rise of 10+ min that exceeds the time
   elapsed by more than 3 min means the operator's AVL moved the bus onto an earlier trip.
   L7 bus 2653 (1 Oct 2026, single midday bus, 28-min cycle) arrived at Parc Cerdanyola on
   time, left on the 14:12 trip and was reported +29/+30 to Pl. Tereses against the 13:44
   trip it had already run. Our measured delay agreed (+28) because it is timed on the
-  operator's trip, so it cannot catch this. [delayJump.js](src/core/schedule/delayJump.js)
+  operator's trip, so it cannot catch this. `findDelayJumps` ([anomalies.go](app/anomalies.go))
   finds the stretch; it gets the relink treatment (out of KPIs and rankings, listed with
-  the SAE anomalies, Investigar verdict `delay_jump`). See `test/delay_jump_test.js`.
+  the SAE anomalies, Investigar verdict `delay_jump`).
 - **Every punctuality figure counts the same rows, and service hours come from the
-  timetable.** `_serviceFilter` in historyDb leaves out records outside the line's
-  published service that day ([serviceHours.js](src/core/schedule/serviceHours.js): day
+  timetable.** `serviceFilter` in [historydb_phantom.go](app/historydb_phantom.go) leaves out records outside the line's
+  published service that day (service hours in [schedlogic.go](app/schedlogic.go): day
   type, holidays, season), 10+ min records in the first half hour of the line's service,
   and relink / deadhead / delay-jump stretches. The incident tables did this; the summary,
   rankings, termòmetre, monthly report and line pages did not, so one week could show
   "+50 max" beside an incident list calling it a relink. Fixed clock rules ("before 06:00
   is depot") dropped L1/L2's 05:25 trips and L1/L3's last trips. The worst stop and hour
   count stop visits, never raw 20-second samples. No data is `null` ("--"), never 100 %
-  or 0 %. See `test/service_rows_test.js`.
-- **A fact shown to riders needs a source.** [mataroFleet.js](src/data/mataroFleet.js)
+  or 0 %.
+- **A fact shown to riders needs a source.** The fleet registry in [schedules.go](app/schedules.go)
   states only what the Ajuntament (5 Jul 2024) and the operator publish: 2668-2687 are
   Volvo 7900 Hybrid, Euro VI, and every bus has a ramp. Make, model and propulsion of the
   other buses, and air conditioning, are unknown and show no chip; the old diesel models,
   legacy series and "Dièsel" fallback were not sourced. Per-stop `segmentMeters` /
   `cumulativeMeters` are along the drawn route and `travelSec` is the published offset
   (`node scripts/stop_route_distances.js --check`); they were straight lines and an
-  8 m/s estimate. See `test/mataro_fleet_test.js` and `test/stop_route_distances_test.js`.
+  8 m/s estimate. See `test/stop_route_distances_test.js`.
 - **A live bus's trip start is a timetable time, not an observation.** The SIRI feed
   reports a delay but never the trip or when it began, so the cockpit's "Inici Trajecte"
   read "--" for every live bus. `tripMatcher.matchTripStart` recovers the trip from the
@@ -405,24 +411,24 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   starts at its own first stop); the tracker sets `tripStartTime` / `tripStartStop` /
   `tripStartSource: 'timetable'`, and dead-reckoned buses keep the last match. No
   reported delay, a bus at a terminal, or two trips in one minute give none; the UI says
-  "(horari)". The technical telemetry card starts folded. See `test/trip_start_test.js`.
+  "(horari)". The technical telemetry card starts folded.
 - **A GPS gap is a silence between two real fixes, recorded by the worker.** The feed sends
-  a fix about every 30 s; [gpsGapDetector.js](src/core/geo/gpsGapDetector.js) records a
+  a fix about every 30 s; the gap detector in [geo.go](app/geo.go) records a
   silence of 90 s - 15 min (only when `observedAt` moves forward, so re-emits and
   dead-reckoned positions never count) in `gps_gaps`: last fix before, first fix after,
   duration. Silences at a terminal (`at_terminal`) or while no other bus reported
   (`feed_wide`, the operator's feed stalled) are stored but kept off the /dades map;
   longer ones, line changes and fixes without a fleet number (the SIRI client's placeholder
   `Bus`, shared by every bus sent without `<VehicleRef>`) are not gaps. `/api/analytics/gps-gaps` groups the rest into
-  hotspots by distance (within 100 m of a hotspot's centre, [gapClusters.js](src/core/geo/gapClusters.js);
+  hotspots by distance (within 100 m of a hotspot's centre, `geo.go`;
   a fixed grid split neighbours across its lines; recurrent: 3+ gaps from 2+ buses). Clicking
   a hotspot draws the street each loss was driven on, cut from the line's route by
-  [gapPath.js](src/core/geo/gapPath.js) (forward along the route, right pass on circular
+  the gap path code in `geo.go` (forward along the route, right pass on circular
   lines, drivable in the gap's time; otherwise none). The hotspot's detail opens beside the
   map (under it on a phone), never over its streets, with one row per bus that highlights
   its street; lines sharing a street are drawn as nested stripes, each bus's end dot is
   where its GPS came back. A click on the map background clears it. Rows are pruned with the delay logs.
-  "Quins busos el perden més" ([gapBuses.js](src/core/geo/gapBuses.js)) compares each bus with
+  "Quins busos el perden més" (`geo.go`) compares each bus with
   the other buses on its lines per stop visit (`stop_visits`): expected losses = Σ its visits ×
   that line's losses per visit, and a Poisson tail says whether the excess can be chance
   (suspect: 4+ losses, 1.5×, p < 0.05). Far above its colleagues on the same streets points
@@ -434,7 +440,6 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   `/api/analytics/gps-gaps*` has its own rate budget (60/min, `RATE_LIMIT_MAP_MAX`) apart
   from the 12/min heavy reports; the page reuses answers for 60 s, sends one request for
   quick clicks, and on a 429 keeps the map on screen and retries after `Retry-After`.
-  See `test/gps_gaps_test.js`, `test/gps_gap_paths_test.js` and `test/gps_gap_buses_test.js`.
 - **The Investigar "Pas" is the last sample before the stop, a trajectory card says how it ended, and an incident is one bus trip.**
   The run table's first column used to show the FIRST sample logged while the bus was heading to a stop, which
   is when it left the previous stop: on L2 bus 2684 (2 Oct 2026) the row read 17:17 beside "17:06 → 17:23", and 17:17 was the previous
@@ -449,13 +454,13 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   12 min), not one per 20-minute window: a 24-minute trip was three rows. The two tiers stay separate: a trip with
   samples on both sides of 25 min is one row in Top Incidents and one under "En investigació". Rows with no vehicle id keep the window. A bus that carries its delay across trips is still
   one row per trip, which is honest: the delay is real (L3 and L2 buses on 2 Oct had 30-39 min gaps in service
-  against 13-19 min headways). See `test/incident_trip_outcome_test.js`.
+  against 13-19 min headways).
 - **A bus driving BACK along its route with the delay frozen on is a phantom stretch, not a delay.**
   L8 bus 2679 (2 Oct 2026): +26 at Ronda Barceló (10:07, stop 12 of 13), then from 10:13 to 10:30 the feed placed it at
   Edif. Vidre, Institut Català Salut, Gatassa, Pl. Gatassa, Tarragona, Parc Cerdanyola, Roca Blanca, Tarragona and Roca Blanca
   again, all "direction 0" and all +26, and at 10:32 Tarragona +1 on the next trip. The bus had abandoned its late trip and
   driven back to the start of the line. The deadhead rule never saw it because the direction flag did not change.
-  [backwardLeg.js](src/core/schedule/backwardLeg.js) finds it: delay >= 15 min, the stop order 4+ places behind the furthest
+  `findBackwardLegs` ([anomalies.go](app/anomalies.go)) finds it: delay >= 15 min, the stop order 4+ places behind the furthest
   stop reached, the delay within 3 min of the one at that stop, 3+ stop visits, and the bus never comes back to the
   furthest stop (L3 runs out to Caldes d'Estrac and returns through the same stops, which looks backwards by the
   published list; a stop name that appears twice in a direction is skipped for the same reason). Measured on 48 h of
@@ -463,13 +468,13 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   `_findPhantomStretches` returns `backs` and adds their windows, so the service KPIs, rankings, termòmetre and visits leave
   it out; it is listed with the SAE anomalies as `backward_leg` (and wins over the relink that its tail also forms); a
   trajectory that reaches it ends as `backward_leg` at the furthest stop served; Investigar returns the `backward_leg`
-  verdict and groups its visits as one phantom group (`phantomKind: 'backward'`). See `test/backward_leg_test.js`.
+  verdict and groups its visits as one phantom group (`phantomKind: 'backward'`).
 - **The edge-case debug table is the way to find out what a phantom stretch really was.** The bottom of /dades
   Top Incidents lists one row per relink, deadhead return, delay jump, backward leg and `trip_change` trajectory
   (`_buildEdgeCases`, newest first, 150 at most), each with the number of stored GPS positions around it
   (`gpsPoints`; `gpsExpired` when there are none because they were pruned) and an Investigar button. Positions are
   kept 6 h, so open a case within that time to look at where the bus really was. "Copiar taula" copies it as
-  tab-separated text. See `test/edge_cases_test.js`.
+  tab-separated text.
 - **"No records for the first stops" is not proof of a short-turn: check the signal.** A bus that joins its next trip
   mid-route (`joinedMidRoute`) was explained as "it skipped part of the route". The same gap appears when the bus lost
   GPS and the operator's system reassigned it (L1 bus 2684, 26 Sep 2026: relink at Parc Central +12 -> 0 after a 7-minute silence),
@@ -478,7 +483,7 @@ setup and contracts; verify disagreements against source, not fixed source-line 
   `feed_stalled`, `terminal`, `kept` (2+ real positions, no silence) or `unknown`. Investigar's "Per què el retard desapareix
   després?" says only what that found, and `unknown` says it cannot tell (positions are kept 6 h, silences are recorded
   only since they were introduced). The edge-case table carries the same `signal` per case. Absence of evidence is never
-  worded as evidence. See `test/signal_evidence_test.js`.
+  worded as evidence.
 - **Colours, radii and spacing come from tokens.** [UI_GUIDE.md](UI_GUIDE.md) §2.0 lists the
   design-system tokens (`--brand`, `--action`/`--on-action`, `--status-*`, `--punct-*`,
   `--line-N`/`--on-line-N`, `--radius-xs`…`--radius-xl`, `--space-1`…`--space-8`). Every
@@ -492,14 +497,14 @@ setup and contracts; verify disagreements against source, not fixed source-line 
 
 ## 4. Runtime, configuration and privacy
 
-Compose retains 400 MB limit, 80 MB reservation, 160 MB V8 heap, non-root execution
-with all capabilities dropped and no-new-privileges,
+Compose retains 400 MB limit, 80 MB reservation, `GOGC=50` and `GOMEMLIMIT=128MiB`,
+uid 1000 with all capabilities dropped and no-new-privileges, a `scratch` image,
 15-second stop grace and the data volume. DATA_DIR controls history placement, not
-all caches; REPORTS_DIR independently controls reports. Node >=22.5 is required.
+all caches; REPORTS_DIR independently controls reports.
 
 /api/health is liveness. /api/ready returns 503 during startup/shutdown and 200 when
 usable (including degraded timetable-only operation). Probes must not query providers
-or SQLite. Preserve aliases; inspect server.js rather than restoring retired contracts.
+or SQLite. Preserve aliases; inspect app/server.go rather than restoring retired contracts.
 
 Never publish credential values or log endpoint queries, coordinates or keys.
 ORS_BASE_URL / ORS_API_KEY configure walking; AMB_API_KEY belongs to inactive AMB.
@@ -512,13 +517,15 @@ Historical exposure needs operator review; do not rotate accounts incidentally.
   misconfiguration.** `mataro.avanzagrupo.com` serves its leaf without the
   Sectigo intermediate that signed it, which used to be answered with
   `rejectUnauthorized: false` and `NODE_TLS_REJECT_UNAUTHORIZED=0`. Those notices
-  feed line detours and `seasonCalendar.registerWindow`, and the scraped
+  feed line detours and the season calendar's notice windows, and the scraped
   response is the source of the published timetable, so an unverified response
   is an integrity hole, not an inconvenience. The chain is genuine — it is just
   incomplete — so the missing certificates are vendored in `src/data/certs/`
-  and applied to that host alone via `src/core/http/verifiedTls.js`. Adding a
-  broken host to `CHAIN_REPAIR_HOSTS` is the fix; relaxing verification is not,
-  and `test/portal_tls_verification_test.js` fails if a blanket bypass returns.
+  and applied to that host alone: `chainRepairHosts` in `app/httpguard.go` for the
+  server, `scripts/lib/verifiedTls.js` for the timetable scraper. Adding a broken
+  host there is the fix; relaxing verification (`InsecureSkipVerify`,
+  `rejectUnauthorized: false`) is not, and `test/portal_tls_verification_test.js`
+  fails if a blanket bypass returns.
   That sweep strips comments with a **string-aware** helper: the Accept header
   contains `*/*;q=0.8`, and a naive regex reads that as a comment opener and
   skips real code while reporting success.
@@ -526,14 +533,17 @@ Historical exposure needs operator review; do not rotate accounts incidentally.
 ## 5. Validation and delivery
 
 ```bash
+# Go, in a golang:1.26-alpine container: gofmt -l . (no output), go vet ./..., go build
 npm run test:syntax
 npm test
-npm run test:full
 node scripts/docs_check.js
 ```
 
-The runner discovers test/*.js with isolated DATA_DIR/DB_PATH/REPORTS_DIR and prints
-exclusions; --full adds performance suites. Freeze schedule-sensitive fixtures and
+The runner discovers test/*.js (browser code, scripts, the TLS chain) with isolated
+DATA_DIR/DB_PATH/REPORTS_DIR. The Go server has no unit tests of its own yet: the
+differential harness that checked it against the Node code was removed with that
+code, so check a server change by running the binary on a copy of the database and
+comparing the affected endpoints before and after. Freeze schedule-sensitive fixtures and
 compare unexpected failures with HEAD before modifying assertions or production code.
 Use local ORS stubs, not personal coordinates. No CI workflow or browser framework
 is part of this upgrade. Review git diff/status and report files, rationale, tests

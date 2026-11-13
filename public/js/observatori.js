@@ -583,7 +583,7 @@ class ObservatoriApp {
   }
 
   /**
-   * Which buses lose GPS the most (src/core/geo/gapBuses.js): each against
+   * Which buses lose GPS the most (app/geo.go): each against
    * the other buses on its lines, per 100 stops served. Far above its
    * colleagues on the same streets points at the bus's equipment; losing it
    * where the others lose it too points at coverage.

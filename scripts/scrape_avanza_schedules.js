@@ -18,7 +18,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const https = require('node:https');
-const verifiedTls = require('../src/core/http/verifiedTls');
+const verifiedTls = require('./lib/verifiedTls');
 
 // mataro.avanzagrupo.com serves its leaf certificate without the Sectigo
 // intermediate that signed it, so Node cannot build the chain and fails with
@@ -29,7 +29,7 @@ const verifiedTls = require('../src/core/http/verifiedTls');
 //
 // The chain is genuine, just incomplete, so the missing intermediate and its
 // root are vendored in src/data/certs/ and supplied for this host alone. See
-// src/core/http/verifiedTls.js for the full chain and the rationale.
+// scripts/lib/verifiedTls.js for the full chain and the rationale.
 //
 // This is a plain https.request rather than global fetch, because fetch runs on
 // undici, which cannot be given a per-request https.Agent. Assigning

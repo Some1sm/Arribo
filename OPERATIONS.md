@@ -53,7 +53,7 @@ ORS_BASE_URL=https://your-existing-ors-host.example/ors
 ORS_API_KEY=your-provider-issued-key
 ```
 
-Plain `npm start` does not automatically load `.env`. Include `/ors` only if required
+The binary does not load `.env` itself (Compose does, for `docker compose`). Include `/ors` only if required
 by your deployment, and do not append `/v2`. The adapter POSTs to
 `{base}/v2/directions/foot-walking/geojson` with an optional Authorization header.
 GeoJSON uses [lon,lat], converted back for Leaflet. URLs and keys are server-only
@@ -109,22 +109,21 @@ service-worker versions together when shell assets change.
 
 CLI SIGINT/SIGTERM marks readiness false, closes SSE, drains HTTP for up to five
 seconds, then awaits worker shutdown for up to five seconds. A 12-second outer
-deadline fits the 15-second Compose grace. Windows native child termination does
-not test POSIX signal delivery; validate that on Linux/container. When importing the
-Express app, callers own servers opened with `app.listen()` and must close those
-alongside calling `app.shutdown()` for worker cleanup.
+deadline fits the 15-second Compose grace. Validate signal handling on Linux or in the container.
 
 ## Reproducible installation
 
-Docker uses locked `npm ci --omit=dev`, with no install fallback. Dockerfile pins the
-verified official `node:22.23.4-alpine` manifest digest. This ensures repeatability,
-not that the image is the latest security patch. For updates, verify an existing
-official tag/digest, review security fixes, run syntax/full tests and container
-boot/shutdown checks, then update the pin. A registry lookup is not a Docker build.
-Non-root operation (all capabilities dropped, no-new-privileges), 160 MB V8 heap and
-400 MB Compose limit remain.
+The Dockerfile has three stages. `assets` uses the pinned official
+`node:22.23.4-alpine` manifest digest only to minify the browser files; `build`
+compiles the Go server with `golang:1.26-alpine` against the locked `go.sum`; the
+runtime image is `scratch` with the binary, CA certificates, the timezone data,
+`public/` and `src/data/`. The digest pin ensures repeatability, not that the image is
+the latest security patch. For updates, verify an existing official tag/digest, review
+security fixes, run the tests and container boot/shutdown checks, then update the pin.
+Non-root operation (uid 1000, all capabilities dropped, no-new-privileges),
+`GOGC=50` / `GOMEMLIMIT=128MiB` and the 400 MB Compose limit remain.
 
-The image is built in two stages. The `assets` stage runs a full locked `npm ci` (dev dependencies included) and minifies copies of `public/js/*.js` and `public/css/*.css` with esbuild (`scripts/minify_public.js`); the runtime stage copies only those minified files over the readable sources. HTML, `sw.js` and the manifest are served unchanged. To debug a browser error with readable stack traces, reproduce it with `npm start`, which serves the sources.
+The image is built in two stages. The `assets` stage runs a full locked `npm ci` (dev dependencies included) and minifies copies of `public/js/*.js` and `public/css/*.css` with esbuild (`scripts/minify_public.js`); the runtime stage copies only those minified files over the readable sources. HTML, `sw.js` and the manifest are served unchanged. To debug a browser error with readable stack traces, run the binary from a checkout (see README, *Run locally*), which serves the sources.
 
 ## Consistent backup and isolated restore
 
@@ -141,7 +140,7 @@ node scripts/history_backup.js verify /backups/history-2026-09-17.db
 node scripts/history_backup.js restore /backups/history-2026-09-17.db /restore-check/history.db
 ```
 
-## Stop visits backfill and CSV audit
+## Stop visits backfill
 
 The historical analytics system measures punctuality per **stop visit** (one vehicle
 serving one stop), consolidating raw 20-second GPS polls. For databases populated
@@ -159,11 +158,6 @@ node scripts/backfill_stop_visits.js data/transit_history.db --force
 - **Concurrency protection:** Tries `BEGIN IMMEDIATE` and aborts immediately with a clear error on `SQLITE_BUSY` if the database is active or locked by another process.
 - **Idempotency:** Checks for existing `source = 'backfill'` rows and skips unless `--force` is supplied. Never exposed over HTTP.
 
-To independently verify an exported CSV (samples or visits) against the official methodology:
-
-```bash
-node scripts/audit_observatori_csv.js /path/to/exported.csv
-```
 
 ## Seasonal timetable checks
 
@@ -186,28 +180,26 @@ published summer period is picked up from the aviso sync without a code change. 
 overlapping notice windows resolve to winter marked `seasonKnown: false` rather than an
 arbitrary pick. The known summer window in config is 27 Jul – 23 Aug 2026, the only one
 the operator has published; **the 2026–2027 season boundary dates are not published**, so
-add them to `SUMMER_WINDOWS` when they are.
+add them to the summer windows in `app/calendar.go` when they are.
 
 ## Certificate chain rotations
 
 `mataro.avanzagrupo.com` serves its leaf certificate **without** the Sectigo
-intermediate that signed it, so Node cannot build the chain and rejects the
-connection. The chain itself is valid — the leaf's AIA extension points at the
+intermediate that signed it, so a verifying client cannot build the chain and rejects
+the connection. The chain itself is valid — the leaf's AIA extension points at the
 missing certificate — so the intermediate and its root are vendored in
-`src/data/certs/` and applied to that host only by
-`src/core/http/verifiedTls.js`. Verification stays on for every request.
+`src/data/certs/` and applied to that host only: by `chainRepairHosts` in `app/httpguard.go` for
+the server, and by `scripts/lib/verifiedTls.js` for
+`scripts/scrape_avanza_schedules.js`. Verification stays on for every request.
 
-Both HTTPS callers go through a plain `https.request` carrying that agent:
-the tracker directly, and `scripts/scrape_avanza_schedules.js` via its own
-`httpsFetch` wrapper. Global `fetch` is deliberately **not** used, because
-undici cannot accept a per-request `https.Agent`. Setting
-`NODE_EXTRA_CA_CERTS` inside the script is not a workaround either — Node
-reads that variable once at process startup, so assigning it from within a
-running script is already too late and the connection fails exactly as before.
+The scraper uses a plain `https.request` carrying that agent. Global `fetch`
+is deliberately **not** used, because undici cannot accept a per-request
+`https.Agent`. Setting `NODE_EXTRA_CA_CERTS` inside the script is not a
+workaround either — Node reads that variable once at process startup.
 
 **Do not respond to a chain error by disabling verification.**
-`NODE_TLS_REJECT_UNAUTHORIZED=0` and `rejectUnauthorized: false` authenticate
-nothing, and the affected responses are operator notices (which drive line
+`InsecureSkipVerify`, `NODE_TLS_REJECT_UNAUTHORIZED=0` and
+`rejectUnauthorized: false` authenticate nothing, and the affected responses are operator notices (which drive line
 detours and the season calendar) and scraped timetables. A stale notice is a
 better failure than a forged one.
 
@@ -219,8 +211,8 @@ better failure than a forged one.
 | `UNABLE_TO_GET_ISSUER_CERT_LOCALLY` | Sectigo rotated to a new CA. The vendored root no longer signs the leaf. |
 | `CERT_HAS_EXPIRED` | A vendored certificate reached its expiry. |
 
-`describeChainFailure()` in `src/core/http/verifiedTls.js` names the cause in
-the tracker log, and a failed avisos fetch falls back to the last known
+`describeChainFailure()` in `app/httpguard.go` names the cause in
+the tracker log (in Node's error codes, as above), and a failed avisos fetch falls back to the last known
 notices rather than serving nothing.
 
 ### Re-vendoring
@@ -242,28 +234,7 @@ notices rather than serving nothing.
    expiry dates, and that the live portal still authorizes — an unrotated
    vendored cert fails loudly here rather than in production.
 
-## Backfilling derived timetable times
-
-Live ingestion derives `scheduled_time` / `actual_time` for each new delay row from
-the static timetable and stamps `times_source='derived_timetable'`. Rows written
-before that existed have neither. This CLI fills them in.
-
-The values are **approximations, not observations**. Old rows carry no direction and
-no stop sequence number, so the match is made on line + stop name + time + delay
-across every direction the line runs, keeping the best-fitting one. Every row it
-touches is stamped `times_source='derived_timetable_backfill'`, which the Observatori
-drilldown reports differently from a live derivation and from a real upstream time.
-
-The pending backlog is mostly retired-provider data (Catalonia-wide agencies whose
-trackers were deleted). Those lines have no timetable in this repo, so they are
-counted as skipped rather than silently attempted. Back up first; it is a dry run
-unless `--apply` is passed.
-
-```bash
-node scripts/backfill_delay_times.js                    # report only
-node scripts/backfill_delay_times.js --limit 500        # sample a subset
-node scripts/backfill_delay_times.js --apply            # write
-```
+## Promoting a restore
 
 Verification returns counts for delay_logs and vehicle_snapshots. Restore writes a
 **new isolated target**, never replacing live storage. Never copy only the main file
@@ -339,8 +310,8 @@ to the shipped `src/data/mataro_schedules.seasons.json`. To refresh:
 In June of each year, the operator publishes the summer service window notice (e.g. "HORARIS ESTIU <year>").
 1. Check `/api/health` for `schedule.seasonOutlook`: starting 1 June, a warning (`Horari d'estiu <year> no configurat`) is published if the upcoming summer window is not yet configured.
 2. Read the operator's summer notice from the portal or notice feed to find the exact service dates.
-3. Add the dated window to `SUMMER_WINDOWS` in `src/data/seasonCalendar.js` with its `source` description.
-4. Run `node test/season_provenance_test.js` and `npm test` to verify that both directions and all lines remain internally consistent across seasons.
+3. Add the dated window to the summer windows in `app/calendar.go` with its `source` description.
+4. Run `node scripts/scrape_maresme_timetables.js --diff` to check that both directions of every line come from the same season, then build and vet the server.
 5. Deploy the updated configuration.
 
 ## Documentation checks and credentials

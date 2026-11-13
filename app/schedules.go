@@ -1,6 +1,7 @@
 package main
 
-// Port of src/data/mataroSchedules.js and src/data/mataroFleet.js.
+// Timetable loading and the fleet registry (ported from the former
+// src/data/mataroSchedules.js and src/data/mataroFleet.js).
 
 import (
 	"encoding/json"

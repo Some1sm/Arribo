@@ -3306,7 +3306,7 @@ class TransitApp {
                     const delayClass = (b.delayMins > 3) ? 'delay-late' : (b.delayMins > 0 ? 'delay-warning' : 'delay-on-time');
                     const badgeText = b.delayBadgeText || (b.delayMins > 0 ? `+${b.delayMins} min` : 'A l\'hora');
                     const isHybrid = Boolean(b.isHybrid || b.propulsion === 'hybrid');
-                    // Only a sourced fact gets a chip (see src/data/mataroFleet.js).
+                    // Only a sourced fact gets a chip (see the fleet registry in app/schedules.go).
                     const ecoBadge = b.propulsionBadge || (isHybrid ? 'Híbrid Eco' : '');
                     return `
                       <div class="schematic-bus-chip docked ${delayClass}" data-vehicle-id="${this.esc(b.vehicleId)}" data-lat="${b.latitude || b.lat}" data-lon="${b.longitude || b.lon}" title="Fes clic per centrar aquest bus al mapa">

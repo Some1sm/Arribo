@@ -9,7 +9,7 @@
  * intermediate that signed it, so Node fails with UNABLE_TO_VERIFY_LEAF_SIGNATURE
  * before any application logic runs. The original code answered that with
  *
- *     rejectUnauthorized: false      (src/mataroTracker.js)
+ *     rejectUnauthorized: false      (the former Node tracker)
  *     NODE_TLS_REJECT_UNAUTHORIZED=0  (scripts/scrape_avanza_schedules.js)
  *
  * Neither is a fix. Both disable authentication for the response, and that
@@ -21,7 +21,9 @@
  * -------
  * The chain is genuine, just incomplete — the leaf's own AIA extension points
  * at the missing certificate. The intermediate and its root are vendored in
- * src/data/certs/ and supplied ONLY for this host, so verification stays on.
+ * src/data/certs/ and supplied ONLY for this host, so verification stays on:
+ * by the Go server (app/httpguard.go, chainRepairHosts) and by the timetable
+ * scraper (scripts/lib/verifiedTls.js).
  *
  * This suite fails if anyone reintroduces a blanket bypass, and it re-verifies
  * the vendored chain's signatures and expiry dates so an upstream rotation is
@@ -36,7 +38,7 @@ const path = require('path');
 const https = require('https');
 const { X509Certificate } = require('crypto');
 
-const verifiedTls = require('../src/core/http/verifiedTls');
+const verifiedTls = require('../scripts/lib/verifiedTls');
 const { stripComments } = require('./helpers/strip_comments.cjs');
 
 let passed = 0;
@@ -55,13 +57,13 @@ const REPO = path.join(__dirname, '..');
 const CERT_DIR = path.join(REPO, 'src', 'data', 'certs');
 const PORTAL_HOST = 'mataro.avanzagrupo.com';
 
-function walk(dir, out = []) {
+function walk(dir, out = [], ext = '.js') {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
-      walk(full, out);
-    } else if (entry.isFile() && entry.name.endsWith('.js')) {
+      walk(full, out, ext);
+    } else if (entry.isFile() && entry.name.endsWith(ext)) {
       out.push(full);
     }
   }
@@ -139,13 +141,19 @@ console.log('📌 Test 1: No blanket TLS verification bypass remains in applicat
   // Comments are stripped: both files legitimately *name* the setting they
   // removed while explaining why it is gone, and a mention is not a bypass.
   const strip = (f) => stripComments(fs.readFileSync(path.join(REPO, ...f), 'utf8'));
-  const tracker = strip(['src', 'mataroTracker.js']);
   const scraper = strip(['scripts', 'scrape_avanza_schedules.js']);
 
-  check(!/rejectUnauthorized\s*:\s*false/.test(tracker),
-    'src/mataroTracker.js must not set rejectUnauthorized:false');
-  check(!/NODE_TLS_REJECT_UNAUTHORIZED/.test(tracker),
-    'src/mataroTracker.js must not disable TLS verification');
+  // The Go server: no InsecureSkipVerify anywhere (comments included: Go code
+  // has no reason to name it), and the portal host is the one repair host.
+  const goFiles = walk(path.join(REPO, 'app'), [], '.go');
+  for (const file of goFiles) {
+    const rel = path.relative(REPO, file).replace(/\\/g, '/');
+    check(!/InsecureSkipVerify/.test(fs.readFileSync(file, 'utf8')), `${rel} must not set InsecureSkipVerify`);
+  }
+  check(goFiles.length > 20, `The Go sweep found a plausible number of files (${goFiles.length})`);
+  const guard = fs.readFileSync(path.join(REPO, 'app', 'httpguard.go'), 'utf8');
+  check(/chainRepairHosts\s*=\s*map\[string\]bool\{"mataro\.avanzagrupo\.com":\s*true\}/.test(guard),
+    'The Go server must repair the chain for the portal host only');
 
   check(!/NODE_TLS_REJECT_UNAUTHORIZED/.test(scraper),
     'scripts/scrape_avanza_schedules.js must not disable TLS verification');
@@ -179,7 +187,7 @@ console.log('📌 Test 1: No blanket TLS verification bypass remains in applicat
     check(!/rejectUnauthorized\s*:\s*false/.test(src), `${rel} must not set rejectUnauthorized:false`);
     check(!/NODE_TLS_REJECT_UNAUTHORIZED/.test(src), `${rel} must not disable TLS verification`);
   }
-  check(files.length > 20, `The sweep found a plausible number of files (${files.length})`);
+  check(files.length > 15, `The sweep found a plausible number of files (${files.length})`);
 
   // The stripper must not be a no-op that quietly passes everything.
   const sanity = stripComments("const a = 'http://x/*y'; // NODE_TLS_REJECT_UNAUTHORIZED\nconst b = 1;");
@@ -188,8 +196,6 @@ console.log('📌 Test 1: No blanket TLS verification bypass remains in applicat
   check(sanity.includes('http://x/*y'), 'The stripper must preserve strings containing /*');
 
   // 1c. The replacement is actually in place, not just the bug removed.
-  check(/agent:\s*verifiedTls\.agentFor\(/.test(tracker),
-    'The tracker must request the chain-repairing agent');
   check(verifiedTls.needsChainRepair(PORTAL_HOST),
     'The portal host must be registered for chain repair');
 

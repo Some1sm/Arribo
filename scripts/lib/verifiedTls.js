@@ -57,7 +57,7 @@ const https = require('https');
 const tls = require('tls');
 const path = require('path');
 
-const CERT_DIR = path.join(__dirname, '..', '..', 'data', 'certs');
+const CERT_DIR = path.join(__dirname, '..', '..', 'src', 'data', 'certs');
 
 /**
  * Hosts whose chain is incomplete upstream. Keyed by hostname so adding

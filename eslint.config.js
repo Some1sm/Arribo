@@ -32,9 +32,9 @@ const correctness = {
 module.exports = [
   { ignores: ['node_modules/**', 'data/**', 'public/sw.js', '.agents/**', 'prompts/**'] },
 
-  // Server + worker + shared core: CommonJS on Node.
+  // Maintenance scripts and tests: CommonJS on Node.
   {
-    files: ['server.js', 'src/**/*.js', 'scripts/**/*.js', 'test/**/*.js'],
+    files: ['scripts/**/*.js', 'test/**/*.js'],
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'commonjs',

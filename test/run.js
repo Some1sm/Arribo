@@ -3,11 +3,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-const excluded = {
-  'challenger_m5_adversarial_stress_test.js': 'Manual legacy load/fault-injection diagnostic',
-  'challenger_m5_concurrency_ipc_test.js': 'Manual legacy database/fault-injection diagnostic'
-};
-const performanceTests = new Set(['startup_benchmark.js', 'stop_cache_benchmark_test.js']);
+const excluded = {};
+const performanceTests = new Set();
 const args = process.argv.slice(2);
 if (args.some(arg => !['--full', '--list'].includes(arg))) {
   throw new Error('Usage: node test/run.js [--full] [--list]');

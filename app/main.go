@@ -7,13 +7,8 @@ import (
 )
 
 func main() {
-	if len(os.Args) > 1 {
-		switch os.Args[1] {
-		case "difftest":
-			os.Exit(runDifftest(os.Args[2:]))
-		case "healthcheck":
-			os.Exit(runHealthcheck())
-		}
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		os.Exit(runHealthcheck())
 	}
 	os.Exit(runServer())
 }

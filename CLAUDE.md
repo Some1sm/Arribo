@@ -4,44 +4,40 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Arribo! is a real-time transit platform for **Mataró Bus Urbà L1–L8** (8 lines, 155 stops): live map/arrivals, a direct+one-transfer journey planner, and a historical punctuality "Observatori". Node.js ≥22.5 (needs built-in `node:sqlite`), Express + vanilla JS frontend, no build step for development (the Docker image serves esbuild-minified copies of `public/js` and `public/css`, built by `scripts/minify_public.js`). Production deps: `express`, `cors`, `compression`.
+Arribo! is a real-time transit platform for **Mataró Bus Urbà L1–L8** (8 lines, 155 stops): live map/arrivals, a direct+one-transfer journey planner, and a historical punctuality "Observatori". The server is one static **Go** binary (`app/`, Go 1.26, pure-Go SQLite via modernc.org/sqlite, no cgo); the frontend is vanilla JS in `public/`, with no build step for development (the Docker image serves esbuild-minified copies of `public/js` and `public/css`, built by `scripts/minify_public.js` in a Node build stage). Node is only used for that minification, the browser-code tests and the data/maintenance scripts.
 
-**Read [AGENTS.md](AGENTS.md) first** — it is the authoritative contract for ownership boundaries, domain invariants, and required validation. [README.md](README.md) and [OPERATIONS.md](OPERATIONS.md) are current; [docs/history/ARCHITECTURE.md](docs/history/ARCHITECTURE.md) is historical and describes a retired Catalonia-wide scope. Verify anything against source, not against those older documents.
+The Go server was ported from a Node/Express backend (removed 2026-11-13) and kept its HTTP contract byte for byte: JSON key order, number formatting, headers and error texts. [app/README.md](app/README.md) explains how (the `Obj` ordered object, the `World` lock that stands in for the event loop) and lists the few transport-level differences.
+
+**Read [AGENTS.md](AGENTS.md) first** — it is the authoritative contract for ownership boundaries, domain invariants, and required validation. [README.md](README.md) and [OPERATIONS.md](OPERATIONS.md) are current; [docs/history/ARCHITECTURE.md](docs/history/ARCHITECTURE.md) is historical and describes a retired Catalonia-wide scope and the former Node code. Verify anything against source, not against those older documents.
 
 ## Commands
 
-```bash
-npm ci                  # install (Node >= 22.5)
-npm start               # run on http://localhost:3000 (npm run dev is the same, no reload)
+There is no Go toolchain on the Windows machine; build and vet in a container (on the VPS, under `/var/tmp`):
 
+```bash
+docker run --rm -v "$PWD/app":/src -w /src -e CGO_ENABLED=0 golang:1.26-alpine sh -c 'go vet ./... && go build -trimpath -ldflags="-s -w" -o arribo .'
+docker compose up -d --build      # the real image: container on port 3000, ./data mounted
+```
+
+Node side (browser code, scripts):
+
+```bash
+npm ci                  # dev tools only: esbuild, eslint
 npm run test:syntax     # vm.Script parse of every .js in the repo
 npm run lint            # ESLint (correctness rules; no-unused-vars is a warning)
 npm test                # auto-discovers test/*.js, one process per suite, isolated temp storage
-npm run test:full       # adds the two performance suites
-npm run test:list       # show which suites run/skip and why
+npm run test:list       # show which suites run
 node scripts/docs_check.js   # validates relative links + npm script refs in README/AGENTS/OPERATIONS
 ```
-
-**Run a single test** — suites are standalone Node scripts; invoke one directly. They expect isolated storage, so set it yourself when running outside the runner:
-
-```bash
-node test/mataro_fleet_test.js
-# or with isolation, mirroring test/run.js:
-DATA_DIR=./tmp/db DB_PATH=./tmp/db/history.db REPORTS_DIR=./tmp/db/reports node test/worker_bridge_test.js
-```
-
-Narrower named scripts exist for fast loops (`test:core`, `test:unit`, `test:mataro`, `test:edge`, `test:infra`, `test:e2e`, `test:perf`) but they are static lists — prefer `node test/<suite>.js` for a single suite and `npm test` for a full sweep.
 
 **Operational / data scripts**
 
 ```bash
 node scripts/scrape_avanza_schedules.js                    # refresh src/data/mataro_schedules.json from the Avanza portal
+node scripts/scrape_maresme_timetables.js [--diff]         # refresh / check src/data/mataro_schedules.seasons.json
 node scripts/history_backup.js backup <src.db> <dest.db>   # also: verify | restore (restore writes a NEW file, never live storage)
-node scripts/cdp_ui_check.js, upgrades_ui_check.js, observatori_cdp_layout_check.js, ui_card_height_check.js   # CDP layout probes
-docker compose up -d --build                                # container on port 3000, ./data mounted
+node scripts/cdp_ui_check.js, upgrades_ui_check.js, ui_card_height_check.js   # CDP layout probes against a running server
 ```
-
-`test/run.js` excludes 4 manual/legacy suites and 2 performance suites by default, printing the reason for each skip. Integration suites can start workers, hit upstream, and write runtime data — check a suite's setup before pointing it at a deployment's data directory.
 
 **Windows note:** this machine installs Node under `G:\Programas\nodejs`, not `C:\Program Files\nodejs`. If `npm` ever falls off PATH in the Git Bash tool, run it as
 `node /g/Programas/nodejs/node_modules/npm/bin/npm-cli.js <script>`
@@ -49,48 +45,50 @@ with a process-local `PATH` that includes `/g/Programas/nodejs`, or use the Powe
 
 ## Architecture
 
-### Two processes, strict ownership
+### Two worlds, strict ownership
 
 ```
 Browser (vanilla JS + Leaflet)
       │  /api/* (GET/HEAD only, read-only guard + rate limit)
-Express main process  ── server.js
+Server world  ── app/server.go (+ express.go, qs.go)
       │  • serves public/, owns in-memory fleet + report caches
-      │  • flightRecorder = main-side MEMORY replica only
-      │  WorkerBridge (src/core/WorkerBridge.js): spawn, heartbeat, watchdog, restart
-      │  DB_REQUEST / DB_RESPONSE  +  REPORT / INGEST_* messages
-      ▼  child_process fork + IPC
-Ingestion worker  ── src/workers/ingestionWorker.js + src/ingestionDaemon.js
+      │  • flight recorder = server-side MEMORY replica only
+      │  WorkerBridge (app/bridge.go): start, heartbeat, watchdog, restart
+      │  DB_REQUEST / DB_RESPONSE  +  REPORT / INGEST_* messages (JSON round trip)
+      ▼
+Worker world  ── app/worker.go + app/ingestion.go
         • SIRI polling (vehicles 20s, notices 5min, reports 30min)
-        • THE ONLY process that opens SQLite (src/historyDb.js, WAL mode)
+        • THE ONLY side that opens SQLite (app/historydb*.go, WAL mode)
         • notices, analytics reports, delay logs, vehicle snapshots
 ```
 
+Both worlds live in one process. Each has its own lock (`World` in `app/tracker.go`): code runs holding it, `await` releases it around real I/O, and `spawn` runs a callee until its first await before handing the lock back, which keeps the ordering the Node event loop had.
+
 Consequences that are easy to get wrong:
-- **The HTTP process must never open SQLite.** All history access goes through `workerBridge.historyQuery(op, args)` and is proxied to the worker. A change that imports `historyDb` into `server.js` breaks the ownership model.
+- **The server world must never open SQLite.** All history access goes through `historyQuery(op, args, timeout)` on the bridge and is answered by the worker. The HTTP side must never block on SQLite.
+- Values crossing between the worlds are JSON round-tripped (`passJSON`), as IPC serialisation did; do not share mutable objects across them.
 - Backup/restore is a **separate local CLI**, deliberately not an HTTP endpoint.
-- Geocoding and ORS walking are request-time clients in the main process; they do not touch DB or ingestion ownership.
-- `flightRecorder` holds a replica of worker state in memory; persistence only happens worker-side.
+- Geocoding and ORS walking are request-time clients on the server side; they do not touch DB or ingestion ownership.
+- The flight recorder holds a replica of worker state in memory; persistence only happens worker-side.
 
 ### Module layering (reuse, don't reimplement)
 
-`src/core/` holds the engines that must be reused rather than forked:
+- `timeengine.go`, `calendar.go` — all date math. **Europe/Madrid only** (embedded tz database); never host-local time. Service dates cross midnight and DST; a nonexistent spring time is rejected and a repeated autumn time resolves to the earlier occurrence.
+- `planner.go` — candidate generation (direct + one transfer) and the journey timeline: walks, catchable departures, absolute times, ranking, dedupe.
+- `schedules.go` (timetables, fleet registry), `schedlogic.go` (trip matching, delay engine, service hours), `synth.go` (schedule synthesis).
+- `geo.go` (geometry, GPS gap detection) + `walkgeo.go` (ORS foot-walking or labeled approximate fallback — **never substitute driving routes**; street geocoder).
+- `tracker*.go` (the Mataró tracker), `registry.go` — **only Mataró is registered**; there is nothing to re-enable.
+- `httpguard.go` — security headers, API rate limiter, trusted proxies, bounded bodies, the per-host TLS chain repair; `anomalies.go`, `incidentrun.go` — phantom-stretch and incident logic.
+- `jsobj.go`, `jsonparse.go`, `jsmap.go`, `jscase.go`, `mathjs.go`, `fdlibm.go` — JavaScript value semantics (ordered objects, `JSON.stringify` formatting, case mapping, V8's Math). Build responses with these, not Go maps or `encoding/json`, or key order and number formatting change.
 
-- `time/calendarEngine.js`, `time/timeEngine.js` — all date math. **Europe/Madrid only**; never host-local `getHours()`/`getDay()`. Service dates cross midnight and DST; a nonexistent spring time is rejected and a repeated autumn time resolves to the earlier occurrence.
-- `schedule/transitRouter.js` → generates direct + one-transfer candidates; `schedule/journeyTimeline.js` → resolves walks, checks catchable departures, makes times absolute, ranks, dedupes.
-- `schedule/scheduleSynthesizer.js`, `schedule/delayEngine.js`.
-- `geo/geoEngine.js` + `geo/pedestrianRouter.js` (ORS foot-walking or labeled approximate fallback — **never substitute driving routes**), `geo/streetGeocoder.js`.
-- `BaseTracker.js` / `TrackerRegistry.js` — tracker lifecycle and line→tracker resolution. **Only Mataró is registered.** The non-Mataró provider trackers and their GTFS/indexer helpers were deleted rather than left dormant, so `TrackerRegistry` has a single provider by construction — there is nothing to re-enable.
-- `httpProtection.js` — security headers, API rate limiter, trusted proxies. `serviceStatus.js` — service calendar/status.
-
-`server.js` is a ~44 KB route table with compatibility aliases (`/api/mataro/*`, `/api/plan` vs `/api/mataro/plan`, and page aliases `/com-anar-hi`, `/rutes`, `/itinerari`, `/observatori`). Inspect it rather than assuming a contract has been retired.
+`server.go` is the route table, with compatibility aliases (`/api/mataro/*`, `/api/plan` vs `/api/mataro/plan`, and page aliases `/com-anar-hi`, `/rutes`, `/itinerari`, `/observatori`). Inspect it rather than assuming a contract has been retired.
 
 ### Coordinates: two orders, both load-bearing
 
 - Internal / Leaflet geometry: **[lat, lon]**
 - GeoJSON / OpenRouteService: **[lon, lat]**
 
-Conversions exist at the boundaries (`pedestrianRouter`, `geoEngine`). Preserve zero coordinates (`||`-style fallbacks silently break Equator/Prime Meridian) and keep the `lat`/`lon` plus `latitude`/`longitude` vehicle field compatibility aliases.
+Conversions exist at the boundaries (`walkgeo.go`, `geo.go`). Preserve zero coordinates (`||`-style fallbacks silently break Equator/Prime Meridian) and keep the `lat`/`lon` plus `latitude`/`longitude` vehicle field compatibility aliases.
 
 ### Telemetry honesty
 
@@ -111,33 +109,39 @@ Vanilla-JS constraints to preserve: Leaflet canvas renderer, event delegation, b
 | `REPORTS_DIR` | `./data/reports` | Independent of `DATA_DIR` |
 | `DB_PATH` | `transit_history.db` under `DATA_DIR` | |
 | `ORS_BASE_URL` / `ORS_API_KEY` | unset | Walking is **disabled** without these; there is no silent public-provider default |
-| `TRUSTED_PROXIES` | unset | Feeds `trustedProxies()` |
+| `TRUSTED_PROXIES` | unset | Feeds the trusted-proxy check |
 | `MATARO_SIRI_ACCOUNT_ID` / `MATARO_SIRI_ACCOUNT_KEY` | built-in Avanza defaults | Override the SIRI account; public well-known values, not secrets |
+| `ARRIBO_ROOT` | the binary's directory | Holds `public/`, `src/data/` and `data/` |
+| `GOGC` / `GOMEMLIMIT` | `50` / `128MiB` in compose | See *Memory* in [app/README.md](app/README.md) |
 
-Plain `npm start` does **not** load `.env` — set real environment variables (or Compose `.env`).
+The binary does **not** load `.env` — set real environment variables (or Compose `.env`).
 
 `MATARO_SIRI_ACCOUNT_ID` / `MATARO_SIRI_ACCOUNT_KEY` override the SIRI account. They are unset by default, in which case the client falls back to the built-in Avanza well-known values (`Mataro` / `Mataro*WS`) — these are public client defaults shared by every consumer of the portal, not secrets. Unchanged deployments need no configuration.
 
 ## Health, logging, privacy
 
-- `/api/health` = liveness (always the Docker healthcheck target). `/api/ready` = 503 during startup/shutdown, else 200 with `ready` or `degraded`; **probes must never query providers or SQLite**. An empty overnight fleet alone is not degraded; fleet fetch age >60 s or unknown is.
+- `/api/health` = liveness (the container healthcheck runs `/app/arribo healthcheck`, which GETs it). `/api/ready` = 503 during startup/shutdown, else 200 with `ready` or `degraded`; **probes must never query providers or SQLite**. An empty overnight fleet alone is not degraded; fleet fetch age >60 s or unknown is.
 - SSE (`/api/fleet/events`) is unbuffered, capped at 200 streams and 8 per client address (a refused browser falls back to polling); its clients and timers must be closed on shutdown.
-- Never log or return endpoint queries, coordinates, or key values. Planner requests may carry home/workplace coordinates — do not log them.
-- SIGINT/SIGTERM: mark not-ready → close SSE → drain HTTP ≤5 s → await worker shutdown ≤5 s, inside a 12 s outer deadline under Compose's 15 s grace. Windows child termination does not exercise POSIX signal delivery — validate that on Linux/container.
-- Compose: 400 MB limit, 80 MB reservation, 160 MB V8 heap, non-root with all capabilities dropped and no-new-privileges, `Europe/Madrid`, digest-pinned `node:22.23.4-alpine`.
+- Never log or return endpoint queries, coordinates, or key values. Planner requests may carry home/workplace coordinates — do not log them. Transport errors are logged in Node's wording without URLs (`nodeErrMessage`, `describeChainFailure`).
+- Never disable TLS verification (`InsecureSkipVerify`); the Avanza portal's incomplete chain is repaired with vendored CAs in `src/data/certs/` (see OPERATIONS.md).
+- SIGINT/SIGTERM: mark not-ready → close SSE → drain HTTP ≤5 s → await worker shutdown ≤5 s, under Compose's 15 s grace.
+- Compose: 400 MB limit, 80 MB reservation, `GOGC=50`, `GOMEMLIMIT=128MiB`, uid 1000 with all capabilities dropped and no-new-privileges, `Europe/Madrid`, a `scratch` image (no shell).
 
 ## Delivery
 
-Validate before reporting done — a run is not finished while a suite is red:
+Validate before reporting done — a run is not finished while a check is red:
 
 ```bash
+# Go (in a golang:1.26-alpine container): gofmt -l . must print nothing; go vet ./...; go build
 npm run test:syntax && npm run lint && npm test && node scripts/docs_check.js
 ```
+
+The Go server has no unit tests of its own yet: the parity harness that checked it against the Node code went with the Node code. For any server change, run the binary against a copy of the database and compare the affected endpoints before and after.
 
 `npm run lint` is advisory: it exits 0 with `no-unused-vars` warnings, so a
 non-zero exit means a genuine correctness error. `npm run test:syntax` remains
 the hard gate.
 
-When a test fails, **compare against HEAD before changing anything** and prefer fixing the fixture over relaxing the assertion. Schedule-sensitive fixtures are frozen deliberately. Use a local ORS stub, never personal coordinates.
+When a test fails, **compare against HEAD before changing anything** and prefer fixing the fixture over relaxing the assertion. Use a local ORS stub, never personal coordinates.
 
 Commit, push, deploy, or restore live data **only when explicitly asked**. Report files changed, rationale, test results, and anything unverified.

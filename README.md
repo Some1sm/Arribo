@@ -52,22 +52,22 @@ Arribo! integrates data from three primary sources with strict integrity rules:
 ```text
 Browser (vanilla JavaScript + Leaflet)
                  |
-          Express HTTP server
+     Go HTTP server (server world)
           /api/* + public assets
                  |
-           WorkerBridge IPC
+         bridge (JSON messages)
                  |
-      Background ingestion worker
+      Ingestion worker (worker world)
       - Mataró SIRI polling
       - Fleet updates and service notices
       - SQLite history and delay recording
       - Cached analytics report generation
 ```
 
-The main process serves the frontend and API, maintains in-memory fleet/report caches, and uses worker RPC for SIRI and historical database operations. The worker owns SQLite persistence and scheduled ingestion. Geocoding has its own client path.
+Both worlds run in one Go process ([app/](app/README.md)). The server world serves the frontend and API, maintains in-memory fleet/report caches, and asks the worker for SIRI and historical database operations. The worker owns SQLite persistence and scheduled ingestion. Geocoding has its own client path.
 
-- **Runtime:** Node.js **22.5 or newer**, required for built-in `node:sqlite`.
-- **Production dependencies:** `express`, `cors`, and `compression`.
+- **Runtime:** one static Go binary (Go 1.26, pure-Go SQLite, no cgo). It replaced the former Node/Express server on 2026-11-13 and keeps its HTTP contract.
+- **Node:** only for development tools: the minify step of the image build, the browser-code tests and the data scripts.
 - **Frontend:** plain HTML/CSS/JavaScript; no build step is needed to develop or run locally. The Docker image serves esbuild-minified copies of `public/js` and `public/css` ([scripts/minify_public.js](scripts/minify_public.js)).
 - **Storage:** SQLite history plus local route and timetable data.
 
@@ -75,12 +75,14 @@ The main process serves the frontend and API, maintains in-memory fleet/report c
 
 From the repository root:
 
+The simplest way is the Docker image below. Without Docker, build the binary with a Go 1.26 toolchain and run it from the repository root (it finds `public/`, `src/data/` and `data/` next to itself, or under `ARRIBO_ROOT`):
+
 ```bash
-npm ci
-npm start
+cd app && CGO_ENABLED=0 go build -o arribo . && cd ..
+ARRIBO_ROOT=$PWD app/arribo
 ```
 
-Open **http://localhost:3000**. `npm run dev` starts the same Node server; it does not provide automatic reload. Upstream live data requires network access.
+Open **http://localhost:3000**. This serves the unminified `public/` files. Upstream live data requires network access.
 
 ## Docker deployment
 
@@ -89,9 +91,9 @@ docker compose up -d --build
 docker compose logs -f arribo
 ```
 
-The Compose service exposes port 3000 and mounts `./data:/app/data` for persistent storage. The image runs the Go port of the server ([app/](app/README.md)): one static binary on a `scratch` base, serving the same `public/` (minified with Node at build time), the same `src/data/` files and the same SQLite database. It uses `Europe/Madrid`, a 400 MB container memory limit and a `GOMEMLIMIT` soft heap target. See [docker-compose.yml](docker-compose.yml) and [Dockerfile](Dockerfile) for exact settings. `npm start` still runs the Node implementation, which remains the reference the Go port is tested against.
+The Compose service exposes port 3000 and mounts `./data:/app/data` for persistent storage. The image runs the Go port of the server ([app/](app/README.md)): one static binary on a `scratch` base, serving the same `public/` (minified with Node at build time), the same `src/data/` files and the same SQLite database. It uses `Europe/Madrid`, a 400 MB container memory limit and a `GOMEMLIMIT` soft heap target. See [docker-compose.yml](docker-compose.yml) and [Dockerfile](Dockerfile) for exact settings.
 
-The repository targets a long-running Node/Docker deployment; retired serverless configuration has been removed.
+The repository targets a long-running Docker deployment; retired serverless configuration has been removed.
 
 ### Storage settings
 
@@ -136,20 +138,18 @@ API routes use GET; the server also permits HEAD. Other methods are rejected by 
 | `/api/analytics/termometre?hours=24` | Bus-service scorecard |
 | `/api/analytics/export/csv?hours=48` | Delay-log CSV export |
 
-Mataró-specific aliases and older compatibility routes also exist; `server.js` is the definitive route reference.
+Mataró-specific aliases and older compatibility routes also exist; [app/server.go](app/server.go) is the definitive route reference.
 
 ## Testing
 
 ```bash
-npm test             # Auto-discovers every test/ suite (except listed exclusions)
-npm run test:list    # Show which suites would run and which are skipped
-npm run test:full    # Also includes the performance benchmark suites
+npm ci               # dev tools: esbuild, eslint
+npm test             # Auto-discovers every test/ suite
+npm run test:list    # Show which suites would run
 node scripts/docs_check.js # Local guide links and npm script references
 ```
 
-Every `test/*.js` file runs in its own Node process with isolated temporary storage. A handful of retired-provider diagnostics and manual load tests are skipped with printed reasons (see `test/run.js`).
-
-**Integration test note:** integration suites may start workers, contact upstream services, and write runtime data; inspect their setup before running against a deployment's data directory.
+Every `test/*.js` file runs in its own Node process with isolated temporary storage. These cover the browser code, the data scripts and the portal's TLS chain. The Go server has no unit tests of its own yet (the harness that compared it with the Node server went with that code); `go vet` and `gofmt -l` must be clean, and a server change is checked by running the binary on a copy of the database and comparing the affected endpoints.
 
 ## Avanza Mataró Timetable API & Data Extraction
 
@@ -188,7 +188,7 @@ Other open-source tools and community transit projects can query these endpoints
 
 - **Session Cookies:** Send an initial `GET https://mataro.avanzagrupo.com/detalle-linea?idBusLine=1` to receive session cookies (`JSESSIONID`, `COOKIE_SUPPORT`), and supply them in the `Cookie` header on subsequent POSTs.
 - **Headers:** Include `'X-Requested-With': 'XMLHttpRequest'` and `'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'`.
-- **TLS Certificate Chain:** `mataro.avanzagrupo.com` serves its leaf certificate without the Sectigo intermediate that signed it, so Node cannot verify the chain and fails with `UNABLE_TO_VERIFY_LEAF_SIGNATURE`. This is repaired, not bypassed: the intermediate and its root are vendored in `src/data/certs/` and supplied for that host only, so verification stays on. **Do not set `NODE_TLS_REJECT_UNAUTHORIZED=0` or `rejectUnauthorized: false`** — these notices and timetables would then be unauthenticated. See [OPERATIONS.md](OPERATIONS.md#certificate-chain-rotations) and `test/portal_tls_verification_test.js`.
+- **TLS Certificate Chain:** `mataro.avanzagrupo.com` serves its leaf certificate without the Sectigo intermediate that signed it, so neither Go nor Node can verify the chain and fails with `UNABLE_TO_VERIFY_LEAF_SIGNATURE`. This is repaired, not bypassed: the intermediate and its root are vendored in `src/data/certs/` and supplied for that host only, so verification stays on. **Do not set `NODE_TLS_REJECT_UNAUTHORIZED=0` or `rejectUnauthorized: false`** — these notices and timetables would then be unauthenticated. See [OPERATIONS.md](OPERATIONS.md#certificate-chain-rotations) and `test/portal_tls_verification_test.js`.
 
 ### Automated Scraper Script
 
@@ -211,16 +211,15 @@ node scripts/scrape_maresme_timetables.js            # write src/data/mataro_sch
 node scripts/scrape_maresme_timetables.js --diff     # report per-grid season provenance, write nothing
 ```
 
-The seasons file carries **both** grids; `src/data/seasonCalendar.js` picks the one in force and
-`src/data/mataroSchedules.js` serves it at require time, so no call site passes a season. Stop
+The seasons file carries **both** grids; `app/calendar.go` picks the one in force and
+`app/schedules.go` serves it at load time, so no call site passes a season. Stop
 geometry still comes from the Avanza scrape — only times are taken from maresme.net, which makes
 cumulative offsets authoritative rather than locally calibrated.
 
 `--diff` is the audit tool: it classifies every shipped grid as winter, summer, identical in
 both, or neither. It is what surfaced the original defect — the previous
 `mataro_schedules.json` held a **mixture**, with L1/L2/L4/L6/L8 winter in one direction and
-summer in the other. `test/season_provenance_test.js` is the standing guard against that
-returning.
+summer in the other. Run `--diff` after every refresh to keep it from returning.
 
 The active season and its provenance are reported on `/api/health` (`schedule.season`,
 `schedule.seasonSource`, `schedule.seasonKnown`) and shown as a pill in the page header. A live

@@ -1,12 +1,12 @@
 # Arribo server in Go
 
-`app/` is a port of the Node backend (`server.js` and `src/`) to one static Go
-binary. The browser app in `public/`, the data files in `src/data/` and the
-SQLite schema of `data/transit_history.db` are unchanged; the Go server reads
-the same files and the same database.
+`app/` is the Arribo server: one static Go binary, ported from the former Node
+backend (`server.js` and `src/`, removed on 2026-11-13 once the port had run in
+production). The browser app in `public/`, the data files in `src/data/` and the
+SQLite schema of `data/transit_history.db` were left unchanged by the port.
 
-The JavaScript sources stay in the repository: they are the reference the port
-is checked against (see *Parity testing*), and the browser code is unchanged.
+The table below maps the old modules to their Go files (each Go file's header
+names the module it came from), for reading the git history before the removal.
 
 ## Layout
 
@@ -50,7 +50,7 @@ variables apply (`PORT`, `TZ`, `DATA_DIR`, `DB_PATH`, `REPORTS_DIR`,
 - `ARRIBO_FAKE_EPOCH_MS`, `ARRIBO_FAKE_RATE`: a fake clock, for tests.
 
 Subcommands: `arribo` (the server), `arribo healthcheck` (the container probe:
-exit 0 when `/api/health` answers 200), `arribo difftest` (see below).
+exit 0 when `/api/health` answers 200).
 
 ## Memory
 
@@ -85,7 +85,9 @@ because the collector then has a larger heap to mark.
 
 ## Parity testing
 
-Two layers, both run on the host against the production Node image:
+Before the Node code was removed, the port was checked against it in two
+layers. Neither harness is in the repository any more (they needed the Node
+code); they are in the git history before 2026-11-13:
 
 1. **Functions** (`difftest/gen.js` + `arribo difftest`): the JS functions run
    on random inputs and the Go ports replay every case byte for byte (timetable,
