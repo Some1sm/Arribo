@@ -333,6 +333,17 @@ func (t *MataroTracker) staticStops(route *Obj, line *Obj) []any {
 }
 
 func (t *MataroTracker) precompileStaticRoutes() {
+	// A route's polyline is the same in every variant of its line; the
+	// templates are only read (responses copy them), so they share one slice.
+	polylines := map[*Obj][]any{}
+	routePolyline := func(r *Obj) []any {
+		if p, ok := polylines[r]; ok {
+			return p
+		}
+		p := polylinePairs(r)
+		polylines[r] = p
+		return p
+	}
 	for _, line := range t.linesData {
 		lID := jsString(line.Get("id"))
 		routes := t.routes(lID)
@@ -350,14 +361,14 @@ func (t *MataroTracker) precompileStaticRoutes() {
 			} else {
 				selected = O("coords", []any{}, "stops", []any{})
 			}
-			polyline := polylinePairs(selected)
+			polyline := routePolyline(selected)
 			stops := t.staticStops(selected, line)
 			allDirections := []any{}
 			for idx, r := range routes {
 				allDirections = append(allDirections, O(
 					"dirId", numToString(float64(idx)),
 					"name", r.Get("name"),
-					"polyline", polylinePairs(r),
+					"polyline", routePolyline(r),
 					"stops", t.staticStops(r, line),
 				))
 			}

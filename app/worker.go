@@ -116,7 +116,7 @@ func passJSON(v any) any {
 		}
 		return x
 	}
-	return jsonRoundTrip(v)
+	return jsonClone(v)
 }
 
 // workerMsg is a message from the server to the worker.

@@ -256,7 +256,7 @@ func sqlArgToJS(v driver.Value) any {
 	case float64:
 		return x
 	case string:
-		return x
+		return v // already boxed
 	case []byte:
 		return string(x)
 	case bool:
@@ -735,7 +735,7 @@ func sqlValueToJS(v any) any {
 	case float64:
 		return x
 	case string:
-		return x
+		return v // already boxed
 	case []byte:
 		return string(x)
 	case bool:
@@ -777,13 +777,26 @@ func (h *HistoryDB) rows(q string, max int, args ...any) ([]*Obj, error) {
 	for i := range vals {
 		ptrs[i] = &vals[i]
 	}
+	// Short text values (line codes, vehicle and stop ids, enum-like flags)
+	// repeat on most rows; keeping one copy each makes a large result much
+	// smaller while it is held. The map keeps the boxed value, so a repeat
+	// is not boxed again.
+	intern := map[string]any{}
 	for (max < 0 || len(out) < max) && rows.Next() {
 		if err := rows.Scan(ptrs...); err != nil {
 			return nil, err
 		}
 		o := &Obj{kvs: make([]objKV, 0, len(cols))}
 		for i, c := range cols {
-			o.Set(c, sqlValueToJS(vals[i]))
+			v := sqlValueToJS(vals[i])
+			if str, ok := v.(string); ok && len(str) <= internMaxLen {
+				if kept, ok := intern[str]; ok {
+					v = kept
+				} else {
+					intern[str] = v
+				}
+			}
+			o.Set(c, v)
 		}
 		out = append(out, o)
 	}

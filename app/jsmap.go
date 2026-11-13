@@ -5,6 +5,7 @@ package main
 // sort first), and re-setting a key keeps its position.
 
 import (
+	"math"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -105,6 +106,95 @@ func jsonRoundTrip(v any) any {
 		return nil
 	}
 	return out
+}
+
+// jsonClone returns the same value as jsonRoundTrip without writing the JSON
+// text: a deep copy with JSON's conversions (an undefined member is dropped,
+// undefined / NaN / ±Infinity become null, -0 becomes 0, typed slices become
+// []any). Building the copy directly keeps a large worker result from
+// existing three times at once (original, text, parsed copy). Strings are
+// immutable and shared; one that is not valid UTF-8, or a value that writes
+// its own JSON, still goes through the text so its conversion is exact.
+func jsonClone(v any) any {
+	switch x := v.(type) {
+	case nil, undefinedT:
+		return nil
+	case bool:
+		return x
+	case float64:
+		if math.IsNaN(x) || math.IsInf(x, 0) {
+			return nil
+		}
+		return boxNumber(x + 0) // -0 + 0 is +0, as String(-0) is "0"
+	case int:
+		return boxNumber(float64(x))
+	case int64:
+		return boxNumber(float64(x))
+	case string:
+		if utf8.ValidString(x) {
+			return x
+		}
+		return jsonRoundTrip(x)
+	case *Obj:
+		if x == nil {
+			return nil
+		}
+		// Same key order as the parsed text would give (array-index keys first).
+		o := &Obj{kvs: make([]objKV, 0, len(x.kvs))}
+		bad := false
+		x.each(func(k string, val any) {
+			if bad || isUndef(val) {
+				return
+			}
+			if !utf8.ValidString(k) {
+				bad = true
+				return
+			}
+			o.Set(k, jsonClone(val))
+		})
+		if bad {
+			return jsonRoundTrip(x)
+		}
+		return o
+	case []any:
+		out := make([]any, len(x))
+		for i, e := range x {
+			out[i] = jsonClone(e)
+		}
+		return out
+	case []string:
+		out := make([]any, len(x))
+		for i, e := range x {
+			out[i] = jsonClone(e)
+		}
+		return out
+	case []float64:
+		out := make([]any, len(x))
+		for i, e := range x {
+			out[i] = jsonClone(e)
+		}
+		return out
+	case []int:
+		out := make([]any, len(x))
+		for i, e := range x {
+			out[i] = boxNumber(float64(e))
+		}
+		return out
+	case [][]float64:
+		out := make([]any, len(x))
+		for i, e := range x {
+			out[i] = jsonClone(e)
+		}
+		return out
+	case []*Obj:
+		out := make([]any, len(x))
+		for i, e := range x {
+			out[i] = jsonClone(e)
+		}
+		return out
+	}
+	// JSMarshaler, rawJSON, and anything writeJSON rejects (it panics the same way).
+	return jsonRoundTrip(v)
 }
 
 // stripMarks is s.normalize('NFD').replace(/[̀-ͯ]/g, ”).
