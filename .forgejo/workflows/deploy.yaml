@@ -1,0 +1,97 @@
+# Every push to main is a production deploy: the checks below must pass, then
+# the image is built on the host and the live stack in
+# /home/server/containers/apps-dave/arribo is updated. See CLAUDE.md, "Deploying".
+name: Deploy Arribo
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  go:
+    runs-on: docker
+    container:
+      image: golang:1.26-alpine
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - name: Fetch Repository
+        uses: http://forgejo:3000/vps-common/forgejo-actions/checkout@v1.1
+
+      - name: gofmt and go vet
+        shell: sh
+        run: |
+          set -e
+          cd app
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "gofmt would change:"; echo "$unformatted"; exit 1
+          fi
+          go vet ./...
+
+  node:
+    runs-on: docker
+    container:
+      # Same Node image as the Dockerfile's assets stage.
+      image: node:22.23.4-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914
+    steps:
+      - name: Fetch Repository
+        uses: http://forgejo:3000/vps-common/forgejo-actions/checkout@v1.1
+
+      - name: Syntax, lint, tests, docs
+        shell: sh
+        run: |
+          set -e
+          npm ci --no-audit --no-fund
+          npm run test:syntax
+          npm run lint
+          npm test
+          node scripts/docs_check.js
+
+  deploy:
+    needs: [go, node]
+    runs-on: docker
+    container:
+      image: docker:latest
+    steps:
+      - name: Fetch Repository
+        uses: http://forgejo:3000/vps-common/forgejo-actions/checkout@v1.1
+
+      - name: Keep the running image for rollback
+        shell: sh
+        run: |
+          if docker image inspect arribo-arribo:latest >/dev/null 2>&1; then
+            docker tag arribo-arribo:latest arribo-arribo:previous
+            echo ">>> arribo-arribo:previous is the image that ran before this deploy"
+          fi
+
+      # The stack mounts ./data as /app/data, which hides the image's copy of
+      # data/cities/mataro: the route and stop files must be synced into it.
+      - name: Build and Deploy Stack
+        uses: http://forgejo:3000/vps-common/forgejo-actions/deploy-compose@v1.1
+        with:
+          app_name: "arribo"
+          target_dir: "/home/server/containers/apps-dave/arribo"
+          build_image: "true"
+          sync_files: "data/cities/mataro"
+
+      - name: Wait for the container to be healthy
+        shell: sh
+        run: |
+          for i in $(seq 1 40); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' arribo 2>/dev/null || echo missing)
+            if [ "$status" = "healthy" ]; then
+              echo ">>> arribo is healthy"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo ">>> arribo is not healthy after 2 minutes (status: $status). Last log lines:"
+          docker logs --tail 40 arribo 2>&1
+          echo ">>> Roll back: docker tag arribo-arribo:previous arribo-arribo:latest && docker compose up -d (in the stack folder)"
+          exit 1

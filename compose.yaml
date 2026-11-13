@@ -1,5 +1,8 @@
 services:
   arribo:
+    # The deploy workflow builds this tag from the repository and copies only
+    # this file to the server; `build: .` is for running from a checkout.
+    image: arribo-arribo:latest
     build: .
     container_name: arribo
     restart: unless-stopped

@@ -16,8 +16,10 @@ There is no Go toolchain on the Windows machine; build and vet in a container (o
 
 ```bash
 docker run --rm -v "$PWD/app":/src -w /src -e CGO_ENABLED=0 golang:1.26-alpine sh -c 'go vet ./... && go build -trimpath -ldflags="-s -w" -o arribo .'
-docker compose up -d --build      # the real image: container on port 3000, ./data mounted
+docker compose up -d --build      # the real image from a checkout: container on port 3000, ./data mounted
 ```
+
+Production does not use this: a push to `main` deploys (see *Deploying*).
 
 Node side (browser code, scripts):
 
@@ -101,6 +103,10 @@ The platform distinguishes three things and must not conflate them: **fresh GPS*
 
 Vanilla-JS constraints to preserve: Leaflet canvas renderer, event delegation, bounded caches, visibility-driven deep sleep, async state guards (stale-search invalidation in `plan.js`), and fully scrollable departure boards. [UI_GUIDE.md](UI_GUIDE.md) is the design system reference — CSS custom properties (`--c10-primary`, `--bg-surface*`, `--btn-*`), the 150 ms `cubic-bezier(0.16, 1, 0.3, 1)` interaction timing, and the button-class hierarchy (`.btn-primary`, `.btn-secondary`, pills, `.btn-icon`). Read it before adding UI.
 
+### Data files
+
+Timetables (`src/data/mataro_schedules*.json`), routes and stops (`data/cities/mataro/`) are checked in, not fetched at run time: the Observatori measures punctuality against them, and the worker's nightly drift check against maresme.net (`schedule.drift` on `/api/health`) says when they need a refresh. They are written by `scripts/lib/dataJson.js` (one trip or stop per line; never `JSON.stringify(v, null, 2)`, which made them ~85 000 lines), and the seasons file stores each day type once: `restoreSeasonDayAliases` in `app/schedules.go` rebuilds the `Feiners` / `Dissabtes` / `Diumenges i Festius` / `festius` copies at load. `test/data_files_format_test.js` guards both. Details in OPERATIONS.md, *Data file format*.
+
 ## Configuration
 
 | Variable | Default | Notes |
@@ -137,7 +143,7 @@ Validate before reporting done — a run is not finished while a check is red:
 npm run test:syntax && npm run lint && npm test && node scripts/docs_check.js
 ```
 
-The Go server has no unit tests of its own yet: the parity harness that checked it against the Node code went with the Node code. For any server change, run the binary against a copy of the database and compare the affected endpoints before and after.
+The Go server has no unit tests of its own yet: the parity harness that checked it against the Node code went with the Node code. For any server change, compare the old and new binary side by side (*Checking a server change* below).
 
 `npm run lint` is advisory: it exits 0 with `no-unused-vars` warnings, so a
 non-zero exit means a genuine correctness error. `npm run test:syntax` remains
@@ -145,4 +151,30 @@ the hard gate.
 
 When a test fails, **compare against HEAD before changing anything** and prefer fixing the fixture over relaxing the assertion. Use a local ORS stub, never personal coordinates.
 
-Commit, push, deploy, or restore live data **only when explicitly asked**. Report files changed, rationale, test results, and anything unverified.
+Commit, push, deploy, or restore live data **only when explicitly asked** — and a push to `main` **is** a deploy. Report files changed, rationale, test results, and anything unverified.
+
+### Checking a server change
+
+Build the old and the new binary, run each against its own copy of the same database snapshot on an internal Docker network (no internet, provider hosts such as `sirimataro.avanzagrupo.com`, `mataro.avanzagrupo.com`, `photon.komoot.io`, `maresme.net` mapped to `127.0.0.1`), with a frozen clock (`ARRIBO_FAKE_EPOCH_MS=<ms>`, `ARRIBO_FAKE_RATE=0`) and the same `public/` mounted in both, then send the same requests to both and compare status, headers and body. The client used so far (about 1 700 requests over every route, written for the Node-vs-Go port) and a database snapshot live only on the VPS, under `/var/tmp/arribo-go/e2e/` (`client/`, `db/snap.db`, `start.sh` shows the container setup). `/var/tmp` is not backed up, so do not count on it staying. Mount `src/` read-only and give each server its own `data/` copy. On that replay a `/api/line/N` that looks slower on one side is ordering (the first call builds a ~0.3 s cache), not a regression: time it directly before believing it.
+
+## Deploying
+
+The repository is `some1sm/arribo` on the self-hosted Forgejo (`git@git.lan:some1sm/arribo.git`, private). From Windows push with `GIT_SSH_COMMAND=/c/Windows/System32/OpenSSH/ssh.exe` so the Windows ssh-agent supplies the key; "Permission denied (publickey)" means the agent does not hold it (the user runs `ssh-add`).
+
+**Every push to `main` deploys to production** through [.forgejo/workflows/deploy.yaml](.forgejo/workflows/deploy.yaml) on the server's runner:
+
+1. `go` (gofmt must print nothing, `go vet`) and `node` (`npm ci`, `test:syntax`, `lint`, `npm test`, `docs_check`) run in parallel. A red check stops the deploy.
+2. `deploy` tags the running image `arribo-arribo:previous`, then `vps-common/forgejo-actions/deploy-compose@v1.1` builds `arribo-arribo:latest` from the repository, copies `compose.yaml` and `data/cities/mataro/` into the stack folder and runs `docker compose up -d`. It never pulls base images, never overwrites `.env`, and refuses to run if a project called `arribo` is running from another folder.
+3. It waits up to 2 minutes for the container's healthcheck; a container that does not get healthy fails the job (and is left running: roll back by hand).
+
+A re-run of an old job redeploys that old commit. `workflow_dispatch` redeploys `main` from the Actions tab. Job logs are in the repository's Actions tab, or on the host under `/home/server/containers/infra/services/forgejo/data/gitea/actions_log/some1sm/arribo/`.
+
+**The live stack** is `/home/server/containers/apps-dave/arribo` on the VPS (`ssh vps`, Windows OpenSSH; compose project and container `arribo`, port 3000). It holds `compose.yaml`, `.env` (the ORS settings; the repository never overwrites it) and `data/`: `transit_history.db` (~200 MB, WAL), `reports/`, `cache/`, `snapshots/` and the city files. Until 2026-11-13 this folder was a git checkout deployed by hand, so `.git`, the sources and the old `docker-compose.yml` may still be there; Compose uses `compose.yaml` when both exist. Touching files there by hand counts as deploying.
+
+`./data` is mounted over the image's `/app/data`, so the repository's `data/cities/mataro/*.json` reach production only because the workflow syncs that folder. A new file elsewhere under `data/` needs adding to `sync_files`. Files deleted from the repository are not deleted on the server.
+
+**Rolling back**, on the host in the stack folder: `docker tag arribo-arribo:previous arribo-arribo:latest && docker compose up -d` (the next push replaces it again), or revert the commit and push. Kept by hand: `arribo-arribo:go-1dda103` (first Go deploy) and `arribo-arribo:node-100f254` (the last Node image; it needs the Node-era `docker-compose.yml` and `Dockerfile`, saved with a database copy in `/var/tmp/arribo-backup-20261113`, which may not survive). The deploy action prunes untagged images, so an image is only kept if it has a tag.
+
+**After a deploy** check `docker ps` (healthy), `docker logs arribo` (no `error` / `panic`), and `/api/ready` (`ready`, fleet `fresh`). Memory is ~55–65 MiB in normal service and ~105–120 MiB with every cache full (Node used ~100 MiB in service); see *Memory* in [app/README.md](app/README.md).
+
+Base images: the Node pin (digest) is repeated in the Dockerfile and the workflow — change both together. `golang:1.26-alpine` and `docker:latest` float.
