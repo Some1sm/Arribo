@@ -43,13 +43,13 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const https = require('node:https');
+const { dataFileText } = require('./lib/dataJson');
 
 const CURRENT_PATH = path.join(__dirname, '..', 'src', 'data', 'mataro_schedules.json');
 const OUTPUT_PATH = path.join(__dirname, '..', 'src', 'data', 'mataro_schedules.seasons.json');
 
 const SEASONS = { hivern: 'winter', estiu: 'summer' };
 const DAY_KEYS = { a: 'weekday', b: 'saturday', c: 'sunday' };
-const CATALAN = { weekday: 'Feiners', saturday: 'Dissabtes', sunday: 'Diumenges i Festius' };
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 // ---------------------------------------------------------------------------
@@ -223,14 +223,6 @@ function toTimeStr(sec) {
   return `${pad2(h)}:${pad2(m)}`;
 }
 
-function formatJsonWithCompactArrays(obj) {
-  const json = JSON.stringify(obj, null, 2);
-  return json.replace(/"s": \[\s+([\s\S]*?)\s+\]/g, (_, inner) => {
-    const compact = inner.split(/,\s*/).map((x) => x.trim()).join(', ');
-    return `"s": [${compact}]`;
-  });
-}
-
 /**
  * Builds the timetable half of every direction for one season. Geometry,
  * distances and stop lists are carried over from the current file untouched;
@@ -360,15 +352,9 @@ function buildSeason(html, line, seasonName, notes) {
       dir.dayTravelSec[day] = terminal;
       dir.scheduleStats[day] = { count: departures.length, first: departures[0], last: departures[departures.length - 1] };
       dir.afternoonOnly[day] = toSec(departures[0]) >= 12 * 3600;
-
-      // Keep the historical alias keys populated; the loader still falls back
-      // to them and the data file has always carried both.
-      dir.schedules[CATALAN[day]] = departures.slice();
-      dir.dayTrips[CATALAN[day]] = trips;
-      if (day === 'sunday') {
-        dir.schedules.festius = departures.slice();
-        dir.dayTrips.festius = trips;
-      }
+      // The Catalan alias keys (Feiners, Dissabtes, Diumenges i Festius,
+      // festius) are not stored: the server rebuilds them from these three
+      // day types when it loads the file (restoreDayAliases, app/schedules.go).
     }
 
     if (!dir.dayTravelSec.weekday) {
@@ -620,7 +606,7 @@ async function main() {
     seasons
   };
 
-  fs.writeFileSync(OUTPUT_PATH, formatJsonWithCompactArrays(payload) + '\n');
+  fs.writeFileSync(OUTPUT_PATH, dataFileText(payload));
   console.log(`\n✓ Wrote ${path.relative(process.cwd(), OUTPUT_PATH)}`);
   if (notes.length) {
     console.log(`\n── ${notes.length} note(s) ──`);

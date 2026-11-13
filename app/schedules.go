@@ -118,11 +118,83 @@ func loadSchedules(seasonsPath, legacyPath string) error {
 		seasonKeys = seasons.Keys()
 		for _, k := range seasonKeys {
 			if g, ok := seasons.Get(k).(*Obj); ok {
+				restoreSeasonDayAliases(g)
 				seasonGrids[k] = buildGrid(g)
 			}
 		}
 	}
 	return nil
+}
+
+// dayAliasOrder is the key order the seasons file used to hold in dayTrips
+// and schedules. The alias keys were exact copies of their day type, so the
+// file now stores only weekday / saturday / sunday (scripts/lib/dataJson.js)
+// and the loader puts the copies back, in this order, before anything reads
+// the grid.
+var dayAliasOrder = [...]struct{ key, day string }{
+	{"weekday", ""},
+	{"Feiners", "weekday"},
+	{"saturday", ""},
+	{"Dissabtes", "saturday"},
+	{"sunday", ""},
+	{"Diumenges i Festius", "sunday"},
+	{"festius", "sunday"},
+}
+
+func restoreSeasonDayAliases(grid *Obj) {
+	for _, lk := range grid.Keys() {
+		line, _ := grid.Get(lk).(*Obj)
+		if lk == "_meta" || line == nil {
+			continue
+		}
+		dirs := line.ObjAt("directions")
+		if dirs == nil {
+			continue
+		}
+		for _, dk := range dirs.Keys() {
+			d, _ := dirs.Get(dk).(*Obj)
+			if d == nil {
+				continue
+			}
+			for _, field := range [...]string{"dayTrips", "schedules"} {
+				if m := d.ObjAt(field); m != nil {
+					d.Set(field, withDayAliases(m))
+				}
+			}
+		}
+	}
+}
+
+// withDayAliases returns m with each missing alias key set to a copy of its
+// day type, in dayAliasOrder, followed by any other keys m holds. A map that
+// already has every alias (a file written before the aliases were dropped)
+// comes back unchanged.
+func withDayAliases(m *Obj) *Obj {
+	complete := true
+	for _, a := range dayAliasOrder {
+		if a.day != "" && !m.Has(a.key) && m.Has(a.day) {
+			complete = false
+			break
+		}
+	}
+	if complete {
+		return m
+	}
+	out := O()
+	for _, a := range dayAliasOrder {
+		switch {
+		case m.Has(a.key):
+			out.Set(a.key, m.Get(a.key))
+		case a.day != "" && m.Has(a.day):
+			out.Set(a.key, deepClone(m.Get(a.day)))
+		}
+	}
+	for _, k := range m.Keys() {
+		if !out.Has(k) {
+			out.Set(k, m.Get(k))
+		}
+	}
+	return out
 }
 
 func buildGrid(g *Obj) *schedGrid {

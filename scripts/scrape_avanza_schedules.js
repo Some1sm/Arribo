@@ -19,6 +19,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const https = require('node:https');
 const verifiedTls = require('./lib/verifiedTls');
+const { dataFileText } = require('./lib/dataJson');
 
 // mataro.avanzagrupo.com serves its leaf certificate without the Sectigo
 // intermediate that signed it, so Node cannot build the chain and fails with
@@ -358,7 +359,7 @@ async function scrapeNetwork() {
 
   // Save updated schedule files
   console.log(`💾 Updating ${DATA_PATH_SRC}...`);
-  fs.writeFileSync(DATA_PATH_SRC, JSON.stringify(currentSchedules, null, 2), 'utf8');
+  fs.writeFileSync(DATA_PATH_SRC, dataFileText(currentSchedules), 'utf8');
 
 
   console.log('\n🎉 Official Avanza schedule calibration completed successfully!');

@@ -35,6 +35,7 @@ node scripts/docs_check.js   # validates relative links + npm script refs in REA
 ```bash
 node scripts/scrape_avanza_schedules.js                    # refresh src/data/mataro_schedules.json from the Avanza portal
 node scripts/scrape_maresme_timetables.js [--diff]         # refresh / check src/data/mataro_schedules.seasons.json
+node scripts/lib/dataJson.js <file.json>...                 # rewrite a data file in the compact data-file format (see OPERATIONS.md)
 node scripts/history_backup.js backup <src.db> <dest.db>   # also: verify | restore (restore writes a NEW file, never live storage)
 node scripts/cdp_ui_check.js, upgrades_ui_check.js, ui_card_height_check.js   # CDP layout probes against a running server
 ```

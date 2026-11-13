@@ -305,6 +305,17 @@ to the shipped `src/data/mataro_schedules.seasons.json`. To refresh:
    ```
 4. Deploy the updated dataset.
 
+### Data file format
+
+The scrapers and `scripts/stop_route_distances.js` write the timetable, route and stop
+files with `scripts/lib/dataJson.js`: one trip or stop per line, short lists packed
+several to a line, so the files stay diffable at about a tenth of their pretty-printed
+size. The seasons file stores each day type once (`weekday`, `saturday`, `sunday`); the
+server rebuilds the Catalan alias keys (`Feiners`, `Dissabtes`, `Diumenges i Festius`,
+`festius`) when it loads it. If a data file is replaced by hand (a new route export, for
+example), rewrite it with `node scripts/lib/dataJson.js <file>`;
+`test/data_files_format_test.js` fails until you do.
+
 ### Yearly seasonal upkeep checklist
 
 In June of each year, the operator publishes the summer service window notice (e.g. "HORARIS ESTIU <year>").

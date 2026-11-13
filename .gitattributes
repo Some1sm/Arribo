@@ -1,0 +1,6 @@
+# Timetable, route and stop data written by scripts (scripts/lib/dataJson.js):
+# collapsed in Forgejo diffs. holidays.json is edited by hand and stays visible.
+src/data/mataro_schedules.json linguist-generated=true
+src/data/mataro_schedules.seasons.json linguist-generated=true
+data/cities/mataro/mataro_routes_full.json linguist-generated=true
+data/cities/mataro/mataro_paradas.json linguist-generated=true

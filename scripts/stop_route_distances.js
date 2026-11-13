@@ -24,6 +24,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { dataFileText } = require('./lib/dataJson');
 
 const ROOT = path.join(__dirname, '..');
 const ROUTES_PATH = path.join(ROOT, 'data', 'cities', 'mataro', 'mataro_routes_full.json');
@@ -77,11 +78,6 @@ function alongRoute(coords, stops) {
   });
 }
 
-function formatSeasons(obj) {
-  // Same as formatJsonWithCompactArrays in scripts/scrape_maresme_timetables.js.
-  return JSON.stringify(obj, null, 2).replace(/"s": \[\s+([\s\S]*?)\s+\]/g, (_, inner) => `"s": [${inner.split(/,\s*/).map(x => x.trim()).join(', ')}]`);
-}
-
 function rewriteGrid(grid, routes, report) {
   for (const [lineId, line] of Object.entries(grid)) {
     if (lineId === '_meta' || !line || !line.directions) continue;
@@ -119,12 +115,12 @@ function main() {
   const legacyRaw = fs.readFileSync(LEGACY_PATH, 'utf8');
   const legacy = JSON.parse(legacyRaw);
   rewriteGrid(legacy, routes, report);
-  const legacyOut = JSON.stringify(legacy, null, 2) + '\n';
+  const legacyOut = dataFileText(legacy);
 
   const seasonsRaw = fs.readFileSync(SEASONS_PATH, 'utf8');
   const seasons = JSON.parse(seasonsRaw);
   for (const grid of Object.values(seasons.seasons || {})) rewriteGrid(grid, routes, report);
-  const seasonsOut = formatSeasons(seasons) + '\n';
+  const seasonsOut = dataFileText(seasons);
 
   for (const [file, before, after] of [[LEGACY_PATH, legacyRaw, legacyOut], [SEASONS_PATH, seasonsRaw, seasonsOut]]) {
     // A Windows checkout (core.autocrlf) holds these files with CRLF: compare
