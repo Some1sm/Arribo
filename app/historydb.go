@@ -99,7 +99,7 @@ func summariseTimesProvenance(c provCounts) string {
 	return provMixed
 }
 
-var mataroLineIDs = []string{"1", "2", "3", "4", "5", "6", "7", "8"}
+var mataroLineIDs = mataroAgency.LineIDs
 var mataroLineCodes = func() []string {
 	out := make([]string, len(mataroLineIDs))
 	for i, id := range mataroLineIDs {

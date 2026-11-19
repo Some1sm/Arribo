@@ -1174,7 +1174,7 @@ func (s *Server) hDataHealth(q *xreq, res *xres) error {
 	holidaysKnown := isHolidayKnown(nowI)
 	holidayCoverage := getHolidayCoverage(nowI)
 
-	ids := []string{"1", "2", "3", "4", "5", "6", "7", "8"}
+	ids := mataroAgency.LineIDs
 	chans := make([]chan *Obj, len(ids))
 	deadline := time.Now().Add(3 * time.Second)
 	for i, id := range ids {

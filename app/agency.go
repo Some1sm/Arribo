@@ -18,10 +18,32 @@ type Agency struct {
 	Mode string
 	// DefaultColor is used when a line's own colour is unknown.
 	DefaultColor string
+	// LineIDs are the operator's line ids, in catalog order. Read-only:
+	// callers must not modify the slice.
+	LineIDs []string
+	// Bounds is the box a vehicle fix must fall in to be accepted.
+	Bounds GeoBounds
 	// matchLine takes a lower-cased line id with any "line-" / "linia-"
 	// prefix removed and returns the operator's own id for that line, or
 	// ok=false when the line is not this operator's.
 	matchLine func(clean string) (id string, ok bool)
+}
+
+// GeoBounds is a lat/lon box, edges included.
+type GeoBounds struct{ MinLat, MaxLat, MinLon, MaxLon float64 }
+
+// contains reports whether a finite fix lies in the box.
+func (b GeoBounds) contains(lat, lon float64) bool {
+	return isFinite(lat) && isFinite(lon) && lat >= b.MinLat && lat <= b.MaxLat && lon >= b.MinLon && lon <= b.MaxLon
+}
+
+// lineIDsAny is LineIDs as a fresh []any, for JSON values.
+func (a *Agency) lineIDsAny() []any {
+	out := make([]any, len(a.LineIDs))
+	for i, id := range a.LineIDs {
+		out[i] = id
+	}
+	return out
 }
 
 var mataroAgency = &Agency{
@@ -29,6 +51,8 @@ var mataroAgency = &Agency{
 	Name:         "Mataró Bus",
 	Mode:         "bus",
 	DefaultColor: "#009485",
+	LineIDs:      []string{"1", "2", "3", "4", "5", "6", "7", "8"},
+	Bounds:       GeoBounds{MinLat: 41.45, MaxLat: 41.65, MinLon: 2.30, MaxLon: 2.55},
 	matchLine: func(clean string) (string, bool) {
 		id := reRegMataroPrefix.ReplaceAllLiteralString(clean, "")
 		if reRegL18.MatchString(id) {

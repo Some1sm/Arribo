@@ -297,7 +297,7 @@ func resolveObservedAt(bus *Obj, isDerived bool) any {
 }
 
 func (d *IngestionDaemon) pollMataroVehicles() {
-	lines := []string{"1", "2", "3", "4", "5", "6", "7", "8"}
+	lines := mataroAgency.LineIDs
 	var wg sync.WaitGroup
 	for _, lID := range lines {
 		lID := lID
@@ -613,7 +613,7 @@ func (d *IngestionDaemon) checkFleetAnomaly(now float64) *Obj {
 	nowSec := float64(net.Hour*3600 + net.Minute*60 + net.Second)
 	dayType := resolveDayType(int64(now)).DayType
 	scheduled := 0.0
-	for _, l := range []string{"1", "2", "3", "4", "5", "6", "7", "8"} {
+	for _, l := range mataroAgency.LineIDs {
 		scheduled += getScheduledFleetRequirement(l, dayType, nowSec, true, "")
 	}
 	if liveCount > 0 {
