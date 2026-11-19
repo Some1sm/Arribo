@@ -626,6 +626,19 @@ func (h *HistoryDB) migrate() error {
 		{"delay_logs", "direction", "ALTER TABLE delay_logs ADD COLUMN direction TEXT DEFAULT '';"},
 		{"delay_logs", "times_source", "ALTER TABLE delay_logs ADD COLUMN times_source TEXT DEFAULT '';"},
 		{"delay_logs", "observed_at", "ALTER TABLE delay_logs ADD COLUMN observed_at INTEGER;"},
+		// Multi-agency groundwork (docs/catalonia-review/REPORT.md, phase 1):
+		// which operator and transport mode a row belongs to. Every existing
+		// and current row is Mataró's urban bus, so the defaults are exact;
+		// no query reads these yet. SQLite adds a column with a constant
+		// default without rewriting the table.
+		{"delay_logs", "agency_id", "ALTER TABLE delay_logs ADD COLUMN agency_id TEXT NOT NULL DEFAULT 'mataro';"},
+		{"delay_logs", "mode", "ALTER TABLE delay_logs ADD COLUMN mode TEXT NOT NULL DEFAULT 'bus';"},
+		{"stop_visits", "agency_id", "ALTER TABLE stop_visits ADD COLUMN agency_id TEXT NOT NULL DEFAULT 'mataro';"},
+		{"stop_visits", "mode", "ALTER TABLE stop_visits ADD COLUMN mode TEXT NOT NULL DEFAULT 'bus';"},
+		{"vehicle_snapshots", "agency_id", "ALTER TABLE vehicle_snapshots ADD COLUMN agency_id TEXT NOT NULL DEFAULT 'mataro';"},
+		{"vehicle_snapshots", "mode", "ALTER TABLE vehicle_snapshots ADD COLUMN mode TEXT NOT NULL DEFAULT 'bus';"},
+		{"gps_gaps", "agency_id", "ALTER TABLE gps_gaps ADD COLUMN agency_id TEXT NOT NULL DEFAULT 'mataro';"},
+		{"gps_gaps", "mode", "ALTER TABLE gps_gaps ADD COLUMN mode TEXT NOT NULL DEFAULT 'bus';"},
 	} {
 		ok, err := h.hasColumn(a.table, a.col)
 		if err != nil {
