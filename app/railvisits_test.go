@@ -28,10 +28,10 @@ func TestRailVisitTracker(t *testing.T) {
 	tr := newRailVisitTracker("renfe_rodalies", "rail")
 	t0 := time.Unix(1795100000, 0)
 
-	// Poll 1: trip A next stop S1 (+60 s), trip B next stop S1 (+6000 s, implausible), trip C next stop S2.
+	// Poll 1: trip A next stop S1 (+60 s), trip B next stop S1 (+12000 s, implausible), trip C next stop S2.
 	got := tr.observe(ctx, t0, nil, rvFeed(map[string][][3]int64{
 		"A": {{1, t0.Unix() + 120, 60}},
-		"B": {{1, t0.Unix() + 300, 6000}},
+		"B": {{1, t0.Unix() + 300, 12000}},
 		"C": {{2, t0.Unix() + 600, 0}},
 	}))
 	if len(got) != 0 {
@@ -41,7 +41,7 @@ func TestRailVisitTracker(t *testing.T) {
 	t1 := t0.Add(30 * time.Second)
 	got = tr.observe(ctx, t1, nil, rvFeed(map[string][][3]int64{
 		"A": {{1, t0.Unix() + 150, 90}},
-		"B": {{2, t0.Unix() + 900, 6000}},
+		"B": {{2, t0.Unix() + 900, 12000}},
 		"C": {{2, t0.Unix() + 600, 0}},
 	}))
 	if len(got) != 0 || tr.Implausible != 1 {
@@ -51,7 +51,7 @@ func TestRailVisitTracker(t *testing.T) {
 	t2 := t0.Add(60 * time.Second)
 	got = tr.observe(ctx, t2, nil, rvFeed(map[string][][3]int64{
 		"A": {{2, t0.Unix() + 400, 100}},
-		"B": {{2, t0.Unix() + 900, 6000}},
+		"B": {{2, t0.Unix() + 900, 12000}},
 	}))
 	if len(got) != 1 || got[0].TripID != "A" || got[0].StopID != "S1" || got[0].DelaySec != 90 ||
 		got[0].ActualUnix != t0.Unix()+150 || got[0].ScheduledUnix != t0.Unix()+60 || got[0].AgencyID != "renfe_rodalies" || got[0].Mode != "rail" {

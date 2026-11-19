@@ -18,8 +18,10 @@ import (
 type railVisit struct {
 	AgencyID, Mode string
 	TripID, StopID string
-	ScheduledUnix  int64 // scheduled arrival (else departure)
-	ActualUnix     int64 // last predicted time before the train passed
+	LineCode       string // route short name from the timetable (R2S, S1, ...)
+	StopName       string // station name from the timetable
+	ScheduledUnix  int64  // scheduled arrival (else departure)
+	ActualUnix     int64  // last predicted time before the train passed
 	DelaySec       int32
 }
 
@@ -32,7 +34,7 @@ type openRailVisit struct {
 // recorded. Renfe's feed has been seen reporting -3240 s.
 const (
 	railMinDelaySec = -10 * 60
-	railMaxDelaySec = 90 * 60
+	railMaxDelaySec = 180 * 60 // Rodalies disruptions of an hour or more are real
 	// A stop still listed but predicted this long ago is taken as passed.
 	railPastGrace = 2 * time.Minute
 	// A trip missing from the feed this long is forgotten; its stops close

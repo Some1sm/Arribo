@@ -453,6 +453,12 @@ func (p *rtPoller) trackVisits(ctx context.Context, fm *FeedMessage) {
 		fm = &FeedMessage{Header: fm.Header, Entities: kept}
 	}
 	closed := p.visits.observe(ctx, time.Now(), p.tt, fm)
+	if p.tt != nil {
+		for i := range closed {
+			closed[i].LineCode = p.tt.tripLine(ctx, closed[i].TripID)
+			closed[i].StopName = p.tt.stopName(ctx, closed[i].StopID)
+		}
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.pending = append(p.pending, closed...)

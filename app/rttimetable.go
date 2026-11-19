@@ -18,7 +18,8 @@ import (
 type rtTimetable struct {
 	db    *sql.DB
 	mu    sync.Mutex
-	cache map[string]int64 // trip_id + "\x00" + stop_id -> scheduled seconds (-1 = none)
+	cache map[string]int64  // trip_id + "\x00" + stop_id -> scheduled seconds (-1 = none)
+	names map[string]string // line and stop name lookups
 }
 
 // openRtTimetable opens the imported timetable at path read-only, or
@@ -126,4 +127,37 @@ func (t *rtTimetable) hasTrip(ctx context.Context, tripID string) bool {
 	t.cache[key] = v
 	t.mu.Unlock()
 	return v >= 0
+}
+
+// lookupString runs a one-value query with a bounded cache keyed by key.
+func (t *rtTimetable) lookupString(ctx context.Context, key, q, arg string) string {
+	t.mu.Lock()
+	if t.names == nil {
+		t.names = map[string]string{}
+	}
+	if v, hit := t.names[key]; hit {
+		t.mu.Unlock()
+		return v
+	}
+	t.mu.Unlock()
+	var s sql.NullString
+	_ = t.db.QueryRowContext(ctx, q, arg).Scan(&s)
+	t.mu.Lock()
+	if len(t.names) > 50000 {
+		t.names = map[string]string{}
+	}
+	t.names[key] = s.String
+	t.mu.Unlock()
+	return s.String
+}
+
+// tripLine is the trip's route short name (else long name), "" if unknown.
+func (t *rtTimetable) tripLine(ctx context.Context, tripID string) string {
+	return t.lookupString(ctx, "L\x00"+tripID, `SELECT COALESCE(NULLIF(r.short_name, ''), r.long_name)
+	  FROM trips t JOIN routes r ON r.route_id = t.route_id WHERE t.trip_id = ? LIMIT 1`, tripID)
+}
+
+// stopName is the stop's name, "" if unknown.
+func (t *rtTimetable) stopName(ctx context.Context, stopID string) string {
+	return t.lookupString(ctx, "S\x00"+stopID, `SELECT name FROM stops WHERE stop_id = ? LIMIT 1`, stopID)
 }
