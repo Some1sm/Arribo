@@ -25,6 +25,7 @@ func newTrackerRegistry(t *MataroTracker) *TrackerRegistry {
 
 type lineResolution struct {
 	Type       string
+	AgencyID   string
 	Tracker    *MataroTracker
 	LineID     string
 	CleanCode  string
@@ -47,21 +48,19 @@ var (
 func (r *TrackerRegistry) getTrackerForLine(lineID any) (*lineResolution, error) {
 	raw := jsTrim(jsString(or(lineID, "")))
 	clean := reRegLinePrefix.ReplaceAllLiteralString(jsLower(raw), "")
-	mataroID := reRegMataroPrefix.ReplaceAllLiteralString(clean, "")
-	if reRegL18.MatchString(mataroID) {
-		mataroID = mataroID[1:]
-	}
-	if !reRegDigit18.MatchString(mataroID) {
+	agency, id, ok := agencyForLine(clean)
+	if !ok {
 		return nil, errors.New("No transit tracker registered for line '" + jsString(lineID) + "'.")
 	}
-	cfg := r.t.resolveLineConfig(mataroID)
-	var color any = "#009485"
+	// Only Mataró is registered, and it has the one tracker r.t.
+	cfg := r.t.resolveLineConfig(id)
+	var color any = agency.DefaultColor
 	if cfg != nil && truthy(cfg.Get("color")) {
 		color = cfg.Get("color")
 	}
 	return &lineResolution{
-		Type: "mataro", Tracker: r.t, LineID: mataroID, CleanCode: "L" + mataroID,
-		Agency: "Mataró Bus", IsTrain: false, Color: color, LineConfig: cfg,
+		Type: agency.ID, AgencyID: agency.ID, Tracker: r.t, LineID: id, CleanCode: "L" + id,
+		Agency: agency.Name, IsTrain: agency.Mode == "rail", Color: color, LineConfig: cfg,
 	}, nil
 }
 
