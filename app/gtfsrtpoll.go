@@ -64,16 +64,19 @@ type rtSource struct {
 
 // rtPoller polls one rtSource.
 type rtPoller struct {
-	src      rtSource
-	snap     atomic.Pointer[rtSnapshot]
-	mu       sync.Mutex // guards trips between the two loops
-	trip     map[string]int32
-	trips    int
-	terr     string
-	tt       *rtTimetable // imported timetable, for feeds without delays (nil if absent)
-	ttMod    time.Time    // modification time of the open timetable file
-	logNext  bool         // log the next snapshot (after a timetable opens)
-	computed int          // delays derived from predicted times in the last trip feed
+	src                                      rtSource
+	snap                                     atomic.Pointer[rtSnapshot]
+	mu                                       sync.Mutex // guards trips between the two loops
+	trip                                     map[string]int32
+	trips                                    int
+	terr                                     string
+	tt                                       *rtTimetable      // imported timetable, for feeds without delays (nil if absent)
+	ttMod                                    time.Time         // modification time of the open timetable file
+	logNext                                  bool              // log the next snapshot (after a timetable opens)
+	visits                                   *railVisitTracker // station visits from trip updates (run goroutine only)
+	pending                                  []railVisit       // closed visits waiting for the worker (guarded by mu)
+	closedVisits, droppedVisits, implausible int               // counters (guarded by mu)
+	computed                                 int               // delays derived from predicted times in the last trip feed
 }
 
 var cataloniaBounds = GeoBounds{MinLat: 40.5, MaxLat: 42.9, MinLon: 0.15, MaxLon: 3.4}
@@ -217,6 +220,7 @@ func (p *rtPoller) pollTrips(ctx context.Context) {
 		if err != nil {
 			return nil, err
 		}
+		p.trackVisits(ctx, fm)
 		out := map[string]int32{}
 		for _, e := range fm.Entities {
 			if e.IsDeleted || e.TripUpdate == nil || e.TripUpdate.Trip.TripID == "" {
@@ -379,6 +383,9 @@ func (p *rtPoller) logSnapshot() {
 	if s.TripsErr != "" {
 		msg += "; trip updates error: " + s.TripsErr
 	}
+	p.mu.Lock()
+	msg += fmt.Sprintf("; station visits closed %d (queued %d, implausible %d, dropped %d)", p.closedVisits, len(p.pending), p.implausible, p.droppedVisits)
+	p.mu.Unlock()
 	log.Print(msg)
 }
 
@@ -409,4 +416,59 @@ func startGtfsRtPollers() (stop func()) {
 		cancel()
 		wg.Wait()
 	}
+}
+
+// rtMaxPending bounds the closed visits waiting for the worker; the oldest
+// are dropped (and counted) beyond it.
+const rtMaxPending = 5000
+
+// trackVisits folds a trip-update feed into the station-visit tracker and
+// queues the visits that closed. With bounds set (Renfe's feed covers all
+// of Spain) only trips in the area count: trips in the imported timetable,
+// else trips of vehicles last seen inside the bounds.
+func (p *rtPoller) trackVisits(ctx context.Context, fm *FeedMessage) {
+	if p.visits == nil {
+		p.visits = newRailVisitTracker(p.src.AgencyID, p.src.Mode)
+	}
+	if p.src.bounds != nil {
+		var inArea map[string]bool
+		if p.tt == nil {
+			inArea = map[string]bool{}
+			if s := p.snap.Load(); s != nil {
+				for _, v := range s.Vehicles {
+					inArea[v.TripID] = true
+				}
+			}
+		}
+		kept := make([]Entity, 0, len(fm.Entities))
+		for _, e := range fm.Entities {
+			if e.TripUpdate == nil {
+				continue
+			}
+			id := e.TripUpdate.Trip.TripID
+			if (p.tt != nil && p.tt.hasTrip(ctx, id)) || (p.tt == nil && inArea[id]) {
+				kept = append(kept, e)
+			}
+		}
+		fm = &FeedMessage{Header: fm.Header, Entities: kept}
+	}
+	closed := p.visits.observe(ctx, time.Now(), p.tt, fm)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.pending = append(p.pending, closed...)
+	if over := len(p.pending) - rtMaxPending; over > 0 {
+		p.pending = append([]railVisit(nil), p.pending[over:]...)
+		p.droppedVisits += over
+	}
+	p.closedVisits += len(closed)
+	p.implausible = p.visits.Implausible
+}
+
+// takeRailVisits hands over the queued closed visits (for the worker).
+func (p *rtPoller) takeRailVisits() []railVisit {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := p.pending
+	p.pending = nil
+	return out
 }

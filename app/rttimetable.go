@@ -104,3 +104,26 @@ func tripUpdateComputedDelay(ctx context.Context, tt *rtTimetable, tu *TripUpdat
 	}
 	return nil
 }
+
+// hasTrip reports whether the timetable has trip_id (cached, bounded).
+func (t *rtTimetable) hasTrip(ctx context.Context, tripID string) bool {
+	key := "\x01" + tripID
+	t.mu.Lock()
+	if v, hit := t.cache[key]; hit {
+		t.mu.Unlock()
+		return v >= 0
+	}
+	t.mu.Unlock()
+	var one int
+	v := int64(-1)
+	if t.db.QueryRowContext(ctx, `SELECT 1 FROM trips WHERE trip_id = ? LIMIT 1`, tripID).Scan(&one) == nil {
+		v = 1
+	}
+	t.mu.Lock()
+	if len(t.cache) > 50000 {
+		t.cache = map[string]int64{}
+	}
+	t.cache[key] = v
+	t.mu.Unlock()
+	return v >= 0
+}
