@@ -1,6 +1,31 @@
 # Scaling Arribo! to all of Catalonia: review
 
-*2026-11-19. Six parallel Gemini 3.8 Flash (High) agents read the code; Claude checked their main claims against the source and wrote this report. Nothing in the repo was changed apart from this folder. The raw agent reports are in [gemini-raw/](gemini-raw/).*
+*2026-11-19. Six parallel Gemini 3.8 Flash (High) agents read the code; Claude checked their main claims against the source and wrote this report. The raw agent reports are in [gemini-raw/](gemini-raw/).*
+
+---
+
+## Status: start here in a new chat
+
+*Last updated 2026-11-19.*
+
+**Done**
+- [x] This review: six agent lanes, with the main claims checked against the code (Section 7 lists the claims that were wrong).
+- [x] Quick wins shipped. Commit `6a8e63c`, merged to `main` as `c365414` (git.lan PR #1), deployed and confirmed live on http://87.106.33.66:3000/:
+  - Static files from `public/` are gzip/br-compressed (`app/server.go`, `serveStatic`). `app.js` went from 276 KB to 64 KB gzip.
+  - SSE clients keep at most 4 waiting frames, and each frame write has a 30 s deadline (`msgQueue.pushLatest` in `app/worker.go`; `sseMaxQueued` and `sseWriteTimeout` in `app/server.go`).
+  - Both are recorded in `app/README.md` under "Deliberate changes made after the Node code was removed".
+- [x] The other quick wins were examined and ruled out, with reasons (Section 6, "Update").
+
+**Open**
+- [ ] **Answer the decisions in Section 8** (official feeds only? first network? infrastructure? planner in scope? data-quality tiers?). Write the answers directly under each question.
+- [ ] **Phase 0:** check that the Rodalies and FGC open GTFS / GTFS-RT feeds exist, with their URLs, licences and update rates. Section 3 is still unverified.
+- [ ] **Phase 1** (after the decisions): `agency_id` / `mode` columns and an agency registry with only Mataró in it. Zero behaviour change, checked old-vs-new.
+- [ ] Housekeeping: GitHub `main` has its own merge commit (`11c0998`), with the same tree as git.lan's `c365414`. Reset GitHub `main` to git.lan's before the next mirror push, otherwise it won't fast-forward.
+
+**Ground rules for whoever continues**
+- git.lan is the source of truth. A push to `main` there **deploys**. GitHub is a mirror.
+- Validate every server change with gofmt, go vet and a build in `golang:1.26-alpine`; npm syntax, lint, test and docs_check in the pinned `node:22.23.4-alpine` image; and old and new binaries side by side on an internal Docker network (no internet).
+- Data trust comes first: never infer positions or delays a feed did not report (Section 2).
 
 ---
 
