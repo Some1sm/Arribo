@@ -498,7 +498,8 @@ class TransitApp {
       try {
         const cached = JSON.parse(cachedLinesStr);
         if (Array.isArray(cached) && cached.length > 0) {
-          this.availableLines = cached;
+          this.availableLines = cached.filter(l => l.trackable !== false);
+          this.catalogAllLines = cached;
         }
       } catch {}
     }
@@ -522,7 +523,10 @@ class TransitApp {
       if (res.ok) {
         const json = await res.json();
         if (json.success && Array.isArray(json.lines) && json.lines.length > 0) {
-          this.availableLines = json.lines;
+          // All lines colour badges anywhere; only trackable ones (with a live
+          // line view) are listed, filtered and drawn on the network map.
+          this.catalogAllLines = json.lines;
+          this.availableLines = json.lines.filter(l => l.trackable !== false);
           if (Array.isArray(json.operators)) this.availableOperators = json.operators;
           try {
             localStorage.setItem('arribo_lines_cache', JSON.stringify(json.lines));
@@ -981,7 +985,7 @@ class TransitApp {
 
   /** Runs whenever the catalog changes: line colours and the landing filter dock. */
   applyCatalog() {
-    window.TransitUtils?.applyLineColors?.(this.availableLines || []);
+    window.TransitUtils?.applyLineColors?.(this.catalogAllLines || this.availableLines || []);
     this.renderLandingFilterTabs();
     this.renderPickerFilterTabs();
   }
@@ -995,7 +999,7 @@ class TransitApp {
     const dock = document.getElementById('landing-filter-tabs');
     if (!dock) return;
     const lines = this.availableLines || [];
-    const ops = this.catalogOperators();
+    const ops = this.catalogOperators().filter(o => lines.some(l => (l.agencyId || 'mataro') === o.id));
     const items = [{ value: 'all', label: `Totes les línies (${lines.length})` }];
     if (ops.length > 1) ops.forEach(o => items.push({ value: `op:${o.id}`, label: o.name }));
     else lines.forEach(l => items.push({ value: String(l.id), label: l.code || String(l.id) }));
@@ -1011,7 +1015,7 @@ class TransitApp {
     const dock = document.getElementById('line-picker-filter-tabs');
     if (!dock) return;
     const lines = this.availableLines || [];
-    const ops = this.catalogOperators();
+    const ops = this.catalogOperators().filter(o => lines.some(l => (l.agencyId || 'mataro') === o.id));
     const items = [{ value: 'all', label: 'Totes les línies' }];
     if (ops.length > 1) ops.forEach(o => items.push({ value: `op:${o.id}`, label: o.name }));
     else lines.forEach(l => items.push({ value: String(l.id), label: l.code || String(l.id) }));

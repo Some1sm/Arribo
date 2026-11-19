@@ -10,6 +10,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -160,4 +161,51 @@ func (t *rtTimetable) tripLine(ctx context.Context, tripID string) string {
 // stopName is the stop's name, "" if unknown.
 func (t *rtTimetable) stopName(ctx context.Context, stopID string) string {
 	return t.lookupString(ctx, "S\x00"+stopID, `SELECT name FROM stops WHERE stop_id = ? LIMIT 1`, stopID)
+}
+
+// rtRoute is one line of an imported timetable, for the line catalog.
+type rtRoute struct {
+	Code, Name, Color, TextColor string
+	RouteType                    int
+}
+
+// catalogRoutes is the timetable's lines grouped by short name (Renfe's
+// feed has several routes per line code), in a stable order: the first
+// route's long name and colours win. Colours are returned as "#rrggbb";
+// a missing text colour stays empty (the client applies the GTFS default).
+func (t *rtTimetable) catalogRoutes(ctx context.Context) ([]rtRoute, error) {
+	rows, err := t.db.QueryContext(ctx, `SELECT COALESCE(NULLIF(short_name, ''), route_id), COALESCE(long_name, ''),
+	    COALESCE(color, ''), COALESCE(text_color, ''), COALESCE(route_type, 3)
+	  FROM routes ORDER BY rowid`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	seen := map[string]bool{}
+	var out []rtRoute
+	hex := func(s string) string {
+		if len(s) == 6 {
+			for _, c := range s {
+				if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F') {
+					return ""
+				}
+			}
+			return "#" + s
+		}
+		return ""
+	}
+	for rows.Next() {
+		var r rtRoute
+		if err := rows.Scan(&r.Code, &r.Name, &r.Color, &r.TextColor, &r.RouteType); err != nil {
+			return nil, err
+		}
+		if r.Code == "" || seen[r.Code] {
+			continue
+		}
+		seen[r.Code] = true
+		r.Name = strings.Join(strings.Fields(r.Name), " ") // Renfe pads its names with runs of spaces
+		r.Color, r.TextColor = hex(r.Color), hex(r.TextColor)
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }

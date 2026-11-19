@@ -91,7 +91,10 @@
     serviceArea() {
       let ops = null;
       try { ops = JSON.parse(global.localStorage?.getItem('arribo_operators_cache') || 'null'); } catch { ops = null; }
-      if (!Array.isArray(ops) || ops.length === 0) return null;
+      if (!Array.isArray(ops)) return null;
+      // Only operators whose lines the app can follow live decide where maps start.
+      ops = ops.filter(o => o && o.trackable !== false);
+      if (ops.length === 0) return null;
       const boxes = ops.map(o => o?.bounds).filter(b => b && [b.minLat, b.maxLat, b.minLon, b.maxLon].every(Number.isFinite));
       if (boxes.length === 0) return null;
       const box = {

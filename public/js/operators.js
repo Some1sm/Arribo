@@ -59,7 +59,7 @@
 
   function linesTable(op) {
     if (!op.lines || !op.lines.length) return '';
-    const rows = op.lines.map(l => `<tr><th scope="row"><span class="line-badge">${esc(l.line)}</span></th><td class="${delayClass(l.avgDelay)}">${esc(fmtMin(l.avgDelay))}</td><td>${esc(fmtPct(l.onTimePct))}</td><td>${esc(fmtMin(l.maxDelay))}</td><td>${l.visits}</td></tr>`).join('');
+    const rows = op.lines.map(l => `<tr><th scope="row"><span class="line-badge" data-line="${esc(`${op.id}:${l.line}`)}">${esc(l.line)}</span></th><td class="${delayClass(l.avgDelay)}">${esc(fmtMin(l.avgDelay))}</td><td>${esc(fmtPct(l.onTimePct))}</td><td>${esc(fmtMin(l.maxDelay))}</td><td>${l.visits}</td></tr>`).join('');
     return `<div class="op-table-wrap"><table class="op-table"><caption>Per línia (de més a menys retard mitjà)</caption><thead><tr><th scope="col">Línia</th><th scope="col">Retard mitjà</th><th scope="col">Puntualitat</th><th scope="col">Màxim</th><th scope="col">Passos</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
 
@@ -122,6 +122,11 @@
     });
     load();
   });
+
+  // Line colours (GTFS route_color / route_text_color) for the badges, from the catalog.
+  fetch('/api/lines').then(r => (r.ok ? r.json() : null)).then(j => {
+    if (j && Array.isArray(j.lines)) window.TransitUtils?.applyLineColors?.(j.lines);
+  }).catch(() => {});
 
   load();
   setInterval(() => { if (!document.hidden) load(); }, 120000);

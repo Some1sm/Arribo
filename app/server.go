@@ -1295,7 +1295,12 @@ func (s *Server) hLines(q *xreq, res *xres) error {
 			out = append(out, catalogLine(l))
 		}
 	}
-	res.json(O("success", true, "count", float64(len(out)), "lines", out, "operators", catalogOperators(lines)))
+	ops := catalogOperators(lines)
+	if railLines, railOps := railCatalog(); len(railOps) > 0 {
+		out = append(out, railLines...)
+		ops = append(ops, railOps...)
+	}
+	res.json(O("success", true, "count", float64(len(out)), "lines", out, "operators", ops))
 	return nil
 }
 

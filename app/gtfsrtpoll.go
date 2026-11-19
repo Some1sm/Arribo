@@ -200,6 +200,11 @@ func (p *rtPoller) syncTimetable() {
 		_ = p.tt.db.Close()
 	}
 	p.tt, p.ttMod = tt, fi.ModTime()
+	if routes, err := tt.catalogRoutes(context.Background()); err == nil {
+		rtCatalog.Store(p.src.AgencyID, &rtCatalogOp{AgencyID: p.src.AgencyID, Mode: p.src.Mode, Lines: routes})
+	} else {
+		log.Printf("[GTFS-RT] %s: timetable lines not read: %v", p.src.AgencyID, err)
+	}
 	p.logNext = true
 	log.Printf("[GTFS-RT] %s: timetable opened (%s)", p.src.AgencyID, fi.ModTime().UTC().Format(time.RFC3339))
 }
@@ -478,3 +483,15 @@ func (p *rtPoller) takeRailVisits() []railVisit {
 	p.pending = nil
 	return out
 }
+
+// rtCatalogOp is one GTFS-RT operator's lines, read from its imported
+// timetable and published for the line catalog. Immutable once stored.
+type rtCatalogOp struct {
+	AgencyID, Mode string
+	Lines          []rtRoute
+}
+
+// rtCatalog maps agency id -> *rtCatalogOp. Written by the pollers when a
+// timetable (re)opens, read by the server's /api/lines without any lock or
+// database access.
+var rtCatalog sync.Map

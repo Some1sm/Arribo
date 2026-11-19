@@ -126,6 +126,7 @@ func catalogOperators(lines []any) []any {
 			"id", a.ID, "name", a.Name, "mode", a.Mode, "lineCount", counts[a.ID],
 			"bounds", O("minLat", b.MinLat, "maxLat", b.MaxLat, "minLon", b.MinLon, "maxLon", b.MaxLon),
 			"center", []any{a.Center[0], a.Center[1]}, "zoom", a.Zoom,
+			"trackable", true,
 		))
 	}
 	return out
@@ -139,10 +140,46 @@ func catalogLine(l *Obj) *Obj {
 		return out
 	}
 	out.Set("agencyId", a.ID)
+	out.Set("trackable", true)
 	if ink, ok := a.LineInk[id]; ok {
 		out.Set("textColor", ink)
 	} else {
 		out.Set("textColor", nil)
 	}
 	return out
+}
+
+// railCatalog adds the GTFS-RT operators' lines (Rodalies, FGC: names and
+// colours from their imported timetables) to the line catalog, in the order
+// of reportOperators. They are not trackable yet (no live line view), so the
+// client lists them for colours and Dades but not as lines to follow.
+func railCatalog() (lines []any, ops []any) {
+	for _, info := range reportOperators {
+		v, ok := rtCatalog.Load(info.ID)
+		if !ok {
+			continue
+		}
+		op := v.(*rtCatalogOp)
+		for _, r := range op.Lines {
+			var color, ink any = nil, nil
+			if r.Color != "" {
+				color = r.Color
+			}
+			if r.TextColor != "" {
+				ink = r.TextColor
+			}
+			lines = append(lines, O(
+				"id", r.Code, "code", r.Code, "name", r.Name, "color", color, "textColor", ink,
+				"agency", info.Name, "agencyId", info.ID, "group", info.ID, "mode", "Tren",
+				"directions", []any{}, "trackable", false,
+			))
+		}
+		b := cataloniaBounds
+		ops = append(ops, O(
+			"id", info.ID, "name", info.Name, "mode", op.Mode, "lineCount", float64(len(op.Lines)),
+			"bounds", O("minLat", b.MinLat, "maxLat", b.MaxLat, "minLon", b.MinLon, "maxLon", b.MaxLon),
+			"center", nil, "zoom", nil, "trackable", false,
+		))
+	}
+	return lines, ops
 }
