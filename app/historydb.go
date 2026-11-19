@@ -116,9 +116,13 @@ func quotedList(xs []string) string {
 	return strings.Join(q, ", ")
 }
 
-var mataroScopeSQL = " AND (UPPER(line_code) IN (" + quotedList(mataroLineCodes) + ") AND line_id IN (" +
+// The "all lines" scope of the delay_logs and stop_visits reports: Mataró's rows
+// (agency_id) on Mataró's line codes. Every row is Mataró's today, so the
+// agency_id term changes no result; it keeps the reports Mataró-only once
+// other operators are ingested.
+var mataroScopeSQL = " AND agency_id = '" + mataroAgency.ID + "' AND (UPPER(line_code) IN (" + quotedList(mataroLineCodes) + ") AND line_id IN (" +
 	quotedList(append(append([]string{}, mataroLineIDs...), mataroLineCodes...)) + "))"
-var mataroVisitsScopeSQL = " AND (UPPER(line_code) IN (" + quotedList(mataroLineCodes) + "))"
+var mataroVisitsScopeSQL = " AND agency_id = '" + mataroAgency.ID + "' AND (UPPER(line_code) IN (" + quotedList(mataroLineCodes) + "))"
 
 func appendMataroScope(where string, isAll bool) string {
 	if isAll {
