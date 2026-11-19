@@ -47,7 +47,7 @@ class NetworkMap extends TransitMap {
       preferCanvas: true,
       fadeAnimation: true,
       zoomAnimation: true
-    }).setView([41.54, 2.44], 13);
+    }).setView(window.TransitUtils?.serviceArea?.()?.center || [41.54, 2.44], window.TransitUtils?.serviceArea?.()?.zoom || 13);
 
     // Line geometry, stops and buses live in their own groups so a single line
     // can be re-rendered without touching the others.
@@ -245,10 +245,10 @@ class NetworkMap extends TransitMap {
    */
   setLineFilter(filter) {
     const raw = String(filter ?? 'all').trim();
-    // Only 'all' and a real Mataró line code are honoured. An unrecognised
-    // value falls back to showing everything, because a blank map with no
-    // visible cause is a worse failure than ignoring a bad value.
-    this.lineFilter = /^L?[1-8]$/i.test(raw) ? `L${raw.replace(/^L/i, '')}` : 'all';
+    // Any catalog line id is honoured; "all" and operator filters ("op:<id>")
+    // show every line for now. A blank map with no visible cause is a worse
+    // failure than ignoring a bad value, so anything else shows everything.
+    this.lineFilter = raw && raw !== 'all' && !raw.startsWith('op:') ? (canonicalLineCode(raw) || raw.toUpperCase()) : 'all';
     this.applyLineVisibility();
     this.renderLegend();
   }

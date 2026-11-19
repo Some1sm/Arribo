@@ -26,7 +26,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
   
   <!-- App Styles -->
-  <link rel="stylesheet" href="/css/style.css?v=9.4.46">
+  <link rel="stylesheet" href="/css/style.css?v=9.4.47">
 </head>
 <body>
 
@@ -205,16 +205,9 @@
         </div>
 
         <!-- Network & Operator Filter Tabs -->
-        <div class="landing-filter-tabs" id="landing-filter-tabs">
-          <button type="button" class="landing-filter-tab active" data-filter="all">Totes les línies (8)</button>
-          <button type="button" class="landing-filter-tab tabular-nums" data-filter="1">L1</button>
-          <button type="button" class="landing-filter-tab tabular-nums" data-filter="2">L2</button>
-          <button type="button" class="landing-filter-tab tabular-nums" data-filter="3">L3</button>
-          <button type="button" class="landing-filter-tab tabular-nums" data-filter="4">L4</button>
-          <button type="button" class="landing-filter-tab tabular-nums" data-filter="5">L5</button>
-          <button type="button" class="landing-filter-tab tabular-nums" data-filter="6">L6</button>
-          <button type="button" class="landing-filter-tab tabular-nums" data-filter="7">L7</button>
-          <button type="button" class="landing-filter-tab tabular-nums" data-filter="8">L8</button>
+        <!-- Filled from the line catalog (app.js renderLandingFilterTabs) -->
+        <div class="landing-filter-tabs">
+          <div class="pill-group" id="landing-filter-tabs" role="group" aria-label="Filtra el mapa de la xarxa"></div>
         </div>
       </section>
 
@@ -661,16 +654,9 @@
       </div>
 
       <!-- City & Network Filter Pills -->
-      <div class="line-picker-filter-tabs" id="line-picker-filter-tabs">
-        <button type="button" class="line-filter-tab active" data-city="all">🌐 Totes les línies</button>
-        <button type="button" class="line-filter-tab" data-city="1">L1</button>
-        <button type="button" class="line-filter-tab" data-city="2">L2</button>
-        <button type="button" class="line-filter-tab" data-city="3">L3</button>
-        <button type="button" class="line-filter-tab" data-city="4">L4</button>
-        <button type="button" class="line-filter-tab" data-city="5">L5</button>
-        <button type="button" class="line-filter-tab" data-city="6">L6</button>
-        <button type="button" class="line-filter-tab" data-city="7">L7</button>
-        <button type="button" class="line-filter-tab" data-city="8">L8</button>
+      <!-- Filled from the line catalog (app.js renderPickerFilterTabs) -->
+      <div class="line-picker-filter-tabs">
+        <div class="pill-group" id="line-picker-filter-tabs" role="group" aria-label="Filtra les línies"></div>
       </div>
 
       <!-- Scrollable Lines Grid & Categories -->
@@ -869,15 +855,15 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   
   <!-- App Scripts -->
-  <script src="/js/utils.js?v=9.4.46"></script>
-  <script src="/js/storage.js?v=9.4.46"></script>
-  <script src="/js/requests.js?v=9.4.46"></script>
-  <script src="/js/stopFeatures.js?v=9.4.46"></script>
-  <script src="/js/journeys.js?v=9.4.46"></script>
-  <script src="/js/journeyControls.js?v=9.4.46"></script>
-  <script src="/js/pwa.js?v=9.4.46"></script>
-  <script src="/js/map.js?v=9.4.46"></script>
-  <script src="/js/networkMap.js?v=9.4.46"></script>
-  <script src="/js/app.js?v=9.4.46"></script>
+  <script src="/js/utils.js?v=9.4.47"></script>
+  <script src="/js/storage.js?v=9.4.47"></script>
+  <script src="/js/requests.js?v=9.4.47"></script>
+  <script src="/js/stopFeatures.js?v=9.4.47"></script>
+  <script src="/js/journeys.js?v=9.4.47"></script>
+  <script src="/js/journeyControls.js?v=9.4.47"></script>
+  <script src="/js/pwa.js?v=9.4.47"></script>
+  <script src="/js/map.js?v=9.4.47"></script>
+  <script src="/js/networkMap.js?v=9.4.47"></script>
+  <script src="/js/app.js?v=9.4.47"></script>
 </body>
 </html>

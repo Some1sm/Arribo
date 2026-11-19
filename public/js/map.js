@@ -81,7 +81,7 @@ class TransitMap {
       preferCanvas: true, // Use lightweight HTML5 Canvas renderer for polylines and vectors (saves ~40MB DOM/GPU RAM)
       fadeAnimation: true,
       zoomAnimation: true
-    }).setView([41.54, 2.44], 13);
+    }).setView(window.TransitUtils?.serviceArea?.()?.center || [41.54, 2.44], window.TransitUtils?.serviceArea?.()?.zoom || 13);
 
     this.trafficLayerGroup = L.layerGroup().addTo(this.map);
     this.itineraryLayerGroup = L.layerGroup().addTo(this.map);

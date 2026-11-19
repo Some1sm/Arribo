@@ -23,6 +23,12 @@ type Agency struct {
 	LineIDs []string
 	// Bounds is the box a vehicle fix must fall in to be accepted.
 	Bounds GeoBounds
+	// LineInk is the text colour on each line's colour (GTFS route_text_color;
+	// for Mataró the design system's on-line-N values). Data, never computed.
+	LineInk map[string]string
+	// Center and Zoom are the map's starting view when this is the only operator.
+	Center [2]float64
+	Zoom   float64
 	// matchLine takes a lower-cased line id with any "line-" / "linia-"
 	// prefix removed and returns the operator's own id for that line, or
 	// ok=false when the line is not this operator's.
@@ -56,6 +62,12 @@ var mataroAgency = &Agency{
 	DefaultColor: "#009485",
 	LineIDs:      mataroLineIDList,
 	Bounds:       GeoBounds{MinLat: 41.45, MaxLat: 41.65, MinLon: 2.30, MaxLon: 2.55},
+	Center:       [2]float64{41.54, 2.44},
+	Zoom:         13,
+	LineInk: map[string]string{
+		"1": "#09090b", "2": "#ffffff", "3": "#09090b", "4": "#09090b",
+		"5": "#09090b", "6": "#09090b", "7": "#09090b", "8": "#ffffff",
+	},
 	matchLine: func(clean string) (string, bool) {
 		id := reRegMataroPrefix.ReplaceAllLiteralString(clean, "")
 		if reRegL18.MatchString(id) {
@@ -94,4 +106,43 @@ func containsString(xs []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// catalogOperators describes the registered operators for the line catalog:
+// id, name, mode, how many lines and the map area their vehicles cover.
+func catalogOperators(lines []any) []any {
+	counts := map[string]float64{}
+	for _, x := range lines {
+		if l, ok := x.(*Obj); ok {
+			if a, _, ok := agencyForLine(jsLower(jsString(l.Get("id")))); ok {
+				counts[a.ID]++
+			}
+		}
+	}
+	out := []any{}
+	for _, a := range agencies {
+		b := a.Bounds
+		out = append(out, O(
+			"id", a.ID, "name", a.Name, "mode", a.Mode, "lineCount", counts[a.ID],
+			"bounds", O("minLat", b.MinLat, "maxLat", b.MaxLat, "minLon", b.MinLon, "maxLon", b.MaxLon),
+			"center", []any{a.Center[0], a.Center[1]}, "zoom", a.Zoom,
+		))
+	}
+	return out
+}
+
+// catalogLine is a catalog line with its operator id and text colour added.
+func catalogLine(l *Obj) *Obj {
+	out := spreadAny(O(), l)
+	a, id, ok := agencyForLine(jsLower(jsString(l.Get("id"))))
+	if !ok {
+		return out
+	}
+	out.Set("agencyId", a.ID)
+	if ink, ok := a.LineInk[id]; ok {
+		out.Set("textColor", ink)
+	} else {
+		out.Set("textColor", nil)
+	}
+	return out
 }

@@ -42,6 +42,72 @@
     },
 
     /**
+     * The catalog key of a line: "<operator>:<line id>" ("mataro:3",
+     * "renfe_rodalies:R2S"). Badges carry it as data-line="…" so their colours
+     * come from applyLineColors().
+     */
+    lineKey(line) {
+      return `${line?.agencyId || 'mataro'}:${line?.id ?? ''}`;
+    },
+
+    /**
+     * Line colours from data (Arribo! Design System, LineBadge): one <style>
+     * block with a rule per catalog line setting --line-color / --line-ink on
+     * every element whose data-line is that line. Colours are the operator's
+     * (GTFS route_color / route_text_color; Mataró's from its catalog); only
+     * literal hex values are accepted, and a line with a colour but no text
+     * colour gets black, the GTFS default for route_text_color. Nothing is
+     * derived from the colour. No inline styles, so it scales to any number
+     * of lines.
+     */
+    applyLineColors(lines) {
+      const doc = global.document;
+      if (!doc || !Array.isArray(lines)) return;
+      const hex = v => (typeof v === 'string' && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(v.trim()) ? v.trim() : null);
+      const quote = s => String(s).replace(/["\\]/g, '\\$&');
+      const rules = [];
+      for (const l of lines) {
+        const color = hex(l?.color);
+        if (!color) continue;
+        const ink = hex(l.textColor) || '#000000';
+        rules.push(`[data-line="${quote(this.lineKey(l))}"]{--line-color:${color};--line-ink:${ink}}`);
+      }
+      let el = doc.getElementById('arribo-line-colors');
+      if (!el) {
+        el = doc.createElement('style');
+        el.id = 'arribo-line-colors';
+        doc.head.appendChild(el);
+      }
+      el.textContent = rules.join('\n');
+    },
+
+    /**
+     * The area the app serves, from the operators of the line catalog
+     * (/api/lines "operators", cached by the main page): where maps start and
+     * whether a GPS position is "here". One operator: its own starting view.
+     * Several: the centre of their combined bounds, zoomed out to the region.
+     * null until a catalog has been seen; callers keep their own default.
+     */
+    serviceArea() {
+      let ops = null;
+      try { ops = JSON.parse(global.localStorage?.getItem('arribo_operators_cache') || 'null'); } catch { ops = null; }
+      if (!Array.isArray(ops) || ops.length === 0) return null;
+      const boxes = ops.map(o => o?.bounds).filter(b => b && [b.minLat, b.maxLat, b.minLon, b.maxLon].every(Number.isFinite));
+      if (boxes.length === 0) return null;
+      const box = {
+        minLat: Math.min(...boxes.map(b => b.minLat)), maxLat: Math.max(...boxes.map(b => b.maxLat)),
+        minLon: Math.min(...boxes.map(b => b.minLon)), maxLon: Math.max(...boxes.map(b => b.maxLon))
+      };
+      const single = ops.length === 1 && Array.isArray(ops[0].center) && ops[0].center.every(Number.isFinite);
+      return {
+        center: single ? ops[0].center : [(box.minLat + box.maxLat) / 2, (box.minLon + box.maxLon) / 2],
+        zoom: single && Number.isFinite(ops[0].zoom) ? ops[0].zoom : 9,
+        bounds: [[box.minLat, box.minLon], [box.maxLat, box.maxLon]],
+        contains: (lat, lon) => boxes.some(b => lat >= b.minLat && lat <= b.maxLat && lon >= b.minLon && lon <= b.maxLon)
+      };
+    },
+
+    /**
      * Picks black or white text for a saturated line-colour chip.
      *
      * Line chips are white-on-brand by convention, but several Mataró line

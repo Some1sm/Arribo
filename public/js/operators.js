@@ -16,6 +16,8 @@
   const fmtMin = v => (v === null || v === undefined) ? '—' : `${v > 0 ? '+' : ''}${String(v).replace('.', ',')} min`;
   const fmtPct = v => (v === null || v === undefined) ? '—' : `${String(v).replace('.', ',')} %`;
   const delayClass = v => v === null || v === undefined ? '' : v > 15 ? 'op-severe' : v > 5 ? 'op-late' : v < -1 ? 'op-early' : 'op-ontime';
+  // KpiTile verdict modifiers: only for figures that are themselves a verdict.
+  const delayVerdict = v => v === null || v === undefined ? '' : v > 15 ? ' is-bad' : v > 5 ? ' is-warn' : v >= -1 ? ' is-good' : '';
 
   // Stacked bar of the delay buckets as SVG (widths are attributes, not styles).
   function bucketBar(op) {
@@ -43,18 +45,21 @@
 
   function feedLine(op) {
     const f = op.feed;
-    if (!f) return '<p class="op-feed op-feed-off">Recollida en directe aturada: es mostren les dades ja registrades.</p>';
+    if (!f) return '<p class="op-feed"><span class="chip chip-estimated">Recollida en directe aturada: es mostren les dades ja registrades.</span></p>';
     const bits = [];
     if (f.vehiclesNow !== undefined) bits.push(`${f.vehiclesNow} trens en directe`);
     if (f.fetchAgeSec !== undefined) bits.push(`dades de fa ${f.fetchAgeSec} s`);
-    if (f.implausibleDropped) bits.push(`${f.implausibleDropped} valors impossibles descartats des de l'arrencada`);
     const err = f.vehiclesError || f.tripUpdatesError;
-    return `<p class="op-feed${err ? ' op-feed-err' : ''}">${esc(bits.join(' · '))}${err ? ` · Error del canal: ${esc(err)}` : ''}</p>`;
+    const chip = err
+      ? `<span class="chip chip-danger">${esc(bits.concat(`Error del canal: ${err}`).join(' · '))}</span>`
+      : `<span class="chip chip-live">${esc(bits.join(' · ') || 'Canal en directe')}</span>`;
+    const dropped = f.implausibleDropped ? ` <span class="op-muted">${esc(`${f.implausibleDropped} valors impossibles descartats des de l'arrencada`)}</span>` : '';
+    return `<p class="op-feed">${chip}${dropped}</p>`;
   }
 
   function linesTable(op) {
     if (!op.lines || !op.lines.length) return '';
-    const rows = op.lines.map(l => `<tr><th scope="row">${esc(l.line)}</th><td class="${delayClass(l.avgDelay)}">${esc(fmtMin(l.avgDelay))}</td><td>${esc(fmtPct(l.onTimePct))}</td><td>${esc(fmtMin(l.maxDelay))}</td><td>${l.visits}</td></tr>`).join('');
+    const rows = op.lines.map(l => `<tr><th scope="row"><span class="line-badge">${esc(l.line)}</span></th><td class="${delayClass(l.avgDelay)}">${esc(fmtMin(l.avgDelay))}</td><td>${esc(fmtPct(l.onTimePct))}</td><td>${esc(fmtMin(l.maxDelay))}</td><td>${l.visits}</td></tr>`).join('');
     return `<div class="op-table-wrap"><table class="op-table"><caption>Per línia (de més a menys retard mitjà)</caption><thead><tr><th scope="col">Línia</th><th scope="col">Retard mitjà</th><th scope="col">Puntualitat</th><th scope="col">Màxim</th><th scope="col">Passos</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
 
@@ -66,18 +71,18 @@
 
   function card(op) {
     const empty = !op.visits;
-    return `<article class="op-card" aria-labelledby="op-${esc(op.id)}">
+    return `<article class="card-inset op-operator" aria-labelledby="op-${esc(op.id)}">
       <header class="op-card-head">
-        <h4 id="op-${esc(op.id)}">${esc(op.name)}</h4>
-        <span class="op-badge" title="${esc(op.source)}">Previsió en temps real de l'operador</span>
+        <h4 id="op-${esc(op.id)}" class="op-name">${esc(op.name)}</h4>
+        <span class="chip chip-scheduled" title="${esc(op.source)}">Previsió en temps real de l'operador</span>
       </header>
       ${empty ? '<p class="op-empty">Encara no hi ha passos registrats en aquest període.</p>' : `
       <div class="op-kpis">
-        <div><span class="op-kpi-label">Puntualitat (≤ ${op.onTimeMaxMins} min)</span><span class="op-kpi-value">${esc(fmtPct(op.onTimePct))}</span></div>
-        <div><span class="op-kpi-label">Retard mitjà</span><span class="op-kpi-value ${delayClass(op.avgDelay)}">${esc(fmtMin(op.avgDelay))}</span></div>
-        <div><span class="op-kpi-label">Retard màxim</span><span class="op-kpi-value">${esc(fmtMin(op.maxDelay))}</span></div>
-        <div><span class="op-kpi-label">Passos per estació</span><span class="op-kpi-value">${op.visits}</span></div>
-        <div><span class="op-kpi-label">Trens</span><span class="op-kpi-value">${op.trips}</span></div>
+        <div class="kpi"><span class="kpi-label">Puntualitat (≤ ${op.onTimeMaxMins} min)</span><span class="kpi-value">${esc(fmtPct(op.onTimePct))}</span></div>
+        <div class="kpi"><span class="kpi-label">Retard mitjà</span><span class="kpi-value${delayVerdict(op.avgDelay)}">${esc(fmtMin(op.avgDelay))}</span></div>
+        <div class="kpi"><span class="kpi-label">Retard màxim</span><span class="kpi-value">${esc(fmtMin(op.maxDelay))}</span></div>
+        <div class="kpi"><span class="kpi-label">Passos per estació</span><span class="kpi-value">${op.visits}</span></div>
+        <div class="kpi"><span class="kpi-label">Trens</span><span class="kpi-value">${op.trips}</span></div>
       </div>
       ${bucketBar(op)}
       ${linesTable(op)}
@@ -112,8 +117,8 @@
     hours = Number(btn.dataset.opHours) || 24;
     section.querySelectorAll('[data-op-hours]').forEach(b => {
       const on = b === btn;
-      b.classList.toggle('active', on);
-      b.setAttribute('aria-selected', on ? 'true' : 'false');
+      b.classList.toggle('is-active', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
     load();
   });

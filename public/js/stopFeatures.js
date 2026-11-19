@@ -72,7 +72,9 @@
         (pos) => {
           if (geoBtn) geoBtn.innerHTML = originalHtml;
           const { latitude, longitude } = pos.coords;
-          if (latitude >= 41.45 && latitude <= 41.60 && longitude >= 2.35 && longitude <= 2.52) {
+          // Inside the area the operators serve (from the line catalog); Mataró's box until one is known.
+          const area = window.TransitUtils?.serviceArea?.();
+          if (area ? area.contains(latitude, longitude) : (latitude >= 41.45 && latitude <= 41.60 && longitude >= 2.35 && longitude <= 2.52)) {
             this.loadNearbyStops(latitude, longitude, 'La teva posició GPS 📍');
           } else {
             this.openZonePicker();

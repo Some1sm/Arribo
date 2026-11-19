@@ -483,14 +483,14 @@ class TransitApp {
 
   async fetchLines() {
     const defaultEmergencyLines = [
-      { id: '1', code: 'L1', name: 'Línia 1 - Circular Mataró', color: '#ff00ff', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Circular' }] },
-      { id: '2', code: 'L2', name: 'Línia 2 - Circular Mataró', color: '#804000', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Circular' }] },
-      { id: '3', code: 'L3', name: 'Línia 3 - Camí de la Serra - Rocafonda', color: '#808080', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Sentit Anada' }, { dirId: '1', name: 'Sentit Tornada' }] },
-      { id: '4', code: 'L4', name: 'Línia 4 - Cirera - Molins', color: '#ff0000', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Sentit Anada' }, { dirId: '1', name: 'Sentit Tornada' }] },
-      { id: '5', code: 'L5', name: 'Línia 5 - Estació Rodalies - Hospital de Mataró', color: '#00ea00', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Cap a Hospital' }, { dirId: '1', name: 'Cap a Estació' }] },
-      { id: '6', code: 'L6', name: 'Línia 6 - Ctra. de Cirera - Institut Català Salut', color: '#febf01', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Sentit Anada' }, { dirId: '1', name: 'Sentit Tornada' }] },
-      { id: '7', code: 'L7', name: 'Línia 7 - Pl. de les Tereses - Cerdanyola', color: '#80ffff', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Sentit Anada' }, { dirId: '1', name: 'Sentit Tornada' }] },
-      { id: '8', code: 'L8', name: 'Línia 8 - Estació Rodalies - Galícia', color: '#008040', agency: 'Mataró Bus (Avanza)', group: 'mataro', directions: [{ dirId: '0', name: 'Cap a Galícia' }, { dirId: '1', name: 'Cap a Estació' }] }
+      { id: '1', code: 'L1', name: 'Línia 1 - Circular Mataró', color: '#ff00ff', textColor: '#09090b', agency: 'Mataró Bus (Avanza)', agencyId: 'mataro', group: 'mataro', directions: [{ dirId: '0', name: 'Circular' }] },
+      { id: '2', code: 'L2', name: 'Línia 2 - Circular Mataró', color: '#804000', textColor: '#ffffff', agency: 'Mataró Bus (Avanza)', agencyId: 'mataro', group: 'mataro', directions: [{ dirId: '0', name: 'Circular' }] },
+      { id: '3', code: 'L3', name: 'Línia 3 - Camí de la Serra - Rocafonda', color: '#808080', textColor: '#09090b', agency: 'Mataró Bus (Avanza)', agencyId: 'mataro', group: 'mataro', directions: [{ dirId: '0', name: 'Sentit Anada' }, { dirId: '1', name: 'Sentit Tornada' }] },
+      { id: '4', code: 'L4', name: 'Línia 4 - Cirera - Molins', color: '#ff0000', textColor: '#09090b', agency: 'Mataró Bus (Avanza)', agencyId: 'mataro', group: 'mataro', directions: [{ dirId: '0', name: 'Sentit Anada' }, { dirId: '1', name: 'Sentit Tornada' }] },
+      { id: '5', code: 'L5', name: 'Línia 5 - Estació Rodalies - Hospital de Mataró', color: '#00ea00', textColor: '#09090b', agency: 'Mataró Bus (Avanza)', agencyId: 'mataro', group: 'mataro', directions: [{ dirId: '0', name: 'Cap a Hospital' }, { dirId: '1', name: 'Cap a Estació' }] },
+      { id: '6', code: 'L6', name: 'Línia 6 - Ctra. de Cirera - Institut Català Salut', color: '#febf01', textColor: '#09090b', agency: 'Mataró Bus (Avanza)', agencyId: 'mataro', group: 'mataro', directions: [{ dirId: '0', name: 'Sentit Anada' }, { dirId: '1', name: 'Sentit Tornada' }] },
+      { id: '7', code: 'L7', name: 'Línia 7 - Pl. de les Tereses - Cerdanyola', color: '#80ffff', textColor: '#09090b', agency: 'Mataró Bus (Avanza)', agencyId: 'mataro', group: 'mataro', directions: [{ dirId: '0', name: 'Sentit Anada' }, { dirId: '1', name: 'Sentit Tornada' }] },
+      { id: '8', code: 'L8', name: 'Línia 8 - Estació Rodalies - Galícia', color: '#008040', textColor: '#ffffff', agency: 'Mataró Bus (Avanza)', agencyId: 'mataro', group: 'mataro', directions: [{ dirId: '0', name: 'Cap a Galícia' }, { dirId: '1', name: 'Cap a Estació' }] }
     ];
 
     const cachedLinesStr = localStorage.getItem('arribo_lines_cache');
@@ -506,6 +506,11 @@ class TransitApp {
     if (!this.availableLines || this.availableLines.length === 0) {
       this.availableLines = defaultEmergencyLines;
     }
+    try {
+      const cachedOps = JSON.parse(localStorage.getItem('arribo_operators_cache') || 'null');
+      if (Array.isArray(cachedOps)) this.availableOperators = cachedOps;
+    } catch {}
+    this.applyCatalog();
 
     // Fast non-blocking fetch to update the catalog in background
     try {
@@ -518,9 +523,12 @@ class TransitApp {
         const json = await res.json();
         if (json.success && Array.isArray(json.lines) && json.lines.length > 0) {
           this.availableLines = json.lines;
+          if (Array.isArray(json.operators)) this.availableOperators = json.operators;
           try {
             localStorage.setItem('arribo_lines_cache', JSON.stringify(json.lines));
+            if (Array.isArray(json.operators)) localStorage.setItem('arribo_operators_cache', JSON.stringify(json.operators));
           } catch {}
+          this.applyCatalog();
           if (!this.activeLineId) {
             this.renderLandingLines();
           }
@@ -703,7 +711,7 @@ class TransitApp {
   setupLandingControls() {
     const heroInput = document.getElementById('landing-hero-search-input');
     const clearBtn = document.getElementById('btn-landing-search-clear');
-    const filterTabs = document.querySelectorAll('#landing-filter-tabs .landing-filter-tab');
+    const filterDock = document.getElementById('landing-filter-tabs');
     const container = document.getElementById('landing-lines-container');
     const favGrid = document.getElementById('landing-favorites-grid');
     const nearbyGrid = document.getElementById('landing-nearby-grid');
@@ -778,18 +786,21 @@ class TransitApp {
       this.renderLandingLines();
     });
 
-    filterTabs.forEach(tab => {
-      tab.addEventListener('click', (e) => {
-        e.preventDefault();
-        filterTabs.forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
-        this.landingFilter = tab.getAttribute('data-filter') || 'all';
-        // The tabs filter the network map, not the line cards: the grid under
-        // "Mataró Bus Urbà" is the full catalogue and stays complete so every
-        // line remains one click away.
-        this.applyLandingFilterToNetworkMap();
-        this.renderLandingLines();
+    // The dock is rebuilt from the catalog (renderLandingFilterTabs), so one
+    // delegated listener. The pills filter the network map, not the line
+    // cards: the grid is the full catalogue and every line stays one click away.
+    filterDock?.addEventListener('click', (e) => {
+      const tab = e.target.closest('[data-filter]');
+      if (!tab) return;
+      e.preventDefault();
+      this.landingFilter = tab.getAttribute('data-filter') || 'all';
+      filterDock.querySelectorAll('[data-filter]').forEach(t => {
+        const on = t === tab;
+        t.classList.toggle('is-active', on);
+        t.setAttribute('aria-pressed', String(on));
       });
+      this.applyLandingFilterToNetworkMap();
+      this.renderLandingLines();
     });
 
     // Action buttons: Nearby Stops GPS & Mataró Zones
@@ -933,6 +944,85 @@ class TransitApp {
     });
   }
 
+  // ==========================================
+  // CATALOG: OPERATORS, LINE COLOURS, FILTERS
+  // ==========================================
+
+  /** The catalog's operators in order: the server's list (/api/lines
+   *  "operators"), plus any operator a line names that the list lacks. */
+  catalogOperators() {
+    const ops = Array.isArray(this.availableOperators)
+      ? this.availableOperators.map(o => ({ id: String(o.id), name: o.name || String(o.id), mode: o.mode || '' }))
+      : [];
+    for (const l of this.availableLines || []) {
+      const id = l.agencyId || 'mataro';
+      if (!ops.some(o => o.id === id)) ops.push({ id, name: l.agency || id, mode: l.mode || '' });
+    }
+    return ops;
+  }
+
+  /** Lines grouped under their operator, operators in catalog order, empty groups dropped. */
+  linesByOperator(lines) {
+    return this.catalogOperators()
+      .map(op => ({ op, lines: lines.filter(l => (l.agencyId || 'mataro') === op.id) }))
+      .filter(g => g.lines.length > 0);
+  }
+
+  /** Catalog line for a line id or code, for badges outside the catalog lists. */
+  catalogLine(lineId) {
+    const want = String(lineId ?? '').replace(/^L/i, '').toLowerCase();
+    return (this.availableLines || []).find(l => String(l.id).toLowerCase() === want || String(l.code || '').toLowerCase() === String(lineId ?? '').toLowerCase());
+  }
+
+  /** data-line attribute for a line badge (colours from TransitUtils.applyLineColors). */
+  lineAttr(line) {
+    return line ? ` data-line="${this.esc(window.TransitUtils?.lineKey?.(line) ?? '')}"` : '';
+  }
+
+  /** Runs whenever the catalog changes: line colours and the landing filter dock. */
+  applyCatalog() {
+    window.TransitUtils?.applyLineColors?.(this.availableLines || []);
+    this.renderLandingFilterTabs();
+    this.renderPickerFilterTabs();
+  }
+
+  /**
+   * The landing filter (a SegmentedControl) built from the catalog: "all",
+   * then one pill per operator when there are several, or one per line while
+   * there is a single operator. It filters the network map.
+   */
+  renderLandingFilterTabs() {
+    const dock = document.getElementById('landing-filter-tabs');
+    if (!dock) return;
+    const lines = this.availableLines || [];
+    const ops = this.catalogOperators();
+    const items = [{ value: 'all', label: `Totes les línies (${lines.length})` }];
+    if (ops.length > 1) ops.forEach(o => items.push({ value: `op:${o.id}`, label: o.name }));
+    else lines.forEach(l => items.push({ value: String(l.id), label: l.code || String(l.id) }));
+    if (!items.some(i => i.value === this.landingFilter)) this.landingFilter = 'all';
+    dock.innerHTML = items.map(i => {
+      const on = i.value === this.landingFilter;
+      return `<button type="button" class="pill${on ? ' is-active' : ''}" aria-pressed="${on}" data-filter="${this.esc(i.value)}">${this.esc(i.label)}</button>`;
+    }).join('');
+  }
+
+  /** The line picker's filter dock, built like the landing one. */
+  renderPickerFilterTabs() {
+    const dock = document.getElementById('line-picker-filter-tabs');
+    if (!dock) return;
+    const lines = this.availableLines || [];
+    const ops = this.catalogOperators();
+    const items = [{ value: 'all', label: 'Totes les línies' }];
+    if (ops.length > 1) ops.forEach(o => items.push({ value: `op:${o.id}`, label: o.name }));
+    else lines.forEach(l => items.push({ value: String(l.id), label: l.code || String(l.id) }));
+    if (!items.some(i => i.value === (this.linePickerFilter || 'all'))) this.linePickerFilter = 'all';
+    const current = this.linePickerFilter || 'all';
+    dock.innerHTML = items.map(i => {
+      const on = i.value === current;
+      return `<button type="button" class="pill${on ? ' is-active' : ''}" aria-pressed="${on}" data-city="${this.esc(i.value)}">${this.esc(i.label)}</button>`;
+    }).join('');
+  }
+
   renderLandingLines() {
     this.renderLandingFavorites();
     this.updateHeaderFavoritesBadge();
@@ -965,34 +1055,33 @@ class TransitApp {
 
     if (linesToRender.length === 0 && stopsToRender.length === 0) {
       container.innerHTML = `
-        <div style="padding: 3rem 1rem; text-align: center; color: var(--text-muted); background:var(--bg-card-gradient); border-radius:var(--radius-lg); border:1px solid var(--border-subtle);">
-          <div style="width:36px; height:36px; border-radius:50%; background:rgba(148,163,184,0.12); color:var(--text-muted); display:flex; align-items:center; justify-content:center; margin:0 auto 0.75rem auto; font-size:1rem; font-weight:800;">?</div>
-          <div style="font-size:1.1rem; font-weight: 700; color: #fff; margin-bottom: 0.35rem;">Cap línia ni parada trobada</div>
-          <div style="font-size: 0.85rem; max-width:450px; margin:0 auto;">No hi ha cap resultat per a "${this.esc(this.landingSearch)}". Prova cercant per línia (ex: L1, L2, L3, 5, 8) o parada (ex: Hospital, Rodalies, Tereses).</div>
+        <div class="empty-state">
+          <div class="empty-state-title">Cap línia ni parada trobada</div>
+          <div class="empty-state-text">No hi ha cap resultat per a "${this.esc(this.landingSearch)}". Prova amb el codi o el nom d'una línia, o amb el nom d'una parada.</div>
         </div>
       `;
       return;
     }
 
     let html = '';
-    if (linesToRender.length > 0) {
+    // One group per operator, in catalog order.
+    for (const { op, lines } of this.linesByOperator(linesToRender)) {
       html += `
         <div class="landing-group-section">
           <div class="landing-group-header">
-            <h3>Mataró Bus Urbà</h3>
-            <span class="landing-group-badge">${linesToRender.length} línia${linesToRender.length === 1 ? '' : 'es'}</span>
+            <h3>${this.esc(op.name)}</h3>
+            <span class="landing-group-badge">${lines.length} línia${lines.length === 1 ? '' : 'es'}</span>
           </div>
           <div class="landing-lines-grid">
-            ${linesToRender.map(l => {
-              const contrast = this.getContrastColor(l.color);
+            ${lines.map(l => {
               const dirCount = l.directions ? `${l.directions.length} sentits` : 'En servei';
               return `
                 <div class="landing-line-card" data-line-id="${this.esc(l.id)}" title="Fes clic per seguir la línia ${this.esc(l.code)} en directe">
-                  <span class="landing-line-badge" style="background:${this.esc(l.color)}; color:${contrast};">${this.esc(l.code)}</span>
+                  <span class="landing-line-badge"${this.lineAttr(l)}>${this.esc(l.code)}</span>
                   <div class="landing-line-info">
                     <div class="landing-line-title">${this.esc(l.name)}</div>
                     <div class="landing-line-operator">
-                      <span>${this.esc(l.agency || 'Mataró Bus')}</span>
+                      <span>${this.esc(l.agency || op.name)}</span>
                       <span>•</span>
                       <span>${dirCount}</span>
                     </div>
@@ -1010,17 +1099,16 @@ class TransitApp {
 
     if (stopsToRender.length > 0) {
       html += `
-        <div class="landing-group-section" style="${linesToRender.length > 0 ? 'margin-top:1.5rem;' : ''}">
+        <div class="landing-group-section">
           <div class="landing-group-header">
             <h3>Parades trobades</h3>
             <span class="landing-group-badge">${stopsToRender.length} parada${stopsToRender.length === 1 ? '' : 'es'}</span>
           </div>
           <div class="landing-lines-grid">
             ${stopsToRender.map(s => {
-              const contrast = this.getContrastColor(s.lineColor || '#009485');
               return `
                 <div class="landing-line-card landing-stop-card" data-stop-id="${this.esc(s.stopId || s.code)}" data-stop-name="${this.esc(s.stopName || s.name)}" data-line-id="${this.esc(s.lineId || '1')}" data-lat="${this.esc(s.lat || '')}" data-lon="${this.esc(s.lon || '')}" title="Veure arribades a ${this.esc(s.stopName || s.name)}">
-                  <span class="landing-line-badge" style="background:${this.esc(s.lineColor || '#009485')}; color:${contrast};">${this.esc(s.lineCode || 'Bus')}</span>
+                  <span class="landing-line-badge"${this.lineAttr(this.catalogLine(s.lineId || s.lineCode))}>${this.esc(s.lineCode || 'Bus')}</span>
                   <div class="landing-line-info">
                     <div class="landing-line-title">${this.esc(s.stopName || s.name)}</div>
                     <div class="landing-line-operator">
@@ -4229,7 +4317,9 @@ class TransitApp {
     const cityFilter = this.linePickerFilter || 'all';
 
     const filterFn = (l) => {
-      if (cityFilter !== 'all') {
+      if (cityFilter.startsWith('op:')) {
+        if ((l.agencyId || 'mataro') !== cityFilter.slice(3)) return false;
+      } else if (cityFilter !== 'all') {
         const matchId = String(l.id).toLowerCase() === cityFilter.toLowerCase() ||
                         String(l.code).toLowerCase() === `l${cityFilter}`.toLowerCase();
         if (!matchId) return false;
@@ -4245,32 +4335,31 @@ class TransitApp {
 
     if (linesToRender.length === 0) {
       container.innerHTML = `
-        <div style="padding: 2.5rem 1rem; text-align: center; color: var(--text-muted);">
-          <div style="font-size: 2rem; margin-bottom: 0.5rem;">🔍</div>
-          <div style="font-weight: 700; color: #fff; margin-bottom: 0.25rem;">Cap línia trobada</div>
-          <div style="font-size: 0.85rem;">Prova amb una altra cerca (ex: L1, L2, L3, 5, 8)...</div>
+        <div class="empty-state">
+          <div class="empty-state-title">Cap línia trobada</div>
+          <div class="empty-state-text">Prova amb un altre codi o nom de línia.</div>
         </div>
       `;
       return;
     }
 
-    let html = `
+    // One group per operator, in catalog order; scales to any number of lines.
+    container.innerHTML = this.linesByOperator(linesToRender).map(({ op, lines }) => `
       <div class="line-category-group">
         <div class="line-category-title">
-          <span>📍 Mataró Bus Urbà (${linesToRender.length})</span>
+          <span>${this.esc(op.name)} (${lines.length})</span>
         </div>
         <div class="line-grid">
-          ${linesToRender.map(l => {
+          ${lines.map(l => {
             const isActive = String(l.id) === String(this.activeLineId);
-            const contrast = this.getContrastColor(l.color);
             return `
               <div class="line-grid-card ${isActive ? 'active' : ''}" data-line-id="${this.esc(l.id)}">
                 <div class="line-card-left">
-                  <span class="line-card-badge" style="background:${l.color}; color:${contrast};">${l.code}</span>
+                  <span class="line-card-badge"${this.lineAttr(l)}>${this.esc(l.code)}</span>
                   <div class="line-card-details">
                     <div class="line-card-name">${this.esc(l.code)}: ${this.esc(l.name)}</div>
                     <div class="line-card-sub">
-                      <span>${l.agency || 'Mataró Bus'}</span>
+                      <span>${this.esc(l.agency || op.name)}</span>
                       <span>•</span>
                       <span>${l.directions ? `${l.directions.length} sentits` : 'En servei'}</span>
                     </div>
@@ -4282,9 +4371,7 @@ class TransitApp {
           }).join('')}
         </div>
       </div>
-    `;
-
-    container.innerHTML = html;
+    `).join('');
   }
 
   setupLinePicker() {
@@ -4343,14 +4430,18 @@ class TransitApp {
       }, { passive: false });
     }
 
-    document.querySelectorAll('.line-filter-tab').forEach(tab => {
-      tab.addEventListener('click', (e) => {
-        e.preventDefault();
-        document.querySelectorAll('.line-filter-tab').forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
-        this.linePickerFilter = tab.getAttribute('data-city') || 'all';
-        this.renderLinePicker();
+    // The dock is rebuilt from the catalog (renderPickerFilterTabs): one delegated listener.
+    filterTabsContainer?.addEventListener('click', (e) => {
+      const tab = e.target.closest('[data-city]');
+      if (!tab) return;
+      e.preventDefault();
+      this.linePickerFilter = tab.getAttribute('data-city') || 'all';
+      filterTabsContainer.querySelectorAll('[data-city]').forEach(t => {
+        const on = t === tab;
+        t.classList.toggle('is-active', on);
+        t.setAttribute('aria-pressed', String(on));
       });
+      this.renderLinePicker();
     });
 
     document.addEventListener('keydown', (e) => {
@@ -5195,10 +5286,10 @@ class TransitApp {
 
     const seq = ++this.networkMapSeq;
     const map = this.networkMap;
+    // Every catalog line (its id is what /api/line/:id resolves), not a fixed L1-L8 list.
     const lines = (this.availableLines || [])
-      .filter(l => /^L?[1-8]$/i.test(String(l.id || '')) || /^L[1-8]$/i.test(String(l.code || '')))
-      .map(l => String(l.code || l.id).replace(/^L/i, ''))
-      .filter((v, i, a) => a.indexOf(v) === i);
+      .map(l => String(l.id ?? ''))
+      .filter((v, i, a) => v && a.indexOf(v) === i);
 
     try {
       const results = await Promise.allSettled(

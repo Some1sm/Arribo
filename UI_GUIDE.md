@@ -53,6 +53,7 @@ The seven components of the Arribo! Design System are in `public/css/style.css` 
 
 - **Shared names are scoped.** Where an old class already had the name (`.btn-primary`, `.btn-secondary`, `.btn-sm`, `.btn-icon`, `.card-title`), the design-system rule only applies inside its component (`.btn.btn-primary`, `.card .card-title`), so unmigrated screens keep their look. Always write the full form (`class="btn btn-primary"`).
 - **Line colours come from data.** A line's colour and ink are the operator's (GTFS `route_color` / `route_text_color`; Mataró's values from its catalog), set on the badge as `--line-color` / `--line-ink`. Nothing is computed from the colour at runtime. With no colour the badge falls back to `bg-surface-elevated` / `text-primary`.
+- **How:** `/api/lines` gives each line `agencyId` and `textColor` and lists the `operators` (name, mode, bounds, starting view). `TransitUtils.applyLineColors(lines)` writes one `<style id="arribo-line-colors">` with a rule per line on `[data-line="<operator>:<id>"]`; badges only carry `data-line` (`TransitUtils.lineKey(line)`), never inline colours. `TransitUtils.serviceArea()` gives maps their starting view and the geolocation check its area.
 - No `[data-theme="light"]` overrides inside components; L7's outline uses `border-strong` in both themes.
 
 ### 2.1 Color & Surface Tokens

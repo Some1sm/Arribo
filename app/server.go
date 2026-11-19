@@ -1289,7 +1289,13 @@ func (s *Server) hLines(q *xreq, res *xres) error {
 		s.sendInternalError(q, res, err, O("count", 0.0, "lines", []any{}))
 		return nil
 	}
-	res.json(O("success", true, "count", float64(len(lines)), "lines", lines))
+	out := make([]any, 0, len(lines))
+	for _, x := range lines {
+		if l, ok := x.(*Obj); ok {
+			out = append(out, catalogLine(l))
+		}
+	}
+	res.json(O("success", true, "count", float64(len(out)), "lines", out, "operators", catalogOperators(lines)))
 	return nil
 }
 

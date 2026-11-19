@@ -13,7 +13,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-  <link rel="stylesheet" href="/css/style.css?v=9.4.46">
+  <link rel="stylesheet" href="/css/style.css?v=9.4.47">
 </head>
 <body class="observatori-page-body observatori-page">
 
@@ -251,16 +251,16 @@
 
     <!-- Trains (Rodalies, FGC): per-operator punctuality from their real-time feeds.
          Hidden until train data is collected (public/js/operators.js). -->
-    <section class="op-section" id="operators-section" aria-labelledby="operators-title" hidden>
-      <div class="op-section-head">
+    <section class="card" id="operators-section" aria-labelledby="operators-title" hidden>
+      <div class="card-header">
         <div>
-          <h3 id="operators-title" class="op-section-title">Trens: Rodalies i FGC</h3>
-          <p class="op-section-subtitle">Puntualitat de cada operador a partir dels seus canals en temps real. Un tren és puntual si arriba amb 5 minuts de retard o menys.</p>
+          <h3 id="operators-title" class="card-title">Trens: Rodalies i FGC</h3>
+          <p class="card-subtitle">Puntualitat de cada operador a partir dels seus canals en temps real. Un tren és puntual si arriba amb 5 minuts de retard o menys.</p>
         </div>
         <div class="op-section-tools">
-          <div class="observatori-mode-toggle-group" role="tablist" aria-label="Període">
-            <button type="button" class="observatori-pill-btn active" role="tab" aria-selected="true" data-op-hours="24">24 h</button>
-            <button type="button" class="observatori-pill-btn" role="tab" aria-selected="false" data-op-hours="168">7 dies</button>
+          <div class="pill-group" role="group" aria-label="Període">
+            <button type="button" class="pill is-active" aria-pressed="true" data-op-hours="24">24 h</button>
+            <button type="button" class="pill" aria-pressed="false" data-op-hours="168">7 dies</button>
           </div>
           <span class="op-updated" id="operators-updated" aria-live="polite"></span>
         </div>
@@ -349,11 +349,11 @@
   </footer>
 
   <!-- Scripts -->
-  <script src="/js/utils.js?v=9.4.46"></script>
-  <script src="/js/storage.js?v=9.4.46"></script>
-  <script src="/js/pwa.js?v=9.4.46"></script>
+  <script src="/js/utils.js?v=9.4.47"></script>
+  <script src="/js/storage.js?v=9.4.47"></script>
+  <script src="/js/pwa.js?v=9.4.47"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="/js/observatori.js?v=9.4.46"></script>
-  <script src="/js/operators.js?v=9.4.46"></script>
+  <script src="/js/observatori.js?v=9.4.47"></script>
+  <script src="/js/operators.js?v=9.4.47"></script>
 </body>
 </html>
