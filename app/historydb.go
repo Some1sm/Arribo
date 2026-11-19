@@ -879,10 +879,11 @@ func (h *HistoryDB) recordVehicleSnapshot(snap *Obj) {
 	if snap.Get("isRealTime") != false {
 		rt = 1
 	}
+	agencyID, mode := rowAgency(snap)
 	_, _ = h.run(`
           INSERT INTO vehicle_snapshots
-          (vehicle_id, line_id, line_code, agency, lat, lon, speed_kmh, bearing, delay_mins, is_realtime, status, timestamp)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (vehicle_id, line_id, line_code, agency, lat, lon, speed_kmh, bearing, delay_mins, is_realtime, status, timestamp, agency_id, mode)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
 		jsString(snap.Get("vehicleId")),
 		jsString(or(snap.Get("lineId"), "")),
@@ -896,7 +897,15 @@ func (h *HistoryDB) recordVehicleSnapshot(snap *Obj) {
 		rt,
 		jsString(or(snap.Get("status"), "active")),
 		bindNumberish(ts),
+		agencyID, mode,
 	)
+}
+
+// rowAgency is the operator and transport mode a history row is stored
+// under: the record's agencyId / mode when the caller gives them, else
+// Mataró's urban bus, which every caller is today.
+func rowAgency(o *Obj) (string, string) {
+	return jsString(or(o.Get("agencyId"), "mataro")), jsString(or(o.Get("mode"), "bus"))
 }
 
 // bindNumberish binds a value the way the source passes it straight through
@@ -985,10 +994,11 @@ func (h *HistoryDB) recordDelayLog(e *Obj) {
 	if !truthy(ts) {
 		ts = float64(nowMs())
 	}
+	agencyID, mode := rowAgency(e)
 	_, _ = h.run(`
           INSERT INTO delay_logs
-          (vehicle_id, line_id, line_code, agency, stop_id, stop_name, delay_mins, scheduled_time, actual_time, is_realtime, is_delayed, timestamp, direction, times_source, observed_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (vehicle_id, line_id, line_code, agency, stop_id, stop_name, delay_mins, scheduled_time, actual_time, is_realtime, is_delayed, timestamp, direction, times_source, observed_at, agency_id, mode)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
 		jsString(or(e.Get("vehicleId"), "")),
 		jsString(or(e.Get("lineId"), "")),
@@ -1004,6 +1014,7 @@ func (h *HistoryDB) recordDelayLog(e *Obj) {
 		jsString(or(e.Get("direction"), "")),
 		jsString(or(e.Get("timesSource"), "")),
 		finiteOr(e.Get("observedAt"), nil),
+		agencyID, mode,
 	)
 }
 
@@ -1035,10 +1046,11 @@ func (h *HistoryDB) recordStopVisit(v *Obj) {
 	if a, ok := v.Get("tripAgrees").(float64); ok && (a == 1 || a == 0) {
 		agrees = a
 	}
+	agencyID, mode := rowAgency(v)
 	_, _ = h.run(`
           INSERT INTO stop_visits
-          (vehicle_id, line_code, direction, stop_name, first_ts, last_ts, delay_mins, sample_count, scheduled_time, actual_time, times_source, is_realtime, measured_delay_mins, source, measured_method, trip_agrees)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (vehicle_id, line_code, direction, stop_name, first_ts, last_ts, delay_mins, sample_count, scheduled_time, actual_time, times_source, is_realtime, measured_delay_mins, source, measured_method, trip_agrees, agency_id, mode)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
 		jsString(or(v.Get("vehicleId"), "")),
 		jsUpper(jsString(or(v.Get("lineCode"), ""))),
@@ -1056,6 +1068,7 @@ func (h *HistoryDB) recordStopVisit(v *Obj) {
 		jsString(or(v.Get("source"), "live")),
 		jsString(or(v.Get("measuredMethod"), "")),
 		agrees,
+		agencyID, mode,
 	)
 }
 
@@ -1076,10 +1089,11 @@ func (h *HistoryDB) recordGpsGap(g *Obj) {
 	if math.IsNaN(gap) || gap == 0 {
 		gap = 0
 	}
+	agencyID, mode := rowAgency(g)
 	_, _ = h.run(`
           INSERT INTO gps_gaps
-          (vehicle_id, line_code, direction, lost_ts, regained_ts, gap_sec, lost_lat, lost_lon, regained_lat, regained_lon, stop_name, at_terminal, feed_wide)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (vehicle_id, line_code, direction, lost_ts, regained_ts, gap_sec, lost_lat, lost_lon, regained_lat, regained_lon, stop_name, at_terminal, feed_wide, agency_id, mode)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
 		jsString(g.Get("vehicleId")),
 		jsUpper(jsString(or(g.Get("lineCode"), ""))),
@@ -1094,6 +1108,7 @@ func (h *HistoryDB) recordGpsGap(g *Obj) {
 		jsString(or(g.Get("stopName"), "")),
 		b2f(g.Get("atTerminal")),
 		b2f(g.Get("feedWide")),
+		agencyID, mode,
 	)
 }
 
