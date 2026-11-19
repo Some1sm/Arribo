@@ -37,6 +37,24 @@ The Arribo! Design System (tokens, 7 components, usage rules) is the reference. 
 
 The older names below stay valid (several now carry the corrected values) and are migrated screen by screen: `--c10-primary*`, `--brand-primary` and `--accent-live` → `--brand*`; `--accent-warning` / `-scheduled` / `-danger` / `-regulating` → the status tokens; `--border-focus` → `--focus-ring` for outlines. Names the code used without defining (`--bg-elevated`, `--bg-secondary`, `--bg-card`, `--color-on-time`…) are now defined as aliases.
 
+### 2.0.1 Design System v1 components (the component layer)
+
+The seven components of the Arribo! Design System are in `public/css/style.css` (block "DESIGN SYSTEM v1 — COMPONENT LAYER", copied from the design system's `components/bundle.css`). **All new markup uses them**; old classes move onto them screen by screen, as each component's "Replaces" list in the design system says.
+
+| Component | Markup | Notes |
+|---|---|---|
+| Button | `<button class="btn btn-primary">` (+ `btn-secondary`, `btn-ghost`, `btn-danger`; modifiers `btn-sm`, `btn-icon`) | One primary per view. |
+| SegmentedControl | `.pill-group[role=group][aria-label]` holding `.pill` buttons; active one `.is-active` + `aria-pressed="true"` | Period, line, view mode. |
+| NavPill | `<a class="nav-pill">` with `aria-current="page"` on the current page | Header navigation. |
+| StatusChip | `.chip` + `chip-live` / `-estimated` / `-scheduled` / `-regulating` / `-on-time` / `-late` / `-severe` / `-neutral` (`chip-plain` drops the dot) | Always with a word or signed minutes. |
+| LineBadge | `.line-badge` with `--line-color` / `--line-ink` from the catalog; `line-1` … `line-8` classes as Mataró's fallback | See below. |
+| Card | `.card` > `.card-header` (`.card-title`, `.card-subtitle`) and `.card-inset` for nested grounds | Never a card in a card. |
+| KpiTile | `.kpi` > `.kpi-label`, `.kpi-value` (`is-good` / `is-warn` / `is-bad` / `is-info`), `.kpi-note` | A few headline figures per page. |
+
+- **Shared names are scoped.** Where an old class already had the name (`.btn-primary`, `.btn-secondary`, `.btn-sm`, `.btn-icon`, `.card-title`), the design-system rule only applies inside its component (`.btn.btn-primary`, `.card .card-title`), so unmigrated screens keep their look. Always write the full form (`class="btn btn-primary"`).
+- **Line colours come from data.** A line's colour and ink are the operator's (GTFS `route_color` / `route_text_color`; Mataró's values from its catalog), set on the badge as `--line-color` / `--line-ink`. Nothing is computed from the colour at runtime. With no colour the badge falls back to `bg-surface-elevated` / `text-primary`.
+- No `[data-theme="light"]` overrides inside components; L7's outline uses `border-strong` in both themes.
+
 ### 2.1 Color & Surface Tokens
 
 | Token | Dark Mode Value | Light Mode Value | Description |
