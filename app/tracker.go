@@ -988,8 +988,6 @@ func asObj(v any) *Obj {
 	return o
 }
 
-var reLineID18Tracker = regexp.MustCompile(`^[1-8]$`)
-
 // getLineDetails serves the computed line view, cached for one second per
 // SIRI snapshot. opts nil is the default {}.
 func (t *MataroTracker) getLineDetails(lineID any, direction any, opts *Obj) *Obj {
@@ -1001,7 +999,7 @@ func (t *MataroTracker) getLineDetails(lineID any, direction any, opts *Obj) *Ob
 	if lID == "" {
 		lID = "1"
 	}
-	if !reLineID18Tracker.MatchString(lID) || notPlain || (opts != nil && opts.Len() > 0) {
+	if !mataroAgency.hasLine(lID) || notPlain || (opts != nil && opts.Len() > 0) {
 		return t.computeLineDetails(lineID, direction, opts)
 	}
 	dirKey := "both"

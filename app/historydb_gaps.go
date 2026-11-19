@@ -696,8 +696,8 @@ func (h *HistoryDB) getLineDelayStats(lineCode, hoursBack, lineID any) *Obj {
           SUM(early_count) as earlyCount,
           SUM(late_count) as lateCount
         FROM hourly_line_visit_stats
-        WHERE (UPPER(line_code) = ? OR UPPER(line_code) = ? OR UPPER(line_code) = ?) AND timestamp >= ?
-      `, codeUpper, codeNoHyphen, codeWithL, cutoff)
+        WHERE agency_id = ? AND (UPPER(line_code) = ? OR UPPER(line_code) = ? OR UPPER(line_code) = ?) AND timestamp >= ?
+      `, mataroAgency.ID, codeUpper, codeNoHyphen, codeWithL, cutoff)
 		if err != nil {
 			return nil, err
 		}
@@ -728,8 +728,8 @@ func (h *HistoryDB) getLineDelayStats(lineCode, hoursBack, lineID any) *Obj {
           SUM(CASE WHEN early_count IS NULL THEN 1 ELSE 0 END) as legacyHours,
           SUM(late_count) as lateCount
         FROM hourly_line_stats
-        WHERE (UPPER(line_code) = ? OR UPPER(line_code) = ? OR UPPER(line_code) = ?) AND timestamp >= ?
-      `, codeUpper, codeNoHyphen, codeWithL, cutoff)
+        WHERE agency_id = ? AND (UPPER(line_code) = ? OR UPPER(line_code) = ? OR UPPER(line_code) = ?) AND timestamp >= ?
+      `, mataroAgency.ID, codeUpper, codeNoHyphen, codeWithL, cutoff)
 		if err != nil {
 			return nil, err
 		}

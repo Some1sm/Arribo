@@ -90,7 +90,7 @@ func (c *SiriClient) cacheEntry(key string) *siriCacheEntry { return c.cache[key
 func (c *SiriClient) setRpcBackend(fn func(op string, args *Obj) (any, error)) { c.rpc = fn }
 
 func (c *SiriClient) isValidMataroCoord(lat, lon float64) bool {
-	return isFinite(lat) && isFinite(lon) && lat >= 41.45 && lat <= 41.65 && lon >= 2.30 && lon <= 2.55
+	return mataroAgency.Bounds.contains(lat, lon)
 }
 
 // observationTimestamp is Date.parse(value) when plausible, else null.

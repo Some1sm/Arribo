@@ -99,7 +99,7 @@ func summariseTimesProvenance(c provCounts) string {
 	return provMixed
 }
 
-var mataroLineIDs = []string{"1", "2", "3", "4", "5", "6", "7", "8"}
+var mataroLineIDs = mataroAgency.LineIDs
 var mataroLineCodes = func() []string {
 	out := make([]string, len(mataroLineIDs))
 	for i, id := range mataroLineIDs {
@@ -116,9 +116,13 @@ func quotedList(xs []string) string {
 	return strings.Join(q, ", ")
 }
 
-var mataroScopeSQL = " AND (UPPER(line_code) IN (" + quotedList(mataroLineCodes) + ") AND line_id IN (" +
+// The "all lines" scope of the delay_logs and stop_visits reports: Mataró's rows
+// (agency_id) on Mataró's line codes. Every row is Mataró's today, so the
+// agency_id term changes no result; it keeps the reports Mataró-only once
+// other operators are ingested.
+var mataroScopeSQL = " AND agency_id = '" + mataroAgency.ID + "' AND (UPPER(line_code) IN (" + quotedList(mataroLineCodes) + ") AND line_id IN (" +
 	quotedList(append(append([]string{}, mataroLineIDs...), mataroLineCodes...)) + "))"
-var mataroVisitsScopeSQL = " AND (UPPER(line_code) IN (" + quotedList(mataroLineCodes) + "))"
+var mataroVisitsScopeSQL = " AND agency_id = '" + mataroAgency.ID + "' AND (UPPER(line_code) IN (" + quotedList(mataroLineCodes) + "))"
 
 func appendMataroScope(where string, isAll bool) string {
 	if isAll {
@@ -614,6 +618,73 @@ func (h *HistoryDB) hasColumn(table, col string) (bool, error) {
 	return false, nil
 }
 
+// rollupPerAgencyDDL is the shape of the two hourly rollup tables once they
+// are keyed per operator: agency_id joins the unique key, so line codes
+// shared by several operators (Mataró bus L1, metro L1) get separate
+// buckets. historySchema still creates the original shape; a table without
+// agency_id is rebuilt into this one, keeping every row and id. %s is the
+// table name.
+var rollupPerAgencyDDL = map[string]struct{ ddl, cols string }{
+	"hourly_line_stats": {`CREATE TABLE %s (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            agency_id TEXT NOT NULL DEFAULT 'mataro',
+            line_code TEXT NOT NULL,
+            agency TEXT,
+            date_hour TEXT NOT NULL,
+            sample_count INTEGER DEFAULT 0,
+            avg_delay_mins REAL DEFAULT 0,
+            max_delay_mins INTEGER DEFAULT 0,
+            on_time_count INTEGER DEFAULT 0,
+            late_count INTEGER DEFAULT 0,
+            timestamp INTEGER NOT NULL,
+            delay_sum REAL,
+            early_count INTEGER,
+            UNIQUE(agency_id, line_code, date_hour)
+          )`, "id, line_code, agency, date_hour, sample_count, avg_delay_mins, max_delay_mins, on_time_count, late_count, timestamp, delay_sum, early_count"},
+	"hourly_line_visit_stats": {`CREATE TABLE %s (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            agency_id TEXT NOT NULL DEFAULT 'mataro',
+            line_code TEXT NOT NULL,
+            agency TEXT,
+            date_hour TEXT NOT NULL,
+            visit_count INTEGER DEFAULT 0,
+            sample_count INTEGER DEFAULT 0,
+            delay_sum REAL DEFAULT 0,
+            avg_delay_mins REAL DEFAULT 0,
+            max_delay_mins INTEGER DEFAULT 0,
+            on_time_count INTEGER DEFAULT 0,
+            early_count INTEGER DEFAULT 0,
+            late_count INTEGER DEFAULT 0,
+            timestamp INTEGER NOT NULL,
+            UNIQUE(agency_id, line_code, date_hour)
+          )`, "id, line_code, agency, date_hour, visit_count, sample_count, delay_sum, avg_delay_mins, max_delay_mins, on_time_count, early_count, late_count, timestamp"},
+}
+
+// rebuildRollupsPerAgency rebuilds each rollup table that has no agency_id
+// column into rollupPerAgencyDDL, in one transaction per table. Existing
+// rows are all Mataró's, which the column default records.
+func (h *HistoryDB) rebuildRollupsPerAgency() error {
+	for _, table := range []string{"hourly_line_stats", "hourly_line_visit_stats"} {
+		ok, err := h.hasColumn(table, "agency_id")
+		if err != nil {
+			return err
+		}
+		if ok {
+			continue
+		}
+		spec := rollupPerAgencyDDL[table]
+		tmp := table + "_per_agency"
+		if err := h.exec("BEGIN IMMEDIATE; DROP TABLE IF EXISTS " + tmp + "; " +
+			fmt.Sprintf(spec.ddl, tmp) + "; " +
+			"INSERT INTO " + tmp + " (" + spec.cols + ") SELECT " + spec.cols + " FROM " + table + "; " +
+			"DROP TABLE " + table + "; ALTER TABLE " + tmp + " RENAME TO " + table + "; COMMIT;"); err != nil {
+			_ = h.exec("ROLLBACK")
+			return err
+		}
+	}
+	return nil
+}
+
 func (h *HistoryDB) migrate() error {
 	if err := h.exec(historySchema); err != nil {
 		return err
@@ -649,6 +720,9 @@ func (h *HistoryDB) migrate() error {
 				return err
 			}
 		}
+	}
+	if err := h.rebuildRollupsPerAgency(); err != nil {
+		return err
 	}
 	visitCols, err := h.columnNames("stop_visits")
 	if err != nil {

@@ -388,7 +388,7 @@ func (t *MataroTracker) fetchAvisosDirect() []any {
 						"title", title,
 						"description", desc,
 						"agency", "Mataró Bus (Avanza)",
-						"linesAffected", []any{"1", "2", "3", "4", "5", "6", "7", "8"},
+						"linesAffected", mataroAgency.lineIDsAny(),
 						"affectedLines", "Totes les línies",
 						"severity", "info",
 						"url", avisosURL,

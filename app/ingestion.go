@@ -6,6 +6,7 @@ package main
 
 import (
 	"log"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -165,6 +166,7 @@ func (d *IngestionDaemon) start() {
 	d.after(stop, 1500*time.Millisecond, d.pollCanary)
 	d.every(stop, 5*time.Minute, d.pollCanary)
 	d.every(stop, 60*time.Second, func() { d.checkScheduleDriftSchedule(float64(nowMs())) })
+	d.every(stop, 30*time.Second, d.writeRailVisits)
 
 	log.Printf("[IngestionDaemon] ✅ Mataró Bus Ingestion Engine Active.")
 }
@@ -297,7 +299,7 @@ func resolveObservedAt(bus *Obj, isDerived bool) any {
 }
 
 func (d *IngestionDaemon) pollMataroVehicles() {
-	lines := []string{"1", "2", "3", "4", "5", "6", "7", "8"}
+	lines := mataroAgency.LineIDs
 	var wg sync.WaitGroup
 	for _, lID := range lines {
 		lID := lID
@@ -613,7 +615,7 @@ func (d *IngestionDaemon) checkFleetAnomaly(now float64) *Obj {
 	nowSec := float64(net.Hour*3600 + net.Minute*60 + net.Second)
 	dayType := resolveDayType(int64(now)).DayType
 	scheduled := 0.0
-	for _, l := range []string{"1", "2", "3", "4", "5", "6", "7", "8"} {
+	for _, l := range mataroAgency.LineIDs {
 		scheduled += getScheduledFleetRequirement(l, dayType, nowSec, true, "")
 	}
 	if liveCount > 0 {
@@ -725,4 +727,40 @@ func (d *IngestionDaemon) checkScheduleDrift() any {
 	d.scheduleDrift = res
 	d.emitIpc("SCHEDULE_DRIFT_UPDATE", res)
 	return res
+}
+
+// writeRailVisits stores the station visits the GTFS-RT pollers closed
+// (phase 2 of docs/catalonia-review/REPORT.md) as stop_visits rows under
+// their own agency_id and mode. A rail visit has no fleet vehicle id, so
+// vehicle_id holds the trip id. Visits without a line or stop name (no
+// timetable yet) are not stored. Runs as a daemon task, under the worker
+// lock, so only the worker writes the history database.
+func (d *IngestionDaemon) writeRailVisits() {
+	for _, p := range gtfsRtPollers {
+		for _, v := range p.takeRailVisits() {
+			if v.LineCode == "" || v.StopName == "" {
+				continue
+			}
+			ms := float64(v.ActualUnix * 1000)
+			delay := math.Round(float64(v.DelaySec) / 60)
+			d.db.recordStopVisit(O(
+				"vehicleId", v.TripID,
+				"lineCode", v.LineCode,
+				"stopName", v.StopName,
+				"firstTs", ms,
+				"lastTs", ms,
+				"delayMins", delay,
+				"sampleCount", 1.0,
+				"scheduledTime", madridTime(v.ScheduledUnix*1000).Format("15:04"),
+				"actualTime", madridTime(v.ActualUnix*1000).Format("15:04"),
+				"timesSource", "gtfsrt",
+				"isRealTime", true,
+				"measuredDelayMins", delay,
+				"source", "live",
+				"measuredMethod", "gtfsrt_trip_update",
+				"agencyId", v.AgencyID,
+				"mode", v.Mode,
+			))
+		}
+	}
 }

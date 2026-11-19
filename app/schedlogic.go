@@ -695,7 +695,7 @@ const (
 	dayMs            = 24 * hourMs
 )
 
-var lineIDs = []string{"1", "2", "3", "4", "5", "6", "7", "8"}
+var lineIDs = mataroAgency.LineIDs
 
 var (
 	shMu          sync.Mutex

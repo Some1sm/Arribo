@@ -46,6 +46,7 @@ type Server struct {
 	shuttingDown  bool
 	incidentCache *JSMap
 	gpsGapCache   *JSMap
+	operatorCache *JSMap
 	sseRoute      *routeEntry
 	routes        []*routeEntry
 }
@@ -845,6 +846,7 @@ func newServer() (*Server, error) {
 		publicDir:     filepath.Join(appRoot, "public"),
 		incidentCache: newJSMap(),
 		gpsGapCache:   newJSMap(),
+		operatorCache: newJSMap(),
 	}
 	s.w = newWorld("server")
 	s.w.mu.Lock()
@@ -1071,6 +1073,7 @@ func (s *Server) buildRoutes() {
 	s.get(p("/api/analytics/incidents", "/api/retards/incidents", "/api/analytics/line/:lineId/incidents"), s.hIncidents)
 	s.get(p("/api/analytics/incidents/inspect"), s.hInspect)
 	s.get(p("/api/analytics/gps-gaps"), s.hGpsGaps)
+	s.get(p("/api/analytics/operators"), s.hOperators)
 	s.get(p("/api/analytics/gps-gaps/paths"), s.hGpsGapPaths)
 	s.get(p("/api/analytics/gps-gaps/passes"), s.hGpsGapPasses)
 	s.get(p("/api/diagnostics/upstream"), s.hDiagUpstream)
@@ -1174,7 +1177,7 @@ func (s *Server) hDataHealth(q *xreq, res *xres) error {
 	holidaysKnown := isHolidayKnown(nowI)
 	holidayCoverage := getHolidayCoverage(nowI)
 
-	ids := []string{"1", "2", "3", "4", "5", "6", "7", "8"}
+	ids := mataroAgency.LineIDs
 	chans := make([]chan *Obj, len(ids))
 	deadline := time.Now().Add(3 * time.Second)
 	for i, id := range ids {
@@ -1908,17 +1911,27 @@ func (s *Server) hTermometre(q *xreq, res *xres) error {
 		}
 		var term any = termometre
 		if !truthy(termometre) {
+			// No report (or one without a termòmetre): say so. This used to
+			// answer with a made-up scorecard (grade A, 92 %, "Pl. de les
+			// Tereses" as the bottleneck) that the API, the share text and the
+			// exports passed on as measurements. Same keys as a real
+			// termòmetre (historydb_report.go), with nulls and noData.
 			term = O(
 				"title", "El Termòmetre del Bus ("+numToString(hours)+"h)",
 				"timeframeHours", hours,
-				"grade", "A",
-				"punctualityPct", or(field(summary, "networkPunctualityPct"), 92.0),
-				"networkAvgDelay", or(field(summary, "networkAvgDelay"), 1.1),
-				"championLine", O("code", "L1", "name", "Línia 1", "onTimePct", 95.0, "avgDelay", 0.8),
-				"worstBottleneck", O("stopName", "Pl. de les Tereses", "lineCode", "L2", "avgDelay", 3.2, "severeLatePct", 14.0),
-				"peakHour", "08:00 - 09:00",
-				"peakHourDelay", 2.3,
-				"totalTripsAnalyzed", or(field(summary, "totalRecordedArrivals"), 0.0),
+				"noData", true,
+				"noDataReason", "Encara no hi ha cap informe de puntualitat per a aquest període.",
+				"grade", nil,
+				"punctualityPct", nil,
+				"earlyPct", nil,
+				"latePct", nil,
+				"networkAvgDelay", nil,
+				"championLine", nil,
+				"worstBottleneck", nil,
+				"peakHour", nil,
+				"peakHourDelay", nil,
+				"totalTripsAnalyzed", 0.0,
+				"totalStopVisits", 0.0,
 			)
 		}
 		res.json(O("success", true, "termometre", term, "summary", or(summary, O())))
@@ -2190,5 +2203,27 @@ func (s *Server) hDiagTest(q *xreq, res *xres) error {
 		"message", "Connexió correcta amb sirimataro.avanzagrupo.com ("+numToString(latency)+"ms). "+numToString(active)+" vehicles actius.",
 		"testedAt", fmt.Sprintf("%d:%02d:%02d", t.Hour(), t.Minute(), t.Second()),
 	))
+	return nil
+}
+
+// hOperators serves per-operator punctuality for the GTFS-RT operators
+// (Rodalies, FGC): /api/analytics/operators?hours=24|168. Cached 60 s.
+func (s *Server) hOperators(q *xreq, res *xres) error {
+	hours := clampHours(qv(q, "hours"), 24, 168)
+	key := numToString(hours)
+	now := float64(nowMs())
+	if data, ok := cacheGetFresh(s.operatorCache, key, now); ok {
+		res.h.Set("X-Cache", "HIT")
+		res.json(spreadAny(O("success", true), data))
+		return nil
+	}
+	data, err := s.historyQuery("getOperatorReport", O("hours", hours), 15000)
+	if err != nil {
+		s.sendInternalError(q, res, err, O("success", false, "operators", []any{}))
+		return nil
+	}
+	s.operatorCache.Set(key, &cachedData{data: data, timestamp: now})
+	res.h.Set("X-Cache", "MISS")
+	res.json(spreadAny(O("success", true), data))
 	return nil
 }

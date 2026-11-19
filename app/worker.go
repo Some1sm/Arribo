@@ -166,6 +166,7 @@ type Worker struct {
 	reports  *ReportCache
 	registry *TrackerRegistry
 	daemon   *IngestionDaemon
+	stopRt   func() // stops the GTFS-RT pollers (a no-op unless ARRIBO_GTFSRT=1)
 	inbox    *msgQueue[workerMsg]
 	out      func(serverMsg)
 	exited   chan struct{}
@@ -221,6 +222,7 @@ func (k *Worker) boot() {
 	})
 	k.registry.isInitialized = true
 	k.daemon.start()
+	k.stopRt = startGtfsRtPollers()
 	k.sendToMaster("WORKER_READY", O("pid", float64(os.Getpid()), "version", "3.0.0-mataro"))
 	log.Printf("[Worker] ✅ Ingestion Worker Ready and Listening.")
 	k.w.mu.Unlock()
@@ -275,6 +277,9 @@ func (k *Worker) handleMasterMessage(m workerMsg) {
 		k.out(serverMsg{typ: "DB_RESPONSE", requestID: m.requestID, ok: true, result: passJSON(res)})
 	case "SHUTDOWN":
 		log.Printf("[Worker] Graceful shutdown requested by master...")
+		if k.stopRt != nil {
+			k.stopRt()
+		}
 		k.daemon.stop()
 		k.db.close()
 		k.exit()
@@ -403,6 +408,8 @@ func (k *Worker) executeDbOperation(op string, rawArgs any) (res any, err error)
 		return db.getDelayIncidents(args), nil
 	case "inspectDelayIncident":
 		return db.inspectDelayIncident(args), nil
+	case "getOperatorReport":
+		return db.getOperatorReport(jsNumber(args.Get("hours")), gtfsRtFeedStats())
 	case "getGpsGapHotspots":
 		return db.getGpsGapHotspots(gapOpts{days: args.Get("days"), lineCode: args.Get("lineCode"),
 			vehicleID: args.Get("vehicleId"), hide: args.Get("hide"), now: float64(nowMs())}), nil
