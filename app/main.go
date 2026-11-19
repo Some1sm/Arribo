@@ -10,6 +10,9 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
 		os.Exit(runHealthcheck())
 	}
+	if len(os.Args) > 1 && os.Args[1] == "gtfs-import" {
+		os.Exit(runGtfsImport(os.Args[2:]))
+	}
 	os.Exit(runServer())
 }
 
