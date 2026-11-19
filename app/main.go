@@ -13,6 +13,9 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "gtfs-import" {
 		os.Exit(runGtfsImport(os.Args[2:]))
 	}
+	if len(os.Args) > 1 && os.Args[1] == "gtfsrt-dump" {
+		os.Exit(runGtfsRtDump(os.Args[2:]))
+	}
 	os.Exit(runServer())
 }
 
