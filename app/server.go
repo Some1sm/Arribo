@@ -155,6 +155,13 @@ func (s *Server) serveStatic(q *xreq, res *xres) (bool, error) {
 		}
 		return false, nil
 	}
+	// Static files are compressed like API responses (gzip/br by
+	// Accept-Encoding, compressible types of 1 KiB or more). Only a full 200
+	// body: a 206 range is a byte slice of the uncompressed file, and a 304
+	// or HEAD has no body.
+	if r.file && res.file != nil && res.status == 200 {
+		res.compress = true
+	}
 	return r.file || r.dir, nil
 }
 
@@ -677,6 +684,13 @@ type fleetBroadcaster struct {
 const sseMaxClients = 200
 const sseMaxPerClient = 8
 
+// sseMaxQueued frames may wait for a client before the backlog is replaced
+// by the newest frame (each fleet frame is a full snapshot, so nothing is
+// lost). sseWriteTimeout bounds one frame's write: a client that has stopped
+// reading is dropped instead of holding its connection open indefinitely.
+const sseMaxQueued = 4
+const sseWriteTimeout = 30 * time.Second
+
 func newFleetBroadcaster(s *Server) *fleetBroadcaster {
 	return &fleetBroadcaster{s: s, perClient: map[string]int{}}
 }
@@ -715,7 +729,7 @@ func (b *fleetBroadcaster) broadcast(snapshot *Obj) {
 	b.latest = toJSON(snapshot)
 	f := b.frame()
 	for _, c := range append([]*sseClient(nil), b.clients...) {
-		c.queue.push(f)
+		c.queue.pushLatest(f, sseMaxQueued)
 	}
 }
 
@@ -774,6 +788,7 @@ func (b *fleetBroadcaster) serve(res *xres) {
 		if !ok {
 			return
 		}
+		_ = rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout))
 		if _, err := w.Write(f); err != nil {
 			return
 		}
@@ -799,7 +814,7 @@ func (b *fleetBroadcaster) start() {
 			case <-t.C:
 				b.s.w.mu.Lock()
 				for _, c := range append([]*sseClient(nil), b.clients...) {
-					c.queue.push([]byte(": ping\n\n"))
+					c.queue.pushLatest([]byte(": ping\n\n"), sseMaxQueued)
 				}
 				b.s.w.mu.Unlock()
 			}

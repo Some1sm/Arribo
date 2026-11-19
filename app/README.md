@@ -109,3 +109,13 @@ Known differences, all at the transport level:
 - Compressed bytes differ (same encodings, same decompressed content), and
   Node's `Connection: keep-alive` / `Keep-Alive` headers are absent.
 - Log lines are the same events, not always the same text.
+
+Deliberate changes made after the Node code was removed:
+
+- Static files from `public/` are compressed like API responses (gzip or br by
+  `Accept-Encoding`, compressible types of 1 KiB or more, with
+  `Vary: Accept-Encoding`). Express served them uncompressed. Range (206), HEAD
+  and 304 answers are unchanged.
+- An SSE client keeps at most 4 waiting frames; when it falls behind, the
+  backlog is replaced by the newest frame (fleet frames are full snapshots).
+  Each frame write has a 30 s deadline, after which the client is dropped.
