@@ -41,7 +41,7 @@ Still to check: licence terms for each feed, Renfe's update cadence (header time
 **Open**
 - [ ] **Phase 1:** `agency_id` / `mode` columns and an agency registry with only Mataró in it. Zero behaviour change, checked old-vs-new.
   - [x] Step 1 (`82722ef`, branch `phase1/agency-columns`): `agency_id` (default `'mataro'`) and `mode` (default `'bus'`) added to `delay_logs`, `stop_visits`, `vehicle_snapshots` and `gps_gaps` through the column migration in `app/historydb.go`. Not read or written yet.
-  - [ ] Step 2: write `agency_id`/`mode` explicitly in the four INSERTs (from the line resolution, still always `mataro`/`bus`).
+  - [x] Step 2: the four INSERTs write `agency_id`/`mode` explicitly, from the record's optional `agencyId`/`mode` fields (`rowAgency` in `app/historydb.go`), defaulting to `mataro`/`bus`. This is the hook new ingesters will set.
   - [ ] Step 3: rollup tables. `UNIQUE(line_code, date_hour)` becomes `UNIQUE(agency_id, line_code, date_hour)`. That needs a table rebuild, and the `SELECT *` in `historydb_maint.go:51` has to be checked.
   - [ ] Step 4: an agency registry (`app/registry.go`) that holds Mataró as one entry; replace the L1–L8 checks one call site at a time.
 - [ ] Licences and update rates of the Rodalies/FGC feeds are still unchecked. Gemini needs `--yolo` for web search, and Claude Code's permission check blocks that; allow it with a Bash permission rule for `agy-delegate`, or check by hand.
