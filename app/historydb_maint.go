@@ -48,7 +48,7 @@ func (h *HistoryDB) rollup(progressTable, maxSQL, batchSQL string, visits bool) 
 			table = "hourly_line_visit_stats"
 		}
 		for _, b := range batches {
-			previous, err := h.get("SELECT * FROM "+table+" WHERE line_code = ? AND date_hour = ?", b.Get("line_code"), b.Get("date_hour"))
+			previous, err := h.get("SELECT * FROM "+table+" WHERE agency_id = ? AND line_code = ? AND date_hour = ?", b.Get("agency_id"), b.Get("line_code"), b.Get("date_hour"))
 			if err != nil {
 				return nil, err
 			}
@@ -98,14 +98,14 @@ func (h *HistoryDB) rollup(progressTable, maxSQL, batchSQL string, visits bool) 
 				}
 				if _, err := h.run(`
         INSERT INTO hourly_line_stats
-          (line_code, agency, date_hour, sample_count, delay_sum, avg_delay_mins, max_delay_mins, on_time_count, early_count, late_count, timestamp)
-        VALUES (?, ?, ?, ?, ?, ROUND(? * 1.0 / ?, 2), ?, ?, ?, ?, ?)
-        ON CONFLICT(line_code, date_hour) DO UPDATE SET
+          (agency_id, line_code, agency, date_hour, sample_count, delay_sum, avg_delay_mins, max_delay_mins, on_time_count, early_count, late_count, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ROUND(? * 1.0 / ?, 2), ?, ?, ?, ?, ?)
+        ON CONFLICT(agency_id, line_code, date_hour) DO UPDATE SET
           agency = excluded.agency, sample_count = excluded.sample_count,
           delay_sum = excluded.delay_sum, avg_delay_mins = excluded.avg_delay_mins,
           max_delay_mins = excluded.max_delay_mins, on_time_count = excluded.on_time_count,
           early_count = excluded.early_count, late_count = excluded.late_count, timestamp = excluded.timestamp
-      `, b.Get("line_code"), agency, b.Get("date_hour"), samples, sum, sum, samples, maxDelay,
+      `, b.Get("agency_id"), b.Get("line_code"), agency, b.Get("date_hour"), samples, sum, sum, samples, maxDelay,
 					jsPlus(numOrZeroOr(bget("on_time_count")), b.Get("on_time")),
 					early,
 					jsPlus(numOrZeroOr(bget("late_count")), b.Get("late")),
@@ -117,15 +117,15 @@ func (h *HistoryDB) rollup(progressTable, maxSQL, batchSQL string, visits bool) 
 				samples := jsPlus(numOrZeroOr(bget("sample_count")), or(b.Get("samples"), b.Get("visits")))
 				if _, err := h.run(`
         INSERT INTO hourly_line_visit_stats
-          (line_code, agency, date_hour, visit_count, sample_count, delay_sum, avg_delay_mins, max_delay_mins, on_time_count, early_count, late_count, timestamp)
-        VALUES (?, 'Mataró Bus (Avanza)', ?, ?, ?, ?, ROUND(? * 1.0 / ?, 2), ?, ?, ?, ?, ?)
-        ON CONFLICT(line_code, date_hour) DO UPDATE SET
+          (agency_id, line_code, agency, date_hour, visit_count, sample_count, delay_sum, avg_delay_mins, max_delay_mins, on_time_count, early_count, late_count, timestamp)
+        VALUES (?, ?, 'Mataró Bus (Avanza)', ?, ?, ?, ?, ROUND(? * 1.0 / ?, 2), ?, ?, ?, ?, ?)
+        ON CONFLICT(agency_id, line_code, date_hour) DO UPDATE SET
           agency = excluded.agency, visit_count = excluded.visit_count,
           sample_count = excluded.sample_count, delay_sum = excluded.delay_sum,
           avg_delay_mins = excluded.avg_delay_mins, max_delay_mins = excluded.max_delay_mins,
           on_time_count = excluded.on_time_count, early_count = excluded.early_count,
           late_count = excluded.late_count, timestamp = excluded.timestamp
-      `, b.Get("line_code"), b.Get("date_hour"), vis, samples, sum, sum, vis, maxDelay,
+      `, b.Get("agency_id"), b.Get("line_code"), b.Get("date_hour"), vis, samples, sum, sum, vis, maxDelay,
 					jsPlus(numOrZeroOr(bget("on_time_count")), b.Get("on_time")),
 					jsPlus(numOrZeroOr(bget("early_count")), b.Get("early")),
 					jsPlus(numOrZeroOr(bget("late_count")), b.Get("late")),
@@ -157,7 +157,7 @@ func (h *HistoryDB) aggregateHourlyStats() (*Obj, error) {
 		return nil, errors.New("Hourly rollup database unavailable")
 	}
 	return h.rollup("hourly_rollup_progress", "SELECT COALESCE(MAX(id), 0) AS id FROM delay_logs", `
-        SELECT line_code, MIN(agency) AS agency,
+        SELECT agency_id, line_code, MIN(agency) AS agency,
           -- Europe/Madrid bucketing via the registered madrid_datetime UDF
           -- ('YYYY-MM-DD HH:MM:SS'), NOT strftime(...,'localtime'). The
           -- host-local variant silently depended on the process TZ, so a
@@ -170,7 +170,7 @@ func (h *HistoryDB) aggregateHourlyStats() (*Obj, error) {
           SUM(CASE WHEN delay_mins > 3 THEN 1 ELSE 0 END) AS late,
           MIN(timestamp) AS timestamp
         FROM delay_logs WHERE id > ? AND id <= ?
-        GROUP BY line_code, date_hour
+        GROUP BY agency_id, line_code, date_hour
       `, false)
 }
 
@@ -179,7 +179,7 @@ func (h *HistoryDB) aggregateHourlyVisitStats() (*Obj, error) {
 		return nil, errors.New("Hourly visit rollup database unavailable")
 	}
 	return h.rollup("hourly_visit_rollup_progress", "SELECT COALESCE(MAX(id), 0) AS id FROM stop_visits", `
-        SELECT line_code,
+        SELECT agency_id, line_code,
           substr(madrid_datetime(last_ts), 1, 13) || ':00' AS date_hour,
           COUNT(*) AS visits,
           SUM(sample_count) AS samples,
@@ -190,7 +190,7 @@ func (h *HistoryDB) aggregateHourlyVisitStats() (*Obj, error) {
           SUM(CASE WHEN `+lateSQL+` THEN 1 ELSE 0 END) AS late,
           MIN(last_ts) AS timestamp
         FROM stop_visits WHERE id > ? AND id <= ? AND `+validDelaySQL+`
-        GROUP BY line_code, date_hour
+        GROUP BY agency_id, line_code, date_hour
       `, true)
 }
 
