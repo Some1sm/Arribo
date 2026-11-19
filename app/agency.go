@@ -37,6 +37,9 @@ func (b GeoBounds) contains(lat, lon float64) bool {
 	return isFinite(lat) && isFinite(lon) && lat >= b.MinLat && lat <= b.MaxLat && lon >= b.MinLon && lon <= b.MaxLon
 }
 
+// hasLine reports whether id is exactly one of the operator's line ids.
+func (a *Agency) hasLine(id string) bool { return containsString(a.LineIDs, id) }
+
 // lineIDsAny is LineIDs as a fresh []any, for JSON values.
 func (a *Agency) lineIDsAny() []any {
 	out := make([]any, len(a.LineIDs))
@@ -51,14 +54,14 @@ var mataroAgency = &Agency{
 	Name:         "Mataró Bus",
 	Mode:         "bus",
 	DefaultColor: "#009485",
-	LineIDs:      []string{"1", "2", "3", "4", "5", "6", "7", "8"},
+	LineIDs:      mataroLineIDList,
 	Bounds:       GeoBounds{MinLat: 41.45, MaxLat: 41.65, MinLon: 2.30, MaxLon: 2.55},
 	matchLine: func(clean string) (string, bool) {
 		id := reRegMataroPrefix.ReplaceAllLiteralString(clean, "")
 		if reRegL18.MatchString(id) {
 			id = id[1:]
 		}
-		if !reRegDigit18.MatchString(id) {
+		if !containsString(mataroLineIDList, id) {
 			return "", false
 		}
 		return id, true
@@ -77,4 +80,18 @@ func agencyForLine(clean string) (*Agency, string, bool) {
 		}
 	}
 	return nil, "", false
+}
+
+// mataroLineIDList is Mataró's lines. A separate variable so the matcher
+// above can use it without referring to mataroAgency itself (Go rejects a
+// package variable whose initializer refers to the variable).
+var mataroLineIDList = []string{"1", "2", "3", "4", "5", "6", "7", "8"}
+
+func containsString(xs []string, s string) bool {
+	for _, x := range xs {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }

@@ -39,7 +39,6 @@ var (
 	reRegLinePrefix   = regexp.MustCompile(`^(line-|linia-)`)
 	reRegMataroPrefix = regexp.MustCompile(`^mataro_?`)
 	reRegL18          = regexp.MustCompile(`^l[1-8]$`)
-	reRegDigit18      = regexp.MustCompile(`^[1-8]$`)
 	reRegNonAlnum     = regexp.MustCompile(`[^a-z0-9]`)
 	reRegSearchStrip  = jsRe(`[-_\s\.]`)
 	reRegWS           = jsRe(`\s+`)

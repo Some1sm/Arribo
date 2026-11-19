@@ -425,7 +425,6 @@ var (
 	reLinePrefix   = regexp.MustCompile(`^line-?`)
 	reLiniaPrefix  = regexp.MustCompile(`^linia-?`)
 	reLDigit       = regexp.MustCompile(`^l([1-8])$`)
-	reLineID18     = regexp.MustCompile(`^[1-8]$`)
 )
 
 // normalizeLineId: '1', 'mataro_1', 'L1', 'Line 1' -> '1'..'8'.
@@ -472,7 +471,7 @@ func getLineSchedule(lineID, season string) *SchedLine {
 		return nil
 	}
 	clean := normalizeLineId(lineID)
-	if !reLineID18.MatchString(clean) {
+	if !mataroAgency.hasLine(clean) {
 		return nil
 	}
 	return grid.lines[clean]
