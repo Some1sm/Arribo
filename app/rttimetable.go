@@ -10,7 +10,6 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 )
@@ -22,14 +21,9 @@ type rtTimetable struct {
 	cache map[string]int64 // trip_id + "\x00" + stop_id -> scheduled seconds (-1 = none)
 }
 
-// openRtTimetable opens <ARRIBO_GTFS_DIR>/<agencyID>.db read-only, or
-// returns nil when the variable or the file is missing.
-func openRtTimetable(agencyID string) (*rtTimetable, error) {
-	dir := os.Getenv("ARRIBO_GTFS_DIR")
-	if dir == "" {
-		return nil, nil
-	}
-	p := filepath.Join(dir, agencyID+".db")
+// openRtTimetable opens the imported timetable at path read-only, or
+// returns nil when the file is missing.
+func openRtTimetable(p string) (*rtTimetable, error) {
 	if _, err := os.Stat(p); err != nil {
 		return nil, nil
 	}

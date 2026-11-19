@@ -57,6 +57,9 @@ type rtSource struct {
 	vehicleURL, tripURL     func(context.Context) (string, error)
 	vehicleEvery, tripEvery time.Duration
 	bounds                  *GeoBounds // keep only vehicles inside (Renfe covers all of Spain)
+	// staticURL is the operator's static GTFS zip, imported daily into the
+	// timetable the poller uses; staticBBox cuts it down like --bbox.
+	staticURL, staticBBox string
 }
 
 // rtPoller polls one rtSource.
@@ -68,6 +71,8 @@ type rtPoller struct {
 	trips    int
 	terr     string
 	tt       *rtTimetable // imported timetable, for feeds without delays (nil if absent)
+	ttMod    time.Time    // modification time of the open timetable file
+	logNext  bool         // log the next snapshot (after a timetable opens)
 	computed int          // delays derived from predicted times in the last trip feed
 }
 
@@ -157,7 +162,9 @@ func defaultRtSources() []rtSource {
 			vehicleURL:   fixedURL("https://gtfsrt.renfe.com/vehicle_positions.pb"),
 			tripURL:      fixedURL("https://gtfsrt.renfe.com/trip_updates.pb"),
 			vehicleEvery: 30 * time.Second, tripEvery: 30 * time.Second,
-			bounds: &cataloniaBounds,
+			bounds:     &cataloniaBounds,
+			staticURL:  "https://ssl.renfe.com/ftransit/Fichero_CER_FOMENTO/fomento_transit.zip",
+			staticBBox: "40.5,42.9,0.15,3.4",
 		},
 		{
 			// FGC's open-data API allows 5,000 anonymous requests a day:
@@ -166,12 +173,36 @@ func defaultRtSources() []rtSource {
 			vehicleURL:   retry(fgcVP, fgcVPReset),
 			tripURL:      retry(fgcTU, fgcTUReset),
 			vehicleEvery: 30 * time.Second, tripEvery: 90 * time.Second,
+			staticURL: "https://www.fgc.cat/google/google_transit.zip",
 		},
 	}
 }
 
 // pollTrips refreshes trip-level delays.
+// syncTimetable (re)opens the imported timetable when the file appears or
+// is replaced by a refresh; an open handle keeps reading the old file until
+// then, so a refresh never breaks a lookup in progress.
+func (p *rtPoller) syncTimetable() {
+	path := gtfsTimetablePath(p.src.AgencyID)
+	fi, err := os.Stat(path)
+	if err != nil || fi.ModTime().Equal(p.ttMod) {
+		return
+	}
+	tt, err := openRtTimetable(path)
+	if err != nil || tt == nil {
+		log.Printf("[GTFS-RT] %s: timetable not opened: %v", p.src.AgencyID, err)
+		return
+	}
+	if p.tt != nil {
+		_ = p.tt.db.Close()
+	}
+	p.tt, p.ttMod = tt, fi.ModTime()
+	p.logNext = true
+	log.Printf("[GTFS-RT] %s: timetable opened (%s)", p.src.AgencyID, fi.ModTime().UTC().Format(time.RFC3339))
+}
+
 func (p *rtPoller) pollTrips(ctx context.Context) {
+	p.syncTimetable()
 	total, computed := 0, 0
 	delays, err := func() (map[string]int32, error) {
 		u, err := p.src.tripURL(ctx)
@@ -291,12 +322,11 @@ func (p *rtPoller) pollVehicles(ctx context.Context) {
 // (trip updates first, so the first snapshot can carry delays).
 func (p *rtPoller) run(ctx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
-	if tt, err := openRtTimetable(p.src.AgencyID); err != nil {
-		log.Printf("[GTFS-RT] %s: timetable not opened: %v", p.src.AgencyID, err)
-	} else if tt != nil {
-		p.tt = tt
-		defer tt.db.Close()
-	}
+	defer func() {
+		if p.tt != nil {
+			_ = p.tt.db.Close()
+		}
+	}()
 	p.pollTrips(ctx)
 	p.pollVehicles(ctx)
 	p.logSnapshot()
@@ -314,7 +344,9 @@ func (p *rtPoller) run(ctx context.Context, wg *sync.WaitGroup) {
 		case <-vt.C:
 			p.pollVehicles(ctx)
 			polls++
-			if polls%20 == 0 { // about every 10 minutes
+			// About every 10 minutes, and right after a timetable opens.
+			if polls%20 == 0 || p.logNext {
+				p.logNext = false
 				p.logSnapshot()
 			}
 		}
@@ -367,6 +399,11 @@ func startGtfsRtPollers() (stop func()) {
 		wg.Add(1)
 		go p.run(ctx, &wg)
 	}
+	wg.Add(1)
+	go func(srcs []rtSource) {
+		defer wg.Done()
+		runTimetableRefresher(ctx, srcs)
+	}(defaultRtSources())
 	log.Printf("[GTFS-RT] polling %d operators (ARRIBO_GTFSRT=1)", len(gtfsRtPollers))
 	return func() {
 		cancel()
