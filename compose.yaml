@@ -29,6 +29,10 @@ services:
       - SNAPSHOT_RETENTION_HOURS=6
       - VEHICLE_SNAPSHOT_INTERVAL_MS=60000
       - DELAY_RETENTION_DAYS=30
+      # Rodalies and FGC: poll their GTFS-RT feeds, import their timetables
+      # daily into ./data/gtfs/ (~60 MB) and record train station visits for
+      # the Dades "Trens" section. Measured ~36 MiB with it on. 0 to turn off.
+      - ARRIBO_GTFSRT=${ARRIBO_GTFSRT:-1}
     ulimits:
       core:
         soft: 0
