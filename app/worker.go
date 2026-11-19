@@ -80,6 +80,27 @@ func (q *msgQueue[T]) push(v T) bool {
 	return true
 }
 
+// pushLatest is push for a queue whose items supersede each other (SSE fleet
+// snapshots and pings): when max items are already waiting, they are dropped
+// and only v is kept, so a reader that stalls holds one frame, not a backlog.
+func (q *msgQueue[T]) pushLatest(v T, max int) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.closed {
+		return false
+	}
+	if len(q.items) >= max {
+		var zero T
+		for i := range q.items {
+			q.items[i] = zero
+		}
+		q.items = q.items[:0]
+	}
+	q.items = append(q.items, v)
+	q.cond.Signal()
+	return true
+}
+
 func (q *msgQueue[T]) pop() (T, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
