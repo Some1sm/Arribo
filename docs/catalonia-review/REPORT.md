@@ -1,6 +1,53 @@
 # Scaling Arribo! to all of Catalonia: review
 
-*2026-11-19. Six parallel Gemini 3.8 Flash (High) agents read the code; Claude checked their main claims against the source and wrote this report. Nothing in the repo was changed apart from this folder. The raw agent reports are in [gemini-raw/](gemini-raw/).*
+*2026-11-19. Six parallel Gemini 3.8 Flash (High) agents read the code; Claude checked their main claims against the source and wrote this report. The raw agent reports are in [gemini-raw/](gemini-raw/).*
+
+---
+
+## Status: start here in a new chat
+
+*Last updated 2026-11-19.*
+
+**Done**
+- [x] This review: six agent lanes, with the main claims checked against the code (Section 7 lists the claims that were wrong).
+- [x] Quick wins shipped. Commit `6a8e63c`, merged to `main` as `c365414` (git.lan PR #1), deployed and confirmed live on http://87.106.33.66:3000/:
+  - Static files from `public/` are gzip/br-compressed (`app/server.go`, `serveStatic`). `app.js` went from 276 KB to 64 KB gzip.
+  - SSE clients keep at most 4 waiting frames, and each frame write has a 30 s deadline (`msgQueue.pushLatest` in `app/worker.go`; `sseMaxQueued` and `sseWriteTimeout` in `app/server.go`).
+  - Both are recorded in `app/README.md` under "Deliberate changes made after the Node code was removed".
+- [x] The other quick wins were examined and ruled out, with reasons (Section 6, "Update").
+- [x] **Section 8 decisions answered by the owner.** In short:
+  - Official **and** unofficial sources. Where nothing is public, request the data from the authorities.
+  - **Rodalies + FGC first.**
+  - **No more RAM;** Postgres is acceptable, or something cheaper.
+  - **The planner is in scope** (goal: better than the official planner).
+  - **Data-quality tiers: yes.** Always say when data is timetable-only or the real-time feed is poor, and offer alternatives.
+- [x] **Phase 0 for Rodalies + FGC: feeds confirmed** (2026-11-19, live requests; see "Verified feeds" below).
+
+**Verified feeds (2026-11-19)**
+
+| Feed | URL | Key | What was seen |
+|---|---|---|---|
+| Renfe GTFS-RT positions | `https://gtfsrt.renfe.com/vehicle_positions.pb` (also `.json`) | none | National feed: 437 trains, **127 in Catalonia** (R1 31, R4 27, R2S 19, R2N 10, R2 8, R11 8, R15 6, R3 5, R8 4, R16 4, RG1 2, R13/R14/RL4 1), header 36 s old. Each entry has `tripId`, `stopId`, `currentStatus` and a label like `R2S-28385` |
+| Renfe GTFS-RT trip updates | `https://gtfsrt.renfe.com/trip_updates.pb` (also `.json`) | none | 442 entries. Trip-level `delay` in seconds: 70 of 117 Catalan trips non-zero, max 3,480 s. Only 1–2 `stopTimeUpdate`s per trip, so per-stop visits must still come from positions |
+| Renfe GTFS-RT alerts | `https://gtfsrt.renfe.com/alerts.pb` | none | Present (not parsed yet) |
+| Renfe static GTFS (Cercanías) | `https://ssl.renfe.com/ftransit/Fichero_CER_FOMENTO/fomento_transit.zip` | none | 15.7 MB, all of Spain's Cercanías; filter to Rodalies de Catalunya |
+| FGC static GTFS | `https://www.fgc.cat/google/google_transit.zip` | none | 1.1 MB |
+| FGC open data (Opendatasoft) | `https://dadesobertes.fgc.cat/api/explore/v2.1/catalog/datasets/<id>/records` | none | Datasets `vehicle-positions-gtfs_realtime`, `trip-updates-gtfs_realtime`, `alerts-gtfs_realtime`, `posicionament-dels-trens` (65 trains live: line, lat/lon, direction, next stops, `en_hora` flag), `gtfs_*`, `avisos` |
+
+Still to check: licence terms for each feed, Renfe's update cadence (header timestamps looked about 30 s apart), and the actual format of FGC's GTFS-RT datasets.
+
+**Storage given "no more RAM":** Postgres would need roughly 100–200 MB of its own on a box capped at 400 MB for the app, so the recommendation is to **stay on SQLite** (zero extra RAM): one DB file per month, incremental hourly rollups per (agency, line, stop), and reports that read the rollups. Revisit Postgres only if the VPS gets more memory.
+
+**Open**
+- [ ] **Phase 1:** `agency_id` / `mode` columns and an agency registry with only Mataró in it. Zero behaviour change, checked old-vs-new.
+- [ ] **Phase 2:** GTFS importer (Renfe Cercanías filtered to Catalonia, FGC) into an on-disk SQLite timetable, plus a GTFS-RT ingester for both. Shown in Dades as separate operators with their data-quality tier.
+- [ ] Unofficial sources and data requests: list the operators with no public real-time feed (Section 3) and draft a request to the relevant authority (ATM / Generalitat).
+- [ ] Housekeeping: GitHub `main` has its own merge commit (`11c0998`), with the same tree as git.lan's `c365414`. Reset GitHub `main` to git.lan's before the next mirror push, otherwise it won't fast-forward.
+
+**Ground rules for whoever continues**
+- git.lan is the source of truth. A push to `main` there **deploys**. GitHub is a mirror.
+- Validate every server change with gofmt, go vet and a build in `golang:1.26-alpine`; npm syntax, lint, test and docs_check in the pinned `node:22.23.4-alpine` image; and old and new binaries side by side on an internal Docker network (no internet).
+- Data trust comes first: never infer positions or delays a feed did not report (Section 2).
 
 ---
 
@@ -280,8 +327,8 @@ Remember that a push to `main` deploys.
 
 ## 8. Decisions only you can make
 
-1. **Sources:** official feeds only, or also unofficial and reverse-engineered APIs (the old approach)?
-2. **First expansion:** which network first? My suggestion is Rodalies + FGC, or TMB bus.
-3. **Infrastructure:** stay on the single VPS with SQLite for now, or budget for Postgres/Timescale and more RAM (Gemini suggests 2–4 GB for a full Catalonia live set)?
-4. **Product:** is the planner part of the Catalonia scope, or is Arribo a *delay observatory and live map* first? Dropping the planner from scope removes the largest single rewrite (Phase 5).
-5. **Data-quality tiers:** do you accept showing "timetable only" operators with no delay statistics?
+1. **Sources:** official feeds only, or also unofficial and reverse-engineered APIs (the old approach)? Do both, if public sources arent available we have to ask for them to the authorities. because its public data they must provide it.
+2. **First expansion:** which network first? My suggestion is Rodalies + FGC, or TMB bus. Rodalies + FGC sounds good.
+3. **Infrastructure:** stay on the single VPS with SQLite for now, or budget for Postgres/Timescale and more RAM (Gemini suggests 2–4 GB for a full Catalonia live set)? we could budget for postgres, or if you know of a cheaper alternative thats also completely valid we could investigate it. we are not getting more RAM for now so we will optimize as much as possible. I´m making this project so people can see how efficient a tool can be done by a single user with AI. 
+4. **Product:** is the planner part of the Catalonia scope, or is Arribo a *delay observatory and live map* first? Dropping the planner from scope removes the largest single rewrite (Phase 5). It is part of it, idea is getting a better planner than officially provided by government. with real data from everywhere possible.
+5. **Data-quality tiers:** do you accept showing "timetable only" operators with no delay statistics? YES. i want users to 100% trust this app/tool. If schedules are just timetables or if the realtime is bad, please make sure to point it out and provide alternatives.
