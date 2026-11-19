@@ -1911,17 +1911,27 @@ func (s *Server) hTermometre(q *xreq, res *xres) error {
 		}
 		var term any = termometre
 		if !truthy(termometre) {
+			// No report (or one without a termòmetre): say so. This used to
+			// answer with a made-up scorecard (grade A, 92 %, "Pl. de les
+			// Tereses" as the bottleneck) that the API, the share text and the
+			// exports passed on as measurements. Same keys as a real
+			// termòmetre (historydb_report.go), with nulls and noData.
 			term = O(
 				"title", "El Termòmetre del Bus ("+numToString(hours)+"h)",
 				"timeframeHours", hours,
-				"grade", "A",
-				"punctualityPct", or(field(summary, "networkPunctualityPct"), 92.0),
-				"networkAvgDelay", or(field(summary, "networkAvgDelay"), 1.1),
-				"championLine", O("code", "L1", "name", "Línia 1", "onTimePct", 95.0, "avgDelay", 0.8),
-				"worstBottleneck", O("stopName", "Pl. de les Tereses", "lineCode", "L2", "avgDelay", 3.2, "severeLatePct", 14.0),
-				"peakHour", "08:00 - 09:00",
-				"peakHourDelay", 2.3,
-				"totalTripsAnalyzed", or(field(summary, "totalRecordedArrivals"), 0.0),
+				"noData", true,
+				"noDataReason", "Encara no hi ha cap informe de puntualitat per a aquest període.",
+				"grade", nil,
+				"punctualityPct", nil,
+				"earlyPct", nil,
+				"latePct", nil,
+				"networkAvgDelay", nil,
+				"championLine", nil,
+				"worstBottleneck", nil,
+				"peakHour", nil,
+				"peakHourDelay", nil,
+				"totalTripsAnalyzed", 0.0,
+				"totalStopVisits", 0.0,
 			)
 		}
 		res.json(O("success", true, "termometre", term, "summary", or(summary, O())))
