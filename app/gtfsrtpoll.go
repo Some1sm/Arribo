@@ -18,6 +18,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -43,6 +44,7 @@ type rtSnapshot struct {
 	Vehicles      []rtVehicle
 	TripDelays    map[string]int32 // trip_id -> trip-level delay in seconds
 	TripUpdates   int              // trip updates in the last feed, with or without a delay
+	Computed      int              // of TripDelays, how many came from predicted times vs the timetable
 	VehiclesErr   string
 	TripsErr      string
 }
@@ -59,12 +61,14 @@ type rtSource struct {
 
 // rtPoller polls one rtSource.
 type rtPoller struct {
-	src   rtSource
-	snap  atomic.Pointer[rtSnapshot]
-	mu    sync.Mutex // guards trips between the two loops
-	trip  map[string]int32
-	trips int
-	terr  string
+	src      rtSource
+	snap     atomic.Pointer[rtSnapshot]
+	mu       sync.Mutex // guards trips between the two loops
+	trip     map[string]int32
+	trips    int
+	terr     string
+	tt       *rtTimetable // imported timetable, for feeds without delays (nil if absent)
+	computed int          // delays derived from predicted times in the last trip feed
 }
 
 var cataloniaBounds = GeoBounds{MinLat: 40.5, MaxLat: 42.9, MinLon: 0.15, MaxLon: 3.4}
@@ -168,7 +172,7 @@ func defaultRtSources() []rtSource {
 
 // pollTrips refreshes trip-level delays.
 func (p *rtPoller) pollTrips(ctx context.Context) {
-	total := 0
+	total, computed := 0, 0
 	delays, err := func() (map[string]int32, error) {
 		u, err := p.src.tripURL(ctx)
 		if err != nil {
@@ -192,6 +196,9 @@ func (p *rtPoller) pollTrips(ctx context.Context) {
 			// delays need the static timetable (slice 3).
 			if d := tripUpdateDelay(e.TripUpdate); d != nil {
 				out[e.TripUpdate.Trip.TripID] = *d
+			} else if d := tripUpdateComputedDelay(ctx, p.tt, e.TripUpdate); d != nil {
+				out[e.TripUpdate.Trip.TripID] = *d
+				computed++
 			}
 		}
 		return out, nil
@@ -202,7 +209,7 @@ func (p *rtPoller) pollTrips(ctx context.Context) {
 		p.terr = err.Error()
 		return
 	}
-	p.trip, p.trips, p.terr = delays, total, ""
+	p.trip, p.trips, p.computed, p.terr = delays, total, computed, ""
 }
 
 // tripUpdateDelay is the trip-level delay, else the first stop event's.
@@ -225,7 +232,7 @@ func tripUpdateDelay(tu *TripUpdate) *int32 {
 func (p *rtPoller) pollVehicles(ctx context.Context) {
 	snap := &rtSnapshot{AgencyID: p.src.AgencyID, FetchedAt: time.Now()}
 	p.mu.Lock()
-	snap.TripDelays, snap.TripUpdates, snap.TripsErr = p.trip, p.trips, p.terr
+	snap.TripDelays, snap.TripUpdates, snap.Computed, snap.TripsErr = p.trip, p.trips, p.computed, p.terr
 	p.mu.Unlock()
 	fm, err := func() (*FeedMessage, error) {
 		u, err := p.src.vehicleURL(ctx)
@@ -284,6 +291,12 @@ func (p *rtPoller) pollVehicles(ctx context.Context) {
 // (trip updates first, so the first snapshot can carry delays).
 func (p *rtPoller) run(ctx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
+	if tt, err := openRtTimetable(p.src.AgencyID); err != nil {
+		log.Printf("[GTFS-RT] %s: timetable not opened: %v", p.src.AgencyID, err)
+	} else if tt != nil {
+		p.tt = tt
+		defer tt.db.Close()
+	}
 	p.pollTrips(ctx)
 	p.pollVehicles(ctx)
 	p.logSnapshot()
@@ -319,7 +332,15 @@ func (p *rtPoller) logSnapshot() {
 			withDelay++
 		}
 	}
-	msg := fmt.Sprintf("[GTFS-RT] %s: %d vehicles (%d with a trip delay), %d trip updates (%d with a delay)", s.AgencyID, len(s.Vehicles), withDelay, s.TripUpdates, len(s.TripDelays))
+	msg := fmt.Sprintf("[GTFS-RT] %s: %d vehicles (%d with a trip delay), %d trip updates (%d with a delay, %d computed from the timetable)", s.AgencyID, len(s.Vehicles), withDelay, s.TripUpdates, len(s.TripDelays), s.Computed)
+	if len(s.TripDelays) > 0 {
+		ds := make([]int, 0, len(s.TripDelays))
+		for _, d := range s.TripDelays {
+			ds = append(ds, int(d))
+		}
+		sort.Ints(ds)
+		msg += fmt.Sprintf("; trip delay s min/median/max %d/%d/%d", ds[0], ds[len(ds)/2], ds[len(ds)-1])
+	}
 	if s.VehiclesErr != "" {
 		msg += "; vehicles error: " + s.VehiclesErr
 	}
