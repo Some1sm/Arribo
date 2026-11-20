@@ -233,11 +233,40 @@ func railLineTrains(info operatorInfo, code, ref, direction string, headsign map
 			t.Set("destination", strOrNil(headsign[v.DirectionID]))
 			t.Set("toStop", strOrNil(v.StopName))
 			t.Set("delayMinutes", t.Get("delayMins"))
+			status, badge := railDelayLabel(t.Get("delayMins"), t.Get("delayDiscarded") == true)
+			t.Set("delayStatus", status)
+			t.Set("delayBadgeText", badge)
+			t.Set("delayFormatted", badge)
 			t.Set("isGhostVehicle", false)
+			t.Set("agency", info.Name)
+			t.Set("attribution", trainAttribution[info.ID])
 			buses = append(buses, t)
 		}
 	}
 	return buses, stale
+}
+
+// railDelayLabel is a train's delay status and label for the line view,
+// with rail's punctuality rule (on time up to 5 min late). A missing delay
+// is said to be missing, never shown as on time.
+func railDelayLabel(mins any, discarded bool) (status, label string) {
+	m, ok := mins.(float64)
+	switch {
+	case discarded:
+		return "unknown", "Retard descartat"
+	case !ok:
+		return "unknown", "Sense dada de retard"
+	case m > 5:
+		return "delayed", "+" + numToString(m) + " min"
+	case m < -1:
+		return "early", "−" + numToString(-m) + " min"
+	case m == 0:
+		return "on_time", "A l'hora"
+	case m > 0:
+		return "on_time", "+" + numToString(m) + " min"
+	default:
+		return "on_time", "−" + numToString(-m) + " min"
+	}
 }
 
 // hRailLine answers the /api/line/:lineId family for a rail line. It
@@ -259,8 +288,11 @@ func (s *Server) hRailLine(q *xreq, res *xres, kind string) bool {
 		// No bus-style delay statistics for trains here: Dades has the
 		// operators' punctuality (/api/analytics/operators).
 		res.json(O("success", true, "stats", nil))
+	case "eta":
+		// The view falls back to its own estimate when this is not a success.
+		res.json(O("success", false, "error", "Not available for rail lines yet"))
 	default:
-		// target-eta, vehicles, stop departures: not built for rail yet.
+		// vehicles, stop departures: not built for rail yet.
 		// Said plainly rather than answered with Mataró's empty shapes.
 		res.status = 404
 		res.json(O("success", false, "error", "Not available for rail lines yet"))

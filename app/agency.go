@@ -168,10 +168,14 @@ func railCatalog() (lines []any, ops []any) {
 			if r.TextColor != "" {
 				ink = r.TextColor
 			}
+			// lineRef opens the line view (/api/line/<agency>:<code>);
+			// openable says a line profile exists to draw it.
+			_, hasProfile := op.Profiles[r.Code]
 			lines = append(lines, O(
 				"id", r.Code, "code", r.Code, "name", r.Name, "color", color, "textColor", ink,
 				"agency", info.Name, "agencyId", info.ID, "group", info.ID, "mode", "Tren",
 				"directions", []any{}, "trackable", false,
+				"lineRef", info.ID+":"+r.Code, "openable", hasProfile,
 			))
 		}
 		b := cataloniaBounds

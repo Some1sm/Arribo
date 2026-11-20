@@ -260,10 +260,12 @@ class TransitApp {
       if (this.activeLineId) {
         // Validate the hash-resolved line actually exists — otherwise show a
         // friendly 'not found' popup instead of an eternal loading screen.
-        const lineObj = this.availableLines.find(l => 
+        // A rail line exists when the catalog lists it as openable.
+        const railLine = this.railCatalogLine(this.activeLineId);
+        const lineObj = (railLine && railLine.openable ? railLine : null) || (railLine ? null : this.availableLines.find(l => 
           String(l.id).toLowerCase() === String(this.activeLineId).toLowerCase() || 
           String(l.code).toLowerCase() === String(this.activeLineId).toLowerCase()
-        );
+        ));
         if (!lineObj) {
           this.showLineNotFoundModal(this.activeLineId);
           this.activeLineId = null;
@@ -342,6 +344,13 @@ class TransitApp {
     }
 
     const cleanHash = hash.replace(/^#/, '').replace(/^line-/, '').replace(/^linia-/, '').replace(/^l(?=[a-zA-Z0-9])/, '');
+
+    // A rail line ("#lfgc:L6"): its catalog lineRef, else as written (the
+    // server matches it case-insensitively).
+    if (window.TransitUtils?.isRailLineId?.(cleanHash)) {
+      this.activeLineId = this.railCatalogLine(cleanHash)?.lineRef || cleanHash;
+      return;
+    }
 
     const matchedLine = this.availableLines.find(l => 
       String(l.id).toLowerCase() === hash || 
@@ -548,7 +557,7 @@ class TransitApp {
     this.selectedVehicleId = null;
     this.mapController?.clearVehicleTrail();
 
-    const lineObj = this.availableLines.find(l => 
+    const lineObj = this.railCatalogLine(lineId) || this.availableLines.find(l => 
       String(l.id).toLowerCase() === String(lineId).toLowerCase() || 
       String(l.code).toLowerCase() === String(lineId).toLowerCase()
     );
@@ -972,8 +981,17 @@ class TransitApp {
       .filter(g => g.lines.length > 0);
   }
 
+  /** The catalog entry of a rail line ("fgc:L6", any case), or undefined. */
+  railCatalogLine(lineId) {
+    if (!window.TransitUtils?.isRailLineId?.(lineId)) return undefined;
+    const want = String(lineId).toLowerCase();
+    return (this.catalogAllLines || []).find(l => String(l.lineRef || '').toLowerCase() === want);
+  }
+
   /** Catalog line for a line id or code, for badges outside the catalog lists. */
   catalogLine(lineId) {
+    const rail = this.railCatalogLine(lineId);
+    if (rail) return rail;
     const want = String(lineId ?? '').replace(/^L/i, '').toLowerCase();
     return (this.availableLines || []).find(l => String(l.id).toLowerCase() === want || String(l.code || '').toLowerCase() === String(lineId ?? '').toLowerCase());
   }
@@ -1414,7 +1432,10 @@ class TransitApp {
 
       // 1. Kick off Line details and Target ETA in parallel
       const linePromise = fetch(`/api/line/${lId}?direction=${dir}`).then(r => r.json()).catch(() => ({ success: false }));
-      const etaPromise = fetch(`/api/line/${lId}/target-eta?direction=${dir}${savedStopId ? `&stopId=${savedStopId}` : ''}`).then(r => r.json()).catch(() => ({ success: false }));
+      // Rail lines have no stop ETA yet; their panel is built from the live trains.
+      const etaPromise = window.TransitUtils?.isRailLineId?.(lId)
+        ? Promise.resolve({ success: false })
+        : fetch(`/api/line/${lId}/target-eta?direction=${dir}${savedStopId ? `&stopId=${savedStopId}` : ''}`).then(r => r.json()).catch(() => ({ success: false }));
 
       // 2. Process Line details immediately (<5ms)
       const lineRes = await linePromise;
@@ -1625,7 +1646,9 @@ class TransitApp {
     }
 
     let stats = lData?.delayStats || null;
-    const lId = lData?.id || lData?.code || this.activeLineId;
+    // A rail catalog entry's id is its bare code ("L6"), which is Mataró's L6:
+    // address it by its lineRef.
+    const lId = lData?.lineRef || lData?.id || lData?.code || this.activeLineId;
     if (!lId) return;
 
     if (!stats) {
@@ -1771,7 +1794,79 @@ class TransitApp {
   renderUpstreamOutageBanner(isOutage) {
     const banner = document.getElementById('upstream-outage-banner');
     if (!banner) return;
-    banner.style.display = isOutage ? 'flex' : 'none';
+    // The banner is about Mataró's bus feed; a rail line's data is its own.
+    const onRail = window.TransitUtils?.isRailLineId?.(this.activeLineId);
+    banner.style.display = isOutage && !onRail ? 'flex' : 'none';
+  }
+
+  /**
+   * The target card of a rail line. There is no per-station timetable or
+   * ETA for trains yet, so instead of the bus wording ("Sense bus", "no
+   * departures", which would read as "no trains") it says how many trains
+   * the operator reports on the line now and lists them, each with its
+   * next station, how old its position is and its delay as reported. On a
+   * Mataró line it only restores what it changed.
+   */
+  renderRailPanel(lData) {
+    const rail = window.TransitUtils?.isRailLineId?.(this.activeLineId);
+    const title = document.getElementById('departures-card-title');
+    const telemetry = document.getElementById('telemetry-card');
+    if (telemetry) telemetry.hidden = Boolean(rail);
+    if (title) title.textContent = rail ? 'Trens a la línia ara' : 'Properes sortides';
+    const corridorSub = document.getElementById('corridor-subtitle-text');
+    if (corridorSub) {
+      corridorSub.textContent = rail
+        ? `Estacions del trajecte més llarg de la línia${lData?.geometryEstimated ? '; traç aproximat entre estacions' : ''}. Trens on l'operador els situa, sense estimacions.`
+        : "Telemetria oficial en temps real amb estimació automàtica en zones d'ombra";
+    }
+    if (!rail) return;
+    this.renderUpstreamOutageBanner(false);
+
+    const esc = (v) => this.esc(v);
+    const trains = (Array.isArray(lData?.activeBuses) ? lData.activeBuses : []).filter(b => b && b.positionSource === 'gtfsrt');
+    const n = trains.length;
+    const staleN = Number(lData?.railData?.staleTrains) || 0;
+    const etaBigEl = document.getElementById('eta-big-display');
+    const etaClockEl = document.getElementById('eta-clock-display');
+    const etaPillEl = document.getElementById('eta-status-pill');
+    const etaStatusText = document.getElementById('eta-status-text');
+    const destEl = document.getElementById('next-bus-dest');
+    if (etaBigEl) etaBigEl.textContent = n > 0 ? `${n} ${n === 1 ? 'tren' : 'trens'}` : 'Cap tren';
+    if (etaClockEl) {
+      etaClockEl.textContent = (n > 0 ? "Informats ara per l'operador en aquest sentit" : "L'operador no informa de cap tren en aquest sentit ara mateix")
+        + (staleN > 0 ? ` · ${staleN} més sense actualitzar` : '') + '. Horaris per estació: encara no disponibles.';
+    }
+    if (etaPillEl && etaStatusText) {
+      etaPillEl.className = `eta-status-pill ${n > 0 ? 'live' : 'scheduled'}`;
+      etaStatusText.textContent = n > 0 ? 'Posicions en directe' : 'Sense trens informats';
+    }
+    if (destEl) {
+      const d = (lData?.directions || []).find(x => String(x.dirId) === String(this.activeDirection));
+      destEl.textContent = d ? d.name.replace(/^Cap a /, '') : 'Ambdós sentits';
+    }
+
+    const badge = document.getElementById('dep-count-badge');
+    const container = document.getElementById('departures-list-container');
+    if (badge) badge.textContent = `${n} ${n === 1 ? 'tren' : 'trens'}`;
+    if (!container) return;
+    if (n === 0) {
+      container.innerHTML = `<p class="rail-departures-note">Cap tren informat ara mateix en aquest sentit.${staleN > 0 ? ` ${staleN} ${staleN === 1 ? 'tren té' : 'trens tenen'} una posició de fa més de 3 min i no es mostren.` : ''}</p>`;
+      return;
+    }
+    const chipFor = (b) => {
+      const cls = b.delayStatus === 'delayed' ? (Number(b.delayMins) > 15 ? 'chip-severe' : 'chip-late')
+        : (b.delayStatus === 'on_time' ? 'chip-on-time' : (b.delayStatus === 'early' ? 'chip-on-time' : 'chip-neutral chip-plain'));
+      return `<span class="chip ${cls}">${esc(b.delayBadgeText || 'Sense dada de retard')}</span>`;
+    };
+    const ageText = (s) => (Number.isFinite(Number(s)) ? (Number(s) < 60 ? `fa ${Math.round(s)} s` : `fa ${Math.round(s / 60)} min`) : 'hora desconeguda');
+    container.innerHTML = trains.map(b => `
+      <div class="rail-train-row">
+        <div class="rail-train-main">
+          <strong>${esc(b.toStop ? `${b.currentStatus === 'STOPPED_AT' ? 'A' : 'Cap a'} ${b.toStop}` : 'Estació no informada')}</strong>
+          <span class="rail-train-sub">${esc(b.destination ? `Destí ${b.destination}` : '')}${b.destination ? ' · ' : ''}posició ${esc(ageText(b.ageSec))}${b.delaySource === 'timetable' ? " · retard calculat amb l'horari" : ''}</span>
+        </div>
+        ${chipFor(b)}
+      </div>`).join('') + (lData?.railData?.attribution ? `<p class="rail-departures-note">${esc(lData.railData.attribution)}</p>` : '');
   }
 
   async checkUpstreamStatus() {
@@ -2151,6 +2246,7 @@ class TransitApp {
 
     this.renderEtaDisplay(next, etaBigEl, etaClockEl, etaPillEl, etaStatusText);
     this.renderDeparturesInto('departures-list-container', 'dep-count-badge', data.upcomingDepartures || []);
+    this.renderRailPanel(lData);
   }
 
   updateTargetFavButton(stopId) {
@@ -3997,6 +4093,14 @@ class TransitApp {
     }
 
     // Silent background fetch / SWR revalidation
+    // No per-station timetable for trains yet: say so instead of an error
+    // or an empty "no arrivals" list, which would read as "no trains".
+    if (window.TransitUtils?.isRailLineId?.(this.activeLineId)) {
+      if (listEl) listEl.innerHTML = '<p class="rail-departures-note">Encara no mostrem els horaris de cada estació per als trens. Els trens que veus al mapa són els que l\'operador informa ara mateix.</p>';
+      if (countBadge) countBadge.textContent = '—';
+      return;
+    }
+
     try {
       let fetchDirection = this.activeDirection || '0';
       if (String(fetchDirection) === 'both' && this._resolvedStopDirection) {
@@ -5524,6 +5628,9 @@ class TransitApp {
 
     const lId = this.activeLineId;
     if (!lId) return;
+    // The stream carries Mataró's buses only: merging it into a rail line
+    // would drop its trains, which come with the line's REST refresh.
+    if (window.TransitUtils?.isRailLineId?.(lId)) return;
 
     const dir = this.activeDirection;
     const matchesView = v =>
@@ -6223,6 +6330,12 @@ class TransitApp {
 
       if (!this.activeLineId) {
         this.mapController?.toggleTrafficHeatmap(false);
+        trafficBtn.classList.remove('active');
+        return;
+      }
+
+      // Traffic segments are measured from Mataró's buses only.
+      if (window.TransitUtils?.isRailLineId?.(this.activeLineId)) {
         trafficBtn.classList.remove('active');
         return;
       }

@@ -165,3 +165,25 @@ func TestRailLineDetails(t *testing.T) {
 		t.Errorf("fallback: %v", string(toJSON(d9)))
 	}
 }
+
+func TestRailDelayLabel(t *testing.T) {
+	cases := []struct {
+		mins      any
+		discarded bool
+		status    string
+		label     string
+	}{
+		{nil, false, "unknown", "Sense dada de retard"},
+		{3.0, true, "unknown", "Retard descartat"},
+		{0.0, false, "on_time", "A l'hora"},
+		{4.0, false, "on_time", "+4 min"},
+		{-1.0, false, "on_time", "−1 min"},
+		{6.0, false, "delayed", "+6 min"},
+		{-3.0, false, "early", "−3 min"},
+	}
+	for _, c := range cases {
+		if st, lb := railDelayLabel(c.mins, c.discarded); st != c.status || lb != c.label {
+			t.Errorf("%v/%v -> %q %q, want %q %q", c.mins, c.discarded, st, lb, c.status, c.label)
+		}
+	}
+}

@@ -46,6 +46,11 @@
      * "renfe_rodalies:R2S"). Badges carry it as data-line="…" so their colours
      * come from applyLineColors().
      */
+    isRailLineId(id) {
+      // Rail lines are addressed "<agency>:<code>" (fgc:L6), Mataró's by number.
+      return /^[a-z_]+:[^:]+$/i.test(String(id ?? ''));
+    },
+
     lineKey(line) {
       return `${line?.agencyId || 'mataro'}:${line?.id ?? ''}`;
     },

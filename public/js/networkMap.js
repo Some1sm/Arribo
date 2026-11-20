@@ -68,6 +68,7 @@ class NetworkMap extends TransitMap {
     this.trainLayer = L.layerGroup().addTo(this.map);
     this.trainMarkers = new Map();     // train id -> { marker, popupHtml }
     this.trainColors = new Map();      // "<agencyId>:<line code>" -> line colour (from the catalog)
+    this.trainLineRefs = new Map();    // "<agencyId>:<line code>" -> lineRef, for lines the line view can open
     this.trainFeed = null;             // last /api/trains body with enabled:true, else null
     this.trainsShown = true;
 
@@ -100,6 +101,11 @@ class NetworkMap extends TransitMap {
         const shareBtn = ev.target.closest('[data-share-vehicle]');
         if (shareBtn && window.transitApp?.shareLiveBus) {
           window.transitApp.shareLiveBus(shareBtn.dataset.shareVehicle);
+          return;
+        }
+        const railBtn = ev.target.closest('[data-open-rail-line]');
+        if (railBtn && window.transitApp?.switchLine) {
+          window.transitApp.switchLine(railBtn.dataset.openRailLine);
           return;
         }
         const lineBtn = ev.target.closest('[data-open-line]');
@@ -137,7 +143,9 @@ class NetworkMap extends TransitMap {
   /** Line colours for the trains, from the full catalog (trackable or not). */
   setTrainCatalog(lines) {
     this.trainColors.clear();
+    this.trainLineRefs.clear();
     for (const l of Array.isArray(lines) ? lines : []) {
+      if (l && l.agencyId && l.openable && l.lineRef) this.trainLineRefs.set(`${l.agencyId}:${l.code || l.id}`, l.lineRef);
       if (!l || !l.agencyId || typeof l.color !== 'string') continue;
       if (!/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(l.color.trim())) continue;
       this.trainColors.set(`${l.agencyId}:${l.code || l.id}`, l.color.trim());
@@ -182,7 +190,7 @@ class NetworkMap extends TransitMap {
       const style = t.stale
         ? { radius: 6, color: neutral, weight: 2, dashArray: '3 3', fillColor: ring, fillOpacity: 0.6, opacity: 0.9 }
         : { radius: 6, color: ring, weight: 2, dashArray: null, fillColor: lineColor, fillOpacity: 0.95, opacity: 1 };
-      const popupHtml = buildTrainPopupHtml(t, operators.get(t.agencyId));
+      const popupHtml = buildTrainPopupHtml(t, operators.get(t.agencyId), this.trainLineRefs.get(`${t.agencyId}:${t.lineCode}`));
       const existing = this.trainMarkers.get(t.id);
       if (existing) {
         existing.marker.setLatLng([lat, lon]);
@@ -667,7 +675,7 @@ function formatAge(sec) {
  * that there is none. StatusChip and LineBadge from the design system; the
  * badge's colour comes from the catalog through data-line.
  */
-function buildTrainPopupHtml(t, op) {
+function buildTrainPopupHtml(t, op, lineRef) {
   const esc = (v) => window.TransitUtils.esc(v);
   const line = t.lineCode
     ? `<span class="line-badge" data-line="${esc(`${t.agencyId}:${t.lineCode}`)}">${esc(t.lineCode)}</span>`
@@ -706,9 +714,11 @@ function buildTrainPopupHtml(t, op) {
     ${where}
     <div class="train-popup-chips">${position}${delay}</div>
     ${delayNote ? `<div class="train-popup-note">${esc(delayNote)}</div>` : ''}
+    ${lineRef ? `<button type="button" class="btn btn-secondary btn-sm" data-open-rail-line="${esc(lineRef)}">Obre la línia ${esc(t.lineCode)}</button>` : ''}
     ${op?.attribution ? `<div class="train-popup-credit">${esc(op.attribution)}</div>` : ''}
   </div>`;
 }
+window.buildTrainPopupHtml = buildTrainPopupHtml;
 
 /** Staleness backstop for entries carried across a physical-only SSE snapshot.
  *  Comfortably longer than this map's 30 s REST cadence, so a carried entry

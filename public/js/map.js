@@ -1199,6 +1199,11 @@ class TransitMap {
    *   delegation in each map's own `popupopen` listener.
    */
   buildBusPopupHtml(bus, ctx = {}) {
+    // A train (GTFS-RT) gets the train popup: what its operator reported,
+    // with rail's punctuality rule, never the bus wording.
+    if (bus && bus.positionSource === 'gtfsrt' && typeof window.buildTrainPopupHtml === 'function') {
+      return window.buildTrainPopupHtml(bus, { name: bus.agency, attribution: bus.attribution });
+    }
     const isGhost = Boolean(ctx.isGhost);
     const isEst = Boolean(ctx.isEst);
     const isSecDir = Boolean(ctx.isSecDir);
@@ -1591,7 +1596,9 @@ class TransitMap {
       // 1. Street-Snapping: Snap raw GPS strictly to the target road polyline,
       // except a bus the server found off its route (bus.offRoute): it stays
       // where its GPS puts it, and its glide does not follow the route either.
-      const followRoute = !bus.offRoute && targetPolyline && targetPolyline.length > 1;
+      // A train (GTFS-RT) is drawn where its operator reported it, never
+      // snapped: a line drawn from stations alone is only an approximation.
+      const followRoute = !bus.offRoute && bus.positionSource !== 'gtfsrt' && targetPolyline && targetPolyline.length > 1;
       let snapped = { lat: bus.lat, lon: bus.lon, bearing: bus.bearing || 0 };
       if (followRoute) {
         snapped = this.snapToPolyline(bus.lat, bus.lon, targetPolyline);
