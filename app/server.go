@@ -1041,6 +1041,7 @@ func (s *Server) buildRoutes() {
 	s.get(p("/api/data-health"), s.hDataHealth)
 	s.get(p("/api/lines"), s.hLines)
 	s.get(p("/api/search/stops"), s.hSearchStops)
+	s.get(p("/api/network/vehicles"), s.hNetworkVehicles)
 	s.get(p("/api/line/:lineId"), s.hLine)
 	s.get(p("/api/line/:lineId/target-eta"), s.hLineTargetEta)
 	s.get(p("/api/line/:lineId/vehicles"), s.hLineVehicles)
@@ -1341,6 +1342,39 @@ func (s *Server) hSearchStops(q *xreq, res *xres) error {
 		}
 	}
 	res.json(O("success", true, "query", qs, "results", results, "stops", stops, "streets", streets))
+	return nil
+}
+
+// hNetworkVehicles serves the landing network map's buses for every trackable
+// line in one response: each line's activeBuses exactly as
+// /api/line/:id?direction=both builds them (getLineDetails, mapStandardize),
+// without the geometry, stops and departures, which the map loads once.
+func (s *Server) hNetworkVehicles(q *xreq, res *xres) error {
+	err := tryJS(func() {
+		lines := []any{}
+		for _, x := range s.registry.getAllLines() {
+			l, _ := x.(*Obj)
+			if l == nil {
+				continue
+			}
+			id := jsString(l.Get("id"))
+			r, rerr := s.registry.getTrackerForLine(id)
+			if rerr != nil || r == nil || r.Tracker == nil {
+				continue
+			}
+			buses := []any{}
+			if data := r.Tracker.getLineDetails(r.LineID, "both", nil); data != nil {
+				if arr, ok := data.Get("activeBuses").([]any); ok {
+					buses = mapStandardize(arr)
+				}
+			}
+			lines = append(lines, O("id", id, "code", or(l.Get("code"), id), "activeBuses", buses))
+		}
+		res.json(O("success", true, "timestamp", float64(nowMs()), "lines", lines))
+	})
+	if err != nil {
+		s.handleRouteError(q, res, err)
+	}
 	return nil
 }
 

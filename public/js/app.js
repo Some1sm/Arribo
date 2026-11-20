@@ -5500,12 +5500,21 @@ class TransitApp {
       .catch(() => undefined);
 
     try {
-      const results = await Promise.allSettled(
-        lines.map(id => fetch(`/api/line/${id}?direction=both`)
+      // Geometry once (full line views); after that one request for every
+      // line's buses (/api/network/vehicles: same activeBuses, no geometry,
+      // stops or departures). On failure the buses on the map stay as they were.
+      const results = loadGeometry
+        ? await Promise.allSettled(
+          lines.map(id => fetch(`/api/line/${id}?direction=both`)
+            .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+            .then(json => ({ id, data: json?.data }))
+            .catch(err => ({ id, error: err }))))
+        : await fetch('/api/network/vehicles')
           .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-          .then(json => ({ id, data: json?.data }))
-          .catch(err => ({ id, error: err })))
-      );
+          .then(json => (Array.isArray(json?.lines) ? json.lines : [])
+            .filter(l => lines.includes(String(l.id)))
+            .map(l => ({ status: 'fulfilled', value: { id: String(l.id), data: { code: l.code, activeBuses: l.activeBuses } } })))
+          .catch(() => []);
 
       // Stale-response guard: a slow refresh must not overwrite a newer one.
       if (seq !== this.networkMapSeq || map !== this.networkMap) return;
