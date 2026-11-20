@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -34,6 +35,8 @@ type rtVehicle struct {
 	ObservedAt             int64 // unix seconds; 0 when the feed omits it
 	DelaySec               *int32
 	HasDelayFromTripUpdate bool
+	DelayComputed          bool   // the delay was derived from predicted times and the timetable
+	LineCode, StopName     string // from the imported timetable (line: else the label's prefix); "" if unknown
 }
 
 // rtSnapshot is a feed's latest state.
@@ -45,6 +48,7 @@ type rtSnapshot struct {
 	TripDelays    map[string]int32 // trip_id -> trip-level delay in seconds
 	TripUpdates   int              // trip updates in the last feed, with or without a delay
 	Computed      int              // of TripDelays, how many came from predicted times vs the timetable
+	ComputedTrips map[string]bool  // trip ids whose delay was computed (immutable once stored)
 	VehiclesErr   string
 	TripsErr      string
 }
@@ -77,6 +81,7 @@ type rtPoller struct {
 	pending                                  []railVisit       // closed visits waiting for the worker (guarded by mu)
 	closedVisits, droppedVisits, implausible int               // counters (guarded by mu)
 	computed                                 int               // delays derived from predicted times in the last trip feed
+	computedTrips                            map[string]bool   // which trips those were (guarded by mu; replaced, never mutated)
 }
 
 var cataloniaBounds = GeoBounds{MinLat: 40.5, MaxLat: 42.9, MinLon: 0.15, MaxLon: 3.4}
@@ -212,6 +217,7 @@ func (p *rtPoller) syncTimetable() {
 func (p *rtPoller) pollTrips(ctx context.Context) {
 	p.syncTimetable()
 	total, computed := 0, 0
+	computedTrips := map[string]bool{}
 	delays, err := func() (map[string]int32, error) {
 		u, err := p.src.tripURL(ctx)
 		if err != nil {
@@ -238,6 +244,7 @@ func (p *rtPoller) pollTrips(ctx context.Context) {
 				out[e.TripUpdate.Trip.TripID] = *d
 			} else if d := tripUpdateComputedDelay(ctx, p.tt, e.TripUpdate); d != nil {
 				out[e.TripUpdate.Trip.TripID] = *d
+				computedTrips[e.TripUpdate.Trip.TripID] = true
 				computed++
 			}
 		}
@@ -249,7 +256,7 @@ func (p *rtPoller) pollTrips(ctx context.Context) {
 		p.terr = err.Error()
 		return
 	}
-	p.trip, p.trips, p.computed, p.terr = delays, total, computed, ""
+	p.trip, p.trips, p.computed, p.computedTrips, p.terr = delays, total, computed, computedTrips, ""
 }
 
 // tripUpdateDelay is the trip-level delay, else the first stop event's.
@@ -272,7 +279,7 @@ func tripUpdateDelay(tu *TripUpdate) *int32 {
 func (p *rtPoller) pollVehicles(ctx context.Context) {
 	snap := &rtSnapshot{AgencyID: p.src.AgencyID, FetchedAt: time.Now()}
 	p.mu.Lock()
-	snap.TripDelays, snap.TripUpdates, snap.Computed, snap.TripsErr = p.trip, p.trips, p.computed, p.terr
+	snap.TripDelays, snap.TripUpdates, snap.Computed, snap.ComputedTrips, snap.TripsErr = p.trip, p.trips, p.computed, p.computedTrips, p.terr
 	p.mu.Unlock()
 	fm, err := func() (*FeedMessage, error) {
 		u, err := p.src.vehicleURL(ctx)
@@ -321,10 +328,52 @@ func (p *rtPoller) pollVehicles(ctx context.Context) {
 		if d, ok := snap.TripDelays[v.TripID]; ok && v.TripID != "" {
 			d := d
 			v.DelaySec, v.HasDelayFromTripUpdate = &d, true
+			v.DelayComputed = snap.ComputedTrips[v.TripID]
 		}
+		p.describeVehicle(ctx, &v)
 		snap.Vehicles = append(snap.Vehicles, v)
 	}
 	p.snap.Store(snap)
+}
+
+// describeVehicle adds the line code and the station name from the
+// imported timetable. Without a timetable line for the trip, the label's
+// prefix ("R2S-28385" -> "R2S") is used only when it is one of the
+// operator's catalog lines, so a label is never taken for a line it isn't.
+// Runs on the poller's goroutine, which owns the timetable handle; the
+// server only ever reads the finished snapshot.
+func (p *rtPoller) describeVehicle(ctx context.Context, v *rtVehicle) {
+	if p.tt != nil {
+		if v.TripID != "" {
+			v.LineCode = p.tt.tripLine(ctx, v.TripID)
+		}
+		if v.StopID != "" {
+			v.StopName = p.tt.stopName(ctx, v.StopID)
+		}
+	}
+	if v.LineCode == "" {
+		v.LineCode = catalogLineFromLabel(p.src.AgencyID, v.Label)
+	}
+}
+
+// catalogLineFromLabel is the label's prefix before '-' when the operator's
+// catalog has a line with that code, else "".
+func catalogLineFromLabel(agencyID, label string) string {
+	i := strings.IndexByte(label, '-')
+	if i <= 0 {
+		return ""
+	}
+	prefix := label[:i]
+	c, ok := rtCatalog.Load(agencyID)
+	if !ok {
+		return ""
+	}
+	for _, r := range c.(*rtCatalogOp).Lines {
+		if r.Code == prefix {
+			return prefix
+		}
+	}
+	return ""
 }
 
 // run polls until ctx ends. The first poll of each kind starts at once
@@ -395,7 +444,13 @@ func (p *rtPoller) logSnapshot() {
 }
 
 // gtfsRtPollers holds the running pollers (nil unless ARRIBO_GTFSRT=1).
+// Worker-side: read under the worker lock.
 var gtfsRtPollers []*rtPoller
+
+// rtLivePollers publishes the running pollers to the server world, which
+// reads their snapshots (/api/trains) without any lock or database access.
+// nil while the pollers are off or stopped.
+var rtLivePollers atomic.Pointer[[]*rtPoller]
 
 // startGtfsRtPollers starts one poller per source when ARRIBO_GTFSRT=1 and
 // returns a function that stops them and waits for them to finish.
@@ -405,6 +460,9 @@ func startGtfsRtPollers() (stop func()) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
+	// A restarted worker starts a fresh set; the stopped pollers of the
+	// previous one must not be counted or drained again.
+	gtfsRtPollers = nil
 	for _, src := range defaultRtSources() {
 		p := &rtPoller{src: src}
 		gtfsRtPollers = append(gtfsRtPollers, p)
@@ -416,8 +474,11 @@ func startGtfsRtPollers() (stop func()) {
 		defer wg.Done()
 		runTimetableRefresher(ctx, srcs)
 	}(defaultRtSources())
+	live := append([]*rtPoller(nil), gtfsRtPollers...)
+	rtLivePollers.Store(&live)
 	log.Printf("[GTFS-RT] polling %d operators (ARRIBO_GTFSRT=1)", len(gtfsRtPollers))
 	return func() {
+		rtLivePollers.CompareAndSwap(&live, nil)
 		cancel()
 		wg.Wait()
 	}

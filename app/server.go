@@ -1058,6 +1058,7 @@ func (s *Server) buildRoutes() {
 	s.get(p("/api/disruptions"), s.hDisruptions)
 	s.get(p("/api/vehicles"), s.hVehicles)
 	s.get(p("/api/fleet/live"), s.hFleetLive)
+	s.get(p("/api/trains"), s.hTrains)
 	s.get(p("/api/vehicle/:vehicleId/trail"), s.hTrail)
 	s.get(p("/api/line/:lineId/stats"), s.hLineStats)
 	s.get(p("/api/analytics/journalism", "/api/retards/journalism"), s.hJournalism)
