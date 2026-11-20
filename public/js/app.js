@@ -4415,9 +4415,28 @@ class TransitApp {
     if (!backdrop) return;
     this.linePickerSearch = '';
     if (input) input.value = '';
+    this.renderLinePickerHeader();
     this.renderLinePicker();
     backdrop.classList.add('active');
     setTimeout(() => input?.focus(), 50);
+  }
+
+  /**
+   * The picker's heading from the lines it lists. With Mataró's lines only,
+   * the Mataró wording stays as it was; once other operators' lines are
+   * listed it names them and counts every line, rather than claiming "the
+   * 8 lines of Mataró".
+   */
+  renderLinePickerHeader() {
+    const lines = this.pickerLines();
+    const ops = this.linesByOperator(lines).map(g => g.op);
+    if (ops.length <= 1) return;
+    const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+    set('line-picker-badge', 'Totes les xarxes');
+    set('line-picker-title', 'Explorador de línies');
+    set('line-picker-subtitle', `${lines.length} línies de ${ops.length} operadors: ${ops.map(o => o.name).join(', ')}`);
+    const input = document.getElementById('line-picker-search-input');
+    if (input) input.placeholder = '🔍 Cerca per línia o operador (ex: L1, R1, S2, FGC)...';
   }
 
   closeLinePicker() {
