@@ -166,7 +166,8 @@ type Worker struct {
 	reports  *ReportCache
 	registry *TrackerRegistry
 	daemon   *IngestionDaemon
-	stopRt   func() // stops the GTFS-RT pollers (a no-op unless ARRIBO_GTFSRT=1)
+	stopRt   func()         // stops the GTFS-RT pollers (a no-op unless ARRIBO_GTFSRT=1)
+	railTT   railTimetables // read-only rail timetables for station departures (worker lock)
 	inbox    *msgQueue[workerMsg]
 	out      func(serverMsg)
 	exited   chan struct{}
@@ -280,6 +281,7 @@ func (k *Worker) handleMasterMessage(m workerMsg) {
 		if k.stopRt != nil {
 			k.stopRt()
 		}
+		k.railTT.close()
 		k.daemon.stop()
 		k.db.close()
 		k.exit()
@@ -408,6 +410,8 @@ func (k *Worker) executeDbOperation(op string, rawArgs any) (res any, err error)
 		return db.getDelayIncidents(args), nil
 	case "inspectDelayIncident":
 		return db.inspectDelayIncident(args), nil
+	case "getRailDepartures":
+		return k.railDeparturesOp(args)
 	case "getOperatorReport":
 		return db.getOperatorReport(jsNumber(args.Get("hours")), gtfsRtFeedStats())
 	case "getGpsGapHotspots":

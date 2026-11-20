@@ -187,3 +187,101 @@ func TestRailDelayLabel(t *testing.T) {
 		}
 	}
 }
+
+func openRailTestTimetableWith(t *testing.T, feed map[string]string) *rtTimetable {
+	t.Helper()
+	dir := t.TempDir()
+	zipPath, out := filepath.Join(dir, "fgc.zip"), filepath.Join(dir, "fgc.db")
+	writeTestZip(t, zipPath, feed)
+	if code := runGtfsImport([]string{"fgc", zipPath, out}); code != 0 {
+		t.Fatalf("import exit %d", code)
+	}
+	tt, err := openRtTimetable(out)
+	if err != nil || tt == nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = tt.db.Close() })
+	return tt
+}
+
+func TestRailDepartures(t *testing.T) {
+	feed := railTestFeed()
+	feed["trips.txt"] += "RL6,S,late,Pl. Catalunya,0,\nRL6,X,holiday,Pl. Catalunya,0,\n"
+	feed["stop_times.txt"] += "late,24:30:00,24:30:00,A,1\nlate,24:40:00,24:40:00,B,2\n" +
+		"holiday,09:30:00,09:30:00,A,1\nholiday,09:40:00,09:40:00,B,2\n"
+	// Service X runs every day but is removed on Monday 2026-11-23.
+	feed["calendar.txt"] += "X,1,1,1,1,1,1,1,20260101,20271231\n"
+	feed["calendar_dates.txt"] = "service_id,date,exception_type\nX,20261123,2\n"
+	tt := openRailTestTimetableWith(t, feed)
+	ctx := context.Background()
+	at := func(s string) time.Time {
+		v, err := time.ParseInLocation("2006-01-02 15:04", s, madrid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	ids := func(d []railDeparture) []string {
+		out := []string{}
+		for _, x := range d {
+			out = append(out, x.TripID+"@"+time.Unix(x.DepartUnix, 0).In(madrid).Format("15:04"))
+		}
+		return out
+	}
+
+	// Monday 08:50: "long" at 09:00 (the removed "holiday" is not listed;
+	// "short" left at 08:00; "back" ends at A, which is not a departure).
+	d, err := tt.departures(ctx, "L6", "A", -1, at("2026-11-23 08:50"))
+	if err != nil || len(d) != 1 || ids(d)[0] != "long@09:00" {
+		t.Errorf("monday: %v %v", ids(d), err)
+	}
+	// Tuesday the holiday service runs again.
+	d, _ = tt.departures(ctx, "L6", "A", -1, at("2026-11-24 08:50"))
+	if got := ids(d); len(got) != 2 || got[0] != "long@09:00" || got[1] != "holiday@09:30" {
+		t.Errorf("tuesday: %v", got)
+	}
+	// Tuesday 00:20: Monday's 24:30 trip, found on the previous service day.
+	d, _ = tt.departures(ctx, "L6", "A", -1, at("2026-11-24 00:20"))
+	if got := ids(d); len(got) != 1 || got[0] != "late@00:30" {
+		t.Errorf("after midnight: %v", got)
+	}
+	// Direction filter, and "back" leaving C in direction 1.
+	if d, _ = tt.departures(ctx, "L6", "A", 1, at("2026-11-23 08:50")); len(d) != 0 {
+		t.Errorf("direction 1 at A: %v", ids(d))
+	}
+	if d, _ = tt.departures(ctx, "L6", "C", 1, at("2026-11-23 09:55")); len(d) != 1 || d[0].TripID != "back" || d[0].DirectionID != 1 {
+		t.Errorf("back at C: %v", ids(d))
+	}
+}
+
+func TestRailDeparturesResponse(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	sched := []any{
+		O("tripId", "live", "headsign", "Pl. Catalunya", "directionId", 0.0, "departUnix", float64(now.Unix()+300)),
+		O("tripId", "plain", "headsign", "Pl. Catalunya", "directionId", 0.0, "departUnix", float64(now.Unix()+600)),
+		O("tripId", "gone", "headsign", "Pl. Catalunya", "directionId", 0.0, "departUnix", float64(now.Unix()-600)),
+		O("tripId", "weird", "headsign", "", "directionId", 1.0, "departUnix", float64(now.Unix()+900)),
+	}
+	snap := &rtSnapshot{
+		TripDelays:    map[string]int32{"live": 120, "gone": 60, "weird": -40 * 60},
+		ComputedTrips: map[string]bool{"live": true},
+	}
+	o := railDeparturesResponse(reportOperators[1], rtLineStop{ID: "A", Name: "Sarrià", Lat: 41.4, Lon: 2.12}, sched, snap, now)
+	deps := o.Get("departures").([]any)
+	if len(deps) != 3 {
+		t.Fatalf("departures: %s", string(toJSON(o)))
+	}
+	live, plain, weird := deps[0].(*Obj), deps[1].(*Obj), deps[2].(*Obj)
+	if live.Get("isRealTime") != true || live.Get("delayMins") != 2.0 || live.Get("minutesAway") != 7.0 || live.Get("delaySource") != "timetable" || live.Get("delayBadgeText") != "+2 min" {
+		t.Errorf("live: %s", string(toJSON(live)))
+	}
+	if plain.Get("isRealTime") != false || plain.Get("isTheoretical") != true || plain.Get("delayMins") != nil || plain.Get("delayBadgeText") != "Horari" || plain.Get("delayStatus") != "scheduled" {
+		t.Errorf("timetable only: %s", string(toJSON(plain)))
+	}
+	if weird.Get("delayDiscarded") != true || weird.Get("delayBadgeText") != "Retard descartat" || weird.Get("destination") != nil || weird.Get("direction") != "1" {
+		t.Errorf("discarded: %s", string(toJSON(weird)))
+	}
+	if stop := o.Get("stop").(*Obj); stop.Get("name") != "Sarrià" {
+		t.Errorf("stop: %s", string(toJSON(stop)))
+	}
+}

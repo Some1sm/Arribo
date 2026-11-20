@@ -4093,14 +4093,6 @@ class TransitApp {
     }
 
     // Silent background fetch / SWR revalidation
-    // No per-station timetable for trains yet: say so instead of an error
-    // or an empty "no arrivals" list, which would read as "no trains".
-    if (window.TransitUtils?.isRailLineId?.(this.activeLineId)) {
-      if (listEl) listEl.innerHTML = '<p class="rail-departures-note">Encara no mostrem els horaris de cada estació per als trens. Els trens que veus al mapa són els que l\'operador informa ara mateix.</p>';
-      if (countBadge) countBadge.textContent = '—';
-      return;
-    }
-
     try {
       let fetchDirection = this.activeDirection || '0';
       if (String(fetchDirection) === 'both' && this._resolvedStopDirection) {
@@ -4110,6 +4102,14 @@ class TransitApp {
         ? `/api/line/${this.activeLineId}/stop/${stopId}/departures?direction=${fetchDirection}`
         : `/api/mataro/stop/${stopId}/departures`;
       const res = await fetch(endpoint).then(r => r.json());
+
+      // A rail station whose timetable cannot be read: say so, rather than
+      // an error or an empty board, which would read as "no trains".
+      if (!(res.success && res.data) && window.TransitUtils?.isRailLineId?.(this.activeLineId)) {
+        if (listEl) listEl.innerHTML = '<p class="rail-departures-note">No s\'han pogut llegir els horaris d\'aquesta estació. Els trens que veus al mapa són els que l\'operador informa ara mateix.</p>';
+        if (countBadge) countBadge.textContent = '—';
+        return;
+      }
 
       if (res.success && res.data) {
         // Save to cache for subsequent 0ms opens (bounded LRU-style, cap 50)

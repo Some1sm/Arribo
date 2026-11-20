@@ -269,6 +269,36 @@ func railDelayLabel(mins any, discarded bool) (status, label string) {
 	}
 }
 
+// railDepartures serves /api/line/<agency>:<code>/stop/:stopId/departures:
+// the timetable's next departures from the worker, with live delays added
+// here from the pollers' snapshot.
+func (s *Server) railDepartures(q *xreq, res *xres, info operatorInfo, op *rtCatalogOp, code string) {
+	stopID := jsString(q.params.Get("stopId"))
+	stop, ok := lineStop(op, code, stopID)
+	if !ok {
+		res.status = 404
+		res.json(O("success", false, "error", "Unknown station for this line"))
+		return
+	}
+	direction := ""
+	if v := qv(q, "direction"); !isUndef(v) {
+		direction = jsTrim(jsString(v))
+	}
+	data, err := s.historyQuery("getRailDepartures", O("agencyId", info.ID, "code", code, "stopId", stopID, "direction", direction), 8000)
+	if err != nil {
+		s.sendInternalError(q, res, err, O("success", false))
+		return
+	}
+	var snap *rtSnapshot
+	for _, f := range liveTrainFeeds() {
+		if f.info.ID == info.ID {
+			snap = f.snap
+		}
+	}
+	sched, _ := field(data, "departures").([]any)
+	res.json(O("success", true, "data", railDeparturesResponse(info, stop, sched, snap, time.UnixMilli(nowMs()))))
+}
+
 // hRailLine answers the /api/line/:lineId family for a rail line. It
 // returns false when lineId is not a rail line, so the caller continues
 // with Mataró's resolution.
@@ -288,11 +318,13 @@ func (s *Server) hRailLine(q *xreq, res *xres, kind string) bool {
 		// No bus-style delay statistics for trains here: Dades has the
 		// operators' punctuality (/api/analytics/operators).
 		res.json(O("success", true, "stats", nil))
+	case "departures":
+		s.railDepartures(q, res, info, op, code)
 	case "eta":
 		// The view falls back to its own estimate when this is not a success.
 		res.json(O("success", false, "error", "Not available for rail lines yet"))
 	default:
-		// vehicles, stop departures: not built for rail yet.
+		// vehicles: not built for rail yet.
 		// Said plainly rather than answered with Mataró's empty shapes.
 		res.status = 404
 		res.json(O("success", false, "error", "Not available for rail lines yet"))
