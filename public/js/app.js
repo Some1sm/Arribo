@@ -730,6 +730,10 @@ class TransitApp {
     document.addEventListener('arribo:lang', () => {
       this.renderLandingFilterTabs();
       this.renderLandingHeader();
+      this.renderLandingLines();
+      this.renderPickerFilterTabs();
+      this.renderLinePickerHeader();
+      this.renderLinePicker();
     });
     const container = document.getElementById('landing-lines-container');
     const favGrid = document.getElementById('landing-favorites-grid');
@@ -1076,7 +1080,8 @@ class TransitApp {
     if (!dock) return;
     const lines = this.pickerLines();
     const ops = this.catalogOperators().filter(o => lines.some(l => (l.agencyId || 'mataro') === o.id));
-    const items = [{ value: 'all', label: 'Totes les línies' }];
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
+    const items = [{ value: 'all', label: t('picker.allLines') }];
     if (ops.length > 1) ops.forEach(o => items.push({ value: `op:${o.id}`, label: o.name }));
     else lines.forEach(l => items.push({ value: String(l.id), label: l.code || String(l.id) }));
     if (!items.some(i => i.value === (this.linePickerFilter || 'all'))) this.linePickerFilter = 'all';
@@ -1088,6 +1093,7 @@ class TransitApp {
   }
 
   renderLandingLines() {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     this.renderLandingFavorites();
     this.updateHeaderFavoritesBadge();
 
@@ -1120,8 +1126,8 @@ class TransitApp {
     if (linesToRender.length === 0 && stopsToRender.length === 0) {
       container.innerHTML = `
         <div class="empty-state">
-          <div class="empty-state-title">Cap línia ni parada trobada</div>
-          <div class="empty-state-text">No hi ha cap resultat per a "${this.esc(this.landingSearch)}". Prova amb el codi o el nom d'una línia, o amb el nom d'una parada.</div>
+          <div class="empty-state-title">${this.esc(t('landing.noResults'))}</div>
+          <div class="empty-state-text">${this.esc(t('landing.noResultsHint', { q: this.landingSearch }))}</div>
         </div>
       `;
       return;
@@ -1134,20 +1140,20 @@ class TransitApp {
         <div class="landing-group-section">
           <div class="landing-group-header">
             <h3>${this.esc(op.name)}</h3>
-            <span class="landing-group-badge">${lines.length} línia${lines.length === 1 ? '' : 'es'}</span>
+            <span class="landing-group-badge">${this.esc(t(lines.length === 1 ? 'landing.linesOne' : 'landing.linesMany', { n: lines.length }))}</span>
           </div>
           <div class="landing-lines-grid">
             ${lines.map(l => {
-              const dirCount = l.directions ? `${l.directions.length} sentits` : 'En servei';
+              const dirCount = l.directions ? t('common.directions', { n: l.directions.length }) : t('common.inService');
               return `
-                <div class="landing-line-card" data-line-id="${this.esc(l.id)}" title="Fes clic per seguir la línia ${this.esc(l.code)} en directe">
+                <div class="landing-line-card" data-line-id="${this.esc(l.id)}" title="${this.esc(t('landing.followLine', { code: l.code }))}">
                   <span class="landing-line-badge"${this.lineAttr(l)}>${this.esc(l.code)}</span>
                   <div class="landing-line-info">
                     <div class="landing-line-title">${this.esc(l.name)}</div>
                     <div class="landing-line-operator">
                       <span>${this.esc(l.agency || op.name)}</span>
                       <span>•</span>
-                      <span>${dirCount}</span>
+                      <span>${this.esc(dirCount)}</span>
                     </div>
                   </div>
                   <span class="landing-line-arrow">
@@ -1165,18 +1171,18 @@ class TransitApp {
       html += `
         <div class="landing-group-section">
           <div class="landing-group-header">
-            <h3>Parades trobades</h3>
-            <span class="landing-group-badge">${stopsToRender.length} parada${stopsToRender.length === 1 ? '' : 'es'}</span>
+            <h3>${this.esc(t('landing.stopsFound'))}</h3>
+            <span class="landing-group-badge">${this.esc(t(stopsToRender.length === 1 ? 'landing.stopsOne' : 'landing.stopsMany', { n: stopsToRender.length }))}</span>
           </div>
           <div class="landing-lines-grid">
             ${stopsToRender.map(s => {
               return `
-                <div class="landing-line-card landing-stop-card" data-stop-id="${this.esc(s.stopId || s.code)}" data-stop-name="${this.esc(s.stopName || s.name)}" data-line-id="${this.esc(s.lineId || '1')}" data-lat="${this.esc(s.lat || '')}" data-lon="${this.esc(s.lon || '')}" title="Veure arribades a ${this.esc(s.stopName || s.name)}">
+                <div class="landing-line-card landing-stop-card" data-stop-id="${this.esc(s.stopId || s.code)}" data-stop-name="${this.esc(s.stopName || s.name)}" data-line-id="${this.esc(s.lineId || '1')}" data-lat="${this.esc(s.lat || '')}" data-lon="${this.esc(s.lon || '')}" title="${this.esc(t('landing.seeArrivals', { stop: s.stopName || s.name }))}">
                   <span class="landing-line-badge"${this.lineAttr(this.catalogLine(s.lineId || s.lineCode))}>${this.esc(s.lineCode || 'Bus')}</span>
                   <div class="landing-line-info">
                     <div class="landing-line-title">${this.esc(s.stopName || s.name)}</div>
                     <div class="landing-line-operator">
-                      <span>${this.esc(s.zone || 'Mataró Urbà')}${s.code ? ` • Codi: #${this.esc(s.code)}` : ''}</span>
+                      <span>${this.esc(s.zone || 'Mataró Urbà')}${s.code ? ` • ${this.esc(t('landing.codeLabel', { code: s.code }))}` : ''}</span>
                       ${s.directionText ? `<span>• ${this.esc(s.directionText)}</span>` : ''}
                     </div>
                   </div>
@@ -1197,6 +1203,7 @@ class TransitApp {
     const section = document.getElementById('landing-favorites-section');
     const grid = document.getElementById('landing-favorites-grid');
     const badge = document.getElementById('fav-stops-count-badge');
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     if (!section || !grid) return;
 
     if (!this.favoriteStops || this.favoriteStops.length === 0) {
@@ -1205,7 +1212,7 @@ class TransitApp {
     }
 
     section.style.display = 'block';
-    if (badge) badge.textContent = `${this.favoriteStops.length} parada${this.favoriteStops.length === 1 ? '' : 'es'}`;
+    if (badge) badge.textContent = t(this.favoriteStops.length === 1 ? 'landing.stopsOne' : 'landing.stopsMany', { n: this.favoriteStops.length });
 
     grid.innerHTML = this.favoriteStops.map(stop => {
       const linePills = (stop.lines && stop.lines.length > 0)
@@ -1217,14 +1224,14 @@ class TransitApp {
           <div class="landing-fav-card-header">
             <div>
               <div class="landing-fav-title">${this.esc(stop.name)}</div>
-              <div class="landing-fav-code">Codi #${this.esc(stop.code || stop.id)}</div>
+              <div class="landing-fav-code">${this.esc(t('landing.favCode', { code: stop.code || stop.id }))}</div>
             </div>
-            <button type="button" class="btn-fav-remove" data-stop-id="${this.esc(stop.id)}" title="Treure de preferides">&times;</button>
+            <button type="button" class="btn-fav-remove" data-stop-id="${this.esc(stop.id)}" title="${this.esc(t('landing.favRemove'))}">&times;</button>
           </div>
           <div class="landing-fav-lines">${linePills}</div>
           <div class="landing-fav-arrivals" id="fav-arrivals-${this.esc(stop.id)}">
             <div style="font-size:0.75rem; color:var(--text-muted); display:flex; align-items:center; gap:4px;">
-              <span class="loading-spinner-inline" style="width:10px;height:10px;border-width:1.5px;"></span> Carregant arribades en directe...
+              <span class="loading-spinner-inline" style="width:10px;height:10px;border-width:1.5px;"></span> ${this.esc(t('landing.favLoading'))}
             </div>
           </div>
         </div>
@@ -4465,12 +4472,13 @@ class TransitApp {
     const lines = this.pickerLines();
     const ops = this.linesByOperator(lines).map(g => g.op);
     if (ops.length <= 1) return;
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
-    set('line-picker-badge', 'Totes les xarxes');
-    set('line-picker-title', 'Explorador de línies');
-    set('line-picker-subtitle', `${lines.length} línies de ${ops.length} operadors: ${ops.map(o => o.name).join(', ')}`);
+    set('line-picker-badge', t('picker.allNetworks'));
+    set('line-picker-title', t('picker.headerTitle'));
+    set('line-picker-subtitle', t('picker.headerSubtitle', { n: lines.length, m: ops.length, ops: ops.map(o => o.name).join(', ') }));
     const input = document.getElementById('line-picker-search-input');
-    if (input) input.placeholder = '🔍 Cerca per línia o operador (ex: L1, R1, S2, FGC)...';
+    if (input) input.placeholder = t('picker.headerSearch');
   }
 
   closeLinePicker() {
@@ -4479,6 +4487,7 @@ class TransitApp {
   }
 
   renderLinePicker() {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     const container = document.getElementById('line-picker-container');
     if (!container) return;
 
@@ -4505,8 +4514,8 @@ class TransitApp {
     if (linesToRender.length === 0) {
       container.innerHTML = `
         <div class="empty-state">
-          <div class="empty-state-title">Cap línia trobada</div>
-          <div class="empty-state-text">Prova amb un altre codi o nom de línia.</div>
+          <div class="empty-state-title">${this.esc(t('picker.noLines'))}</div>
+          <div class="empty-state-text">${this.esc(t('picker.noLinesHint'))}</div>
         </div>
       `;
       return;
@@ -4531,7 +4540,7 @@ class TransitApp {
                     <div class="line-card-sub">
                       <span>${this.esc(l.agency || op.name)}</span>
                       <span>•</span>
-                      <span>${l.lineRef ? 'Tren' : (l.directions ? `${l.directions.length} sentits` : 'En servei')}</span>
+                      <span>${this.esc(l.lineRef ? t('common.train') : (l.directions ? t('common.directions', { n: l.directions.length }) : t('common.inService')))}</span>
                     </div>
                   </div>
                 </div>
