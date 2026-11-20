@@ -726,6 +726,11 @@ class TransitApp {
     const heroInput = document.getElementById('landing-hero-search-input');
     const clearBtn = document.getElementById('btn-landing-search-clear');
     const filterDock = document.getElementById('landing-filter-tabs');
+    // Language change (i18n.js): redraw the texts built from the catalog.
+    document.addEventListener('arribo:lang', () => {
+      this.renderLandingFilterTabs();
+      this.renderLandingHeader();
+    });
     const container = document.getElementById('landing-lines-container');
     const favGrid = document.getElementById('landing-favorites-grid');
     const nearbyGrid = document.getElementById('landing-nearby-grid');
@@ -1022,16 +1027,17 @@ class TransitApp {
     const listed = this.availableLines || [];
     const busOps = ops.filter(o => listed.some(l => (l.agencyId || 'mataro') === o.id));
     const railOps = ops.filter(o => !busOps.includes(o));
-    const list = names => (names.length <= 1 ? (names[0] || '') : `${names.slice(0, -1).join(', ')} i ${names[names.length - 1]}`);
+    const i18n = window.ArriboI18n;
+    const t = (key, vars) => (i18n ? i18n.t(key, vars) : key);
+    const list = names => (i18n ? i18n.list(names) : names.join(', '));
     const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
-    set('landing-hero-eyebrow', `Xarxa en directe • ${ops.map(short).join(' · ')}`);
-    set('landing-hero-title', railOps.length ? 'Quin bus o tren vols seguir?' : 'Quina línia vols seguir?');
-    set('landing-hero-subtitle', `${listed.length} línies de ${list(busOps.map(short))} amb GPS en directe` +
-      (railOps.length ? `, i els trens de ${list(railOps.map(short))} al mapa de la xarxa i a la vista de cada línia.` : '.'));
-    set('header-city-pill', 'Catalunya');
+    set('landing-hero-eyebrow', t('hero.eyebrow.multi', { ops: ops.map(short).join(' · ') }));
+    set('landing-hero-title', t(railOps.length ? 'hero.title.trains' : 'hero.title.lines'));
+    set('landing-hero-subtitle', t('hero.subtitle.buses', { n: listed.length, buses: list(busOps.map(short)) }) +
+      (railOps.length ? t('hero.subtitle.trains', { trains: list(railOps.map(short)) }) : '.'));
+    set('header-city-pill', t('header.pill.multi'));
     if (!this.activeLineId) {
-      set('header-subtitle', railOps.length ? 'Busos i trens en directe' : 'Transport públic en directe');
-      document.title = railOps.length ? 'Arribo! | Busos i trens en temps real' : 'Arribo! | Transport públic en temps real';
+      document.title = t(railOps.length ? 'title.trains' : 'title.lines');
     }
   }
 
@@ -1054,7 +1060,7 @@ class TransitApp {
     if (!dock) return;
     const lines = this.availableLines || [];
     const ops = this.catalogOperators().filter(o => lines.some(l => (l.agencyId || 'mataro') === o.id));
-    const items = [{ value: 'all', label: `Totes les línies (${lines.length})` }];
+    const items = [{ value: 'all', label: window.ArriboI18n ? window.ArriboI18n.t('filter.allLines', { n: lines.length }) : `Totes les línies (${lines.length})` }];
     if (ops.length > 1) ops.forEach(o => items.push({ value: `op:${o.id}`, label: o.name }));
     else lines.forEach(l => items.push({ value: String(l.id), label: l.code || String(l.id) }));
     if (!items.some(i => i.value === this.landingFilter)) this.landingFilter = 'all';

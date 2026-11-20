@@ -11955,3 +11955,18 @@ body[data-dades-scope="bus"] #operators-section { display: none !important; }
 /* Dades: exact line filter under the report search (observatori.js renderLineFilter) */
 .journalism-line-filter { margin: 0 0 var(--space-5); }
 .journalism-line-filter[hidden] { display: none; }
+
+/* Language switch in the page headers (i18n.js mountPickers) */
+.lang-select {
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
+  background: var(--bg-surface-elevated);
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.lang-select:hover { color: var(--text-primary); border-color: var(--focus-ring); }
