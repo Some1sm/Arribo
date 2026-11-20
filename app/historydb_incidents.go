@@ -282,7 +282,7 @@ func (h *HistoryDB) delayIncidents(lineCode, hours, limit, minDelay any) (*Obj, 
 	var visitLineParams []any
 	var visitCode any
 	if !isAll {
-		visitLineWhere = " AND (UPPER(line_code) = ? OR UPPER(line_code) = ?)"
+		visitLineWhere = mataroAgencySQL + " AND (UPPER(line_code) = ? OR UPPER(line_code) = ?)"
 		visitLineParams = []any{codeWithL, codeWithoutL}
 		visitCode = codeWithL
 	}

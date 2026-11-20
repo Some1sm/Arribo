@@ -124,6 +124,12 @@ var mataroScopeSQL = " AND agency_id = '" + mataroAgency.ID + "' AND (UPPER(line
 	quotedList(append(append([]string{}, mataroLineIDs...), mataroLineCodes...)) + "))"
 var mataroVisitsScopeSQL = " AND agency_id = '" + mataroAgency.ID + "' AND (UPPER(line_code) IN (" + quotedList(mataroLineCodes) + "))"
 
+// mataroAgencySQL keeps a per-line or per-stop Mataró query on Mataró's
+// rows. stop_visits also holds the GTFS-RT operators' station visits under
+// their own line codes, and FGC's L6, L7 and L8 share Mataró's codes: a
+// filter on line_code alone mixed FGC trains into Mataró's lines 6-8.
+var mataroAgencySQL = " AND agency_id = '" + mataroAgency.ID + "'"
+
 func appendMataroScope(where string, isAll bool) string {
 	if isAll {
 		return where + mataroScopeSQL

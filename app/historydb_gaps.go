@@ -138,7 +138,7 @@ func (h *HistoryDB) getGpsGapHotspots(o gapOpts) *Obj {
 		visitRows, err := h.all(`
         SELECT vehicle_id AS vehicleId, line_code AS lineCode, COUNT(*) AS n
         FROM stop_visits
-        WHERE last_ts >= ? AND last_ts < ?`+lineSQL+`
+        WHERE last_ts >= ? AND last_ts < ?`+mataroAgencySQL+lineSQL+`
         GROUP BY vehicle_id, line_code
       `, params...)
 		if err != nil {
@@ -421,7 +421,7 @@ func (h *HistoryDB) getGpsGapPasses(ids any, days any, now float64) *Obj {
 		args := stringsToAny(stops)
 		visitRows, err := h.all(`
         SELECT vehicle_id AS vehicleId, line_code AS lineCode, stop_name AS stopName, first_ts AS firstTs, last_ts AS lastTs
-        FROM stop_visits WHERE stop_name IN (`+marks+`) AND last_ts >= ? AND last_ts < ?
+        FROM stop_visits WHERE stop_name IN (`+marks+`) AND last_ts >= ? AND last_ts < ?`+mataroAgencySQL+`
       `, append(append([]any{}, args...), since, now)...)
 		if err != nil {
 			return nil, err
@@ -622,7 +622,7 @@ func (h *HistoryDB) getLineDelayStats(lineCode, hoursBack, lineID any) *Obj {
           OR UPPER(line_code) = ?
           OR UPPER(line_code) = ?
           OR UPPER(REPLACE(REPLACE(line_code, '-', ''), '_', '')) = ?
-        ) AND last_ts >= ? AND `+validDelaySQL+service.visits+`
+        ) AND last_ts >= ? AND `+validDelaySQL+mataroAgencySQL+service.visits+`
       `, codeUpper, codeNoHyphen, codeWithL, codeWithoutL, codeNoHyphen, cutoff)
 		if err != nil {
 			return nil, err
