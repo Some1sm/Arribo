@@ -986,6 +986,7 @@ class TransitApp {
   /** Runs whenever the catalog changes: line colours and the landing filter dock. */
   applyCatalog() {
     window.TransitUtils?.applyLineColors?.(this.catalogAllLines || this.availableLines || []);
+    this.networkMap?.setTrainCatalog?.(this.catalogAllLines || []);
     this.renderLandingFilterTabs();
     this.renderPickerFilterTabs();
   }
@@ -5267,6 +5268,8 @@ class TransitApp {
     // Colours come from the same catalog the single-line map and the landing
     // line cards use, so a line can never be one colour here and another there.
     this.networkMap.setLineCatalog(this.availableLines || []);
+    this.networkMap.setTrainCatalog(this.catalogAllLines || []);
+    this.networkMap.setTrainsShown(this.readTrainsShown());
     // Honour a filter the visitor picked before scrolling the map into view.
     this.networkMap.setLineFilter(this.landingFilter || 'all');
     if (this.currentTheme) this.networkMap.setTheme(this.currentTheme);
@@ -5295,6 +5298,12 @@ class TransitApp {
       .map(l => String(l.id ?? ''))
       .filter((v, i, a) => v && a.indexOf(v) === i);
 
+    // Rodalies / FGC trains, fetched alongside the bus lines. A failure only
+    // leaves the train layer as it was; it never blocks the buses.
+    const trainsReq = fetch('/api/trains')
+      .then(r => (r.ok ? r.json() : null))
+      .catch(() => undefined);
+
     try {
       const results = await Promise.allSettled(
         lines.map(id => fetch(`/api/line/${id}?direction=both`)
@@ -5317,6 +5326,13 @@ class TransitApp {
         }
         map.applyLineVehicles(code, data.activeBuses || []);
       }
+
+      const trains = await trainsReq;
+      if (seq !== this.networkMapSeq || map !== this.networkMap) return;
+      // undefined = network error: keep the last trains (each says how old it is).
+      if (trains !== undefined) map.applyTrains(trains);
+      this.renderNetworkTrainToggle();
+      this.updateNetworkMapBadge();
 
       // Badge first, re-frame second. fitToNetwork() is cosmetic, and when it
       // threw, the badge write after it was skipped entirely — the count then
@@ -5359,13 +5375,44 @@ class TransitApp {
       : '';
     // Report the real split. Never clamp against a scheduled total: that
     // "fix" is what made a 5-bus fleet read "6 en servei" (see AGENTS.md §3).
+    const trains = this.networkMap.trainCounts();
+    const trainText = trains.total > 0
+      ? ` · ${trains.total} ${trains.total === 1 ? 'tren' : 'trens'}${trains.stale > 0 ? ` (${trains.stale} sense actualitzar)` : ''}`
+      : '';
     if (total === 0) {
-      badge.textContent = `${scope}Sense autobusos ara`;
+      badge.textContent = `${scope}Sense autobusos ara${trainText}`;
       return;
     }
     badge.textContent = scope + (estimated > 0
       ? `${total} autobusos · ${live} GPS · ${estimated} estimats`
-      : `${total} autobusos · ${live} en GPS directe`);
+      : `${total} autobusos · ${live} en GPS directe`) + trainText;
+  }
+
+  readTrainsShown() {
+    try { return localStorage.getItem('arribo_network_trains') !== 'off'; } catch { return true; }
+  }
+
+  /**
+   * The "Trens" toggle above the network map: shown only while /api/trains
+   * has train data (polling on), so a Mataró-only deployment looks unchanged.
+   */
+  renderNetworkTrainToggle() {
+    const btn = document.getElementById('network-map-trains-toggle');
+    const map = this.networkMap;
+    if (!btn || !map) return;
+    btn.hidden = !map.trainFeed;
+    btn.setAttribute('aria-pressed', String(map.trainsShown));
+    btn.textContent = map.trainsShown ? 'Amaga els trens' : 'Mostra els trens';
+    if (!btn.dataset.bound) {
+      btn.dataset.bound = '1';
+      btn.addEventListener('click', () => {
+        const next = !this.networkMap.trainsShown;
+        try { localStorage.setItem('arribo_network_trains', next ? 'on' : 'off'); } catch {}
+        this.networkMap.setTrainsShown(next);
+        this.renderNetworkTrainToggle();
+        this.updateNetworkMapBadge();
+      });
+    }
   }
 
   startNetworkMapTimer() {

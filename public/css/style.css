@@ -5106,6 +5106,22 @@ body {
   color: var(--text-muted);
 }
 
+.network-map-header-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* Rodalies / FGC train popup on the network map (tokens only). */
+.train-popup { display: grid; gap: 0.45rem; font-size: 0.82rem; color: var(--text-primary); }
+.train-popup-head { display: flex; align-items: center; gap: 0.5rem; }
+.train-popup-op { font-weight: 600; color: var(--text-secondary); }
+.train-popup-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.train-popup-note { color: var(--text-muted); font-size: 0.75rem; }
+.train-popup-credit { color: var(--text-muted); font-size: 0.7rem; border-top: 1px solid var(--border-subtle); padding-top: 0.35rem; }
+
 .landing-lines-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -11665,6 +11681,7 @@ input#plan-max-walk:focus {
 /* ---------------------------------------------------------------- Trains: per-operator punctuality (operators.js) */
 #operators-section { margin-bottom: 1.5rem; }
 #operators-section[hidden] { display: none; }
+#network-map-trains-toggle[hidden] { display: none; }
 .op-section-tools { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
 .op-updated { font-size: 0.75rem; color: var(--text-muted); font-family: var(--font-mono, monospace); }
 .op-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: var(--space-5); }

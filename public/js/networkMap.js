@@ -62,6 +62,14 @@ class NetworkMap extends TransitMap {
     this.routeLayer = L.featureGroup().addTo(this.map);
     this.stopLayer = L.layerGroup().addTo(this.map);
     this.busLayer = L.layerGroup().addTo(this.map);
+    // Rodalies / FGC trains from /api/trains: their own layer of canvas
+    // circle markers (no DOM per train), drawn at the positions the
+    // operators reported, never snapped or animated.
+    this.trainLayer = L.layerGroup().addTo(this.map);
+    this.trainMarkers = new Map();     // train id -> { marker, popupHtml }
+    this.trainColors = new Map();      // "<agencyId>:<line code>" -> line colour (from the catalog)
+    this.trainFeed = null;             // last /api/trains body with enabled:true, else null
+    this.trainsShown = true;
 
     this.lineGeometries = new Map();   // code -> { color, name, primary, secondary }
     // Per-line layer groups, so filtering one line out is a remove() on two
@@ -122,6 +130,95 @@ class NetworkMap extends TransitMap {
 
     this.geometriesLoaded = false;
     this.renderLegend();
+  }
+
+  // ---------------------------------------------------------------- trains
+
+  /** Line colours for the trains, from the full catalog (trackable or not). */
+  setTrainCatalog(lines) {
+    this.trainColors.clear();
+    for (const l of Array.isArray(lines) ? lines : []) {
+      if (!l || !l.agencyId || typeof l.color !== 'string') continue;
+      if (!/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(l.color.trim())) continue;
+      this.trainColors.set(`${l.agencyId}:${l.code || l.id}`, l.color.trim());
+    }
+    this.renderTrains();
+  }
+
+  /** Takes an /api/trains body; null (or enabled:false) clears the layer. */
+  applyTrains(feed) {
+    this.trainFeed = feed && feed.enabled && Array.isArray(feed.trains) ? feed : null;
+    this.renderTrains();
+  }
+
+  setTrainsShown(shown) {
+    this.trainsShown = Boolean(shown);
+    this.renderTrains();
+  }
+
+  /** Trains are drawn with every line on screen, not under a single bus line's filter. */
+  trainsVisible() {
+    return Boolean(this.trainFeed) && this.trainsShown && this.lineFilter === 'all';
+  }
+
+  renderTrains() {
+    if (!this.map || !this.trainLayer) return;
+    const trains = this.trainFeed ? this.trainFeed.trains.slice(0, MAX_TRAIN_MARKERS) : [];
+    const css = getComputedStyle(document.documentElement);
+    const token = (name) => css.getPropertyValue(name).trim();
+    const neutral = token('--text-muted');
+    const ring = token('--bg-surface');
+    const operators = new Map((this.trainFeed?.operators || []).map(o => [o.id, o]));
+    const seen = new Set();
+
+    for (const t of trains) {
+      const lat = Number(t?.lat ?? t?.latitude);
+      const lon = Number(t?.lon ?? t?.longitude);
+      if (t?.lat === null || t?.lon === null || !Number.isFinite(lat) || !Number.isFinite(lon) || !t.id) continue;
+      seen.add(t.id);
+      const lineColor = this.trainColors.get(`${t.agencyId}:${t.lineCode}`) || neutral;
+      // A position the operator has stopped updating is drawn hollow and
+      // dashed, in the neutral colour: it is old, not live.
+      const style = t.stale
+        ? { radius: 6, color: neutral, weight: 2, dashArray: '3 3', fillColor: ring, fillOpacity: 0.6, opacity: 0.9 }
+        : { radius: 6, color: ring, weight: 2, dashArray: null, fillColor: lineColor, fillOpacity: 0.95, opacity: 1 };
+      const popupHtml = buildTrainPopupHtml(t, operators.get(t.agencyId));
+      const existing = this.trainMarkers.get(t.id);
+      if (existing) {
+        existing.marker.setLatLng([lat, lon]);
+        existing.marker.setStyle(style);
+        if (existing.popupHtml !== popupHtml) {
+          existing.marker.setPopupContent(popupHtml);
+          existing.popupHtml = popupHtml;
+        }
+        continue;
+      }
+      const marker = L.circleMarker([lat, lon], style);
+      marker.bindPopup(popupHtml, { className: 'arribo-train-popup', minWidth: 240, maxWidth: 320, autoPan: true, closeButton: true });
+      marker.addTo(this.trainLayer);
+      this.trainMarkers.set(t.id, { marker, popupHtml });
+    }
+    for (const [id, obj] of Array.from(this.trainMarkers.entries())) {
+      if (seen.has(id)) continue;
+      this.trainLayer.removeLayer(obj.marker);
+      this.trainMarkers.delete(id);
+    }
+    const onMap = this.map.hasLayer(this.trainLayer);
+    if (this.trainsVisible() && !onMap) this.map.addLayer(this.trainLayer);
+    if (!this.trainsVisible() && onMap) this.map.removeLayer(this.trainLayer);
+  }
+
+  /** Trains drawn now: total and how many have a position older than the live window. */
+  trainCounts() {
+    if (!this.trainsVisible()) return { total: 0, stale: 0, available: Boolean(this.trainFeed) };
+    let stale = 0;
+    let total = 0;
+    for (const t of this.trainFeed.trains.slice(0, MAX_TRAIN_MARKERS)) {
+      if (!t || !t.id || !Number.isFinite(Number(t.lat))) continue;
+      total++;
+      if (t.stale) stale++;
+    }
+    return { total, stale, available: true };
   }
 
   renderLegend() {
@@ -251,6 +348,7 @@ class NetworkMap extends TransitMap {
     this.lineFilter = raw && raw !== 'all' && !raw.startsWith('op:') ? (canonicalLineCode(raw) || raw.toUpperCase()) : 'all';
     this.applyLineVisibility();
     this.renderLegend();
+    this.renderTrains();
   }
 
   isLineVisible(code) {
@@ -544,6 +642,7 @@ class NetworkMap extends TransitMap {
       this.map = null;
     }
     this.busMarkersMap.clear();
+    this.trainMarkers.clear();
     this.lineGeometries.clear();
     this.lineLayers.clear();
     this.busesByLine.clear();
@@ -551,6 +650,65 @@ class NetworkMap extends TransitMap {
 }
 
 // -------------------------------------------------------------- helpers
+
+/** Bound on train markers, far above the ~200 trains both feeds report. */
+const MAX_TRAIN_MARKERS = 1500;
+
+function formatAge(sec) {
+  if (!Number.isFinite(sec)) return null;
+  if (sec < 60) return `fa ${Math.round(sec)} s`;
+  if (sec < 3600) return `fa ${Math.round(sec / 60)} min`;
+  return `fa ${Math.floor(sec / 3600)} h ${Math.round((sec % 3600) / 60)} min`;
+}
+
+/**
+ * Popup for one train. Every statement is about what the operator's feed
+ * reported: how old the position is, the delay and where it comes from, or
+ * that there is none. StatusChip and LineBadge from the design system; the
+ * badge's colour comes from the catalog through data-line.
+ */
+function buildTrainPopupHtml(t, op) {
+  const esc = (v) => window.TransitUtils.esc(v);
+  const line = t.lineCode
+    ? `<span class="line-badge" data-line="${esc(`${t.agencyId}:${t.lineCode}`)}">${esc(t.lineCode)}</span>`
+    : '<span class="chip chip-plain chip-neutral">Línia desconeguda</span>';
+  const age = formatAge(Number(t.ageSec));
+  let position;
+  if (t.ageSec === null || t.ageSec === undefined) {
+    position = '<span class="chip chip-neutral">Hora de la posició desconeguda</span>';
+  } else if (t.stale) {
+    position = `<span class="chip chip-neutral">Posició antiga · ${esc(age)}</span>`;
+  } else {
+    position = `<span class="chip chip-live">En directe · ${esc(age)}</span>`;
+  }
+  let delay;
+  let delayNote = '';
+  if (t.delayDiscarded) {
+    delay = '<span class="chip chip-plain chip-neutral">Retard descartat</span>';
+    delayNote = "L'operador ha publicat un retard impossible (més de 10 min d'avançament o més de 3 h de retard).";
+  } else if (Number.isFinite(t.delayMins)) {
+    const m = t.delayMins;
+    const cls = m > 15 ? 'chip-severe' : (m > 5 ? 'chip-late' : 'chip-on-time');
+    const label = m === 0 ? "A l'hora" : `${m > 0 ? '+' : '−'}${Math.abs(m)} min`;
+    delay = `<span class="chip ${cls}">${esc(label)}</span>`;
+    delayNote = t.delaySource === 'timetable'
+      ? "Calculat amb l'hora prevista de l'operador i el seu horari oficial."
+      : "Retard publicat per l'operador.";
+  } else {
+    delay = '<span class="chip chip-plain chip-neutral">Sense dada de retard</span>';
+  }
+  const where = t.stopName
+    ? `<div class="train-popup-row">${t.currentStatus === 'STOPPED_AT' ? 'A' : 'Cap a'} <strong>${esc(t.stopName)}</strong></div>`
+    : '';
+  const name = op?.name || t.agencyId;
+  return `<div class="train-popup">
+    <div class="train-popup-head">${line}<span class="train-popup-op">${esc(name)}</span></div>
+    ${where}
+    <div class="train-popup-chips">${position}${delay}</div>
+    ${delayNote ? `<div class="train-popup-note">${esc(delayNote)}</div>` : ''}
+    ${op?.attribution ? `<div class="train-popup-credit">${esc(op.attribution)}</div>` : ''}
+  </div>`;
+}
 
 /** Staleness backstop for entries carried across a physical-only SSE snapshot.
  *  Comfortably longer than this map's 30 s REST cadence, so a carried entry
