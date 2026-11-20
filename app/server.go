@@ -1344,6 +1344,9 @@ func (s *Server) hSearchStops(q *xreq, res *xres) error {
 }
 
 func (s *Server) hLine(q *xreq, res *xres) error {
+	if s.hRailLine(q, res, "line") {
+		return nil
+	}
 	lineID := q.params.Get("lineId")
 	direction := or(qv(q, "direction"), "0")
 	err := tryJS(func() {
@@ -1371,6 +1374,9 @@ func (s *Server) hLine(q *xreq, res *xres) error {
 }
 
 func (s *Server) hLineTargetEta(q *xreq, res *xres) error {
+	if s.hRailLine(q, res, "eta") {
+		return nil
+	}
 	lineID := q.params.Get("lineId")
 	direction := or(qv(q, "direction"), "0")
 	stopID := or(qv(q, "stopId"), nil)
@@ -1397,6 +1403,9 @@ func (s *Server) hLineTargetEta(q *xreq, res *xres) error {
 }
 
 func (s *Server) hLineVehicles(q *xreq, res *xres) error {
+	if s.hRailLine(q, res, "vehicles") {
+		return nil
+	}
 	lineID := q.params.Get("lineId")
 	direction := or(qv(q, "direction"), "0")
 	err := tryJS(func() {
@@ -1461,6 +1470,9 @@ func (s *Server) hLineVehicles(q *xreq, res *xres) error {
 }
 
 func (s *Server) hLineStopDepartures(q *xreq, res *xres) error {
+	if s.hRailLine(q, res, "departures") {
+		return nil
+	}
 	lineID := q.params.Get("lineId")
 	stopID := q.params.Get("stopId")
 	direction := or(qv(q, "direction"), "0")
@@ -1772,6 +1784,9 @@ func (s *Server) hTrail(q *xreq, res *xres) error {
 }
 
 func (s *Server) hLineStats(q *xreq, res *xres) error {
+	if s.hRailLine(q, res, "stats") {
+		return nil
+	}
 	lineID := jsString(q.params.Get("lineId"))
 	cleanCode := "L" + reLeadingL.ReplaceAllString(lineID, "")
 	err := tryJS(func() {

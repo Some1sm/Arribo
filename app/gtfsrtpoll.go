@@ -37,6 +37,7 @@ type rtVehicle struct {
 	HasDelayFromTripUpdate bool
 	DelayComputed          bool   // the delay was derived from predicted times and the timetable
 	LineCode, StopName     string // from the imported timetable (line: else the label's prefix); "" if unknown
+	DirectionID            int    // the trip's GTFS direction_id from the timetable; -1 if unknown
 }
 
 // rtSnapshot is a feed's latest state.
@@ -206,7 +207,18 @@ func (p *rtPoller) syncTimetable() {
 	}
 	p.tt, p.ttMod = tt, fi.ModTime()
 	if routes, err := tt.catalogRoutes(context.Background()); err == nil {
-		rtCatalog.Store(p.src.AgencyID, &rtCatalogOp{AgencyID: p.src.AgencyID, Mode: p.src.Mode, Lines: routes})
+		op := &rtCatalogOp{AgencyID: p.src.AgencyID, Mode: p.src.Mode, Lines: routes}
+		// Line profiles (stations and geometry per direction) for the line
+		// view; a failure leaves the catalog without them, not without lines.
+		if profiles, err := tt.lineProfiles(context.Background()); err == nil {
+			op.Profiles = map[string]*rtLineProfile{}
+			for i := range profiles {
+				op.Profiles[profiles[i].Code] = &profiles[i]
+			}
+		} else {
+			log.Printf("[GTFS-RT] %s: line profiles not read: %v", p.src.AgencyID, err)
+		}
+		rtCatalog.Store(p.src.AgencyID, op)
 	} else {
 		log.Printf("[GTFS-RT] %s: timetable lines not read: %v", p.src.AgencyID, err)
 	}
@@ -343,9 +355,11 @@ func (p *rtPoller) pollVehicles(ctx context.Context) {
 // Runs on the poller's goroutine, which owns the timetable handle; the
 // server only ever reads the finished snapshot.
 func (p *rtPoller) describeVehicle(ctx context.Context, v *rtVehicle) {
+	v.DirectionID = -1
 	if p.tt != nil {
 		if v.TripID != "" {
 			v.LineCode = p.tt.tripLine(ctx, v.TripID)
+			v.DirectionID = p.tt.tripDirection(ctx, v.TripID)
 		}
 		if v.StopID != "" {
 			v.StopName = p.tt.stopName(ctx, v.StopID)
@@ -550,6 +564,7 @@ func (p *rtPoller) takeRailVisits() []railVisit {
 type rtCatalogOp struct {
 	AgencyID, Mode string
 	Lines          []rtRoute
+	Profiles       map[string]*rtLineProfile // line code -> profile (nil if not built)
 }
 
 // rtCatalog maps agency id -> *rtCatalogOp. Written by the pollers when a

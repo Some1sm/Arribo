@@ -158,6 +158,18 @@ func (t *rtTimetable) tripLine(ctx context.Context, tripID string) string {
 	  FROM trips t JOIN routes r ON r.route_id = t.route_id WHERE t.trip_id = ? LIMIT 1`, tripID)
 }
 
+// tripDirection is the trip's direction_id, -1 if unknown.
+func (t *rtTimetable) tripDirection(ctx context.Context, tripID string) int {
+	v := t.lookupString(ctx, "D\x00"+tripID, `SELECT CAST(direction_id AS TEXT) FROM trips WHERE trip_id = ? LIMIT 1`, tripID)
+	switch v {
+	case "0":
+		return 0
+	case "1":
+		return 1
+	}
+	return -1
+}
+
 // stopName is the stop's name, "" if unknown.
 func (t *rtTimetable) stopName(ctx context.Context, stopID string) string {
 	return t.lookupString(ctx, "S\x00"+stopID, `SELECT name FROM stops WHERE stop_id = ? LIMIT 1`, stopID)
@@ -208,4 +220,185 @@ func (t *rtTimetable) catalogRoutes(ctx context.Context) ([]rtRoute, error) {
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+// rtLineStop is one station of a line profile, in travel order.
+type rtLineStop struct {
+	ID, Name string
+	Lat, Lon float64
+}
+
+// rtLineDirection is one direction of a rail line as the timetable
+// describes it: the stations of its longest trip in that direction and
+// the trip's GTFS shape (else the straight segments between the
+// stations, which GeometryFromStops says).
+type rtLineDirection struct {
+	DirectionID       int
+	Headsign          string
+	Stops             []rtLineStop
+	Geometry          [][2]float64 // [lat, lon]
+	GeometryFromStops bool
+	Trips             int // trips of the line in this direction in the timetable
+}
+
+// rtLineProfile is one line (grouped by short name, as in the catalog).
+type rtLineProfile struct {
+	Code       string
+	Directions []rtLineDirection // ordered by direction id
+}
+
+// rtMaxShapePoints bounds a direction's geometry; longer shapes keep every
+// n-th point plus the last, which is far finer than a phone map shows.
+const rtMaxShapePoints = 600
+
+// lineProfiles builds every line's profile from the timetable. Run on the
+// poller goroutine when a timetable opens; the result is immutable.
+//
+// A line's stations per direction are those of its trip with the most
+// stops (the first such trip in file order on a tie). Branches and short
+// workings are therefore not listed separately: this is a map of the
+// line, not its timetable.
+func (t *rtTimetable) lineProfiles(ctx context.Context) ([]rtLineProfile, error) {
+	rows, err := t.db.QueryContext(ctx, `SELECT COALESCE(NULLIF(r.short_name, ''), r.route_id), COALESCE(tr.direction_id, 0),
+	    tr.trip_id, COALESCE(tr.headsign, ''), COALESCE(tr.shape_id, ''),
+	    (SELECT COUNT(*) FROM stop_times st WHERE st.trip_id = tr.trip_id)
+	  FROM trips tr JOIN routes r ON r.route_id = tr.route_id
+	  ORDER BY tr.rowid`)
+	if err != nil {
+		return nil, err
+	}
+	type pick struct {
+		tripID, headsign, shapeID string
+		n, trips                  int
+	}
+	type key struct {
+		code string
+		dir  int
+	}
+	best := map[key]*pick{}
+	var order []string
+	seenCode := map[string]bool{}
+	for rows.Next() {
+		var k key
+		var p pick
+		if err := rows.Scan(&k.code, &k.dir, &p.tripID, &p.headsign, &p.shapeID, &p.n); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if k.code == "" || p.n < 2 {
+			continue
+		}
+		if !seenCode[k.code] {
+			seenCode[k.code] = true
+			order = append(order, k.code)
+		}
+		cur := best[k]
+		if cur == nil {
+			p.trips = 1
+			best[k] = &p
+			continue
+		}
+		cur.trips++
+		if p.n > cur.n {
+			p.trips = cur.trips
+			best[k] = &p
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+
+	out := make([]rtLineProfile, 0, len(order))
+	for _, code := range order {
+		prof := rtLineProfile{Code: code}
+		for dir := 0; dir <= 1; dir++ {
+			p := best[key{code, dir}]
+			if p == nil {
+				continue
+			}
+			d := rtLineDirection{DirectionID: dir, Headsign: strings.Join(strings.Fields(p.headsign), " "), Trips: p.trips}
+			if d.Stops, err = t.tripStops(ctx, p.tripID); err != nil {
+				return nil, err
+			}
+			if p.shapeID != "" {
+				if d.Geometry, err = t.shapePoints(ctx, p.shapeID); err != nil {
+					return nil, err
+				}
+			}
+			if len(d.Geometry) < 2 {
+				d.Geometry, d.GeometryFromStops = nil, true
+				for _, s := range d.Stops {
+					d.Geometry = append(d.Geometry, [2]float64{s.Lat, s.Lon})
+				}
+			}
+			if d.Headsign == "" && len(d.Stops) > 0 {
+				d.Headsign = d.Stops[len(d.Stops)-1].Name
+			}
+			prof.Directions = append(prof.Directions, d)
+		}
+		if len(prof.Directions) > 0 {
+			out = append(out, prof)
+		}
+	}
+	return out, nil
+}
+
+// tripStops is a trip's stations in stop_sequence order.
+func (t *rtTimetable) tripStops(ctx context.Context, tripID string) ([]rtLineStop, error) {
+	rows, err := t.db.QueryContext(ctx, `SELECT st.stop_id, COALESCE(s.name, st.stop_id), s.lat, s.lon
+	  FROM stop_times st LEFT JOIN stops s ON s.stop_id = st.stop_id
+	  WHERE st.trip_id = ? ORDER BY st.stop_sequence`, tripID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []rtLineStop
+	for rows.Next() {
+		var s rtLineStop
+		var lat, lon sql.NullFloat64
+		if err := rows.Scan(&s.ID, &s.Name, &lat, &lon); err != nil {
+			return nil, err
+		}
+		if !lat.Valid || !lon.Valid { // a station without coordinates cannot be drawn
+			continue
+		}
+		s.Name = strings.Join(strings.Fields(s.Name), " ")
+		s.Lat, s.Lon = lat.Float64, lon.Float64
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+// shapePoints is a shape's points in order, thinned to rtMaxShapePoints.
+func (t *rtTimetable) shapePoints(ctx context.Context, shapeID string) ([][2]float64, error) {
+	rows, err := t.db.QueryContext(ctx, `SELECT lat, lon FROM shapes WHERE shape_id = ? ORDER BY seq`, shapeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var pts [][2]float64
+	for rows.Next() {
+		var p [2]float64
+		if err := rows.Scan(&p[0], &p[1]); err != nil {
+			return nil, err
+		}
+		pts = append(pts, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(pts) > rtMaxShapePoints {
+		step := (len(pts) + rtMaxShapePoints - 1) / rtMaxShapePoints
+		thin := make([][2]float64, 0, rtMaxShapePoints+1)
+		for i := 0; i < len(pts); i += step {
+			thin = append(thin, pts[i])
+		}
+		if last := pts[len(pts)-1]; thin[len(thin)-1] != last {
+			thin = append(thin, last)
+		}
+		pts = thin
+	}
+	return pts, nil
 }
