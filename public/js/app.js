@@ -740,6 +740,34 @@ class TransitApp {
         this.renderDirectionButtons([], this.activeDirection);
         if (this.currentTargetStopData) this.renderTargetCard(this.currentTargetStopData, this.currentTargetLineData);
         if (this._lastCockpitLineData) this.renderTelemetryCockpit(this._lastCockpitLineData, this._lastCockpitTargetData);
+        this.updateTargetFavButton();
+        this.updateCountdownLabel();
+        this._applyMapExpandLabels?.();
+        const telemetryToggle = document.getElementById('telemetry-toggle');
+        if (telemetryToggle) this.setTelemetryExpanded(telemetryToggle.getAttribute('aria-expanded') === 'true');
+        const lData = this.activeLineData;
+        if (lData) {
+          this.updateHeaderBrand(lData);
+          this.renderLineBanner(lData);
+          this.renderDisruptionsBanner(lData);
+          this.renderRailPanel(lData);
+          this.updateActiveBusesCount((this.activeBuses || []).length, lData);
+          // The timeline updates in place while the route key is unchanged:
+          // clear it so the texts are rebuilt in the new language.
+          const savedStopId = this.targetStopsByLine[`${this.activeLineId}_${this.activeDirection}`] || null;
+          const stops = this.allStops || [];
+          const targetId = savedStopId && stops.some(s => String(s.id || s.mouteStopId || s.code) === String(savedStopId))
+            ? savedStopId
+            : (stops[0]?.id || stops[0]?.mouteStopId || stops[0]?.code || null);
+          const timeline = document.getElementById('corridor-timeline-container');
+          if (timeline) delete timeline.dataset.routeKey;
+          this.renderRouteTimeline(lData, targetId);
+          this.setStopsViewMode(this.stopsViewMode || 'schematic');
+          this.renderStopsBrowser(lData, this.activeLineId);
+        }
+        // An open stop window is redrawn from the departures cache (one quiet refresh follows).
+        const stopModal = document.getElementById('stop-modal-backdrop');
+        if (stopModal?.classList.contains('active') && this._inspectArgs) this.inspectStop(...this._inspectArgs);
       }
     });
     const container = document.getElementById('landing-lines-container');
@@ -1632,14 +1660,16 @@ class TransitApp {
   }
 
   updateHeaderBrand(lData) {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     const code = lData.code || lData.id || 'C-10';
     const mapTitle = document.getElementById('map-line-title');
     if (mapTitle) {
-      mapTitle.textContent = `Traçat ${code} i parades en temps real`;
+      mapTitle.textContent = t('map.lineTitle', { code });
     }
   }
 
   renderLineBanner(lData) {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     const badge = document.getElementById('active-line-badge');
     const city = document.getElementById('active-line-city-name');
     const title = document.getElementById('active-line-title');
@@ -1655,9 +1685,10 @@ class TransitApp {
     }
 
     if (city) {
-      const text = calTag ? `${lData.agency || 'Xarxa de Transport'} • 📅 ${calTag}` : (lData.agency || 'Xarxa de Transport');
+      const agencyName = lData.agency || t('banner.agency');
+      const text = calTag ? `${agencyName} • 📅 ${calTag}` : agencyName;
       if (lData.operatorWebsite) {
-        city.innerHTML = `${this.esc(text)} • <a href="${this.safeUrl(lData.operatorWebsite)}" target="_blank" rel="noopener noreferrer" class="line-website-link" style="color:var(--brand-primary, #38bdf8); text-decoration:underline; font-weight:600; cursor:pointer;" title="Consultar horaris PDF oficials">📄 Web PDF oficial ↗</a>`;
+        city.innerHTML = `${this.esc(text)} • <a href="${this.safeUrl(lData.operatorWebsite)}" target="_blank" rel="noopener noreferrer" class="line-website-link" style="color:var(--brand-primary, #38bdf8); text-decoration:underline; font-weight:600; cursor:pointer;" title="${this.esc(t('banner.pdfTitle'))}">${this.esc(t('banner.pdfLink'))}</a>`;
       } else {
         city.textContent = text;
       }
@@ -1679,6 +1710,7 @@ class TransitApp {
   }
 
   async renderLineDelayStats(lData) {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     const pillEl = document.getElementById('line-stat-pill');
     const delayValEl = document.getElementById('line-stat-delay-val');
     const avgValEl = document.getElementById('line-stat-avg-val');
@@ -1733,7 +1765,7 @@ class TransitApp {
 
     if (pillEl) {
       pillEl.classList.remove('moderate', 'severe');
-      pillEl.title = enough ? '' : `Poques dades: ${visits} passos per parada en 24 h`;
+      pillEl.title = enough ? '' : t('banner.lowData', { n: visits });
       if (latePct !== null && latePct > 25) {
         pillEl.classList.add('severe');
       } else if (latePct !== null && latePct > 10) {
@@ -1808,6 +1840,7 @@ class TransitApp {
   }
 
   renderDisruptionsBanner(lData) {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     const banner = document.getElementById('route-disruption-banner');
     const titleEl = document.getElementById('disruption-banner-title');
     const descEl = document.getElementById('disruption-banner-desc');
@@ -1823,19 +1856,21 @@ class TransitApp {
     );
 
     if (chipCount) {
-      chipCount.textContent = disruptions.length > 0 ? `${disruptions.length} Avisos` : 'Avisos';
+      chipCount.textContent = disruptions.length > 0
+        ? t(disruptions.length === 1 ? 'banner.noticesOne' : 'banner.noticesMany', { n: disruptions.length })
+        : t('banner.notices');
     }
 
     if (!banner || !titleEl || !descEl) return;
 
     if (disruptions.length > 0) {
       const d = disruptions[0];
-      titleEl.textContent = `⚠️ Avís de servei: ${this.decodeHtml(d.title)}`;
-      descEl.textContent = this.decodeHtml(d.description || d.affectedStops || 'Afectacions al recorregut habitual d\'aquesta línia.');
+      titleEl.textContent = t('banner.alert', { title: this.decodeHtml(d.title) });
+      descEl.textContent = this.decodeHtml(d.description || d.affectedStops || t('banner.defaultDesc'));
 
       const btn = document.getElementById('btn-view-disruption-details');
       if (btn) {
-        btn.textContent = 'Veure detall';
+        btn.textContent = t('banner.details');
         btn.onclick = (e) => {
           e.preventDefault();
           this.openDisruptionsModal();
@@ -1864,16 +1899,17 @@ class TransitApp {
    * Mataró line it only restores what it changed.
    */
   renderRailPanel(lData) {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     const rail = window.TransitUtils?.isRailLineId?.(this.activeLineId);
     const title = document.getElementById('departures-card-title');
     const telemetry = document.getElementById('telemetry-card');
     if (telemetry) telemetry.hidden = Boolean(rail);
-    if (title) title.textContent = rail ? 'Trens a la línia ara' : 'Properes sortides';
+    if (title) title.textContent = rail ? t('rail.trainsNow') : t('dep.nextTitle');
     const corridorSub = document.getElementById('corridor-subtitle-text');
     if (corridorSub) {
       corridorSub.textContent = rail
-        ? `Estacions del trajecte més llarg de la línia${lData?.geometryEstimated ? '; traç aproximat entre estacions' : ''}. Trens on l'operador els situa, sense estimacions.`
-        : "Telemetria oficial en temps real amb estimació automàtica en zones d'ombra";
+        ? t('timeline.subtitleRail', { approx: lData?.geometryEstimated ? t('timeline.approxTrace') : '' })
+        : t('timeline.subtitleBus');
     }
     if (!rail) return;
     this.renderUpstreamOutageBanner(false);
@@ -1887,39 +1923,39 @@ class TransitApp {
     const etaPillEl = document.getElementById('eta-status-pill');
     const etaStatusText = document.getElementById('eta-status-text');
     const destEl = document.getElementById('next-bus-dest');
-    if (etaBigEl) etaBigEl.textContent = n > 0 ? `${n} ${n === 1 ? 'tren' : 'trens'}` : 'Cap tren';
+    if (etaBigEl) etaBigEl.textContent = n > 0 ? t(n === 1 ? 'rail.countOne' : 'rail.countMany', { n }) : t('rail.none');
     if (etaClockEl) {
-      etaClockEl.textContent = (n > 0 ? "Informats ara per l'operador en aquest sentit" : "L'operador no informa de cap tren en aquest sentit ara mateix")
-        + (staleN > 0 ? ` · ${staleN} més sense actualitzar` : '') + '. Horaris per estació: encara no disponibles.';
+      etaClockEl.textContent = (n > 0 ? t('rail.reportedNow') : t('rail.notReported'))
+        + (staleN > 0 ? t('rail.staleMore', { n: staleN }) : '') + t('rail.noTimes');
     }
     if (etaPillEl && etaStatusText) {
       etaPillEl.className = `eta-status-pill ${n > 0 ? 'live' : 'scheduled'}`;
-      etaStatusText.textContent = n > 0 ? 'Posicions en directe' : 'Sense trens informats';
+      etaStatusText.textContent = n > 0 ? t('rail.livePositions') : t('rail.noneReported');
     }
     if (destEl) {
       const d = (lData?.directions || []).find(x => String(x.dirId) === String(this.activeDirection));
-      destEl.textContent = d ? d.name.replace(/^Cap a /, '') : 'Ambdós sentits';
+      destEl.textContent = d ? d.name.replace(/^Cap a /, '') : t('line.both');
     }
 
     const badge = document.getElementById('dep-count-badge');
     const container = document.getElementById('departures-list-container');
-    if (badge) badge.textContent = `${n} ${n === 1 ? 'tren' : 'trens'}`;
+    if (badge) badge.textContent = t(n === 1 ? 'rail.countOne' : 'rail.countMany', { n });
     if (!container) return;
     if (n === 0) {
-      container.innerHTML = `<p class="rail-departures-note">Cap tren informat ara mateix en aquest sentit.${staleN > 0 ? ` ${staleN} ${staleN === 1 ? 'tren té' : 'trens tenen'} una posició de fa més de 3 min i no es mostren.` : ''}</p>`;
+      container.innerHTML = `<p class="rail-departures-note">${esc(t('rail.listNone') + (staleN > 0 ? t(staleN === 1 ? 'rail.staleOne' : 'rail.staleMany', { n: staleN }) : ''))}</p>`;
       return;
     }
     const chipFor = (b) => {
       const cls = b.delayStatus === 'delayed' ? (Number(b.delayMins) > 15 ? 'chip-severe' : 'chip-late')
         : (b.delayStatus === 'on_time' ? 'chip-on-time' : (b.delayStatus === 'early' ? 'chip-on-time' : 'chip-neutral chip-plain'));
-      return `<span class="chip ${cls}">${esc(b.delayBadgeText || 'Sense dada de retard')}</span>`;
+      return `<span class="chip ${cls}">${esc(b.delayBadgeText || t('rail.noDelay'))}</span>`;
     };
-    const ageText = (s) => (Number.isFinite(Number(s)) ? (Number(s) < 60 ? `fa ${Math.round(s)} s` : `fa ${Math.round(s / 60)} min`) : 'hora desconeguda');
+    const ageText = (s) => (Number.isFinite(Number(s)) ? (Number(s) < 60 ? t('rail.ageSec', { n: Math.round(s) }) : t('rail.ageMin', { n: Math.round(s / 60) })) : t('rail.ageUnknown'));
     container.innerHTML = trains.map(b => `
       <div class="rail-train-row">
         <div class="rail-train-main">
-          <strong>${esc(b.toStop ? `${b.currentStatus === 'STOPPED_AT' ? 'A' : 'Cap a'} ${b.toStop}` : 'Estació no informada')}</strong>
-          <span class="rail-train-sub">${esc(b.destination ? `Destí ${b.destination}` : '')}${b.destination ? ' · ' : ''}posició ${esc(ageText(b.ageSec))}${b.delaySource === 'timetable' ? " · retard calculat amb l'horari" : ''}</span>
+          <strong>${esc(b.toStop ? t(b.currentStatus === 'STOPPED_AT' ? 'rail.at' : 'rail.toward', { name: b.toStop }) : t('rail.noStation'))}</strong>
+          <span class="rail-train-sub">${esc(b.destination ? t('rail.dest', { name: b.destination }) : '')}${b.destination ? ' · ' : ''}${esc(t('rail.position', { age: ageText(b.ageSec) }))}${b.delaySource === 'timetable' ? esc(` · ${t('rail.delayTimetable')}`) : ''}</span>
         </div>
         ${chipFor(b)}
       </div>`).join('') + (lData?.railData?.attribution ? `<p class="rail-departures-note">${esc(lData.railData.attribution)}</p>` : '');
@@ -2156,7 +2192,9 @@ class TransitApp {
     }
   }
 
-  renderTargetCardLoading(lData, stopName = 'Parada seleccionada', stopCode = '...', destName = null) {
+  renderTargetCardLoading(lData, stopName, stopCode = '...', destName = null) {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
+    if (stopName === undefined) stopName = t('stop.selected');
     const titleEl = document.getElementById('target-stop-title');
     const codeEl = document.getElementById('target-stop-code');
     const dirSubEl = document.getElementById('target-direction-sub');
@@ -2172,31 +2210,31 @@ class TransitApp {
 
     if (titleEl) titleEl.textContent = stopName;
     if (codeEl) codeEl.textContent = stopCode;
-    if (dirSubEl) dirSubEl.textContent = lData?.directions?.[0]?.name || 'Sincronitzant horaris...';
+    if (dirSubEl) dirSubEl.textContent = lData?.directions?.[0]?.name || t('stop.loadSchedules');
     if (lineTagEl && lData) {
       lineTagEl.textContent = lData.code || lData.id || 'C-10';
       if (lData.color) lineTagEl.style.color = lData.color;
     }
-    if (destEl) destEl.textContent = destName || lData?.directions?.[0]?.name || 'Sincronitzant...';
-    if (opEl && lData) opEl.textContent = lData.agency || 'Operador de Transport';
+    if (destEl) destEl.textContent = destName || lData?.directions?.[0]?.name || t('stop.loadSync');
+    if (opEl && lData) opEl.textContent = lData.agency || t('stop.operatorFallback');
 
     if (etaBigEl) {
-      etaBigEl.innerHTML = `<span class="eta-loading-box"><span class="loading-spinner-inline"></span> Sincronitzant...</span>`;
+      etaBigEl.innerHTML = `<span class="eta-loading-box"><span class="loading-spinner-inline"></span> ${this.esc(t('stop.loadSync'))}</span>`;
     }
     if (etaClockEl) {
-      etaClockEl.innerHTML = `<span class="cockpit-val-loading"><span class="loading-spinner-inline" style="width:10px;height:10px;border-width:1.5px;"></span> Calculant proper pas en temps real...</span>`;
+      etaClockEl.innerHTML = `<span class="cockpit-val-loading"><span class="loading-spinner-inline" style="width:10px;height:10px;border-width:1.5px;"></span> ${this.esc(t('stop.loadNext'))}</span>`;
     }
     if (etaPillEl && etaStatusText) {
       etaPillEl.className = 'eta-status-pill';
       etaPillEl.style.background = 'rgba(255,255,255,0.06)';
       etaPillEl.style.color = 'var(--text-secondary)';
-      etaStatusText.innerHTML = `<span class="loading-spinner-inline" style="width:10px;height:10px;border-width:1.5px;margin-right:4px;"></span> Sincronitzant GPS`;
+      etaStatusText.innerHTML = `<span class="loading-spinner-inline" style="width:10px;height:10px;border-width:1.5px;margin-right:4px;"></span> ${this.esc(t('stop.loadGps'))}`;
     }
     if (depContainer) {
       depContainer.innerHTML = `
         <div class="departures-loading-placeholder">
           <span class="loading-spinner-inline"></span>
-          Sincronitzant properes sortides i horaris oficials...
+          ${this.esc(t('stop.loadDepartures'))}
         </div>
       `;
     }
@@ -2308,6 +2346,7 @@ class TransitApp {
   }
 
   updateTargetFavButton(stopId) {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     const favBtn = document.getElementById('btn-target-toggle-fav');
     if (!favBtn) return;
     const currentId = stopId || this.currentTargetStop?.id || this.currentTargetStop?.code || this.getCurrentTargetStop()?.id;
@@ -2320,9 +2359,9 @@ class TransitApp {
     }
     const textEl = document.getElementById('target-fav-text');
     if (textEl) {
-      textEl.textContent = 'Preferida';
+      textEl.textContent = t('fav.label');
     }
-    favBtn.title = isFav ? 'Aquesta parada és a les teves preferides (fes clic per treure-la)' : 'Afegir aquesta parada a les teves preferides';
+    favBtn.title = isFav ? t('fav.targetIsFav') : t('fav.targetAdd');
   }
 
   renderEtaDisplay(next, etaBigEl, etaClockEl, etaPillEl, etaStatusText) {
@@ -2695,6 +2734,7 @@ class TransitApp {
   // ==========================================
 
   renderTelemetryCockpit(lineData, targetData = null) {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     this._lastCockpitLineData = lineData;
     this._lastCockpitTargetData = targetData;
     const buses = lineData.activeBuses || [];
@@ -2711,14 +2751,14 @@ class TransitApp {
         chipsContainer.innerHTML = buses.map((b, idx) => {
           const isSelected = String(b.tripId || b.vehicleId) === String(this.selectedVehicleId);
           const isGhost = Boolean(b.isGhostVehicle || (b.vehicleId && String(b.vehicleId).startsWith('EST_')) || b.isTheoretical);
-          const label = isGhost ? `Estimat (${b.departureTime || 'Horari'})` : (b.vehicleId ? `Bus #${b.vehicleId}` : `Bus ${idx + 1}`);
+          const label = isGhost ? t('veh.chipTimetableOnly', { time: b.departureTime || t('veh.chipTimetable') }) : (b.vehicleId ? `Bus #${b.vehicleId}` : `Bus ${idx + 1}`);
           const isParked = b.isTerminalLayover;
           const chipClass = `telemetry-bus-chip ${isSelected ? 'active' : ''} ${isGhost ? 'ghost-chip' : ''}`;
           return `
             <button type="button" class="${chipClass}" data-bus-trip="${this.esc(b.tripId || b.vehicleId)}">
               <span>${isGhost ? '⚡' : (isParked ? '🅿️' : '🚌')}</span>
               <span>${this.esc(label)}</span>
-              <span style="font-size:0.68rem; opacity:0.8;">(${this.esc(b.toStop || b.destination || 'En línia')})</span>
+              <span style="font-size:0.68rem; opacity:0.8;">(${this.esc(b.toStop || b.destination || t('veh.chipOnLine'))})</span>
             </button>
           `;
         }).join('');
@@ -2746,6 +2786,7 @@ class TransitApp {
   }
 
   setTelemetryExpanded(open) {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     const toggle = document.getElementById('telemetry-toggle');
     const body = document.getElementById('telemetry-body');
     const card = document.getElementById('telemetry-card');
@@ -2753,7 +2794,7 @@ class TransitApp {
     if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
     if (body) body.hidden = !open;
     if (card) card.classList.toggle('is-collapsed', !open);
-    if (label) label.textContent = open ? 'Amaga detalls' : 'Mostra detalls';
+    if (label) label.textContent = open ? t('veh.hideDetails') : t('veh.showDetails');
   }
 
   renderTelemetryFields(b, lineData, targetData = null) {
@@ -2854,11 +2895,12 @@ class TransitApp {
   // ==========================================
 
   renderRouteTimeline(lineData, activeTargetId) {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     const container = document.getElementById('corridor-timeline-container');
     const titleEl = document.getElementById('corridor-title-text');
 
     if (titleEl) {
-      titleEl.textContent = `Recorregut ${lineData.code || lineData.id || ''}: ${lineData.name || ''}`;
+      titleEl.textContent = t('timeline.title', { code: lineData.code || lineData.id || '', name: lineData.name || '' });
     }
 
     if (!container) return;
@@ -2868,8 +2910,8 @@ class TransitApp {
       ? lineData.allDirections 
       : ((isBoth && lineData.secondaryStops && lineData.secondaryStops.length > 0)
           ? [
-              { dirId: '1', name: lineData.directionName || 'Sentit 1', stops: lineData.stops || [] },
-              { dirId: '0', name: 'Sentit 2', stops: lineData.secondaryStops || [] }
+              { dirId: '1', name: lineData.directionName || t('timeline.dir1'), stops: lineData.stops || [] },
+              { dirId: '0', name: t('timeline.dir2'), stops: lineData.secondaryStops || [] }
             ]
           : null);
 
@@ -2941,15 +2983,15 @@ class TransitApp {
               <div class="timeline-dir-header-title">
                 <span class="timeline-dir-icon">${dIdx === 0 ? '➔' : '⬅'}</span>
                 <strong>${this.esc(d.name)}</strong>
-                <span class="timeline-dir-badge">${dirStops.length} parades</span>
+                <span class="timeline-dir-badge">${this.esc(t('stops.count', { n: dirStops.length }))}</span>
               </div>
-              <button type="button" class="btn-timeline-select-dir" data-dir-id="${d.dirId}" title="Veure i fixar només ${this.esc(d.name)}">
-                <span>Veure només aquest sentit</span>
+              <button type="button" class="btn-timeline-select-dir" data-dir-id="${d.dirId}" title="${this.esc(t('timeline.onlyDirTitle', { name: d.name }))}">
+                <span>${this.esc(t('timeline.onlyDir'))}</span>
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
               </button>
             </div>
             <div class="corridor-timeline-wrapper">
-              <button type="button" class="btn-timeline-scroll btn-timeline-scroll-left" title="Desplaçar a l'esquerra" aria-label="Desplaçar a l'esquerra">
+              <button type="button" class="btn-timeline-scroll btn-timeline-scroll-left" title="${this.esc(t('timeline.scrollLeft'))}" aria-label="${this.esc(t('timeline.scrollLeft'))}">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
               </button>
               <div class="corridor-timeline-track">
@@ -2974,19 +3016,19 @@ class TransitApp {
                   }
 
                   return `
-                    <div class="corridor-step ${isPassed ? 'passed' : ''}" data-target-id="${sId}" style="cursor:pointer;" title="Fixar ${this.esc(s.name)} com a parada principal">
+                    <div class="corridor-step ${isPassed ? 'passed' : ''}" data-target-id="${sId}" style="cursor:pointer;" title="${this.esc(t('timeline.pinStop', { name: s.name }))}">
                       <div class="${nodeClass}">
                         <span>${iconContent}</span>
                       </div>
                       <div class="step-info">
                         <span class="step-name">${this.esc(s.name)}</span>
-                        <span class="step-zone">#${s.seq || idx + 1} • ${s.zone || 'Parada'}</span>
+                        <span class="step-zone">#${s.seq || idx + 1} • ${this.esc(s.zone || t('stop.fallbackName'))}</span>
                       </div>
                     </div>
                   `;
                 }).join('')}
               </div>
-              <button type="button" class="btn-timeline-scroll btn-timeline-scroll-right" title="Desplaçar a la dreta" aria-label="Desplaçar a la dreta">
+              <button type="button" class="btn-timeline-scroll btn-timeline-scroll-right" title="${this.esc(t('timeline.scrollRight'))}" aria-label="${this.esc(t('timeline.scrollRight'))}">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
               </button>
             </div>
@@ -3053,7 +3095,7 @@ class TransitApp {
       container.dataset.routeKey = routeKey;
       container.innerHTML = `
         <div class="corridor-timeline-wrapper">
-          <button type="button" class="btn-timeline-scroll btn-timeline-scroll-left" title="Desplaçar a l'esquerra" aria-label="Desplaçar a l'esquerra">
+          <button type="button" class="btn-timeline-scroll btn-timeline-scroll-left" title="${this.esc(t('timeline.scrollLeft'))}" aria-label="${this.esc(t('timeline.scrollLeft'))}">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
           </button>
           <div class="corridor-timeline-track">
@@ -3078,19 +3120,19 @@ class TransitApp {
               }
 
               return `
-                <div class="corridor-step ${isPassed ? 'passed' : ''}" data-target-id="${sId}" style="cursor:pointer;" title="Fixar ${this.esc(s.name)} com a parada principal">
+                <div class="corridor-step ${isPassed ? 'passed' : ''}" data-target-id="${sId}" style="cursor:pointer;" title="${this.esc(t('timeline.pinStop', { name: s.name }))}">
                   <div class="${nodeClass}">
                     <span>${iconContent}</span>
                   </div>
                   <div class="step-info">
                     <span class="step-name">${this.esc(s.name)}</span>
-                    <span class="step-zone">#${s.seq || idx + 1} • ${s.zone || 'Parada'}</span>
+                    <span class="step-zone">#${s.seq || idx + 1} • ${this.esc(s.zone || t('stop.fallbackName'))}</span>
                   </div>
                 </div>
               `;
             }).join('')}
           </div>
-          <button type="button" class="btn-timeline-scroll btn-timeline-scroll-right" title="Desplaçar a la dreta" aria-label="Desplaçar a la dreta">
+          <button type="button" class="btn-timeline-scroll btn-timeline-scroll-right" title="${this.esc(t('timeline.scrollRight'))}" aria-label="${this.esc(t('timeline.scrollRight'))}">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
           </button>
         </div>
@@ -3172,6 +3214,7 @@ class TransitApp {
   }
 
   setStopsViewMode(mode) {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     this.stopsViewMode = mode;
     const listBtn = document.getElementById('btn-stops-mode-list');
     const schematicBtn = document.getElementById('btn-stops-mode-schematic');
@@ -3188,7 +3231,7 @@ class TransitApp {
       if (schematicScroll) schematicScroll.style.display = 'block';
       if (searchInput) {
         searchInput.style.display = 'block';
-        searchInput.placeholder = "🔍 Cercar parada al termòmetre (ex: Tereses, 1016, Hospital)...";
+        searchInput.placeholder = t('stops.searchSchematic');
         if (searchInput.value) this.filterSchematicStops(searchInput.value.toLowerCase().trim());
       }
       this.renderSchematicThermometer(this.activeLineData, this.activeLineId);
@@ -3201,7 +3244,7 @@ class TransitApp {
       if (listScroll) listScroll.style.display = 'block';
       if (searchInput) {
         searchInput.style.display = 'block';
-        searchInput.placeholder = "🔍 Filtrar llista de parades...";
+        searchInput.placeholder = t('stops.searchList');
         if (searchInput.value) this.filterListStops(searchInput.value.toLowerCase().trim());
       }
     }
@@ -3437,13 +3480,14 @@ class TransitApp {
   }
 
   renderSingleSchematicTrack({ stops, dirName, dirId, lineColor, lineCode, activeVehicles, currentTargetId, isHubStop, isBoth, dirIndex }) {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     if (!stops || stops.length === 0) {
       return `
         <div class="schematic-dir-section" id="schematic-group-${dirId}">
           <div class="stops-dir-header" style="border-left-color:${this.esc(lineColor)};">
             <strong class="stops-dir-name">${this.esc(dirName)}</strong>
           </div>
-          <div style="text-align:center; padding:1.5rem; color:var(--text-muted); font-size:0.8rem;">Sense parades per a aquest sentit</div>
+          <div style="text-align:center; padding:1.5rem; color:var(--text-muted); font-size:0.8rem;">${this.esc(t('timeline.noStopsDir'))}</div>
         </div>
       `;
     }
@@ -3499,15 +3543,15 @@ class TransitApp {
             <div class="stops-dir-header-title-row">
               <span class="stops-dir-icon">${dirIcon}</span>
               <strong class="stops-dir-name">${this.esc(dirName)}</strong>
-              <span class="stops-dir-count-pill">${stops.length} parades</span>
+              <span class="stops-dir-count-pill">${this.esc(t('stops.count', { n: stops.length }))}</span>
               <span class="schematic-bus-active-count">
-                ${CANONICAL_BUS_ICON_SVG} ${activeVehicles.length} ${activeVehicles.length === 1 ? 'bus actiu' : 'busos actius'}
+                ${CANONICAL_BUS_ICON_SVG} ${this.esc(t(activeVehicles.length === 1 ? 'timeline.activeOne' : 'timeline.activeMany', { n: activeVehicles.length }))}
               </span>
             </div>
           </div>
           ${isBoth ? `
-            <button type="button" class="btn-select-dir-view" data-dir-id="${dirId}" title="Seleccionar i filtrar només aquest sentit">
-              <span>Filtrar aquest sentit</span>
+            <button type="button" class="btn-select-dir-view" data-dir-id="${dirId}" title="${this.esc(t('timeline.filterDirTitle'))}">
+              <span>${this.esc(t('timeline.filterDir'))}</span>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
             </button>
           ` : ''}
@@ -3541,8 +3585,8 @@ class TransitApp {
             <div class="schematic-content-col">
               <div class="schematic-stop-name-row">
                 <span class="schematic-stop-name ${isCancelled ? 'is-cancelled' : ''}">${this.esc(s.name)}</span>
-                ${isTarget ? '<span class="schematic-target-badge">⭐ Parada seleccionada</span>' : ''}
-                ${isCancelled ? '<span class="schematic-cancelled-badge">❌ Anul·lada</span>' : ''}
+                ${isTarget ? `<span class="schematic-target-badge">⭐ ${this.esc(t('stop.selected'))}</span>` : ''}
+                ${isCancelled ? `<span class="schematic-cancelled-badge">${this.esc(t('timeline.cancelledBadge'))}</span>` : ''}
               </div>
 
               ${hub ? `
@@ -3561,17 +3605,17 @@ class TransitApp {
                 <div class="schematic-docked-buses-container">
                   ${dockedBuses.map(b => {
                     const delayClass = (b.delayMins > 3) ? 'delay-late' : (b.delayMins > 0 ? 'delay-warning' : 'delay-on-time');
-                    const badgeText = b.delayBadgeText || (b.delayMins > 0 ? `+${b.delayMins} min` : 'A l\'hora');
+                    const badgeText = b.delayBadgeText || (b.delayMins > 0 ? `+${b.delayMins} min` : t('timeline.onTime'));
                     const isHybrid = Boolean(b.isHybrid || b.propulsion === 'hybrid');
                     // Only a sourced fact gets a chip (see the fleet registry in app/schedules.go).
-                    const ecoBadge = b.propulsionBadge || (isHybrid ? 'Híbrid Eco' : '');
+                    const ecoBadge = b.propulsionBadge || (isHybrid ? t('timeline.hybridEco') : '');
                     return `
-                      <div class="schematic-bus-chip docked ${delayClass}" data-vehicle-id="${this.esc(b.vehicleId)}" data-lat="${b.latitude || b.lat}" data-lon="${b.longitude || b.lon}" title="Fes clic per centrar aquest bus al mapa">
+                      <div class="schematic-bus-chip docked ${delayClass}" data-vehicle-id="${this.esc(b.vehicleId)}" data-lat="${b.latitude || b.lat}" data-lon="${b.longitude || b.lon}" title="${this.esc(t('timeline.centreBusTitle'))}">
                         <span class="schematic-bus-pulse-dot"></span>
                         <strong class="schematic-bus-id">#${this.esc(b.vehicleId)}</strong>
                         <span class="schematic-bus-badge">${this.esc(badgeText)}</span>
                         ${ecoBadge ? `<span class="schematic-bus-eco is-hybrid">${this.esc(ecoBadge)}</span>` : ''}
-                        <button type="button" class="btn-share-bus" data-share-bus="${this.esc(b.vehicleId)}" title="Compartir enllaç en directe del Bus #${this.esc(b.vehicleId)}">
+                        <button type="button" class="btn-share-bus" data-share-bus="${this.esc(b.vehicleId)}" title="${this.esc(t('timeline.shareTitle', { id: b.vehicleId }))}">
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
                         </button>
                       </div>
@@ -3588,18 +3632,18 @@ class TransitApp {
               <div class="schematic-segment-buses">
                 ${transitBuses.map(b => {
                   const delayClass = (b.delayMins > 3) ? 'delay-late' : (b.delayMins > 0 ? 'delay-warning' : 'delay-on-time');
-                  const badgeText = b.delayBadgeText || (b.delayMins > 0 ? `+${b.delayMins} min` : 'A l\'hora');
-                  const speedText = b.speedKmh ? `${Math.round(b.speedKmh)} km/h` : 'En trànsit';
+                  const badgeText = b.delayBadgeText || (b.delayMins > 0 ? `+${b.delayMins} min` : t('timeline.onTime'));
+                  const speedText = b.speedKmh ? `${Math.round(b.speedKmh)} km/h` : t('timeline.inTransit');
                   const isHybrid = Boolean(b.isHybrid || b.propulsion === 'hybrid');
-                  const ecoBadge = b.propulsionBadge || (isHybrid ? 'Híbrid Eco' : '');
+                  const ecoBadge = b.propulsionBadge || (isHybrid ? t('timeline.hybridEco') : '');
                   return `
-                    <div class="schematic-bus-chip in-transit ${delayClass}" data-vehicle-id="${this.esc(b.vehicleId)}" data-lat="${b.latitude || b.lat}" data-lon="${b.longitude || b.lon}" title="Fes clic per centrar aquest bus al mapa">
+                    <div class="schematic-bus-chip in-transit ${delayClass}" data-vehicle-id="${this.esc(b.vehicleId)}" data-lat="${b.latitude || b.lat}" data-lon="${b.longitude || b.lon}" title="${this.esc(t('timeline.centreBusTitle'))}">
                       <span class="schematic-transit-arrow">↓</span>
                       <strong class="schematic-bus-id">#${this.esc(b.vehicleId)}</strong>
                       <span class="schematic-bus-speed">${this.esc(speedText)}</span>
                       <span class="schematic-bus-badge">${this.esc(badgeText)}</span>
                       ${ecoBadge ? `<span class="schematic-bus-eco is-hybrid">${this.esc(ecoBadge)}</span>` : ''}
-                      <button type="button" class="btn-share-bus" data-share-bus="${this.esc(b.vehicleId)}" title="Compartir enllaç en directe del Bus #${this.esc(b.vehicleId)}">
+                      <button type="button" class="btn-share-bus" data-share-bus="${this.esc(b.vehicleId)}" title="${this.esc(t('timeline.shareTitle', { id: b.vehicleId }))}">
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
                       </button>
                     </div>
@@ -3621,6 +3665,7 @@ class TransitApp {
   }
 
   renderSchematicThermometer(lineDataOrStops, lineKey) {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     const container = document.getElementById('stops-schematic-scroll');
     if (!container) return;
 
@@ -3637,9 +3682,9 @@ class TransitApp {
       const code = String(s.code || s.id || '');
       if (name.includes('rodalies') || code === '1016' || code === '1015') return { type: 'train', icon: '🚆', label: 'Rodalies Renfe R1/RG1' };
       if (name.includes('hospital') || code === '1001') return { type: 'hospital', icon: '🏥', label: 'Hospital de Mataró' };
-      if (name.includes('tereses') || code === '1060') return { type: 'hub', icon: '🏛️', label: 'Centre / Connexions Urbanes' };
+      if (name.includes('tereses') || code === '1060') return { type: 'hub', icon: '🏛️', label: t('timeline.hubCentre') };
       if (name.includes('mataró parc') || name.includes('mataro parc')) return { type: 'mall', icon: '🛍️', label: 'Mataró Parc Comercial' };
-      if (name.includes('estació d\'autobusos') || name.includes('estacio d\'autobusos')) return { type: 'bus', icon: '🚌', label: 'Estació d\'Autobusos' };
+      if (name.includes('estació d\'autobusos') || name.includes('estacio d\'autobusos')) return { type: 'bus', icon: '🚌', label: t('timeline.hubBusStation') };
       return null;
     };
 
@@ -3649,8 +3694,8 @@ class TransitApp {
         ? lineData.allDirections
         : (lineData.secondaryStops && lineData.secondaryStops.length > 0
             ? [
-                { dirId: '0', name: lineData.directionName || 'Sentit 1', stops: lineData.stops || [] },
-                { dirId: '1', name: 'Sentit 2', stops: lineData.secondaryStops || [] }
+                { dirId: '0', name: lineData.directionName || t('timeline.dir1'), stops: lineData.stops || [] },
+                { dirId: '1', name: t('timeline.dir2'), stops: lineData.secondaryStops || [] }
               ]
             : null)
     ) : null;
@@ -3723,26 +3768,26 @@ class TransitApp {
           <div class="schematic-header-summary">
             <div style="display:flex; align-items:center; gap:8px;">
               <span class="schematic-line-tag" style="background:${this.esc(lineColor)};">
-                ${this.esc(lineData?.code || lineKey || 'Línia')}
+                ${this.esc(lineData?.code || lineKey || t('timeline.lineFallback'))}
               </span>
-              <span class="schematic-dir-title">⇄ Ambdós sentits (${allDirs.length} recorreguts, ${totalStops} parades)</span>
+              <span class="schematic-dir-title">${this.esc(t('timeline.bothSummary', { dirs: allDirs.length, stops: totalStops }))}</span>
             </div>
             <span class="schematic-bus-active-count">
-              ${CANONICAL_BUS_ICON_SVG} ${allActiveVehicles.length} ${allActiveVehicles.length === 1 ? 'bus actiu' : 'busos actius'}
+              ${CANONICAL_BUS_ICON_SVG} ${this.esc(t(allActiveVehicles.length === 1 ? 'timeline.activeOne' : 'timeline.activeMany', { n: allActiveVehicles.length }))}
             </span>
           </div>
 
           <!-- Direction Jump Navigator Bar for Schematic -->
           <div class="stops-directions-nav" style="margin-bottom:0.85rem;">
-            <span class="stops-nav-label">Anar a:</span>
+            <span class="stops-nav-label">${this.esc(t('timeline.goTo'))}</span>
             <div class="stops-nav-buttons">
               ${allDirs.map((d, idx) => {
                 const dirId = String(d.dirId !== undefined ? d.dirId : (d.id !== undefined ? d.id : idx));
                 const dirIcon = idx === 0 ? '➔' : '⬅';
                 return `
-                  <button type="button" class="btn-dir-jump" data-dir-target="schematic-group-${dirId}" title="Desplaçar a les parades de ${this.esc(d.name)}">
+                  <button type="button" class="btn-dir-jump" data-dir-target="schematic-group-${dirId}" title="${this.esc(t('timeline.jumpTitle', { name: d.name }))}">
                     <span>${dirIcon} ${this.esc(d.name)}</span>
-                    <span class="btn-dir-jump-badge">${(d.stops || []).length} parades</span>
+                    <span class="btn-dir-jump-badge">${this.esc(t('stops.count', { n: (d.stops || []).length }))}</span>
                   </button>
                 `;
               }).join('')}
@@ -3776,11 +3821,11 @@ class TransitApp {
     // Single direction fallback
     const stops = Array.isArray(lineDataOrStops) ? lineDataOrStops : (lineData?.stops || this.allStops || []);
     if (!stops || stops.length === 0) {
-      container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);">Sense parades disponibles</div>';
+      container.innerHTML = `<div style="text-align:center; padding:2rem; color:var(--text-muted);">${this.esc(t('timeline.noStops'))}</div>`;
       return;
     }
 
-    const dirName = lineData?.directionName || 'Recorregut de la línia';
+    const dirName = lineData?.directionName || t('timeline.routeFallback');
     const dirId = String(lineData?.direction !== undefined ? lineData.direction : (this.activeDirection || '1'));
 
     let html = `
@@ -3788,12 +3833,12 @@ class TransitApp {
         <div class="schematic-header-summary">
           <div style="display:flex; align-items:center; gap:8px;">
             <span class="schematic-line-tag" style="background:${this.esc(lineColor)};">
-              ${this.esc(lineData?.code || lineKey || 'Línia')}
+              ${this.esc(lineData?.code || lineKey || t('timeline.lineFallback'))}
             </span>
             <span class="schematic-dir-title">${this.esc(dirName)}</span>
           </div>
           <span class="schematic-bus-active-count">
-            ${CANONICAL_BUS_ICON_SVG} ${allActiveVehicles.length} ${allActiveVehicles.length === 1 ? 'bus actiu' : 'busos actius'}
+            ${CANONICAL_BUS_ICON_SVG} ${this.esc(t(allActiveVehicles.length === 1 ? 'timeline.activeOne' : 'timeline.activeMany', { n: allActiveVehicles.length }))}
           </span>
         </div>
     `;
@@ -3821,6 +3866,7 @@ class TransitApp {
   }
 
   renderStopsBrowser(lineDataOrStops, lineKey) {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     this.ensureViewModeControlsExist();
     // If schematic view mode is active, refresh the thermometer
     if (this.stopsViewMode === 'schematic') {
@@ -3843,8 +3889,8 @@ class TransitApp {
         ? lineData.allDirections
         : (lineData.secondaryStops && lineData.secondaryStops.length > 0
             ? [
-                { dirId: '1', name: lineData.directionName || 'Sentit 1', stops: lineData.stops || [] },
-                { dirId: '0', name: 'Sentit 2', stops: lineData.secondaryStops || [] }
+                { dirId: '1', name: lineData.directionName || t('timeline.dir1'), stops: lineData.stops || [] },
+                { dirId: '0', name: t('timeline.dir2'), stops: lineData.secondaryStops || [] }
               ]
             : null)
     ) : null;
@@ -3858,10 +3904,10 @@ class TransitApp {
       // Render top direction jump bar + both direction sections stacked one below the other
       let html = `
         <div class="stops-directions-nav" id="stops-directions-nav">
-          <span class="stops-nav-label">Anar a:</span>
+          <span class="stops-nav-label">${this.esc(t('timeline.goTo'))}</span>
           <div class="stops-nav-buttons">
             ${allDirs.map((d, idx) => `
-              <button type="button" class="btn-dir-jump" data-dir-target="stops-group-${d.dirId}" title="Desplaçar a les parades de ${this.esc(d.name)}">
+              <button type="button" class="btn-dir-jump" data-dir-target="stops-group-${d.dirId}" title="${this.esc(t('timeline.jumpTitle', { name: d.name }))}">
                 <span>${idx === 0 ? '➔' : '⬅'} ${this.esc(d.name)}</span>
                 <span class="btn-dir-jump-badge">${d.stops?.length || 0}</span>
               </button>
@@ -3880,11 +3926,11 @@ class TransitApp {
                 <div class="stops-dir-header-title-row">
                   <span class="stops-dir-icon">${dirIcon}</span>
                   <strong class="stops-dir-name">${this.esc(d.name)}</strong>
-                  <span class="stops-dir-count-pill">${dirStops.length} parades</span>
+                  <span class="stops-dir-count-pill">${this.esc(t('stops.count', { n: dirStops.length }))}</span>
                 </div>
               </div>
-              <button type="button" class="btn-select-dir-view" data-dir-id="${d.dirId}" title="Seleccionar i filtrar només les parades d'aquest sentit">
-                <span>Filtrar aquest sentit</span>
+              <button type="button" class="btn-select-dir-view" data-dir-id="${d.dirId}" title="${this.esc(t('stops.filterDirTitle'))}">
+                <span>${this.esc(t('stops.filterDir'))}</span>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
               </button>
             </div>
@@ -3902,12 +3948,12 @@ class TransitApp {
                         <div class="stop-row-name">
                           <span style="${isCancelled ? 'text-decoration:line-through; color:#f87171;' : ''}">${this.esc(s.name)}</span>
                           ${isTarget ? '⭐' : ''}
-                          ${isCancelled ? '<span class="stop-status-badge cancelled" style="margin-left:6px; background:rgba(239,68,68,0.25); color:#fca5a5; font-size:0.65rem; font-weight:800; padding:1px 6px; border-radius:4px; display:inline-block;">❌ Fora de servei</span>' : ''}
+                          ${isCancelled ? '<span class="stop-status-badge cancelled" style="margin-left:6px; background:rgba(239,68,68,0.25); color:#fca5a5; font-size:0.65rem; font-weight:800; padding:1px 6px; border-radius:4px; display:inline-block;">' + this.esc(t('stops.outOfService')) + '</span>' : ''}
                         </div>
-                        <div class="stop-row-zone">${this.esc(s.zone || 'Parada')} ${s.code ? `• Codi: ${this.esc(s.code)}` : ''}</div>
+                        <div class="stop-row-zone">${this.esc(s.zone || t('stop.fallbackName'))} ${s.code ? `• ${this.esc(t('stops.code', { code: s.code }))}` : ''}</div>
                       </div>
                     </div>
-                    <button type="button" class="btn-icon btn-inspect-stop" style="width:34px; height:34px;" title="Veure arribades" data-stop-id="${id}" data-stop-name="${this.esc(s.name)}">
+                    <button type="button" class="btn-icon btn-inspect-stop" style="width:34px; height:34px;" title="${this.esc(t('stops.viewArrivals'))}" data-stop-id="${id}" data-stop-name="${this.esc(s.name)}">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
                     </button>
                   </div>
@@ -3936,12 +3982,12 @@ class TransitApp {
                 <div class="stop-row-name">
                   <span style="${isCancelled ? 'text-decoration:line-through; color:#f87171;' : ''}">${this.esc(s.name)}</span>
                   ${isTarget ? '⭐' : ''}
-                  ${isCancelled ? '<span class="stop-status-badge cancelled" style="margin-left:6px; background:rgba(239,68,68,0.25); color:#fca5a5; font-size:0.65rem; font-weight:800; padding:1px 6px; border-radius:4px; display:inline-block;">❌ Fora de servei</span>' : ''}
+                  ${isCancelled ? '<span class="stop-status-badge cancelled" style="margin-left:6px; background:rgba(239,68,68,0.25); color:#fca5a5; font-size:0.65rem; font-weight:800; padding:1px 6px; border-radius:4px; display:inline-block;">' + this.esc(t('stops.outOfService')) + '</span>' : ''}
                 </div>
-                <div class="stop-row-zone">${this.esc(s.zone || 'Parada')} ${s.code ? `• Codi: ${this.esc(s.code)}` : ''}</div>
+                <div class="stop-row-zone">${this.esc(s.zone || t('stop.fallbackName'))} ${s.code ? `• ${this.esc(t('stops.code', { code: s.code }))}` : ''}</div>
               </div>
             </div>
-            <button type="button" class="btn-icon btn-inspect-stop" style="width:34px; height:34px;" title="Veure arribades" data-stop-id="${id}" data-stop-name="${this.esc(s.name)}">
+            <button type="button" class="btn-icon btn-inspect-stop" style="width:34px; height:34px;" title="${this.esc(t('stops.viewArrivals'))}" data-stop-id="${id}" data-stop-name="${this.esc(s.name)}">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
             </button>
           </div>
@@ -3985,6 +4031,8 @@ class TransitApp {
   // ==========================================
 
   async inspectStop(stopId, stopName, stopSeq = null) {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
+    this._inspectArgs = [stopId, stopName, stopSeq];
     const modal = document.getElementById('stop-modal-backdrop');
     const titleEl = document.getElementById('modal-stop-title');
     const subEl = document.getElementById('modal-stop-subtitle');
@@ -4029,11 +4077,11 @@ class TransitApp {
     const totalStops = stopsList.length;
     const currStop = currIndex >= 0 ? stopsList[currIndex] : null;
 
-    const displayName = stopName || currStop?.name || 'Parada';
+    const displayName = stopName || currStop?.name || t('stop.fallbackName');
     const displayCode = stopId || currStop?.code || currStop?.id || '--';
 
     if (titleEl) titleEl.textContent = displayName;
-    if (subEl) subEl.textContent = `Codi identificador: ${displayCode}`;
+    if (subEl) subEl.textContent = t('inspect.codeId', { code: displayCode });
 
     // SWR Cache Lookup for Instant 0ms Rendering
     const stopCacheKey = `${this.activeLineId}_${this.activeDirection}_${stopId}`;
@@ -4044,11 +4092,11 @@ class TransitApp {
       this.renderModalDepartures(cachedEntry.data, stopId, currIndex, stopsList);
     } else {
       if (countBadge) countBadge.innerHTML = '<span class="loading-spinner-inline" style="width:10px;height:10px;border-width:1.5px;"></span>';
-      if (listEl) listEl.innerHTML = '<div class="departures-loading-placeholder"><span class="loading-spinner-inline"></span> Sincronitzant properes sortides i horaris oficials...</div>';
+      if (listEl) listEl.innerHTML = `<div class="departures-loading-placeholder"><span class="loading-spinner-inline"></span> ${this.esc(t('stop.loadDepartures'))}</div>`;
     }
 
     if (seqBadge) {
-      seqBadge.textContent = currIndex >= 0 ? `Parada #${currIndex + 1} / ${totalStops}` : 'Parada';
+      seqBadge.textContent = currIndex >= 0 ? t('inspect.seq', { n: currIndex + 1, total: totalStops }) : t('stop.fallbackName');
     }
 
     let prevStop = null;
@@ -4092,7 +4140,7 @@ class TransitApp {
         };
       } else {
         prevBtn.disabled = true;
-        prevName.textContent = 'Capçalera';
+        prevName.textContent = t('inspect.start');
         prevBtn.onclick = null;
       }
     }
@@ -4109,7 +4157,7 @@ class TransitApp {
         };
       } else {
         nextBtn.disabled = true;
-        nextName.textContent = 'Terminus';
+        nextName.textContent = t('inspect.end');
         nextBtn.onclick = null;
       }
     }
@@ -4132,16 +4180,16 @@ class TransitApp {
         const starIcon = favBtn.querySelector('#modal-star-icon') || favBtn.querySelector('.star-icon');
         const starLabel = favBtn.querySelector('#modal-star-label') || favBtn.querySelector('.star-label');
         if (starIcon) starIcon.textContent = isFav ? '⭐' : '☆';
-        if (starLabel) starLabel.textContent = isFav ? 'Preferida' : 'Preferida';
-        favBtn.setAttribute('title', isFav ? 'Treure de parades preferides' : 'Afegir a parades preferides');
+        if (starLabel) starLabel.textContent = t('fav.label');
+        favBtn.setAttribute('title', t(isFav ? 'modal.favRemoveTitle' : 'modal.favAddTitle'));
       }
       if (footerFavBtn) {
         footerFavBtn.classList.toggle('is-favorite', isFav);
         const footerIcon = footerFavBtn.querySelector('#modal-footer-fav-icon') || footerFavBtn.querySelector('.fav-action-icon');
         const footerText = footerFavBtn.querySelector('#modal-footer-fav-text');
         if (footerIcon) footerIcon.textContent = isFav ? '⭐' : '☆';
-        if (footerText) footerText.textContent = isFav ? 'Preferida' : 'Afegir a Preferides';
-        footerFavBtn.setAttribute('title', isFav ? 'Treure de parades preferides' : 'Afegir a parades preferides');
+        if (footerText) footerText.textContent = isFav ? t('fav.label') : t('modal.favAddText');
+        footerFavBtn.setAttribute('title', t(isFav ? 'modal.favRemoveTitle' : 'modal.favAddTitle'));
       }
     };
 
@@ -4174,7 +4222,7 @@ class TransitApp {
       // A rail station whose timetable cannot be read: say so, rather than
       // an error or an empty board, which would read as "no trains".
       if (!(res.success && res.data) && window.TransitUtils?.isRailLineId?.(this.activeLineId)) {
-        if (listEl) listEl.innerHTML = '<p class="rail-departures-note">No s\'han pogut llegir els horaris d\'aquesta estació. Els trens que veus al mapa són els que l\'operador informa ara mateix.</p>';
+        if (listEl) listEl.innerHTML = `<p class="rail-departures-note">${this.esc(t('inspect.railError'))}</p>`;
         if (countBadge) countBadge.textContent = '—';
         return;
       }
@@ -4195,12 +4243,13 @@ class TransitApp {
     } catch (e) {
       console.error('Stop departures fetch error:', e);
       if (!cachedEntry && listEl) {
-        listEl.innerHTML = '<div style="color:var(--danger); font-size:0.85rem;">Error en carregar les sortides.</div>';
+        listEl.innerHTML = `<div style="color:var(--danger); font-size:0.85rem;">${this.esc(t('inspect.fetchError'))}</div>`;
       }
     }
   }
 
   renderModalDepartures(data, stopId, currIndex, stopsList) {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     const listEl = document.getElementById('modal-departures-list');
     const countBadge = document.getElementById('modal-departures-count-badge');
     const mapsLink = document.getElementById('modal-maps-link');
@@ -4209,14 +4258,14 @@ class TransitApp {
     const deps = data?.departures || [];
     const stopObj = data?.stop || {};
 
-    if (countBadge) countBadge.textContent = `${deps.length} sortides`;
+    if (countBadge) countBadge.textContent = t(deps.length === 1 ? 'dep.countOne' : 'dep.count', { n: deps.length });
 
     if (mapsLink && stopObj.lat && stopObj.lon) {
       mapsLink.href = `https://www.google.com/maps/search/?api=1&query=${stopObj.lat},${stopObj.lon}`;
     }
 
     if (deps.length === 0) {
-      listEl.innerHTML = '<div style="color:var(--text-muted); font-size:0.85rem; padding:0.5rem;">Sense arribades previstes en els propers 120 min.</div>';
+      listEl.innerHTML = `<div style="color:var(--text-muted); font-size:0.85rem; padding:0.5rem;">${this.esc(t('modal.none'))}</div>`;
       return;
     }
 
@@ -4242,8 +4291,8 @@ class TransitApp {
       const isDiff = schedTime && schedTime !== estTime && !d.isEstimated;
       const rawDelayMins = d.delayMins !== undefined && d.delayMins !== null ? Number(d.delayMins) : 0;
       const delayText = rawDelayMins >= 2
-        ? `+${rawDelayMins} min retard`
-        : (rawDelayMins <= -1 ? `${Math.abs(rawDelayMins)} min avançat` : 'Puntual');
+        ? t('dep.late', { n: rawDelayMins })
+        : (rawDelayMins <= -1 ? t('dep.early', { n: Math.abs(rawDelayMins) }) : t('dep.onTime'));
 
       const isLiveOrEstimated = Boolean(d.isRealTime || d.isEstimated || d.vehicleId);
       const matchedBus = isLiveOrEstimated ? this.resolveBusForDeparture(d, stopSeq, stopId, idx) : null;
@@ -4253,13 +4302,13 @@ class TransitApp {
       const hasActiveBus = Boolean(matchedBus && (resolvedVehicleId || (resolvedLat && resolvedLon)));
 
       const minsText = isFirstMorning
-        ? `🌅 Demà ${estTime}`
+        ? `🌅 ${t('dep.tomorrow', { time: estTime })}`
         : (isTomorrow
-            ? `Demà ${estTime}`
+            ? t('dep.tomorrow', { time: estTime })
             : (isFirstToday && (d.minutesAway === undefined || d.minutesAway > 180)
                 ? `🌅 ${estTime}`
                 : ((d.minutesAway !== undefined && d.minutesAway >= 0 && d.minutesAway <= 180)
-                    ? (d.minutesAway <= 0 ? 'Ara' : (d.minutesAway === 1 ? '1 min' : `${d.minutesAway} min`))
+                    ? (d.minutesAway <= 0 ? t('common.now') : (d.minutesAway === 1 ? '1 min' : `${d.minutesAway} min`))
                     : `${estTime}`)));
 
       const isRegulating = Boolean(d.delayStatus === 'regulating' || d.isRegulating || d.isTerminalLayover || d.arrivalTime);
@@ -4298,27 +4347,27 @@ class TransitApp {
       const tagLabel = isParkedAtTerminal
         ? ''
         : ((isFirstMorning || isFirstToday)
-            ? '🌅 1r Servei'
-            : (isTomorrow ? 'Programat' : (d.isEstimated ? '⚡ En ruta' : (d.isRealTime ? '🟢 Temps Real' : 'Programat'))));
+            ? `🌅 ${t('stop.firstService')}`
+            : (isTomorrow ? t('dep.scheduled') : (d.isEstimated ? `⚡ ${t('dep.enRoute')}` : (d.isRealTime ? `🟢 ${t('dep.realtime')}` : t('dep.scheduled')))));
 
       let regBadgeText = '';
       let regBadgeTitle = '';
       if (isRegulating) {
         if (isParkedAtTerminal) {
-          regBadgeText = '🅿️ A la parada';
-          regBadgeTitle = arrTime ? `Autobús a la parada des de les ${arrTime}` : 'Autobús a la parada en regulació';
+          regBadgeText = `🅿️ ${t('dep.atStop')}`;
+          regBadgeTitle = arrTime ? t('dep.atStopSince', { time: arrTime }) : t('dep.atStopReg');
         } else if (isApproachingTerminal) {
-          regBadgeText = '⏱️ En camí';
-          regBadgeTitle = `Arribada a capçalera prevista a les ${arrTime}${arrMinsAway !== null ? ` (${arrMinsAway <= 0 ? 'Ara' : (arrMinsAway === 1 ? '1 min' : `${arrMinsAway} min`)})` : ''}`;
+          regBadgeText = `⏱️ ${t('dep.onWay')}`;
+          regBadgeTitle = `${t('dep.termArrival', { time: arrTime })}${arrMinsAway !== null ? ` (${arrMinsAway <= 0 ? t('common.now') : (arrMinsAway === 1 ? '1 min' : `${arrMinsAway} min`)})` : ''}`;
         } else if (d.originTerminalName) {
-          regBadgeText = '⏱️ En regulació';
-          regBadgeTitle = `Autobús regulant a ${d.originTerminalName}${d.originDepartureTime ? ` (sortida: ${d.originDepartureTime})` : ''}`;
+          regBadgeText = `⏱️ ${t('dep.regulating')}`;
+          regBadgeTitle = (d.originDepartureTime ? t('dep.regAtDep', { name: d.originTerminalName, time: d.originDepartureTime }) : t('dep.regAt', { name: d.originTerminalName }));
         } else {
-          regBadgeText = '⏱️ En regulació';
-          regBadgeTitle = 'Autobús en regulació de línia';
+          regBadgeText = `⏱️ ${t('dep.regulating')}`;
+          regBadgeTitle = t('dep.regLine');
         }
         if (schedTime && isDiff) {
-          regBadgeTitle += ` • Horari oficial teòric: ${schedTime}`;
+          regBadgeTitle += t('dep.officialSuffix', { time: schedTime });
         }
       }
 
@@ -4327,72 +4376,79 @@ class TransitApp {
         if (rawDelayMins >= 2) {
           pillLabel = delayText;
         } else if (rawDelayMins <= -1) {
-          pillLabel = `${Math.abs(rawDelayMins)} min avançat`;
+          pillLabel = t('dep.early', { n: Math.abs(rawDelayMins) });
         } else {
-          pillLabel = '⏱️ Regulació';
+          pillLabel = `⏱️ ${t('dep.regulation')}`;
         }
       } else if (isFirstMorning || isFirstToday) {
-        pillLabel = '1r Servei';
+        pillLabel = t('stop.firstService');
       } else if (isTomorrow) {
-        pillLabel = 'Programat';
+        pillLabel = t('dep.scheduled');
       } else if (d.isEstimated) {
         const hasExplicitDelay = Boolean(d.delayBadgeText && (d.delayBadgeText.includes('retard') || d.delayBadgeText.includes('avançat')));
         const estDelayBadge = hasExplicitDelay ? d.delayBadgeText : delayText;
-        pillLabel = rawDelayMins >= 2 ? estDelayBadge : '⚡ En ruta';
+        pillLabel = rawDelayMins >= 2 ? estDelayBadge : `⚡ ${t('dep.enRoute')}`;
       } else {
-        pillLabel = d.delayBadgeText || 'Puntual';
+        pillLabel = d.delayBadgeText || t('dep.onTime');
       }
 
       const pillClass = isRegulating
         ? (rawDelayMins >= 2 ? 'delayed' : (rawDelayMins <= -1 ? 'early' : 'regulating'))
         : ((isTomorrow || isFirstToday) ? 'scheduled' : (rawDelayMins >= 2 ? 'delayed' : (rawDelayMins <= -1 ? 'early' : (d.delayStatus || 'on-time'))));
 
-      const cleanDest = (d.destination || 'Destí').replace(/^Cap a\s+/i, '').trim() || 'Destí';
-      let subtextHtml = '';
+      const cleanDest = (d.destination || t('common.destination')).replace(/^Cap a\s+/i, '').trim() || t('common.destination');
+            let subtextHtml = '';
       let subtextTitle = '';
+
+      const minsLabel = (n) => (n <= 0 ? t('common.now') : (n === 1 ? '1 min' : `${n} min`));
+      const offBr = (schedTime && isDiff) ? t('dep.officialBracket', { time: schedTime }) : '';
+      const layPause = layoverMins > 0 ? t('dep.pause', { n: layoverMins }) : '';
+      const layMins = layoverMins > 0 ? ` • ${this.esc(t('dep.regMins', { n: layoverMins }))}` : '';
+      const inDep = depMinsAway !== null ? t('dep.inMin', { n: depMinsAway }) : '';
+      const leavesFor = t('dep.leavesFor', { dest: cleanDest, time: depTime }) + inDep;
 
       if (isRegulating) {
         if (hasValidLayoverInterval) {
           if (isApproachingTerminal) {
-            subtextHtml = `<span>⏱️ Arribada ${arrTime}${arrMinsAway !== null ? ` (${arrMinsAway <= 0 ? 'Ara' : (arrMinsAway === 1 ? '1 min' : `${arrMinsAway} min`)})` : ''}${layoverMins > 0 ? ` • Regulació: ${layoverMins} min` : ''}</span>`;
-            subtextTitle = `Regulació a capçalera: Arribada prevista a les ${arrTime}${arrMinsAway !== null ? ` (en ${arrMinsAway <= 0 ? '0' : arrMinsAway} min)` : ''}${layoverMins > 0 ? ` • Pausa de regulació de ${layoverMins} min` : ''} • Sortida cap a ${cleanDest} a les ${depTime}${depMinsAway !== null ? ` (en ${depMinsAway} min)` : ''}${schedTime && isDiff ? ` [Horari oficial: ${schedTime}]` : ''}`;
+            subtextHtml = `<span>⏱️ ${this.esc(t('dep.arrivalShort', { time: arrTime }))}${arrMinsAway !== null ? ` (${this.esc(minsLabel(arrMinsAway))})` : ''}${layMins}</span>`;
+            subtextTitle = `${t('dep.tTermReg', { time: arrTime })}${arrMinsAway !== null ? t('dep.inMin', { n: arrMinsAway <= 0 ? '0' : arrMinsAway }) : ''}${layPause}${leavesFor}${offBr}`;
           } else {
-            subtextHtml = `<span>⏱️ A la parada des de les ${arrTime}${layoverMins > 0 ? ` • Regulació: ${layoverMins} min` : ''}</span>`;
-            subtextTitle = `Regulació a capçalera: Autobús a la parada des de les ${arrTime}${layoverMins > 0 ? ` • Pausa de regulació de ${layoverMins} min` : ''} • Sortida cap a ${cleanDest} a les ${depTime}${depMinsAway !== null ? ` (en ${depMinsAway} min)` : ''}${schedTime && isDiff ? ` [Horari oficial: ${schedTime}]` : ''}`;
+            subtextHtml = `<span>⏱️ ${this.esc(t('dep.atStopSinceShort', { time: arrTime }))}${layMins}</span>`;
+            subtextTitle = `${t('dep.tTermAtStop', { time: arrTime })}${layPause}${leavesFor}${offBr}`;
           }
         } else if (d.originTerminalName) {
-          subtextHtml = `<span>⏱️ Regulant a ${this.esc(d.originTerminalName)}${d.originDepartureTime ? ` • Surt a les ${this.esc(d.originDepartureTime)}` : ''}</span>`;
-          subtextTitle = `Autobús en regulació a ${d.originTerminalName}${d.originDepartureTime ? ` (sortida d'origen a les ${d.originDepartureTime})` : ''} • Arribada prevista aquí a les ${depTime}${depMinsAway !== null ? ` (en ${depMinsAway} min)` : ''}${schedTime && isDiff ? ` [Horari oficial: ${schedTime}]` : ''}`;
+          subtextHtml = `<span>⏱️ ${this.esc(t('dep.regulatingAtShort', { name: d.originTerminalName }))}${d.originDepartureTime ? ` • ${this.esc(t('dep.leavesAt', { time: d.originDepartureTime }))}` : ''}</span>`;
+          subtextTitle = `${t('dep.tOriginReg', { name: d.originTerminalName })}${d.originDepartureTime ? t('dep.tOriginDep', { time: d.originDepartureTime }) : ''}${t('dep.arrivesHereAt', { time: depTime })}${inDep}${offBr}`;
         } else {
-          subtextHtml = `<span>⏱️ En regulació a capçalera • Sortida a les ${depTime}</span>`;
-          subtextTitle = `Autobús en regulació a capçalera • Sortida prevista a les ${depTime}${depMinsAway !== null ? ` (en ${depMinsAway} min)` : ''}${schedTime && isDiff ? ` [Horari oficial: ${schedTime}]` : ''}`;
+          subtextHtml = `<span>⏱️ ${this.esc(t('dep.regAtTerminal', { time: depTime }))}</span>`;
+          subtextTitle = `${t('dep.tRegTerminal', { time: depTime })}${inDep}${offBr}`;
         }
       } else if (isFirstMorning) {
-        subtextHtml = `<span>📅 Primer autobús del matí (Demà a les ${estTime})</span>`;
-        subtextTitle = `Primer autobús del matí de demà a les ${estTime}`;
+        subtextHtml = `<span>📅 ${this.esc(t('dep.firstMorningSub', { time: estTime }))}</span>`;
+        subtextTitle = t('dep.firstMorningTitle', { time: estTime });
       } else if (isFirstToday) {
-        subtextHtml = `<span>📅 Primer servei d'avui (a les ${estTime})</span>`;
-        subtextTitle = `Primer servei programat d'avui a les ${estTime}`;
+        subtextHtml = `<span>📅 ${this.esc(t('dep.firstTodaySub', { time: estTime }))}</span>`;
+        subtextTitle = t('dep.firstTodayTitle', { time: estTime });
       } else if (isTomorrow) {
-        subtextHtml = `<span>📅 Horari teòric: <strong class="sched-strong">Demà a les ${estTime}</strong></span>`;
-        subtextTitle = `Sortida programada per a demà a les ${estTime}`;
+        subtextHtml = `<span>📅 ${this.esc(t('dep.timetableLabel'))} <strong class="sched-strong">${this.esc(t('dep.tomorrowAt', { time: estTime }))}</strong></span>`;
+        subtextTitle = t('dep.tomorrowTitle', { time: estTime });
       } else if (d.isRealTime) {
         if (schedTime && isDiff) {
-          subtextHtml = `<span>📅 Horari teòric: <strong class="sched-strong">${schedTime}</strong> <span class="dep-delay-note ${rawDelayMins >= 2 ? 'delay' : (rawDelayMins <= -1 ? 'early' : 'on-time')}">(${delayText})</span></span>`;
-          subtextTitle = `Temps real SIRI Avanza • Horari programat: ${schedTime} (${delayText})`;
+          subtextHtml = `<span>📅 ${this.esc(t('dep.timetableLabel'))} <strong class="sched-strong">${schedTime}</strong> <span class="dep-delay-note ${rawDelayMins >= 2 ? 'delay' : (rawDelayMins <= -1 ? 'early' : 'on-time')}">(${this.esc(delayText)})</span></span>`;
+          subtextTitle = t('dep.tRealDiff', { time: schedTime, delay: delayText });
         } else {
-          subtextHtml = `<span>🟢 Arribada en temps real (SIRI Avanza)</span>`;
-          subtextTitle = `Arribada transmesa en temps real pel sistema SIRI Avanza`;
+          subtextHtml = `<span>🟢 ${this.esc(t('dep.realtimeSub'))}</span>`;
+          subtextTitle = t('dep.realtimeTitle');
         }
       } else if (d.isEstimated) {
-        subtextHtml = `<span>⚡ Estimació de pas segons telemetria GPS</span>`;
-        subtextTitle = `Estimació calculada segons telemetria GPS`;
+        subtextHtml = `<span>⚡ ${this.esc(t('dep.estSub'))}</span>`;
+        subtextTitle = t('dep.estTitle');
       } else {
-        subtextHtml = `<span>📅 Horari teòric programat</span>`;
-        subtextTitle = `Horari teòric programat`;
+        subtextHtml = `<span>📅 ${this.esc(t('dep.schedSub'))}</span>`;
+        subtextTitle = t('dep.schedTitle');
       }
 
-      const linePrefix = d.lineId ? `Línia ${d.lineId}: ` : '';
+const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
       const etaSuffix = minsText ? `, ${minsText}` : '';
 
       return `
@@ -4404,20 +4460,20 @@ class TransitApp {
              data-stop-id="${this.esc(stopId || '')}"
              data-dep-index="${idx}"
              ${hasActiveBus ? 'tabindex="0" role="button"' : 'role="listitem"'}
-             aria-label="${hasActiveBus ? `Localitzar al mapa: ${linePrefix}sortida de les ${depTime} cap a ${this.esc(cleanDest)}${etaSuffix}` : `${linePrefix}Sortida de les ${depTime} cap a ${this.esc(cleanDest)}${etaSuffix}`}"
-             title="${hasActiveBus ? 'Fes clic per localitzar aquest autobús en directe al mapa' : ''}">
+             aria-label="${this.esc(t(hasActiveBus ? 'dep.ariaLocate' : 'dep.ariaPlain', { prefix: linePrefix, time: depTime, dest: cleanDest, eta: etaSuffix }))}"
+             title="${hasActiveBus ? this.esc(t('dep.locateTitle')) : ''}">
           <div class="dep-time-group">
             <div class="dep-time-row">
               <span class="dep-clock">${depTime}</span>
               ${isRegulating
-                ? `<span class="dep-regulating-pill" title="${this.esc(regBadgeTitle)}">${regBadgeText}</span>`
-                : (isDiff ? `<span class="dep-sched-pill" title="Horari oficial teòric: ${schedTime}">Oficial: ${schedTime}</span>` : '')}
-              ${(!isParkedAtTerminal && tagLabel) ? `<span class="dep-tag-sub ${(isFirstMorning || isFirstToday) ? 'first-service' : ''}" title="${this.esc(tagLabel)}">${tagLabel}</span>` : ''}
+                ? `<span class="dep-regulating-pill" title="${this.esc(regBadgeTitle)}">${this.esc(regBadgeText)}</span>`
+                : (isDiff ? `<span class="dep-sched-pill" title="${this.esc(t('dep.officialTitle', { time: schedTime }))}">${this.esc(t('dep.officialPill', { time: schedTime }))}</span>` : '')}
+              ${(!isParkedAtTerminal && tagLabel) ? `<span class="dep-tag-sub ${(isFirstMorning || isFirstToday) ? 'first-service' : ''}" title="${this.esc(tagLabel)}">${this.esc(tagLabel)}</span>` : ''}
             </div>
             
-            <div class="dep-dest" title="Cap a ${this.esc(cleanDest)}">
+            <div class="dep-dest" title="${this.esc(t('dep.towards'))} ${this.esc(cleanDest)}">
               ${d.lineId ? `<span class="line-badge-sm" style="font-size:0.68rem; padding:1px 5px; margin-right:4px; background:var(--c10-primary);">${this.esc(d.lineId)}</span>` : ''}
-              Cap a <strong>${this.esc(cleanDest)}</strong>
+              ${this.esc(t('dep.towards'))} <strong>${this.esc(cleanDest)}</strong>
             </div>
 
             <div class="dep-time-sub" title="${this.esc(subtextTitle)}">
@@ -4426,12 +4482,12 @@ class TransitApp {
           </div>
 
           <div class="dep-status">
-            <span class="dep-mins" style="${(isFirstMorning || isFirstToday) ? 'color:#fbbf24;' : (isTomorrow ? 'color:#94a3b8;' : '')}">${minsText}</span>
+            <span class="dep-mins" style="${(isFirstMorning || isFirstToday) ? 'color:#fbbf24;' : (isTomorrow ? 'color:#94a3b8;' : '')}">${this.esc(minsText)}</span>
             <span class="dep-delay-pill ${pillClass}" title="${this.esc((d.isEstimated && rawDelayMins >= 2) ? pillLabel : (d.delayBadgeText || pillLabel))}">${this.esc(pillLabel)}</span>
             ${hasActiveBus ? `
               <span class="dep-map-cta">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polygon points="12 8 8 12 12 16 12 8"/></svg>
-                Veure al mapa
+                ${this.esc(t('dep.viewMap'))}
               </span>
             ` : ''}
           </div>
@@ -4441,7 +4497,7 @@ class TransitApp {
 
     const modalFooterHint = deps.length > 5 ? `
       <div class="dep-scroll-footer" style="text-align: center; padding: 0.6rem 0.5rem; font-size: 0.72rem; color: var(--text-muted); border-top: 1px dashed var(--border-subtle); margin-top: 0.25rem;">
-        📜 Mostrant tot l'horari teòric oficial del dia • Desplaça per consultar totes les sortides
+        📜 ${this.esc(t('dep.footer'))}
       </div>
     ` : '';
 
@@ -4453,12 +4509,12 @@ class TransitApp {
     if (alarmBtn && alarmBtnText) {
       const isAlarmActive = this.activeProximityAlarm && this.activeProximityAlarm.stopId === String(stopId);
       alarmBtn.classList.toggle('active', Boolean(isAlarmActive));
-      alarmBtnText.textContent = isAlarmActive ? 'Alarma Activada ⏰' : "Avisa'm en arribar";
+      alarmBtnText.textContent = isAlarmActive ? t('modal.alarmOn') : t('modal.alarmOff');
       alarmBtn.onclick = (e) => {
         e.preventDefault();
         this.toggleProximityAlarm({
           id: String(stopId),
-          name: currStop?.name || stopObj?.name || 'Parada',
+          name: currStop?.name || stopObj?.name || t('stop.fallbackName'),
           lat: stopObj?.lat || currStop?.lat,
           lon: stopObj?.lon || currStop?.lon
         });
@@ -5244,6 +5300,7 @@ class TransitApp {
   // ==========================================
 
   setupMapResizeControls() {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     const expandWidthBtn = document.getElementById('btn-map-expand-width');
     const expandLabel = document.getElementById('map-expand-label') || expandWidthBtn?.querySelector('span');
     const mapContainer = document.getElementById('map-container');
@@ -5264,6 +5321,14 @@ class TransitApp {
     };
 
     let isExpanded = false;
+    // Label and title follow the state and the language (also redrawn on arribo:lang).
+    const applyExpandLabels = () => {
+      const expanded = explorerGrid ? explorerGrid.classList.contains('expanded-width') : isExpanded;
+      if (expandLabel) expandLabel.textContent = expanded ? t('map.normal') : t('map.wide');
+      if (expandWidthBtn) expandWidthBtn.title = expanded ? t('map.shrinkTitle') : t('map.expandTitle');
+    };
+    this._applyMapExpandLabels = applyExpandLabels;
+    applyExpandLabels();
     expandWidthBtn?.addEventListener('click', (e) => {
       e.preventDefault();
       isExpanded = !isExpanded;
@@ -5271,10 +5336,7 @@ class TransitApp {
       const performToggle = () => {
         explorerGrid?.classList.toggle('expanded-width', isExpanded);
         expandWidthBtn.classList.toggle('active', isExpanded);
-        if (expandLabel) {
-          expandLabel.textContent = isExpanded ? 'Normal' : 'Ample';
-        }
-        expandWidthBtn.title = isExpanded ? 'Reduir mapa a la vista estàndard' : 'Ampliar mapa a tota l\'amplada';
+        applyExpandLabels();
         if (mapContainer) {
           mapContainer.style.height = isExpanded ? '560px' : '';
         }
@@ -5860,13 +5922,17 @@ class TransitApp {
   }
 
   updateCountdownLabel() {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     const label = document.getElementById('countdown-label');
     if (label) {
-      label.textContent = `Actualització en ${this.secondsRemaining}s`;
+      label.textContent = t('map.refreshIn', { n: this.secondsRemaining });
     }
   }
 
   updateActiveBusesCount(count, lData = null) {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
+    // The header counts are bold: the numbers are integers, so they go in as markup.
+    const strong = (n) => `<strong>${n}</strong>`;
     const headerEl = document.getElementById('header-active-buses-text');
     const mapEl = document.getElementById('map-bus-counter-tag');
 
@@ -5888,25 +5954,25 @@ class TransitApp {
 
     if (total > 0) {
       if (live > 0 && est > 0) {
-        if (headerEl) headerEl.innerHTML = `🟢 <strong>${live}</strong> GPS + ⚡ <strong>${est}</strong> est. (de ${total})`;
-        if (mapEl) mapEl.innerHTML = `🟢 ${live} amb GPS + ⚡ ${est} estimat${est === 1 ? '' : 's'} (${total} en servei)`;
+        if (headerEl) headerEl.innerHTML = t('map.hdrMixed', { live: strong(live), est: strong(est), total });
+        if (mapEl) mapEl.innerHTML = this.esc(t(est === 1 ? 'map.mixedOne' : 'map.mixedMany', { live, est, total }));
         return;
       } else if (live > 0 && est === 0) {
-        if (headerEl) headerEl.innerHTML = `🟢 <strong>${live}</strong> en directe (100% flota amb GPS)`;
-        if (mapEl) mapEl.innerHTML = `🟢 ${live} bus${live === 1 ? '' : 'os'} en directe (100% GPS)`;
+        if (headerEl) headerEl.innerHTML = t('map.hdrLive', { n: strong(live) });
+        if (mapEl) mapEl.innerHTML = this.esc(t(live === 1 ? 'map.liveOne' : 'map.liveMany', { n: live }));
         return;
       } else if (live === 0 && est > 0) {
-        if (headerEl) headerEl.innerHTML = `⚡ <strong>${est}</strong> estimat${est === 1 ? '' : 's'} (sense GPS)`;
-        if (mapEl) mapEl.innerHTML = `⚡ ${est} bus${est === 1 ? '' : 'os'} estimats segons horari (sense GPS)`;
+        if (headerEl) headerEl.innerHTML = t(est === 1 ? 'map.hdrEstOne' : 'map.hdrEstMany', { n: strong(est) });
+        if (mapEl) mapEl.innerHTML = this.esc(t(est === 1 ? 'map.estOne' : 'map.estMany', { n: est }));
         return;
       }
     }
 
     if (headerEl) {
-      headerEl.innerHTML = `🌙 <strong>0</strong> busos en servei ara`;
+      headerEl.innerHTML = t('map.hdrNone', { n: strong(0) });
     }
     if (mapEl) {
-      mapEl.innerHTML = `🌙 Sense busos en servei ara mateix`;
+      mapEl.innerHTML = this.esc(t('map.none'));
     }
   }
 
