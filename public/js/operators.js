@@ -206,6 +206,29 @@
     </article>`;
   }
 
+  // Catalog operators (/api/lines), for their short names in the page header.
+  let catalogOps = null;
+
+  // With train data the page header names every network shown and says where
+  // each figure comes from; without it the static Mataró wording stays.
+  function wordHeader(ops) {
+    const withData = new Set(ops.filter(o => o.visits > 0 || o.feed).map(o => o.id));
+    if (!withData.size) return;
+    const named = (catalogOps || []).filter(o => o.trackable !== false || withData.has(o.id));
+    if (!named.length) return;
+    const short = o => o.shortName || o.name;
+    const buses = named.filter(o => o.trackable !== false).map(short);
+    const trains = named.filter(o => o.trackable === false).map(short);
+    const list = xs => (xs.length <= 1 ? (xs[0] || '') : `${xs.slice(0, -1).join(', ')} i ${xs[xs.length - 1]}`);
+    const eyebrow = document.getElementById('dades-eyebrow');
+    if (eyebrow) eyebrow.textContent = `Xarxa en directe • ${named.map(short).join(' · ')}`;
+    const intro = document.getElementById('dades-intro');
+    if (intro && trains.length) {
+      intro.textContent = `Dades històriques de puntualitat registrades pel nostre servidor: els busos de ${list(buses)} pel seu GPS, i els trens de ${list(trains)} pels seus canals en temps real. Informació objectiva de puntualitat, colls d'ampolla i congestió horària.`;
+    }
+    document.title = 'Observatori de Retards i Puntualitat — Dades | Arribo!';
+  }
+
   async function load() {
     const seq = ++loadSeq;
     try {
@@ -223,6 +246,7 @@
       }
       lastOps = ops;
       render();
+      wordHeader(ops);
       loadLine();
       if (updated) updated.textContent = new Date(data.generatedAt || Date.now()).toLocaleTimeString('ca-ES', { hour: '2-digit', minute: '2-digit' });
     } catch {
@@ -246,6 +270,7 @@
   // Line colours (GTFS route_color / route_text_color) for the badges, from the catalog.
   fetch('/api/lines').then(r => (r.ok ? r.json() : null)).then(j => {
     if (j && Array.isArray(j.lines)) window.TransitUtils?.applyLineColors?.(j.lines);
+    if (j && Array.isArray(j.operators)) { catalogOps = j.operators; if (lastOps.length) wordHeader(lastOps); }
   }).catch(() => {});
 
   load();
