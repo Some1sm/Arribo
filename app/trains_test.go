@@ -56,7 +56,7 @@ func trainsOf(t *testing.T, o *Obj) []*Obj {
 
 func TestTrainsResponseFields(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
-	o := trainsResponse(testTrainFeeds(now), now, "", "")
+	o := trainsResponse(testTrainFeeds(now), now, "", "", nil)
 	if o.Get("enabled") != true || o.Get("count") != 3.0 {
 		t.Fatalf("enabled/count: %v %v", o.Get("enabled"), o.Get("count"))
 	}
@@ -109,16 +109,16 @@ func TestTrainsResponseFields(t *testing.T) {
 func TestTrainsResponseFilters(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	feeds := testTrainFeeds(now)
-	if o := trainsResponse(feeds, now, "fgc", ""); o.Get("count") != 1.0 || len(o.Get("operators").([]any)) != 1 {
+	if o := trainsResponse(feeds, now, "fgc", "", nil); o.Get("count") != 1.0 || len(o.Get("operators").([]any)) != 1 {
 		t.Errorf("agency filter: %v", string(toJSON(o)))
 	}
-	if o := trainsResponse(feeds, now, "", "r2s"); o.Get("count") != 1.0 || trainsOf(t, o)[0].Get("lineCode") != "R2S" {
+	if o := trainsResponse(feeds, now, "", "r2s", nil); o.Get("count") != 1.0 || trainsOf(t, o)[0].Get("lineCode") != "R2S" {
 		t.Errorf("line filter: %v", string(toJSON(o)))
 	}
-	if o := trainsResponse(feeds, now, "nope", ""); o.Get("count") != 0.0 || len(o.Get("operators").([]any)) != 0 {
+	if o := trainsResponse(feeds, now, "nope", "", nil); o.Get("count") != 0.0 || len(o.Get("operators").([]any)) != 0 {
 		t.Errorf("unknown agency: %v", string(toJSON(o)))
 	}
-	off := trainsResponse(nil, now, "", "")
+	off := trainsResponse(nil, now, "", "", nil)
 	if off.Get("enabled") != false || off.Get("count") != 0.0 {
 		t.Errorf("pollers off: %v", string(toJSON(off)))
 	}
@@ -126,7 +126,7 @@ func TestTrainsResponseFilters(t *testing.T) {
 		t.Errorf("key order: %s", string(toJSON(off)))
 	}
 	// Before the first poll an operator is listed with no data.
-	o := trainsResponse([]trainFeed{{info: reportOperators[1]}}, now, "", "")
+	o := trainsResponse([]trainFeed{{info: reportOperators[1]}}, now, "", "", nil)
 	if op := o.Get("operators").([]any)[0].(*Obj); op.Get("vehicles") != 0.0 || op.Get("fetchedAt") != nil {
 		t.Errorf("no snapshot yet: %v", string(toJSON(o)))
 	}
@@ -143,5 +143,35 @@ func TestCatalogLineFromLabel(t *testing.T) {
 	}
 	if got := catalogLineFromLabel("missing_op", "R1-7"); got != "" {
 		t.Errorf("unknown operator -> %q", got)
+	}
+}
+
+func TestTrainsBox(t *testing.T) {
+	now := time.Unix(1795100000, 0)
+	feeds := testTrainFeeds(now)
+	all := trainsResponse(feeds, now, "", "", nil).Get("count")
+	// Around Mataró (41.5, 2.4): only the R1 train; the operators keep their totals.
+	o := trainsResponse(feeds, now, "", "", parseTrainBox("41.45,2.3,41.6,2.5"))
+	if o.Get("count") != 1.0 || trainsOf(t, o)[0].Get("lineCode") != "R1" {
+		t.Fatalf("box around Mataró: count=%v", o.Get("count"))
+	}
+	if ops := o.Get("operators").([]any); ops[0].(*Obj).Get("vehicles") == 0.0 {
+		t.Fatal("an operator's vehicle total must not shrink with the box")
+	}
+	if b := o.Get("bbox").([]any); len(b) != 4 || b[0] != 41.45 {
+		t.Fatalf("bbox echo: %v", o.Get("bbox"))
+	}
+	// The zero longitude of the first train is inside a box that spans it.
+	if o := trainsResponse(feeds, now, "", "", parseTrainBox("41,-0.5,41.3,0.5")); o.Get("count") != 1.0 {
+		t.Fatalf("box spanning lon 0: count=%v", o.Get("count"))
+	}
+	// Invalid boxes are no filter.
+	for _, s := range []string{"", "1,2,3", "a,b,c,d", "41.6,2,41.4,3", "0,0,100,0", "NaN,0,1,1"} {
+		if parseTrainBox(s) != nil {
+			t.Fatalf("%q should not parse", s)
+		}
+		if o := trainsResponse(feeds, now, "", "", parseTrainBox(s)); o.Get("count") != all || o.Get("bbox") != nil {
+			t.Fatalf("%q filtered: count=%v", s, o.Get("count"))
+		}
 	}
 }

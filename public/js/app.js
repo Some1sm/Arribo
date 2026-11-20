@@ -5433,6 +5433,12 @@ class TransitApp {
     this.networkMap.setLineFilter(this.landingFilter || 'all');
     if (this.currentTheme) this.networkMap.setTheme(this.currentTheme);
 
+    // Panning or zooming changes the area the trains are fetched for.
+    this.networkTrainsSeq = this.networkTrainsSeq || 0;
+    this.networkMap.map?.on('moveend', () => {
+      clearTimeout(this._networkTrainsTimer);
+      this._networkTrainsTimer = setTimeout(() => this.refreshNetworkTrains(), 400);
+    });
     this.refreshNetworkMap(true);
     this.startNetworkMapTimer();
     return this.networkMap;
@@ -5445,6 +5451,35 @@ class TransitApp {
    *
    * allSettled, not all: one line failing must not blank the other seven.
    */
+  /**
+   * /api/trains for the network map's visible area (padded by 30 %), so a
+   * visitor looking at Mataró does not download every train in Catalonia
+   * every 30 s. Before the map has a size, the whole feed.
+   */
+  networkTrainsUrl() {
+    const map = this.networkMap?.map;
+    if (!map) return '/api/trains';
+    try {
+      const b = map.getBounds().pad(0.3);
+      const f = v => Number(v).toFixed(4);
+      return `/api/trains?bbox=${f(b.getSouth())},${f(b.getWest())},${f(b.getNorth())},${f(b.getEast())}`;
+    } catch {
+      return '/api/trains';
+    }
+  }
+
+  /** Refetches only the trains (after the map moved); same stale-response guard idea. */
+  async refreshNetworkTrains() {
+    const map = this.networkMap;
+    if (!map || !this.isTabVisible) return;
+    const seq = ++this.networkTrainsSeq;
+    const trains = await fetch(this.networkTrainsUrl()).then(r => (r.ok ? r.json() : null)).catch(() => undefined);
+    if (seq !== this.networkTrainsSeq || map !== this.networkMap || trains === undefined) return;
+    map.applyTrains(trains);
+    this.renderNetworkTrainToggle();
+    this.updateNetworkMapBadge();
+  }
+
   async refreshNetworkMap(loadGeometry = false) {
     if (!this.networkMap || !this.isTabVisible) return;
     if (this._isRefreshingNetwork) return;
@@ -5459,7 +5494,8 @@ class TransitApp {
 
     // Rodalies / FGC trains, fetched alongside the bus lines. A failure only
     // leaves the train layer as it was; it never blocks the buses.
-    const trainsReq = fetch('/api/trains')
+    const trainSeq = ++this.networkTrainsSeq;
+    const trainsReq = fetch(this.networkTrainsUrl())
       .then(r => (r.ok ? r.json() : null))
       .catch(() => undefined);
 
@@ -5489,7 +5525,8 @@ class TransitApp {
       const trains = await trainsReq;
       if (seq !== this.networkMapSeq || map !== this.networkMap) return;
       // undefined = network error: keep the last trains (each says how old it is).
-      if (trains !== undefined) map.applyTrains(trains);
+      // A pan refetch (refreshNetworkTrains) may have drawn a newer area meanwhile.
+      if (trains !== undefined && trainSeq === this.networkTrainsSeq) map.applyTrains(trains);
       this.renderNetworkTrainToggle();
       this.updateNetworkMapBadge();
 
@@ -5536,7 +5573,7 @@ class TransitApp {
     // "fix" is what made a 5-bus fleet read "6 en servei" (see AGENTS.md §3).
     const trains = this.networkMap.trainCounts();
     const trainText = trains.total > 0
-      ? ` · ${trains.total} ${trains.total === 1 ? 'tren' : 'trens'}${trains.stale > 0 ? ` (${trains.stale} sense actualitzar)` : ''}`
+      ? ` · ${trains.total} ${trains.total === 1 ? 'tren' : 'trens'}${trains.inView ? ' a la vista' : ''}${trains.stale > 0 ? ` (${trains.stale} sense actualitzar)` : ''}`
       : '';
     if (total === 0) {
       badge.textContent = `${scope}Sense autobusos ara${trainText}`;

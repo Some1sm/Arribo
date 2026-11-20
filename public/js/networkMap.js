@@ -226,7 +226,8 @@ class NetworkMap extends TransitMap {
       total++;
       if (t.stale) stale++;
     }
-    return { total, stale, available: true };
+    // inView: the feed was cut to the map's area (?bbox=), so these are the trains in view.
+    return { total, stale, available: true, inView: Array.isArray(this.trainFeed?.bbox) };
   }
 
   renderLegend() {

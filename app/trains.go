@@ -13,6 +13,7 @@ package main
 
 import (
 	"math"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -57,7 +58,36 @@ func liveTrainFeeds() []trainFeed {
 // trainsResponse builds the /api/trains body. agency and line filter the
 // trains (line matches the code case-insensitively); operators are always
 // listed with their feed state so the client can say why a list is empty.
-func trainsResponse(feeds []trainFeed, now time.Time, agency, line string) *Obj {
+// trainBox is the optional ?bbox= filter: only trains inside it are listed.
+type trainBox struct{ minLat, minLon, maxLat, maxLon float64 }
+
+func (b *trainBox) has(lat, lon float64) bool {
+	return b == nil || (lat >= b.minLat && lat <= b.maxLat && lon >= b.minLon && lon <= b.maxLon)
+}
+
+// parseTrainBox reads "minLat,minLon,maxLat,maxLon"; anything else (wrong
+// count, not finite, min above max, outside the globe) means no filter.
+func parseTrainBox(s string) *trainBox {
+	parts := strings.Split(s, ",")
+	if len(parts) != 4 {
+		return nil
+	}
+	var v [4]float64
+	for i, p := range parts {
+		f, err := strconv.ParseFloat(strings.TrimSpace(p), 64)
+		if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
+			return nil
+		}
+		v[i] = f
+	}
+	b := &trainBox{v[0], v[1], v[2], v[3]}
+	if b.minLat > b.maxLat || b.minLon > b.maxLon || b.minLat < -90 || b.maxLat > 90 || b.minLon < -180 || b.maxLon > 180 {
+		return nil
+	}
+	return b
+}
+
+func trainsResponse(feeds []trainFeed, now time.Time, agency, line string, box *trainBox) *Obj {
 	nowMs := float64(now.UnixMilli())
 	ops := []any{}
 	trains := []any{}
@@ -85,6 +115,9 @@ func trainsResponse(feeds []trainFeed, now time.Time, agency, line string) *Obj 
 				if line != "" && !strings.EqualFold(v.LineCode, line) {
 					continue
 				}
+				if !box.has(v.Lat, v.Lon) {
+					continue
+				}
 				trains = append(trains, trainJSON(f.info, s, v, now))
 			}
 		}
@@ -96,6 +129,7 @@ func trainsResponse(feeds []trainFeed, now time.Time, agency, line string) *Obj 
 		"timestamp", nowMs,
 		"staleAfterSec", float64(trainStaleSec),
 		"count", float64(len(trains)),
+		"bbox", boxJSON(box),
 		"operators", ops,
 		"trains", trains,
 	)
@@ -190,6 +224,20 @@ func (s *Server) hTrains(q *xreq, res *xres) error {
 		}
 		return str
 	}
-	res.json(trainsResponse(liveTrainFeeds(), time.Now(), param("agency"), param("line")))
+	bbox := ""
+	if v := qv(q, "bbox"); !isUndef(v) {
+		if s := jsString(v); len(s) <= 120 {
+			bbox = s
+		}
+	}
+	res.json(trainsResponse(liveTrainFeeds(), time.Now(), param("agency"), param("line"), parseTrainBox(bbox)))
 	return nil
+}
+
+// boxJSON echoes the applied ?bbox= (nil when none or invalid).
+func boxJSON(b *trainBox) any {
+	if b == nil {
+		return nil
+	}
+	return []any{b.minLat, b.minLon, b.maxLat, b.maxLon}
 }
