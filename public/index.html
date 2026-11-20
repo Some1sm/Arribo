@@ -323,9 +323,9 @@
     <div class="page-view" id="view-active-line" style="display:none;">
       
       <!-- Multi-City Line Selector Bar & Return to Hub -->
-      <section class="line-selector-section" aria-label="Selector de línia i ciutat">
+      <section class="line-selector-section" data-i18n-aria-label="line.selectorAria" aria-label="Selector de línia i ciutat">
         <div class="line-selector-card">
-          <div class="line-selector-current" id="line-selector-current-info" title="Fes clic per canviar de línia">
+          <div class="line-selector-current" id="line-selector-current-info" data-i18n-title="line.changeLineHint" title="Fes clic per canviar de línia">
             <span class="line-badge-hero" id="active-line-badge" style="background:var(--c10-primary);">--</span>
             <div class="line-selector-info">
               <div class="line-selector-city-tag">
@@ -337,25 +337,25 @@
           </div>
 
           <!-- 24h Delay & Reliability Telemetry Metric -->
-          <div class="line-selector-stats" id="line-selector-stats" role="button" tabindex="0" title="Retards i puntualitat de les últimes 24h (Fes clic per obrir l'Observatori de Retards)">
+          <div class="line-selector-stats" id="line-selector-stats" role="button" tabindex="0" data-i18n-title="line.statsTitle" title="Retards i puntualitat de les últimes 24h (Fes clic per obrir l'Observatori de Retards)">
             <div class="line-stat-pill" id="line-stat-pill">
               <span class="stat-pulse-dot" id="line-stat-dot"></span>
-              <span class="stat-pill-label">Retard 24h:</span>
+              <span class="stat-pill-label" data-i18n="line.delay24">Retard 24h:</span>
               <strong class="stat-pill-val" id="line-stat-delay-val">--%</strong>
             </div>
             <div class="line-stat-details" id="line-stat-details">
-              <span class="line-stat-sub-item"><strong id="line-stat-avg-val">-- min</strong> mitjana</span>
+              <span class="line-stat-sub-item"><strong id="line-stat-avg-val">-- min</strong> <span data-i18n="line.avgSuffix">mitjana</span></span>
             </div>
           </div>
           
           <div class="line-selector-actions">
-            <button type="button" class="btn-back-to-landing" id="btn-back-to-landing" title="Tornar al catàleg complet de línies">
+            <button type="button" class="btn-back-to-landing" id="btn-back-to-landing" data-i18n-title="line.backTitle" title="Tornar al catàleg complet de línies">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-              <span>Totes les línies</span>
+              <span data-i18n="picker.allLines">Totes les línies</span>
             </button>
-            <button type="button" class="btn-change-line" id="open-line-picker-btn" aria-label="Canviar línia o operadora">
+            <button type="button" class="btn-change-line" id="open-line-picker-btn" data-i18n-aria-label="line.changeAria" aria-label="Canviar línia o operadora">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-              <span>Canviar línia</span>
+              <span data-i18n="line.changeLine">Canviar línia</span>
             </button>
           </div>
         </div>
@@ -365,8 +365,8 @@
       <div id="upstream-outage-banner" class="disruption-banner-card" style="display:none;">
         <div class="disruption-banner-icon">ℹ️</div>
         <div class="disruption-banner-content">
-          <strong id="upstream-outage-banner-title">Estat del servei en temps real</strong>
-          <span id="upstream-outage-banner-desc">Les dades en temps real de l'operador no estan disponibles ara mateix. Es mostren horaris previstos.</span>
+          <strong id="upstream-outage-banner-title" data-i18n="line.outageTitle">Estat del servei en temps real</strong>
+          <span id="upstream-outage-banner-desc" data-i18n="line.outageDesc">Les dades en temps real de l'operador no estan disponibles ara mateix. Es mostren horaris previstos.</span>
         </div>
       </div>
 
@@ -381,7 +381,7 @@
       </div>
 
       <!-- Dynamic Direction Selector Bar -->
-      <section class="direction-bar" aria-label="Selector de sentit">
+      <section class="direction-bar" data-i18n-aria-label="line.dirAria" aria-label="Selector de sentit">
         <div class="direction-toggle-group" id="direction-toggle-group"></div>
 
         <div class="refresh-status">
@@ -391,23 +391,23 @@
       </section>
 
       <!-- Dynamic Hero ETA Section -->
-      <section class="hero-eta-grid" aria-label="Temps d'arribada">
+      <section class="hero-eta-grid" data-i18n-aria-label="line.etaAria" aria-label="Temps d'arribada">
         
         <!-- Primary Target Card -->
         <div class="target-card">
           <div class="target-header">
             <div class="target-header-top">
-              <div class="target-badge" id="target-header-badge">⭐ Parada Principal</div>
+              <div class="target-badge" id="target-header-badge" data-i18n="stop.mainBadge">⭐ Parada Principal</div>
               <div class="target-select-wrapper">
-                <label for="target-stop-select" style="font-size:0.75rem; color:var(--text-muted); margin-right:0.3rem;">Canviar:</label>
-                <select id="target-stop-select" class="target-stop-select" aria-label="Selecciona la teva parada principal">
+                <label for="target-stop-select" data-i18n="stop.change" style="font-size:0.75rem; color:var(--text-muted); margin-right:0.3rem;">Canviar:</label>
+                <select id="target-stop-select" class="target-stop-select" data-i18n-aria-label="stop.selectAria" aria-label="Selecciona la teva parada principal">
                   <option value="">Carregant parades...</option>
                 </select>
               </div>
             </div>
             <h2 class="target-name" id="target-stop-title">Selecciona una parada</h2>
             <div class="target-subname">
-              <span>Codi: <strong id="target-stop-code">--</strong></span> • 
+              <span><span data-i18n="stop.codeLabel">Codi:</span> <strong id="target-stop-code">--</strong></span> • 
               <span id="target-direction-sub">Sentit</span>
             </div>
           </div>
@@ -425,22 +425,22 @@
             </div>
 
             <div class="target-meta">
-              <div><span>Línia: <strong id="target-line-tag" style="color:var(--c10-primary);">--</strong></span></div>
-              <div><span>Destí: <strong id="next-bus-dest">Destí</strong></span></div>
-              <div><span>Operador: <strong id="target-operator-name">Operador</strong></span></div>
+              <div><span><span data-i18n="stop.lineLabel">Línia:</span> <strong id="target-line-tag" style="color:var(--c10-primary);">--</strong></span></div>
+              <div><span><span data-i18n="stop.destLabel">Destí:</span> <strong id="next-bus-dest">Destí</strong></span></div>
+              <div><span><span data-i18n="stop.operatorLabel">Operador:</span> <strong id="target-operator-name">Operador</strong></span></div>
             </div>
           </div>
 
           <div class="target-actions-bar" id="target-actions-bar">
-            <button type="button" class="btn-target-action" id="btn-target-focus-map" title="Centrar el mapa en aquesta parada">
+            <button type="button" class="btn-target-action" id="btn-target-focus-map" data-i18n-title="stop.focusMapTitle" title="Centrar el mapa en aquesta parada">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
-              <span>Al mapa</span>
+              <span data-i18n="stop.toMap">Al mapa</span>
             </button>
-            <a href="/plan" class="btn-target-action" id="btn-target-plan-from" title="Planificar ruta des d'aquesta parada">
+            <a href="/plan" class="btn-target-action" id="btn-target-plan-from" data-i18n-title="stop.planTitle" title="Planificar ruta des d'aquesta parada">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
-              <span>Planificar</span>
+              <span data-i18n="stop.plan">Planificar</span>
             </a>
-            <a id="target-maps-link" href="#" target="_blank" rel="noopener noreferrer" class="btn-target-action" title="Obrir la ubicació a Google Maps">
+            <a id="target-maps-link" href="#" target="_blank" rel="noopener noreferrer" class="btn-target-action" data-i18n-title="stop.mapsTitle" title="Obrir la ubicació a Google Maps">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
               <span>Google Maps</span>
             </a>
@@ -466,7 +466,7 @@
       </section>
 
       <!-- Route Progression & Telemetry Cockpit -->
-      <section class="corridor-section" aria-label="Seguiment de la línia">
+      <section class="corridor-section" data-i18n-aria-label="line.trackAria" aria-label="Seguiment de la línia">
         <div class="section-header">
           <div>
             <h3 class="card-title">
@@ -484,7 +484,7 @@
           <button type="button" class="telemetry-header telemetry-toggle" id="telemetry-toggle" aria-expanded="false" aria-controls="telemetry-body">
             <span class="telemetry-title-group">
               <span class="telemetry-live-radar" id="telemetry-radar-dot"></span>
-              <strong>🛰️ Telemetria GPS i Estimació en Zones de Cobertura</strong>
+              <strong data-i18n="veh.panelTitle">🛰️ Telemetria GPS i Estimació en Zones de Cobertura</strong>
             </span>
             <span class="telemetry-header-end">
               <span class="telemetry-status-badge" id="telemetry-status-badge">🟢 Senyal GPS Actiu</span>
@@ -499,43 +499,43 @@
 
             <!-- Active Vehicles Selection Bar -->
             <div class="telemetry-vehicles-bar" id="telemetry-vehicles-bar" style="display:none;">
-              <span class="telemetry-vehicles-label">Vehicles detectats:</span>
+              <span class="telemetry-vehicles-label" data-i18n="veh.detected">Vehicles detectats:</span>
               <div class="telemetry-vehicles-chips" id="telemetry-vehicles-chips"></div>
             </div>
 
             <!-- Ghost Bus Advisory Notice -->
             <div class="telemetry-ghost-notice" id="telemetry-ghost-notice" style="display:none;">
               <span style="font-size:1.1rem; line-height:1;">⚡</span>
-              <span><strong>Vehicle estimat segons horari oficial:</strong> Aquest autobús està programat en servei actiu però no transmet dades GPS a la xarxa SAE. La seva posició al mapa es calcula teòricament segons la sortida oficial.</span>
+              <span><strong data-i18n="veh.ghostTitle">Vehicle estimat segons horari oficial:</strong> <span data-i18n="veh.ghostText">Aquest autobús està programat en servei actiu però no transmet dades GPS a la xarxa SAE. La seva posició al mapa es calcula teòricament segons la sortida oficial.</span></span>
             </div>
 
             <div class="telemetry-grid">
               <div class="telemetry-item">
-                <span class="telemetry-label">📍 Coordenades GPS</span>
+                <span class="telemetry-label" data-i18n="veh.lblCoords">📍 Coordenades GPS</span>
                 <strong class="telemetry-val" id="telemetry-coords">--</strong>
               </div>
               <div class="telemetry-item">
-                <span class="telemetry-label">🧭 Rumb & Orientació</span>
+                <span class="telemetry-label" data-i18n="veh.lblBearing">🧭 Rumb & Orientació</span>
                 <strong class="telemetry-val" id="telemetry-bearing">--</strong>
               </div>
               <div class="telemetry-item">
-                <span class="telemetry-label">⚡ Velocitat</span>
+                <span class="telemetry-label" data-i18n="veh.lblSpeed">⚡ Velocitat</span>
                 <strong class="telemetry-val" id="telemetry-speed">--</strong>
               </div>
               <div class="telemetry-item">
-                <span class="telemetry-label">🛣️ Tram Actual</span>
+                <span class="telemetry-label" data-i18n="veh.lblSegment">🛣️ Tram Actual</span>
                 <strong class="telemetry-val" id="telemetry-segment">--</strong>
               </div>
               <div class="telemetry-item">
-                <span class="telemetry-label">⏱️ Propera Parada</span>
+                <span class="telemetry-label" data-i18n="veh.lblNextStop">⏱️ Propera Parada</span>
                 <strong class="telemetry-val" id="telemetry-eta-next">--</strong>
               </div>
               <div class="telemetry-item">
-                <span class="telemetry-label">🕐 Inici Trajecte</span>
+                <span class="telemetry-label" data-i18n="veh.lblTripStart">🕐 Inici Trajecte</span>
                 <strong class="telemetry-val" id="telemetry-trip-start">--</strong>
               </div>
               <div class="telemetry-item">
-                <span class="telemetry-label">📊 Progrés Trajecte</span>
+                <span class="telemetry-label" data-i18n="veh.lblProgress">📊 Progrés Trajecte</span>
                 <div style="display:flex; align-items:center; gap:0.5rem; width:100%; margin-top:2px;">
                   <div class="telemetry-progress-track"><div class="telemetry-progress-fill" id="telemetry-progress-bar" style="width: 0%;"></div></div>
                   <span id="telemetry-progress-text" style="font-weight:700; font-size:0.8rem; color:#fff;">0%</span>
@@ -560,15 +560,15 @@
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
                 <span id="map-line-title">Mapa en temps real</span>
               </h3>
-              <span style="font-size:0.75rem; color:var(--text-secondary);">Fes clic sobre qualsevol parada per veure el temps</span>
+              <span data-i18n="line.mapHint" style="font-size:0.75rem; color:var(--text-secondary);">Fes clic sobre qualsevol parada per veure el temps</span>
             </div>
 
             <!-- Map Resize & View Controls -->
             <div class="map-controls-group">
               <span class="map-bus-counter-tag" id="map-bus-counter-tag"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px; margin-right:3px;"><path d="M4.7 17.5H3.4A1.4 1.4 0 0 1 2 16.1V6.4A1.4 1.4 0 0 1 3.4 5H17.5A4.5 4.5 0 0 1 22 9.5v6.6a1.4 1.4 0 0 1-1.4 1.4h-1.3"/><path d="M9.3 17.5h5.4"/><path d="M2 11.6h20"/><path d="M7.5 5v6.6M12.5 5v6.6M17.6 5.2v6.4"/><circle cx="7" cy="17.5" r="2.3"/><circle cx="17" cy="17.5" r="2.3"/></svg>0 actius</span>
-              <button type="button" class="btn-map-control btn-traffic-toggle" id="btn-map-toggle-traffic" title="Activar / desactivar mapa de trànsit i retards">
+              <button type="button" class="btn-map-control btn-traffic-toggle" id="btn-map-toggle-traffic" data-i18n-title="line.trafficTitle" title="Activar / desactivar mapa de trànsit i retards">
                 <span class="traffic-dot" style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#10b981; margin-right:3px;"></span>
-                <span>Trànsit</span>
+                <span data-i18n="line.traffic">Trànsit</span>
               </button>
               <button type="button" class="btn-map-control" id="btn-map-expand-width" title="Ampliar mapa a tota l'amplada">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
@@ -580,25 +580,25 @@
           <div id="map-container"></div>
 
           <!-- Floating Itinerary Guidance Bar -->
-          <div class="itinerary-floating-bar" id="itinerary-floating-bar" role="region" aria-label="Guia del trajecte seleccionat">
+          <div class="itinerary-floating-bar" id="itinerary-floating-bar" role="region" data-i18n-aria-label="line.itinAria" aria-label="Guia del trajecte seleccionat">
             <div class="itinerary-bar-header">
               <div class="itinerary-bar-title" id="itinerary-bar-title">
                 <span>🧭</span>
-                <span id="itinerary-summary-text">Itinerari seleccionat</span>
+                <span id="itinerary-summary-text" data-i18n="line.itinSelected">Itinerari seleccionat</span>
               </div>
               <div class="itinerary-bar-actions">
                 <button type="button" class="btn-itinerary-back" id="btn-itinerary-back-to-planner">
                   <span>🔙</span>
-                  <span>Cercador</span>
+                  <span data-i18n="line.itinBack">Cercador</span>
                 </button>
-                <button type="button" class="btn-itinerary-close" id="btn-itinerary-close" title="Tancar itinerari i tornar al mapa habitual">✕</button>
+                <button type="button" class="btn-itinerary-close" id="btn-itinerary-close" data-i18n-title="line.itinClose" title="Tancar itinerari i tornar al mapa habitual">✕</button>
               </div>
             </div>
             <div class="itinerary-bar-steps" id="itinerary-bar-steps"></div>
           </div>
 
           <!-- Draggable Resize Bar -->
-          <div class="map-resize-bar" id="map-resize-bar" title="Arrossega amunt o avall per canviar l'alçada del mapa">
+          <div class="map-resize-bar" id="map-resize-bar" data-i18n-title="line.resizeTitle" title="Arrossega amunt o avall per canviar l'alçada del mapa">
             <span class="resize-handle-dots"></span>
           </div>
         </div>
@@ -608,14 +608,14 @@
           <div class="stops-card-header-row">
             <h3 class="card-title" style="font-size:0.95rem; margin-bottom:0;">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-              Parades (<span id="stops-total-count">--</span>)
+              <span data-i18n="line.stops">Parades</span> (<span id="stops-total-count">--</span>)
             </h3>
-            <div class="stops-view-mode-pills" id="stops-view-mode-pills" role="tablist" aria-label="Mode de visualització de parades">
-              <button type="button" class="btn-map-control btn-stops-view-mode active" id="btn-stops-mode-schematic" data-mode="schematic" role="tab" aria-selected="true" title="Veure termòmetre esquemàtic estil metro amb posició de busos en viu">
-                <span>🚇 Termòmetre</span>
+            <div class="stops-view-mode-pills" id="stops-view-mode-pills" role="tablist" data-i18n-aria-label="line.viewModeAria" aria-label="Mode de visualització de parades">
+              <button type="button" class="btn-map-control btn-stops-view-mode active" id="btn-stops-mode-schematic" data-mode="schematic" role="tab" aria-selected="true" data-i18n-title="line.modeSchematicTitle" title="Veure termòmetre esquemàtic estil metro amb posició de busos en viu">
+                <span data-i18n="line.modeSchematic">🚇 Termòmetre</span>
               </button>
-              <button type="button" class="btn-map-control btn-stops-view-mode" id="btn-stops-mode-list" data-mode="list" role="tab" aria-selected="false" title="Veure llista detallada de parades">
-                <span>📋 Llista</span>
+              <button type="button" class="btn-map-control btn-stops-view-mode" id="btn-stops-mode-list" data-mode="list" role="tab" aria-selected="false" data-i18n-title="line.modeListTitle" title="Veure llista detallada de parades">
+                <span data-i18n="line.modeList">📋 Llista</span>
               </button>
             </div>
             <div class="stops-card-dir-pills" id="stops-card-dir-pills"></div>
@@ -624,8 +624,8 @@
           <!-- Prominent Direction Buttons / Tabs directly inside Stops Card -->
           <!-- Search & Filter bar (integrated for both Thermometer and List modes) -->
           <div class="stops-search-wrapper">
-            <input type="text" id="stop-search-input" class="stops-search-input" placeholder="🔍 Cercar parada al termòmetre (ex: Tereses, 1016, Hospital)..." aria-label="Cercar parada">
-            <button type="button" id="btn-clear-stop-search" class="btn-clear-search" style="display:none;" title="Netejar cerca">✕</button>
+            <input type="text" id="stop-search-input" class="stops-search-input" placeholder="🔍 Cercar parada al termòmetre (ex: Tereses, 1016, Hospital)..." data-i18n-aria-label="line.stopSearchAria" aria-label="Cercar parada">
+            <button type="button" id="btn-clear-stop-search" class="btn-clear-search" style="display:none;" data-i18n-title="line.clearSearch" title="Netejar cerca">✕</button>
           </div>
 
           <div class="stops-schematic-scroll" id="stops-schematic-scroll"></div>
