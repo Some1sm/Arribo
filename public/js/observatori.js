@@ -9,6 +9,7 @@ class ObservatoriApp {
     this.currentHours = 24;
     this.currentTab = 'journalism'; // 'journalism' | 'termometre' | 'incidents'
     this.filterText = '';
+    this.lineCode = ''; // exact line filter for Mataró's reports (?linia=), set by the line pills
     this.sorts = {
       mostDelayed: { key: 'avgDelay', asc: false },
       worstStops: { key: 'avgDelay', asc: false },
@@ -77,6 +78,9 @@ class ObservatoriApp {
       this._currentMonthlyMonth = month;
     }
 
+    const linia = params.get('linia');
+    if (linia && /^[A-Za-z0-9]{1,6}$/.test(linia)) this.lineCode = linia.toUpperCase();
+
     const q = params.get('q');
     if (q) {
       this.filterText = q;
@@ -134,6 +138,10 @@ class ObservatoriApp {
       params.set('q', this.filterText);
     }
 
+    if (this.lineCode && this.currentTab === 'journalism') {
+      params.set('linia', this.lineCode);
+    }
+
     if (this.groupByLine && this.currentTab === 'journalism') {
       params.set('grouped', '1');
     }
@@ -146,11 +154,30 @@ class ObservatoriApp {
     window.history.replaceState({}, '', newUrl);
   }
 
+  /**
+   * The line pills above Mataró's report: "Totes" plus one per trackable
+   * catalog line (a SegmentedControl). Hidden with fewer than two lines.
+   */
+  renderLineFilter() {
+    const dock = document.getElementById('journalism-line-filter');
+    if (!dock) return;
+    const lines = (this.availableLines || []).filter(l => l && l.trackable !== false && l.code);
+    dock.hidden = lines.length < 2;
+    if (dock.hidden) return;
+    if (this.lineCode && !lines.some(l => String(l.code).toUpperCase() === this.lineCode)) this.lineCode = '';
+    const items = [{ code: '', label: 'Totes' }, ...lines.map(l => ({ code: String(l.code).toUpperCase(), label: String(l.code) }))];
+    dock.innerHTML = items.map(i => {
+      const on = i.code === this.lineCode;
+      return `<button type="button" class="pill${on ? ' is-active' : ''}" aria-pressed="${on}" data-line-code="${this.esc(i.code)}">${this.esc(i.label)}</button>`;
+    }).join('');
+  }
+
   async fetchLinesMetadata() {
     try {
       const res = await fetch('/api/lines').then(r => r.json());
       if (res && res.success && Array.isArray(res.lines)) {
         this.availableLines = res.lines;
+        this.renderLineFilter();
       }
     } catch {
       // Non-critical fallback
@@ -995,6 +1022,18 @@ class ObservatoriApp {
       });
     });
 
+    // Line pills (exact line filter, alongside the text search)
+    document.getElementById('journalism-line-filter')?.addEventListener('click', (e) => {
+      const pill = e.target.closest('[data-line-code]');
+      if (!pill) return;
+      this.lineCode = pill.getAttribute('data-line-code') || '';
+      this.updateUrl();
+      this.renderLineFilter();
+      if (this.currentReport && this.currentTab === 'journalism') {
+        this.renderJournalismReport(this.currentReport);
+      }
+    });
+
     // Search input
     const searchInput = document.getElementById('journalism-search-input');
     searchInput?.addEventListener('input', (e) => {
@@ -1353,6 +1392,9 @@ class ObservatoriApp {
     const filterText = (this.filterText || '').trim().toLowerCase();
     const norm = (str) => String(str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     const cleanFilter = norm(filterText);
+    // Exact line from the line pills, applied on top of the text search.
+    const lineFilter = (this.lineCode || '').toUpperCase();
+    const onLine = x => !lineFilter || String(x?.lineCode || '').toUpperCase() === lineFilter;
 
     const s = report.summary || {};
     const isAllStopsMode = this.stopFilterMode === 'all';
@@ -1372,6 +1414,7 @@ class ObservatoriApp {
         (st.agency && (st.agency.toLowerCase().includes(filterText) || norm(st.agency).includes(cleanFilter)))
       );
     }
+    matchingAllStops = matchingAllStops.filter(onLine);
     const matchingTotalCount = matchingAllStops.length;
     const matchingBottleneckCount = matchingAllStops.filter(s => s.isBottleneck).length;
     const matchingPunctualCount = Math.max(0, matchingTotalCount - matchingBottleneckCount);
@@ -1399,6 +1442,10 @@ class ObservatoriApp {
       agencies = agencies.filter(a =>
         (a.agency && (a.agency.toLowerCase().includes(filterText) || norm(a.agency).includes(cleanFilter)))
       );
+    }
+    if (lineFilter) {
+      mostDelayed = mostDelayed.filter(onLine);
+      worstStops = worstStops.filter(onLine);
     }
 
     // Sort list
@@ -1493,7 +1540,7 @@ class ObservatoriApp {
         const pctStr = v => (v === null || v === undefined ? '—' : `${Number(v).toLocaleString('ca-ES')}%`);
         const tone = v => (v === null || v === undefined ? 'var(--text-muted)' : v >= 75 ? 'var(--accent-live)' : v >= 60 ? 'var(--accent-warning)' : 'var(--accent-danger)');
         const num = v => (Number(v) || 0).toLocaleString('ca-ES');
-        const lines = Array.isArray(comp.byLine) ? comp.byLine : [];
+        const lines = (Array.isArray(comp.byLine) ? comp.byLine : []).filter(onLine);
         const hours = (Array.isArray(comp.byHour) ? comp.byHour : []).filter(h => h.comparedVisits >= 20);
         return `
         <div style="background:rgba(16,185,129,0.06); border:1px solid rgba(16,185,129,0.25); border-radius:10px; padding:0.8rem 1rem; margin-bottom:1.25rem; font-size:0.78rem; color:var(--text-secondary); line-height:1.5;">
@@ -1754,7 +1801,7 @@ class ObservatoriApp {
 
         let stopNoticeHtml = '';
         if (!isAllStopsMode && matchingPunctualCount > 0) {
-          const lineNotice = filterText ? "d'aquesta línia" : 'a la xarxa';
+          const lineNotice = (filterText || lineFilter) ? "d'aquesta línia" : 'a la xarxa';
           stopNoticeHtml = `
             <div class="observatori-filter-notice" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.6rem; background:rgba(0,148,133,0.08); border:1px solid rgba(0,148,133,0.25); border-radius:10px; padding:0.65rem 0.95rem; margin-bottom:1rem; font-size:0.8rem;">
               <div style="display:flex; align-items:center; gap:0.55rem; color:var(--text-primary);">

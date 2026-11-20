@@ -11951,3 +11951,7 @@ body[data-dades-scope="bus"] #operators-section { display: none !important; }
 }
 .empty-state-title { font-size: 1rem; font-weight: 700; color: var(--text-primary); margin-bottom: var(--space-1); }
 .empty-state-text { font-size: 0.85rem; max-width: 450px; margin: 0 auto; }
+
+/* Dades: exact line filter under the report search (observatori.js renderLineFilter) */
+.journalism-line-filter { margin: 0 0 var(--space-5); }
+.journalism-line-filter[hidden] { display: none; }

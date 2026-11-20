@@ -13,7 +13,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-  <link rel="stylesheet" href="/css/style.css?v=9.4.57">
+  <link rel="stylesheet" href="/css/style.css?v=9.4.58">
 </head>
 <body class="observatori-page-body observatori-page">
 
@@ -178,6 +178,8 @@
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       <input type="text" id="journalism-search-input" class="line-picker-search-input" placeholder="Cerca per línia (ex: L1, L2, L3, 5, 8), parada o empresa..." autocomplete="off">
     </div>
+    <!-- Exact line filter for Mataró's report, built from the catalog (observatori.js renderLineFilter) -->
+    <div class="pill-group journalism-line-filter dades-bus-only" id="journalism-line-filter" role="group" aria-label="Línia" hidden></div>
 
     <!-- Collapsible Methodology Section (Plan 6.7) -->
     <details class="observatori-methodology-card dades-bus-only" id="observatori-methodology-details" style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; margin-bottom:1.5rem; overflow:hidden;">
@@ -357,11 +359,11 @@
   </footer>
 
   <!-- Scripts -->
-  <script src="/js/utils.js?v=9.4.57"></script>
-  <script src="/js/storage.js?v=9.4.57"></script>
-  <script src="/js/pwa.js?v=9.4.57"></script>
+  <script src="/js/utils.js?v=9.4.58"></script>
+  <script src="/js/storage.js?v=9.4.58"></script>
+  <script src="/js/pwa.js?v=9.4.58"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="/js/observatori.js?v=9.4.57"></script>
-  <script src="/js/operators.js?v=9.4.57"></script>
+  <script src="/js/observatori.js?v=9.4.58"></script>
+  <script src="/js/operators.js?v=9.4.58"></script>
 </body>
 </html>
