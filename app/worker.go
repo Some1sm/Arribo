@@ -410,6 +410,8 @@ func (k *Worker) executeDbOperation(op string, rawArgs any) (res any, err error)
 		return db.getDelayIncidents(args), nil
 	case "inspectDelayIncident":
 		return db.inspectDelayIncident(args), nil
+	case "getOperatorLineReport":
+		return db.getOperatorLineReport(jsString(args.Get("agencyId")), jsString(args.Get("line")), jsNumber(args.Get("hours")))
 	case "getRailDepartures":
 		return k.railDeparturesOp(args)
 	case "getOperatorReport":
