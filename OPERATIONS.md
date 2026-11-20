@@ -325,6 +325,16 @@ In June of each year, the operator publishes the summer service window notice (e
 4. Run `node scripts/scrape_maresme_timetables.js --diff` to check that both directions of every line come from the same season, then build and vet the server.
 5. Deploy the updated configuration.
 
+## Vercel domain (proxy only)
+
+The Vercel project for the `bad-amb-bus-tracker` domain does not run Arribo: the Go server, its polling, SQLite and SSE need the always-on VPS, and Vercel functions are short-lived with no persistent disk. `vercel.json` makes each deployment a proxy instead: no install or build (the build only writes an empty `.vercel-proxy/` output folder, so no stale copy of `public/` is ever served from Vercel), and every path is rewritten to the live app on the VPS (`http://87.106.33.66:3000`). Change that address there if the VPS moves.
+
+Limits of the proxy:
+
+- The VPS sees Vercel's addresses, not the visitor's: `TRUSTED_PROXIES` cannot list Vercel's changing egress ranges, so visitors behind the same Vercel address share the API rate limit (120 requests a minute) and the SSE cap (8 streams per address). A refused stream falls back to polling. Watch for 429s in the browser if the domain gets traffic.
+- Vercel may close long-lived responses, so the live SSE stream can reconnect or fall back to polling more often than on the VPS address.
+- Production deployments follow the Vercel project's production branch (normally GitHub `main`); other branches get preview deployments of the same proxy.
+
 ## Documentation checks and credentials
 
 Run `node scripts/docs_check.js` for relative links and npm script references in the

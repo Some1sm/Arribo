@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "echo 'Arribo runs on the VPS; Vercel only proxies to it'",
+  "buildCommand": "mkdir -p .vercel-proxy && printf 'Arribo is served from the VPS through the rewrite below.\\n' > .vercel-proxy/README.txt",
+  "outputDirectory": ".vercel-proxy",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "http://87.106.33.66:3000/$1" }
+  ]
+}
