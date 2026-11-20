@@ -123,7 +123,7 @@ func catalogOperators(lines []any) []any {
 	for _, a := range agencies {
 		b := a.Bounds
 		out = append(out, O(
-			"id", a.ID, "name", a.Name, "mode", a.Mode, "lineCount", counts[a.ID],
+			"id", a.ID, "name", a.Name, "shortName", a.Name, "mode", a.Mode, "lineCount", counts[a.ID],
 			"bounds", O("minLat", b.MinLat, "maxLat", b.MaxLat, "minLon", b.MinLon, "maxLon", b.MaxLon),
 			"center", []any{a.Center[0], a.Center[1]}, "zoom", a.Zoom,
 			"trackable", true,
@@ -180,7 +180,7 @@ func railCatalog() (lines []any, ops []any) {
 		}
 		b := cataloniaBounds
 		ops = append(ops, O(
-			"id", info.ID, "name", info.Name, "mode", op.Mode, "lineCount", float64(len(op.Lines)),
+			"id", info.ID, "name", info.Name, "shortName", info.ShortName, "mode", op.Mode, "lineCount", float64(len(op.Lines)),
 			"bounds", O("minLat", b.MinLat, "maxLat", b.MaxLat, "minLon", b.MinLon, "maxLon", b.MaxLon),
 			"center", nil, "zoom", nil, "trackable", false,
 		))

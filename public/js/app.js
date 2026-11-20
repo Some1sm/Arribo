@@ -441,6 +441,7 @@ class TransitApp {
     }
 
     document.title = "Arribo! | Telemetria i Seguiment d'Autobusos en Temps Real";
+    this.renderLandingHeader();
 
     this.resumeNetworkMap();
   }
@@ -965,7 +966,7 @@ class TransitApp {
    *  "operators"), plus any operator a line names that the list lacks. */
   catalogOperators() {
     const ops = Array.isArray(this.availableOperators)
-      ? this.availableOperators.map(o => ({ id: String(o.id), name: o.name || String(o.id), mode: o.mode || '' }))
+      ? this.availableOperators.map(o => ({ id: String(o.id), name: o.name || String(o.id), shortName: o.shortName || o.name || String(o.id), mode: o.mode || '' }))
       : [];
     for (const l of this.availableLines || []) {
       const id = l.agencyId || 'mataro';
@@ -1008,8 +1009,35 @@ class TransitApp {
     return line ? ` data-line="${this.esc(window.TransitUtils?.lineKey?.(line) ?? '')}"` : '';
   }
 
+  /**
+   * Landing and header texts that follow the catalog. With one operator the
+   * page keeps its Mataró wording (the static HTML). With trains in the
+   * catalog it names every network and says what each offers: bus lines
+   * followed live by GPS, trains on the network map and in their line view.
+   */
+  renderLandingHeader() {
+    const ops = this.catalogOperators();
+    if (ops.length <= 1) return;
+    const short = o => o.shortName || o.name;
+    const listed = this.availableLines || [];
+    const busOps = ops.filter(o => listed.some(l => (l.agencyId || 'mataro') === o.id));
+    const railOps = ops.filter(o => !busOps.includes(o));
+    const list = names => (names.length <= 1 ? (names[0] || '') : `${names.slice(0, -1).join(', ')} i ${names[names.length - 1]}`);
+    const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+    set('landing-hero-eyebrow', `Xarxa en directe • ${ops.map(short).join(' · ')}`);
+    set('landing-hero-title', railOps.length ? 'Quin bus o tren vols seguir?' : 'Quina línia vols seguir?');
+    set('landing-hero-subtitle', `${listed.length} línies de ${list(busOps.map(short))} amb GPS en directe` +
+      (railOps.length ? `, i els trens de ${list(railOps.map(short))} al mapa de la xarxa i a la vista de cada línia.` : '.'));
+    set('header-city-pill', 'Catalunya');
+    if (!this.activeLineId) {
+      set('header-subtitle', railOps.length ? 'Busos i trens en directe' : 'Transport públic en directe');
+      document.title = railOps.length ? 'Arribo! | Busos i trens en temps real' : 'Arribo! | Transport públic en temps real';
+    }
+  }
+
   /** Runs whenever the catalog changes: line colours and the landing filter dock. */
   applyCatalog() {
+    this.renderLandingHeader();
     window.TransitUtils?.applyLineColors?.(this.catalogAllLines || this.availableLines || []);
     this.networkMap?.setTrainCatalog?.(this.catalogAllLines || []);
     this.renderLandingFilterTabs();
