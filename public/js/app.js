@@ -981,6 +981,13 @@ class TransitApp {
       .filter(g => g.lines.length > 0);
   }
 
+  /** Lines the line picker lists: the trackable lines plus every rail line
+   *  the line view can open (catalog `openable`), which open by lineRef. */
+  pickerLines() {
+    const rail = (this.catalogAllLines || []).filter(l => l && l.lineRef && l.openable);
+    return [...(this.availableLines || []), ...rail];
+  }
+
   /** The catalog entry of a rail line ("fgc:L6", any case), or undefined. */
   railCatalogLine(lineId) {
     if (!window.TransitUtils?.isRailLineId?.(lineId)) return undefined;
@@ -1033,7 +1040,7 @@ class TransitApp {
   renderPickerFilterTabs() {
     const dock = document.getElementById('line-picker-filter-tabs');
     if (!dock) return;
-    const lines = this.availableLines || [];
+    const lines = this.pickerLines();
     const ops = this.catalogOperators().filter(o => lines.some(l => (l.agencyId || 'mataro') === o.id));
     const items = [{ value: 'all', label: 'Totes les línies' }];
     if (ops.length > 1) ops.forEach(o => items.push({ value: `op:${o.id}`, label: o.name }));
@@ -4440,7 +4447,7 @@ class TransitApp {
       return code.includes(q) || name.includes(q) || agency.includes(q) || ('línia ' + code).includes(q) || ('linia ' + code).includes(q);
     };
 
-    const linesToRender = this.availableLines.filter(filterFn);
+    const linesToRender = this.pickerLines().filter(filterFn);
 
     if (linesToRender.length === 0) {
       container.innerHTML = `
@@ -4460,9 +4467,10 @@ class TransitApp {
         </div>
         <div class="line-grid">
           ${lines.map(l => {
-            const isActive = String(l.id) === String(this.activeLineId);
+            const openId = l.lineRef || l.id;
+            const isActive = String(openId).toLowerCase() === String(this.activeLineId).toLowerCase();
             return `
-              <div class="line-grid-card ${isActive ? 'active' : ''}" data-line-id="${this.esc(l.id)}">
+              <div class="line-grid-card ${isActive ? 'active' : ''}" data-line-id="${this.esc(openId)}">
                 <div class="line-card-left">
                   <span class="line-card-badge"${this.lineAttr(l)}>${this.esc(l.code)}</span>
                   <div class="line-card-details">
@@ -4470,7 +4478,7 @@ class TransitApp {
                     <div class="line-card-sub">
                       <span>${this.esc(l.agency || op.name)}</span>
                       <span>•</span>
-                      <span>${l.directions ? `${l.directions.length} sentits` : 'En servei'}</span>
+                      <span>${l.lineRef ? 'Tren' : (l.directions ? `${l.directions.length} sentits` : 'En servei')}</span>
                     </div>
                   </div>
                 </div>

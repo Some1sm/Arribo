@@ -19,6 +19,9 @@ function escHtml(value) {
 }
 
 const CANONICAL_BUS_ICON_INNER_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle;"><path d="M4.7 17.5H3.4A1.4 1.4 0 0 1 2 16.1V6.4A1.4 1.4 0 0 1 3.4 5H17.5A4.5 4.5 0 0 1 22 9.5v6.6a1.4 1.4 0 0 1-1.4 1.4h-1.3"/><path d="M9.3 17.5h5.4"/><path d="M2 11.6h20"/><path d="M7.5 5v6.6M12.5 5v6.6M17.6 5.2v6.4"/><circle cx="7" cy="17.5" r="2.3"/><circle cx="17" cy="17.5" r="2.3"/></svg>';
+// Trains (GTFS-RT, Rodalies / FGC) get their own front-view drawing, so a
+// train on a rail line never looks like a bus.
+const TRAIN_ICON_INNER_SVG = '<svg class="train-icon-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="14" rx="3"/><path d="M5 10h14"/><path d="M12 3v7"/><circle cx="9" cy="13.5" r="0.7"/><circle cx="15" cy="13.5" r="0.7"/><path d="M8 21l2-4"/><path d="M16 21l-2-4"/></svg>';
 
 
 /**
@@ -1701,7 +1704,7 @@ class TransitMap {
           }
           const iconInner = el.querySelector('.bus-icon-inner');
           if (iconInner) {
-            iconInner.innerHTML = isGhost ? '⚡' : (bus.isTerminalLayover ? '🅿️' : CANONICAL_BUS_ICON_INNER_SVG);
+            iconInner.innerHTML = isGhost ? '⚡' : (bus.isTerminalLayover ? '🅿️' : (bus.positionSource === 'gtfsrt' ? TRAIN_ICON_INNER_SVG : CANONICAL_BUS_ICON_INNER_SVG));
           }
           obj.marker.setZIndexOffset(isSelected ? 5000 : (isGhost ? 1500 : 2000));
         }
@@ -1716,13 +1719,13 @@ class TransitMap {
             </div>
           </div>
         ` : `
-          <div class="live-bus-marker-wrap ${isSelected ? 'selected' : ''} ${isGhost ? 'ghost-bus' : ''}">
+          <div class="live-bus-marker-wrap ${isSelected ? 'selected' : ''} ${isGhost ? 'ghost-bus' : ''} ${bus.positionSource === 'gtfsrt' ? 'is-train' : ''}">
             <div class="bus-selection-ring" style="${isSelected ? '' : 'display:none;'}"></div>
             <div class="bus-heading-cone" style="transform: rotate(${bearingAngle}deg);">
               <div class="bus-heading-arrow"></div>
             </div>
             <div class="live-bus-pin" style="background: ${pinBg};">
-              <span class="bus-icon-inner" style="transform: scaleX(${isHeadingWest ? -1 : 1});">${isGhost ? '⚡' : CANONICAL_BUS_ICON_INNER_SVG}</span>
+              <span class="bus-icon-inner" style="transform: scaleX(${isHeadingWest ? -1 : 1});">${isGhost ? '⚡' : (bus.positionSource === 'gtfsrt' ? TRAIN_ICON_INNER_SVG : CANONICAL_BUS_ICON_INNER_SVG)}</span>
               <span class="bus-status-dot ${isGhost ? 'ghost' : (isEst ? 'estimated' : 'live')}"></span>
             </div>
           </div>

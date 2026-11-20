@@ -5124,6 +5124,8 @@ body {
 .rail-train-main { display: grid; gap: 0.15rem; min-width: 0; }
 .rail-train-sub { color: var(--text-muted); font-size: 0.75rem; }
 #telemetry-card[hidden] { display: none; }
+/* A train's feed gives no heading here: no direction cone on its pin. */
+.live-bus-marker-wrap.is-train .bus-heading-cone { display: none; }
 .rail-departures-note { color: var(--text-muted); font-size: 0.85rem; padding: 0.5rem; margin: 0; }
 .train-popup-credit { color: var(--text-muted); font-size: 0.7rem; border-top: 1px solid var(--border-subtle); padding-top: 0.35rem; }
 
