@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Observatori de Retards i Puntualitat — Dades | Arribo! Mataró</title>
+  <title data-i18n="dades.pageTitle">Observatori de Retards i Puntualitat — Dades | Arribo! Mataró</title>
   <meta name="description" content="Anàlisi històrica de retards, puntualitat de les línies de Mataró Bus Urbà, mapa de colls d'ampolla i el Termòmetre setmanal.">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2310b981' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M4.7 17.5H3.4A1.4 1.4 0 0 1 2 16.1V6.4A1.4 1.4 0 0 1 3.4 5H17.5A4.5 4.5 0 0 1 22 9.5v6.6a1.4 1.4 0 0 1-1.4 1.4h-1.3'/><path d='M9.3 17.5h5.4'/><path d='M2 11.6h20'/><path d='M7.5 5v6.6M12.5 5v6.6M17.6 5.2v6.4'/><circle cx='7' cy='17.5' r='2.3'/><circle cx='17' cy='17.5' r='2.3'/></svg>">
   
@@ -13,14 +13,14 @@
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-  <link rel="stylesheet" href="/css/style.css?v=9.4.59">
+  <link rel="stylesheet" href="/css/style.css?v=9.4.60">
 </head>
 <body class="observatori-page-body observatori-page">
 
   <!-- Top Navigation Bar -->
   <header class="app-header observatori-header">
     <div class="header-container">
-      <a href="/" class="brand-title-wrap" id="header-logo-group" title="Arribo! - Tornar al mapa en temps real">
+      <a href="/" class="brand-title-wrap" id="header-logo-group" title="Arribo! - Tornar al mapa en temps real" data-i18n-title="dades.brandTitle">
         <div class="brand-mark-box" id="header-line-badge">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M4.7 17.5H3.4A1.4 1.4 0 0 1 2 16.1V6.4A1.4 1.4 0 0 1 3.4 5H17.5A4.5 4.5 0 0 1 22 9.5v6.6a1.4 1.4 0 0 1-1.4 1.4h-1.3"/>
@@ -32,26 +32,26 @@
           </svg>
         </div>
         <span>Arribo!</span>
-        <span class="brand-badge-pill" id="header-city-pill">Dades</span>
+        <span class="brand-badge-pill" id="header-city-pill" data-i18n="dades.headerPill">Dades</span>
         <span class="brand-badge-pill season-pill" id="header-season-pill" hidden></span>
       </a>
 
       <div class="header-actions">
         <!-- Back to Main Map -->
-        <a href="/" class="btn-header-nav map-btn" id="btn-header-map" title="Tornar al mapa en temps real" style="text-decoration:none;">
+        <a href="/" class="btn-header-nav map-btn" id="btn-header-map" title="Tornar al mapa en temps real" data-i18n-title="dades.navMapTitle" style="text-decoration:none;">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/></svg>
-          <span>Mapa general</span>
+          <span data-i18n="dades.navMap">Mapa general</span>
         </a>
 
         <!-- Journey Planner Navigation Button -->
-        <a href="/plan" class="btn-header-nav planner-btn" id="btn-header-planner" title="Com anar-hi: Planificador de viatges A a B" style="text-decoration:none;">
+        <a href="/plan" class="btn-header-nav planner-btn" id="btn-header-planner" title="Com anar-hi: Planificador de viatges A a B" data-i18n-title="dades.navPlannerTitle" style="text-decoration:none;">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
-          <span>Com anar-hi</span>
+          <span data-i18n="dades.navPlanner">Com anar-hi</span>
         </a>
 
         <!-- Theme Toggle Button -->
         <select class="lang-select" data-lang-picker aria-label="Idioma"></select>
-        <button type="button" class="btn-icon btn-theme-toggle" id="btn-page-theme-toggle" title="Canviar tema clar / fosc" aria-label="Canviar tema clar o fosc">
+        <button type="button" class="btn-icon btn-theme-toggle" id="btn-page-theme-toggle" title="Canviar tema clar / fosc" data-i18n-title="dades.themeTitle" aria-label="Canviar tema clar o fosc" data-i18n-aria-label="dades.themeAria">
           <svg class="theme-icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="5"></circle>
             <line x1="12" y1="1" x2="12" y2="3"></line>
@@ -81,69 +81,69 @@
           <span class="beacon-pulse-ring"></span>
           <span class="beacon-pulse-dot"></span>
         </span>
-        <span id="dades-eyebrow">Xarxa Urbana • Mataró Bus • Telemetria en Temps Real</span>
+        <span id="dades-eyebrow" data-i18n="dades.heroEyebrow">Xarxa Urbana • Mataró Bus • Telemetria en Temps Real</span>
       </div>
-      <h1>Observatori de Retards i Puntualitat</h1>
-      <p id="dades-intro">Dades històriques registrades pel nostre servidor central de telemetria a Mataró Bus Urbà. Informació objectiva de puntualitat, colls d'ampolla i congestió horària.</p>
+      <h1 data-i18n="dades.heroTitle">Observatori de Retards i Puntualitat</h1>
+      <p id="dades-intro" data-i18n="dades.heroIntro">Dades històriques registrades pel nostre servidor central de telemetria a Mataró Bus Urbà. Informació objectiva de puntualitat, colls d'ampolla i congestió horària.</p>
     </div>
 
     <!-- Network scope (all / Mataró's buses / one train operator): built by
          public/js/operators.js from the operators that have data; hidden
          while there is no train data, so a Mataró-only Dades is unchanged. -->
     <div class="dades-scope" id="dades-scope-wrap" hidden>
-      <span class="dades-scope-label" id="dades-scope-label">Xarxa</span>
+      <span class="dades-scope-label" id="dades-scope-label" data-i18n="dades.scopeLabel">Xarxa</span>
       <div class="pill-group" id="dades-scope" role="group" aria-labelledby="dades-scope-label"></div>
     </div>
 
     <!-- Timeframe Selector & CSV Download Toolbar -->
     <div class="observatori-toolbar dades-bus-only">
-      <div class="line-picker-filter-tabs" id="journalism-timeframe-tabs" role="tablist" aria-label="Selecció de període d'anàlisi">
-        <button type="button" class="line-filter-tab active" data-hours="24" role="tab" aria-selected="true" title="Dades de les darreres 24 hores">
+      <div class="line-picker-filter-tabs" id="journalism-timeframe-tabs" role="tablist" aria-label="Selecció de període d'anàlisi" data-i18n-aria-label="dades.tabsAria">
+        <button type="button" class="line-filter-tab active" data-hours="24" role="tab" aria-selected="true" title="Dades de les darreres 24 hores" data-i18n-title="dades.tab24hTitle">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <circle cx="12" cy="12" r="10"></circle>
             <polyline points="12 6 12 12 16 14"></polyline>
           </svg>
-          <span class="tab-text-full">24 hores</span>
-          <span class="tab-text-compact">24h</span>
+          <span class="tab-text-full" data-i18n="dades.tab24h">24 hores</span>
+          <span class="tab-text-compact" data-i18n="dades.tab24hCompact">24h</span>
         </button>
-        <button type="button" class="line-filter-tab" data-hours="48" role="tab" aria-selected="false" title="Dades de les darreres 48 hores">
+        <button type="button" class="line-filter-tab" data-hours="48" role="tab" aria-selected="false" title="Dades de les darreres 48 hores" data-i18n-title="dades.tab48hTitle">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M8 2v4"></path>
             <path d="M16 2v4"></path>
             <rect x="3" y="4" width="18" height="18" rx="2"></rect>
             <path d="M3 10h18"></path>
           </svg>
-          <span class="tab-text-full">48 hores</span>
-          <span class="tab-text-compact">48h</span>
+          <span class="tab-text-full" data-i18n="dades.tab48h">48 hores</span>
+          <span class="tab-text-compact" data-i18n="dades.tab48hCompact">48h</span>
         </button>
-        <button type="button" class="line-filter-tab" data-hours="168" role="tab" aria-selected="false" title="Dades dels darrers 7 dies">
+        <button type="button" class="line-filter-tab" data-hours="168" role="tab" aria-selected="false" title="Dades dels darrers 7 dies" data-i18n-title="dades.tab7dTitle">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <line x1="18" y1="20" x2="18" y2="10"></line>
             <line x1="12" y1="20" x2="12" y2="4"></line>
             <line x1="6" y1="20" x2="6" y2="14"></line>
           </svg>
-          <span class="tab-text-full">7 dies</span>
-          <span class="tab-text-compact">7d</span>
+          <span class="tab-text-full" data-i18n="dades.tab7d">7 dies</span>
+          <span class="tab-text-compact" data-i18n="dades.tab7dCompact">7d</span>
         </button>
         <span class="tab-divider" aria-hidden="true"></span>
-        <button type="button" class="line-filter-tab termometre-tab" id="btn-observatori-termometre" data-tab="termometre" role="tab" aria-selected="false" title="Fitxa resumida i infografia del Termòmetre">
+        <button type="button" class="line-filter-tab termometre-tab" id="btn-observatori-termometre" data-tab="termometre" role="tab" aria-selected="false" title="Fitxa resumida i infografia del Termòmetre" data-i18n-title="dades.tabTermometreTitle">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"></path>
           </svg>
-          <span class="tab-text-full">El Termòmetre</span>
-          <span class="tab-text-compact">Termòmetre</span>
+          <span class="tab-text-full" data-i18n="dades.tabTermometre">El Termòmetre</span>
+          <span class="tab-text-compact" data-i18n="dades.tabTermometreCompact">Termòmetre</span>
         </button>
-        <button type="button" class="line-filter-tab incidents-tab" id="btn-observatori-incidents" data-tab="incidents" role="tab" aria-selected="false" title="Investigador d'incidents de trànsit (0–24m) i auditoria de telemetria">
+        <button type="button" class="line-filter-tab incidents-tab" id="btn-observatori-incidents" data-tab="incidents" role="tab" aria-selected="false" title="Investigador d'incidents de trànsit (0–24m) i auditoria de telemetria" data-i18n-title="dades.tabIncidentsTitle">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path>
             <line x1="12" y1="9" x2="12" y2="13"></line>
             <line x1="12" y1="17" x2="12.01" y2="17"></line>
           </svg>
-          <span class="tab-text-full">Top Incidents</span>
-          <span class="tab-text-compact">Incidents</span>
+          <span class="tab-text-full" data-i18n="dades.tabIncidents">Top Incidents</span>
+          <span class="tab-text-compact" data-i18n="dades.tabIncidentsCompact">Incidents</span>
           <span class="tab-badge-alert">&ge;5m</span>
         </button>
-        <button type="button" class="line-filter-tab monthly-tab" id="btn-observatori-monthly" data-tab="monthly" role="tab" aria-selected="false" title="Informe mensual oficial de puntualitat per a l'Ajuntament de Mataró">
+        <button type="button" class="line-filter-tab monthly-tab" id="btn-observatori-monthly" data-tab="monthly" role="tab" aria-selected="false" title="Informe mensual oficial de puntualitat per a l'Ajuntament de Mataró" data-i18n-title="dades.tabMonthlyTitle">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
             <polyline points="14 2 14 8 20 8"></polyline>
@@ -151,76 +151,76 @@
             <line x1="16" y1="17" x2="8" y2="17"></line>
             <polyline points="10 9 9 9 8 9"></polyline>
           </svg>
-          <span class="tab-text-full">Informe Mensual</span>
-          <span class="tab-text-compact">Mensual</span>
+          <span class="tab-text-full" data-i18n="dades.tabMonthly">Informe Mensual</span>
+          <span class="tab-text-compact" data-i18n="dades.tabMonthlyCompact">Mensual</span>
         </button>
       </div>
 
-      <a href="/api/analytics/export/visits.csv" class="btn-secondary btn-csv-export" download title="Descarregar fitxer CSV de passos per parada consolidats">
+      <a href="/api/analytics/export/visits.csv" class="btn-secondary btn-csv-export" download title="Descarregar fitxer CSV de passos per parada consolidats" data-i18n-title="dades.csvVisitsTitle">
         <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
           <polyline points="7 10 12 15 17 10"></polyline>
           <line x1="12" y1="15" x2="12" y2="3"></line>
         </svg>
-        <span>CSV Passos</span>
+        <span data-i18n="dades.csvVisits">CSV Passos</span>
       </a>
-      <a href="/api/analytics/export/csv" class="btn-secondary btn-csv-export" download title="Descarregar fitxer CSV complet de mostres per a anàlisi detallada">
+      <a href="/api/analytics/export/csv" class="btn-secondary btn-csv-export" download title="Descarregar fitxer CSV complet de mostres per a anàlisi detallada" data-i18n-title="dades.csvSamplesTitle">
         <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
           <polyline points="7 10 12 15 17 10"></polyline>
           <line x1="12" y1="15" x2="12" y2="3"></line>
         </svg>
-        <span>CSV Mostres</span>
+        <span data-i18n="dades.csvSamples">CSV Mostres</span>
       </a>
     </div>
 
     <!-- Search Input Filter -->
     <div class="line-picker-search-bar dades-bus-only" id="journalism-search-bar-wrap">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <input type="text" id="journalism-search-input" class="line-picker-search-input" placeholder="Cerca per línia (ex: L1, L2, L3, 5, 8), parada o empresa..." autocomplete="off">
+      <input type="text" id="journalism-search-input" class="line-picker-search-input" placeholder="Cerca per línia (ex: L1, L2, L3, 5, 8), parada o empresa..." data-i18n-placeholder="dades.searchPlaceholder" autocomplete="off">
     </div>
     <!-- Exact line filter for Mataró's report, built from the catalog (observatori.js renderLineFilter) -->
-    <div class="pill-group journalism-line-filter dades-bus-only" id="journalism-line-filter" role="group" aria-label="Línia" hidden></div>
+    <div class="pill-group journalism-line-filter dades-bus-only" id="journalism-line-filter" role="group" aria-label="Línia" data-i18n-aria-label="dades.lineFilterAria" hidden></div>
 
     <!-- Collapsible Methodology Section (Plan 6.7) -->
     <details class="observatori-methodology-card dades-bus-only" id="observatori-methodology-details" style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; margin-bottom:1.5rem; overflow:hidden;">
       <summary style="padding:0.85rem 1.2rem; font-weight:600; cursor:pointer; display:flex; align-items:center; justify-content:space-between; user-select:none; color:var(--text-primary); font-size:0.9rem;">
         <span style="display:flex; align-items:center; gap:0.5rem;">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-          <strong>Metodologia i Criteris de Càlcul de l'Observatori</strong>
+          <strong data-i18n="dades.methTitle">Metodologia i Criteris de Càlcul de l'Observatori</strong>
         </span>
-        <span class="methodology-arrow" style="font-size:0.8rem; color:var(--brand-primary); font-weight:500;"><span class="methodology-when-closed">Desplegar ▾</span><span class="methodology-when-open">Plegar ▴</span></span>
+        <span class="methodology-arrow" style="font-size:0.8rem; color:var(--brand-primary); font-weight:500;"><span class="methodology-when-closed" data-i18n="dades.methExpand">Desplegar ▾</span><span class="methodology-when-open" data-i18n="dades.methCollapse">Plegar ▴</span></span>
       </summary>
       <div style="padding:0.25rem 1.2rem 1.2rem; font-size:0.82rem; line-height:1.6; color:var(--text-secondary); border-top:1px solid var(--border-subtle);">
         <div class="methodology-grid">
           <div>
-            <h5 style="color:var(--text-primary); margin-bottom:0.35rem; font-size:0.86rem;">📡 Font de dades i telemetria</h5>
-            <p style="margin:0;">Les dades provenen del canal oficial de telemetria en temps real (SIRI) del servei de Mataró Bus Urbà ofert per Avanza. Arribo! sondeja la posició i el retard de cada autobús cada 20 segons de forma ininterrompuda.</p>
+            <h5 style="color:var(--text-primary); margin-bottom:0.35rem; font-size:0.86rem;" data-i18n="dades.methSourceTitle">📡 Font de dades i telemetria</h5>
+            <p style="margin:0;" data-i18n="dades.methSourceText">Les dades provenen del canal oficial de telemetria en temps real (SIRI) del servei de Mataró Bus Urbà ofert per Avanza. Arribo! sondeja la posició i el retard de cada autobús cada 20 segons de forma ininterrompuda.</p>
           </div>
           <div>
-            <h5 style="color:var(--text-primary); margin-bottom:0.35rem; font-size:0.86rem;">📍 Unitat d'anàlisi: Passos per parada</h5>
-            <p style="margin:0;">La unitat d'anàlisi és el <em>pas per parada</em> (un vehicle donant servei a una parada concreta). Les múltiples observacions consecutives d'un mateix autobús mentre s'aproxima o fa parada es consoliden en un únic pas, evitant que una cua o retenció multipliqui artificialment les mostres.</p>
+            <h5 style="color:var(--text-primary); margin-bottom:0.35rem; font-size:0.86rem;" data-i18n="dades.methUnitTitle">📍 Unitat d'anàlisi: Passos per parada</h5>
+            <p style="margin:0;"><span data-i18n="dades.methUnitPre">La unitat d'anàlisi és el </span><em data-i18n="dades.methUnitEm">pas per parada</em><span data-i18n="dades.methUnitPost"> (un vehicle donant servei a una parada concreta). Les múltiples observacions consecutives d'un mateix autobús mentre s'aproxima o fa parada es consoliden en un únic pas, evitant que una cua o retenció multipliqui artificialment les mostres.</span></p>
           </div>
           <div>
-            <h5 style="color:var(--text-primary); margin-bottom:0.35rem; font-size:0.86rem;">⏱️ Llindars de puntualitat oficials</h5>
+            <h5 style="color:var(--text-primary); margin-bottom:0.35rem; font-size:0.86rem;" data-i18n="dades.methThreshTitle">⏱️ Llindars de puntualitat oficials</h5>
             <ul style="margin:0; padding-left:1.1rem;">
-              <li><strong>Puntual:</strong> retard entre <strong>-1 i +3 minuts</strong>.</li>
-              <li><strong>Avançat:</strong> més d'1 minut abans de l'horari (<strong>&lt; -1 min</strong>). Un bus que passa abans d'hora no és puntual perquè qui arriba a l'horari fixat el perd.</li>
-              <li><strong>Amb retard:</strong> superior a 3 minuts (<strong>&gt; 3 min</strong>).</li>
-              <li><strong>Retard sever:</strong> 5 minuts o més (<strong>&ge; 5 min</strong>).</li>
+              <li><strong data-i18n="dades.methOnTimeLbl">Puntual:</strong><span data-i18n="dades.methOnTimePre"> retard entre </span><strong data-i18n="dades.methOnTimeRange">-1 i +3 minuts</strong>.</li>
+              <li><strong data-i18n="dades.methEarlyLbl">Avançat:</strong><span data-i18n="dades.methEarlyPre"> més d'1 minut abans de l'horari (</span><strong data-i18n="dades.methEarlyRange">&lt; -1 min</strong><span data-i18n="dades.methEarlyPost">). Un bus que passa abans d'hora no és puntual perquè qui arriba a l'horari fixat el perd.</span></li>
+              <li><strong data-i18n="dades.methLateLbl">Amb retard:</strong><span data-i18n="dades.methLatePre"> superior a 3 minuts (</span><strong data-i18n="dades.methLateRange">&gt; 3 min</strong>).</li>
+              <li><strong data-i18n="dades.methSevereLbl">Retard sever:</strong><span data-i18n="dades.methSeverePre"> 5 minuts o més (</span><strong data-i18n="dades.methSevereRange">&ge; 5 min</strong>).</li>
             </ul>
           </div>
           <div>
-            <h5 style="color:var(--text-primary); margin-bottom:0.35rem; font-size:0.86rem;">📅 Horaris i temporada de referència</h5>
-            <p style="margin:0;">Es comparen les arribades contra la graella oficial publicada a <strong>maresme.net</strong> per a cada expedició concreta, aplicant automàticament el calendari de temporada vigent (estiu/hivern) i tipus de dia (feiner, dissabte o festiu).</p>
+            <h5 style="color:var(--text-primary); margin-bottom:0.35rem; font-size:0.86rem;" data-i18n="dades.methSchedTitle">📅 Horaris i temporada de referència</h5>
+            <p style="margin:0;"><span data-i18n="dades.methSchedPre">Es comparen les arribades contra la graella oficial publicada a </span><strong>maresme.net</strong><span data-i18n="dades.methSchedPost"> per a cada expedició concreta, aplicant automàticament el calendari de temporada vigent (estiu/hivern) i tipus de dia (feiner, dissabte o festiu).</span></p>
           </div>
           <div>
-            <h5 style="color:var(--text-primary); margin-bottom:0.35rem; font-size:0.86rem;">🎯 Mesurament independent de retards</h5>
-            <p style="margin:0;">A més de recopilar el retard informat per l'operador (SIRI), Arribo! mesura amb el GPS l'instant real de pas davant la parada i el compara amb l'hora publicada de l'expedició que indica l'operador. La taxa de concordança (diferència &le; 1 min) valida el rellotge, no l'expedició: per això s'informa a part quants passos tenen com a expedició més propera la mateixa que indica l'operador.</p>
+            <h5 style="color:var(--text-primary); margin-bottom:0.35rem; font-size:0.86rem;" data-i18n="dades.methIndepTitle">🎯 Mesurament independent de retards</h5>
+            <p style="margin:0;" data-i18n="dades.methIndepText">A més de recopilar el retard informat per l'operador (SIRI), Arribo! mesura amb el GPS l'instant real de pas davant la parada i el compara amb l'hora publicada de l'expedició que indica l'operador. La taxa de concordança (diferència &le; 1 min) valida el rellotge, no l'expedició: per això s'informa a part quants passos tenen com a expedició més propera la mateixa que indica l'operador.</p>
           </div>
         </div>
         <div style="margin-top:1.1rem; padding:0.65rem 0.9rem; background:rgba(255,255,255,0.03); border-radius:8px; font-size:0.76rem; color:var(--text-muted);">
-          <strong>Limitacions conegudes:</strong> Poden existir llacunes si el canal de l'operador pateix talls de servei (consultable a l'<a href="/api/health" target="_blank" style="color:var(--brand-primary); text-decoration:none;">estat del sistema</a>). Els autobusos sense emissió de GPS no poden ser mesurats. El retard exposat és l'informat pels sistemes de la companyia operadora.
+          <strong data-i18n="dades.methLimitsLbl">Limitacions conegudes:</strong><span data-i18n="dades.methLimitsPre"> Poden existir llacunes si el canal de l'operador pateix talls de servei (consultable a l'</span><a href="/api/health" target="_blank" style="color:var(--brand-primary); text-decoration:none;" data-i18n="dades.methLimitsLink">estat del sistema</a><span data-i18n="dades.methLimitsPost">). Els autobusos sense emissió de GPS no poden ser mesurats. El retard exposat és l'informat pels sistemes de la companyia operadora.</span>
         </div>
       </div>
     </details>
@@ -231,15 +231,15 @@
         <div style="display:flex; align-items:center; gap:0.6rem;">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--brand-primary);"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
           <div>
-            <h3 id="data-health-title" style="margin:0; font-size:1.02rem; font-weight:700; color:var(--text-primary);">Estat de les dades i telemetria</h3>
-            <p style="margin:0; font-size:0.78rem; color:var(--text-secondary);">Supervisió en temps real de la integritat del servei, connectivitat i sincronització.</p>
+            <h3 id="data-health-title" style="margin:0; font-size:1.02rem; font-weight:700; color:var(--text-primary);" data-i18n="dades.dhTitle">Estat de les dades i telemetria</h3>
+            <p style="margin:0; font-size:0.78rem; color:var(--text-secondary);" data-i18n="dades.dhSubtitle">Supervisió en temps real de la integritat del servei, connectivitat i sincronització.</p>
           </div>
         </div>
         <div id="data-health-timestamp" style="font-size:0.75rem; color:var(--text-muted); font-family:var(--font-mono, monospace);">--:--:--</div>
       </div>
       <div id="data-health-grid" class="dh-body">
         <div style="text-align:center; padding:1.5rem; color:var(--text-muted); grid-column: 1 / -1;">
-          <span class="loading-spinner-inline"></span> Carregant estat de les dades...
+          <span class="loading-spinner-inline"></span> <span data-i18n="dades.dhLoading">Carregant estat de les dades...</span>
         </div>
       </div>
     </section>
@@ -256,7 +256,7 @@
     <!-- Main Dynamic Analytics Container -->
     <div class="dades-bus-only" id="journalism-content-container" style="min-height:320px;">
       <div style="text-align:center; padding:3rem; color:var(--text-muted);">
-        <span class="loading-spinner-inline"></span> Carregant informe de retards i puntualitat...
+        <span class="loading-spinner-inline"></span> <span data-i18n="dades.loadingReport">Carregant informe de retards i puntualitat...</span>
       </div>
     </div>
 
@@ -265,13 +265,13 @@
     <section class="card" id="operators-section" aria-labelledby="operators-title" hidden>
       <div class="card-header">
         <div>
-          <h3 id="operators-title" class="card-title">Trens: Rodalies i FGC</h3>
-          <p class="card-subtitle">Puntualitat de cada operador a partir dels seus canals en temps real. Un tren és puntual si arriba amb 5 minuts de retard o menys.</p>
+          <h3 id="operators-title" class="card-title" data-i18n="ops.sectionTitle">Trens: Rodalies i FGC</h3>
+          <p class="card-subtitle" data-i18n="ops.sectionSubtitle">Puntualitat de cada operador a partir dels seus canals en temps real. Un tren és puntual si arriba amb 5 minuts de retard o menys.</p>
         </div>
         <div class="op-section-tools">
-          <div class="pill-group" role="group" aria-label="Període">
-            <button type="button" class="pill is-active" aria-pressed="true" data-op-hours="24">24 h</button>
-            <button type="button" class="pill" aria-pressed="false" data-op-hours="168">7 dies</button>
+          <div class="pill-group" role="group" aria-label="Període" data-i18n-aria-label="ops.periodAria">
+            <button type="button" class="pill is-active" aria-pressed="true" data-op-hours="24" data-i18n="ops.period24h">24 h</button>
+            <button type="button" class="pill" aria-pressed="false" data-op-hours="168" data-i18n="ops.period7d">7 dies</button>
           </div>
           <span class="op-updated" id="operators-updated" aria-live="polite"></span>
         </div>
@@ -286,13 +286,13 @@
         <div style="display:flex; align-items:center; gap:0.6rem;">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent-warning);" aria-hidden="true"><line x1="2" y1="2" x2="22" y2="22"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><path d="M2 8.82a15 15 0 0 1 4.17-2.65"/><path d="M10.66 5c4.01-.36 8.14.9 11.34 3.76"/><path d="M16.85 11.25a10 10 0 0 1 2.22 1.68"/><path d="M5 13a10 10 0 0 1 5.24-2.76"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
           <div>
-            <h3 id="gps-gaps-title" class="gps-gaps-title">On perden el GPS els autobusos</h3>
-            <p class="gps-gaps-subtitle">Llocs on un bus deixa d'enviar la seva posició durant 90 s o més i el mapa en directe l'ha d'estimar.</p>
+            <h3 id="gps-gaps-title" class="gps-gaps-title" data-i18n="dades.gpsTitle">On perden el GPS els autobusos</h3>
+            <p class="gps-gaps-subtitle" data-i18n="dades.gpsSubtitle">Llocs on un bus deixa d'enviar la seva posició durant 90 s o més i el mapa en directe l'ha d'estimar.</p>
           </div>
         </div>
         <div class="gps-gaps-filters">
-          <div class="observatori-mode-toggle-group" id="gps-gaps-lines" role="group" aria-label="Línia">
-            <button type="button" class="observatori-pill-btn active" data-gps-line="all">Totes</button>
+          <div class="observatori-mode-toggle-group" id="gps-gaps-lines" role="group" aria-label="Línia" data-i18n-aria-label="dades.gpsLinesAria">
+            <button type="button" class="observatori-pill-btn active" data-gps-line="all" data-i18n="dades.gpsAllLines">Totes</button>
             <button type="button" class="observatori-pill-btn" data-gps-line="L1">L1</button>
             <button type="button" class="observatori-pill-btn" data-gps-line="L2">L2</button>
             <button type="button" class="observatori-pill-btn" data-gps-line="L3">L3</button>
@@ -302,40 +302,40 @@
             <button type="button" class="observatori-pill-btn" data-gps-line="L7">L7</button>
             <button type="button" class="observatori-pill-btn" data-gps-line="L8">L8</button>
           </div>
-          <div class="observatori-mode-toggle-group" id="gps-gaps-hide" role="group" aria-label="Busos al mapa">
-            <button type="button" class="observatori-pill-btn active" data-gps-hide="">Tots els busos</button>
-            <button type="button" class="observatori-pill-btn" data-gps-hide="suspect">Sense problemes</button>
-            <button type="button" class="observatori-pill-btn" data-gps-hide="watch">Sense problemes ni «per sobre»</button>
+          <div class="observatori-mode-toggle-group" id="gps-gaps-hide" role="group" aria-label="Busos al mapa" data-i18n-aria-label="dades.gpsHideAria">
+            <button type="button" class="observatori-pill-btn active" data-gps-hide="" data-i18n="dades.gpsHideAll">Tots els busos</button>
+            <button type="button" class="observatori-pill-btn" data-gps-hide="suspect" data-i18n="dades.gpsHideSuspect">Sense problemes</button>
+            <button type="button" class="observatori-pill-btn" data-gps-hide="watch" data-i18n="dades.gpsHideWatch">Sense problemes ni «per sobre»</button>
           </div>
           <div class="observatori-mode-toggle-group gps-gaps-min" id="gps-gaps-min-group" hidden>
-            <label for="gps-gaps-min">Mínim de pèrdues al mateix punt</label>
+            <label for="gps-gaps-min" data-i18n="dades.gpsMinLabel">Mínim de pèrdues al mateix punt</label>
             <input type="range" id="gps-gaps-min" min="1" max="1" step="1" value="1">
             <output for="gps-gaps-min" id="gps-gaps-min-value">1+</output>
           </div>
         </div>
       </div>
-      <p class="gps-gaps-summary" id="gps-gaps-summary" aria-live="polite">Carregant pèrdues de senyal...</p>
+      <p class="gps-gaps-summary" id="gps-gaps-summary" aria-live="polite" data-i18n="dades.gpsLoading">Carregant pèrdues de senyal...</p>
       <div class="gps-gaps-layout">
         <div class="gps-gaps-map-wrap">
           <div class="gps-gaps-map-box">
-            <div class="gps-gaps-map" id="gps-gaps-map" role="img" aria-label="Mapa de Mataró amb els punts on els autobusos perden el GPS"></div>
+            <div class="gps-gaps-map" id="gps-gaps-map" role="img" aria-label="Mapa de Mataró amb els punts on els autobusos perden el GPS" data-i18n-aria-label="dades.gpsMapAria"></div>
             <div class="gps-gaps-empty" id="gps-gaps-empty" hidden></div>
           </div>
           <div class="gps-gaps-legend">
-            <span><i class="gps-gaps-dot recurrent"></i>Punt recurrent (3+ pèrdues, 2+ busos)</span>
-            <span><i class="gps-gaps-dot"></i>Pèrdua puntual</span>
-            <span><i class="gps-gaps-line"></i>Tram sense senyal</span>
+            <span><i class="gps-gaps-dot recurrent"></i><span data-i18n="dades.gpsLegendRecurrent">Punt recurrent (3+ pèrdues, 2+ busos)</span></span>
+            <span><i class="gps-gaps-dot"></i><span data-i18n="dades.gpsLegendSingle">Pèrdua puntual</span></span>
+            <span><i class="gps-gaps-line"></i><span data-i18n="dades.gpsLegendSegment">Tram sense senyal</span></span>
           </div>
         </div>
         <div class="gps-gaps-side">
           <div class="gps-gaps-detail" id="gps-gaps-detail" aria-live="polite" hidden></div>
-          <ol class="gps-gaps-list" id="gps-gaps-list" aria-label="Punts amb més pèrdues de senyal"></ol>
+          <ol class="gps-gaps-list" id="gps-gaps-list" aria-label="Punts amb més pèrdues de senyal" data-i18n-aria-label="dades.gpsListAria"></ol>
         </div>
       </div>
       <div class="gps-bus-block" id="gps-gaps-buses-block" hidden>
-        <h4 class="gps-bus-title">Quins busos el perden més</h4>
-        <p class="gps-bus-intro">Cada bus comparat amb els altres que fan les mateixes línies, per cada 100 parades. Si un bus el perd molt més que els companys pels mateixos carrers, apunta a l'equip del bus; si el perd on els altres també el perden, és la cobertura.</p>
-        <ol class="gps-bus-list" id="gps-gaps-buses" aria-label="Busos amb més pèrdues de senyal"></ol>
+        <h4 class="gps-bus-title" data-i18n="dades.gpsBusesTitle">Quins busos el perden més</h4>
+        <p class="gps-bus-intro" data-i18n="dades.gpsBusesIntro">Cada bus comparat amb els altres que fan les mateixes línies, per cada 100 parades. Si un bus el perd molt més que els companys pels mateixos carrers, apunta a l'equip del bus; si el perd on els altres també el perden, és la cobertura.</p>
+        <ol class="gps-bus-list" id="gps-gaps-buses" aria-label="Busos amb més pèrdues de senyal" data-i18n-aria-label="dades.gpsBusesAria"></ol>
         <p class="gps-bus-foot" id="gps-gaps-buses-foot"></p>
       </div>
     </section>
@@ -349,23 +349,23 @@
   <footer class="app-footer">
     <div class="footer-content">
       <div>
-        <span><strong>Arribo! Mataró</strong> • Dades oficials en temps real: Mataró Bus Urbà (Avanza / Ajuntament de Mataró)</span>
+        <span><strong>Arribo! Mataró</strong><span data-i18n="dades.footerNote"> • Dades oficials en temps real: Mataró Bus Urbà (Avanza / Ajuntament de Mataró)</span></span>
       </div>
       <div class="footer-links">
-        <a href="/">Mapa general</a>
-        <a href="/plan">Com anar-hi</a>
-        <a href="/dades">Observatori de retards</a>
+        <a href="/" data-i18n="dades.footerMap">Mapa general</a>
+        <a href="/plan" data-i18n="dades.footerPlanner">Com anar-hi</a>
+        <a href="/dades" data-i18n="dades.footerObservatory">Observatori de retards</a>
       </div>
     </div>
   </footer>
 
   <!-- Scripts -->
-  <script src="/js/utils.js?v=9.4.59"></script>
-  <script src="/js/i18n.js?v=9.4.59"></script>
-  <script src="/js/storage.js?v=9.4.59"></script>
-  <script src="/js/pwa.js?v=9.4.59"></script>
+  <script src="/js/utils.js?v=9.4.60"></script>
+  <script src="/js/i18n.js?v=9.4.60"></script>
+  <script src="/js/storage.js?v=9.4.60"></script>
+  <script src="/js/pwa.js?v=9.4.60"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="/js/observatori.js?v=9.4.59"></script>
-  <script src="/js/operators.js?v=9.4.59"></script>
+  <script src="/js/observatori.js?v=9.4.60"></script>
+  <script src="/js/operators.js?v=9.4.60"></script>
 </body>
 </html>

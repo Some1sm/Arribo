@@ -40,6 +40,31 @@ class ObservatoriApp {
       .replace(/'/g, '&#039;');
   }
 
+  t(key, vars) {
+    return window.ArriboI18n ? window.ArriboI18n.t(key, vars) : key;
+  }
+
+  lang() {
+    return (window.ArriboI18n && window.ArriboI18n.lang) || 'ca';
+  }
+
+  locale() {
+    const l = this.lang();
+    return l === 'en' ? 'en-GB' : (l === 'es' ? 'es-ES' : 'ca-ES');
+  }
+
+  dec(x) {
+    return this.lang() === 'en' ? String(x) : String(x).replace('.', ',');
+  }
+
+  _afterStop(name) {
+    const escaped = this.esc(name);
+    const l = this.lang();
+    if (l === 'en') return escaped;
+    if (l === 'es') return `de ${escaped}`;
+    return /^[aeiouàèéíïòóúüh]/i.test(String(name || '')) ? `d'${escaped}` : `de ${escaped}`;
+  }
+
   init() {
     this.initTheme();
     this.initUrlState();
@@ -165,7 +190,7 @@ class ObservatoriApp {
     dock.hidden = lines.length < 2;
     if (dock.hidden) return;
     if (this.lineCode && !lines.some(l => String(l.code).toUpperCase() === this.lineCode)) this.lineCode = '';
-    const items = [{ code: '', label: 'Totes' }, ...lines.map(l => ({ code: String(l.code).toUpperCase(), label: String(l.code) }))];
+    const items = [{ code: '', label: this.t('dades.allLines') }, ...lines.map(l => ({ code: String(l.code).toUpperCase(), label: String(l.code) }))];
     dock.innerHTML = items.map(i => {
       const on = i.code === this.lineCode;
       return `<button type="button" class="pill${on ? ' is-active' : ''}" aria-pressed="${on}" data-line-code="${this.esc(i.code)}">${this.esc(i.label)}</button>`;
@@ -308,7 +333,7 @@ class ObservatoriApp {
       this.renderGpsGaps(seen.data);
       return;
     }
-    if (summary) summary.textContent = 'Carregant pèrdues de senyal...';
+    if (summary) summary.textContent = this.t('dades.gpsLoading');
     // Quick clicks send one request, for the last choice.
     await new Promise(resolve => setTimeout(resolve, 200));
     if (reqId !== this._gpsGapReq) return;
@@ -332,11 +357,11 @@ class ObservatoriApp {
     // A refused or failed request keeps what is on screen (the map, the list
     // and the buses to click), says so, and tries again.
     if (!this._gpsGapShown) this.renderGpsGaps(null);
-    const kept = this._gpsGapShown ? ' El mapa encara mostra la consulta anterior.' : '';
+    const kept = this._gpsGapShown ? this.t('dades.gpsKeptPrev') : '';
     if (summary) {
       summary.innerHTML = retryAfter
-        ? this.esc(`Massa consultes seguides: es torna a carregar sol en ${retryAfter} s.${kept}`)
-        : `${this.esc(`No s'han pogut carregar les pèrdues de senyal.${kept}`)} <button type="button" class="observatori-pill-btn gps-bus-clear" data-gps-retry>Torna-ho a provar</button>`;
+        ? this.esc(this.t('dades.gpsRateLimited', { s: retryAfter, kept }))
+        : `${this.esc(this.t('dades.gpsLoadError', { kept }))} <button type="button" class="observatori-pill-btn gps-bus-clear" data-gps-retry>${this.esc(this.t('dades.gpsRetry'))}</button>`;
     }
     if (retryAfter) {
       this._gpsGapRetry = setTimeout(() => {
@@ -431,23 +456,23 @@ class ObservatoriApp {
 
   gpsGapDetailHtml(c) {
     const back = Math.round(L.latLng(c.lat, c.lon).distanceTo(L.latLng(c.regainedLat, c.regainedLon)));
-    const last = new Date(c.lastTs).toLocaleString('ca-ES', { timeZone: 'Europe/Madrid', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    const last = new Date(c.lastTs).toLocaleString(this.locale(), { timeZone: 'Europe/Madrid', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
     return `<div class="gps-gaps-popup">
       <div class="gps-gaps-popup-head">
-        <strong>${c.stopName ? `Prop de ${this.esc(c.stopName)}` : 'Punt sense parada propera'}</strong>
-        <span class="gps-gaps-popup-tag${c.recurrent ? ' recurrent' : ''}">${c.recurrent ? 'Punt recurrent' : 'Pèrdua puntual'}</span>
+        <strong>${c.stopName ? this.esc(this.t('dades.gpsNearStop', { stop: c.stopName })) : this.esc(this.t('dades.gpsNoNearStop'))}</strong>
+        <span class="gps-gaps-popup-tag${c.recurrent ? ' recurrent' : ''}">${this.esc(this.t(c.recurrent ? 'dades.gpsTagRecurrent' : 'dades.gpsTagSingle'))}</span>
       </div>
-      <button type="button" class="btn-icon gps-gaps-detail-close" data-gps-close aria-label="Tanca el detall">&times;</button>
+      <button type="button" class="btn-icon gps-gaps-detail-close" data-gps-close aria-label="${this.esc(this.t('dades.gpsCloseDetail'))}">&times;</button>
       <dl class="gps-gaps-popup-stats">
-        <dt>Pèrdues</dt><dd>${c.count} · ${c.vehicles} ${c.vehicles === 1 ? 'bus' : 'busos'}</dd>
-        <dt>Sense senyal</dt><dd>${this.esc(this.fmtGapDuration(c.medianGapSec))}${c.count > 1 ? ' de mediana' : ''}</dd>
-        ${c.count > 1 ? `<dt>La més llarga</dt><dd>${this.esc(this.fmtGapDuration(c.maxGapSec))}</dd>` : ''}
-        <dt>El recupera</dt><dd>a ${back} m</dd>
-        <dt>Última</dt><dd>${this.esc(last)}</dd>
+        <dt>${this.esc(this.t('dades.gpsDtLosses'))}</dt><dd>${c.count} · ${c.vehicles} ${this.esc(this.t(c.vehicles === 1 ? 'dades.gpsBusOne' : 'dades.gpsBusMany'))}</dd>
+        <dt>${this.esc(this.t('dades.gpsDtNoSignal'))}</dt><dd>${this.esc(this.fmtGapDuration(c.medianGapSec))}${c.count > 1 ? this.esc(this.t('dades.gpsMedianSuffix')) : ''}</dd>
+        ${c.count > 1 ? `<dt>${this.esc(this.t('dades.gpsDtLongest'))}</dt><dd>${this.esc(this.fmtGapDuration(c.maxGapSec))}</dd>` : ''}
+        <dt>${this.esc(this.t('dades.gpsDtRegains'))}</dt><dd>${this.esc(this.t('dades.gpsRegainsM', { m: back }))}</dd>
+        <dt>${this.esc(this.t('dades.gpsDtLast'))}</dt><dd>${this.esc(last)}</dd>
       </dl>
       <div class="gps-gaps-popup-lines">${c.lines.map(code => this.lineChip(code)).join('')}</div>
-      <div class="gps-gaps-popup-route" data-gps-route><p>Buscant el recorregut sense GPS…</p></div>
-      <div class="gps-gaps-popup-route gps-gaps-passes" data-gps-passes><p>Buscant qui més hi passa…</p></div>
+      <div class="gps-gaps-popup-route" data-gps-route><p>${this.esc(this.t('dades.gpsSearchingRoute'))}</p></div>
+      <div class="gps-gaps-popup-route gps-gaps-passes" data-gps-passes><p>${this.esc(this.t('dades.gpsSearchingPasses'))}</p></div>
     </div>`;
   }
 
@@ -477,40 +502,42 @@ class ObservatoriApp {
     }
     if (!box.isConnected) return; // another hotspot was picked meanwhile
     if (!data) {
-      box.innerHTML = "<p>No s'ha pogut carregar qui més hi passa ara mateix: torna a tocar el punt d'aquí a uns segons.</p>";
+      box.innerHTML = `<p>${this.esc(this.t('dades.gpsPassesError'))}</p>`;
       return;
     }
     const t = data.totals;
     if (!t || !t.buses) {
-      box.innerHTML = "<p>No hi ha altres passades registrades per comparar.</p>";
+      box.innerHTML = `<p>${this.esc(this.t('dades.gpsPassesNone'))}</p>`;
       return;
     }
     const passes = t.lost + t.gpsPasses;
     const losers = data.buses.filter(b => b.lost);
     const clean = data.buses.filter(b => !b.lost && b.gpsPasses);
     const cleanPasses = clean.reduce((s, b) => s + b.gpsPasses, 0);
-    const period = this.gpsGapDays === 1 ? 'les últimes 24 h' : `${this.gpsGapDays} dies`;
+    const period = this.gpsGapDays === 1 ? this.t('dades.gpsPeriod24h') : this.t('dades.gpsPeriodDays', { n: this.gpsGapDays });
     const repeat = losers.find(b => b.lost >= 2 && b.lost / (b.lost + b.gpsPasses) >= 0.5);
     let verdict;
     if (passes < 8) {
-      verdict = 'Encara hi ha poques passades per saber si és el lloc o els busos.';
+      verdict = this.t('dades.gpsVerdictFew');
     } else if (t.lost / passes >= 0.5 && t.lossBuses >= 2) {
-      verdict = 'La majoria de passades hi perden el senyal, i de busos diferents: apunta a la cobertura del lloc.';
+      verdict = this.t('dades.gpsVerdictPlace');
     } else if (t.lost / passes <= 0.25 && t.cleanBuses >= 3) {
-      verdict = `${t.gpsPasses} de ${passes} passades hi tenen senyal: no és un lloc sense cobertura. `
+      verdict = this.t('dades.gpsVerdictCleanHead', { ok: t.gpsPasses, total: passes })
         + (repeat
-          ? `El bus ${repeat.vehicleId} l'hi perd ${repeat.lost} de ${repeat.lost + repeat.gpsPasses} vegades: apunta a l'equip del bus.`
-          : 'Les pèrdues són puntuals, de busos que normalment hi passen amb senyal.');
+          ? this.t('dades.gpsVerdictBusEquip', { id: repeat.vehicleId, lost: repeat.lost, total: repeat.lost + repeat.gpsPasses })
+          : this.t('dades.gpsVerdictSingle'));
     } else {
-      verdict = 'Hi ha passades amb senyal i sense: pot ser el lloc o els busos.';
+      verdict = this.t('dades.gpsVerdictMixed');
     }
     const cleanList = clean.slice(0, 10).map(b => `${this.esc(b.vehicleId)} (${b.gpsPasses})`).join(', ');
-    box.innerHTML = `<h5>Qui més hi passa</h5>
-      <p>En ${period} hi han passat <strong>${t.buses}</strong> busos: <strong>${t.cleanBuses}</strong> sempre amb senyal (${cleanPasses} passades)${t.lossBuses ? ` i ${t.lossBuses} l'hi han perdut` : ''}.</p>
-      ${losers.length ? `<ul class="gps-gaps-popup-paths">${losers.map(b => `<li><span>${b.lines.slice(0, 2).map(code => this.lineChip(code)).join('')}<span>${this.esc(b.vehicleId)}</span><b>sense senyal ${b.lost} de ${b.lost + b.gpsPasses}</b></span></li>`).join('')}</ul>` : ''}
-      ${clean.length ? `<p>Sempre amb senyal: ${cleanList}${clean.length > 10 ? ` i ${clean.length - 10} més` : ''}.</p>` : ''}
+    const lostPart = t.lossBuses ? this.esc(this.t('dades.gpsPassesSummaryLost', { n: t.lossBuses })) : '';
+    const morePart = clean.length > 10 ? this.esc(this.t('dades.gpsPassesMore', { n: clean.length - 10 })) : '';
+    box.innerHTML = `<h5>${this.esc(this.t('dades.gpsPassesTitle'))}</h5>
+      <p>${this.t('dades.gpsPassesSummary', { period: this.esc(period), buses: t.buses, clean: t.cleanBuses, passes: cleanPasses, lost: lostPart })}</p>
+      ${losers.length ? `<ul class="gps-gaps-popup-paths">${losers.map(b => `<li><span>${b.lines.slice(0, 2).map(code => this.lineChip(code)).join('')}<span>${this.esc(b.vehicleId)}</span><b>${this.esc(this.t('dades.gpsPassesLostOf', { lost: b.lost, total: b.lost + b.gpsPasses }))}</b></span></li>`).join('')}</ul>` : ''}
+      ${clean.length ? `<p>${this.t('dades.gpsPassesAlways', { list: cleanList, more: morePart })}</p>` : ''}
       <p class="gps-gaps-passes-verdict">${this.esc(verdict)}</p>
-      ${(cell.count || 0) > ids.length ? `<p>Es compten les ${ids.length} pèrdues més recents d'aquest punt.</p>` : ''}`;
+      ${(cell.count || 0) > ids.length ? `<p>${this.esc(this.t('dades.gpsPassesRecentNote', { n: ids.length }))}</p>` : ''}`;
   }
 
   async showGpsGapPaths(cell, detail) {
@@ -564,21 +591,21 @@ class ObservatoriApp {
       // One row per loss: which bus, when, how long, and the street it drove.
       const rows = (cell.gapIds || []).map(id => this.gpsGapPathCache.get(id)).filter(Boolean)
         .sort((a, b) => (b.lostTs || 0) - (a.lostTs || 0));
-      const hhmm = ts => (Number.isFinite(ts) ? new Date(ts).toLocaleTimeString('ca-ES', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit' }) : '');
+      const hhmm = ts => (Number.isFinite(ts) ? new Date(ts).toLocaleTimeString(this.locale(), { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit' }) : '');
       const drawn = p => Array.isArray(p.path) && p.lengthM >= 25;
-      const what = p => (!Array.isArray(p.path) ? 'no situat' : drawn(p) ? `${p.lengthM} m` : 'aturat');
+      const what = p => (!Array.isArray(p.path) ? this.t('dades.gpsPathNotPlaced') : drawn(p) ? `${p.lengthM} m` : this.t('dades.gpsPathStopped'));
       const row = p => {
         const inner = `${this.lineChip(p.lineCode)}<span>${p.vehicleId ? `${this.esc(p.vehicleId)} · ` : ''}${this.esc(hhmm(p.lostTs))} · ${this.esc(this.fmtGapDuration(p.gapSec))}</span><b>${this.esc(what(p))}</b>`;
         return drawn(p) ? `<li><button type="button" data-gps-path="${p.id}">${inner}</button></li>` : `<li><span>${inner}</span></li>`;
       };
       const hint = paths.length
-        ? "Toca un bus per veure només el seu tram; el punt és on torna el GPS."
-        : (stood ? '' : "No s'ha pogut situar a la ruta de la línia.");
+        ? this.t('dades.gpsPathHint')
+        : (stood ? '' : this.t('dades.gpsPathNotFound'));
       note.innerHTML = rows.length
-        ? `<ul class="gps-gaps-popup-paths">${rows.map(row).join('')}</ul>${hint ? `<p>${hint}</p>` : ''}`
+        ? `<ul class="gps-gaps-popup-paths">${rows.map(row).join('')}</ul>${hint ? `<p>${this.esc(hint)}</p>` : ''}`
         : failed
-          ? "<p>No s'ha pogut carregar el recorregut ara mateix: torna a tocar el punt d'aquí a uns segons.</p>"
-          : "<p>No s'ha pogut situar a la ruta de la línia.</p>";
+          ? `<p>${this.esc(this.t('dades.gpsPathLoadError'))}</p>`
+          : `<p>${this.esc(this.t('dades.gpsPathNotFound'))}</p>`;
       // The rows name every line: the chip row above them would repeat it.
       const chips = detail.querySelector('.gps-gaps-popup-lines');
       if (chips) chips.hidden = rows.length > 0;
@@ -623,31 +650,31 @@ class ObservatoriApp {
     const buses = (data && data.buses) || [];
     block.hidden = !buses.length;
     if (!buses.length) return;
-    const dec = x => String(x).replace('.', ',');
     const tags = {
-      suspect: ['recurrent', 'Possible problema del bus'],
-      watch: ['', 'Per sobre, pot ser atzar'],
-      normal: ['calm', 'Com els companys'],
-      few: ['calm', 'Poques dades']
+      suspect: ['recurrent', this.t('dades.gpsBusTagSuspect')],
+      watch: ['', this.t('dades.gpsBusTagWatch')],
+      normal: ['calm', this.t('dades.gpsBusTagNormal')],
+      few: ['calm', this.t('dades.gpsBusTagFew')]
     };
     list.innerHTML = buses.slice(0, 10).map(b => {
       const [cls, label] = tags[b.verdict] || tags.few;
+      const lossWord = this.t(b.gaps === 1 ? 'dades.gpsLossOne' : 'dades.gpsLossMany');
       const facts = [
-        `<strong>${b.gaps}</strong> ${b.gaps === 1 ? 'pèrdua' : 'pèrdues'}${b.visits ? ` en ${b.visits} parades (${dec(b.per100)} per 100)` : ''}`,
-        b.ratio !== null ? `<strong>${dec(b.ratio)}×</strong> els companys de línia` : '',
-        `${b.sharedPct}% on altres busos també el perden`
+        `<strong>${b.gaps}</strong> ${this.esc(lossWord)}${b.visits ? this.esc(this.t('dades.gpsBusInStops', { visits: b.visits, per100: this.dec(b.per100) })) : ''}`,
+        b.ratio !== null ? this.t('dades.gpsBusRatio', { ratio: this.esc(this.dec(b.ratio)) }) : '',
+        this.esc(this.t('dades.gpsBusShared', { pct: b.sharedPct }))
       ].filter(Boolean).join(' · ');
       const on = this.gpsGapVehicle === b.vehicleId;
       const off = (data.hidden || []).includes(b.vehicleId);
-      return `<li><button type="button" class="gps-bus-row${on ? ' active' : ''}${off ? ' is-hidden' : ''}" data-gps-bus="${this.esc(b.vehicleId)}" aria-pressed="${on}"${off ? ' title="Amagat del mapa"' : ''}>
+      return `<li><button type="button" class="gps-bus-row${on ? ' active' : ''}${off ? ' is-hidden' : ''}" data-gps-bus="${this.esc(b.vehicleId)}" aria-pressed="${on}"${off ? ` title="${this.esc(this.t('dades.gpsBusHiddenTitle'))}"` : ''}>
         <span class="gps-bus-id">${this.esc(b.vehicleId)}</span>
-        <span class="gps-bus-head">${b.lines.map(code => this.lineChip(code)).join('')}<span class="gps-gaps-popup-tag${cls ? ` ${cls}` : ''}">${label}</span></span>
+        <span class="gps-bus-head">${b.lines.map(code => this.lineChip(code)).join('')}<span class="gps-gaps-popup-tag${cls ? ` ${cls}` : ''}">${this.esc(label)}</span></span>
         <span class="gps-bus-facts">${facts}</span>
       </button></li>`;
     }).join('');
     const fleet = (data && data.fleet) || {};
     if (foot) {
-      foot.textContent = `${fleet.inService || 0} busos han fet servei en aquest període i ${fleet.withoutLoss || 0} no han perdut el senyal cap vegada. "Possible problema del bus" vol dir 4 pèrdues o més, 1,5 vegades les dels companys i poc probable per atzar (p < 0,05). Toca un bus per veure només les seves pèrdues al mapa.`;
+      foot.textContent = this.t('dades.gpsBusFoot', { inService: fleet.inService || 0, withoutLoss: fleet.withoutLoss || 0 });
     }
   }
 
@@ -675,10 +702,10 @@ class ObservatoriApp {
     input.max = String(max);
     input.value = String(this.gpsGapMin);
     if (out) out.textContent = `${this.gpsGapMin}+`;
-    input.setAttribute('aria-valuetext', `${this.gpsGapMin} pèrdues o més`);
+    input.setAttribute('aria-valuetext', this.t('dades.gpsMinAria', { n: this.gpsGapMin }));
   }
 
-  renderGpsGaps(data, { fit = true } = {}) {
+  renderGpsGaps(data, { fit = true, forceBuses = false } = {}) {
     const summary = document.getElementById('gps-gaps-summary');
     const list = document.getElementById('gps-gaps-list');
     const empty = document.getElementById('gps-gaps-empty');
@@ -689,14 +716,14 @@ class ObservatoriApp {
     this.gpsGapCells = [];
     if (!summary || !list || !empty) return;
     // The slider only refilters: the bus ranking does not depend on it.
-    if (data !== this._gpsGapData) this.renderGpsGapBuses(data);
+    if (forceBuses || data !== this._gpsGapData) this.renderGpsGapBuses(data);
     this._gpsGapData = data;
     this.syncGpsGapMin(data && Array.isArray(data.cells) ? data.cells : []);
 
     if (!data) {
-      summary.textContent = "No s'han pogut carregar les pèrdues de senyal.";
+      summary.textContent = this.t('dades.gpsLoadError', { kept: '' });
       list.innerHTML = '';
-      empty.textContent = 'Sense dades';
+      empty.textContent = this.t('dades.gpsNoDataShort');
       empty.hidden = false;
       return;
     }
@@ -706,21 +733,22 @@ class ObservatoriApp {
     const allCells = Array.isArray(data.cells) ? data.cells : [];
     const min = this.gpsGapMin || 1;
     const cells = min > 1 ? allCells.filter(c => c.count >= min) : allCells;
-    const period = data.days === 1 ? 'les últimes 24 h' : `els últims ${data.days} dies`;
-    const onLine = data.lineCode ? ` a la ${this.esc(data.lineCode)}` : '';
+    const period = data.days === 1 ? this.t('dades.gpsPeriod24h') : this.t('dades.gpsPeriodLastDays', { n: data.days });
+    const onLine = data.lineCode ? this.t('dades.gpsOnLine', { line: this.esc(data.lineCode) }) : '';
     const left = [];
-    if (t.atTerminal) left.push(`${t.atTerminal} a capçalera`);
-    if (t.feedWide) left.push(`${t.feedWide} talls de tot el canal`);
-    const leftTxt = left.length ? ` No s'hi compten ${left.join(' ni ')}.` : '';
+    if (t.atTerminal) left.push(this.t('dades.gpsExcludedTerminal', { n: t.atTerminal }));
+    if (t.feedWide) left.push(this.t('dades.gpsExcludedFeed', { n: t.feedWide }));
+    const leftTxt = left.length ? this.t('dades.gpsExcludedText', { items: left.join(this.t('dades.gpsExcludedJoin')) }) : '';
 
     // The picked bus, as a chip that shows every bus again.
     const busChip = data.vehicleId
-      ? `<button type="button" class="observatori-pill-btn active gps-bus-clear" data-gps-bus-clear aria-label="Mostra tots els busos">Bus ${this.esc(data.vehicleId)} ×</button> `
+      ? `<button type="button" class="observatori-pill-btn active gps-bus-clear" data-gps-bus-clear aria-label="${this.esc(this.t('dades.gpsShowAllBusesAria'))}">${this.esc(this.t('dades.gpsBusChip', { id: data.vehicleId }))}</button> `
       : '';
     if (!t.mapped) {
-      summary.innerHTML = busChip + this.esc(`Cap pèrdua de senyal registrada${data.lineCode ? ` a la ${data.lineCode}` : ''} en ${period}.${leftTxt}`);
+      const onLineRaw = data.lineCode ? this.t('dades.gpsOnLine', { line: data.lineCode }) : '';
+      summary.innerHTML = busChip + this.esc(this.t('dades.gpsEmptySummary', { onLine: onLineRaw, period, left: leftTxt }));
       list.innerHTML = '';
-      empty.textContent = "Encara no hi ha pèrdues de senyal per mostrar en aquest període.";
+      empty.textContent = this.t('dades.gpsEmptyMap');
       empty.hidden = false;
       return;
     }
@@ -730,19 +758,29 @@ class ObservatoriApp {
     const recurrent = allCells.filter(c => c.recurrent).length;
     // One bus: "recurrent" needs two buses, so say where instead.
     const picked = (data.buses || []).find(b => b.vehicleId === data.vehicleId);
-    const busWhere = `En ${allCells.length} ${allCells.length === 1 ? 'lloc' : 'llocs diferents'}${picked ? `; el ${picked.sharedPct}% on altres busos també el perden` : ''}.`;
+    const busWhere = this.esc(this.t('dades.gpsBusWhere', {
+      n: allCells.length,
+      spots: this.t(allCells.length === 1 ? 'dades.gpsSpotOne' : 'dades.gpsSpotMany'),
+      shared: picked ? this.t('dades.gpsBusWhereShared', { pct: picked.sharedPct }) : ''
+    }));
     summary.innerHTML = busChip + (data.vehicleId
-      ? `<strong>${t.mapped}</strong> pèrdues de senyal${onLine} en ${period}; durada mediana <strong>${this.esc(this.fmtGapDuration(t.medianGapSec))}</strong>. `
-      : `<strong>${t.mapped}</strong> pèrdues de senyal${onLine} en ${period}, de ${t.vehicles} busos; durada mediana <strong>${this.esc(this.fmtGapDuration(t.medianGapSec))}</strong>. `)
+      ? this.t('dades.gpsSummaryBus', { mapped: t.mapped, onLine, period: this.esc(period), median: this.esc(this.fmtGapDuration(t.medianGapSec)) })
+      : this.t('dades.gpsSummaryAll', { mapped: t.mapped, onLine, period: this.esc(period), vehicles: t.vehicles, median: this.esc(this.fmtGapDuration(t.medianGapSec)) }))
       + (data.vehicleId ? busWhere : recurrent
-        ? `<strong>${t.recurrentShare}%</strong> es concentren en ${recurrent} ${recurrent === 1 ? 'punt recurrent' : 'punts recurrents'}.`
-        : 'Cap punt es repeteix prou encara per ser recurrent.')
+        ? this.t('dades.gpsRecurrentShare', { share: t.recurrentShare, n: recurrent, word: this.esc(this.t(recurrent === 1 ? 'dades.gpsRecurrentOne' : 'dades.gpsRecurrentMany')) })
+        : this.esc(this.t('dades.gpsNoRecurrent')))
       + this.esc(leftTxt)
       + (min > 1
-        ? ` Al mapa, només ${cells.length === 1 ? 'el punt' : `els ${cells.length} punts`} amb ${min} pèrdues o més (de ${allCells.length}).`
+        ? this.esc(cells.length === 1
+          ? this.t('dades.gpsSliderSingle', { min, total: allCells.length })
+          : this.t('dades.gpsSliderMany', { shown: cells.length, min, total: allCells.length }))
         : '')
       + ((data.hidden || []).length
-        ? ` Amagats del mapa: ${data.hidden.length} ${data.hidden.length === 1 ? 'bus' : 'busos'} (${data.hidden.map(id => this.esc(id)).join(', ')}).`
+        ? this.esc(this.t('dades.gpsHiddenNote', {
+          n: data.hidden.length,
+          word: this.t(data.hidden.length === 1 ? 'dades.gpsBusOne' : 'dades.gpsBusMany'),
+          ids: data.hidden.join(', ')
+        }))
         : '');
 
     // The list first: the map column stretches to its height, so the map is
@@ -752,10 +790,10 @@ class ObservatoriApp {
         <button type="button" class="gps-gaps-item" data-gps-cell="${i}">
           <span class="gps-gaps-rank${c.recurrent ? ' recurrent' : ''}">${i + 1}</span>
           <span class="gps-gaps-item-main">
-            <strong>${c.stopName ? `Prop de ${this.esc(c.stopName)}` : 'Sense parada propera'}</strong>
-            <span>${c.lines.map(code => this.lineChip(code)).join(' ')} ${c.vehicles} ${c.vehicles === 1 ? 'bus' : 'busos'} · mediana ${this.esc(this.fmtGapDuration(c.medianGapSec))}</span>
+            <strong>${c.stopName ? this.esc(this.t('dades.gpsNearStop', { stop: c.stopName })) : this.esc(this.t('dades.gpsListNoNearStop'))}</strong>
+            <span>${c.lines.map(code => this.lineChip(code)).join(' ')} ${c.vehicles} ${this.esc(this.t(c.vehicles === 1 ? 'dades.gpsBusOne' : 'dades.gpsBusMany'))} · ${this.esc(this.t('dades.gpsListMedian', { val: this.fmtGapDuration(c.medianGapSec) }))}</span>
           </span>
-          <span class="gps-gaps-item-count">${c.count}<small>${c.count === 1 ? 'pèrdua' : 'pèrdues'}</small></span>
+          <span class="gps-gaps-item-count">${c.count}<small>${this.esc(this.t(c.count === 1 ? 'dades.gpsLossOne' : 'dades.gpsLossMany'))}</small></span>
         </button>
       </li>`).join('');
 
@@ -797,11 +835,12 @@ class ObservatoriApp {
   }
 
   renderDataHealth(data) {
+    this._lastDataHealth = data;
     const grid = document.getElementById('data-health-grid');
     if (!grid) return;
     const timeEl = document.getElementById('data-health-timestamp');
     if (timeEl) {
-      timeEl.textContent = new Date().toLocaleTimeString('ca-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      timeEl.textContent = new Date().toLocaleTimeString(this.locale(), { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     }
 
     const items = [];
@@ -821,56 +860,61 @@ class ObservatoriApp {
         <p class="data-health-desc">${description}</p>
       </div>`
     });
+    const noData = this.t('dades.dhNoData');
 
     // 1. Canari SIRI (upstreamCanary)
+    const canaryTitle = this.t('dades.dhCanaryTitle');
     if (!data || data.upstreamCanary === null || data.upstreamCanary === undefined) {
-      items.push(makeItem('Canari SIRI', 'status-neutral', 'Sense dades', 'No s&#039;ha obtingut cap comprovació recent del canari.'));
+      items.push(makeItem(canaryTitle, 'status-neutral', noData, this.esc(this.t('dades.dhCanaryNoData'))));
     } else if (data.upstreamCanary.ok === true) {
-      const ageStr = data.upstreamCanary.checkedAt ? `fa ${Math.round(Math.max(0, Date.now() - data.upstreamCanary.checkedAt) / 1000)} s` : 'recentment';
-      items.push(makeItem('Canari SIRI', 'status-success', 'Operatiu', `El canal SIRI respon (${ageStr}).`));
+      const ageStr = data.upstreamCanary.checkedAt ? this.t('dades.dhAgoSec', { n: Math.round(Math.max(0, Date.now() - data.upstreamCanary.checkedAt) / 1000) }) : this.t('dades.dhRecently');
+      items.push(makeItem(canaryTitle, 'status-success', this.t('dades.dhCanaryOk'), this.esc(this.t('dades.dhCanaryOkDesc', { age: ageStr }))));
     } else {
-      items.push(makeItem('Canari SIRI', 'status-danger', 'Incidència', `Error en la consulta del canari: ${this.esc(data.upstreamCanary.error || 'sense resposta')}`));
+      items.push(makeItem(canaryTitle, 'status-danger', this.t('dades.dhCanaryFail'), this.esc(this.t('dades.dhCanaryFailDesc', { err: data.upstreamCanary.error || this.t('dades.dhNoResponse') }))));
     }
 
     // 2. Connexió operador (lastError)
+    const connTitle = this.t('dades.dhConnTitle');
     const ERROR_TEXT = {
-      malformed: "resposta buida o incompleta de l'operador",
-      auth: 'credencials SIRI rebutjades',
-      soap_fault: "error intern del servidor de l'operador",
-      upstream_error: "l'operador ha retornat un error",
-      network_error: "sense connexió amb el servidor de l'operador",
-      timeout: "l'operador no ha respost a temps"
+      malformed: this.t('dades.dhErrMalformed'),
+      auth: this.t('dades.dhErrAuth'),
+      soap_fault: this.t('dades.dhErrSoap'),
+      upstream_error: this.t('dades.dhErrUpstream'),
+      network_error: this.t('dades.dhErrNetwork'),
+      timeout: this.t('dades.dhErrTimeout')
     };
-    const describeError = (code) => ERROR_TEXT[code] || (/^http_\d+$/.test(String(code)) ? `l'operador ha respost amb HTTP ${String(code).slice(5)}` : String(code));
+    const describeError = (code) => ERROR_TEXT[code] || (/^http_\d+$/.test(String(code)) ? this.t('dades.dhErrHttp', { code: String(code).slice(5) }) : String(code));
     if (!data || !data.upstreamKnown) {
-      items.push(makeItem('Connexió operador', 'status-neutral', 'Sense dades', 'Sense registres d&#039;errors recents de l&#039;operador.'));
+      items.push(makeItem(connTitle, 'status-neutral', noData, this.esc(this.t('dades.dhConnNoData'))));
     } else if (data.lastError === null || data.lastError === undefined) {
-      items.push(makeItem('Connexió operador', 'status-success', 'Sense errors', 'Cap error recent de l&#039;operador.'));
+      items.push(makeItem(connTitle, 'status-success', this.t('dades.dhConnOk'), this.esc(this.t('dades.dhConnOkDesc'))));
     } else {
       const ageMin = data.lastErrorAt ? Math.max(1, Math.round((Date.now() - data.lastErrorAt) / 60000)) : null;
-      const when = ageMin === null ? '' : `fa ${ageMin} min: `;
-      const what = this.esc(describeError(data.lastError));
+      const when = ageMin === null ? '' : this.t('dades.dhAgoMinPrefix', { n: ageMin });
+      const what = describeError(data.lastError);
       if (data.circuitOpen) {
-        items.push(makeItem('Connexió operador', 'status-danger', 'Error', `Últim error ${when}${what}. Consultes en pausa durant 30 s.`));
+        items.push(makeItem(connTitle, 'status-danger', this.t('dades.dhConnCircuitBadge'), this.esc(this.t('dades.dhConnCircuitDesc', { when, what }))));
       } else if (ageMin !== null && ageMin >= 10) {
-        items.push(makeItem('Connexió operador', 'status-neutral', 'Recuperat', `Últim error ${when}${what}. Des d&#039;aleshores l&#039;operador respon correctament.`));
+        items.push(makeItem(connTitle, 'status-neutral', this.t('dades.dhConnRecoveredBadge'), this.esc(this.t('dades.dhConnRecoveredDesc', { when, what }))));
       } else {
-        items.push(makeItem('Connexió operador', 'status-warning', 'Error recent', `Últim error ${when}${what}.`));
+        items.push(makeItem(connTitle, 'status-warning', this.t('dades.dhConnRecentBadge'), this.esc(this.t('dades.dhConnRecentDesc', { when, what }))));
       }
     }
 
     // 3. Anomalia de flota (fleetAnomaly)
+    const anomTitle = this.t('dades.dhAnomalyTitle');
     if (!data || data.fleetAnomaly === null || data.fleetAnomaly === undefined) {
-      items.push(makeItem('Anomalia de flota', 'status-neutral', 'Sense dades', 'Sense avaluació d&#039;anomalies de flota.'));
+      items.push(makeItem(anomTitle, 'status-neutral', noData, this.esc(this.t('dades.dhAnomalyNoData'))));
     } else if (data.fleetAnomaly.detected === true) {
-      items.push(makeItem('Anomalia de flota', 'status-warning', 'Anomalia', this.esc(data.fleetAnomaly.message || 'Desviació en la flota activa detectada.')));
+      items.push(makeItem(anomTitle, 'status-warning', this.t('dades.dhAnomalyBadge'), this.esc(data.fleetAnomaly.message || this.t('dades.dhAnomalyDefault'))));
     } else {
-      items.push(makeItem('Anomalia de flota', 'status-success', 'Normal', 'Cap anomalia de flota a la xarxa.'));
+      items.push(makeItem(anomTitle, 'status-success', this.t('dades.dhNormalBadge'), this.esc(this.t('dades.dhAnomalyOkDesc'))));
     }
 
     // 4. Flota en servei (fleet): its own full-width row with one chip per line.
+    const fleetTitle = this.t('dades.dhFleetTitle');
     if (!data || data.fleet === null || data.fleet === undefined) {
-      const empty = makeItem('Flota en servei', 'status-neutral', 'Sense dades', 'Sense dades de vehicles actius per línia.');
+      const empty = makeItem(fleetTitle, 'status-neutral', noData, this.esc(this.t('dades.dhFleetNoData')));
       items.push({ tone: empty.tone, html: '' });
       fleetHtml = `<div class="dh-fleet">${empty.html}</div>`;
     } else {
@@ -878,18 +922,18 @@ class ObservatoriApp {
       const totalBuses = Number.isFinite(data.fleet.totalScheduledBuses) ? data.fleet.totalScheduledBuses : totalScheduled;
       const isOk = totalBuses > 0 && totalLiveGps >= Math.ceil(totalBuses * 0.7);
       const badgeClass = totalBuses > 0 ? (isOk ? 'status-success' : 'status-warning') : 'status-neutral';
-      const badgeText = `${totalLiveGps} GPS · ${totalEstimated} estimats`;
+      const badgeText = this.t('dades.dhFleetBadge', { gps: totalLiveGps, est: totalEstimated });
       const REASON = {
-        terminal_ghost: 'capçalera ocupada',
-        line_cap: 'límit de flota de la línia',
-        direction_allowance: 'bus real fora del seu horari',
-        colocated: 'bus real a menys de 100 m',
-        no_position: 'sense posició al traçat'
+        terminal_ghost: this.t('dades.dhReasonTerminal'),
+        line_cap: this.t('dades.dhReasonLineCap'),
+        direction_allowance: this.t('dades.dhReasonDirAllow'),
+        colocated: this.t('dades.dhReasonColocated'),
+        no_position: this.t('dades.dhReasonNoPos')
       };
       const chips = lines.map(l => {
         const colour = this.getLineColor(l.lineCode);
         const code = `<span class="dh-line-code" style="background:${colour}; color:${this.chipInk(colour)};">${this.esc(l.lineCode)}</span>`;
-        if (l.available === false) return `<div class="dh-line">${code}<span class="dh-line-count">sense dades</span></div>`;
+        if (l.available === false) return `<div class="dh-line">${code}<span class="dh-line-count">${this.esc(this.t('dades.dhFleetLineNoData'))}</span></div>`;
         const buses = Number.isFinite(l.scheduledBuses) ? l.scheduledBuses : l.scheduledVehicles;
         const shown = l.liveGpsVehicles + (l.estimatedVehicles ?? 0);
         const gap = buses - shown;
@@ -898,73 +942,80 @@ class ObservatoriApp {
           const reasons = Object.entries(l.notDrawn || {})
             .filter(([k, n]) => k !== 'terminal_bus' && n > 0)
             .map(([k, n]) => `${REASON[k] || k}${n > 1 ? ` ×${n}` : ''}`);
-          note = `<span class="dh-line-note">${gap} sense dibuixar${reasons.length ? `: ${this.esc(reasons.join(', '))}` : ''}</span>`;
+          note = `<span class="dh-line-note">${this.esc(this.t('dades.dhFleetNotDrawn', { n: gap }))}${reasons.length ? `: ${this.esc(reasons.join(', '))}` : ''}</span>`;
         }
         return `<div class="dh-line${gap > 0 ? ' has-gap' : ''}">${code}<span class="dh-line-count">${l.liveGpsVehicles}+${l.estimatedVehicles ?? 0}/${buses}</span>${note}</div>`;
       }).join('');
-      const note = complete ? '' : ' Algunes línies no tenen dades.';
-      const fleetItem = makeItem('Flota en servei', badgeClass, badgeText,
-        `${totalLiveGps + totalEstimated} autobusos al mapa; l&#039;horari en necessita ${totalBuses}.${note} Per línia: amb GPS + estimats / necessaris. Un bus que acaba un trajecte i torna a sortir de la mateixa capçalera compta una sola vegada.`);
+      const note = complete ? '' : this.t('dades.dhFleetIncomplete');
+      const fleetItem = makeItem(fleetTitle, badgeClass, badgeText,
+        this.esc(this.t('dades.dhFleetDesc', { shown: totalLiveGps + totalEstimated, need: totalBuses, note })));
       items.push({ tone: fleetItem.tone, html: '' });
       fleetHtml = `<div class="dh-fleet">${fleetItem.html}${chips ? `<div class="dh-lines">${chips}</div>` : ''}</div>`;
     }
 
     // 5. Deriva horària (scheduleDrift)
+    const driftTitle = this.t('dades.dhDriftTitle');
     if (!data || data.scheduleDrift === null || data.scheduleDrift === undefined) {
-      items.push(makeItem('Deriva horària', 'status-neutral', 'Sense dades', 'Sense comprovació de deriva entre operador i graella.'));
+      items.push(makeItem(driftTitle, 'status-neutral', noData, this.esc(this.t('dades.dhDriftNoData'))));
     } else if (data.scheduleDrift.drift === true && data.scheduleDrift.layoutError) {
-      items.push(makeItem('Deriva horària', 'status-warning', 'Graella canviada', `L&#039;operador ha canviat la forma de la graella (sovint una parada nova o suprimida): cal tornar a extreure els horaris. ${this.esc(data.scheduleDrift.layoutError)}`));
+      items.push(makeItem(driftTitle, 'status-warning', this.t('dades.dhDriftLayoutBadge'), this.esc(this.t('dades.dhDriftLayoutDesc', { err: data.scheduleDrift.layoutError }))));
     } else if (data.scheduleDrift.drift === true) {
-      items.push(makeItem('Deriva horària', 'status-warning', 'Desviació', `Detectada diferència de ${data.scheduleDrift.differencesCount || 1} sortides respecte a la graella.`));
+      items.push(makeItem(driftTitle, 'status-warning', this.t('dades.dhDriftWarnBadge'), this.esc(this.t('dades.dhDriftWarnDesc', { n: data.scheduleDrift.differencesCount || 1 }))));
     } else {
-      items.push(makeItem('Deriva horària', 'status-success', 'Sincronitzat', 'Horaris de l&#039;operador coincidents amb la graella oficial.'));
+      items.push(makeItem(driftTitle, 'status-success', this.t('dades.dhDriftOkBadge'), this.esc(this.t('dades.dhDriftOkDesc'))));
     }
 
     // 6. Temporada de servei (season)
+    const seasonTitle = this.t('dades.dhSeasonTitle');
     if (!data || data.season === null || data.season === undefined) {
-      items.push(makeItem('Temporada de servei', 'status-neutral', 'Sense dades', 'Sense dades de temporada oficial.'));
+      items.push(makeItem(seasonTitle, 'status-neutral', noData, this.esc(this.t('dades.dhSeasonNoData'))));
     } else if (data.season.seasonKnown) {
-      const label = data.season.season === 'summer' ? "Horari d'estiu" : "Horari d'hivern";
+      const label = data.season.season === 'summer' ? this.t('dades.dhSeasonSummer') : this.t('dades.dhSeasonWinter');
       const src = String(data.season.seasonSource || '');
+      const localizedSrc = src === 'calendar' ? this.t('dades.dhSeasonSourceCalendar') : src;
       const srcText = src.startsWith('default')
-        ? 'Horari d&#039;hivern per defecte: cap període d&#039;estiu cobreix avui.'
+        ? this.t('dades.dhSeasonDefaultWinter')
         : (src.startsWith('notice')
-          ? `Segons l&#039;avís de l&#039;operador ${this.esc(src.replace(/^notice\s*/, ''))}.`
-          : `Temporada vigent segons ${this.esc(src || 'configuració')}.`);
-      items.push(makeItem('Temporada de servei', 'status-success', label, srcText));
+          ? this.t('dades.dhSeasonNotice', { src: src.replace(/^notice\s*/, '') })
+          : this.t('dades.dhSeasonConfig', { src: localizedSrc || this.t('dades.dhSeasonConfigFallback') }));
+      items.push(makeItem(seasonTitle, 'status-success', label, this.esc(srcText)));
     } else {
-      items.push(makeItem('Temporada de servei', 'status-warning', 'No verificada', `Graella de temporada (${this.esc(data.season.season)}) sense verificar per l&#039;any actual.`));
+      items.push(makeItem(seasonTitle, 'status-warning', this.t('dades.dhSeasonUnverifiedBadge'), this.esc(this.t('dades.dhSeasonUnverifiedDesc', { season: data.season.season }))));
     }
 
     // 7. Previsió de temporada (seasonOutlook)
+    const outlookTitle = this.t('dades.dhOutlookTitle');
     if (!data || data.seasonOutlook === null || data.seasonOutlook === undefined) {
-      items.push(makeItem('Previsió estiu', 'status-neutral', 'Sense dades', 'Sense dades sobre la previsió d&#039;horari d&#039;estiu.'));
+      items.push(makeItem(outlookTitle, 'status-neutral', noData, this.esc(this.t('dades.dhOutlookNoData'))));
     } else if (!data.seasonOutlook.warning) {
-      items.push(makeItem('Previsió estiu', 'status-success', 'Configurat', 'Proper període d&#039;estiu configurat al calendari.'));
+      items.push(makeItem(outlookTitle, 'status-success', this.t('dades.dhOutlookOkBadge'), this.esc(this.t('dades.dhOutlookOkDesc'))));
     } else {
-      items.push(makeItem('Previsió estiu', 'status-warning', 'Atenció', this.esc(data.seasonOutlook.warning)));
+      items.push(makeItem(outlookTitle, 'status-warning', this.t('dades.dhAttentionBadge'), this.esc(data.seasonOutlook.warning)));
     }
 
     // 8. Festius oficials (holidaysKnownForYear)
+    const holTitle = this.t('dades.dhHolidaysTitle');
     if (!data || data.holidaysKnownForYear === null || data.holidaysKnownForYear === undefined) {
-      items.push(makeItem('Festius oficials', 'status-neutral', 'Sense dades', 'Sense verificació del calendari laboral de l&#039;any.'));
+      items.push(makeItem(holTitle, 'status-neutral', noData, this.esc(this.t('dades.dhHolidaysNoData'))));
     } else if (data.holidaysKnownForYear === true) {
       if (data.holidayCoverage && data.holidayCoverage.warning) {
-        items.push(makeItem('Festius oficials', 'status-warning', 'Atenció', this.esc(data.holidayCoverage.warning)));
+        items.push(makeItem(holTitle, 'status-warning', this.t('dades.dhAttentionBadge'), this.esc(data.holidayCoverage.warning)));
       } else {
-        items.push(makeItem('Festius oficials', 'status-success', 'Verificat', 'Festius de Catalunya i locals de Mataró verificats.'));
+        items.push(makeItem(holTitle, 'status-success', this.t('dades.dhVerifiedBadge'), this.esc(this.t('dades.dhHolidaysOkDesc'))));
       }
     } else {
-      items.push(makeItem('Festius oficials', 'status-warning', 'Incomplet', this.esc((data.holidayCoverage && data.holidayCoverage.warning) || 'Calendari de festius incomplet') + '. En aquests dies es pot mostrar l&#039;horari de feiner.'));
+      const warn = (data.holidayCoverage && data.holidayCoverage.warning) || this.t('dades.dhHolidaysIncompleteDefault');
+      items.push(makeItem(holTitle, 'status-warning', this.t('dades.dhIncompleteBadge'), this.esc(warn + this.t('dades.dhHolidaysIncompleteSuffix'))));
     }
 
     // 9. Frescor dels informes (reportFreshness)
+    const freshTitle = this.t('dades.dhFreshTitle');
     if (!data || data.reportFreshness === null || data.reportFreshness === undefined || !Array.isArray(data.reportFreshness)) {
-      items.push(makeItem('Frescor informes', 'status-neutral', 'Sense dades', 'Sense informació d&#039;actualització dels informes.'));
+      items.push(makeItem(freshTitle, 'status-neutral', noData, this.esc(this.t('dades.dhFreshNoData'))));
     } else if (data.reportFreshness.length > 0 && data.reportFreshness.every(r => r.fresh)) {
-      items.push(makeItem('Frescor informes', 'status-success', 'Al dia', 'Informes de 24 h, 48 h i 7 dies actualitzats.'));
+      items.push(makeItem(freshTitle, 'status-success', this.t('dades.dhFreshOkBadge'), this.esc(this.t('dades.dhFreshOkDesc'))));
     } else {
-      items.push(makeItem('Frescor informes', 'status-warning', 'Regenerant', 'Alguns informes s&#039;estan actualitzant en segon pla.'));
+      items.push(makeItem(freshTitle, 'status-warning', this.t('dades.dhFreshWarnBadge'), this.esc(this.t('dades.dhFreshWarnDesc'))));
     }
 
     // Summary line: the one thing to read first.
@@ -973,18 +1024,60 @@ class ObservatoriApp {
     const unknown = count('none');
     const summaryTone = count('bad') ? 'bad' : (problems ? 'warn' : (unknown === items.length ? 'none' : 'ok'));
     const summaryText = summaryTone === 'none'
-      ? 'Encara no hi ha dades de l&#039;estat del servei.'
+      ? this.t('dades.dhSummaryNone')
       : problems
-        ? `${problems} ${problems === 1 ? 'indicador necessita' : 'indicadors necessiten'} atenció.`
-        : 'Tot correcte.';
-    const unknownText = unknown && summaryTone !== 'none' ? ` ${unknown} sense dades.` : '';
+        ? this.t(problems === 1 ? 'dades.dhSummaryWarnOne' : 'dades.dhSummaryWarnMany', { n: problems })
+        : this.t('dades.dhSummaryOk');
+    const unknownText = unknown && summaryTone !== 'none' ? this.t('dades.dhSummaryUnknown', { n: unknown }) : '';
     grid.innerHTML = `
-      <p class="dh-summary dh-${summaryTone}"><span class="dh-dot" aria-hidden="true"></span>${summaryText}${unknownText}</p>
+      <p class="dh-summary dh-${summaryTone}"><span class="dh-dot" aria-hidden="true"></span>${this.esc(summaryText + unknownText)}</p>
       <div class="dh-list">${items.map(i => i.html).join('')}</div>
       ${fleetHtml}`;
   }
 
+  onLangChange() {
+    this.renderLineFilter();
+    if (this._lastDataHealth !== undefined) {
+      this.renderDataHealth(this._lastDataHealth);
+    }
+    if (this._gpsGapData !== undefined) {
+      const sel = this.gpsGapSelected;
+      this.renderGpsGaps(this._gpsGapData, { fit: false, forceBuses: true });
+      if (sel !== null && sel !== undefined) this.selectGpsGapCell(sel);
+    }
+    if (this.currentTab === 'journalism') {
+      if (this.currentReport) {
+        const modalState = this._activeModal ? { ...this._activeModal } : null;
+        this.renderJournalismReport(this.currentReport);
+        if (modalState) {
+          if (modalState.type === 'stop') this.openStopHourlyDrilldown(modalState.stopIdx, modalState.hour);
+          else if (modalState.type === 'hour') this.openHourSummaryDrilldown(modalState.hour);
+        }
+      } else if (this._journalismStatus) {
+        const contentContainer = document.getElementById('journalism-content-container');
+        if (this._journalismStatus.type === 'empty') {
+          this._setStatusMessage(contentContainer, this.t('dades.noReportData'));
+        } else if (this._journalismStatus.type === 'error') {
+          this._setStatusMessage(contentContainer, this.t('dades.reportLoadError', { err: this._journalismStatus.err }), true);
+        }
+      }
+    } else if (this.currentTab === 'termometre') {
+      if (this.termometreData) this.renderTermometreScorecard(this.termometreData);
+    } else if (this.currentTab === 'incidents') {
+      if (this.lastIncidentData) {
+        this.renderDelayIncidentsView(this.lastIncidentData, this._currentIncidentLine || 'all', this._currentIncidentHours || 168, this._currentIncidentMode || 'top');
+        if (this._lastIncidentInspect) {
+          this._renderIncidentDrilldown(this._lastIncidentInspect.data, this._lastIncidentInspect.lineCode, this._lastIncidentInspect.stopName, false);
+        }
+      }
+    } else if (this.currentTab === 'monthly') {
+      if (this._monthlyData) this.renderMonthlyReport(this._monthlyData);
+    }
+  }
+
   bindEvents() {
+    document.addEventListener('arribo:lang', () => this.onLangChange());
+
     // Refresh Button
     document.getElementById('btn-observatori-refresh')?.addEventListener('click', (e) => {
       e.preventDefault();
@@ -1311,6 +1404,11 @@ class ObservatoriApp {
   // 1. JOURNALISM & HISTORICAL DELAY REPORT
   // ==========================================
 
+  _setStatusMessage(el, msg, isError = false) {
+    if (!el) return;
+    el.innerHTML = `<div style="text-align:center; padding:3rem; color:${isError ? 'var(--danger)' : 'var(--text-muted)'};">${this.esc(msg)}</div>`;
+  }
+
   async loadJournalismReport(hours = 24, force = false) {
     this.currentHours = hours;
     const contentContainer = document.getElementById('journalism-content-container');
@@ -1329,7 +1427,7 @@ class ObservatoriApp {
 
     if (!this.currentReport || force) {
       if (contentContainer) {
-        contentContainer.innerHTML = '<div style="text-align:center; padding:3rem; color:var(--text-muted);"><span class="loading-spinner-inline"></span> Carregant informe de retards i puntualitat del servidor central...</div>';
+        contentContainer.innerHTML = `<div style="text-align:center; padding:3rem; color:var(--text-muted);"><span class="loading-spinner-inline"></span> ${this.esc(this.t('dades.loadingServerReport'))}</div>`;
       }
     }
 
@@ -1341,19 +1439,18 @@ class ObservatoriApp {
       const journalismData = res.status === 'fulfilled' && res.value?.success ? (res.value.report || res.value) : null;
 
       if (journalismData) {
+        this._journalismStatus = null;
         this.currentReport = journalismData;
         this.renderJournalismReport(journalismData);
       } else {
+        this._journalismStatus = { type: 'empty' };
         this.clearOperatorComparison();
-        if (contentContainer) {
-          contentContainer.innerHTML = '<div style="text-align:center; padding:3rem; color:var(--text-muted);">No hi ha prou dades de retards registrades encara. El servidor està capturant la telemetria contínua.</div>';
-        }
+        this._setStatusMessage(contentContainer, this.t('dades.noReportData'));
       }
     } catch (err) {
+      this._journalismStatus = { type: 'error', err: err.message };
       this.clearOperatorComparison();
-      if (contentContainer) {
-        contentContainer.innerHTML = `<div style="text-align:center; padding:3rem; color:var(--danger);">Error en carregar informe de periodisme: ${this.esc(err.message)}</div>`;
-      }
+      this._setStatusMessage(contentContainer, this.t('dades.reportLoadError', { err: err.message }), true);
     }
   }
 
@@ -1389,6 +1486,7 @@ class ObservatoriApp {
     if (!container) return;
 
     this.currentReport = report;
+    const loc = this.locale();
     const filterText = (this.filterText || '').trim().toLowerCase();
     const norm = (str) => String(str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     const cleanFilter = norm(filterText);
@@ -1403,7 +1501,7 @@ class ObservatoriApp {
       : (report.rankingWorstStops || []);
     const bottlenecksSource = (report.rankingWorstStops && report.rankingWorstStops.length > 0)
       ? report.rankingWorstStops
-      : allStopsSource.filter(s => s.isBottleneck);
+      : allStopsSource.filter(st => st.isBottleneck);
 
     // Calculate full matching stops vs bottleneck matching stops for contextual notice
     let matchingAllStops = allStopsSource.filter(st => (st.arrivalCount || 0) > 0);
@@ -1416,7 +1514,7 @@ class ObservatoriApp {
     }
     matchingAllStops = matchingAllStops.filter(onLine);
     const matchingTotalCount = matchingAllStops.length;
-    const matchingBottleneckCount = matchingAllStops.filter(s => s.isBottleneck).length;
+    const matchingBottleneckCount = matchingAllStops.filter(st => st.isBottleneck).length;
     const matchingPunctualCount = Math.max(0, matchingTotalCount - matchingBottleneckCount);
 
     const activeStopsSource = isAllStopsMode ? allStopsSource : bottlenecksSource;
@@ -1476,16 +1574,20 @@ class ObservatoriApp {
       return '<span style="opacity:0.3; margin-left:4px;">↕</span>';
     };
 
+    const compiledTime = report.meta?.generatedAt
+      ? new Date(report.meta.generatedAt).toLocaleTimeString(loc, { hour: '2-digit', minute: '2-digit' })
+      : '';
+
     let html = `
       <!-- Pre-generated Cache Banner -->
       ${report.meta?.generatedAt ? `
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; background:rgba(0,148,133,0.08); border:1px solid rgba(0,148,133,0.22); border-radius:10px; padding:0.6rem 0.95rem; margin-bottom:1.25rem; font-size:0.78rem;">
           <div style="display:flex; align-items:center; gap:0.4rem; color:var(--text-primary);">
             <span>⚡</span>
-            <span><strong>Informe pregenerat</strong>: compilat a les <strong>${new Date(report.meta.generatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong> (actualització automàtica cada 30 min)</span>
+            <span><strong>${this.esc(this.t('dades.cacheTitle'))}</strong>${this.t('dades.cacheDesc', { time: this.esc(compiledTime) })}</span>
           </div>
           <div style="display:flex; align-items:center; gap:0.6rem;">
-            <span style="color:var(--brand-primary); font-weight:700; font-size:0.75rem;">⏱️ Càrrega instantània</span>
+            <span style="color:var(--brand-primary); font-weight:700; font-size:0.75rem;">${this.esc(this.t('dades.cacheInstant'))}</span>
           </div>
         </div>
       ` : ''}
@@ -1493,27 +1595,27 @@ class ObservatoriApp {
       <!-- KPI Stats Grid -->
       <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:0.85rem; margin-bottom:1.5rem;">
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:1rem;">
-          <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Passos per Parada</div>
-          <div style="font-size:1.75rem; font-weight:700; color:var(--brand-primary); margin-top:0.25rem;">${(s.totalRecordedArrivals || 0).toLocaleString('ca-ES')}</div>
-          <div style="font-size:0.72rem; color:var(--text-muted);">${s.monitoredLinesCount || 0} línies monitorades${s.hoursAnalyzed ? ` • darreres ${s.hoursAnalyzed} h` : ''}${s.totalSamples ? ` (${s.totalSamples.toLocaleString('ca-ES')} mostres individuals)` : ''}</div>
+          <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">${this.esc(this.t('dades.kpiVisits'))}</div>
+          <div style="font-size:1.75rem; font-weight:700; color:var(--brand-primary); margin-top:0.25rem;">${(s.totalRecordedArrivals || 0).toLocaleString(loc)}</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">${this.esc(this.t('dades.kpiMonitoredLines', { n: s.monitoredLinesCount || 0 }))}${s.hoursAnalyzed ? this.esc(this.t('dades.kpiLastHours', { h: s.hoursAnalyzed })) : ''}${s.totalSamples ? this.esc(this.t('dades.kpiIndivSamples', { n: s.totalSamples.toLocaleString(loc) })) : ''}</div>
         </div>
 
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:1rem;">
-          <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Puntualitat Global</div>
-          <div style="font-size:1.75rem; font-weight:700; color:${s.networkPunctualityPct === null || s.networkPunctualityPct === undefined ? 'var(--text-muted)' : (s.networkPunctualityPct >= 85 ? 'var(--accent-live)' : 'var(--accent-warning)')}; margin-top:0.25rem;">${s.networkPunctualityPct === null || s.networkPunctualityPct === undefined ? '—' : `${Number(s.networkPunctualityPct).toLocaleString('ca-ES')}%`}</div>
-          <div style="font-size:0.72rem; color:var(--text-muted);">${s.networkPunctualityPct === null || s.networkPunctualityPct === undefined ? 'Sense passos: la puntualitat no es mesura' : `${Number(s.networkPunctualityPct).toLocaleString('ca-ES')}% puntual · ${Number(s.earlyPct || 0).toLocaleString('ca-ES')}% avançat · ${Number(s.latePct || 0).toLocaleString('ca-ES')}% tard`}</div>
+          <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">${this.esc(this.t('dades.kpiPunctuality'))}</div>
+          <div style="font-size:1.75rem; font-weight:700; color:${s.networkPunctualityPct === null || s.networkPunctualityPct === undefined ? 'var(--text-muted)' : (s.networkPunctualityPct >= 85 ? 'var(--accent-live)' : 'var(--accent-warning)')}; margin-top:0.25rem;">${s.networkPunctualityPct === null || s.networkPunctualityPct === undefined ? '—' : `${Number(s.networkPunctualityPct).toLocaleString(loc)}%`}</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">${s.networkPunctualityPct === null || s.networkPunctualityPct === undefined ? this.esc(this.t('dades.kpiNoVisits')) : this.esc(this.t('dades.kpiPunctBreakdown', { onTime: Number(s.networkPunctualityPct).toLocaleString(loc), early: Number(s.earlyPct || 0).toLocaleString(loc), late: Number(s.latePct || 0).toLocaleString(loc) }))}</div>
         </div>
 
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:1rem;">
-          <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Retard Mitjà Xarxa</div>
+          <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">${this.esc(this.t('dades.kpiAvgDelay'))}</div>
           <div style="font-size:1.75rem; font-weight:700; color:var(--accent-scheduled); margin-top:0.25rem;">${s.networkAvgDelay === null || s.networkAvgDelay === undefined ? '—' : `${Number(s.networkAvgDelay) > 0 ? '+' : ''}${s.networkAvgDelay} min`}</div>
-          <div style="font-size:0.72rem; color:var(--text-muted);">Mitjana de totes les mostres del període</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">${this.esc(this.t('dades.kpiAvgDelaySub'))}</div>
         </div>
 
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:1rem;">
-          <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">Retard Màxim Registrat</div>
+          <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">${this.esc(this.t('dades.kpiMaxDelay'))}</div>
           <div style="font-size:1.75rem; font-weight:700; color:var(--accent-danger); margin-top:0.25rem;">${s.networkMaxDelay === null || s.networkMaxDelay === undefined ? '—' : `${Number(s.networkMaxDelay) > 0 ? '+' : ''}${s.networkMaxDelay} min`}</div>
-          <div style="font-size:0.72rem; color:var(--text-muted);">${s.networkMaxDelay === null || s.networkMaxDelay === undefined ? 'Sense mostres: no hi ha màxim' : 'Afectació puntual extrema'}</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">${s.networkMaxDelay === null || s.networkMaxDelay === undefined ? this.esc(this.t('dades.kpiMaxDelayEmpty')) : this.esc(this.t('dades.kpiMaxDelaySub'))}</div>
         </div>
       </div>
 
@@ -1523,11 +1625,12 @@ class ObservatoriApp {
         if (!sb || !sb.totalSamples || !(sb.nonRealtimeSamples > 0)) return '';
         return `
         <div style="background:rgba(56,189,248,0.06); border:1px solid rgba(56,189,248,0.22); border-radius:10px; padding:0.7rem 0.95rem; margin-bottom:1.25rem; font-size:0.76rem; color:var(--text-secondary); line-height:1.5;">
-          <strong style="color:var(--accent-scheduled);">Mostres, no viatges.</strong>
-          Aquests KPIs es calculen sobre <strong>${sb.totalSamples.toLocaleString()} mostres individuals</strong> (un registre per senyal de vehicle, no pas viatges).
-          D'aquestes, <strong>${sb.nonRealtimeSamples.toLocaleString()} (${sb.nonRealtimePct}%)</strong> són posicions extrapolades
-          (dead-reckoning, <code>is_realtime = 0</code>) i no GPS fresc: s'hi inclouen perquè el retard registrat és real,
-          però no són una observació directa de la posició del vehicle.
+          <strong style="color:var(--accent-scheduled);">${this.esc(this.t('dades.samplingTitle'))}</strong>
+          ${this.t('dades.samplingText', {
+            total: this.esc(sb.totalSamples.toLocaleString(loc)),
+            nonRt: this.esc(sb.nonRealtimeSamples.toLocaleString(loc)),
+            pct: this.esc(sb.nonRealtimePct)
+          })}
         </div>`;
       })()}
 
@@ -1536,45 +1639,42 @@ class ObservatoriApp {
         const comp = s.delayMeasurementComparison;
         // A report cached by an older build lacks the operator_trip fields; skip the panel until it is regenerated.
         if (!comp || !comp.hasData || !comp.comparedVisits || comp.method !== 'operator_trip') return '';
-        const signed = v => (v === null || v === undefined ? '—' : `${v > 0 ? '+' : ''}${Number(v).toLocaleString('ca-ES')} min`);
-        const pctStr = v => (v === null || v === undefined ? '—' : `${Number(v).toLocaleString('ca-ES')}%`);
+        const signed = v => (v === null || v === undefined ? '—' : `${v > 0 ? '+' : ''}${Number(v).toLocaleString(loc)} min`);
+        const pctStr = v => (v === null || v === undefined ? '—' : `${Number(v).toLocaleString(loc)}%`);
         const tone = v => (v === null || v === undefined ? 'var(--text-muted)' : v >= 75 ? 'var(--accent-live)' : v >= 60 ? 'var(--accent-warning)' : 'var(--accent-danger)');
-        const num = v => (Number(v) || 0).toLocaleString('ca-ES');
+        const num = v => (Number(v) || 0).toLocaleString(loc);
         const lines = (Array.isArray(comp.byLine) ? comp.byLine : []).filter(onLine);
         const hours = (Array.isArray(comp.byHour) ? comp.byHour : []).filter(h => h.comparedVisits >= 20);
         return `
         <div style="background:rgba(16,185,129,0.06); border:1px solid rgba(16,185,129,0.25); border-radius:10px; padding:0.8rem 1rem; margin-bottom:1.25rem; font-size:0.78rem; color:var(--text-secondary); line-height:1.5;">
           <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.35rem;">
-            <strong style="color:var(--accent-live); font-size:0.84rem;">🎯 Contrast: retard informat vs. pas mesurat</strong>
+            <strong style="color:var(--accent-live); font-size:0.84rem;">${this.esc(this.t('dades.contrastTitle'))}</strong>
             <span style="font-size:0.75rem; font-family:var(--font-mono); font-weight:600; background:rgba(16,185,129,0.15); color:${tone(comp.agreementPct)}; padding:0.15rem 0.5rem; border-radius:9999px;">
-              ${pctStr(comp.agreementPct)} d'acord (≤1 min)
+              ${this.esc(this.t('dades.contrastAgree', { pct: pctStr(comp.agreementPct) }))}
             </span>
           </div>
           <div>
-            Sobre <strong>${num(comp.comparedVisits)} passos per parada</strong>, comparem el retard que informa l'operador
-            amb l'hora a què el GPS mostra que el bus ha passat per la parada, mesurada contra l'horari publicat del mateix viatge.
-            L'acord diu que el nostre rellotge i el de l'operador coincideixen; no prova que el bus fes aquell viatge (això ho mira la línia següent).
-            Retard mitjà informat: <strong>${signed(comp.operatorAvgDelay)}</strong> ·
-            mesurat per Arribo!: <strong>${signed(comp.measuredAvgDelay)}</strong> ·
-            diferència mitjana: <strong>${signed(comp.biasMins)}</strong>.
+            ${this.t('dades.contrastBody', {
+              visits: this.esc(num(comp.comparedVisits)),
+              opAvg: this.esc(signed(comp.operatorAvgDelay)),
+              measAvg: this.esc(signed(comp.measuredAvgDelay)),
+              bias: this.esc(signed(comp.biasMins))
+            })}
           </div>
           <div style="margin-top:0.35rem;">
-            <strong>Viatge confirmat de forma independent: ${pctStr(comp.tripConfirmedPct)}</strong>
-            (${num(comp.tripConfirmedVisits)} de ${num(comp.tripCheckedVisits)} passos):
-            el viatge programat més proper a l'hora de pas és el mateix que indica l'operador.
-            La resta són busos amb més retard que mig interval entre busos; per a aquests només l'operador sap quin viatge fan,
-            i el contrast es fa sobre el viatge que indica.
+            <strong>${this.esc(this.t('dades.contrastTripConf', { pct: pctStr(comp.tripConfirmedPct) }))}</strong>
+            ${this.esc(this.t('dades.contrastTripConfRest', { conf: num(comp.tripConfirmedVisits), checked: num(comp.tripCheckedVisits) }))}
           </div>
           ${lines.length ? `
           <div class="observatori-table-wrapper" style="margin-top:0.6rem;">
             <table class="observatori-table">
               <thead>
                 <tr>
-                  <th class="sticky-col">Línia</th>
-                  <th>Passos</th>
-                  <th>Acord ≤1 min</th>
-                  <th>Diferència mitjana</th>
-                  <th>Viatge confirmat</th>
+                  <th class="sticky-col">${this.esc(this.t('dades.contrastColLine'))}</th>
+                  <th>${this.esc(this.t('dades.contrastColVisits'))}</th>
+                  <th>${this.esc(this.t('dades.contrastColAgree'))}</th>
+                  <th>${this.esc(this.t('dades.contrastColBias'))}</th>
+                  <th>${this.esc(this.t('dades.contrastColConfirmed'))}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1594,10 +1694,10 @@ class ObservatoriApp {
           </div>` : ''}
           ${hours.length ? `
           <div style="margin-top:0.6rem;">
-            <div style="font-weight:600; color:var(--text-primary); margin-bottom:0.3rem;">Acord per franja horària</div>
+            <div style="font-weight:600; color:var(--text-primary); margin-bottom:0.3rem;">${this.esc(this.t('dades.contrastByHour'))}</div>
             <div style="display:flex; flex-wrap:wrap; gap:0.35rem;">
               ${hours.map(h => `
-              <span title="${num(h.comparedVisits)} passos" style="font-family:var(--font-mono); font-size:0.72rem; padding:0.15rem 0.45rem; border-radius:6px; background:var(--bg-elevated); border:1px solid var(--border-subtle); color:${tone(h.agreementPct)};">
+              <span title="${this.esc(this.t('dades.contrastVisitsTip', { n: num(h.comparedVisits) }))}" style="font-family:var(--font-mono); font-size:0.72rem; padding:0.15rem 0.45rem; border-radius:6px; background:var(--bg-elevated); border:1px solid var(--border-subtle); color:${tone(h.agreementPct)};">
                 ${this.esc(h.hour)}h ${pctStr(h.agreementPct)}
               </span>`).join('')}
             </div>
@@ -1621,38 +1721,38 @@ class ObservatoriApp {
         <div class="hourly-delays-section" style="margin-bottom:1.5rem;">
           <div class="hourly-chart-header">
             <h4 class="hourly-chart-title">
-              <span>Distribució Horària (Hores amb Més Retards)</span>
+              <span>${this.esc(this.t('dades.hourlyTitle'))}</span>
             </h4>
             <div class="hourly-chart-legend">
               <div class="hourly-legend-item">
                 <span class="hourly-legend-dot" style="background:#10b981;"></span>
-                <span>Puntual (&lt;1.5m)</span>
+                <span>${this.esc(this.t('dades.hourlyLegendOnTime'))}</span>
               </div>
               <div class="hourly-legend-item">
                 <span class="hourly-legend-dot" style="background:#f59e0b;"></span>
-                <span>Moderat (1.5–3.5m)</span>
+                <span>${this.esc(this.t('dades.hourlyLegendMod'))}</span>
               </div>
               <div class="hourly-legend-item">
                 <span class="hourly-legend-dot" style="background:#ef4444;"></span>
-                <span>Crític (&gt;3.5m)</span>
+                <span>${this.esc(this.t('dades.hourlyLegendCrit'))}</span>
               </div>
             </div>
           </div>
 
           <!-- Congestion Bar Chart -->
-          <div class="hourly-chart-container" title="Retard mitjà per franja horària">
+          <div class="hourly-chart-container" title="${this.esc(this.t('dades.hourlyChartTitle'))}">
             ${serviceHours.map(h => {
               const dVal = Number(h.avgDelay) || 0;
               const pctHeight = Math.max(6, Math.min(100, Math.round((dVal / maxHDelay) * 100)));
-              const barBg = dVal >= 3.5 
-                ? 'linear-gradient(180deg, #ef4444 0%, #b91c1c 100%)' 
-                : (dVal >= 1.5 
-                    ? 'linear-gradient(180deg, #f59e0b 0%, #b45309 100%)' 
-                    : (dVal > 0 
-                        ? 'linear-gradient(180deg, #10b981 0%, #047857 100%)' 
+              const barBg = dVal >= 3.5
+                ? 'linear-gradient(180deg, #ef4444 0%, #b91c1c 100%)'
+                : (dVal >= 1.5
+                    ? 'linear-gradient(180deg, #f59e0b 0%, #b45309 100%)'
+                    : (dVal > 0
+                        ? 'linear-gradient(180deg, #10b981 0%, #047857 100%)'
                         : 'rgba(255, 255, 255, 0.08)'));
               const delayLabel = dVal > 0 ? `+${dVal}m` : (h.sampleCount > 0 ? '0m' : '-');
-              const tooltip = `${h.timeWindow} • Retard mitjà: +${dVal} min • ${h.latePercentage}% viatges tardans (${h.sampleCount} expedicions)`;
+              const tooltip = this.t('dades.hourlyBarTip', { win: h.timeWindow, d: dVal, pct: h.latePercentage, n: h.sampleCount });
               return `
                 <div class="hourly-bar-col" title="${this.esc(tooltip)}">
                   <div class="hourly-bar-track">
@@ -1668,7 +1768,7 @@ class ObservatoriApp {
           <!-- Peak Hours Ranking & Critical Bottlenecks -->
           ${peakHours.length > 0 ? `
             <div style="font-size:0.85rem; font-weight:700; color:var(--text-secondary); margin-top:0.75rem;">
-              Franges amb Més Retards:
+              ${this.esc(this.t('dades.peakHoursHeading'))}
             </div>
             <div class="peak-hours-grid" style="margin-top:0.5rem;">
               ${peakHours.slice(0, 3).map((ph, idx) => {
@@ -1683,22 +1783,22 @@ class ObservatoriApp {
 
                   <div class="peak-hour-metrics">
                     <div class="peak-hour-stat">
-                      <span class="stat-label">Retard Mitjà</span>
+                      <span class="stat-label">${this.esc(this.t('dades.peakAvgDelay'))}</span>
                       <strong class="stat-val ${ph.avgDelay >= 3 ? 'severe' : 'warning'}">+${ph.avgDelay} min</strong>
                     </div>
                     <div class="peak-hour-stat">
-                      <span class="stat-label">% Afectats</span>
+                      <span class="stat-label">${this.esc(this.t('dades.peakAffected'))}</span>
                       <strong class="stat-val">${ph.latePercentage}%</strong>
                     </div>
                     <div class="peak-hour-stat">
-                      <span class="stat-label">Expedicions</span>
-                      <strong class="stat-val">${(ph.sampleCount || 0).toLocaleString()}</strong>
+                      <span class="stat-label">${this.esc(this.t('dades.peakTrips'))}</span>
+                      <strong class="stat-val">${(ph.sampleCount || 0).toLocaleString(loc)}</strong>
                     </div>
                   </div>
 
                   ${ph.worstStopsDuringHour && ph.worstStopsDuringHour.length > 0 ? `
                     <div class="peak-hour-bottlenecks">
-                      <span class="bottlenecks-title">Colls d'ampolla en aquesta hora:</span>
+                      <span class="bottlenecks-title">${this.esc(this.t('dades.peakBottlenecks'))}</span>
                       <div class="bottlenecks-list">
                         ${ph.worstStopsDuringHour.map(bs => `
                           <div class="bottleneck-item">
@@ -1723,27 +1823,27 @@ class ObservatoriApp {
       <div class="observatori-table-container" style="margin-bottom:1.5rem;">
         <div class="observatori-table-header-row">
           <h4 class="observatori-table-title">
-            <span>Línies Més Afectades per Retards</span>
-            <span class="observatori-table-subtitle">(${mostDelayed.length} línies actives analitzades)</span>
+            <span>${this.esc(this.t('dades.linesTitle'))}</span>
+            <span class="observatori-table-subtitle">${this.esc(this.t('dades.linesSubtitle', { n: mostDelayed.length }))}</span>
           </h4>
-          <span class="observatori-table-subtitle">Clica a les capçaleres per ordenar ↕</span>
+          <span class="observatori-table-subtitle">${this.esc(this.t('dades.clickToSort'))}</span>
         </div>
-        ${mostDelayed.length === 0 ? '<div style="color:var(--text-muted); font-size:0.85rem; padding:0.8rem; background:var(--bg-elevated); border-radius:8px;">Cap línia coincideix amb el filtre o no hi ha retards suficients.</div>' : `
+        ${mostDelayed.length === 0 ? `<div style="color:var(--text-muted); font-size:0.85rem; padding:0.8rem; background:var(--bg-elevated); border-radius:8px;">${this.esc(this.t('dades.linesEmpty'))}</div>` : `
           <div class="observatori-table-scroll-hint" aria-hidden="true">
             <span class="scroll-hint-icon">↔</span>
-            <span>Desplaça en horitzontal per veure totes les dades</span>
+            <span>${this.esc(this.t('dades.scrollHint'))}</span>
             <span class="scroll-hint-chevron">›</span>
           </div>
           <div class="observatori-table-wrapper">
             <table class="observatori-table">
               <thead>
                 <tr>
-                  <th class="sticky-col" data-sort-table="mostDelayed" data-sort-key="lineCode" role="button" tabindex="0">Línia ${getSortIndicator('mostDelayed', 'lineCode')}</th>
-                  <th data-sort-table="mostDelayed" data-sort-key="avgDelay" role="button" tabindex="0">Retard Mitjà ${getSortIndicator('mostDelayed', 'avgDelay')}</th>
-                  <th data-sort-table="mostDelayed" data-sort-key="onTimePercentage" role="button" tabindex="0">% Puntual ${getSortIndicator('mostDelayed', 'onTimePercentage')}</th>
-                  <th class="observatori-col-desktop" data-sort-table="mostDelayed" data-sort-key="maxDelay" role="button" tabindex="0">Retard Màxim ${getSortIndicator('mostDelayed', 'maxDelay')}</th>
-                  <th class="observatori-col-desktop" data-sort-table="mostDelayed" data-sort-key="sampleCount" role="button" tabindex="0">Passos per parada ${getSortIndicator('mostDelayed', 'sampleCount')}</th>
-                  <th class="observatori-col-desktop" data-sort-table="mostDelayed" data-sort-key="agency" role="button" tabindex="0">Operador ${getSortIndicator('mostDelayed', 'agency')}</th>
+                  <th class="sticky-col" data-sort-table="mostDelayed" data-sort-key="lineCode" role="button" tabindex="0">${this.esc(this.t('dades.colLine'))} ${getSortIndicator('mostDelayed', 'lineCode')}</th>
+                  <th data-sort-table="mostDelayed" data-sort-key="avgDelay" role="button" tabindex="0">${this.esc(this.t('dades.colAvgDelay'))} ${getSortIndicator('mostDelayed', 'avgDelay')}</th>
+                  <th data-sort-table="mostDelayed" data-sort-key="onTimePercentage" role="button" tabindex="0">${this.esc(this.t('dades.colOnTimePct'))} ${getSortIndicator('mostDelayed', 'onTimePercentage')}</th>
+                  <th class="observatori-col-desktop" data-sort-table="mostDelayed" data-sort-key="maxDelay" role="button" tabindex="0">${this.esc(this.t('dades.colMaxDelay'))} ${getSortIndicator('mostDelayed', 'maxDelay')}</th>
+                  <th class="observatori-col-desktop" data-sort-table="mostDelayed" data-sort-key="sampleCount" role="button" tabindex="0">${this.esc(this.t('dades.colVisits'))} ${getSortIndicator('mostDelayed', 'sampleCount')}</th>
+                  <th class="observatori-col-desktop" data-sort-table="mostDelayed" data-sort-key="agency" role="button" tabindex="0">${this.esc(this.t('dades.colOperator'))} ${getSortIndicator('mostDelayed', 'agency')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1767,21 +1867,21 @@ class ObservatoriApp {
                     <td style="white-space:nowrap;">
                       <div style="display:flex; flex-direction:column; gap:0.2rem;">
                         <div style="display:flex; align-items:center; gap:0.4rem;">
-                          <span style="font-weight:600; color:${onTime >= 85 ? 'var(--accent-live)' : 'var(--accent-warning)'}; min-width:34px;">${onTime.toLocaleString('ca-ES')}%</span>
+                          <span style="font-weight:600; color:${onTime >= 85 ? 'var(--accent-live)' : 'var(--accent-warning)'}; min-width:34px;">${onTime.toLocaleString(loc)}%</span>
                           <div style="flex:1; max-width:60px; height:5px; background:var(--bg-main); border-radius:3px; overflow:hidden;">
                             <div style="width:${onTime}%; height:100%; background:${onTime >= 85 ? 'var(--accent-live)' : 'var(--accent-warning)'};"></div>
                           </div>
                         </div>
                         <div style="font-size:0.68rem; color:var(--text-muted);">
-                          ${onTime.toLocaleString('ca-ES')}% puntual · ${(Number(l.earlyPercentage) || 0).toLocaleString('ca-ES')}% avançat · ${(Number(l.latePercentage) || 0).toLocaleString('ca-ES')}% tard
+                          ${this.esc(this.t('dades.kpiPunctBreakdown', { onTime: onTime.toLocaleString(loc), early: (Number(l.earlyPercentage) || 0).toLocaleString(loc), late: (Number(l.latePercentage) || 0).toLocaleString(loc) }))}
                         </div>
                       </div>
                     </td>
                     <td class="observatori-col-desktop" style="color:var(--text-muted); white-space:nowrap;">${maxStr}</td>
-                    <td class="observatori-col-desktop" style="color:var(--text-muted);">${(l.sampleCount || 0).toLocaleString('ca-ES')}</td>
+                    <td class="observatori-col-desktop" style="color:var(--text-muted);">${(l.sampleCount || 0).toLocaleString(loc)}</td>
                     <td class="observatori-col-desktop" style="color:var(--text-muted); font-size:0.75rem;">
                       ${this.esc(l.agency || 'Mataró Bus')}
-                      ${isL95 ? '<span style="color:var(--accent-scheduled); font-size:0.7rem; display:block;">ℹ️ L95 exprés: trànsit C-31/C-32</span>' : ''}
+                      ${isL95 ? `<span style="color:var(--accent-scheduled); font-size:0.7rem; display:block;">${this.esc(this.t('dades.l95Note'))}</span>` : ''}
                     </td>
                   </tr>
                 `;}).join('')}
@@ -1801,19 +1901,19 @@ class ObservatoriApp {
 
         let stopNoticeHtml = '';
         if (!isAllStopsMode && matchingPunctualCount > 0) {
-          const lineNotice = (filterText || lineFilter) ? "d'aquesta línia" : 'a la xarxa';
+          const lineNotice = (filterText || lineFilter) ? this.t('dades.stopsNoticeLine') : this.t('dades.stopsNoticeNet');
           stopNoticeHtml = `
             <div class="observatori-filter-notice" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.6rem; background:rgba(0,148,133,0.08); border:1px solid rgba(0,148,133,0.25); border-radius:10px; padding:0.65rem 0.95rem; margin-bottom:1rem; font-size:0.8rem;">
               <div style="display:flex; align-items:center; gap:0.55rem; color:var(--text-primary);">
                 <span style="font-size:1.15rem; flex-shrink:0;">ℹ️</span>
                 <div>
-                  <strong>Només es mostren colls d'ampolla</strong> (retard &ge; 1.5 min o &ge; 20% greus).
-                  <span style="color:var(--text-muted); margin-left:0.25rem;">Les altres <strong>${matchingPunctualCount}</strong> parades ${lineNotice} han funcionat amb puntualitat (&lt; 1.5 min).</span>
+                  ${this.t('dades.stopsNoticeBottlenecks')}
+                  <span style="color:var(--text-muted); margin-left:0.25rem;">${this.t('dades.stopsNoticePunctual', { n: matchingPunctualCount, scope: this.esc(lineNotice) })}</span>
                 </div>
               </div>
               <button type="button" class="observatori-action-btn btn-secondary btn-sm" data-toggle-stop-mode="all">
                 <span>🔓</span>
-                <span>Veure totes les parades (${matchingTotalCount})</span>
+                <span>${this.esc(this.t('dades.stopsViewAllBtn', { n: matchingTotalCount }))}</span>
               </button>
             </div>
           `;
@@ -1823,13 +1923,13 @@ class ObservatoriApp {
               <div style="display:flex; align-items:center; gap:0.55rem; color:var(--text-primary);">
                 <span style="font-size:1.15rem; flex-shrink:0;">📋</span>
                 <div>
-                  <strong>Mostrant totes les ${worstStops.length} parades actives</strong> (inclou parades puntuals i colls d'ampolla).
-                  <span style="color:var(--text-muted); margin-left:0.25rem;">${matchingBottleneckCount} són colls d'ampolla.</span>
+                  ${this.t('dades.stopsNoticeAll', { n: worstStops.length })}
+                  <span style="color:var(--text-muted); margin-left:0.25rem;">${this.esc(this.t('dades.stopsNoticeAllCount', { n: matchingBottleneckCount }))}</span>
                 </div>
               </div>
               <button type="button" class="observatori-action-btn btn-secondary btn-sm" data-toggle-stop-mode="bottlenecks">
                 <span>⚠️</span>
-                <span>Només colls d'ampolla (${matchingBottleneckCount})</span>
+                <span>${this.esc(this.t('dades.stopsOnlyBottlenecksBtn', { n: matchingBottleneckCount }))}</span>
               </button>
             </div>
           `;
@@ -1847,7 +1947,7 @@ class ObservatoriApp {
           <tr>
             <td class="sticky-col" style="font-weight:600; color:var(--text-primary);">
               <div class="observatori-stop-cell">
-                <span class="observatori-rank-num ${isSevereStop && st.overallRank <= 3 ? 'rank-' + st.overallRank : ''}" title="Rànquing: #${st.overallRank}">#${st.overallRank}</span>
+                <span class="observatori-rank-num ${isSevereStop && st.overallRank <= 3 ? 'rank-' + st.overallRank : ''}" title="${this.esc(this.t('dades.rankTitle', { n: st.overallRank }))}">#${st.overallRank}</span>
                 <span class="observatori-stop-name" title="${this.esc(st.stopName)}">${this.esc(st.stopName)}</span>
                 <span class="observatori-mobile-only" style="background:${lColor}; color:${badgeTextColor}; padding:0.1rem 0.35rem; border-radius:4px; font-size:0.7rem; font-weight:800; margin-left:0.25rem;">${this.esc(st.lineCode)}</span>
               </div>
@@ -1864,11 +1964,11 @@ class ObservatoriApp {
             </td>
             <td style="white-space:nowrap;">
               ${st.criticalHour && st.criticalHour !== '--' && Number(st.criticalHourAvgDelay) >= 1.5 ? `
-                <div class="bottleneck-hour-badge" title="Retard mitjà en aquesta franja: +${st.criticalHourAvgDelay} min">
+                <div class="bottleneck-hour-badge" title="${this.esc(this.t('dades.criticalHourTip', { d: st.criticalHourAvgDelay }))}">
                   <span class="badge-time">${this.esc(st.criticalHour)}</span>
                   <span class="badge-delay">(+${st.criticalHourAvgDelay}m)</span>
                 </div>
-              ` : (isSevereStop ? '<span style="color:var(--text-muted); font-size:0.75rem;">Uniforme</span>' : '<span style="color:var(--accent-live); font-size:0.75rem; font-weight:600;">✓ Puntual</span>')}
+              ` : (isSevereStop ? `<span style="color:var(--text-muted); font-size:0.75rem;">${this.esc(this.t('dades.stopsUniform'))}</span>` : `<span style="color:var(--accent-live); font-size:0.75rem; font-weight:600;">${this.esc(this.t('dades.stopsPunctual'))}</span>`)}
             </td>
             <td class="observatori-col-desktop" style="color:var(--text-muted); white-space:nowrap;">${sMaxStr}</td>
           </tr>
@@ -1880,7 +1980,7 @@ class ObservatoriApp {
         } else {
           const lineGroups = new Map();
           for (const st of displayedWorstStops) {
-            const lCode = st.lineCode || 'Altres';
+            const lCode = st.lineCode || this.t('dades.stopsOther');
             if (!lineGroups.has(lCode)) {
               lineGroups.set(lCode, []);
             }
@@ -1899,8 +1999,8 @@ class ObservatoriApp {
             const lColor = this.getLineColor(lineCode);
             const badgeTextColor = this.chipInk(lColor);
             const lineMatch = (this.availableLines || []).find(l => String(l.code || l.id).toUpperCase() === String(lineCode).toUpperCase());
-            const lineTitle = lineMatch?.name || `Línia ${lineCode}`;
-            const lineAvg = (lineStops.reduce((sum, s) => sum + (Number(s.avgDelay) || 0), 0) / lineStops.length).toFixed(1);
+            const lineTitle = lineMatch?.name || this.t('dades.lineNameFallback', { code: lineCode });
+            const lineAvg = (lineStops.reduce((sum, st) => sum + (Number(st.avgDelay) || 0), 0) / lineStops.length).toFixed(1);
             const slowestStop = lineStops.reduce((prev, curr) => (prev.overallRank < curr.overallRank ? prev : curr), lineStops[0]);
 
             return `
@@ -1910,11 +2010,11 @@ class ObservatoriApp {
                     <div class="observatori-group-header-left">
                       <span class="observatori-line-badge" style="background:${lColor}; color:${badgeTextColor}; font-weight:800; font-size:0.75rem; padding:0.15rem 0.45rem; border-radius:4px;">${this.esc(lineCode)}</span>
                       <span style="font-weight:700; color:var(--text-primary); font-size:0.83rem;">${this.esc(lineTitle)}</span>
-                      <span style="font-size:0.72rem; color:var(--text-muted); font-weight:500;">(${lineStops.length} ${lineStops.length === 1 ? 'parada' : 'parades'})</span>
+                      <span style="font-size:0.72rem; color:var(--text-muted); font-weight:500;">(${lineStops.length} ${this.esc(this.t(lineStops.length === 1 ? 'dades.stopOne' : 'dades.stopMany'))})</span>
                     </div>
                     <div class="observatori-group-header-right">
-                      <span>Retard mitjà: <strong style="color:${Number(lineAvg) >= 3 ? 'var(--accent-danger)' : 'var(--accent-warning)'};">+${lineAvg} min</strong></span>
-                      <span style="border-left:1px solid var(--border-subtle); padding-left:0.6rem;">Parada més lenta: <strong style="color:var(--brand-primary);">#${slowestStop.overallRank}</strong> (${this.esc(slowestStop.stopName)})</span>
+                      <span>${this.esc(this.t('dades.groupAvgDelay'))} <strong style="color:${Number(lineAvg) >= 3 ? 'var(--accent-danger)' : 'var(--accent-warning)'};">+${lineAvg} min</strong></span>
+                      <span style="border-left:1px solid var(--border-subtle); padding-left:0.6rem;">${this.esc(this.t('dades.groupSlowest'))} <strong style="color:var(--brand-primary);">#${slowestStop.overallRank}</strong> (${this.esc(slowestStop.stopName)})</span>
                     </div>
                   </div>
                 </td>
@@ -1929,43 +2029,43 @@ class ObservatoriApp {
           ${stopNoticeHtml}
           <div class="observatori-table-header-row">
             <h4 class="observatori-table-title">
-              <span>${isAllStopsMode ? 'Totes les Parades per Retard Mitjà' : "Colls d'Ampolla: Parades amb Més Retard"}</span>
-              <span class="observatori-table-subtitle">(Mostrant ${displayedWorstStops.length} de ${totalWorst})</span>
+              <span>${this.esc(this.t(isAllStopsMode ? 'dades.stopsTitleAll' : 'dades.stopsTitleBottlenecks'))}</span>
+              <span class="observatori-table-subtitle">${this.esc(this.t('dades.showingOf', { shown: displayedWorstStops.length, total: totalWorst }))}</span>
             </h4>
             <div class="observatori-filter-toolbar">
               <div class="observatori-mode-toggle-group">
-                <button type="button" class="observatori-pill-btn ${!isAllStopsMode ? 'active' : ''}" data-toggle-stop-mode="bottlenecks" title="Mostra exclusivament les parades amb retards significatius">⚠️ Colls d'ampolla</button>
-                <button type="button" class="observatori-pill-btn ${isAllStopsMode ? 'active' : ''}" data-toggle-stop-mode="all" title="Mostra el 100% de les parades registrades, incloent-hi les puntuals">📋 Totes les parades</button>
+                <button type="button" class="observatori-pill-btn ${!isAllStopsMode ? 'active' : ''}" data-toggle-stop-mode="bottlenecks" title="${this.esc(this.t('dades.btnBottlenecksTitle'))}">${this.esc(this.t('dades.btnBottlenecks'))}</button>
+                <button type="button" class="observatori-pill-btn ${isAllStopsMode ? 'active' : ''}" data-toggle-stop-mode="all" title="${this.esc(this.t('dades.btnAllStopsTitle'))}">${this.esc(this.t('dades.btnAllStops'))}</button>
               </div>
-              <label class="observatori-group-toggle" title="Agrupa les parades per línia d'autobús o desmarca per veure l'ordre real">
+              <label class="observatori-group-toggle" title="${this.esc(this.t('dades.groupByLineTitle'))}">
                 <input type="checkbox" id="observatori-group-by-line" ${isGroupedByLine ? 'checked' : ''}>
-                <span>Agrupar per línia</span>
+                <span>${this.esc(this.t('dades.groupByLine'))}</span>
               </label>
-              <div class="observatori-filter-group" aria-label="Filtre de parades">
-                <span class="observatori-filter-label">FILTRE:</span>
+              <div class="observatori-filter-group" aria-label="${this.esc(this.t('dades.stopsFilterAria'))}">
+                <span class="observatori-filter-label">${this.esc(this.t('dades.filterLabel'))}</span>
                 <button type="button" class="observatori-pill-btn ${worstLimit === 10 ? 'active' : ''}" data-worst-limit="10">Top 10</button>
                 <button type="button" class="observatori-pill-btn ${worstLimit === 25 ? 'active' : ''}" data-worst-limit="25">Top 25</button>
-                <button type="button" class="observatori-pill-btn ${worstLimit >= 9999 ? 'active' : ''}" data-worst-limit="9999">Totes (${totalWorst})</button>
+                <button type="button" class="observatori-pill-btn ${worstLimit >= 9999 ? 'active' : ''}" data-worst-limit="9999">${this.esc(this.t('dades.allCount', { n: totalWorst }))}</button>
               </div>
             </div>
           </div>
-          ${totalWorst === 0 ? `<div style="color:var(--text-muted); font-size:0.85rem; padding:0.8rem; background:var(--bg-elevated); border-radius:8px;">${isAllStopsMode ? 'Cap parada coincideix amb el filtre.' : 'Sense punts negres registrats o cap parada coincideix amb el filtre.'}</div>` : `
+          ${totalWorst === 0 ? `<div style="color:var(--text-muted); font-size:0.85rem; padding:0.8rem; background:var(--bg-elevated); border-radius:8px;">${this.esc(this.t(isAllStopsMode ? 'dades.stopsEmptyAll' : 'dades.stopsEmptyBottlenecks'))}</div>` : `
             <div class="observatori-table-scroll-hint" aria-hidden="true">
               <span class="scroll-hint-icon">↔</span>
-              <span>Desplaça en horitzontal per veure totes les dades</span>
+              <span>${this.esc(this.t('dades.scrollHint'))}</span>
               <span class="scroll-hint-chevron">›</span>
             </div>
             <div class="observatori-table-wrapper">
               <table class="observatori-table">
                 <thead>
                   <tr>
-                    <th class="sticky-col" data-sort-table="worstStops" data-sort-key="overallRank" role="button" tabindex="0">${isAllStopsMode ? 'Rànquing / Parada' : 'Rànquing / Parada (Punt Negre)'} ${getSortIndicator('worstStops', 'overallRank')}</th>
-                    <th class="observatori-col-desktop" data-sort-table="worstStops" data-sort-key="lineCode" role="button" tabindex="0">Línia ${getSortIndicator('worstStops', 'lineCode')}</th>
-                    <th class="observatori-col-desktop" data-sort-table="worstStops" data-sort-key="agency" role="button" tabindex="0">Operador ${getSortIndicator('worstStops', 'agency')}</th>
-                    <th data-sort-table="worstStops" data-sort-key="avgDelay" role="button" tabindex="0">Retard Mitjà ${getSortIndicator('worstStops', 'avgDelay')}</th>
-                    <th data-sort-table="worstStops" data-sort-key="severeLatePct" role="button" tabindex="0">% Retards Greus ${getSortIndicator('worstStops', 'severeLatePct')}</th>
-                    <th data-sort-table="worstStops" data-sort-key="criticalHourAvgDelay" role="button" tabindex="0">Hora Crítica (Punta) ${getSortIndicator('worstStops', 'criticalHourAvgDelay')}</th>
-                    <th class="observatori-col-desktop" data-sort-table="worstStops" data-sort-key="maxDelay" role="button" tabindex="0">Retard Màx. ${getSortIndicator('worstStops', 'maxDelay')}</th>
+                    <th class="sticky-col" data-sort-table="worstStops" data-sort-key="overallRank" role="button" tabindex="0">${this.esc(this.t(isAllStopsMode ? 'dades.colRankStop' : 'dades.colRankStopBottleneck'))} ${getSortIndicator('worstStops', 'overallRank')}</th>
+                    <th class="observatori-col-desktop" data-sort-table="worstStops" data-sort-key="lineCode" role="button" tabindex="0">${this.esc(this.t('dades.colLine'))} ${getSortIndicator('worstStops', 'lineCode')}</th>
+                    <th class="observatori-col-desktop" data-sort-table="worstStops" data-sort-key="agency" role="button" tabindex="0">${this.esc(this.t('dades.colOperator'))} ${getSortIndicator('worstStops', 'agency')}</th>
+                    <th data-sort-table="worstStops" data-sort-key="avgDelay" role="button" tabindex="0">${this.esc(this.t('dades.colAvgDelay'))} ${getSortIndicator('worstStops', 'avgDelay')}</th>
+                    <th data-sort-table="worstStops" data-sort-key="severeLatePct" role="button" tabindex="0">${this.esc(this.t('dades.colSeverePct'))} ${getSortIndicator('worstStops', 'severeLatePct')}</th>
+                    <th data-sort-table="worstStops" data-sort-key="criticalHourAvgDelay" role="button" tabindex="0">${this.esc(this.t('dades.colCriticalHour'))} ${getSortIndicator('worstStops', 'criticalHourAvgDelay')}</th>
+                    <th class="observatori-col-desktop" data-sort-table="worstStops" data-sort-key="maxDelay" role="button" tabindex="0">${this.esc(this.t('dades.colMaxShort'))} ${getSortIndicator('worstStops', 'maxDelay')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1976,10 +2076,10 @@ class ObservatoriApp {
             ${hasMoreWorst ? `
               <div style="display:flex; justify-content:center; align-items:center; gap:0.6rem; padding:0.75rem; background:var(--bg-elevated); border-top:1px solid var(--border-subtle); border-radius:0 0 10px 10px;">
                 <button type="button" class="btn-primary observatori-action-btn" data-worst-limit="${worstLimit + 15}">
-                  ⬇️ Mostra'n 15 més (${displayedWorstStops.length} de ${totalWorst})
+                  ${this.esc(this.t('dades.showMore15', { shown: displayedWorstStops.length, total: totalWorst }))}
                 </button>
                 <button type="button" class="btn-secondary observatori-action-btn" data-worst-limit="9999">
-                  Totes (${totalWorst})
+                  ${this.esc(this.t('dades.allCount', { n: totalWorst }))}
                 </button>
               </div>
             ` : ''}
@@ -1993,25 +2093,25 @@ class ObservatoriApp {
       <div class="observatori-table-container" style="margin-bottom:1.5rem;">
         <div class="observatori-table-header-row">
           <h4 class="observatori-table-title">
-            <span style="display:flex; align-items:center; gap:0.4rem;">Comparativa per Empresa Operadora</span>
+            <span style="display:flex; align-items:center; gap:0.4rem;">${this.esc(this.t('dades.opCompTitle') || 'Comparativa per Empresa Operadora')}</span>
           </h4>
-          <span class="observatori-table-subtitle">Clica a les capçaleres per ordenar ↕</span>
+          <span class="observatori-table-subtitle">${this.esc(this.t('dades.clickToSort'))}</span>
         </div>
-        ${agencies.length === 0 ? '<div style="color:var(--text-muted); font-size:0.85rem; padding:0.8rem; background:var(--bg-elevated); border-radius:8px;">Recopilant mostres d\'operadors...</div>' : `
+        ${agencies.length === 0 ? `<div style="color:var(--text-muted); font-size:0.85rem; padding:0.8rem; background:var(--bg-elevated); border-radius:8px;">${this.esc(this.t('dades.opCompEmpty'))}</div>` : `
           <div class="observatori-table-scroll-hint" aria-hidden="true">
             <span class="scroll-hint-icon">↔</span>
-            <span>Desplaça en horitzontal per veure totes les dades</span>
+            <span>${this.esc(this.t('dades.scrollHint'))}</span>
             <span class="scroll-hint-chevron">›</span>
           </div>
           <div class="observatori-table-wrapper">
             <table class="observatori-table">
             <thead>
               <tr>
-                <th class="sticky-col" data-sort-table="agencies" data-sort-key="agency" role="button" tabindex="0">Empresa ${getSortIndicator('agencies', 'agency')}</th>
-                <th class="observatori-col-desktop" data-sort-table="agencies" data-sort-key="linesCount" role="button" tabindex="0">Línies ${getSortIndicator('agencies', 'linesCount')}</th>
-                <th class="observatori-col-desktop" data-sort-table="agencies" data-sort-key="totalSamples" role="button" tabindex="0">Passos per parada ${getSortIndicator('agencies', 'totalSamples')}</th>
-                <th data-sort-table="agencies" data-sort-key="avgDelay" role="button" tabindex="0">Retard Mitjà ${getSortIndicator('agencies', 'avgDelay')}</th>
-                <th data-sort-table="agencies" data-sort-key="onTimePct" role="button" tabindex="0">Índex de Puntualitat ${getSortIndicator('agencies', 'onTimePct')}</th>
+                <th class="sticky-col" data-sort-table="agencies" data-sort-key="agency" role="button" tabindex="0">${this.esc(this.t('dades.colCompany'))} ${getSortIndicator('agencies', 'agency')}</th>
+                <th class="observatori-col-desktop" data-sort-table="agencies" data-sort-key="linesCount" role="button" tabindex="0">${this.esc(this.t('dades.colLinesCount'))} ${getSortIndicator('agencies', 'linesCount')}</th>
+                <th class="observatori-col-desktop" data-sort-table="agencies" data-sort-key="totalSamples" role="button" tabindex="0">${this.esc(this.t('dades.colVisits'))} ${getSortIndicator('agencies', 'totalSamples')}</th>
+                <th data-sort-table="agencies" data-sort-key="avgDelay" role="button" tabindex="0">${this.esc(this.t('dades.colAvgDelay'))} ${getSortIndicator('agencies', 'avgDelay')}</th>
+                <th data-sort-table="agencies" data-sort-key="onTimePct" role="button" tabindex="0">${this.esc(this.t('dades.colPunctualityIndex'))} ${getSortIndicator('agencies', 'onTimePct')}</th>
               </tr>
             </thead>
             <tbody>
@@ -2022,11 +2122,11 @@ class ObservatoriApp {
                 <tr>
                   <td class="sticky-col" style="font-weight:700; color:var(--text-primary);">${this.esc(a.agency)}</td>
                   <td class="observatori-col-desktop" style="color:var(--text-muted); text-align:center;">${a.linesCount || 0}</td>
-                  <td class="observatori-col-desktop" style="color:var(--text-muted);">${(a.totalVisits || a.totalSamples || 0).toLocaleString('ca-ES')}</td>
+                  <td class="observatori-col-desktop" style="color:var(--text-muted);">${(a.totalVisits || a.totalSamples || 0).toLocaleString(loc)}</td>
                   <td style="font-weight:700; color:${Number(a.avgDelay) > 0 ? 'var(--accent-danger)' : 'var(--accent-live)'}; white-space:nowrap;">${aAvg}</td>
                   <td style="white-space:nowrap;">
-                    <span style="font-weight:700; color:${onTime === null ? 'var(--text-muted)' : (onTime >= 85 ? 'var(--accent-live)' : 'var(--accent-warning)')};">${onTime === null ? '—' : `${onTime.toLocaleString('ca-ES')}%`}</span>
-                    <span style="font-size:0.7rem; color:var(--text-muted); margin-left:0.3rem;">puntual${a.earlyPct ? ` · ${Number(a.earlyPct).toLocaleString('ca-ES')}% avançat` : ''}${a.latePct ? ` · ${Number(a.latePct).toLocaleString('ca-ES')}% tard` : ''}</span>
+                    <span style="font-weight:700; color:${onTime === null ? 'var(--text-muted)' : (onTime >= 85 ? 'var(--accent-live)' : 'var(--accent-warning)')};">${onTime === null ? '—' : `${onTime.toLocaleString(loc)}%`}</span>
+                    <span style="font-size:0.7rem; color:var(--text-muted); margin-left:0.3rem;">${this.esc(this.t('dades.opOnTimeWord'))}${a.earlyPct ? this.esc(this.t('dades.opEarlyPart', { n: Number(a.earlyPct).toLocaleString(loc) })) : ''}${a.latePct ? this.esc(this.t('dades.opLatePart', { n: Number(a.latePct).toLocaleString(loc) })) : ''}</span>
                   </td>
                 </tr>
               `;}).join('')}
@@ -2067,7 +2167,7 @@ class ObservatoriApp {
 
   renderStopHeatmap(stops) {
     if (!stops.length) return '';
-    if (!stops.every(stop => Array.isArray(stop.hourly))) return '<p>Detall horari pendent de la propera actualització.</p>';
+    if (!stops.every(stop => Array.isArray(stop.hourly))) return `<p>${this.esc(this.t('dades.heatPending'))}</p>`;
 
     this._heatmapStops = stops;
     const hasData = h => stops.some(s => (s.hourly?.[h]?.sampleCount || 0) > 0);
@@ -2079,16 +2179,18 @@ class ObservatoriApp {
 
     const cell = (bucket, stopIdx, h) => {
       const b = bucket || { sampleCount: 0 };
-      const label = b.sampleCount ? `${b.avgDelay} min; ${b.sampleCount} mostres; màxim ${b.maxDelay} min; ${b.severeLatePct}% amb retard ≥5 min` : 'Sense dades';
+      const label = b.sampleCount
+        ? this.t('dades.heatCellLabel', { avg: b.avgDelay, n: b.sampleCount, max: b.maxDelay, severe: b.severeLatePct })
+        : this.t('dades.dhNoData');
       const level = !b.sampleCount ? 'empty' : b.avgDelay >= 5 ? 'late' : b.avgDelay >= 3 ? 'moderate' : 'regular';
-      return `<td class="stop-heat-cell heat-${level}" data-stop-idx="${stopIdx}" data-hour="${h}" role="button" tabindex="0" title="${this.esc(label)} (Clica per obrir el menú de detall)"><span aria-label="${this.esc(label)}">${b.sampleCount ? b.avgDelay : '—'}</span>${b.sampleCount > 0 && b.sampleCount < 5 ? '<small> *</small>' : ''}</td>`;
+      return `<td class="stop-heat-cell heat-${level}" data-stop-idx="${stopIdx}" data-hour="${h}" role="button" tabindex="0" title="${this.esc(this.t('dades.heatCellTip', { label }))}"><span aria-label="${this.esc(label)}">${b.sampleCount ? b.avgDelay : '—'}</span>${b.sampleCount > 0 && b.sampleCount < 5 ? '<small> *</small>' : ''}</td>`;
     };
 
-    return `<section class="stop-hourly-section"><h4>Retard per parada i hora</h4>
-      <p>Observacions registrades, no viatges únics ni causes de congestió. Hora local: Europe/Madrid. Valors en minuts. * Menys de 5 mostres. <strong>Clica a qualsevol franja horària o parada per obrir el menú de detall.</strong></p>
-      <p class="stop-heat-legend"><span class="heat-regular">Menys de 3 min</span> <span class="heat-moderate">3–5 min</span> <span class="heat-late">5 min o més</span> <span>— Sense dades</span></p>
-      <div class="observatori-table-wrapper stop-heatmap-wrapper"><table class="observatori-table stop-heatmap"><caption>Retard mitjà per hora (clica a una franja per al detall)</caption><thead><tr><th scope="col">Parada / línia</th>${visibleHours.map(h => `<th scope="col" data-hour="${h}" role="button" tabindex="0" title="Clica per veure el resum de les ${String(h).padStart(2, '0')}:00h">${String(h).padStart(2, '0')}</th>`).join('')}</tr></thead>
-      <tbody>${stops.map((stop, stopIdx) => `<tr><th scope="row" data-stop-idx="${stopIdx}" role="button" tabindex="0" title="Clica per veure el menú de detall de ${this.esc(stop.stopName)}">${this.esc(stop.stopName)} / ${this.esc(stop.lineCode)}</th>${visibleHours.map(h => cell(stop.hourly?.[h], stopIdx, h)).join('')}</tr>`).join('')}</tbody></table></div>
+    return `<section class="stop-hourly-section"><h4>${this.esc(this.t('dades.heatTitle'))}</h4>
+      <p>${this.t('dades.heatDesc')}</p>
+      <p class="stop-heat-legend"><span class="heat-regular">${this.esc(this.t('dades.heatLegendLow'))}</span> <span class="heat-moderate">${this.esc(this.t('dades.heatLegendMid'))}</span> <span class="heat-late">${this.esc(this.t('dades.heatLegendHigh'))}</span> <span>${this.esc(this.t('dades.heatLegendEmpty'))}</span></p>
+      <div class="observatori-table-wrapper stop-heatmap-wrapper"><table class="observatori-table stop-heatmap"><caption>${this.esc(this.t('dades.heatCaption'))}</caption><thead><tr><th scope="col">${this.esc(this.t('dades.heatColStopLine'))}</th>${visibleHours.map(h => `<th scope="col" data-hour="${h}" role="button" tabindex="0" title="${this.esc(this.t('dades.heatColHourTip', { h: String(h).padStart(2, '0') }))}">${String(h).padStart(2, '0')}</th>`).join('')}</tr></thead>
+      <tbody>${stops.map((stop, stopIdx) => `<tr><th scope="row" data-stop-idx="${stopIdx}" role="button" tabindex="0" title="${this.esc(this.t('dades.heatRowStopTip', { stop: stop.stopName }))}">${this.esc(stop.stopName)} / ${this.esc(stop.lineCode)}</th>${visibleHours.map(h => cell(stop.hourly?.[h], stopIdx, h)).join('')}</tr>`).join('')}</tbody></table></div>
       
       <!-- Single Drilldown Modal Menu -->
       <div class="modal-backdrop" id="stop-drilldown-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="stop-drilldown-modal-title" style="display:none;">
@@ -2104,6 +2206,7 @@ class ObservatoriApp {
 
     this._activeDrilldownStopIdx = stopIdx;
     this._activeDrilldownHour = selectedHour !== null ? parseInt(selectedHour, 10) : null;
+    this._activeModal = { type: 'stop', stopIdx, hour: this._activeDrilldownHour };
 
     const backdrop = document.getElementById('stop-drilldown-modal-backdrop');
     const content = document.getElementById('stop-drilldown-modal-content');
@@ -2115,39 +2218,39 @@ class ObservatoriApp {
     const lColor = this.getLineColor(stop.lineCode);
 
     content.innerHTML = `
-      <button type="button" class="modal-close-btn" id="stop-drilldown-close-btn" aria-label="Tancar finestra">&times;</button>
+      <button type="button" class="modal-close-btn" id="stop-drilldown-close-btn" aria-label="${this.esc(this.t('dades.modalCloseAria'))}">&times;</button>
       <div class="stop-drilldown-header">
         <div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap;">
           <span class="stop-drilldown-line-badge" style="background:${lColor};">${this.esc(stop.lineCode)}</span>
           <h3 class="stop-drilldown-title" id="stop-drilldown-modal-title">${this.esc(stop.stopName)}</h3>
         </div>
         <p class="stop-drilldown-subtitle">
-          Detall horari complet • ${stop.arrivalCount} observacions analitzades • Retard mitjà global: <strong>+${stop.avgDelay} min</strong> • Retard màxim: <strong>+${stop.maxDelay || 0} min</strong>
+          ${this.t('dades.modalStopSub', { count: this.esc(stop.arrivalCount), avg: this.esc(stop.avgDelay), max: this.esc(stop.maxDelay || 0) })}
         </p>
       </div>
 
       ${selH !== null && selectedBucket ? `
         <div class="drilldown-hour-highlight">
           <div class="drilldown-kpi">
-            <span class="drilldown-kpi-label">Franja Horària</span>
+            <span class="drilldown-kpi-label">${this.esc(this.t('dades.modalHourRange'))}</span>
             <strong class="drilldown-kpi-val">${String(selH).padStart(2, '0')}:00 - ${String(selH).padStart(2, '0')}:59</strong>
           </div>
           <div class="drilldown-kpi">
-            <span class="drilldown-kpi-label">Retard Mitjà</span>
+            <span class="drilldown-kpi-label">${this.esc(this.t('dades.modalAvgDelay'))}</span>
             <strong class="drilldown-kpi-val ${selectedBucket.avgDelay >= 5 ? 'severe' : selectedBucket.avgDelay >= 3 ? 'warning' : 'ok'}">
-              ${selectedBucket.sampleCount ? `+${selectedBucket.avgDelay} min` : 'Sense dades'}
+              ${selectedBucket.sampleCount ? `+${selectedBucket.avgDelay} min` : this.esc(this.t('dades.dhNoData'))}
             </strong>
           </div>
           <div class="drilldown-kpi">
-            <span class="drilldown-kpi-label">Mostres Registrades</span>
+            <span class="drilldown-kpi-label">${this.esc(this.t('dades.modalSamples'))}</span>
             <strong class="drilldown-kpi-val">${selectedBucket.sampleCount || 0}</strong>
           </div>
           <div class="drilldown-kpi">
-            <span class="drilldown-kpi-label">Retard Màxim</span>
+            <span class="drilldown-kpi-label">${this.esc(this.t('dades.modalMaxDelay'))}</span>
             <strong class="drilldown-kpi-val">${selectedBucket.maxDelay !== null ? `+${selectedBucket.maxDelay} min` : '—'}</strong>
           </div>
           <div class="drilldown-kpi">
-            <span class="drilldown-kpi-label">Viatges Retard &ge; 5m</span>
+            <span class="drilldown-kpi-label">${this.esc(this.t('dades.modalSevereTrips'))}</span>
             <strong class="drilldown-kpi-val ${selectedBucket.severeLatePct >= 30 ? 'severe' : selectedBucket.severeLatePct >= 15 ? 'warning' : 'ok'}">
               ${selectedBucket.severeLatePct !== null ? `${selectedBucket.severeLatePct}%` : '—'}
             </strong>
@@ -2156,19 +2259,19 @@ class ObservatoriApp {
       ` : ''}
 
       <div style="font-size:0.78rem; color:var(--text-muted); margin-bottom:0.4rem; display:flex; justify-content:space-between; align-items:center;">
-        <span>Clica a qualsevol franja per canviar l'anàlisi destacada</span>
-        <span>* Menys de 5 mostres</span>
+        <span>${this.esc(this.t('dades.modalClickHourHint'))}</span>
+        <span>${this.esc(this.t('dades.modalLessThan5'))}</span>
       </div>
 
       <div class="observatori-table-wrapper" style="max-height: 48vh; overflow:auto;">
         <table class="observatori-table stop-drilldown-table">
           <thead>
             <tr>
-              <th>Hora</th>
-              <th>Mostres</th>
-              <th>Mitjana (min)</th>
-              <th>Màxim (min)</th>
-              <th>Retard &ge; 5 min</th>
+              <th>${this.esc(this.t('dades.modalColHour'))}</th>
+              <th>${this.esc(this.t('dades.modalColSamples'))}</th>
+              <th>${this.esc(this.t('dades.modalColAvgMin'))}</th>
+              <th>${this.esc(this.t('dades.modalColMaxMin'))}</th>
+              <th>${this.esc(this.t('dades.modalColSevere'))}</th>
             </tr>
           </thead>
           <tbody>
@@ -2176,7 +2279,7 @@ class ObservatoriApp {
               const bHour = parseInt(b.hour, 10);
               const isSelected = selH !== null && bHour === selH;
               return `
-                <tr class="${isSelected ? 'drilldown-selected-row' : ''}" data-select-drilldown-hour="${bHour}" role="button" tabindex="0" title="Clica per seleccionar les ${b.hour}:00h">
+                <tr class="${isSelected ? 'drilldown-selected-row' : ''}" data-select-drilldown-hour="${bHour}" role="button" tabindex="0" title="${this.esc(this.t('dades.modalSelectHourTip', { h: b.hour }))}">
                   <th scope="row" style="font-weight:700;">${b.hour}:00 ${isSelected ? '•' : ''}</th>
                   <td>${b.sampleCount}${b.sampleCount > 0 && b.sampleCount < 5 ? ' *' : ''}</td>
                   <td style="font-weight:${isSelected ? '800' : '600'}; color:${b.avgDelay >= 5 ? 'var(--accent-danger)' : b.avgDelay >= 3 ? 'var(--accent-warning)' : 'var(--text-primary)'};">
@@ -2202,6 +2305,7 @@ class ObservatoriApp {
   openHourSummaryDrilldown(hour) {
     const stops = this._heatmapStops || [];
     const h = parseInt(hour, 10);
+    this._activeModal = { type: 'hour', hour: h };
     const stopsAtHour = stops.map((s, idx) => ({ ...s, stopIdx: idx, bucket: s.hourly?.[h] }))
       .filter(s => (s.bucket?.sampleCount || 0) > 0)
       .sort((a, b) => (b.bucket.avgDelay || 0) - (a.bucket.avgDelay || 0));
@@ -2210,20 +2314,21 @@ class ObservatoriApp {
     const content = document.getElementById('stop-drilldown-modal-content');
     if (!backdrop || !content) return;
 
+    const padH = String(h).padStart(2, '0');
     content.innerHTML = `
-      <button type="button" class="modal-close-btn" id="stop-drilldown-close-btn" aria-label="Tancar finestra">&times;</button>
+      <button type="button" class="modal-close-btn" id="stop-drilldown-close-btn" aria-label="${this.esc(this.t('dades.modalCloseAria'))}">&times;</button>
       <div class="stop-drilldown-header">
         <div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap;">
-          <span class="stop-drilldown-line-badge" style="background:var(--brand-primary);">⏰ ${String(h).padStart(2, '0')}:00h</span>
-          <h3 class="stop-drilldown-title" id="stop-drilldown-modal-title">Franja Horària ${String(h).padStart(2, '0')}:00 - ${String(h).padStart(2, '0')}:59</h3>
+          <span class="stop-drilldown-line-badge" style="background:var(--brand-primary);">⏰ ${padH}:00h</span>
+          <h3 class="stop-drilldown-title" id="stop-drilldown-modal-title">${this.esc(this.t('dades.modalHourTitle', { h: padH }))}</h3>
         </div>
         <p class="stop-drilldown-subtitle">
-          Comparativa de retards a totes les parades a aquesta hora • ${stopsAtHour.length} parades registrades amb servei
+          ${this.esc(this.t('dades.modalHourSub', { n: stopsAtHour.length }))}
         </p>
       </div>
 
       <div style="font-size:0.78rem; color:var(--text-muted); margin-bottom:0.4rem;">
-        Clica a qualsevol parada per obrir el seu menú horari complet
+        ${this.esc(this.t('dades.modalClickStopHint'))}
       </div>
 
       <div class="observatori-table-wrapper" style="max-height: 55vh; overflow:auto;">
@@ -2231,21 +2336,21 @@ class ObservatoriApp {
           <thead>
             <tr>
               <th style="width:40px; text-align:center;">#</th>
-              <th>Parada / Línia</th>
-              <th>Mostres</th>
-              <th>Retard Mitjà</th>
-              <th>Retard Màxim</th>
-              <th>Retard &ge; 5 min</th>
+              <th>${this.esc(this.t('dades.heatColStopLine'))}</th>
+              <th>${this.esc(this.t('dades.modalColSamples'))}</th>
+              <th>${this.esc(this.t('dades.colAvgDelay'))}</th>
+              <th>${this.esc(this.t('dades.colMaxDelay'))}</th>
+              <th>${this.esc(this.t('dades.modalColSevere'))}</th>
             </tr>
           </thead>
           <tbody>
             ${stopsAtHour.length === 0 ? `
-              <tr><td colspan="6" style="text-align:center; padding:1.5rem; color:var(--text-muted);">Sense dades d'expedicions en aquesta franja horària.</td></tr>
+              <tr><td colspan="6" style="text-align:center; padding:1.5rem; color:var(--text-muted);">${this.esc(this.t('dades.modalHourEmpty'))}</td></tr>
             ` : stopsAtHour.map((s, idx) => {
               const b = s.bucket;
               const lColor = this.getLineColor(s.lineCode);
               return `
-                <tr data-switch-stop-idx="${s.stopIdx}" data-switch-hour="${h}" role="button" tabindex="0" style="cursor:pointer;" title="Clica per obrir el detall complet de ${this.esc(s.stopName)}">
+                <tr data-switch-stop-idx="${s.stopIdx}" data-switch-hour="${h}" role="button" tabindex="0" style="cursor:pointer;" title="${this.esc(this.t('dades.modalOpenStopTip', { stop: s.stopName }))}">
                   <td style="font-weight:700; color:var(--text-muted); text-align:center;">${idx + 1}</td>
                   <td style="font-weight:600; color:var(--text-primary);">
                     <div style="display:flex; align-items:center; gap:0.4rem;">
@@ -2275,6 +2380,7 @@ class ObservatoriApp {
   }
 
   closeStopHourlyDrilldown() {
+    this._activeModal = null;
     const backdrop = document.getElementById('stop-drilldown-modal-backdrop');
     if (backdrop) {
       backdrop.classList.remove('active');
@@ -2348,7 +2454,7 @@ class ObservatoriApp {
       termometreContainer.style.display = 'block';
       this.showGpsGaps(false);
       if (!this.termometreData || force) {
-        termometreContainer.innerHTML = '<div style="text-align:center; padding:3rem;"><span class="loading-spinner-inline"></span> Generant la fitxa del Termòmetre...</div>';
+        termometreContainer.innerHTML = `<div style="text-align:center; padding:3rem;"><span class="loading-spinner-inline"></span> ${this.esc(this.t('dades.termLoading'))}</div>`;
       }
     }
 
@@ -2359,12 +2465,12 @@ class ObservatoriApp {
         this.renderTermometreScorecard(res.termometre);
       } else {
         if (termometreContainer) {
-          termometreContainer.innerHTML = '<div style="color:var(--danger); text-align:center; padding:2rem;">No s\'ha pogut generar el Termòmetre.</div>';
+          termometreContainer.innerHTML = `<div style="color:var(--danger); text-align:center; padding:2rem;">${this.esc(this.t('dades.termGenError'))}</div>`;
         }
       }
     } catch {
       if (termometreContainer) {
-        termometreContainer.innerHTML = '<div style="color:var(--danger); text-align:center; padding:2rem;">Error de connexió al carregar el Termòmetre.</div>';
+        termometreContainer.innerHTML = `<div style="color:var(--danger); text-align:center; padding:2rem;">${this.esc(this.t('dades.termConnError'))}</div>`;
       }
     }
   }
@@ -2390,6 +2496,7 @@ class ObservatoriApp {
     // on the light surface). gradeColorSvg feeds the downloadable SVG further
     // down, which is a standalone dark-navy image where CSS custom properties
     // do not resolve — a var() there would paint as black/nothing.
+    const loc = this.locale();
     const isGradeA = t.grade && t.grade.startsWith('A');
     const isGradeB = t.grade && t.grade.startsWith('B');
     const isGradeC = t.grade && t.grade.startsWith('C');
@@ -2401,18 +2508,19 @@ class ObservatoriApp {
     const mins = (v) => (v === null || v === undefined ? '—' : `+${v} min`);
     const championPct = t.championLine && t.championLine.onTimePct !== null && t.championLine.onTimePct !== undefined
       ? `${t.championLine.onTimePct}%` : '—';
+    const visitsFmt = (t.totalTripsAnalyzed || 0).toLocaleString(loc);
 
     container.innerHTML = `
       <div class="termometre-scorecard" id="termometre-card-root">
         <div class="termometre-header">
           <div>
-            <span style="font-size:0.75rem; font-weight:800; color:var(--accent-scheduled); text-transform:uppercase; letter-spacing:0.5px;">Observatori Cívic de Mobilitat</span>
-            <h3 style="font-size:1.35rem; font-weight:800; color:var(--text-primary); margin:0.2rem 0;">El Termòmetre del Bus Mataró</h3>
-            <span style="font-size:0.78rem; color:var(--text-muted);">Auditoria independent basada en mostres reals de telemetria GPS</span>
+            <span style="font-size:0.75rem; font-weight:800; color:var(--accent-scheduled); text-transform:uppercase; letter-spacing:0.5px;">${this.esc(this.t('dades.termEyebrow'))}</span>
+            <h3 style="font-size:1.35rem; font-weight:800; color:var(--text-primary); margin:0.2rem 0;">${this.esc(this.t('dades.termTitle'))}</h3>
+            <span style="font-size:0.78rem; color:var(--text-muted);">${this.esc(this.t('dades.termSubtitle'))}</span>
           </div>
           <div class="termometre-grade-badge" style="border-color:${gradeColorCss}; background:rgba(16,185,129,0.12);">
             <div>
-              <div style="font-size:0.65rem; font-weight:800; color:var(--text-muted); text-transform:uppercase;">Nota Global</div>
+              <div style="font-size:0.65rem; font-weight:800; color:var(--text-muted); text-transform:uppercase;">${this.esc(this.t('dades.termGradeLabel'))}</div>
               <div class="termometre-grade-letter" style="color:${gradeColorCss};">${this.esc(t.grade)}</div>
             </div>
           </div>
@@ -2420,50 +2528,50 @@ class ObservatoriApp {
 
         <div class="termometre-metrics-grid">
           <div class="termometre-metric-tile" style="border-left:3px solid var(--accent-live);">
-            <span class="termometre-metric-label">Línia Més Puntual</span>
+            <span class="termometre-metric-label">${this.esc(this.t('dades.termChampLabel'))}</span>
             <span class="termometre-metric-val" style="color:var(--accent-live);">
-              ${t.championLine ? this.esc(t.championLine.code) : '—'} (${championPct} puntual)
+              ${t.championLine ? this.esc(t.championLine.code) : '—'} (${championPct} ${this.esc(this.t('dades.termPunctualWord'))})
             </span>
-            <span style="font-size:0.72rem; color:var(--text-muted);">Retard mitjà: ${t.championLine ? mins(t.championLine.avgDelay) : '—'}</span>
+            <span style="font-size:0.72rem; color:var(--text-muted);">${this.esc(this.t('dades.termAvgDelayLabel', { val: t.championLine ? mins(t.championLine.avgDelay) : '—' }))}</span>
           </div>
 
           <div class="termometre-metric-tile" style="border-left:3px solid var(--accent-danger);">
-            <span class="termometre-metric-label">Punt Negre / Retards</span>
+            <span class="termometre-metric-label">${this.esc(this.t('dades.termWorstLabel'))}</span>
             <span class="termometre-metric-val" style="color:var(--accent-danger); font-size:1rem;">
               ${t.worstBottleneck ? this.esc(t.worstBottleneck.stopName) : '—'}
             </span>
-            <span style="font-size:0.72rem; color:var(--text-muted);">${t.worstBottleneck ? this.esc(t.worstBottleneck.lineCode || '') : ''} • ${t.worstBottleneck ? mins(t.worstBottleneck.avgDelay) : '—'} retard mitjà</span>
+            <span style="font-size:0.72rem; color:var(--text-muted);">${t.worstBottleneck ? this.esc(t.worstBottleneck.lineCode || '') : ''} • ${this.esc(this.t('dades.termAvgDelaySuffix', { val: t.worstBottleneck ? mins(t.worstBottleneck.avgDelay) : '—' }))}</span>
           </div>
 
           <div class="termometre-metric-tile" style="border-left:3px solid var(--accent-warning);">
-            <span class="termometre-metric-label">Franja de Major Congestió</span>
+            <span class="termometre-metric-label">${this.esc(this.t('dades.termPeakLabel'))}</span>
             <span class="termometre-metric-val" style="color:var(--accent-warning);">
               ${t.peakHour ? this.esc(t.peakHour) : '—'}
             </span>
-            <span style="font-size:0.72rem; color:var(--text-muted);">${t.peakHour ? mins(t.peakHourDelay) : '—'} de retard mitjà a la xarxa</span>
+            <span style="font-size:0.72rem; color:var(--text-muted);">${this.esc(this.t('dades.termPeakNetSuffix', { val: t.peakHour ? mins(t.peakHourDelay) : '—' }))}</span>
           </div>
 
           <div class="termometre-metric-tile" style="border-left:3px solid var(--accent-scheduled);">
-            <span class="termometre-metric-label">Puntualitat Global</span>
+            <span class="termometre-metric-label">${this.esc(this.t('dades.termGlobalLabel'))}</span>
             <span class="termometre-metric-val" style="color:var(--accent-scheduled);">
               ${pct(t.punctualityPct)}
             </span>
-            <span style="font-size:0.72rem; color:var(--text-muted);">${(t.totalTripsAnalyzed || 0).toLocaleString('ca-ES')} passos per parada</span>
+            <span style="font-size:0.72rem; color:var(--text-muted);">${this.esc(this.t('dades.termVisitsLabel', { n: visitsFmt }))}</span>
           </div>
         </div>
 
         <div class="termometre-actions-row">
           <div style="font-size:0.75rem; color:var(--text-muted);">
-            Dades de les darreres ${t.timeframeHours || 24} hores
+            ${this.esc(this.t('dades.termLastHours', { h: t.timeframeHours || 24 }))}
           </div>
           <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
             <button type="button" class="btn-primary btn-termometre-action" id="btn-termometre-share">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-              <span>Copiar Resum per Xarxes</span>
+              <span>${this.esc(this.t('dades.termShareBtn'))}</span>
             </button>
             <button type="button" class="btn-secondary btn-termometre-action" id="btn-termometre-download">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              <span>Descarregar Fitxa</span>
+              <span>${this.esc(this.t('dades.termDownloadBtn'))}</span>
             </button>
           </div>
         </div>
@@ -2472,20 +2580,24 @@ class ObservatoriApp {
 
     document.getElementById('btn-termometre-share')?.addEventListener('click', (e) => {
       e.preventDefault();
-      const shareText = `🌡️ El Termòmetre del Bus a Mataró (${t.timeframeHours || 24}h)\n\n` +
-        `• Nota Global: ${t.grade} (${pct(t.punctualityPct)} puntualitat)\n` +
-        `• 🏆 Línia més puntual: ${t.championLine ? t.championLine.code : '—'} (${championPct})\n` +
-        `• ⚠️ Punt negre: ${t.worstBottleneck ? t.worstBottleneck.stopName : '—'} (${t.worstBottleneck ? mins(t.worstBottleneck.avgDelay) : '—'})\n` +
-        `• ⏱️ Hora punta: ${t.peakHour || '—'}\n` +
-        `• Passos per parada analitzats: ${(t.totalTripsAnalyzed || 0).toLocaleString('ca-ES')}\n\n` +
-        `Font: Arribo! Mataró — Dades obertes i telemetria ciutadana.`;
+      const shareText = this.t('dades.termShareText', {
+        h: t.timeframeHours || 24,
+        grade: t.grade,
+        pct: pct(t.punctualityPct),
+        champ: t.championLine ? t.championLine.code : '—',
+        champPct: championPct,
+        worst: t.worstBottleneck ? t.worstBottleneck.stopName : '—',
+        worstDelay: t.worstBottleneck ? mins(t.worstBottleneck.avgDelay) : '—',
+        peak: t.peakHour || '—',
+        visits: visitsFmt
+      });
 
       if (navigator.clipboard) {
         navigator.clipboard.writeText(shareText).then(() => {
-          alert("Resum copiat al porta-retalls! Ja el pots enganxar a Twitter, Telegram o premsa.");
+          alert(this.t('dades.termShareAlert'));
         });
       } else {
-        prompt("Copia el resum:", shareText);
+        prompt(this.t('dades.termSharePrompt'), shareText);
       }
     });
 
@@ -2494,35 +2606,35 @@ class ObservatoriApp {
       const svg = `
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" style="background:#0f172a; font-family:sans-serif;">
   <rect width="800" height="420" fill="#0f172a" rx="16"/>
-  <text x="40" y="50" fill="#38bdf8" font-size="14" font-weight="bold" letter-spacing="1">OBSERVATORI CÍVIC DE MOBILITAT</text>
-  <text x="40" y="85" fill="#ffffff" font-size="26" font-weight="bold">🌡️ El Termòmetre del Bus Mataró</text>
-  <text x="40" y="110" fill="#94a3b8" font-size="13">Informe de puntualitat i retards (${t.timeframeHours || 24}h)</text>
+  <text x="40" y="50" fill="#38bdf8" font-size="14" font-weight="bold" letter-spacing="1">${this.esc(this.t('dades.termSvgEyebrow'))}</text>
+  <text x="40" y="85" fill="#ffffff" font-size="26" font-weight="bold">${this.esc(this.t('dades.termSvgTitle'))}</text>
+  <text x="40" y="110" fill="#94a3b8" font-size="13">${this.esc(this.t('dades.termSvgSub', { h: t.timeframeHours || 24 }))}</text>
 
   <rect x="660" y="35" width="95" height="75" rx="10" fill="#1e293b" stroke="${gradeColor}" stroke-width="2"/>
-  <text x="707" y="58" fill="#94a3b8" font-size="11" text-anchor="middle" font-weight="bold">NOTA</text>
+  <text x="707" y="58" fill="#94a3b8" font-size="11" text-anchor="middle" font-weight="bold">${this.esc(this.t('dades.termSvgGrade'))}</text>
   <text x="707" y="96" fill="${gradeColor}" font-size="34" text-anchor="middle" font-weight="bold">${this.esc(t.grade)}</text>
 
   <rect x="40" y="140" width="345" height="100" rx="10" fill="#1e293b" stroke="#10b981" stroke-width="1.5"/>
-  <text x="60" y="170" fill="#10b981" font-size="13" font-weight="bold">🏆 LÍNIA MÉS PUNTUAL</text>
-  <text x="60" y="202" fill="#ffffff" font-size="20" font-weight="bold">${t.championLine ? this.esc(t.championLine.code) : '—'} (${championPct} puntual)</text>
-  <text x="60" y="225" fill="#94a3b8" font-size="12">Retard mitjà: ${t.championLine ? mins(t.championLine.avgDelay) : '—'}</text>
+  <text x="60" y="170" fill="#10b981" font-size="13" font-weight="bold">${this.esc(this.t('dades.termSvgChamp'))}</text>
+  <text x="60" y="202" fill="#ffffff" font-size="20" font-weight="bold">${t.championLine ? this.esc(t.championLine.code) : '—'} (${championPct} ${this.esc(this.t('dades.termPunctualWord'))})</text>
+  <text x="60" y="225" fill="#94a3b8" font-size="12">${this.esc(this.t('dades.termAvgDelayLabel', { val: t.championLine ? mins(t.championLine.avgDelay) : '—' }))}</text>
 
   <rect x="415" y="140" width="345" height="100" rx="10" fill="#1e293b" stroke="#ef4444" stroke-width="1.5"/>
-  <text x="435" y="170" fill="#ef4444" font-size="13" font-weight="bold">⚠️ PUNT NEGRE / RETARDS</text>
+  <text x="435" y="170" fill="#ef4444" font-size="13" font-weight="bold">${this.esc(this.t('dades.termSvgWorst'))}</text>
   <text x="435" y="202" fill="#ffffff" font-size="18" font-weight="bold">${t.worstBottleneck ? this.esc(t.worstBottleneck.stopName) : '—'}</text>
-  <text x="435" y="225" fill="#94a3b8" font-size="12">${t.worstBottleneck ? this.esc(t.worstBottleneck.lineCode || '') : ''} • ${t.worstBottleneck ? mins(t.worstBottleneck.avgDelay) : '—'} retard mitjà</text>
+  <text x="435" y="225" fill="#94a3b8" font-size="12">${t.worstBottleneck ? this.esc(t.worstBottleneck.lineCode || '') : ''} • ${this.esc(this.t('dades.termAvgDelaySuffix', { val: t.worstBottleneck ? mins(t.worstBottleneck.avgDelay) : '—' }))}</text>
 
   <rect x="40" y="260" width="345" height="100" rx="10" fill="#f59e0b" stroke="#1.5"/>
-  <text x="60" y="290" fill="#f59e0b" font-size="13" font-weight="bold">⏱️ HORA PUNTA CONGESTIÓ</text>
+  <text x="60" y="290" fill="#f59e0b" font-size="13" font-weight="bold">${this.esc(this.t('dades.termSvgPeak'))}</text>
   <text x="60" y="322" fill="#ffffff" font-size="20" font-weight="bold">${t.peakHour ? this.esc(t.peakHour) : '—'}</text>
-  <text x="60" y="345" fill="#94a3b8" font-size="12">${t.peakHour ? mins(t.peakHourDelay) : '—'} de retard mitjà a la xarxa</text>
+  <text x="60" y="345" fill="#94a3b8" font-size="12">${this.esc(this.t('dades.termPeakNetSuffix', { val: t.peakHour ? mins(t.peakHourDelay) : '—' }))}</text>
 
   <rect x="415" y="260" width="345" height="100" rx="10" fill="#1e293b" stroke="#38bdf8" stroke-width="1.5"/>
-  <text x="435" y="290" fill="#38bdf8" font-size="13" font-weight="bold">🌐 PUNTUALITAT GLOBAL</text>
-  <text x="435" y="322" fill="#ffffff" font-size="20" font-weight="bold">${pct(t.punctualityPct)} (${(t.totalTripsAnalyzed || 0).toLocaleString()} mostres)</text>
-  <text x="435" y="345" fill="#94a3b8" font-size="12">Mitjana xarxa: ${mins(t.networkAvgDelay)} retard</text>
+  <text x="435" y="290" fill="#38bdf8" font-size="13" font-weight="bold">${this.esc(this.t('dades.termSvgGlobal'))}</text>
+  <text x="435" y="322" fill="#ffffff" font-size="20" font-weight="bold">${pct(t.punctualityPct)} (${this.esc(this.t('dades.termSvgSamples', { n: visitsFmt }))})</text>
+  <text x="435" y="345" fill="#94a3b8" font-size="12">${this.esc(this.t('dades.termSvgNetAvg', { val: mins(t.networkAvgDelay) }))}</text>
 
-  <text x="40" y="395" fill="#64748b" font-size="12">Arribo! Mataró • Dades oficials en temps real • Avanza / Ajuntament de Mataró</text>
+  <text x="40" y="395" fill="#64748b" font-size="12">${this.esc(this.t('dades.termSvgFooter'))}</text>
 </svg>`;
       const blob = new Blob([svg], { type: 'image/svg+xml' });
       const url = URL.createObjectURL(blob);
@@ -2545,45 +2657,43 @@ class ObservatoriApp {
       <div class="termometre-scorecard" id="termometre-card-root">
         <div class="termometre-header">
           <div>
-            <span style="font-size:0.75rem; font-weight:800; color:var(--accent-scheduled); text-transform:uppercase; letter-spacing:0.5px;">Observatori Cívic de Mobilitat</span>
-            <h3 style="font-size:1.35rem; font-weight:800; color:var(--text-primary); margin:0.2rem 0;">El Termòmetre del Bus Mataró</h3>
-            <span style="font-size:0.78rem; color:var(--text-muted);">Dades de les darreres ${hours} hores</span>
+            <span style="font-size:0.75rem; font-weight:800; color:var(--accent-scheduled); text-transform:uppercase; letter-spacing:0.5px;">${this.esc(this.t('dades.termEyebrow'))}</span>
+            <h3 style="font-size:1.35rem; font-weight:800; color:var(--text-primary); margin:0.2rem 0;">${this.esc(this.t('dades.termTitle'))}</h3>
+            <span style="font-size:0.78rem; color:var(--text-muted);">${this.esc(this.t('dades.termLastHours', { h: hours }))}</span>
           </div>
           <div class="termometre-grade-badge" style="border-color:var(--border-subtle); background:rgba(148,163,184,0.08);">
             <div>
-              <div style="font-size:0.65rem; font-weight:800; color:var(--text-muted); text-transform:uppercase;">Nota Global</div>
+              <div style="font-size:0.65rem; font-weight:800; color:var(--text-muted); text-transform:uppercase;">${this.esc(this.t('dades.termGradeLabel'))}</div>
               <div class="termometre-grade-letter" style="color:var(--text-muted);">—</div>
             </div>
           </div>
         </div>
 
         <div style="margin:1.25rem 0; padding:1rem 1.1rem; background:rgba(251,191,36,0.07); border:1px solid rgba(251,191,36,0.25); border-radius:10px; font-size:0.82rem; line-height:1.5; color:var(--text-secondary);">
-          <strong style="color:var(--accent-warning);">Sense dades per puntuar.</strong>
-          No hi ha cap mostra de retard registrada en aquesta finestra temporal, així que no hi ha nota global,
-          ni línia més puntual, ni punt negre, ni hora punta. Aquest Termòmetre no es publica ni s'exporta
-          fins que hi hagi mostres reals: sense mostres, la puntualitat no es mesura.
+          <strong style="color:var(--accent-warning);">${this.esc(this.t('dades.termNoDataTitle'))}</strong>
+          ${this.esc(this.t('dades.termNoDataText'))}
         </div>
 
         <div class="termometre-metrics-grid">
           <div class="termometre-metric-tile" style="border-left:3px solid var(--border-subtle);">
-            <span class="termometre-metric-label">Línia Més Puntual</span>
+            <span class="termometre-metric-label">${this.esc(this.t('dades.termChampLabel'))}</span>
             <span class="termometre-metric-val" style="color:var(--text-muted);">—</span>
-            <span style="font-size:0.72rem; color:var(--text-muted);">Sense mostres</span>
+            <span style="font-size:0.72rem; color:var(--text-muted);">${this.esc(this.t('dades.termNoSamples'))}</span>
           </div>
           <div class="termometre-metric-tile" style="border-left:3px solid var(--border-subtle);">
-            <span class="termometre-metric-label">Punt Negre / Retards</span>
+            <span class="termometre-metric-label">${this.esc(this.t('dades.termWorstLabel'))}</span>
             <span class="termometre-metric-val" style="color:var(--text-muted); font-size:1rem;">—</span>
-            <span style="font-size:0.72rem; color:var(--text-muted);">Sense mostres</span>
+            <span style="font-size:0.72rem; color:var(--text-muted);">${this.esc(this.t('dades.termNoSamples'))}</span>
           </div>
           <div class="termometre-metric-tile" style="border-left:3px solid var(--border-subtle);">
-            <span class="termometre-metric-label">Franja de Major Congestió</span>
+            <span class="termometre-metric-label">${this.esc(this.t('dades.termPeakLabel'))}</span>
             <span class="termometre-metric-val" style="color:var(--text-muted);">—</span>
-            <span style="font-size:0.72rem; color:var(--text-muted);">Sense mostres</span>
+            <span style="font-size:0.72rem; color:var(--text-muted);">${this.esc(this.t('dades.termNoSamples'))}</span>
           </div>
           <div class="termometre-metric-tile" style="border-left:3px solid var(--border-subtle);">
-            <span class="termometre-metric-label">Puntualitat Global</span>
+            <span class="termometre-metric-label">${this.esc(this.t('dades.termGlobalLabel'))}</span>
             <span class="termometre-metric-val" style="color:var(--text-muted);">—</span>
-            <span style="font-size:0.72rem; color:var(--text-muted);">0 passos per parada</span>
+            <span style="font-size:0.72rem; color:var(--text-muted);">${this.esc(this.t('dades.termZeroVisits'))}</span>
           </div>
         </div>
       </div>
@@ -2630,13 +2740,13 @@ class ObservatoriApp {
       }
     }
 
-    const cleanLabel = (lineCode === 'all' || lineCode === 'ALL') ? 'tota la xarxa' : lineCode;
-    const retryMsg = retryCount > 0 ? ' (sincronitzant amb el procés de fons...)' : '';
+    const cleanLabel = (lineCode === 'all' || lineCode === 'ALL') ? this.t('dades.incWholeNetwork') : lineCode;
+    const retryMsg = retryCount > 0 ? this.t('dades.incRetrying') : '';
     container.innerHTML = `
       <div style="text-align:center; padding:3rem 1rem; color:var(--text-muted);">
         <span class="loading-spinner-inline" style="width:24px; height:24px; border-width:3px; margin-bottom:0.75rem;"></span>
-        <div style="font-weight:700; font-size:0.95rem; color:var(--text-primary); margin-top:0.5rem;">Analitzant telemetria històrica...</div>
-        <div style="font-size:0.8rem; margin-top:0.25rem;">Cercant incidents crítics i traçant trajectòries per a ${cleanLabel}${retryMsg}</div>
+        <div style="font-weight:700; font-size:0.95rem; color:var(--text-primary); margin-top:0.5rem;">${this.esc(this.t('dades.incLoadingTitle'))}</div>
+        <div style="font-size:0.8rem; margin-top:0.25rem;">${this.esc(this.t('dades.incLoadingSub', { target: cleanLabel, retry: retryMsg }))}</div>
       </div>
     `;
 
@@ -2670,8 +2780,9 @@ class ObservatoriApp {
     const content = document.getElementById('drilldown-content');
     const summary = document.getElementById('drilldown-summary');
     if (!panel || !content || !summary) return;
+    this._lastIncidentInspect = null;
     panel.style.display = 'block';
-    content.innerHTML = '<span style="color:var(--text-muted);">Carregant investigació…</span>';
+    content.innerHTML = `<span style="color:var(--text-muted);">${this.esc(this.t('dades.invLoading'))}</span>`;
     summary.innerHTML = '';
     panel.scrollIntoView({ behavior: 'smooth' });
     try {
@@ -2684,229 +2795,329 @@ class ObservatoriApp {
       const res = await fetch(`/api/analytics/incidents/inspect?${params}`);
       const data = await res.json();
       if (!data || data.found === false) {
-        content.innerHTML = `<span style="color:var(--accent-danger);">No es poden carregar mostres en aquesta finestra. ${data?.error || ''}</span>`;
-        summary.innerHTML = `<p style="color:var(--text-muted); font-size:0.82rem;">Cap mostra amb retard ≥5 minuts en els darrers 60 minuts per ${this.esc(lineCode)} @ ${this.esc(stopName)}.</p>`;
+        content.innerHTML = `<span style="color:var(--accent-danger);">${this.esc(this.t('dades.invLoadError', { err: data?.error || '' }))}</span>`;
+        summary.innerHTML = `<p style="color:var(--text-muted); font-size:0.82rem;">${this.esc(this.t('dades.invNoSamples60', { line: lineCode, stop: stopName }))}</p>`;
         return;
       }
-      const ep = data.episode || {};
-      const ev = ep.evidence || {};
-      // The bus's whole run around the clicked delay (server: episode.run), grouped
-      // by trip. The clicked stop alone often holds a single sample, which read as
-      // "the bus only sent one GPS ping" when it had reported all along its route.
-      const run = ep.run && Array.isArray(ep.run.stops) && ep.run.stops.length ? ep.run : null;
-      const trips = run && Array.isArray(run.trips) ? run.trips : [];
-      const sum = run ? (run.summary || {}) : {};
-      const bus = Array.isArray(ep.distinctVehicles) && ep.distinctVehicles.length === 1 ? ep.distinctVehicles[0] : '';
-      const signed = v => (Number(v) > 0 ? `+${v}` : String(v));
-      const hhmm = t => String(t || '').slice(0, 5);
-      const range = sum.fromTime && sum.toTime ? ` (${hhmm(sum.fromTime)}–${hhmm(sum.toTime)})` : '';
-      const stopsWord = n => (n === 1 ? '1 parada' : `${n} parades`);
-
-      // What happened, in one plain sentence. Token colours only (light + dark).
-      let headline;
-      const dh = ep.deadheadReturn || null;
-      // Catalan elision: "d'Euskadi", "de Rodalies".
-      const afterStop = name => (/^[aeiouàèéíïòóúüh]/i.test(String(name || '')) ? `d'${this.esc(name)}` : `de ${this.esc(name)}`);
-      if (ep.verdict === 'deadhead_return' && dh) {
-        headline = { tone: 'var(--accent-warning)', title: 'Tornada sense servei', text: `Aquest registre no és un pas real. Després ${afterStop(dh.lastServedStop)} (${this.esc(dh.lastServedTime)}) el bus ${this.esc(dh.vehicleId)} va deixar de fer servei i va tornar sense passatgers fins a ${this.esc(dh.resumeStop)}, on consta a les ${this.esc(dh.resumeTime)}. Mentre tornava, el sistema de l'operador va continuar anotant parades que el bus no servia.` };
-      } else if (ep.verdict === 'backward_leg' && ep.backwardLeg) {
-        const bl = ep.backwardLeg;
-        headline = { tone: 'var(--accent-warning)', title: 'Recorregut en sentit invers', text: `Aquest registre no és un pas real. Després ${afterStop(bl.lastServedStop)} (${this.esc(hhmm(bl.lastServedTime))}, ${signed(bl.lastServedDelay)} min) el bus ${this.esc(bl.vehicleId)} va anar enrere pel recorregut fins a ${this.esc(bl.lowestStop)} (${bl.stepsBack} parades enrere) i el sistema de l'operador va seguir anotant el mateix retard. Són ${bl.visitCount} registres entre les ${this.esc(hhmm(bl.fromTime))} i les ${this.esc(hhmm(bl.toTime))} que no compten en els rànquings.` };
-      } else if (ep.tripRelink) {
-        headline = { tone: 'var(--accent-warning)', title: 'Viatge reassignat pel SAE', text: `A ${this.esc(ep.tripRelink.stopName)} el retard passa de +${ep.tripRelink.delayBefore} a ${ep.tripRelink.delayAfter} min de cop: cap autobús pot recuperar tant de temps entre dues parades. El sistema de l'operador tenia el bus assignat a un viatge que no feia, i el retard anterior es mesurava contra aquell viatge. No és un retard real verificable.` };
-      } else if (ep.verdict === 'delay_jump' && ep.delayJump) {
-        const jp = ep.delayJump;
-        headline = { tone: 'var(--accent-warning)', title: 'Salt de retard impossible', text: `El sistema de l'operador va passar el bus ${this.esc(jp.vehicleId)} de ${signed(jp.delayBefore)} min a ${this.esc(jp.beforeStop)} (${this.esc(jp.beforeTime)}) a ${signed(jp.delayAfter)} min a ${this.esc(jp.jumpStop)} (${this.esc(jp.jumpTime)}), només ${jp.elapsedMins} min després. Un retard no pot créixer més de pressa que passa el temps: el sistema el va assignar a una expedició anterior a la que feia (ja feta, o d'un altre bus), i el retard es mesurava contra aquella. Aquests registres no compten com a retard del servei.` };
-      } else if (!run) {
-        headline = { tone: 'var(--text-muted)', title: 'Recorregut no disponible', text: 'Aquestes mostres no tenen un únic identificador de bus, així que no es pot reconstruir el seu recorregut.' };
-      } else {
-        const who = bus ? `El bus ${this.esc(bus)}` : 'El bus';
-        const byPattern = {
-          sustained: { tone: 'var(--accent-danger)', title: 'Retard sostingut', text: `${who} va circular entre ${signed(sum.minDelay)} i ${signed(sum.maxDelay)} min de retard durant ${stopsWord(sum.stopCount)}${range}. Un retard estable al llarg del recorregut és un retard real del servei.` },
-          building: { tone: 'var(--accent-danger)', title: 'Retard creixent', text: `${who} va passar de ${signed(sum.firstDelay)} a ${signed(sum.lastDelay)} min de retard en ${stopsWord(sum.stopCount)}${range}: va perdent temps al llarg del recorregut.` },
-          recovering: { tone: 'var(--accent-warning)', title: 'Retard que es recupera', text: `${who} va baixar de ${signed(sum.firstDelay)} a ${signed(sum.lastDelay)} min de retard en ${stopsWord(sum.stopCount)}${range}.` },
-          variable: { tone: 'var(--accent-warning)', title: 'Retard variable', text: `${who} va tenir entre ${signed(sum.minDelay)} i ${signed(sum.maxDelay)} min de retard en ${stopsWord(sum.stopCount)}${range}, sense una tendència clara.` },
-          isolated: { tone: 'var(--text-secondary)', title: 'Registre aïllat', text: `${who} només consta en aquesta parada en aquest viatge. Pot ser un valor puntual de l'operador: cal prudència.` }
-        };
-        headline = byPattern[sum.pattern] || byPattern.variable;
-      }
-
-      // The trip right after the clicked one, when the bus joined it mid-route: that
-      // is why a large delay "disappears" from one stop to the next.
-      const clickedTripIdx = trips.findIndex(t => t.isClickedTrip);
-      const nextTrip = clickedTripIdx >= 0 ? trips[clickedTripIdx + 1] : null;
-      const shortTurn = nextTrip && nextTrip.joinedMidRoute ? nextTrip : null;
-      const shortTurnNote = shortTurn ? this._shortTurnNote(shortTurn, run.stops[shortTurn.startIndex].stopName) : '';
-
-      // A deadhead return in the shown run: why the bus starts again so soon, why the
-      // records in between do not count, and the wait it left on the skipped trip.
-      const dhGap = dh && dh.unservedGap ? dh.unservedGap : null;
-      const deadheadNote = dh
-        ? `<div class="drilldown-callout">
-            <strong>El bus es va saltar un viatge</strong>
-            Després ${afterStop(dh.lastServedStop)} (${this.esc(dh.lastServedTime)}, ${signed(dh.lastServedDelay)} min) el bus no va fer el viatge ${dh.skippedDeparture ? `de les ${this.esc(dh.skippedDeparture)} ` : ''}${this.esc(dh.skippedFrom)} → ${this.esc(dh.skippedTo)}, que dura ${dh.oppositeTripMinutes} min: ${dh.returnMinutes} min després ja començava un altre viatge a ${this.esc(dh.resumeStop)} (${this.esc(dh.resumeTime)}).
-            Els registres d'entremig (${dh.phantoms.map(p => `${this.esc(p.stopName)} ${signed(p.delayMins)} min`).join(', ')}) els va anotar el sistema de l'operador mentre el bus tornava sense passatgers: no són passos reals i no compten en els rànquings.
-            ${dhGap ? `A ${this.esc(dhGap.stopName)} no consta cap bus a les dades de l'operador entre les ${this.esc(dhGap.fromTime)} i les ${this.esc(dhGap.toTime)} (${dhGap.minutes} min${dhGap.plannedHeadwayMinutes ? `; l'horari en preveu un cada ${dhGap.plannedHeadwayMinutes} min` : ''}). Un bus sense equip de seguiment no constaria en aquestes dades.` : ''}
-          </div>`
-        : '';
-
-      // Where the delay came from: back to the last stop without delay (often several
-      // trips earlier), with the places where it grew most. Not for a record that is
-      // not a real delay (deadhead return, trip relink).
-      const origin = run && run.origin && ep.verdict !== 'deadhead_return' && ep.verdict !== 'delay_jump' && ep.verdict !== 'backward_leg' && !ep.tripRelink ? run.origin : null;
-      const originPlace = e => {
-        const span = `${this.esc(hhmm(e.fromTime))}–${this.esc(hhmm(e.toTime))}, ${signed(e.fromDelay)} → ${signed(e.toDelay)} min`;
-        if (e.kind === 'between') return `entre ${this.esc(e.previousStop)} i ${this.esc(e.stopName)} (${span})`;
-        if (e.kind === 'turn') return `en girar, de ${this.esc(e.previousStop)} a ${this.esc(e.stopName)} (${span})`;
-        return `a ${this.esc(e.stopName)} (${span})`;
-      };
-      const originNote = origin && (origin.tripsBefore > 0 || origin.events.length)
-        ? `<div class="drilldown-callout drilldown-origin">
-            <strong>D'on ve el retard</strong>
-            ${origin.onTime
-              ? `L'últim registre sense retard és a les ${this.esc(hhmm(origin.onTime.time))} a ${this.esc(origin.onTime.stopName)} (${signed(origin.onTime.delayMins)} min)${origin.tripsBefore > 0 ? `, ${origin.tripsBefore === 1 ? 'al viatge anterior' : `${origin.tripsBefore} viatges abans`}` : ''}.`
-              : `Al primer registre disponible, a les ${this.esc(hhmm(origin.since.time))}, ja anava amb ${signed(origin.since.delayMins)} min.`}
-            ${origin.tripsBefore > 0 ? "El retard passa d'un viatge a l'altre: el temps a les capçaleres no n'ha recuperat prou." : ''}
-            ${origin.events.length ? `On va créixer més: ${origin.events.map(originPlace).join('; ')}.` : 'No hi ha cap salt concret: es va acumulant a poc a poc.'}
-            <button type="button" class="btn-secondary btn-sm drilldown-jump">Veure-ho a la taula</button>
-          </div>`
-        : '';
-
-      // Evidence, in Catalan. The server's English verdictLabel stays in the API
-      // for other consumers; the panel shows its own wording keyed on ep.verdict.
-      const verdicts = {
-        corroborated: ['var(--accent-live)', 'Confirmat', 'Bus identificat, amb posicions GPS guardades o horaris enviats per l\'operador que ho corroboren.'],
-        derived_only: ['var(--accent-regulating)', 'Dada de l\'operador', 'El retard és el que envia l\'operador. No hi ha cap altra font independent per a aquest moment.'],
-        poll_inflated: ['var(--accent-warning)', 'Mostres repetides', 'El mateix bus registrat moltes vegades seguides: compta com un sol cas.'],
-        unverifiable: ['var(--accent-danger)', 'No verificable', 'No hi ha identificador de bus ni cap altra evidència.'],
-        telemetry_anomaly: ['var(--text-muted)', 'Fora de servei', 'Registre de nit o a cotxeres: no és un retard de servei.'],
-        trip_relink: ['var(--accent-warning)', 'Viatge reassignat pel SAE', 'El retard es mesurava contra un viatge que el bus no feia.'],
-        delay_jump: ['var(--accent-warning)', 'Salt de retard impossible', 'El retard va pujar més de pressa que el rellotge: es mesurava contra una expedició que el bus no feia.'],
-        deadhead_return: ['var(--accent-warning)', 'Tornada sense servei', 'Anotat mentre el bus tornava sense passatgers: no és un pas real per aquesta parada.'],
-        backward_leg: ['var(--accent-warning)', 'Recorregut en sentit invers', 'Anotat mentre el bus anava enrere pel recorregut amb el retard congelat: no és un pas real per aquesta parada.']
-      };
-      const [vTone, vTitle, vText] = verdicts[ep.verdict] || ['var(--text-primary)', 'Sense veredicte', ''];
-      const busCell = Array.isArray(ep.distinctVehicles) && ep.distinctVehicles.length
-        ? ep.distinctVehicles.map(v => `<span class="drilldown-bus-chip">${this.esc(v)}</span>`).join(' ')
-        : ev.vehicleIdGapExplained
-          ? '<span class="drilldown-fact-note">Sense identificador: són mostres anteriors al 19/09/2026, quan encara no es guardava</span>'
-          : '<span style="color:var(--accent-danger);">L\'operador no va enviar l\'identificador del bus</span>';
-      const keptHours = Number(ev.snapshotRetentionHours) || 2;
-      const endTs = ep.tripKey && Number.isFinite(Number(ep.tripKey.endTs)) ? Number(ep.tripKey.endTs) : null;
-      const olderThanKept = endTs !== null && (Date.now() - endTs) > keptHours * 3600 * 1000;
-      const gpsCell = ev.snapshotTrailPoints >= 2
-        ? `<span style="color:var(--accent-live);">${ev.snapshotTrailPoints} posicions al voltant d'aquest moment</span>`
-        : olderThanKept
-          ? `<span>Ja no disponibles</span><span class="drilldown-fact-note">Només es guarden ${keptHours} h.</span>`
-          : '<span style="color:var(--accent-warning);">Cap posició guardada al voltant d\'aquest moment</span>';
-      summary.innerHTML = `
-        <dl class="drilldown-facts">
-          <div class="drilldown-fact"><dt>Veredicte</dt><dd><strong style="color:${vTone};">${vTitle}</strong><span class="drilldown-fact-note">${vText}</span></dd></div>
-          <div class="drilldown-fact"><dt>Bus</dt><dd>${busCell}</dd></div>
-          ${ep.vehicleAmbiguous ? '<div class="drilldown-fact"><dt>Atenció</dt><dd style="color:var(--accent-warning);">Mostres sense identificador: podrien ser de més d\'un autobús</dd></div>' : ''}
-          <div class="drilldown-fact"><dt>Hora teòrica</dt><dd>${this._timesProvenanceLabel(ep.timesProvenance || ev.timesProvenance)}</dd></div>
-          <div class="drilldown-fact"><dt>Posicions GPS guardades</dt><dd>${gpsCell}</dd></div>
-        </dl>
-      `;
-
-      const runRows = run
-        ? run.stops
-        : (ep.rawRows || []).map(r => ({
-          stopName: r.stopName, direction: r.direction, time: String(r.formattedDate || '').slice(11, 19),
-          delayMins: r.delayMins, isRealTime: r.isRealTime, scheduledTime: r.scheduledTime, actualTime: r.actualTime,
-          timesProvenance: r.timesProvenance, isClicked: true, newTrip: false
-        }));
-      // One header row per trip: where it was going, when, and how its delay moved.
-      const tripByStart = new Map(trips.map((t, i) => [t.startIndex, { ...t, order: i }]));
-      const tripHeader = (idx) => {
-        const t = tripByStart.get(idx);
-        if (!t) return '';
-        if (t.isDeadhead) {
-          return `
-          <tr class="drilldown-trip-row is-deadhead${t.isClickedTrip ? ' is-clicked-trip' : ''}">
-            <th colspan="5" scope="colgroup">
-              <span class="drilldown-trip-name">${t.phantomKind === 'backward' ? 'Recorregut en sentit invers' : 'Tornada sense servei'}</span>
-              <span class="drilldown-trip-meta">${this.esc(hhmm(t.fromTime))}–${this.esc(hhmm(t.toTime))}</span>
-              <span class="drilldown-trip-join">${t.phantomKind === 'backward' ? "El bus anava enrere pel recorregut amb el retard congelat: aquests registres no són passos reals." : 'El bus tornava sense passatgers: aquests registres no són passos reals.'}</span>
-            </th>
-          </tr>`;
-        }
-        const delays = t.firstDelay === t.lastDelay ? `${signed(t.firstDelay)} min` : `${signed(t.firstDelay)} → ${signed(t.lastDelay)} min`;
-        const join = t.joinedMidRoute
-          ? `<span class="drilldown-trip-join">S'hi incorpora a mig recorregut: no consta a les ${t.joinedMidRoute.skippedCount} parades anteriors${t.joinedMidRoute.firstSkipped ? ` (${this.esc(t.joinedMidRoute.firstSkipped)} → ${this.esc(t.joinedMidRoute.lastSkipped)})` : ''}.</span>`
-          : '';
-        return `
-          <tr class="drilldown-trip-row${t.isClickedTrip ? ' is-clicked-trip' : ''}">
-            <th colspan="5" scope="colgroup">
-              <span class="drilldown-trip-name">${t.order > 0 ? 'Nou viatge' : 'Viatge'}${t.towards ? ` cap a ${this.esc(t.towards)}` : ''}</span>
-              <span class="drilldown-trip-meta">${this.esc(hhmm(t.fromTime))}–${this.esc(hhmm(t.toTime))} · ${delays}</span>
-              ${join}
-            </th>
-          </tr>`;
-      };
-      // One row per stop visit, five fixed columns (see .drilldown-samples-table).
-      const rowsHtml = runRows.map((s, idx) => {
-        const header = tripHeader(idx);
-        const times = s.scheduledTime && s.actualTime
-          ? `${this.esc(hhmm(s.scheduledTime))} → ${this.esc(hhmm(s.actualTime))}${s.timesProvenance === 'derived_timetable_backfill' ? ' ≈' : ''}`
-          : '—';
-        const delayClass = s.phantom ? 'is-phantom' : (s.delayMins >= 20 ? 'is-high' : (s.delayMins >= 5 ? 'is-mid' : 'is-low'));
-        const rowClass = [s.isClicked ? 'is-clicked' : '', s.phantom ? 'is-phantom' : '', s.originStart ? 'is-origin-start' : ''].filter(Boolean).join(' ');
-        return `${header}
-          <tr class="${rowClass}">
-            <td class="drilldown-cell-time"${s.lastTime && s.lastTime !== s.time ? ` title="Primer registre camí d'aquesta parada: ${this.esc(hhmm(s.time))}"` : ''}>${this.esc(hhmm(s.lastTime || s.time))}</td>
-            <td class="drilldown-cell-delay"><span class="drilldown-delay ${delayClass}">${signed(s.delayMins)} min</span>${s.delayGrowth ? ` <span class="drilldown-growth" title="El retard va créixer ${s.delayGrowth} min en aquest punt">▲${s.delayGrowth}</span>` : ''}</td>
-            <td class="drilldown-cell-stop">${this.esc(s.stopName || '—')}${s.isClicked ? ' <span class="drilldown-clicked-tag">consultada</span>' : ''}${s.originStart ? ' <span class="drilldown-origin-tag">sense retard</span>' : ''}</td>
-            <td class="drilldown-cell-times">${times}</td>
-            <td class="drilldown-cell-src">${s.isRealTime ? 'GPS' : 'Estimat'}</td>
-          </tr>`;
-      }).join('');
-      const tripLink = this._matchIncidentTrip(ep);
-      const clicked = runRows.find(s => s.isClicked) || null;
-      content.innerHTML = `
-        <div class="drilldown-headline" style="--tone:${headline.tone};">
-          <div class="drilldown-headline-title">${headline.title}</div>
-          <p class="drilldown-headline-text">${headline.text}</p>
-        </div>
-        ${originNote}
-        ${shortTurnNote}
-        ${deadheadNote}
-        <p class="drilldown-context">
-          Parada consultada: <strong>${this.esc(clicked ? clicked.stopName : (data.stopName || stopName))}</strong>${clicked && clicked.time ? ` a les ${this.esc(hhmm(clicked.time))}` : ''} · ${ep.verdict === 'deadhead_return' ? `retard anotat: ${signed(ep.peakDelayMins)} min, que no és un pas real` : ep.verdict === 'delay_jump' ? `retard anotat: ${signed(ep.peakDelayMins)} min, mesurat contra una expedició que el bus no feia` : ep.verdict === 'backward_leg' ? `retard anotat: ${signed(ep.peakDelayMins)} min, mentre el bus anava enrere pel recorregut` : `retard màxim en aquesta parada: ${signed(ep.peakDelayMins)} min`}.${run ? ` A sota, tot el que va registrar aquest bus entre les ${this.esc(hhmm(runRows[0].time))} i les ${this.esc(hhmm(runRows[runRows.length - 1].time))}.` : ''}
-        </p>
-        ${tripLink}
-        <div class="drilldown-table-scroll">
-          <table class="drilldown-samples-table">
-            <thead>
-              <tr>
-                <th scope="col">Pas</th>
-                <th scope="col">Retard</th>
-                <th scope="col">Parada</th>
-                <th scope="col">Teòric → Real</th>
-                <th scope="col">Senyal</th>
-              </tr>
-            </thead>
-            <tbody>${rowsHtml || '<tr><td colspan="5" style="color:var(--text-muted);">Cap mostra</td></tr>'}</tbody>
-          </table>
-        </div>
-        <p class="drilldown-legend">El retard es mesura per viatge: quan el bus comença un viatge nou es torna a comptar. «Pas»: l'hora del darrer registre del bus abans de passar per la parada, és a dir, quan hi va arribar (el primer registre, camí de la parada, és a l'indicador en passar-hi el ratolí). «Teòric → Real»: l'operador només envia el retard; l'hora teòrica és la de l'horari publicat per a aquell viatge i la real és la teòrica més el retard. «Senyal»: GPS si la posició era recent, Estimat si el bus havia perdut el senyal uns segons. «▲»: minuts de retard que el bus va guanyar en aquell punt.</p>
-      `;
-      // Show the clicked trip from its header row, directly under the sticky column header.
-      const scroller = content.querySelector('.drilldown-table-scroll');
-      const anchorRow = content.querySelector('tr.is-clicked-trip') || content.querySelector('tr.is-clicked');
-      const headRow = content.querySelector('.drilldown-samples-table thead tr');
-      if (scroller && anchorRow) scroller.scrollTop = Math.max(0, anchorRow.offsetTop - (headRow ? headRow.offsetHeight : 0));
-      // "Veure-ho a la taula": scroll up to where the delay began, with its trip header.
-      let originRow = content.querySelector('tr.is-origin-start') || content.querySelector('.drilldown-samples-table tbody tr');
-      if (originRow && originRow.previousElementSibling && originRow.previousElementSibling.classList.contains('drilldown-trip-row')) originRow = originRow.previousElementSibling;
-      const jump = content.querySelector('.drilldown-jump');
-      if (jump && scroller && originRow) {
-        jump.addEventListener('click', () => {
-          scroller.scrollTop = Math.max(0, originRow.offsetTop - (headRow ? headRow.offsetHeight : 0));
-        });
-      }
+      this._lastIncidentInspect = { data, lineCode, stopName };
+      this._renderIncidentDrilldown(data, lineCode, stopName, false);
     } catch (e) {
-      content.innerHTML = `<span style="color:var(--accent-danger);">Error carregant la investigació: ${this.esc(e.message)}</span>`;
+      content.innerHTML = `<span style="color:var(--accent-danger);">${this.esc(this.t('dades.invError', { err: e.message }))}</span>`;
+    }
+  }
+
+  _renderIncidentDrilldown(data, lineCode, stopName, scrollIntoView = true) {
+    const panel = document.getElementById('incident-drilldown-panel');
+    const content = document.getElementById('drilldown-content');
+    const summary = document.getElementById('drilldown-summary');
+    if (!panel || !content || !summary || !data) return;
+    panel.style.display = 'block';
+    if (scrollIntoView) panel.scrollIntoView({ behavior: 'smooth' });
+
+    const ep = data.episode || {};
+    const ev = ep.evidence || {};
+    // The bus's whole run around the clicked delay (server: episode.run), grouped
+    // by trip. The clicked stop alone often holds a single sample, which read as
+    // "the bus only sent one GPS ping" when it had reported all along its route.
+    const run = ep.run && Array.isArray(ep.run.stops) && ep.run.stops.length ? ep.run : null;
+    const trips = run && Array.isArray(run.trips) ? run.trips : [];
+    const sum = run ? (run.summary || {}) : {};
+    const bus = Array.isArray(ep.distinctVehicles) && ep.distinctVehicles.length === 1 ? ep.distinctVehicles[0] : '';
+    const signed = v => (Number(v) > 0 ? `+${v}` : String(v));
+    const hhmm = t => String(t || '').slice(0, 5);
+    const range = sum.fromTime && sum.toTime ? ` (${hhmm(sum.fromTime)}–${hhmm(sum.toTime)})` : '';
+    const stopsWord = n => (n === 1 ? this.t('dades.invStopOne') : this.t('dades.invStopMany', { n }));
+
+    // What happened, in one plain sentence. Token colours only (light + dark).
+    let headline;
+    const dh = ep.deadheadReturn || null;
+    if (ep.verdict === 'deadhead_return' && dh) {
+      headline = {
+        tone: 'var(--accent-warning)',
+        title: this.esc(this.t('dades.invDeadheadTitle')),
+        text: this.t('dades.invDeadheadText', {
+          after: this._afterStop(dh.lastServedStop),
+          lastTime: this.esc(dh.lastServedTime),
+          bus: this.esc(dh.vehicleId),
+          resumeStop: this.esc(dh.resumeStop),
+          resumeTime: this.esc(dh.resumeTime)
+        })
+      };
+    } else if (ep.verdict === 'backward_leg' && ep.backwardLeg) {
+      const bl = ep.backwardLeg;
+      headline = {
+        tone: 'var(--accent-warning)',
+        title: this.esc(this.t('dades.invBackwardTitle')),
+        text: this.t('dades.invBackwardText', {
+          after: this._afterStop(bl.lastServedStop),
+          lastTime: this.esc(hhmm(bl.lastServedTime)),
+          lastDelay: signed(bl.lastServedDelay),
+          bus: this.esc(bl.vehicleId),
+          lowestStop: this.esc(bl.lowestStop),
+          steps: bl.stepsBack,
+          visits: bl.visitCount,
+          from: this.esc(hhmm(bl.fromTime)),
+          to: this.esc(hhmm(bl.toTime))
+        })
+      };
+    } else if (ep.tripRelink) {
+      headline = {
+        tone: 'var(--accent-warning)',
+        title: this.esc(this.t('dades.invRelinkTitle')),
+        text: this.t('dades.invRelinkText', {
+          stop: this.esc(ep.tripRelink.stopName),
+          before: ep.tripRelink.delayBefore,
+          after: ep.tripRelink.delayAfter
+        })
+      };
+    } else if (ep.verdict === 'delay_jump' && ep.delayJump) {
+      const jp = ep.delayJump;
+      headline = {
+        tone: 'var(--accent-warning)',
+        title: this.esc(this.t('dades.invJumpTitle')),
+        text: this.t('dades.invJumpText', {
+          bus: this.esc(jp.vehicleId),
+          beforeDelay: signed(jp.delayBefore),
+          beforeStop: this.esc(jp.beforeStop),
+          beforeTime: this.esc(jp.beforeTime),
+          afterDelay: signed(jp.delayAfter),
+          jumpStop: this.esc(jp.jumpStop),
+          jumpTime: this.esc(jp.jumpTime),
+          elapsed: jp.elapsedMins
+        })
+      };
+    } else if (!run) {
+      headline = {
+        tone: 'var(--text-muted)',
+        title: this.esc(this.t('dades.invNoRunTitle')),
+        text: this.esc(this.t('dades.invNoRunText'))
+      };
+    } else {
+      const who = bus ? this.t('dades.invBus', { bus: this.esc(bus) }) : this.t('dades.invTheBus');
+      const byPattern = {
+        sustained: { tone: 'var(--accent-danger)', title: this.esc(this.t('dades.invPatSustainedTitle')), text: this.t('dades.invPatSustainedText', { who, min: signed(sum.minDelay), max: signed(sum.maxDelay), stops: this.esc(stopsWord(sum.stopCount)), range: this.esc(range) }) },
+        building: { tone: 'var(--accent-danger)', title: this.esc(this.t('dades.invPatBuildingTitle')), text: this.t('dades.invPatBuildingText', { who, first: signed(sum.firstDelay), last: signed(sum.lastDelay), stops: this.esc(stopsWord(sum.stopCount)), range: this.esc(range) }) },
+        recovering: { tone: 'var(--accent-warning)', title: this.esc(this.t('dades.invPatRecoveringTitle')), text: this.t('dades.invPatRecoveringText', { who, first: signed(sum.firstDelay), last: signed(sum.lastDelay), stops: this.esc(stopsWord(sum.stopCount)), range: this.esc(range) }) },
+        variable: { tone: 'var(--accent-warning)', title: this.esc(this.t('dades.invPatVariableTitle')), text: this.t('dades.invPatVariableText', { who, min: signed(sum.minDelay), max: signed(sum.maxDelay), stops: this.esc(stopsWord(sum.stopCount)), range: this.esc(range) }) },
+        isolated: { tone: 'var(--text-secondary)', title: this.esc(this.t('dades.invPatIsolatedTitle')), text: this.t('dades.invPatIsolatedText', { who }) }
+      };
+      headline = byPattern[sum.pattern] || byPattern.variable;
+    }
+
+    // The trip right after the clicked one, when the bus joined it mid-route: that
+    // is why a large delay "disappears" from one stop to the next.
+    const clickedTripIdx = trips.findIndex(t => t.isClickedTrip);
+    const nextTrip = clickedTripIdx >= 0 ? trips[clickedTripIdx + 1] : null;
+    const shortTurn = nextTrip && nextTrip.joinedMidRoute ? nextTrip : null;
+    const shortTurnNote = shortTurn ? this._shortTurnNote(shortTurn, run.stops[shortTurn.startIndex].stopName) : '';
+
+    // A deadhead return in the shown run: why the bus starts again so soon, why the
+    // records in between do not count, and the wait it left on the skipped trip.
+    const dhGap = dh && dh.unservedGap ? dh.unservedGap : null;
+    const deadheadNote = dh
+      ? `<div class="drilldown-callout">
+          <strong>${this.esc(this.t('dades.invSkippedTitle'))}</strong>
+          ${this.t('dades.invSkippedBody', {
+            after: this._afterStop(dh.lastServedStop),
+            lastTime: this.esc(dh.lastServedTime),
+            lastDelay: signed(dh.lastServedDelay),
+            dep: dh.skippedDeparture ? this.esc(this.t('dades.invSkippedDep', { time: dh.skippedDeparture })) : '',
+            from: this.esc(dh.skippedFrom),
+            to: this.esc(dh.skippedTo),
+            opp: dh.oppositeTripMinutes,
+            ret: dh.returnMinutes,
+            resumeStop: this.esc(dh.resumeStop),
+            resumeTime: this.esc(dh.resumeTime),
+            phantoms: dh.phantoms.map(p => `${this.esc(p.stopName)} ${signed(p.delayMins)} min`).join(', ')
+          })}
+          ${dhGap ? this.esc(this.t('dades.invSkippedGap', {
+            stop: dhGap.stopName,
+            from: dhGap.fromTime,
+            to: dhGap.toTime,
+            mins: dhGap.minutes,
+            headway: dhGap.plannedHeadwayMinutes ? this.t('dades.invSkippedHeadway', { n: dhGap.plannedHeadwayMinutes }) : ''
+          })) : ''}
+        </div>`
+      : '';
+
+    // Where the delay came from: back to the last stop without delay (often several
+    // trips earlier), with the places where it grew most. Not for a record that is
+    // not a real delay (deadhead return, trip relink).
+    const origin = run && run.origin && ep.verdict !== 'deadhead_return' && ep.verdict !== 'delay_jump' && ep.verdict !== 'backward_leg' && !ep.tripRelink ? run.origin : null;
+    const originPlace = e => {
+      const span = `${this.esc(hhmm(e.fromTime))}–${this.esc(hhmm(e.toTime))}, ${signed(e.fromDelay)} → ${signed(e.toDelay)} min`;
+      if (e.kind === 'between') return this.t('dades.invOriginBetween', { prev: this.esc(e.previousStop), stop: this.esc(e.stopName), span });
+      if (e.kind === 'turn') return this.t('dades.invOriginTurn', { prev: this.esc(e.previousStop), stop: this.esc(e.stopName), span });
+      return this.t('dades.invOriginAt', { stop: this.esc(e.stopName), span });
+    };
+    const originNote = origin && (origin.tripsBefore > 0 || origin.events.length)
+      ? `<div class="drilldown-callout drilldown-origin">
+          <strong>${this.esc(this.t('dades.invOriginTitle'))}</strong>
+          ${origin.onTime
+            ? this.t('dades.invOriginLastOnTime', {
+                time: this.esc(hhmm(origin.onTime.time)),
+                stop: this.esc(origin.onTime.stopName),
+                delay: signed(origin.onTime.delayMins),
+                before: origin.tripsBefore > 0 ? this.esc(origin.tripsBefore === 1 ? this.t('dades.invOriginPrevTrip') : this.t('dades.invOriginTripsBefore', { n: origin.tripsBefore })) : ''
+              })
+            : this.esc(this.t('dades.invOriginFirstAvail', { time: hhmm(origin.since.time), delay: signed(origin.since.delayMins) }))}
+          ${origin.tripsBefore > 0 ? this.esc(this.t('dades.invOriginCascade')) : ''}
+          ${origin.events.length ? this.t('dades.invOriginGrew', { places: origin.events.map(originPlace).join('; ') }) : this.esc(this.t('dades.invOriginGradual'))}
+          <button type="button" class="btn-secondary btn-sm drilldown-jump">${this.esc(this.t('dades.invOriginJump'))}</button>
+        </div>`
+      : '';
+
+    // Evidence, localized. The server's English verdictLabel stays in the API
+    // for other consumers; the panel shows its own wording keyed on ep.verdict.
+    const verdicts = {
+      corroborated: ['var(--accent-live)', this.t('dades.verdictCorroborated'), this.t('dades.verdictCorroboratedText')],
+      derived_only: ['var(--accent-regulating)', this.t('dades.verdictDerived'), this.t('dades.verdictDerivedText')],
+      poll_inflated: ['var(--accent-warning)', this.t('dades.verdictPoll'), this.t('dades.verdictPollText')],
+      unverifiable: ['var(--accent-danger)', this.t('dades.verdictUnverifiable'), this.t('dades.verdictUnverifiableText')],
+      telemetry_anomaly: ['var(--text-muted)', this.t('dades.verdictAnomaly'), this.t('dades.verdictAnomalyText')],
+      trip_relink: ['var(--accent-warning)', this.t('dades.verdictRelink'), this.t('dades.verdictRelinkText')],
+      delay_jump: ['var(--accent-warning)', this.t('dades.verdictJump'), this.t('dades.verdictJumpText')],
+      deadhead_return: ['var(--accent-warning)', this.t('dades.verdictDeadhead'), this.t('dades.verdictDeadheadText')],
+      backward_leg: ['var(--accent-warning)', this.t('dades.verdictBackward'), this.t('dades.verdictBackwardText')]
+    };
+    const [vTone, vTitle, vText] = verdicts[ep.verdict] || ['var(--text-primary)', this.t('dades.verdictNone'), ''];
+    const busCell = Array.isArray(ep.distinctVehicles) && ep.distinctVehicles.length
+      ? ep.distinctVehicles.map(v => `<span class="drilldown-bus-chip">${this.esc(v)}</span>`).join(' ')
+      : ev.vehicleIdGapExplained
+        ? `<span class="drilldown-fact-note">${this.esc(this.t('dades.invBusGapPre'))}</span>`
+        : `<span style="color:var(--accent-danger);">${this.esc(this.t('dades.invBusNoId'))}</span>`;
+    const keptHours = Number(ev.snapshotRetentionHours) || 2;
+    const endTs = ep.tripKey && Number.isFinite(Number(ep.tripKey.endTs)) ? Number(ep.tripKey.endTs) : null;
+    const olderThanKept = endTs !== null && (Date.now() - endTs) > keptHours * 3600 * 1000;
+    const gpsCell = ev.snapshotTrailPoints >= 2
+      ? `<span style="color:var(--accent-live);">${this.esc(this.t('dades.invGpsPoints', { n: ev.snapshotTrailPoints }))}</span>`
+      : olderThanKept
+        ? `<span>${this.esc(this.t('dades.invGpsExpired'))}</span><span class="drilldown-fact-note">${this.esc(this.t('dades.invGpsKept', { h: keptHours }))}</span>`
+        : `<span style="color:var(--accent-warning);">${this.esc(this.t('dades.invGpsNone'))}</span>`;
+    summary.innerHTML = `
+      <dl class="drilldown-facts">
+        <div class="drilldown-fact"><dt>${this.esc(this.t('dades.invDtVerdict'))}</dt><dd><strong style="color:${vTone};">${this.esc(vTitle)}</strong><span class="drilldown-fact-note">${this.esc(vText)}</span></dd></div>
+        <div class="drilldown-fact"><dt>${this.esc(this.t('dades.invDtBus'))}</dt><dd>${busCell}</dd></div>
+        ${ep.vehicleAmbiguous ? `<div class="drilldown-fact"><dt>${this.esc(this.t('dades.invDtWarn'))}</dt><dd style="color:var(--accent-warning);">${this.esc(this.t('dades.invAmbiguous'))}</dd></div>` : ''}
+        <div class="drilldown-fact"><dt>${this.esc(this.t('dades.invDtSchedTime'))}</dt><dd>${this._timesProvenanceLabel(ep.timesProvenance || ev.timesProvenance)}</dd></div>
+        <div class="drilldown-fact"><dt>${this.esc(this.t('dades.invDtGps'))}</dt><dd>${gpsCell}</dd></div>
+      </dl>
+    `;
+
+    const runRows = run
+      ? run.stops
+      : (ep.rawRows || []).map(r => ({
+        stopName: r.stopName, direction: r.direction, time: String(r.formattedDate || '').slice(11, 19),
+        delayMins: r.delayMins, isRealTime: r.isRealTime, scheduledTime: r.scheduledTime, actualTime: r.actualTime,
+        timesProvenance: r.timesProvenance, isClicked: true, newTrip: false
+      }));
+    // One header row per trip: where it was going, when, and how its delay moved.
+    const tripByStart = new Map(trips.map((t, i) => [t.startIndex, { ...t, order: i }]));
+    const tripHeader = (idx) => {
+      const t = tripByStart.get(idx);
+      if (!t) return '';
+      if (t.isDeadhead) {
+        return `
+        <tr class="drilldown-trip-row is-deadhead${t.isClickedTrip ? ' is-clicked-trip' : ''}">
+          <th colspan="5" scope="colgroup">
+            <span class="drilldown-trip-name">${this.esc(this.t(t.phantomKind === 'backward' ? 'dades.invBackwardTitle' : 'dades.invDeadheadTitle'))}</span>
+            <span class="drilldown-trip-meta">${this.esc(hhmm(t.fromTime))}–${this.esc(hhmm(t.toTime))}</span>
+            <span class="drilldown-trip-join">${this.esc(this.t(t.phantomKind === 'backward' ? 'dades.invTripBackwardDesc' : 'dades.invTripDeadheadDesc'))}</span>
+          </th>
+        </tr>`;
+      }
+      const delays = t.firstDelay === t.lastDelay ? `${signed(t.firstDelay)} min` : `${signed(t.firstDelay)} → ${signed(t.lastDelay)} min`;
+      const join = t.joinedMidRoute
+        ? `<span class="drilldown-trip-join">${this.esc(this.t('dades.invTripJoined', {
+            n: t.joinedMidRoute.skippedCount,
+            span: t.joinedMidRoute.firstSkipped ? ` (${t.joinedMidRoute.firstSkipped} → ${t.joinedMidRoute.lastSkipped})` : ''
+          }))}</span>`
+        : '';
+      return `
+        <tr class="drilldown-trip-row${t.isClickedTrip ? ' is-clicked-trip' : ''}">
+          <th colspan="5" scope="colgroup">
+            <span class="drilldown-trip-name">${this.esc(this.t(t.order > 0 ? 'dades.invTripNew' : 'dades.invTripFirst'))}${t.towards ? this.esc(this.t('dades.invTripTowards', { dest: t.towards })) : ''}</span>
+            <span class="drilldown-trip-meta">${this.esc(hhmm(t.fromTime))}–${this.esc(hhmm(t.toTime))} · ${delays}</span>
+            ${join}
+          </th>
+        </tr>`;
+    };
+    // One row per stop visit, five fixed columns (see .drilldown-samples-table).
+    const rowsHtml = runRows.map((s, idx) => {
+      const header = tripHeader(idx);
+      const times = s.scheduledTime && s.actualTime
+        ? `${this.esc(hhmm(s.scheduledTime))} → ${this.esc(hhmm(s.actualTime))}${s.timesProvenance === 'derived_timetable_backfill' ? ' ≈' : ''}`
+        : '—';
+      const delayClass = s.phantom ? 'is-phantom' : (s.delayMins >= 20 ? 'is-high' : (s.delayMins >= 5 ? 'is-mid' : 'is-low'));
+      const rowClass = [s.isClicked ? 'is-clicked' : '', s.phantom ? 'is-phantom' : '', s.originStart ? 'is-origin-start' : ''].filter(Boolean).join(' ');
+      return `${header}
+        <tr class="${rowClass}">
+          <td class="drilldown-cell-time"${s.lastTime && s.lastTime !== s.time ? ` title="${this.esc(this.t('dades.invFirstRegTip', { time: hhmm(s.time) }))}"` : ''}>${this.esc(hhmm(s.lastTime || s.time))}</td>
+          <td class="drilldown-cell-delay"><span class="drilldown-delay ${delayClass}">${signed(s.delayMins)} min</span>${s.delayGrowth ? ` <span class="drilldown-growth" title="${this.esc(this.t('dades.invGrowthTip', { n: s.delayGrowth }))}">▲${s.delayGrowth}</span>` : ''}</td>
+          <td class="drilldown-cell-stop">${this.esc(s.stopName || '—')}${s.isClicked ? ` <span class="drilldown-clicked-tag">${this.esc(this.t('dades.invTagClicked'))}</span>` : ''}${s.originStart ? ` <span class="drilldown-origin-tag">${this.esc(this.t('dades.invTagOrigin'))}</span>` : ''}</td>
+          <td class="drilldown-cell-times">${times}</td>
+          <td class="drilldown-cell-src">${this.esc(this.t(s.isRealTime ? 'dades.sigGps' : 'dades.sigEst'))}</td>
+        </tr>`;
+    }).join('');
+    const tripLink = this._matchIncidentTrip(ep);
+    const clicked = runRows.find(s => s.isClicked) || null;
+    const ctxDetail = ep.verdict === 'deadhead_return'
+      ? this.t('dades.invContextDeadhead', { d: signed(ep.peakDelayMins) })
+      : ep.verdict === 'delay_jump'
+        ? this.t('dades.invContextJump', { d: signed(ep.peakDelayMins) })
+        : ep.verdict === 'backward_leg'
+          ? this.t('dades.invContextBackward', { d: signed(ep.peakDelayMins) })
+          : this.t('dades.invContextMax', { d: signed(ep.peakDelayMins) });
+    content.innerHTML = `
+      <div class="drilldown-headline" style="--tone:${headline.tone};">
+        <div class="drilldown-headline-title">${headline.title}</div>
+        <p class="drilldown-headline-text">${headline.text}</p>
+      </div>
+      ${originNote}
+      ${shortTurnNote}
+      ${deadheadNote}
+      <p class="drilldown-context">
+        ${this.t('dades.invContextStop', {
+          stop: this.esc(clicked ? clicked.stopName : (data.stopName || stopName)),
+          at: clicked && clicked.time ? this.esc(this.t('dades.invContextAt', { time: hhmm(clicked.time) })) : '',
+          detail: this.esc(ctxDetail),
+          below: run ? this.esc(this.t('dades.invContextBelow', { from: hhmm(runRows[0].time), to: hhmm(runRows[runRows.length - 1].time) })) : ''
+        })}
+      </p>
+      ${tripLink}
+      <div class="drilldown-table-scroll">
+        <table class="drilldown-samples-table">
+          <thead>
+            <tr>
+              <th scope="col">Pas</th>
+              <th scope="col">Retard</th>
+              <th scope="col">Parada</th>
+              <th scope="col">Teòric → Real</th>
+              <th scope="col">Senyal</th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml || `<tr><td colspan="5" style="color:var(--text-muted);">${this.esc(this.t('dades.invNoRows'))}</td></tr>`}</tbody>
+        </table>
+      </div>
+      <p class="drilldown-legend">${this.esc(this.t('dades.invLegend'))}</p>
+    `;
+    const thKeys = ['dades.invColPass', 'dades.invColDelay', 'dades.invColStop', 'dades.invColTimes', 'dades.invColSignal'];
+    content.querySelectorAll('.drilldown-samples-table thead th[scope="col"]').forEach((th, idx) => {
+      if (thKeys[idx]) th.textContent = this.t(thKeys[idx]);
+    });
+    // Show the clicked trip from its header row, directly under the sticky column header.
+    const scroller = content.querySelector('.drilldown-table-scroll');
+    const anchorRow = content.querySelector('tr.is-clicked-trip') || content.querySelector('tr.is-clicked');
+    const headRow = content.querySelector('.drilldown-samples-table thead tr');
+    if (scroller && anchorRow) scroller.scrollTop = Math.max(0, anchorRow.offsetTop - (headRow ? headRow.offsetHeight : 0));
+    // "Veure-ho a la taula": scroll up to where the delay began, with its trip header.
+    let originRow = content.querySelector('tr.is-origin-start') || content.querySelector('.drilldown-samples-table tbody tr');
+    if (originRow && originRow.previousElementSibling && originRow.previousElementSibling.classList.contains('drilldown-trip-row')) originRow = originRow.previousElementSibling;
+    const jump = content.querySelector('.drilldown-jump');
+    if (jump && scroller && originRow) {
+      jump.addEventListener('click', () => {
+        scroller.scrollTop = Math.max(0, originRow.offsetTop - (headRow ? headRow.offsetHeight : 0));
+      });
     }
   }
 
@@ -2957,19 +3168,29 @@ class ObservatoriApp {
       const badge = d != null
         ? `<span class="drilldown-trip-delay ${st.isRecovered ? 'is-recovered' : (d >= 10 ? 'is-high' : 'is-mid')}">${st.isRecovered ? `${d > 0 ? `+${d}` : d}m ✓` : `+${d}m`}</span>`
         : '';
-      return `<span class="drilldown-trip-stop${st.isRecovered ? ' is-recovered' : ''}" title="${this.esc(st.stopName)}${d != null ? ` (${st.isRecovered ? 'Recuperat' : 'Retard'}: +${d} min)` : ''}">${this.esc(st.stopName)}${badge}</span>${i < arr.length - 1 ? '<span class="drilldown-trip-arrow">→</span>' : ''}`;
+      return `<span class="drilldown-trip-stop${st.isRecovered ? ' is-recovered' : ''}" title="${this.esc(st.stopName)}${d != null ? ` (${this.esc(this.t(st.isRecovered ? 'dades.matchTripRecovered' : 'dades.matchTripDelay'))}: +${d} min)` : ''}">${this.esc(st.stopName)}${badge}</span>${i < arr.length - 1 ? '<span class="drilldown-trip-arrow">→</span>' : ''}`;
     }).join('');
 
+    const endClock = this._clockOf(match.endMomentTs);
+    const metaText = window.ArriboI18n
+      ? this.t('dades.matchTripMeta', {
+        line: match.lineCode || '',
+        bus: match.vehicleId,
+        start: match.startTime || '',
+        end: endClock ? this.t('dades.matchTripEnd', { time: endClock }) : '',
+        n: match.sampleCount || 0
+      })
+      : `${match.lineCode || ''} · bus ${match.vehicleId} · inici ${match.startTime || ''}${endClock ? ` · fi ${endClock}` : ''} · ${match.sampleCount || 0} mostres`;
     return `
       <div class="drilldown-trip-card">
         <div class="drilldown-trip-head">
-          <span class="drilldown-trip-label">Expedició &amp; trajectòria corresponent</span>
-          <span class="drilldown-trip-meta">${this.esc(match.lineCode || '')} · bus ${this.esc(match.vehicleId)} · inici ${this.esc(match.startTime || '')}${this._clockOf(match.endMomentTs) ? ` · fi ${this._clockOf(match.endMomentTs)}` : ''} · ${match.sampleCount || 0} mostres</span>
+          <span class="drilldown-trip-label">${this.esc(this.t('dades.matchTripLabel'))}</span>
+          <span class="drilldown-trip-meta">${this.esc(metaText)}</span>
         </div>
-        <div class="drilldown-trip-flow">${flow || '<span style="color:var(--text-muted);">Sense parades reconstruïdes</span>'}</div>
+        <div class="drilldown-trip-flow">${flow || `<span style="color:var(--text-muted);">${this.esc(this.t('dades.matchTripNoStops'))}</span>`}</div>
         ${this._trajectoryOutcome(match) ? `<p class="drilldown-trip-outcome">${this._trajectoryOutcome(match)}</p>` : ''}
-        <button type="button" class="btn-locate-incident-stop" data-incident-tab="trips" title="Obre la pestanya Expedicions &amp; Trajectòries">
-          <span>Veure a Expedicions &amp; Trajectòries</span>
+        <button type="button" class="btn-locate-incident-stop" data-incident-tab="trips" title="${this.esc(this.t('dades.matchTripBtnTitle'))}">
+          <span>${this.esc(this.t('dades.matchTripBtn'))}</span>
         </button>
       </div>`;
   }
@@ -2978,7 +3199,7 @@ class ObservatoriApp {
   _clockOf(ts) {
     const n = Number(ts);
     return Number.isFinite(n) && n > 0
-      ? new Date(n).toLocaleTimeString('ca-ES', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+      ? new Date(n).toLocaleTimeString(this.locale(), { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
       : '';
   }
 
@@ -2990,28 +3211,40 @@ class ObservatoriApp {
    */
   _trajectoryOutcome(t) {
     const sg = n => (Number(n) > 0 ? `+${Number(n)}` : String(Number(n)));
-    const stop = this.esc(t.endStop || t.lastStop || '');
+    const rawStop = t.endStop || t.lastStop || '';
+    const stop = this.esc(rawStop);
     const end = this._clockOf(t.endMomentTs);
     const next = t.nextTrip && Number.isFinite(Number(t.nextTrip.ts)) ? t.nextTrip : null;
+    const atEnd = end ? this.esc(this.t('dades.invContextAt', { time: end })) : '';
     switch (t.endReason) {
       case 'recovered':
-        return `Recuperat a ${stop}${end ? ` a les ${end}` : ''}: ${sg(t.endDelayMins)} min.`;
+        return this.t('dades.outRecovered', { stop, at: atEnd, delay: sg(t.endDelayMins) });
       case 'trip_change': {
         const gap = next && Number.isFinite(Number(t.endMomentTs)) ? Math.round((Number(next.ts) - Number(t.endMomentTs)) / 60000) : null;
-        return `El retard no es va recuperar en ruta. Després de ${stop}${end ? ` (${end}, ${sg(t.endDelayMins)} min)` : ''}${gap !== null && gap >= 2 ? ` hi ha ${gap} min sense registres i` : ''} el bus consta ja en un altre viatge${next ? `, a ${this.esc(next.stopName)} a les ${this._clockOf(next.ts)} amb ${sg(next.delayMins)} min` : ''}.`;
+        return this.t('dades.outTripChange', {
+          after: this._afterStop(rawStop),
+          at: end ? ` (${end}, ${sg(t.endDelayMins)} min)` : '',
+          gap: gap !== null && gap >= 2 ? this.esc(this.t('dades.outTripChangeGap', { n: gap })) : '',
+          next: next ? this.t('dades.outTripChangeNext', { stop: this.esc(next.stopName), time: this._clockOf(next.ts), delay: sg(next.delayMins) }) : ''
+        });
       }
       case 'end_of_line':
-        return `Arriba a ${stop} (final de línia)${end ? ` a les ${end}` : ''} amb ${sg(t.endDelayMins)} min de retard.${next ? ` Torna a sortir a les ${this._clockOf(next.ts)} des de ${this.esc(next.stopName)} amb ${sg(next.delayMins)} min.` : ''}`;
+        return this.t('dades.outEndOfLine', {
+          stop,
+          at: atEnd,
+          delay: sg(t.endDelayMins),
+          next: next ? this.t('dades.outEndOfLineNext', { time: this._clockOf(next.ts), stop: this.esc(next.stopName), delay: sg(next.delayMins) }) : ''
+        });
       case 'signal_lost':
-        return `Sense registres des de les ${end || '--:--'} (darrera parada: ${stop}, ${sg(t.endDelayMins)} min): no se sap si el bus va recuperar el retard.`;
+        return this.t('dades.outSignalLost', { end: end || '--:--', stop, delay: sg(t.endDelayMins) });
       case 'ongoing':
-        return 'Encara en curs.';
+        return this.esc(this.t('dades.outOngoing'));
       case 'relinked':
-        return "El sistema de l'operador va reassignar el bus a un altre viatge: el retard no es va recuperar.";
+        return this.esc(this.t('dades.outRelinked'));
       case 'deadhead_return':
-        return 'El bus va deixar de servir el viatge: el retard no es va recuperar.';
+        return this.esc(this.t('dades.outDeadhead'));
       case 'backward_leg':
-        return `El bus va tornar enrere pel recorregut sense servir-lo (darrer pas: ${stop}${end ? ` a les ${end}` : ''}): el retard no es va recuperar.`;
+        return this.t('dades.outBackward', { stop, at: atEnd });
       default:
         return '';
     }
@@ -3027,41 +3260,52 @@ class ObservatoriApp {
   _shortTurnNote(trip, firstStop) {
     const j = trip.joinedMidRoute;
     const ev = j.evidence || { signal: 'unknown', gaps: [], snapshots: 0 };
-    const skipped = `Les ${j.skippedCount} parades anteriors d'aquell viatge${j.firstSkipped ? ` (${this.esc(j.firstSkipped)} → ${this.esc(j.lastSkipped)})` : ''} no tenen cap registre d'aquest bus.`;
-    const range = this._clockOf(ev.fromTs) && this._clockOf(ev.toTs) ? `entre les ${this._clockOf(ev.fromTs)} i les ${this._clockOf(ev.toTs)}` : 'en aquest tram';
+    const skipped = this.t('dades.stSkipped', {
+      n: j.skippedCount,
+      span: j.firstSkipped ? ` (${this.esc(j.firstSkipped)} → ${this.esc(j.lastSkipped)})` : ''
+    });
+    const range = this._clockOf(ev.fromTs) && this._clockOf(ev.toTs)
+      ? this.t('dades.stRangeBetween', { from: this._clockOf(ev.fromTs), to: this._clockOf(ev.toTs) })
+      : this.t('dades.stRangeFallback');
     const gap = (ev.gaps || []).find(g => !g.feedWide && !g.atTerminal) || (ev.gaps || [])[0];
     let why;
     switch (ev.signal) {
       case 'lost':
-        why = `El bus va perdre el senyal GPS ${range}${gap ? ` (${gap.gapSec} s${gap.stopName ? `, a prop de ${this.esc(gap.stopName)}` : ''})` : ''}. El més probable és que el sistema de l'operador el tornés a assignar quan el va recuperar: que faltin registres no vol dir que el bus es saltés el recorregut. No es pot saber si el retard es va recuperar.`;
+        why = this.t('dades.stWhyLost', {
+          range: this.esc(range),
+          gap: gap ? ` (${gap.gapSec} s${gap.stopName ? this.t('dades.stWhyLostNear', { stop: this.esc(gap.stopName) }) : ''})` : ''
+        });
         break;
       case 'feed_stalled':
-        why = `${range.charAt(0).toUpperCase()}${range.slice(1)} cap bus va enviar posicions: l'operador va deixar d'enviar dades. Els registres que falten són un tall de dades, no un recorregut saltat.`;
+        why = this.esc(this.t('dades.stWhyStalled', { rangeCap: `${range.charAt(0).toUpperCase()}${range.slice(1)}` }));
         break;
       case 'terminal':
-        why = `El bus era aturat a la capçalera ${range} (sense senyal mentre esperava). Els registres que falten són de la seva espera, no un recorregut saltat.`;
+        why = this.esc(this.t('dades.stWhyTerminal', { range }));
         break;
       case 'kept':
-        why = `El bus va continuar enviant posicions GPS ${range} (${ev.snapshots} guardades), així que no és un tall de senyal. Que no hi hagi registres de retard a les parades anteriors encaixa amb un escurçament del recorregut o amb una reassignació del sistema de l'operador; amb aquestes dades no es pot distingir. El retard no es va recuperar en ruta.`;
+        why = this.esc(this.t('dades.stWhyKept', { range, n: ev.snapshots }));
         break;
       default:
-        why = `No hi ha dades de senyal d'aquest tram (les posicions només es guarden unes hores i els talls de GPS només es registren des que existeix aquest control), així que no es pot saber si és un escurçament del recorregut, una pèrdua de senyal o una reassignació del sistema. El retard no es va recuperar en ruta.`;
+        why = this.esc(this.t('dades.stWhyUnknown'));
     }
     return `<div class="drilldown-callout">
-            <strong>Per què el retard desapareix després?</strong>
-            En girar, el bus no va començar el viatge següent${trip.towards ? ` cap a ${this.esc(trip.towards)}` : ''} des de l'inici: la primera parada on consta és <strong>${this.esc(firstStop)}</strong>. ${skipped}
+            <strong>${this.esc(this.t('dades.stTitle'))}</strong>
+            ${this.t('dades.stIntro', {
+              towards: trip.towards ? this.esc(this.t('dades.invTripTowards', { dest: trip.towards })) : '',
+              stop: this.esc(firstStop)
+            })} ${skipped}
             ${why}
           </div>`;
   }
 
-  /** Plain-Catalan label for the server-side times_provenance classification. */
+  /** Localized label for the server-side times_provenance classification. */
   _timesProvenanceLabel(provenance) {
     switch (provenance) {
-      case 'observed': return '<span style="color:var(--accent-live);">Enviada per l\'operador</span>';
-      case 'derived_timetable': return '<span style="color:var(--text-secondary);">Calculada per Arribo! amb l\'horari publicat i el retard que envia l\'operador (l\'operador no envia l\'hora teòrica)</span>';
-      case 'derived_timetable_backfill': return '<span style="color:var(--accent-warning);">Aproximada a posteriori amb l\'horari publicat (menys fiable)</span>';
-      case 'mixed': return '<span style="color:var(--text-secondary);">Diverses fonts: vegeu la columna «Teòric → Real»</span>';
-      default: return '<span style="color:var(--text-muted);">No disponible</span>';
+      case 'observed': return `<span style="color:var(--accent-live);">${this.esc(this.t('dades.provObserved'))}</span>`;
+      case 'derived_timetable': return `<span style="color:var(--text-secondary);">${this.esc(this.t('dades.provDerived'))}</span>`;
+      case 'derived_timetable_backfill': return `<span style="color:var(--accent-warning);">${this.esc(this.t('dades.provBackfill'))}</span>`;
+      case 'mixed': return `<span style="color:var(--text-secondary);">${this.esc(this.t('dades.provMixed'))}</span>`;
+      default: return `<span style="color:var(--text-muted);">${this.esc(this.t('dades.provNone'))}</span>`;
     }
   }
 
@@ -3072,28 +3316,28 @@ class ObservatoriApp {
       <div style="background:rgba(251,191,36,0.07); border:1px solid rgba(251,191,36,0.25); border-radius:12px; padding:0.85rem 1rem; margin-bottom:1.25rem;">
         <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.75rem; flex-wrap:wrap;">
           <div>
-            <div style="font-size:0.78rem; font-weight:800; color:var(--accent-warning);">Què compten exactament aquestes xifres</div>
+            <div style="font-size:0.78rem; font-weight:800; color:var(--accent-warning);">${this.esc(this.t('dades.dqTitle'))}</div>
             <div style="font-size:0.76rem; color:var(--text-secondary); margin-top:0.2rem; line-height:1.5;">
-              Els KPIs de mostres (${this._fmtCount(s.rawSamplesOverThreshold ?? s.totalRecordedIncidents)} mostres) són
-              <strong>mostres raw</strong>: un mateix autobús hi apareix cada 20 s.${s.worstBasis === 'visits' ? ' El punt negre i la franja es compten en <strong>passos per parada</strong> (un bus a una parada, una vegada).' : ''} Les taules de dalt, en canvi, mostren
-              <strong>episodis deduplicats</strong>${s.listedCommercialEpisodes !== undefined ? ` (${this._fmtCount(s.listedCommercialEpisodes)} de servei, arrodonits al límit de ${s.commercialEpisodeLimit})` : ''}:
-              no són xifres comparables entre elles.
+              ${this.t('dades.dqBody', {
+                raw: this.esc(this._fmtCount(s.rawSamplesOverThreshold ?? s.totalRecordedIncidents)),
+                worst: s.worstBasis === 'visits' ? this.t('dades.dqWorstVisits') : '',
+                listed: s.listedCommercialEpisodes !== undefined ? this.esc(this.t('dades.dqListed', { n: this._fmtCount(s.listedCommercialEpisodes), limit: s.commercialEpisodeLimit })) : ''
+              })}
             </div>
             <div style="font-size:0.76rem; color:var(--text-secondary); margin-top:0.35rem; line-height:1.5;">
               ${q.episodesNote ? this.esc(q.episodesNote) : ''}
             </div>
             ${(s.nonRealtimeSampleCount || 0) > 0 ? `
               <div style="font-size:0.76rem; color:var(--text-secondary); margin-top:0.35rem; line-height:1.5;">
-                D'aquestes mostres, <strong>${this._fmtCount(s.nonRealtimeSampleCount)} (${s.nonRealtimeSamplePct}%)</strong> són
-                posicions extrapolades (dead-reckoning) i no GPS fresc. S'inclouen perquè el retard registrat és real, però no són una observació directa de la posició.
+                ${this.t('dades.dqNonRt', { n: this.esc(this._fmtCount(s.nonRealtimeSampleCount)), pct: this.esc(s.nonRealtimeSamplePct) })}
               </div>
             ` : ''}
           </div>
           <div style="font-size:0.74rem; color:var(--text-muted); text-align:right;">
-            ${this._fmtCount(q.totalRawRows)} mostres raw<br>
-            ${this._fmtCount(q.rowsWithoutVehicleId)} sense vehicle<br>
-            ${this._fmtCount(q.rowsWithoutProvenance)} sense horari<br>
-            ${this._fmtCount(q.distinctEpisodes)} episodis de retard${q.episodeGapMinutes ? ` (≤${q.episodeGapMinutes} min)` : ''}
+            ${this.esc(this.t('dades.dqRawCount', { n: this._fmtCount(q.totalRawRows) }))}<br>
+            ${this.esc(this.t('dades.dqNoVeh', { n: this._fmtCount(q.rowsWithoutVehicleId) }))}<br>
+            ${this.esc(this.t('dades.dqNoProv', { n: this._fmtCount(q.rowsWithoutProvenance) }))}<br>
+            ${this.esc(this.t('dades.dqEpisodes', { n: this._fmtCount(q.distinctEpisodes), gap: q.episodeGapMinutes ? this.t('dades.dqGapMin', { m: q.episodeGapMinutes }) : '' }))}
           </div>
         </div>
       </div>
@@ -3101,20 +3345,20 @@ class ObservatoriApp {
   }
 
   _fmtCount(n) {
-    return (Number(n) || 0).toLocaleString('ca-ES');
+    return (Number(n) || 0).toLocaleString(this.locale());
   }
 
   renderIncidentErrorState(container, lineCode, hours, viewMode) {
     container.innerHTML = `
       <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:12px; padding:2.5rem 1.5rem; text-align:center; color:var(--text-muted); max-width:540px; margin:2rem auto;">
         <div style="font-size:2rem; margin-bottom:0.6rem;">⏱️</div>
-        <div style="font-weight:700; font-size:1.05rem; color:var(--text-primary); margin-bottom:0.4rem;">El servidor està processant les dades de ${hours}h</div>
+        <div style="font-weight:700; font-size:1.05rem; color:var(--text-primary); margin-bottom:0.4rem;">${this.esc(this.t('dades.incErrTitle', { h: hours }))}</div>
         <p style="font-size:0.82rem; margin:0 0 1.25rem 0; line-height:1.45;">
-          Quan es calculen informes de 7 dies o es reindexa la telemetria històrica en segon pla, pot trigar uns instants a sincronitzar.
+          ${this.esc(this.t('dades.incErrText'))}
         </p>
         <button type="button" class="btn-primary" id="btn-retry-incidents-tab">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-          <span>Reintentar ara</span>
+          <span>${this.esc(this.t('dades.incErrRetry'))}</span>
         </button>
       </div>
     `;
@@ -3152,7 +3396,7 @@ class ObservatoriApp {
         .replace(/^AMB-/i, '')
         .trim();
       if (!clean || clean.toLowerCase() === 'bus') return '';
-      return `<span class="bus-id-badge" title="Identificador de vehicle oficial: ${this.esc(vehicleId)}">[ #${this.esc(clean)} ]</span>`;
+      return `<span class="bus-id-badge" title="${this.esc(this.t('dades.incVehBadgeTitle', { id: vehicleId }))}">[ #${this.esc(clean)} ]</span>`;
     };
 
     // The headline maximum is the true maximum over the whole window. The
@@ -3176,20 +3420,25 @@ class ObservatoriApp {
     // false. It can also hold no delays at all. Either way the "else" caption
     // must not interpolate a null into "+null min".
     const commercialMaxCaption = commercialMax === null
-      ? (trueMaxDelay === null ? 'sense mostres registrades' : 'no mesurat en aquesta finestra')
+      ? (trueMaxDelay === null ? this.t('dades.incCommMaxEmpty') : this.t('dades.incCommMaxUnmeasured'))
       : `+${commercialMax} min`;
     const maxDelayValue = trueMaxDelay === null
       ? '—'
       : `${trueMaxDelay > 0 ? '+' : ''}${trueMaxDelay} min`;
+    const minThr = s.minDelayThreshold || 5;
+    const worstUnit = s.worstBasis === 'visits'
+      ? this.t(s.worstStopCount === 1 ? 'dades.incVisitOne' : 'dades.incVisitMany')
+      : this.t(s.worstStopCount === 1 ? 'dades.incRawOne' : 'dades.incRawMany');
+    const worstStopLabel = s.worstStop || this.t('dades.incNone');
 
     container.innerHTML = `
       <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:1.1rem; margin-bottom:1.25rem;">
         <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.75rem;">
           <div>
-            <span style="font-size:0.75rem; font-weight:800; color:var(--accent-scheduled); text-transform:uppercase; letter-spacing:0.5px;">Observatori de Mobilitat • Anàlisi de Causes</span>
-            <h3 style="font-size:1.35rem; font-weight:800; color:var(--text-primary); margin:0.2rem 0;">Investigador d'Incidents de Trànsit &amp; Auditoria de Telemetria</h3>
+            <span style="font-size:0.75rem; font-weight:800; color:var(--accent-scheduled); text-transform:uppercase; letter-spacing:0.5px;">${this.esc(this.t('dades.incEyebrow'))}</span>
+            <h3 style="font-size:1.35rem; font-weight:800; color:var(--text-primary); margin:0.2rem 0;">${this.esc(this.t('dades.incTitle'))}</h3>
             <p style="font-size:0.78rem; color:var(--text-muted); margin:0; max-width:740px; line-height:1.45;">
-              Auditoria de retards per telemetria GPS. Els retards de servei comercial (${s.minDelayThreshold || 5}–24 min) es presenten al rànquing de trànsit regular. Els desfasaments extrems (&ge; 25 min) es classifiquen en una taula separada com a horaris no normals pendents d'investigació per resoldre la seva causa real.
+              ${this.esc(this.t('dades.incIntro', { min: minThr }))}
             </p>
           </div>
         </div>
@@ -3198,19 +3447,19 @@ class ObservatoriApp {
         <div class="incident-filters">
           <!-- Timeframe selector -->
           <div class="incident-filter-row">
-            <span class="incident-filter-label">Període:</span>
+            <span class="incident-filter-label">${this.esc(this.t('dades.incFilterPeriod'))}</span>
             <div class="incident-filter-options incident-filter-options--period">
-              <button type="button" class="incident-filter-pill ${Number(selectedHours) === 24 ? 'active' : ''}" data-incident-hours="24">24 hores</button>
-              <button type="button" class="incident-filter-pill ${Number(selectedHours) === 48 ? 'active' : ''}" data-incident-hours="48">48 hores</button>
-              <button type="button" class="incident-filter-pill ${Number(selectedHours) === 168 ? 'active' : ''}" data-incident-hours="168">7 dies</button>
+              <button type="button" class="incident-filter-pill ${Number(selectedHours) === 24 ? 'active' : ''}" data-incident-hours="24">${this.esc(this.t('dades.incPeriod24h'))}</button>
+              <button type="button" class="incident-filter-pill ${Number(selectedHours) === 48 ? 'active' : ''}" data-incident-hours="48">${this.esc(this.t('dades.incPeriod48h'))}</button>
+              <button type="button" class="incident-filter-pill ${Number(selectedHours) === 168 ? 'active' : ''}" data-incident-hours="168">${this.esc(this.t('dades.incPeriod7d'))}</button>
             </div>
           </div>
 
           <!-- Line selector -->
           <div class="incident-filter-row">
-            <span class="incident-filter-label">Línia:</span>
+            <span class="incident-filter-label">${this.esc(this.t('dades.incFilterLine'))}</span>
             <div class="incident-filter-options incident-filter-options--lines">
-              <button type="button" class="incident-filter-pill ${activeLineNorm === 'ALL' ? 'active' : ''}" data-incident-line="all">Totes les línies</button>
+              <button type="button" class="incident-filter-pill ${activeLineNorm === 'ALL' ? 'active' : ''}" data-incident-line="all">${this.esc(this.t('dades.incAllLines'))}</button>
               ${linesCatalog.map(lCode => {
                 const isActive = activeLineNorm === lCode;
                 const n = /^L([1-8])$/.exec(lCode);
@@ -3229,47 +3478,47 @@ class ObservatoriApp {
       <!-- KPI Summary Cards -->
       <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:0.75rem; margin-bottom:1.25rem;">
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
-          <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">Retard Màxim de Servei</div>
+          <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">${this.esc(this.t('dades.incKpiMax'))}</div>
           <div style="font-size:1.6rem; font-weight:800; color:${trueMaxDelay === null ? 'var(--text-muted)' : 'var(--accent-danger)'}; margin-top:0.2rem;">${maxDelayValue}</div>
-          <div style="font-size:0.72rem; color:var(--text-muted);">${this._fmtCount(s.rawSamplesOverThreshold ?? s.totalRecordedIncidents)} mostres raw &ge; ${s.minDelayThreshold || 5}m • ${topList.length} episodis al rànquing</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">${this.esc(this.t('dades.incKpiMaxSub', { raw: this._fmtCount(s.rawSamplesOverThreshold ?? s.totalRecordedIncidents), min: minThr, ep: topList.length }))}</div>
           ${maxFromInvestigation ? `
             <div style="font-size:0.72rem; color:var(--accent-danger); margin-top:0.2rem; line-height:1.4;">
-              Aquest màxim prové de la taula «Horaris No Habituals» (&ge; 25 min). En aquesta finestra no hi ha cap retard de servei comercial (${s.minDelayThreshold || 5}–24 min), de manera que el màxim comercial no està mesurat.
+              ${this.esc(this.t('dades.incKpiMaxInvNote', { min: minThr }))}
             </div>
           ` : `
-            <div style="font-size:0.72rem; color:var(--text-muted); margin-top:0.2rem;">Màxim del servei comercial (${s.minDelayThreshold || 5}–24 min): ${commercialMaxCaption} • ${investigationList.length} en investigació</div>
+            <div style="font-size:0.72rem; color:var(--text-muted); margin-top:0.2rem;">${this.esc(this.t('dades.incKpiMaxCommNote', { min: minThr, cap: commercialMaxCaption, inv: investigationList.length }))}</div>
           `}
         </div>
 
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
-          <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">Punt Negre (Més Afectat)</div>
-          <div style="font-size:1.05rem; font-weight:700; color:var(--brand-primary); margin-top:0.25rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${this.esc(s.worstStop || 'Cap')}">${this.esc(s.worstStop || 'Cap')}</div>
-          <div style="font-size:0.72rem; color:var(--text-muted);">${this._fmtCount(s.worstStopCount || 0)} ${s.worstBasis === 'visits' ? (s.worstStopCount === 1 ? 'pas' : 'passos') : (s.worstStopCount === 1 ? 'mostra raw' : 'mostres raw')} amb retard &ge; ${s.minDelayThreshold || 5} min</div>
+          <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">${this.esc(this.t('dades.incKpiWorstStop'))}</div>
+          <div style="font-size:1.05rem; font-weight:700; color:var(--brand-primary); margin-top:0.25rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${this.esc(worstStopLabel)}">${this.esc(worstStopLabel)}</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">${this.esc(this.t('dades.incKpiWorstStopSub', { n: this._fmtCount(s.worstStopCount || 0), unit: worstUnit, min: minThr }))}</div>
         </div>
 
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
-          <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">Franja amb Més Retards</div>
+          <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">${this.esc(this.t('dades.incKpiWorstHour'))}</div>
           <div style="font-size:1.15rem; font-weight:700; color:var(--accent-warning); margin-top:0.25rem;">${s.worstHour || '--:00'}</div>
-          <div style="font-size:0.72rem; color:var(--text-muted);">${s.worstHourLatePct !== null && s.worstHourLatePct !== undefined ? `${s.worstHourLatePct}% dels passos amb retard &ge; ${s.minDelayThreshold || 5} min · ` : ''}${s.worstHourTag || 'Horari regular'}</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">${s.worstHourLatePct !== null && s.worstHourLatePct !== undefined ? this.esc(this.t('dades.incKpiWorstHourPct', { pct: s.worstHourLatePct, min: minThr })) : ''}${this.esc(s.worstHourTag || this.t('dades.incRegularSched'))}</div>
         </div>
 
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:0.9rem;">
-          <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">Horaris No Habituals</div>
-          <div style="font-size:1.15rem; font-weight:700; color:var(--accent-danger); margin-top:0.25rem;">${investigationList.length} en investigació</div>
-          <div style="font-size:0.72rem; color:var(--text-muted);">${anomaliesList.length} anomalies de cotxeres/SAE</div>
+          <div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase;">${this.esc(this.t('dades.incKpiUnusual'))}</div>
+          <div style="font-size:1.15rem; font-weight:700; color:var(--accent-danger); margin-top:0.25rem;">${this.esc(this.t('dades.incInInvCount', { n: investigationList.length }))}</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">${this.esc(this.t('dades.incAnomaliesCount', { n: anomaliesList.length }))}</div>
         </div>
       </div>
 
       <!-- Sub-Tab Mode Switcher -->
-      <div class="incident-view-mode-tabs-container" role="tablist" aria-label="Mode d'anàlisi d'incidents">
+      <div class="incident-view-mode-tabs-container" role="tablist" aria-label="${this.esc(this.t('dades.incTabAria'))}">
         <button type="button" class="incident-view-mode-tab ${activeTab === 'top' ? 'active' : ''}" data-incident-tab="top" role="tab" aria-selected="${activeTab === 'top'}">
-          <span><span class="incident-tab-title">Rànquing d'Incidents de Servei</span> <span class="incident-tab-meta">(${s.minDelayThreshold || 5}–24 min) (${topList.length})</span></span>
+          <span><span class="incident-tab-title">${this.esc(this.t('dades.incTabTop'))}</span> <span class="incident-tab-meta">(${minThr}–24 min) (${topList.length})</span></span>
         </button>
         <button type="button" class="incident-view-mode-tab ${activeTab === 'investigation' ? 'active' : ''}" data-incident-tab="investigation" role="tab" aria-selected="${activeTab === 'investigation'}">
-          <span><span class="incident-tab-title">Horaris No Habituals</span> <span class="incident-tab-meta">(&ge; 25 min) (${investigationList.length})</span></span>
+          <span><span class="incident-tab-title">${this.esc(this.t('dades.incTabInv'))}</span> <span class="incident-tab-meta">(&ge; 25 min) (${investigationList.length})</span></span>
         </button>
         <button type="button" class="incident-view-mode-tab ${activeTab === 'trips' ? 'active' : ''}" data-incident-tab="trips" role="tab" aria-selected="${activeTab === 'trips'}">
-          <span><span class="incident-tab-title">Expedicions &amp; Trajectòries</span> <span class="incident-tab-meta">(${tripsList.length})</span></span>
+          <span><span class="incident-tab-title">${this.esc(this.t('dades.incTabTrips'))}</span> <span class="incident-tab-meta">(${tripsList.length})</span></span>
         </button>
       </div>
 
@@ -3278,18 +3527,18 @@ class ObservatoriApp {
         <!-- Table 1: Top Delays Table (Peak per Trip 0-24m) -->
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px; margin-bottom:0.6rem;">
           <div style="font-size:0.78rem; color:var(--text-muted); display:flex; align-items:center; gap:6px;">
-            <span>Mostrant incidents de servei comercial (${s.minDelayThreshold || 5}–24 min). S'agrupen els senyals cada 20 s del mateix viatge i parada per evitar duplicats.</span>
+            <span>${this.esc(this.t('dades.incTopNote', { min: minThr }))}</span>
           </div>
           ${investigationList.length > 0 ? `
             <div style="font-size:0.75rem; color:var(--accent-danger); font-weight:700;">
-              ${investigationList.length} expedicions amb retard extrem (&ge; 25 m) mogudes a la taula inferior d'investigació.
+              ${this.esc(this.t('dades.incTopMoved', { n: investigationList.length }))}
             </div>
           ` : ''}
         </div>
 
         ${topList.length === 0 ? `
           <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:10px; padding:2rem; text-align:center; color:var(--text-muted);">
-            No s'han registrat retards comercials (${s.minDelayThreshold || 5}–24 min) per a la selecció actual (${selectedHours}h).
+            ${this.esc(this.t('dades.incTopEmpty', { min: minThr, h: selectedHours }))}
           </div>
         ` : `
           <div class="observatori-table-wrapper">
@@ -3297,13 +3546,13 @@ class ObservatoriApp {
               <thead>
                 <tr>
                   <th style="width:45px; text-align:center;">#</th>
-                  <th>Retard</th>
-                  <th>Línia</th>
-                  <th>Parada Afectada</th>
-                  <th>Data i Hora</th>
-                  <th>Context Horari</th>
-                  <th style="text-align:center; cursor:help;" title="Tipus de senyal: GPS directe o Estimat">Senyal</th>
-                  <th style="text-align:center;">Mapa</th>
+                  <th>${this.esc(this.t('dades.incColDelay'))}</th>
+                  <th>${this.esc(this.t('dades.colLine'))}</th>
+                  <th>${this.esc(this.t('dades.incColStop'))}</th>
+                  <th>${this.esc(this.t('dades.incColDateTime'))}</th>
+                  <th>${this.esc(this.t('dades.incColContext'))}</th>
+                  <th style="text-align:center; cursor:help;" title="${this.esc(this.t('dades.incColSignalTip'))}">${this.esc(this.t('dades.incColSignal'))}</th>
+                  <th style="text-align:center;">${this.esc(this.t('dades.incColMap'))}</th>
                 </tr>
               </thead>
               <tbody>
@@ -3311,8 +3560,8 @@ class ObservatoriApp {
                   const lColor = getLineColor(inc.lineCode);
                   const delayClass = inc.delayMins >= 20 ? 'var(--accent-danger)' : (inc.delayMins >= 10 ? 'var(--accent-warning)' : 'var(--accent-scheduled)');
                   const signalTooltip = inc.isRealTime
-                    ? 'Senyal GPS directe: Telemetria transmesa en temps real pel vehicle físic.'
-                    : 'Estimació per estima (dead-reckoning): Autobús físic amb GPS que ha perdut la cobertura temporalment (túnels, carrers estrets o caiguda de xarxa). La posició i el retard es calculen avançant la darrera velocitat i retard coneguts (màxim 90 segons). Mai s\'aplica a autobusos sense GPS.';
+                    ? this.t('dades.incSigTipGps')
+                    : this.t('dades.incSigTipEst');
                   return `
                     <tr>
                       <td style="font-weight:700; color:var(--text-muted); text-align:center;">${inc.rank || (i + 1)}</td>
@@ -3335,17 +3584,17 @@ class ObservatoriApp {
                       <td style="text-align:center; white-space:nowrap;">
                         <span class="signal-badge ${inc.isRealTime ? 'gps' : 'estimated'}" title="${this.esc(signalTooltip)}">
                           <span class="dot"></span>
-                          <span>${inc.isRealTime ? 'GPS' : 'Estimat'}</span>
+                          <span>${this.esc(this.t(inc.isRealTime ? 'dades.sigGps' : 'dades.sigEst'))}</span>
                         </span>
                       </td>
                       <td style="text-align:center; white-space:nowrap;">
-                        <button type="button" class="btn-locate-incident-stop" data-locate-line="${this.esc(inc.lineCode)}" data-locate-stop="${this.esc(inc.stopName)}" data-locate-stop-id="${this.esc(inc.stopId || '')}" title="Veure aquesta parada al mapa">
+                        <button type="button" class="btn-locate-incident-stop" data-locate-line="${this.esc(inc.lineCode)}" data-locate-stop="${this.esc(inc.stopName)}" data-locate-stop-id="${this.esc(inc.stopId || '')}" title="${this.esc(this.t('dades.incLocateTip'))}">
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
-                          <span>Mapa</span>
+                          <span>${this.esc(this.t('dades.incBtnMap'))}</span>
                         </button>
-                        <button type="button" class="btn-investigate-incident" data-investigate-line="${this.esc(inc.lineCode)}" data-investigate-stop="${this.esc(inc.stopName)}" data-investigate-vehicle="${this.esc(inc.vehicleId || '')}" data-investigate-at="${inc.timestamp || ''}" title="Investigar aquest retard: veure les mostres originals que el contenen">
+                        <button type="button" class="btn-investigate-incident" data-investigate-line="${this.esc(inc.lineCode)}" data-investigate-stop="${this.esc(inc.stopName)}" data-investigate-vehicle="${this.esc(inc.vehicleId || '')}" data-investigate-at="${inc.timestamp || ''}" title="${this.esc(this.t('dades.incBtnInvTip'))}">
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
-                          <span>Investigar</span>
+                          <span>${this.esc(this.t('dades.incBtnInv'))}</span>
                         </button>
                       </td>
                     </tr>
@@ -3363,11 +3612,11 @@ class ObservatoriApp {
         <div id="incident-drilldown-panel" class="drilldown-panel" style="display:none;">
           <div class="drilldown-layout">
             <div class="drilldown-main">
-              <h3 class="drilldown-title">Investigació del retard</h3>
-              <div id="drilldown-content">Selecciona un retard de la taula per a investigar-lo.</div>
+              <h3 class="drilldown-title">${this.esc(this.t('dades.invPanelTitle'))}</h3>
+              <div id="drilldown-content">${this.esc(this.t('dades.invPanelPrompt'))}</div>
             </div>
-            <aside class="drilldown-aside" aria-label="Evidència">
-              <h4 class="drilldown-aside-title">Evidència</h4>
+            <aside class="drilldown-aside" aria-label="${this.esc(this.t('dades.invAsideAria'))}">
+              <h4 class="drilldown-aside-title">${this.esc(this.t('dades.invAsideTitle'))}</h4>
               <div id="drilldown-summary"></div>
             </aside>
           </div>
@@ -3378,26 +3627,26 @@ class ObservatoriApp {
           <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.75rem; margin-bottom:0.85rem;">
             <div>
               <div style="display:inline-flex; align-items:center; gap:6px; background:rgba(244, 63, 94, 0.15); color:var(--accent-danger); padding:3px 8px; border-radius:6px; font-size:0.72rem; font-weight:800; text-transform:uppercase; letter-spacing:0.4px;">
-                <span>Pendent d'Investigació • Horaris No Habituals (&ge; 25 min)</span>
+                <span>${this.esc(this.t('dades.incInvBadge'))}</span>
               </div>
               <h4 style="font-size:1.15rem; font-weight:800; color:var(--text-primary); margin:0.35rem 0 0.2rem 0;">
-                Horaris No Habituals &amp; Desfasaments Extrems (&ge; 25 min) (${investigationList.length})
+                ${this.esc(this.t('dades.incInvTitle', { n: investigationList.length }))}
               </h4>
               <p style="font-size:0.78rem; color:var(--text-muted); margin:0; max-width:760px; line-height:1.45;">
-                Aquests registres presenten un retard de 25 minuts o més. No es consideren retencions habituals de trànsit de la ciutat, sinó <strong>horaris no normals o possibles incidències de seguiment/telemetria</strong> (com ara autobusos aturats fora de servei en capçalera amb el SAE encès, talls excepcionals de carrer o desfasaments de torn). Estan pendents d'investigació per resoldre la seva causa real.
+                ${this.t('dades.incInvDesc')}
               </p>
             </div>
             ${investigationList.length > 0 ? `
-              <button type="button" class="btn-report-action btn-report-investigation" id="btn-copy-investigation-report" title="Copiar informe dels casos en investigació">
+              <button type="button" class="btn-report-action btn-report-investigation" id="btn-copy-investigation-report" title="${this.esc(this.t('dades.incInvCopyTip'))}">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                <span>Copiar informe d'investigació</span>
+                <span>${this.esc(this.t('dades.incInvCopyBtn'))}</span>
               </button>
             ` : ''}
           </div>
 
           ${investigationList.length === 0 ? `
             <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:10px; padding:1.5rem; text-align:center; color:var(--text-muted); font-size:0.85rem;">
-              Cap horari no habitual ni desfasament extrem (&ge; 25 min) detectat en aquest període (${selectedHours}h).
+              ${this.esc(this.t('dades.incInvEmpty', { h: selectedHours }))}
             </div>
           ` : `
             <div class="observatori-table-wrapper">
@@ -3405,21 +3654,21 @@ class ObservatoriApp {
                 <thead>
                   <tr>
                     <th style="width:45px; text-align:center;">#</th>
-                    <th>Retard Transmès</th>
-                    <th>Línia</th>
-                    <th>Parada Afectada</th>
-                    <th>Data i Hora</th>
-                    <th>Estat / Diagnòstic</th>
-                    <th style="text-align:center; cursor:help;" title="Tipus de senyal: GPS directe o Estimat">Senyal</th>
-                    <th style="text-align:center;">Mapa</th>
+                    <th>${this.esc(this.t('dades.incColDelaySent'))}</th>
+                    <th>${this.esc(this.t('dades.colLine'))}</th>
+                    <th>${this.esc(this.t('dades.incColStop'))}</th>
+                    <th>${this.esc(this.t('dades.incColDateTime'))}</th>
+                    <th>${this.esc(this.t('dades.incColStatus'))}</th>
+                    <th style="text-align:center; cursor:help;" title="${this.esc(this.t('dades.incColSignalTip'))}">${this.esc(this.t('dades.incColSignal'))}</th>
+                    <th style="text-align:center;">${this.esc(this.t('dades.incColMap'))}</th>
                   </tr>
                 </thead>
                 <tbody>
                   ${investigationList.map((inc, i) => {
                     const lColor = getLineColor(inc.lineCode);
                     const signalTooltip = inc.isRealTime
-                      ? 'Senyal GPS directe: Telemetria transmesa en temps real pel vehicle físic.'
-                      : 'Estimació per estima (dead-reckoning) per pèrdua temporal de senyal.';
+                      ? this.t('dades.incSigTipGps')
+                      : this.t('dades.incSigTipEstShort');
                     return `
                       <tr>
                         <td style="font-weight:700; color:var(--text-muted); text-align:center;">${inc.rank || (i + 1)}</td>
@@ -3438,23 +3687,23 @@ class ObservatoriApp {
                         </td>
                         <td style="white-space:nowrap; font-size:0.78rem;">
                           <span style="background:rgba(244,63,94,0.15); color:var(--accent-danger); padding:0.2rem 0.5rem; border-radius:6px; font-weight:700; font-size:0.72rem; display:inline-flex; align-items:center; gap:4px;">
-                            Pendent d'investigació
+                            ${this.esc(this.t('dades.incStatusPending'))}
                           </span>
                         </td>
                         <td style="text-align:center; white-space:nowrap;">
                           <span class="signal-badge ${inc.isRealTime ? 'gps' : 'estimated'}" title="${this.esc(signalTooltip)}">
                             <span class="dot"></span>
-                            <span>${inc.isRealTime ? 'GPS' : 'Estimat'}</span>
+                            <span>${this.esc(this.t(inc.isRealTime ? 'dades.sigGps' : 'dades.sigEst'))}</span>
                           </span>
                         </td>
                         <td style="text-align:center; white-space:nowrap;">
-                          <button type="button" class="btn-locate-incident-stop" data-locate-line="${this.esc(inc.lineCode)}" data-locate-stop="${this.esc(inc.stopName)}" data-locate-stop-id="${this.esc(inc.stopId || '')}" title="Veure aquesta parada al mapa">
+                          <button type="button" class="btn-locate-incident-stop" data-locate-line="${this.esc(inc.lineCode)}" data-locate-stop="${this.esc(inc.stopName)}" data-locate-stop-id="${this.esc(inc.stopId || '')}" title="${this.esc(this.t('dades.incLocateTip'))}">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
-                            <span>Mapa</span>
+                            <span>${this.esc(this.t('dades.incBtnMap'))}</span>
                           </button>
-                          <button type="button" class="btn-investigate-incident" data-investigate-line="${this.esc(inc.lineCode)}" data-investigate-stop="${this.esc(inc.stopName)}" data-investigate-vehicle="${this.esc(inc.vehicleId || '')}" data-investigate-at="${inc.timestamp || ''}" title="Investigar aquest retard: veure les mostres originals que el contenen">
+                          <button type="button" class="btn-investigate-incident" data-investigate-line="${this.esc(inc.lineCode)}" data-investigate-stop="${this.esc(inc.stopName)}" data-investigate-vehicle="${this.esc(inc.vehicleId || '')}" data-investigate-at="${inc.timestamp || ''}" title="${this.esc(this.t('dades.incBtnInvTip'))}">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
-                            <span>Investigar</span>
+                            <span>${this.esc(this.t('dades.incBtnInv'))}</span>
                           </button>
                         </td>
                       </tr>
@@ -3471,26 +3720,26 @@ class ObservatoriApp {
           <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.75rem; margin-bottom:0.85rem;">
             <div>
               <div style="display:inline-flex; align-items:center; gap:6px; background:rgba(245, 158, 11, 0.15); color:var(--accent-warning); padding:3px 8px; border-radius:6px; font-size:0.72rem; font-weight:800; text-transform:uppercase; letter-spacing:0.4px;">
-                <span>Auditoria Operador &amp; Ajuntament</span>
+                <span>${this.esc(this.t('dades.incAnomBadge'))}</span>
               </div>
               <h4 style="font-size:1.15rem; font-weight:800; color:var(--text-primary); margin:0.35rem 0 0.2rem 0;">
-                Anomalies de Telemetria SAE &amp; Sortida de Cotxeres (${anomaliesList.length})
+                ${this.esc(this.t('dades.incAnomTitle', { n: anomaliesList.length }))}
               </h4>
               <p style="font-size:0.78rem; color:var(--text-muted); margin:0; max-width:740px; line-height:1.45;">
-                Aquests registres no corresponen a retencions de trànsit de la ciutat, sinó a <strong>desfasaments de telemetria generats pel sistema SAE (CAD/AVL) d'Avanza</strong> fora de l'horari publicat de cada línia (sortides i tornades a cotxeres) o amb 10 min o més durant la primera mitja hora de servei de la línia (un bus que comença torn assignat a una expedició anterior). També hi apareixen els <strong>viatges reassignats pel SAE</strong> (🔀): trams on el retard desapareix de cop perquè el sistema tenia el bus assignat a un viatge que no feia, i els <strong>salts de retard impossibles</strong> (⏫): el retard puja més de pressa que passa el temps perquè el sistema passa el bus a una expedició anterior. També els <strong>recorreguts en sentit invers</strong> (⏪): el bus torna enrere pel recorregut mentre el sistema segueix anotant el mateix retard. Es publiquen aquí per facilitar l'auditoria i la seva correcció per part de l'Ajuntament de Mataró.
+                ${this.t('dades.incAnomDesc')}
               </p>
             </div>
             ${anomaliesList.length > 0 ? `
-              <button type="button" class="btn-report-action btn-report-anomalies btn-copy-anomalies" id="btn-copy-anomalies-report" title="Copiar resum d'anomalies per a informe o reclamació a l'Ajuntament / Avanza">
+              <button type="button" class="btn-report-action btn-report-anomalies btn-copy-anomalies" id="btn-copy-anomalies-report" title="${this.esc(this.t('dades.incAnomCopyTip'))}">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                <span>Copiar informe d'anomalies</span>
+                <span>${this.esc(this.t('dades.incAnomCopyBtn'))}</span>
               </button>
             ` : ''}
           </div>
 
           ${anomaliesList.length === 0 ? `
             <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:10px; padding:1.5rem; text-align:center; color:var(--text-muted); font-size:0.85rem;">
-              Cap anomalia d'arrencada o manteniment detectada en el període seleccionat (${selectedHours}h).
+              ${this.esc(this.t('dades.incAnomEmpty', { h: selectedHours }))}
             </div>
           ` : `
             <div class="observatori-table-wrapper">
@@ -3498,13 +3747,13 @@ class ObservatoriApp {
                 <thead>
                   <tr>
                     <th style="width:45px; text-align:center;">#</th>
-                    <th>Retard Transmès</th>
-                    <th>Línia</th>
-                    <th>Parada / Punt d'observació</th>
-                    <th>Data i Hora</th>
-                    <th>Diagnòstic / Causa Probable</th>
-                    <th style="text-align:center; cursor:help;" title="Tipus de senyal: GPS directe o Estimat">Senyal</th>
-                    <th style="text-align:center;">Mapa</th>
+                    <th>${this.esc(this.t('dades.incColDelaySent'))}</th>
+                    <th>${this.esc(this.t('dades.colLine'))}</th>
+                    <th>${this.esc(this.t('dades.incColStopPoint'))}</th>
+                    <th>${this.esc(this.t('dades.incColDateTime'))}</th>
+                    <th>${this.esc(this.t('dades.incColDiag'))}</th>
+                    <th style="text-align:center; cursor:help;" title="${this.esc(this.t('dades.incColSignalTip'))}">${this.esc(this.t('dades.incColSignal'))}</th>
+                    <th style="text-align:center;">${this.esc(this.t('dades.incColMap'))}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3516,8 +3765,8 @@ class ObservatoriApp {
                     const badgeBg = (isStartup || isRelink) ? 'rgba(245, 158, 11, 0.15)' : 'rgba(147, 51, 234, 0.15)';
                     const badgeColor = (isStartup || isRelink) ? 'var(--accent-warning)' : 'var(--accent-regulating)';
                     const signalTooltip = inc.isRealTime
-                      ? 'Senyal GPS directe transmès pel vehicle físic.'
-                      : 'Estimació per estima (dead-reckoning) per pèrdua temporal de senyal.';
+                      ? this.t('dades.incSigTipGpsShort')
+                      : this.t('dades.incSigTipEstShort');
                     return `
                       <tr>
                         <td style="font-weight:700; color:var(--text-muted); text-align:center;">${inc.rank || (i + 1)}</td>
@@ -3530,7 +3779,7 @@ class ObservatoriApp {
                         </td>
                         <td style="font-weight:600; color:var(--text-primary);">
                           ${isMaintenance ? `
-                            <span style="color:var(--text-muted); font-size:0.85rem;" title="Sense parada comercial (proves o manteniment a cotxeres)">—</span>
+                            <span style="color:var(--text-muted); font-size:0.85rem;" title="${this.esc(this.t('dades.incMaintNoStopTip'))}">—</span>
                           ` : `
                             ${this.esc(inc.stopName)}
                           `}
@@ -3540,26 +3789,26 @@ class ObservatoriApp {
                         </td>
                         <td style="white-space:nowrap; font-size:0.78rem;">
                           <span style="background:${badgeBg}; color:${badgeColor}; padding:0.2rem 0.5rem; border-radius:6px; font-weight:700; font-size:0.72rem; display:inline-flex; align-items:center; gap:4px;">
-                            ${this.esc(inc.diagnosticBadge || inc.trafficTag || 'Anomalia SAE')}
+                            ${this.esc(inc.diagnosticBadge || inc.trafficTag || this.t('dades.incAnomFallback'))}
                           </span>
                         </td>
                         <td style="text-align:center; white-space:nowrap;">
                           <span class="signal-badge ${inc.isRealTime ? 'gps' : 'estimated'}" title="${this.esc(signalTooltip)}">
                             <span class="dot"></span>
-                            <span>${inc.isRealTime ? 'GPS' : 'Estimat'}</span>
+                            <span>${this.esc(this.t(inc.isRealTime ? 'dades.sigGps' : 'dades.sigEst'))}</span>
                           </span>
                         </td>
                         <td style="text-align:center; white-space:nowrap;">
                           ${isMaintenance ? `
-                            <span style="color:var(--text-muted); font-size:0.85rem;" title="No aplica (operació de cotxeres)">—</span>
+                            <span style="color:var(--text-muted); font-size:0.85rem;" title="${this.esc(this.t('dades.incMaintNaTip'))}">—</span>
                           ` : `
-                            <button type="button" class="btn-locate-incident-stop" data-locate-line="${this.esc(inc.lineCode)}" data-locate-stop="${this.esc(inc.stopName)}" data-locate-stop-id="${this.esc(inc.stopId || '')}" title="Veure aquesta parada al mapa">
+                            <button type="button" class="btn-locate-incident-stop" data-locate-line="${this.esc(inc.lineCode)}" data-locate-stop="${this.esc(inc.stopName)}" data-locate-stop-id="${this.esc(inc.stopId || '')}" title="${this.esc(this.t('dades.incLocateTip'))}">
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
-                              <span>Mapa</span>
+                              <span>${this.esc(this.t('dades.incBtnMap'))}</span>
                             </button>
-                            <button type="button" class="btn-investigate-incident" data-investigate-line="${this.esc(inc.lineCode)}" data-investigate-stop="${this.esc(inc.stopName)}" data-investigate-vehicle="${this.esc(inc.vehicleId || '')}" data-investigate-at="${inc.timestamp || ''}" title="Investigar aquest retard: veure les mostres originals que el contenen">
+                            <button type="button" class="btn-investigate-incident" data-investigate-line="${this.esc(inc.lineCode)}" data-investigate-stop="${this.esc(inc.stopName)}" data-investigate-vehicle="${this.esc(inc.vehicleId || '')}" data-investigate-at="${inc.timestamp || ''}" title="${this.esc(this.t('dades.incBtnInvTip'))}">
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
-                              <span>Investigar</span>
+                              <span>${this.esc(this.t('dades.incBtnInv'))}</span>
                             </button>
                           `}
                         </td>
@@ -3577,26 +3826,26 @@ class ObservatoriApp {
           <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.75rem; margin-bottom:0.85rem;">
             <div>
               <div style="display:inline-flex; align-items:center; gap:6px; background:rgba(244, 63, 94, 0.15); color:var(--accent-danger); padding:3px 8px; border-radius:6px; font-size:0.72rem; font-weight:800; text-transform:uppercase; letter-spacing:0.4px;">
-                <span>Pendent d'Investigació • Horaris No Habituals (&ge; 25 min)</span>
+                <span>${this.esc(this.t('dades.incInvBadge'))}</span>
               </div>
               <h4 style="font-size:1.25rem; font-weight:800; color:var(--text-primary); margin:0.35rem 0 0.2rem 0;">
-                Horaris No Habituals &amp; Desfasaments Extrems (&ge; 25 min) (${investigationList.length})
+                ${this.esc(this.t('dades.incInvTitle', { n: investigationList.length }))}
               </h4>
               <p style="font-size:0.8rem; color:var(--text-muted); margin:0; max-width:760px; line-height:1.45;">
-                Aquests registres presenten un retard de 25 minuts o més. No es consideren retencions habituals de trànsit de la ciutat, sinó <strong>horaris no normals o possibles incidències de seguiment/telemetria</strong> (com ara autobusos aturats fora de servei en capçalera amb el SAE encès, talls excepcionals de carrer o desfasaments de torn). Estan pendents d'investigació per resoldre la seva causa real.
+                ${this.t('dades.incInvDesc')}
               </p>
             </div>
             ${investigationList.length > 0 ? `
-              <button type="button" class="btn-report-action btn-report-investigation" id="btn-copy-investigation-report" title="Copiar informe dels casos en investigació">
+              <button type="button" class="btn-report-action btn-report-investigation" id="btn-copy-investigation-report" title="${this.esc(this.t('dades.incInvCopyTip'))}">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                <span>Copiar informe d'investigació</span>
+                <span>${this.esc(this.t('dades.incInvCopyBtn'))}</span>
               </button>
             ` : ''}
           </div>
 
           ${investigationList.length === 0 ? `
             <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:10px; padding:2rem; text-align:center; color:var(--text-muted); font-size:0.85rem;">
-              Cap horari no habitual ni desfasament extrem (&ge; 25 min) detectat en aquest període (${selectedHours}h).
+              ${this.esc(this.t('dades.incInvEmpty', { h: selectedHours }))}
             </div>
           ` : `
             <div class="observatori-table-wrapper">
@@ -3604,21 +3853,21 @@ class ObservatoriApp {
                 <thead>
                   <tr>
                     <th style="width:45px; text-align:center;">#</th>
-                    <th>Retard Transmès</th>
-                    <th>Línia</th>
-                    <th>Parada Afectada</th>
-                    <th>Data i Hora</th>
-                    <th>Estat / Diagnòstic</th>
-                    <th style="text-align:center; cursor:help;" title="Tipus de senyal: GPS directe o Estimat">Senyal</th>
-                    <th style="text-align:center;">Mapa</th>
+                    <th>${this.esc(this.t('dades.incColDelaySent'))}</th>
+                    <th>${this.esc(this.t('dades.colLine'))}</th>
+                    <th>${this.esc(this.t('dades.incColStop'))}</th>
+                    <th>${this.esc(this.t('dades.incColDateTime'))}</th>
+                    <th>${this.esc(this.t('dades.incColStatus'))}</th>
+                    <th style="text-align:center; cursor:help;" title="${this.esc(this.t('dades.incColSignalTip'))}">${this.esc(this.t('dades.incColSignal'))}</th>
+                    <th style="text-align:center;">${this.esc(this.t('dades.incColMap'))}</th>
                   </tr>
                 </thead>
                 <tbody>
                   ${investigationList.map((inc, i) => {
                     const lColor = getLineColor(inc.lineCode);
                     const signalTooltip = inc.isRealTime
-                      ? 'Senyal GPS directe transmès pel vehicle físic.'
-                      : 'Estimació per estima (dead-reckoning) per pèrdua temporal de senyal.';
+                      ? this.t('dades.incSigTipGpsShort')
+                      : this.t('dades.incSigTipEstShort');
                     return `
                       <tr>
                         <td style="font-weight:700; color:var(--text-muted); text-align:center;">${inc.rank || (i + 1)}</td>
@@ -3637,23 +3886,23 @@ class ObservatoriApp {
                         </td>
                         <td style="white-space:nowrap; font-size:0.78rem;">
                           <span style="background:rgba(244,63,94,0.15); color:var(--accent-danger); padding:0.2rem 0.5rem; border-radius:6px; font-weight:700; font-size:0.72rem; display:inline-flex; align-items:center; gap:4px;">
-                            Pendent d'investigació
+                            ${this.esc(this.t('dades.incStatusPending'))}
                           </span>
                         </td>
                         <td style="text-align:center; white-space:nowrap;">
                           <span class="signal-badge ${inc.isRealTime ? 'gps' : 'estimated'}" title="${this.esc(signalTooltip)}">
                             <span class="dot"></span>
-                            <span>${inc.isRealTime ? 'GPS' : 'Estimat'}</span>
+                            <span>${this.esc(this.t(inc.isRealTime ? 'dades.sigGps' : 'dades.sigEst'))}</span>
                           </span>
                         </td>
                         <td style="text-align:center; white-space:nowrap;">
-                          <button type="button" class="btn-locate-incident-stop" data-locate-line="${this.esc(inc.lineCode)}" data-locate-stop="${this.esc(inc.stopName)}" data-locate-stop-id="${this.esc(inc.stopId || '')}" title="Veure aquesta parada al mapa">
+                          <button type="button" class="btn-locate-incident-stop" data-locate-line="${this.esc(inc.lineCode)}" data-locate-stop="${this.esc(inc.stopName)}" data-locate-stop-id="${this.esc(inc.stopId || '')}" title="${this.esc(this.t('dades.incLocateTip'))}">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
-                            <span>Mapa</span>
+                            <span>${this.esc(this.t('dades.incBtnMap'))}</span>
                           </button>
-                          <button type="button" class="btn-investigate-incident" data-investigate-line="${this.esc(inc.lineCode)}" data-investigate-stop="${this.esc(inc.stopName)}" data-investigate-vehicle="${this.esc(inc.vehicleId || '')}" data-investigate-at="${inc.timestamp || ''}" title="Investigar aquest retard: veure les mostres originals que el contenen">
+                          <button type="button" class="btn-investigate-incident" data-investigate-line="${this.esc(inc.lineCode)}" data-investigate-stop="${this.esc(inc.stopName)}" data-investigate-vehicle="${this.esc(inc.vehicleId || '')}" data-investigate-at="${inc.timestamp || ''}" title="${this.esc(this.t('dades.incBtnInvTip'))}">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
-                            <span>Investigar</span>
+                            <span>${this.esc(this.t('dades.incBtnInv'))}</span>
                           </button>
                         </td>
                       </tr>
@@ -3669,11 +3918,11 @@ class ObservatoriApp {
         <div id="incident-drilldown-panel" class="drilldown-panel" style="display:none;">
           <div class="drilldown-layout">
             <div class="drilldown-main">
-              <h3 class="drilldown-title">Investigació del retard</h3>
-              <div id="drilldown-content">Selecciona un retard de la taula per a investigar-lo.</div>
+              <h3 class="drilldown-title">${this.esc(this.t('dades.invPanelTitle'))}</h3>
+              <div id="drilldown-content">${this.esc(this.t('dades.invPanelPrompt'))}</div>
             </div>
-            <aside class="drilldown-aside" aria-label="Evidència">
-              <h4 class="drilldown-aside-title">Evidència</h4>
+            <aside class="drilldown-aside" aria-label="${this.esc(this.t('dades.invAsideAria'))}">
+              <h4 class="drilldown-aside-title">${this.esc(this.t('dades.invAsideTitle'))}</h4>
               <div id="drilldown-summary"></div>
             </aside>
           </div>
@@ -3684,23 +3933,23 @@ class ObservatoriApp {
           <div style="display:flex; align-items:flex-start; gap:0.65rem;">
             <div style="flex:1;">
               <div style="font-weight:700; color:var(--text-primary); margin-bottom:0.25rem;">
-                Com funcionen les expedicions i trajectòries?
+                ${this.esc(this.t('dades.incTripsHowTitle'))}
               </div>
               <div style="color:var(--text-secondary); margin-bottom:0.6rem;">
-                Cada targeta reconstrueix el recorregut continu d'un <strong>autobús físic individual</strong> (separat per identificador de vehicle), seguint cronològicament com evoluciona el seu retard parada a parada al llarg del servei:
+                ${this.t('dades.incTripsHowIntro')}
               </div>
               <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:0.6rem; font-size:0.76rem; color:var(--text-muted);">
                 <div style="background:var(--bg-surface); padding:0.55rem 0.75rem; border-radius:6px; border:1px solid var(--border-subtle);">
-                  <strong style="color:var(--text-primary); display:block; margin-bottom:2px;">Bus ID individual</strong>
-                  Cada vehicle es monitoritza per separat; no es barregen diferents autobusos que circulin alhora per la mateixa línia.
+                  <strong style="color:var(--text-primary); display:block; margin-bottom:2px;">${this.esc(this.t('dades.incTripsCard1Title'))}</strong>
+                  ${this.esc(this.t('dades.incTripsCard1Text'))}
                 </div>
                 <div style="background:var(--bg-surface); padding:0.55rem 0.75rem; border-radius:6px; border:1px solid var(--border-subtle);">
-                  <strong style="color:var(--text-primary); display:block; margin-bottom:2px;">Progressió parada a parada</strong>
-                  Permet veure exactament a quina parada s'origina la retenció i com el bus va recuperant temps de trajecte.
+                  <strong style="color:var(--text-primary); display:block; margin-bottom:2px;">${this.esc(this.t('dades.incTripsCard2Title'))}</strong>
+                  ${this.esc(this.t('dades.incTripsCard2Text'))}
                 </div>
                 <div style="background:var(--bg-surface); padding:0.55rem 0.75rem; border-radius:6px; border:1px solid var(--border-subtle);">
-                  <strong style="color:var(--text-primary); display:block; margin-bottom:2px;">Normalització de l'horari</strong>
-                  Si la seqüència s'acaba abans del final de la línia, indica que el vehicle ja ha absorbit el retard (&lt;3 min) o ha finalitzat el torn.
+                  <strong style="color:var(--text-primary); display:block; margin-bottom:2px;">${this.esc(this.t('dades.incTripsCard3Title'))}</strong>
+                  ${this.esc(this.t('dades.incTripsCard3Text'))}
                 </div>
               </div>
             </div>
@@ -3709,7 +3958,7 @@ class ObservatoriApp {
 
         ${tripsList.length === 0 ? `
           <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:10px; padding:2rem; text-align:center; color:var(--text-muted);">
-            No s'han detectat expedicions amb retard greu continuat en aquest període.
+            ${this.esc(this.t('dades.incTripsEmpty'))}
           </div>
         ` : `
           <div style="display:flex; flex-direction:column; gap:0.75rem;">
@@ -3718,31 +3967,44 @@ class ObservatoriApp {
               const typeBadgeClass = (trip.incidentType === 'maintenance' || trip.incidentType === 'trip_relink')
                 ? 'incident-badge-maintenance'
                 : (trip.isMovingTraffic ? 'incident-badge-traffic' : 'incident-badge-layover');
+              const tripKind = trip.incidentType === 'maintenance'
+                ? this.t('dades.incTripMaint')
+                : (trip.isMovingTraffic ? this.t('dades.incTripMoving', { n: trip.stopsCount }) : this.t('dades.incTripStopped'));
+              const endReasonBadges = {
+                end_of_line: `<span class="trajectory-end">${this.esc(this.t('dades.endEndOfLine'))}</span>`,
+                recovered: `<span class="trajectory-end is-recovered">${this.esc(this.t('dades.endRecovered'))}</span>`,
+                trip_change: `<span class="trajectory-end">${this.esc(this.t('dades.endTripChange'))}</span>`,
+                relinked: `<span class="trajectory-end">${this.esc(this.t('dades.endRelinked'))}</span>`,
+                deadhead_return: `<span class="trajectory-end">${this.esc(this.t('dades.endDeadhead'))}</span>`,
+                backward_leg: `<span class="trajectory-end">${this.esc(this.t('dades.endBackward'))}</span>`,
+                signal_lost: `<span class="trajectory-end">${this.esc(this.t('dades.endSignalLost'))}</span>`,
+                ongoing: `<span class="trajectory-end">${this.esc(this.t('dades.endOngoing'))}</span>`
+              };
               return `
                 <div class="trip-card">
                   <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
                     <div style="display:flex; align-items:center; gap:0.5rem;">
                       <span style="background:${lColor}; color:${this.chipInk(lColor)}; padding:0.2rem 0.55rem; border-radius:6px; font-weight:800; font-size:0.8rem;">${this.esc(trip.lineCode)}</span>
-                      <strong style="color:var(--text-primary); font-size:0.9rem;">Expedició del ${this.esc(trip.startTime)}</strong>
+                      <strong style="color:var(--text-primary); font-size:0.9rem;">${this.esc(this.t('dades.incTripHead', { start: trip.startTime }))}</strong>
                       ${formatBusBadge(trip.vehicleId)}
-                      <span style="color:var(--text-muted); font-size:0.78rem;">(durada activa: ~${trip.durationMinutes || 1} min)</span>
+                      <span style="color:var(--text-muted); font-size:0.78rem;">${this.esc(this.t('dades.incTripDur', { min: trip.durationMinutes || 1 }))}</span>
                     </div>
                     <div style="display:flex; align-items:center; gap:0.5rem;">
                       <span class="${typeBadgeClass}" style="padding:0.2rem 0.5rem; border-radius:6px; font-size:0.74rem; font-weight:700;">
                         ${this.esc(trip.incidentTypeLabel)}
                       </span>
                       <span style="background:rgba(239,68,68,0.15); color:var(--accent-danger); padding:0.2rem 0.55rem; border-radius:6px; font-size:0.78rem; font-weight:800;">
-                        Màx: +${trip.maxDelayMins} min
+                        ${this.esc(this.t('dades.incTripMax', { d: trip.maxDelayMins }))}
                       </span>
                     </div>
                   </div>
 
                   <!-- Trajectory flow -->
                   <div class="trip-trajectory-flow">
-                    <span style="font-weight:700; color:var(--text-muted); margin-right:0.25rem;">Trajectòria:</span>
-                    ${(trip.stopProgression && trip.stopProgression.length > 0 
-                      ? trip.stopProgression 
-                      : (trip.stopsTraversed || []).map(s => ({ stopName: s, delayMins: null, isRecovered: false }))
+                    <span style="font-weight:700; color:var(--text-muted); margin-right:0.25rem;">${this.esc(this.t('dades.incTripTraj'))}</span>
+                    ${(trip.stopProgression && trip.stopProgression.length > 0
+                      ? trip.stopProgression
+                      : (trip.stopsTraversed || []).map(stName => ({ stopName: stName, delayMins: null, isRecovered: false }))
                     ).map((st, sIdx, arr) => {
                       const dMins = st.delayMins;
                       let delayBadge = '';
@@ -3753,50 +4015,44 @@ class ObservatoriApp {
                         const chipClass = st.isRecovered ? 'delay-low' : (st.belowThreshold ? 'delay-ok' : (dMins >= 10 ? 'delay-high' : 'delay-mid'));
                         delayBadge = `<span class="delay-chip ${chipClass}">${delayText}</span>`;
                       }
+                      const stopTitle = dMins != null
+                        ? `${st.stopName} (${this.t(st.isRecovered ? 'dades.matchTripRecovered' : 'dades.matchTripDelay')}: +${dMins} min)`
+                        : st.stopName;
                       return `
-                        <span class="stop-step ${st.isRecovered ? 'is-recovered' : ''} ${st.belowThreshold && !st.isRecovered ? 'is-below-threshold' : ''}" title="${this.esc(st.stopName)}${dMins != null ? ` (${st.isRecovered ? 'Recuperat' : 'Retard'}: +${dMins} min)` : ''}">
+                        <span class="stop-step ${st.isRecovered ? 'is-recovered' : ''} ${st.belowThreshold && !st.isRecovered ? 'is-below-threshold' : ''}" title="${this.esc(stopTitle)}">
                           <span class="stop-node ${st.isRecovered ? 'recovered' : (st.belowThreshold ? 'ok' : (dMins >= 10 ? 'critical' : 'delayed'))}"></span>
                           <span class="stop-name">${this.esc(st.stopName)}</span>
                           ${delayBadge}
                         </span>
                         ${sIdx < arr.length - 1 ? '<span class="step-arrow">→</span>' : ''}
                       `;
-                    }).join('')}${({
-                      end_of_line: `<span class="trajectory-end">🏁 Final de línia</span>`,
-                      recovered: `<span class="trajectory-end is-recovered">✅ Recuperat</span>`,
-                      trip_change: `<span class="trajectory-end">🔀 Canvi de viatge</span>`,
-                      relinked: `<span class="trajectory-end">🔀 Viatge reassignat pel SAE</span>`,
-                      deadhead_return: `<span class="trajectory-end">↩️ Tornada sense servei</span>`,
-                      backward_leg: `<span class="trajectory-end">⏪ En sentit invers</span>`,
-                      signal_lost: `<span class="trajectory-end">📡 Sense més dades</span>`,
-                      ongoing: `<span class="trajectory-end">⏳ En curs</span>`
-                    })[trip.endReason] || ''}
+                    }).join('')}${endReasonBadges[trip.endReason] || ''}
                   </div>
 
                   ${trip.relink ? `
                   <div style="margin-top:0.5rem; font-size:0.76rem; color:var(--accent-warning); line-height:1.45;">
-                    El sistema de l'operador tenia aquest bus assignat a un viatge anterior: a ${this.esc(trip.relink.stopName)} el retard passa de +${trip.relink.delayBefore} a ${trip.relink.delayAfter} min de cop, cosa físicament impossible. No és un retard real verificable.
+                    ${this.esc(this.t('dades.incTripRelinkNote', { stop: trip.relink.stopName, before: trip.relink.delayBefore, after: trip.relink.delayAfter }))}
                   </div>` : ''}
 
                   ${trip.backwardLeg ? `
                   <div class="trajectory-note">
-                    Després ${/^[aeiouàèéíïòóúüh]/i.test(trip.backwardLeg.lastServedStop) ? 'd\'' : 'de '}${this.esc(trip.backwardLeg.lastServedStop)} el sistema de l'operador va situar el bus ${trip.backwardLeg.stepsBack} parades enrere, fins a ${this.esc(trip.backwardLeg.lowestStop)}, amb el mateix retard. El bus tornava enrere pel recorregut: el retard no es va recuperar i aquests registres no són passos reals.
+                    ${this.esc(this.t('dades.incTripBackwardNote', { after: this._afterStop(trip.backwardLeg.lastServedStop), steps: trip.backwardLeg.stepsBack, lowest: trip.backwardLeg.lowestStop }))}
                   </div>` : ''}
 
                   ${trip.deadhead ? `
                   <div style="margin-top:0.5rem; font-size:0.76rem; color:var(--accent-warning); line-height:1.45;">
-                    Després ${/^[aeiouàèéíïòóúüh]/i.test(trip.deadhead.lastServedStop) ? 'd\'' : 'de '}${this.esc(trip.deadhead.lastServedStop)} el bus va tornar sense passatgers a ${this.esc(trip.deadhead.resumeStop)} en ${trip.deadhead.returnMinutes} min i no va fer el viatge cap a ${this.esc(trip.deadhead.towards)}, que dura ${trip.deadhead.oppositeTripMinutes} min. El retard no es va recuperar: el bus es va saltar un viatge.
+                    ${this.esc(this.t('dades.incTripDeadheadNote', { after: this._afterStop(trip.deadhead.lastServedStop), resume: trip.deadhead.resumeStop, ret: trip.deadhead.returnMinutes, towards: trip.deadhead.towards, opp: trip.deadhead.oppositeTripMinutes }))}
                   </div>` : ''}
 
                   <!-- Context and action footer -->
                   <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.6rem; font-size:0.75rem; color:var(--text-muted); flex-wrap:wrap; gap:0.4rem;">
                     <div>
-                      <span>${this.esc(trip.trafficTag || '')} • ${trip.sampleCount} mostres registrades (${trip.incidentType === 'maintenance' ? 'proves o encesa a cotxeres' : (trip.isMovingTraffic ? `recorregut per ${trip.stopsCount} parades` : 'aturat a parada / regulant capçalera')})</span>
+                      <span>${this.esc(this.t('dades.incTripFooter', { tag: trip.trafficTag || '', n: trip.sampleCount, kind: tripKind }))}</span>
                     </div>
                     ${trip.incidentType !== 'maintenance' ? `
-                      <button type="button" class="btn-locate-incident-stop" data-locate-line="${this.esc(trip.lineCode)}" data-locate-stop="${this.esc(trip.firstStop || trip.stopsTraversed[0])}" title="Veure aquesta parada al mapa">
+                      <button type="button" class="btn-locate-incident-stop" data-locate-line="${this.esc(trip.lineCode)}" data-locate-stop="${this.esc(trip.firstStop || trip.stopsTraversed[0])}" title="${this.esc(this.t('dades.incLocateTip'))}">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
-                        <span>Veure parada</span>
+                        <span>${this.esc(this.t('dades.incViewStop'))}</span>
                       </button>
                     ` : ''}
                   </div>
@@ -3815,18 +4071,18 @@ class ObservatoriApp {
   _stampOf(ts) {
     const n = Number(ts);
     return Number.isFinite(n) && n > 0
-      ? new Date(n).toLocaleString('ca-ES', { timeZone: 'Europe/Madrid', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).replace(',', '')
+      ? new Date(n).toLocaleString(this.locale(), { timeZone: 'Europe/Madrid', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).replace(',', '')
       : '';
   }
 
   /** The kinds in the edge-case table: label and one-line meaning. */
   _edgeCaseKinds() {
     return {
-      relink: ['Viatge reassignat', 'El retard cau de cop a mig recorregut: el SAE tenia el bus en un viatge que no feia.'],
-      deadhead_return: ['Tornada sense servei', "El bus es salta un viatge i torna a l'inici; el SAE segueix anotant parades."],
-      delay_jump: ['Salt de retard', 'El retard puja més de pressa que passa el temps.'],
-      backward_leg: ['Sentit invers', 'Les parades van enrere pel recorregut amb el retard congelat.'],
-      trip_change: ['Canvi de viatge', 'Un retard gran desapareix en un viatge nou, sense recuperar-se en ruta.']
+      relink: [this.t('dades.ecRelink'), this.t('dades.ecRelinkDesc')],
+      deadhead_return: [this.t('dades.ecDeadhead'), this.t('dades.ecDeadheadDesc')],
+      delay_jump: [this.t('dades.ecJump'), this.t('dades.ecJumpDesc')],
+      backward_leg: [this.t('dades.ecBackward'), this.t('dades.ecBackwardDesc')],
+      trip_change: [this.t('dades.ecTripChange'), this.t('dades.ecTripChangeDesc')]
     };
   }
 
@@ -3834,11 +4090,11 @@ class ObservatoriApp {
   _edgeCaseDetail(c) {
     const d = c.detail || {};
     switch (c.kind) {
-      case 'relink': return `${d.samples || 0} registres, ${d.stops || 0} parades afectades`;
-      case 'deadhead_return': return `torna en ${d.returnMinutes} min; el viatge oposat en dura ${d.oppositeTripMinutes}; ${d.records || 0} registres fantasma`;
-      case 'delay_jump': return `puja en ${d.elapsedMins} min; ${d.samples || 0} registres afectats`;
-      case 'backward_leg': return `${d.stepsBack} parades enrere, ${d.visits} visites`;
-      case 'trip_change': return `${d.silentMinutes} min sense registres abans del viatge nou`;
+      case 'relink': return this.t('dades.ecDetRelink', { samples: d.samples || 0, stops: d.stops || 0 });
+      case 'deadhead_return': return this.t('dades.ecDetDeadhead', { ret: d.returnMinutes, opp: d.oppositeTripMinutes, records: d.records || 0 });
+      case 'delay_jump': return this.t('dades.ecDetJump', { elapsed: d.elapsedMins, samples: d.samples || 0 });
+      case 'backward_leg': return this.t('dades.ecDetBackward', { steps: d.stepsBack, visits: d.visits });
+      case 'trip_change': return this.t('dades.ecDetTripChange', { mins: d.silentMinutes });
       default: return '';
     }
   }
@@ -3846,18 +4102,18 @@ class ObservatoriApp {
   /** The signal column: did the bus lose GPS in the silence that needs explaining? */
   _edgeCaseSignal(c) {
     switch (c.signal) {
-      case 'lost': return `va perdre el GPS (${c.signalGapSec} s)`;
-      case 'feed_stalled': return "feed de l'operador aturat";
-      case 'terminal': return 'aturat a la capçalera';
-      case 'kept': return 'va seguir amb GPS';
-      default: return 'sense dades';
+      case 'lost': return this.t('dades.ecSigLost', { sec: c.signalGapSec });
+      case 'feed_stalled': return this.t('dades.ecSigStalled');
+      case 'terminal': return this.t('dades.ecSigTerminal');
+      case 'kept': return this.t('dades.ecSigKept');
+      default: return this.t('dades.ecSigUnknown');
     }
   }
 
   /** The GPS column: positions stored around the case, or why there are none. */
   _edgeCaseGps(c, keptHours) {
-    if (c.gpsPoints > 0) return `${c.gpsPoints} posicions`;
-    return c.gpsExpired ? `caducades (només ${keptHours} h)` : 'cap';
+    if (c.gpsPoints > 0) return this.t('dades.ecGpsPoints', { n: c.gpsPoints });
+    return c.gpsExpired ? this.t('dades.ecGpsExpired', { h: keptHours }) : this.t('dades.ecGpsNone');
   }
 
   /**
@@ -3887,27 +4143,28 @@ class ObservatoriApp {
           <td class="edge-gps ${c.gpsPoints > 0 ? 'has-gps' : ''}">${this.esc(this._edgeCaseGps(c, keptHours))}</td>
           <td class="edge-signal edge-signal-${this.esc(c.signal || 'unknown')}">${this.esc(this._edgeCaseSignal(c))}</td>
           <td>
-            <button type="button" class="btn-investigate-incident" data-investigate-line="${this.esc(c.lineCode)}" data-investigate-stop="${this.esc(c.stop)}" data-investigate-vehicle="${this.esc(c.vehicleId)}" data-investigate-at="${c.at || ''}" title="Investigar aquest cas">
-              <span>Investigar</span>
+            <button type="button" class="btn-investigate-incident" data-investigate-line="${this.esc(c.lineCode)}" data-investigate-stop="${this.esc(c.stop)}" data-investigate-vehicle="${this.esc(c.vehicleId)}" data-investigate-at="${c.at || ''}" title="${this.esc(this.t('dades.ecInvTip'))}">
+              <span>${this.esc(this.t('dades.incBtnInv'))}</span>
             </button>
           </td>
         </tr>`;
     }).join('');
+    const capText = list.length >= 150 ? this.t('dades.ecNoteCap') : '';
     return `
       <section class="edge-cases" id="edge-cases-table" aria-labelledby="edge-cases-title">
         <div class="edge-cases-head">
           <div>
-            <h4 id="edge-cases-title">Casos límit (taula de depuració)</h4>
-            <p class="edge-cases-note">Cada fila és un moment en què les dades de l'operador no encaixen amb el que pot fer un bus. Serveix per mirar què va passar de veritat: la columna GPS diu quantes posicions guardades hi ha al voltant (es guarden ${this.esc(keptHours)} h; obre Investigar abans que caduquin). Més nous primer${list.length >= 150 ? ', els 150 últims' : ''}.</p>
+            <h4 id="edge-cases-title">${this.esc(this.t('dades.ecTitle'))}</h4>
+            <p class="edge-cases-note">${this.esc(this.t('dades.ecNote', { h: keptHours, cap: capText }))}</p>
           </div>
-          ${list.length ? '<button type="button" class="btn-secondary btn-sm" id="btn-copy-edge-cases" title="Copia la taula com a text per enganxar-la en un full de càlcul">Copiar taula</button>' : ''}
+          ${list.length ? `<button type="button" class="btn-secondary btn-sm" id="btn-copy-edge-cases" title="${this.esc(this.t('dades.ecCopyTip'))}">${this.esc(this.t('dades.ecCopyBtn'))}</button>` : ''}
         </div>
         <div class="edge-kinds">${chips}</div>
-        ${list.length === 0 ? '<p class="edge-cases-note">Cap cas límit en el període seleccionat.</p>' : `
+        ${list.length === 0 ? `<p class="edge-cases-note">${this.esc(this.t('dades.ecEmpty'))}</p>` : `
         <div class="observatori-table-wrapper">
           <table class="observatori-table edge-cases-table">
             <thead>
-              <tr><th scope="col">Cas</th><th scope="col">Línia</th><th scope="col">Bus</th><th scope="col">Quan</th><th scope="col">Parades</th><th scope="col">Retard</th><th scope="col">Detall</th><th scope="col">GPS</th><th scope="col">Senyal</th><th scope="col"></th></tr>
+              <tr><th scope="col">${this.esc(this.t('dades.ecColCase'))}</th><th scope="col">${this.esc(this.t('dades.colLine'))}</th><th scope="col">${this.esc(this.t('dades.ecColBus'))}</th><th scope="col">${this.esc(this.t('dades.ecColWhen'))}</th><th scope="col">${this.esc(this.t('dades.ecColStops'))}</th><th scope="col">${this.esc(this.t('dades.incColDelay'))}</th><th scope="col">${this.esc(this.t('dades.ecColDetail'))}</th><th scope="col">${this.esc(this.t('dades.ecColGps'))}</th><th scope="col">${this.esc(this.t('dades.incColSignal'))}</th><th scope="col"></th></tr>
             </thead>
             <tbody>${rows}</tbody>
           </table>
@@ -3921,7 +4178,7 @@ class ObservatoriApp {
     if (!list.length) return;
     const kinds = this._edgeCaseKinds();
     const keptHours = Number(this.lastIncidentData.snapshotRetentionHours) || 6;
-    const lines = [['Cas', 'Línia', 'Bus', 'Des de', 'Fins a', 'Parada inicial', 'Parada final', 'Retard abans', 'Retard després', 'Detall', 'GPS', 'Senyal'].join('\t')];
+    const lines = [this.t('dades.ecTsvHeaders')];
     for (const c of list) {
       lines.push([
         (kinds[c.kind] || [c.kind])[0], c.lineCode, c.vehicleId, this._stampOf(c.fromTs), this._stampOf(c.toTs), c.fromStop, c.toStop,
@@ -3933,13 +4190,14 @@ class ObservatoriApp {
     const done = () => {
       if (!btn) return;
       const orig = btn.textContent;
-      btn.textContent = 'Copiat!';
+      btn.textContent = this.t('dades.copied');
       setTimeout(() => { btn.textContent = orig; }, 2500);
     };
+    const promptMsg = this.t('dades.copyTablePrompt');
     if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-      navigator.clipboard.writeText(text).then(done).catch(() => prompt('Copia aquesta taula:', text));
+      navigator.clipboard.writeText(text).then(done).catch(() => prompt(promptMsg, text));
     } else {
-      prompt('Copia aquesta taula:', text);
+      prompt(promptMsg, text);
     }
   }
 
@@ -3948,38 +4206,51 @@ class ObservatoriApp {
     const list = this.lastIncidentData.telemetryAnomalies;
     if (list.length === 0) return;
 
-    let text = `INFORME D'ANOMALIES DE TELEMETRIA SAE — ARRIBO! MATARÓ\n`;
-    text += `Període: Darreres ${this._currentIncidentHours || 168}h | Línia: ${this._currentIncidentLine || 'Totes'}\n`;
-    text += `Data d'extracció: ${new Date().toLocaleString('ca-ES')}\n`;
-    text += `Total anomalies detectades: ${list.length}\n\n`;
-    text += `Descripció: Aquests registres corresponen a desfasaments transmesos pel sistema SAE (CAD/AVL) d'Avanza (habitualment per assignació d'autobusos que inicien torn a expedicions anteriors no cobertes o arrencada a cotxeres amb consola encesa abans de sortida). No reflecteixen retencions de trànsit reals a la ciutat. També inclou els viatges reassignats pel SAE: trams on el retard desapareix de cop perquè el sistema tenia el bus assignat a un viatge que no feia. I les tornades sense servei: parades anotades mentre un bus tornava sense passatgers a l'inici de la línia després de saltar-se un viatge. I els salts de retard impossibles: el retard puja més de pressa que passa el temps perquè el sistema passa el bus a una expedició anterior. I els recorreguts en sentit invers: el bus torna enrere pel recorregut mentre el sistema segueix anotant el mateix retard.\n\n`;
-    text += `Llistat d'incidències per auditar amb Avanza / Ajuntament de Mataró:\n`;
+    const lineLabel = (!this._currentIncidentLine || this._currentIncidentLine === 'all')
+      ? this.t('dades.allLines')
+      : this._currentIncidentLine;
+    let text = `${this.t('dades.repAnomHead')}\n`;
+    text += `${this.t('dades.repPeriodLine', { h: this._currentIncidentHours || 168, line: lineLabel })}\n`;
+    text += `${this.t('dades.repExtracted', { date: new Date().toLocaleString(this.locale()) })}\n`;
+    text += `${this.t('dades.repAnomTotal', { n: list.length })}\n\n`;
+    text += `${this.t('dades.repAnomDesc')}\n\n`;
+    text += `${this.t('dades.repAnomList')}\n`;
 
     list.forEach((item, idx) => {
-      const sig = item.isRealTime ? 'GPS' : 'Estimat (dead-reckoning)';
+      const sig = item.isRealTime ? this.t('dades.sigGps') : this.t('dades.repSigEst');
       const isMaint = item.anomalyType === 'maintenance' || (item.anomalyType !== 'startup_sae' && item.anomalyType !== 'trip_relink' && item.anomalyType !== 'deadhead_return' && item.anomalyType !== 'delay_jump' && item.anomalyType !== 'backward_leg');
-      const stopInfo = isMaint ? 'Cotxeres / Manteniment' : `Parada: "${item.stopName}"`;
+      const stopInfo = isMaint ? this.t('dades.repAnomMaint') : this.t('dades.repAnomStop', { stop: item.stopName });
       const busTag = item.vehicleId && !item.vehicleId.toLowerCase().endsWith('bus') ? ` | Bus #${item.vehicleId.replace(/^mataro_\w+_/i, '')}` : '';
-      text += `${idx + 1}. [${item.lineCode}] ${item.formattedDate} — ${stopInfo} | Retard transmès: +${item.delayMins} min | Causa: ${item.trafficTag || item.diagnosticBadge || 'Anomalia'}${busTag} | Senyal: ${sig}\n`;
+      text += `${this.t('dades.repAnomItem', {
+        idx: idx + 1,
+        line: item.lineCode,
+        date: item.formattedDate,
+        stopInfo,
+        delay: item.delayMins,
+        cause: item.trafficTag || item.diagnosticBadge || this.t('dades.incAnomFallback'),
+        busTag,
+        sig
+      })}\n`;
     });
 
-    text += `\nGenerat per Arribo! Mataró (https://arribo.cat) a partir del feed oficial SIRI d'Avanza.`;
+    text += `\n${this.t('dades.repAnomFoot')}`;
 
     const finish = () => {
       const btn = document.getElementById('btn-copy-anomalies-report');
       if (btn) {
         const orig = btn.innerHTML;
-        btn.innerHTML = '<span>✅ Copiat al porta-retalls!</span>';
+        btn.innerHTML = `<span>${this.esc(this.t('dades.copiedClip'))}</span>`;
         setTimeout(() => { btn.innerHTML = orig; }, 3000);
       }
     };
+    const promptMsg = this.t('dades.copyAnomPrompt');
 
     if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
       navigator.clipboard.writeText(text).then(finish).catch(() => {
-        prompt('Copia el text següent per a la teva reclamació:', text);
+        prompt(promptMsg, text);
       });
     } else {
-      prompt('Copia el text següent per a la teva reclamació:', text);
+      prompt(promptMsg, text);
     }
   }
 
@@ -3988,36 +4259,48 @@ class ObservatoriApp {
     const list = this.lastIncidentData.investigationIncidents;
     if (list.length === 0) return;
 
-    let text = `INFORME D'HORARIS NO HABITUALS & DESFASAMENTS EXTREMS (≥25 MIN) — ARRIBO! MATARÓ\n`;
-    text += `Període: Darreres ${this._currentIncidentHours || 168}h | Línia: ${this._currentIncidentLine || 'Totes'}\n`;
-    text += `Data d'extracció: ${new Date().toLocaleString('ca-ES')}\n`;
-    text += `Total expedicions en investigació: ${list.length}\n\n`;
-    text += `Descripció: Aquests registres corresponen a horaris no normals o desfasaments extrems de telemetria (de 25 minuts o més) pendents d'investigació per resoldre la causa real (busos aturats fora de servei, anomalies de servidor o desfasaments de torn).\n\n`;
-    text += `Llistat d'expedicions en investigació:\n`;
+    const lineLabel = (!this._currentIncidentLine || this._currentIncidentLine === 'all')
+      ? this.t('dades.allLines')
+      : this._currentIncidentLine;
+    let text = `${this.t('dades.repInvHead')}\n`;
+    text += `${this.t('dades.repPeriodLine', { h: this._currentIncidentHours || 168, line: lineLabel })}\n`;
+    text += `${this.t('dades.repExtracted', { date: new Date().toLocaleString(this.locale()) })}\n`;
+    text += `${this.t('dades.repInvTotal', { n: list.length })}\n\n`;
+    text += `${this.t('dades.repInvDesc')}\n\n`;
+    text += `${this.t('dades.repInvList')}\n`;
 
     list.forEach((item, idx) => {
-      const sig = item.isRealTime ? 'GPS' : 'Estimat (dead-reckoning)';
+      const sig = item.isRealTime ? this.t('dades.sigGps') : this.t('dades.repSigEst');
       const busTag = item.vehicleId && !item.vehicleId.toLowerCase().endsWith('bus') ? ` | Bus #${item.vehicleId.replace(/^mataro_\w+_/i, '')}` : '';
-      text += `${idx + 1}. [${item.lineCode}] ${item.formattedDate} — Parada: "${item.stopName}" | Retard transmès: +${item.delayMins} min${busTag} | Senyal: ${sig}\n`;
+      text += `${this.t('dades.repInvItem', {
+        idx: idx + 1,
+        line: item.lineCode,
+        date: item.formattedDate,
+        stop: item.stopName,
+        delay: item.delayMins,
+        busTag,
+        sig
+      })}\n`;
     });
 
-    text += `\nGenerat per Arribo! Mataró (https://arribo.cat) — Telemetria de transport públic.`;
+    text += `\n${this.t('dades.repInvFoot')}`;
 
     const finish = () => {
       const btn = document.getElementById('btn-copy-investigation-report');
       if (btn) {
         const orig = btn.innerHTML;
-        btn.innerHTML = '<span>✅ Copiat al porta-retalls!</span>';
+        btn.innerHTML = `<span>${this.esc(this.t('dades.copiedClip'))}</span>`;
         setTimeout(() => { btn.innerHTML = orig; }, 3000);
       }
     };
+    const promptMsg = this.t('dades.copyInvPrompt');
 
     if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
       navigator.clipboard.writeText(text).then(finish).catch(() => {
-        prompt('Copia el resum per a la investigació:', text);
+        prompt(promptMsg, text);
       });
     } else {
-      prompt('Copia el resum per a la investigació:', text);
+      prompt(promptMsg, text);
     }
   }
 
@@ -4041,7 +4324,7 @@ class ObservatoriApp {
       monthlyContainer.style.display = 'block';
       this.showGpsGaps(false);
       if (!this._monthlyData || force || (month && month !== this._currentMonthlyMonth)) {
-        monthlyContainer.innerHTML = '<div style="text-align:center; padding:3rem; color:var(--text-muted);"><span class="loading-spinner-inline"></span> Carregant informe mensual per a l\'Ajuntament...</div>';
+        monthlyContainer.innerHTML = `<div style="text-align:center; padding:3rem; color:var(--text-muted);"><span class="loading-spinner-inline"></span> ${this.esc(this.t('dades.mLoading'))}</div>`;
       }
     }
 
@@ -4055,12 +4338,12 @@ class ObservatoriApp {
         this.renderMonthlyReport(res);
       } else {
         if (monthlyContainer) {
-          monthlyContainer.innerHTML = `<div style="text-align:center; padding:2rem; color:var(--text-danger);">Error carregant l'informe mensual: ${this.esc(res?.error || 'Servei no disponible')}</div>`;
+          monthlyContainer.innerHTML = `<div style="text-align:center; padding:2rem; color:var(--text-danger);">${this.esc(this.t('dades.mLoadError', { err: res?.error || this.t('dades.mUnavailable') }))}</div>`;
         }
       }
     } catch (e) {
       if (monthlyContainer) {
-        monthlyContainer.innerHTML = `<div style="text-align:center; padding:2rem; color:var(--text-danger);">Error de connexió en carregar l'informe mensual: ${this.esc(e.message)}</div>`;
+        monthlyContainer.innerHTML = `<div style="text-align:center; padding:2rem; color:var(--text-danger);">${this.esc(this.t('dades.mConnError', { err: e.message }))}</div>`;
       }
     }
   }
@@ -4074,9 +4357,10 @@ class ObservatoriApp {
     const hourly = data.hourlyPunctuality || [];
     const worst = data.worstStops || [];
     const cov = data.dataCoverage || {};
+    const loc = this.locale();
 
     const genDate = data.generationTimestamp
-      ? new Date(data.generationTimestamp).toLocaleString('ca-ES', { timeZone: 'Europe/Madrid' })
+      ? new Date(data.generationTimestamp).toLocaleString(loc, { timeZone: 'Europe/Madrid' })
       : '--';
 
     const linesRows = lines.map(l => {
@@ -4084,7 +4368,7 @@ class ObservatoriApp {
       return `
         <tr>
           <td><span class="line-badge" style="background:${badgeColor}; color:#fff; padding:2px 8px; border-radius:4px; font-weight:bold;">${this.esc(l.lineCode)}</span></td>
-          <td style="text-align:right;">${l.visitCount.toLocaleString('ca-ES')}</td>
+          <td style="text-align:right;">${l.visitCount.toLocaleString(loc)}</td>
           <td style="text-align:right; font-weight:bold; color:var(--color-on-time, #2e7d32);">${l.onTimePct}%</td>
           <td style="text-align:right; color:var(--color-early, #1976d2);">${l.earlyPct}%</td>
           <td style="text-align:right; color:var(--color-late, #f57c00);">${l.latePct}%</td>
@@ -4099,7 +4383,7 @@ class ObservatoriApp {
       return `
         <tr>
           <td><strong>${this.esc(h.hourLabel)}</strong></td>
-          <td style="text-align:right;">${h.visitCount.toLocaleString('ca-ES')}</td>
+          <td style="text-align:right;">${h.visitCount.toLocaleString(loc)}</td>
           <td style="text-align:right; font-weight:bold; color:var(--color-on-time, #2e7d32);">${h.onTimePct}%</td>
           <td style="text-align:right; color:var(--color-early, #1976d2);">${h.earlyPct}%</td>
           <td style="text-align:right; color:var(--color-late, #f57c00);">${h.latePct}%</td>
@@ -4115,82 +4399,82 @@ class ObservatoriApp {
           <td style="text-align:center;">${idx + 1}</td>
           <td><strong>${this.esc(w.stopName)}</strong></td>
           <td><span style="font-size:0.8rem; color:var(--text-secondary);">${this.esc(w.linesServed || '')}</span></td>
-          <td style="text-align:right;">${w.visitCount.toLocaleString('ca-ES')}</td>
+          <td style="text-align:right;">${w.visitCount.toLocaleString(loc)}</td>
           <td style="text-align:right; font-weight:bold; color:var(--color-on-time, #2e7d32);">${w.onTimePct}%</td>
           <td style="text-align:right; color:var(--color-late, #f57c00);">${w.latePct}%</td>
           <td style="text-align:right; color:var(--color-severe, #d32f2f);">${w.severeLatePct}%</td>
           <td style="text-align:right; font-weight:bold; color:var(--color-severe, #d32f2f);">${w.avgDelayMins > 0 ? '+' : ''}${w.avgDelayMins} m</td>
         </tr>
       `;
-    }).join('') : `<tr><td colspan="8" style="text-align:center; padding:1rem; color:var(--text-muted); font-style:italic;">Cap parada no supera el llindar de 50 passos consolidats en aquest mes.</td></tr>`;
+    }).join('') : `<tr><td colspan="8" style="text-align:center; padding:1rem; color:var(--text-muted); font-style:italic;">${this.esc(this.t('dades.mWorstEmpty'))}</td></tr>`;
 
     monthlyContainer.innerHTML = `
       <div class="monthly-report-wrapper">
         <div class="monthly-report-header">
           <div class="monthly-report-title">
             <div style="font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--brand-primary); font-weight:700; margin-bottom:0.25rem;">
-              Ajuntament de Mataró • Servei de Mobilitat Urbana
+              ${this.esc(this.t('dades.mEyebrow'))}
             </div>
-            <h2>Informe Mensual de Puntualitat i Qualitat de Servei</h2>
+            <h2>${this.esc(this.t('dades.mTitle'))}</h2>
             <div class="monthly-report-meta">
-              <span><strong>Mes d'anàlisi:</strong> ${this.esc(data.month)}</span>
-              <span><strong>Versió de dades:</strong> <code>${this.esc(data.dataVersion || 'v3.0')}</code></span>
-              <span><strong>Generat:</strong> ${this.esc(genDate)}</span>
-              <span><strong>Base:</strong> Passos consolidats per parada (${this.esc(s.basis || 'stop_visits')})</span>
+              <span><strong>${this.esc(this.t('dades.mMetaMonth'))}</strong> ${this.esc(data.month)}</span>
+              <span><strong>${this.esc(this.t('dades.mMetaVersion'))}</strong> <code>${this.esc(data.dataVersion || 'v3.0')}</code></span>
+              <span><strong>${this.esc(this.t('dades.mMetaGenerated'))}</strong> ${this.esc(genDate)}</span>
+              <span><strong>${this.esc(this.t('dades.mMetaBasis'))}</strong> ${this.esc(this.t('dades.mMetaBasisVal', { basis: s.basis || 'stop_visits' }))}</span>
             </div>
           </div>
           <div class="monthly-report-controls">
-            <span class="monthly-controls-label" style="font-size:0.8rem; color:var(--text-secondary);">Selecciona mes:</span>
+            <span class="monthly-controls-label" style="font-size:0.8rem; color:var(--text-secondary);">${this.esc(this.t('dades.mSelectMonth'))}</span>
             <input type="month" id="monthly-report-month-input" class="monthly-report-month-input" value="${this.esc(data.month)}">
-            <button type="button" class="btn-print-report" id="btn-print-monthly-report" title="Imprimir informe en format A4 o desar com a PDF">
+            <button type="button" class="btn-print-report" id="btn-print-monthly-report" title="${this.esc(this.t('dades.mPrintTip'))}">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
-              <span>Imprimir / PDF</span>
+              <span>${this.esc(this.t('dades.mPrintBtn'))}</span>
             </button>
           </div>
         </div>
 
         <!-- Global KPIs -->
-        <h4 style="margin:1rem 0 0.5rem 0; font-size:0.95rem; color:var(--text-primary);">1. Resum Global de Puntualitat de la Xarxa</h4>
+        <h4 style="margin:1rem 0 0.5rem 0; font-size:0.95rem; color:var(--text-primary);">${this.esc(this.t('dades.mSec1'))}</h4>
         <div class="monthly-kpi-grid">
           <div class="monthly-kpi-card">
-            <div class="kpi-val">${(s.totalVisits || 0).toLocaleString('ca-ES')}</div>
-            <div class="kpi-lbl">${s.basis === 'delay_logs' ? 'Mostres avaluades (sense passos consolidats)' : 'Passos avaluats (stop_visits)'}</div>
+            <div class="kpi-val">${(s.totalVisits || 0).toLocaleString(loc)}</div>
+            <div class="kpi-lbl">${this.esc(this.t(s.basis === 'delay_logs' ? 'dades.mKpiSamplesFallback' : 'dades.mKpiVisits'))}</div>
           </div>
           <div class="monthly-kpi-card">
             <div class="kpi-val" style="color:var(--color-on-time, #2e7d32);">${s.onTimePct ?? '--'}%</div>
-            <div class="kpi-lbl">Puntualitat global (-1 a +3 min)</div>
+            <div class="kpi-lbl">${this.esc(this.t('dades.mKpiPunctuality'))}</div>
           </div>
           <div class="monthly-kpi-card">
             <div class="kpi-val" style="color:var(--color-early, #1976d2);">${s.earlyPct ?? '--'}%</div>
-            <div class="kpi-lbl">Passos avançats (&lt; -1 min)</div>
+            <div class="kpi-lbl">${this.esc(this.t('dades.mKpiEarly'))}</div>
           </div>
           <div class="monthly-kpi-card">
             <div class="kpi-val" style="color:var(--color-late, #f57c00);">${s.latePct ?? '--'}%</div>
-            <div class="kpi-lbl">Passos amb retard (&gt; 3 min)</div>
+            <div class="kpi-lbl">${this.esc(this.t('dades.mKpiLate'))}</div>
           </div>
           <div class="monthly-kpi-card">
             <div class="kpi-val" style="color:var(--color-severe, #d32f2f);">${s.severeLatePct ?? '--'}%</div>
-            <div class="kpi-lbl">Retards greus (&ge; 5 min)</div>
+            <div class="kpi-lbl">${this.esc(this.t('dades.mKpiSevere'))}</div>
           </div>
           <div class="monthly-kpi-card">
             <div class="kpi-val">${cov.coveragePct ?? '--'}%</div>
-            <div class="kpi-lbl">Cobertura dades (${cov.activeFeedHours || 0}h / ${cov.scheduledServiceHours || 0}h)</div>
+            <div class="kpi-lbl">${this.esc(this.t('dades.mKpiCoverage', { active: cov.activeFeedHours || 0, sched: cov.scheduledServiceHours || 0 }))}</div>
           </div>
         </div>
 
         <!-- Per Line Breakdown -->
-        <h4 style="margin:1.5rem 0 0.5rem 0; font-size:0.95rem; color:var(--text-primary);">2. Puntualitat i Retards per Línia (L1–L8)</h4>
+        <h4 style="margin:1.5rem 0 0.5rem 0; font-size:0.95rem; color:var(--text-primary);">${this.esc(this.t('dades.mSec2'))}</h4>
         <table class="monthly-report-table">
           <thead>
             <tr>
-              <th>Línia</th>
-              <th style="text-align:right;">Passos</th>
-              <th style="text-align:right;">Puntual %</th>
-              <th style="text-align:right;">Avançat %</th>
-              <th style="text-align:right;">Retard %</th>
-              <th style="text-align:right;">Greu &ge;5m %</th>
-              <th style="text-align:right;">Retard Mitjà</th>
-              <th style="text-align:right;">Retard Màxim</th>
+              <th>${this.esc(this.t('dades.colLine'))}</th>
+              <th style="text-align:right;">${this.esc(this.t('dades.mColVisits'))}</th>
+              <th style="text-align:right;">${this.esc(this.t('dades.mColOnTime'))}</th>
+              <th style="text-align:right;">${this.esc(this.t('dades.mColEarly'))}</th>
+              <th style="text-align:right;">${this.esc(this.t('dades.mColLate'))}</th>
+              <th style="text-align:right;">${this.esc(this.t('dades.mColSevere'))}</th>
+              <th style="text-align:right;">${this.esc(this.t('dades.colAvgDelay'))}</th>
+              <th style="text-align:right;">${this.esc(this.t('dades.colMaxDelay'))}</th>
             </tr>
           </thead>
           <tbody>
@@ -4199,17 +4483,17 @@ class ObservatoriApp {
         </table>
 
         <!-- Per Hour Breakdown -->
-        <h4 style="margin:1.5rem 0 0.5rem 0; font-size:0.95rem; color:var(--text-primary);">3. Puntualitat per Franja Horària Operativa</h4>
+        <h4 style="margin:1.5rem 0 0.5rem 0; font-size:0.95rem; color:var(--text-primary);">${this.esc(this.t('dades.mSec3'))}</h4>
         <table class="monthly-report-table">
           <thead>
             <tr>
-              <th>Franja Horària</th>
-              <th style="text-align:right;">Passos</th>
-              <th style="text-align:right;">Puntual %</th>
-              <th style="text-align:right;">Avançat %</th>
-              <th style="text-align:right;">Retard %</th>
-              <th style="text-align:right;">Greu &ge;5m %</th>
-              <th style="text-align:right;">Retard Mitjà</th>
+              <th>${this.esc(this.t('dades.mColHour'))}</th>
+              <th style="text-align:right;">${this.esc(this.t('dades.mColVisits'))}</th>
+              <th style="text-align:right;">${this.esc(this.t('dades.mColOnTime'))}</th>
+              <th style="text-align:right;">${this.esc(this.t('dades.mColEarly'))}</th>
+              <th style="text-align:right;">${this.esc(this.t('dades.mColLate'))}</th>
+              <th style="text-align:right;">${this.esc(this.t('dades.mColSevere'))}</th>
+              <th style="text-align:right;">${this.esc(this.t('dades.colAvgDelay'))}</th>
             </tr>
           </thead>
           <tbody>
@@ -4218,18 +4502,18 @@ class ObservatoriApp {
         </table>
 
         <!-- Worst Stops (>= 50 visits) -->
-        <h4 style="margin:1.5rem 0 0.5rem 0; font-size:0.95rem; color:var(--text-primary);">4. Parades amb Major Retard Acumulat (mínim 50 passos)</h4>
+        <h4 style="margin:1.5rem 0 0.5rem 0; font-size:0.95rem; color:var(--text-primary);">${this.esc(this.t('dades.mSec4'))}</h4>
         <table class="monthly-report-table">
           <thead>
             <tr>
               <th style="text-align:center;">#</th>
-              <th>Parada</th>
-              <th>Línies</th>
-              <th style="text-align:right;">Passos</th>
-              <th style="text-align:right;">Puntual %</th>
-              <th style="text-align:right;">Retard %</th>
-              <th style="text-align:right;">Greu &ge;5m %</th>
-              <th style="text-align:right;">Retard Mitjà</th>
+              <th>${this.esc(this.t('dades.mColStop'))}</th>
+              <th>${this.esc(this.t('dades.mColLines'))}</th>
+              <th style="text-align:right;">${this.esc(this.t('dades.mColVisits'))}</th>
+              <th style="text-align:right;">${this.esc(this.t('dades.mColOnTime'))}</th>
+              <th style="text-align:right;">${this.esc(this.t('dades.mColLate'))}</th>
+              <th style="text-align:right;">${this.esc(this.t('dades.mColSevere'))}</th>
+              <th style="text-align:right;">${this.esc(this.t('dades.colAvgDelay'))}</th>
             </tr>
           </thead>
           <tbody>
@@ -4239,7 +4523,7 @@ class ObservatoriApp {
 
         <!-- Methodology & Audit Invariants -->
         <div class="monthly-methodology-box">
-          <strong style="display:block; margin-bottom:0.35rem; color:var(--text-primary);">Metodologia de Càlcul i Criteris d'Auditoria:</strong>
+          <strong style="display:block; margin-bottom:0.35rem; color:var(--text-primary);">${this.esc(this.t('dades.mMethTitle'))}</strong>
           <p style="margin:0; line-height:1.5; color:var(--text-secondary); font-size:0.82rem;">
             ${this.esc(data.methodology)}
           </p>

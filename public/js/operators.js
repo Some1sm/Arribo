@@ -5,6 +5,12 @@
 (function () {
   'use strict';
   const esc = (window.TransitUtils && window.TransitUtils.esc) || (s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])));
+  const t = (key, vars) => (window.ArriboI18n ? window.ArriboI18n.t(key, vars) : key);
+  const list = xs => (window.ArriboI18n ? window.ArriboI18n.list(xs) : (xs.length <= 1 ? (xs[0] || '') : `${xs.slice(0, -1).join(', ')} i ${xs[xs.length - 1]}`));
+  const lang = () => (window.ArriboI18n ? window.ArriboI18n.lang : 'ca');
+  const locale = () => (lang() === 'en' ? 'en-GB' : (lang() === 'es' ? 'es-ES' : 'ca-ES'));
+  const dec = v => (lang() === 'en' ? String(v) : String(v).replace('.', ','));
+
   const section = document.getElementById('operators-section');
   const body = document.getElementById('operators-body');
   const updated = document.getElementById('operators-updated');
@@ -13,6 +19,7 @@
   let hours = 24;
   let loadSeq = 0;
   let lastOps = [];
+  let lastGeneratedAt = null;
 
   // Network scope: 'all', 'mataro' (the bus reports) or a train operator's
   // id. Kept in the URL (?xarxa=) so a scoped Dades can be shared.
@@ -27,7 +34,7 @@
     if (scope !== 'all' && scope !== 'mataro' && !ids.includes(scope)) scope = 'all';
     document.body.dataset.dadesScope = scope === 'all' ? 'all' : (scope === 'mataro' ? 'bus' : 'rail');
     if (!scopeDock || !scopeWrap) return;
-    const items = [['all', 'Tot'], ['mataro', 'Mataró Bus'], ...ops.map(o => [o.id, o.shortName || o.name])];
+    const items = [['all', t('ops.scopeAll')], ['mataro', 'Mataró Bus'], ...ops.map(o => [o.id, o.shortName || o.name])];
     scopeDock.innerHTML = items.map(([v, label]) => {
       const on = v === scope;
       return `<button type="button" class="pill${on ? ' is-active' : ''}" aria-pressed="${on}" data-dades-scope="${esc(v)}">${esc(label)}</button>`;
@@ -50,16 +57,16 @@
     const shown = scope === 'all' || scope === 'mataro' ? lastOps : lastOps.filter(o => o.id === scope);
     body.innerHTML = shown.map(card).join('');
     if (openLine && !shown.some(o => o.id === openLine.agency)) openLine = null;
-    if (openLine && lastLineHtml && lastLineHtml.key === lineKey()) {
+    if (openLine && lastLineData && lastLineData.key === lineKey()) {
       const host = document.getElementById(`op-line-detail-${openLine.agency}`);
-      if (host) host.innerHTML = lastLineHtml.html;
+      if (host) host.innerHTML = lineDetailHtml(lastLineData.data);
     }
   }
 
   // Line drill-down: one open line at a time, kept across refreshes.
   let openLine = null;
   let lineSeq = 0;
-  let lastLineHtml = null; // { key, html }: the open line's last detail, restored on re-render
+  let lastLineData = null; // { key, data }: the open line's last payload, re-rendered on scope or language change
   const lineKey = () => (openLine ? `${openLine.agency}:${openLine.line}:${hours}` : '');
 
   function hourStrip(rows, onTimeMax) {
@@ -71,18 +78,18 @@
       const d = Number(r.avgDelay) || 0;
       const h = Math.max(2, (Math.abs(d) / max) * 100);
       const cls = d > 15 ? 'op-seg-severe' : d > onTimeMax ? 'op-seg-late' : d < -1 ? 'op-seg-early' : 'op-seg-ontime';
-      return `<rect class="op-seg ${cls}" x="${(hr * w + w * 0.15).toFixed(3)}" y="${(100 - h).toFixed(3)}" width="${(w * 0.7).toFixed(3)}" height="${h.toFixed(3)}"><title>${esc(`${r.hour}h: ${fmtMin(r.avgDelay)} de mitjana, ${r.visits} passos`)}</title></rect>`;
+      return `<rect class="op-seg ${cls}" x="${(hr * w + w * 0.15).toFixed(3)}" y="${(100 - h).toFixed(3)}" width="${(w * 0.7).toFixed(3)}" height="${h.toFixed(3)}"><title>${esc(t('ops.hourTooltip', { hour: r.hour, avg: fmtMin(r.avgDelay), visits: r.visits }))}</title></rect>`;
     }).join('');
-    return `<figure class="op-hours"><svg class="op-hours-svg" role="img" aria-label="Retard mitjà per hora del dia" viewBox="0 0 100 100" preserveAspectRatio="none">${bars}</svg><figcaption><span>0 h</span><span>Retard mitjà per hora</span><span>23 h</span></figcaption></figure>`;
+    return `<figure class="op-hours"><svg class="op-hours-svg" role="img" aria-label="${esc(t('ops.hourStripAria'))}" viewBox="0 0 100 100" preserveAspectRatio="none">${bars}</svg><figcaption><span>0 h</span><span>${esc(t('ops.hourStripCaption'))}</span><span>23 h</span></figcaption></figure>`;
   }
 
   function lineDetailHtml(d) {
-    if (!d.visits) return `<p class="op-empty">${esc(`Encara no hi ha passos de la línia ${d.line} en aquest període.`)}</p>`;
+    if (!d.visits) return `<p class="op-empty">${esc(t('ops.lineEmpty', { line: d.line }))}</p>`;
     const rows = d.stations.map(s => `<tr${s.onProfile === false ? ' class="op-off-profile"' : ''}><th scope="row">${esc(s.station)}</th><td class="${delayClass(s.avgDelay)}">${esc(fmtMin(s.avgDelay))}</td><td>${esc(fmtPct(s.onTimePct))}</td><td>${esc(fmtMin(s.maxDelay))}</td><td>${s.visits}</td></tr>`).join('');
-    const order = d.stationOrder === 'line' ? "en l'ordre de la línia" : 'de més a menys retard';
-    return `<div class="op-line-detail-head"><h5><span class="line-badge" data-line="${esc(`${d.agencyId}:${d.line}`)}">${esc(d.line)}</span> ${esc(`${d.visits} passos`)}</h5><button type="button" class="btn btn-ghost btn-sm" data-op-line-close>Tanca</button></div>
+    const order = d.stationOrder === 'line' ? t('ops.orderLine') : t('ops.orderDelay');
+    return `<div class="op-line-detail-head"><h5><span class="line-badge" data-line="${esc(`${d.agencyId}:${d.line}`)}">${esc(d.line)}</span> ${esc(t('ops.visitsCount', { n: d.visits }))}</h5><button type="button" class="btn btn-ghost btn-sm" data-op-line-close>${esc(t('ops.close'))}</button></div>
       ${hourStrip(d.byHour || [], d.onTimeMaxMins || 5)}
-      <div class="op-table-wrap"><table class="op-table"><caption>${esc(`Per estació (${order})`)}</caption><thead><tr><th scope="col">Estació</th><th scope="col">Retard mitjà</th><th scope="col">Puntualitat</th><th scope="col">Màxim</th><th scope="col">Passos</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+      <div class="op-table-wrap"><table class="op-table"><caption>${esc(t('ops.byStationCaption', { order }))}</caption><thead><tr><th scope="col">${esc(t('ops.colStation'))}</th><th scope="col">${esc(t('ops.colAvgDelay'))}</th><th scope="col">${esc(t('ops.colPunctuality'))}</th><th scope="col">${esc(t('ops.colMax'))}</th><th scope="col">${esc(t('ops.colVisits'))}</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
 
   async function loadLine() {
@@ -90,25 +97,26 @@
     const seq = ++lineSeq;
     const { agency, line } = openLine;
     const host = document.getElementById(`op-line-detail-${agency}`);
-    if (host && !host.innerHTML) host.innerHTML = '<p class="op-empty">Carregant…</p>';
+    if (host && !host.innerHTML) host.innerHTML = `<p class="op-empty">${esc(t('ops.loading'))}</p>`;
     try {
       const res = await fetch(`/api/analytics/operators/line?agency=${encodeURIComponent(agency)}&line=${encodeURIComponent(line)}&hours=${hours}`, { cache: 'no-store' });
       const data = await res.json();
       if (seq !== lineSeq || !openLine || openLine.agency !== agency || openLine.line !== line) return;
       const el = document.getElementById(`op-line-detail-${agency}`);
       if (!el) return;
-      el.innerHTML = data.success ? lineDetailHtml(data) : '<p class="op-empty">No s\'ha pogut carregar aquesta línia.</p>';
-      if (data.success) lastLineHtml = { key: lineKey(), html: el.innerHTML };
+      el.innerHTML = data.success ? lineDetailHtml(data) : `<p class="op-empty">${esc(t('ops.lineError'))}</p>`;
+      if (data.success) lastLineData = { key: lineKey(), data };
     } catch {
       if (seq !== lineSeq) return;
       const el = document.getElementById(`op-line-detail-${agency}`);
-      if (el) el.innerHTML = '<p class="op-empty">No s\'ha pogut carregar aquesta línia.</p>';
+      if (el) el.innerHTML = `<p class="op-empty">${esc(t('ops.lineError'))}</p>`;
     }
   }
 
   body.addEventListener('click', ev => {
     if (ev.target.closest('[data-op-line-close]')) {
       openLine = null;
+      lastLineData = null;
       lineSeq++;
       render();
       return;
@@ -126,8 +134,8 @@
     if (btn) setScope(btn.dataset.dadesScope);
   });
 
-  const fmtMin = v => (v === null || v === undefined) ? '—' : `${v > 0 ? '+' : ''}${String(v).replace('.', ',')} min`;
-  const fmtPct = v => (v === null || v === undefined) ? '—' : `${String(v).replace('.', ',')} %`;
+  const fmtMin = v => (v === null || v === undefined) ? '—' : `${v > 0 ? '+' : ''}${dec(v)} min`;
+  const fmtPct = v => (v === null || v === undefined) ? '—' : (lang() === 'en' ? `${v}%` : `${dec(v)} %`);
   const delayClass = v => v === null || v === undefined ? '' : v > 15 ? 'op-severe' : v > 5 ? 'op-late' : v < -1 ? 'op-early' : 'op-ontime';
   // KpiTile verdict modifiers: only for figures that are themselves a verdict.
   const delayVerdict = v => v === null || v === undefined ? '' : v > 15 ? ' is-bad' : v > 5 ? ' is-warn' : v >= -1 ? ' is-good' : '';
@@ -136,12 +144,12 @@
   function bucketBar(op) {
     const b = op.buckets || {};
     const parts = [
-      ['early', b.early, 'Avançat (> 1 min)'],
-      ['ontime', b.onTime, `Puntual (≤ ${op.onTimeMaxMins} min)`],
-      ['late', b.late15, `${op.onTimeMaxMins + 1}–15 min`],
-      ['late30', b.late30, '16–30 min'],
-      ['late60', b.late60, '31–60 min'],
-      ['severe', b.lateOver60, '> 60 min']
+      ['early', b.early, t('ops.bucketEarly')],
+      ['ontime', b.onTime, t('ops.bucketOnTime', { max: op.onTimeMaxMins })],
+      ['late', b.late15, t('ops.bucketLate15', { from: op.onTimeMaxMins + 1 })],
+      ['late30', b.late30, t('ops.bucketLate30')],
+      ['late60', b.late60, t('ops.bucketLate60')],
+      ['severe', b.lateOver60, t('ops.bucketSevere')]
     ];
     const total = parts.reduce((n, p) => n + (p[1] || 0), 0);
     if (!total) return '';
@@ -152,34 +160,35 @@
       x += w;
       return r;
     }).join('');
-    const legend = parts.map(([cls, n, label]) => `<li><span class="op-dot op-seg-${cls}" aria-hidden="true"></span>${esc(label)} <strong>${Math.round(((n || 0) / total) * 100)} %</strong></li>`).join('');
-    return `<svg class="op-bar" role="img" aria-label="Distribució dels retards" preserveAspectRatio="none" viewBox="0 0 100 10">${rects}</svg><ul class="op-legend">${legend}</ul>`;
+    const pctSuffix = lang() === 'en' ? '%' : ' %';
+    const legend = parts.map(([cls, n, label]) => `<li><span class="op-dot op-seg-${cls}" aria-hidden="true"></span>${esc(label)} <strong>${Math.round(((n || 0) / total) * 100)}${pctSuffix}</strong></li>`).join('');
+    return `<svg class="op-bar" role="img" aria-label="${esc(t('ops.distAria'))}" preserveAspectRatio="none" viewBox="0 0 100 10">${rects}</svg><ul class="op-legend">${legend}</ul>`;
   }
 
   function feedLine(op) {
     const f = op.feed;
-    if (!f) return '<p class="op-feed"><span class="chip chip-estimated">Recollida en directe aturada: es mostren les dades ja registrades.</span></p>';
+    if (!f) return `<p class="op-feed"><span class="chip chip-estimated">${esc(t('ops.feedPaused'))}</span></p>`;
     const bits = [];
-    if (f.vehiclesNow !== undefined) bits.push(`${f.vehiclesNow} trens en directe`);
-    if (f.fetchAgeSec !== undefined) bits.push(`dades de fa ${f.fetchAgeSec} s`);
+    if (f.vehiclesNow !== undefined) bits.push(t('ops.feedLiveTrains', { n: f.vehiclesNow }));
+    if (f.fetchAgeSec !== undefined) bits.push(t('ops.feedAgeSec', { n: f.fetchAgeSec }));
     const err = f.vehiclesError || f.tripUpdatesError;
     const chip = err
-      ? `<span class="chip chip-danger">${esc(bits.concat(`Error del canal: ${err}`).join(' · '))}</span>`
-      : `<span class="chip chip-live">${esc(bits.join(' · ') || 'Canal en directe')}</span>`;
-    const dropped = f.implausibleDropped ? ` <span class="op-muted">${esc(`${f.implausibleDropped} valors impossibles descartats des de l'arrencada`)}</span>` : '';
+      ? `<span class="chip chip-danger">${esc(bits.concat(t('ops.feedError', { err })).join(' · '))}</span>`
+      : `<span class="chip chip-live">${esc(bits.join(' · ') || t('ops.feedLive'))}</span>`;
+    const dropped = f.implausibleDropped ? ` <span class="op-muted">${esc(t('ops.feedDropped', { n: f.implausibleDropped }))}</span>` : '';
     return `<p class="op-feed">${chip}${dropped}</p>`;
   }
 
   function linesTable(op) {
     if (!op.lines || !op.lines.length) return '';
-    const rows = op.lines.map(l => `<tr><th scope="row"><button type="button" class="op-line-btn" data-op-agency="${esc(op.id)}" data-op-line="${esc(l.line)}" aria-expanded="${openLine && openLine.agency === op.id && openLine.line === l.line}" title="Detall de la línia ${esc(l.line)}"><span class="line-badge" data-line="${esc(`${op.id}:${l.line}`)}">${esc(l.line)}</span></button></th><td class="${delayClass(l.avgDelay)}">${esc(fmtMin(l.avgDelay))}</td><td>${esc(fmtPct(l.onTimePct))}</td><td>${esc(fmtMin(l.maxDelay))}</td><td>${l.visits}</td></tr>`).join('');
-    return `<div class="op-table-wrap"><table class="op-table"><caption>Per línia (de més a menys retard mitjà; toca una línia per veure-la per estació i per hora)</caption><thead><tr><th scope="col">Línia</th><th scope="col">Retard mitjà</th><th scope="col">Puntualitat</th><th scope="col">Màxim</th><th scope="col">Passos</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    const rows = op.lines.map(l => `<tr><th scope="row"><button type="button" class="op-line-btn" data-op-agency="${esc(op.id)}" data-op-line="${esc(l.line)}" aria-expanded="${openLine && openLine.agency === op.id && openLine.line === l.line}" title="${esc(t('ops.lineDetailTitle', { line: l.line }))}"><span class="line-badge" data-line="${esc(`${op.id}:${l.line}`)}">${esc(l.line)}</span></button></th><td class="${delayClass(l.avgDelay)}">${esc(fmtMin(l.avgDelay))}</td><td>${esc(fmtPct(l.onTimePct))}</td><td>${esc(fmtMin(l.maxDelay))}</td><td>${l.visits}</td></tr>`).join('');
+    return `<div class="op-table-wrap"><table class="op-table"><caption>${esc(t('ops.linesCaption'))}</caption><thead><tr><th scope="col">${esc(t('ops.colLine'))}</th><th scope="col">${esc(t('ops.colAvgDelay'))}</th><th scope="col">${esc(t('ops.colPunctuality'))}</th><th scope="col">${esc(t('ops.colMax'))}</th><th scope="col">${esc(t('ops.colVisits'))}</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
 
   function stationsList(op) {
     if (!op.worstStations || !op.worstStations.length) return '';
-    const items = op.worstStations.map(s => `<li><span class="op-station">${esc(s.station)}</span><span class="${delayClass(s.avgDelay)}">${esc(fmtMin(s.avgDelay))}</span><span class="op-muted">${s.visits} passos</span></li>`).join('');
-    return `<div class="op-stations"><h4>Estacions amb més retard</h4><ol>${items}</ol></div>`;
+    const items = op.worstStations.map(s => `<li><span class="op-station">${esc(s.station)}</span><span class="${delayClass(s.avgDelay)}">${esc(fmtMin(s.avgDelay))}</span><span class="op-muted">${esc(t('ops.visitsCount', { n: s.visits }))}</span></li>`).join('');
+    return `<div class="op-stations"><h4>${esc(t('ops.worstStationsTitle'))}</h4><ol>${items}</ol></div>`;
   }
 
   function card(op) {
@@ -187,21 +196,21 @@
     return `<article class="card-inset op-operator" aria-labelledby="op-${esc(op.id)}">
       <header class="op-card-head">
         <h4 id="op-${esc(op.id)}" class="op-name">${esc(op.name)}</h4>
-        <span class="chip chip-scheduled" title="${esc(op.source)}">Previsió en temps real de l'operador</span>
+        <span class="chip chip-scheduled" title="${esc(op.source)}">${esc(t('ops.realtimeForecast'))}</span>
       </header>
-      ${empty ? '<p class="op-empty">Encara no hi ha passos registrats en aquest període.</p>' : `
+      ${empty ? `<p class="op-empty">${esc(t('ops.noVisitsPeriod'))}</p>` : `
       <div class="op-kpis">
-        <div class="kpi"><span class="kpi-label">Puntualitat (≤ ${op.onTimeMaxMins} min)</span><span class="kpi-value">${esc(fmtPct(op.onTimePct))}</span></div>
-        <div class="kpi"><span class="kpi-label">Retard mitjà</span><span class="kpi-value${delayVerdict(op.avgDelay)}">${esc(fmtMin(op.avgDelay))}</span></div>
-        <div class="kpi"><span class="kpi-label">Retard màxim</span><span class="kpi-value">${esc(fmtMin(op.maxDelay))}</span></div>
-        <div class="kpi"><span class="kpi-label">Passos per estació</span><span class="kpi-value">${op.visits}</span></div>
-        <div class="kpi"><span class="kpi-label">Trens</span><span class="kpi-value">${op.trips}</span></div>
+        <div class="kpi"><span class="kpi-label">${esc(t('ops.kpiPunctuality', { max: op.onTimeMaxMins }))}</span><span class="kpi-value">${esc(fmtPct(op.onTimePct))}</span></div>
+        <div class="kpi"><span class="kpi-label">${esc(t('ops.kpiAvgDelay'))}</span><span class="kpi-value${delayVerdict(op.avgDelay)}">${esc(fmtMin(op.avgDelay))}</span></div>
+        <div class="kpi"><span class="kpi-label">${esc(t('ops.kpiMaxDelay'))}</span><span class="kpi-value">${esc(fmtMin(op.maxDelay))}</span></div>
+        <div class="kpi"><span class="kpi-label">${esc(t('ops.kpiVisits'))}</span><span class="kpi-value">${op.visits}</span></div>
+        <div class="kpi"><span class="kpi-label">${esc(t('ops.kpiTrains'))}</span><span class="kpi-value">${op.trips}</span></div>
       </div>
       ${bucketBar(op)}
       ${linesTable(op)}
       <div class="op-line-detail" id="op-line-detail-${esc(op.id)}" aria-live="polite"></div>
       ${stationsList(op)}`}
-      <details class="op-source"><summary>D'on surt aquest retard?</summary><p>${esc(op.source)}</p></details>
+      <details class="op-source"><summary>${esc(t('ops.sourceQuestion'))}</summary><p>${esc(op.source)}</p></details>
       ${feedLine(op)}
     </article>`;
   }
@@ -219,14 +228,19 @@
     const short = o => o.shortName || o.name;
     const buses = named.filter(o => o.trackable !== false).map(short);
     const trains = named.filter(o => o.trackable === false).map(short);
-    const list = xs => (xs.length <= 1 ? (xs[0] || '') : `${xs.slice(0, -1).join(', ')} i ${xs[xs.length - 1]}`);
     const eyebrow = document.getElementById('dades-eyebrow');
-    if (eyebrow) eyebrow.textContent = `Xarxa en directe • ${named.map(short).join(' · ')}`;
+    if (eyebrow) eyebrow.textContent = t('ops.headerEyebrow', { ops: named.map(short).join(' · ') });
     const intro = document.getElementById('dades-intro');
     if (intro && trains.length) {
-      intro.textContent = `Dades històriques de puntualitat registrades pel nostre servidor: els busos de ${list(buses)} pel seu GPS, i els trens de ${list(trains)} pels seus canals en temps real. Informació objectiva de puntualitat, colls d'ampolla i congestió horària.`;
+      intro.textContent = t('ops.headerIntro', { buses: list(buses), trains: list(trains) });
     }
-    document.title = 'Observatori de Retards i Puntualitat — Dades | Arribo!';
+    document.title = t('dades.pageTitleMulti');
+  }
+
+  function updateTimestamp() {
+    if (updated && lastGeneratedAt) {
+      updated.textContent = new Date(lastGeneratedAt).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' });
+    }
   }
 
   async function load() {
@@ -245,13 +259,14 @@
         return;
       }
       lastOps = ops;
+      lastGeneratedAt = data.generatedAt || Date.now();
       render();
       wordHeader(ops);
       loadLine();
-      if (updated) updated.textContent = new Date(data.generatedAt || Date.now()).toLocaleTimeString('ca-ES', { hour: '2-digit', minute: '2-digit' });
+      updateTimestamp();
     } catch {
       if (seq !== loadSeq) return;
-      if (!section.hidden) body.innerHTML = '<p class="op-empty">No s\'han pogut carregar les dades dels trens.</p>';
+      if (!section.hidden) body.innerHTML = `<p class="op-empty">${esc(t('ops.loadError'))}</p>`;
     }
   }
 
@@ -265,6 +280,13 @@
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
     load();
+  });
+
+  document.addEventListener('arribo:lang', () => {
+    if (!lastOps.length) return;
+    render();
+    wordHeader(lastOps);
+    updateTimestamp();
   });
 
   // Line colours (GTFS route_color / route_text_color) for the badges, from the catalog.
