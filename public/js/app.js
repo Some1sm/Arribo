@@ -1165,7 +1165,8 @@ class TransitApp {
 
     // NOTE: the L1…L8 filter tabs deliberately do NOT narrow this list. They
     // drive the network map (applyLandingFilterToNetworkMap); the card grid is
-    // the full catalogue and always shows every line.
+    // the full catalogue: Mataró's lines and every train line the line view
+    // can open (pickerLines), grouped by operator.
     const filterFn = (l) => {
       if (!q) return true;
       const code = (l.code || String(l.id)).toLowerCase();
@@ -1174,7 +1175,10 @@ class TransitApp {
       return code.includes(q) || name.includes(q) || agency.includes(q) || ('línia ' + code).includes(q) || ('linia ' + code).includes(q);
     };
 
-    const linesToRender = this.availableLines.filter(filterFn);
+    const linesToRender = this.pickerLines().filter(filterFn);
+    // Renfe's route names keep their file's padding ("Molins de Rei -Maçanet").
+    const lineName = (l) => (l.lineRef ? String(l.name || '').replace(/\s+-\s*|\s*-\s+/g, ' – ') : l.name);
+    const GROUP_PREVIEW = 8; // lines shown per operator before "show all"
 
     let stopsToRender = [];
     if (q && Array.isArray(this.landingSearchResults)) {
@@ -1197,6 +1201,11 @@ class TransitApp {
     let html = '';
     // One group per operator, in catalog order.
     for (const { op, lines } of this.linesByOperator(linesToRender)) {
+      // A long operator (Rodalies, FGC) shows its first lines and a button,
+      // unless the visitor expanded it or is searching.
+      const groupId = `op:${op.id}`;
+      const collapsed = !q && lines.length > GROUP_PREVIEW && !this.expandedGroups.has(groupId);
+      const shown = collapsed ? lines.slice(0, GROUP_PREVIEW) : lines;
       html += `
         <div class="landing-group-section">
           <div class="landing-group-header">
@@ -1204,13 +1213,15 @@ class TransitApp {
             <span class="landing-group-badge">${this.esc(t(lines.length === 1 ? 'landing.linesOne' : 'landing.linesMany', { n: lines.length }))}</span>
           </div>
           <div class="landing-lines-grid">
-            ${lines.map(l => {
-              const dirCount = l.directions ? t('common.directions', { n: l.directions.length }) : t('common.inService');
+            ${shown.map(l => {
+              // Train lines open by their lineRef ("renfe_rodalies:R1"), as in the line picker.
+              const openId = l.lineRef || l.id;
+              const dirCount = l.lineRef ? t('common.train') : (l.directions ? t('common.directions', { n: l.directions.length }) : t('common.inService'));
               return `
-                <div class="landing-line-card" data-line-id="${this.esc(l.id)}" title="${this.esc(t('landing.followLine', { code: l.code }))}">
+                <div class="landing-line-card" data-line-id="${this.esc(openId)}" title="${this.esc(t('landing.followLine', { code: l.code }))}">
                   <span class="landing-line-badge"${this.lineAttr(l)}>${this.esc(l.code)}</span>
                   <div class="landing-line-info">
-                    <div class="landing-line-title">${this.esc(l.name)}</div>
+                    <div class="landing-line-title">${this.esc(lineName(l))}</div>
                     <div class="landing-line-operator">
                       <span>${this.esc(l.agency || op.name)}</span>
                       <span>•</span>
@@ -1224,6 +1235,7 @@ class TransitApp {
               `;
             }).join('')}
           </div>
+          ${collapsed ? `<button type="button" class="btn btn-secondary btn-sm btn-expand-landing-group" data-group-id="${this.esc(groupId)}">${this.esc(t('landing.showAllLines', { n: lines.length }))}</button>` : ''}
         </div>
       `;
     }

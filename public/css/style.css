@@ -11942,6 +11942,8 @@ body[data-dades-scope="bus"] #operators-section { display: none !important; }
   color: var(--text-primary);
 }
 .landing-group-section + .landing-group-section { margin-top: var(--space-7); }
+/* "Show all N lines" under a long operator group (Rodalies, FGC). */
+.landing-group-section > .btn-expand-landing-group { margin-top: var(--space-4); }
 
 /* Empty result in a list (no inline styles in templates) */
 .empty-state {

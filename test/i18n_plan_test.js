@@ -288,10 +288,11 @@ async function run() {
     }
   }
 
-  // 6. Asset version sync (9.4.62 across sw.js and all three HTML files)
+  // 6. Asset version sync: sw.js VERSION equals every ?v= in the three pages
+  // (any version; a literal here would fail on every bump).
   const swSrc = read('public/sw.js');
   const swVer = swSrc.match(/const VERSION = '([^']+)';/)?.[1];
-  assert.equal(swVer, '9.4.62', `Expected sw.js VERSION 9.4.62, got ${swVer}`);
+  assert.ok(/^\d+\.\d+\.\d+$/.test(swVer || ''), `sw.js VERSION missing or malformed: ${swVer}`);
   for (const htmlFile of ['public/index.html', 'public/dades.html', 'public/plan.html']) {
     const html = read(htmlFile);
     const versions = [...html.matchAll(/\?v=([0-9.]+)/g)].map(m => m[1]);
