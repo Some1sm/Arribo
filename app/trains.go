@@ -19,10 +19,27 @@ import (
 )
 
 // trainStaleSec is how old a reported position may be before the train is
-// marked stale (not real time). Both feeds are polled every 30 s and their
-// headers run about 30-40 s behind, so three minutes means the operator
-// has stopped updating the train.
+// marked stale (not real time). Renfe's feed is polled every 30 s and its
+// header runs about 30-40 s behind, so three minutes means the operator has
+// stopped updating the train.
 const trainStaleSec = 180
+
+// trainStaleSecByAgency overrides it per operator, since freshness depends
+// on how each one publishes. FGC writes a new positions file only about
+// every 2 minutes, and each file is already 1.5-2 minutes old when it
+// appears (measured 2026-11-21: ages 122-222 s at the source, about 209 s
+// as served): with 180 s every FGC train was hidden for much of each
+// cycle. Its trains carry their age (ageSec), so a 5-minute bound shows
+// them without passing them off as fresher than they are.
+var trainStaleSecByAgency = map[string]float64{"fgc": 300}
+
+// trainStaleAfter is the stale bound for an operator's trains.
+func trainStaleAfter(agencyID string) float64 {
+	if v, ok := trainStaleSecByAgency[agencyID]; ok {
+		return v
+	}
+	return trainStaleSec
+}
 
 // trainAttribution is the credit each operator's licence (CC BY 4.0)
 // requires wherever its data is shown.
@@ -99,7 +116,7 @@ func trainsResponse(feeds []trainFeed, now time.Time, agency, line string, box *
 			"id", f.info.ID, "name", f.info.Name, "mode", f.info.Mode,
 			"attribution", trainAttribution[f.info.ID],
 			"vehicles", 0.0, "fetchedAt", nil, "fetchAgeSec", nil, "feedTimestamp", nil,
-			"vehiclesError", nil, "tripUpdatesError", nil,
+			"vehiclesError", nil, "tripUpdatesError", nil, "staleAfterSec", trainStaleAfter(f.info.ID),
 		)
 		if s := f.snap; s != nil {
 			op.Set("vehicles", float64(len(s.Vehicles)))
@@ -152,7 +169,7 @@ func trainJSON(info operatorInfo, s *rtSnapshot, v *rtVehicle, now time.Time) *O
 	if observed > 0 {
 		age := math.Max(0, float64(now.Unix()-observed))
 		observedAt, ageSec = float64(observed)*1000, age
-		stale = age > trainStaleSec
+		stale = age > trainStaleAfter(info.ID)
 	}
 
 	delaySec, delayMins, delaySource := any(nil), any(nil), any(nil)

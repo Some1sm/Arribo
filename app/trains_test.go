@@ -175,3 +175,9 @@ func TestTrainsBox(t *testing.T) {
 		}
 	}
 }
+
+func TestTrainStaleAfter(t *testing.T) {
+	if trainStaleAfter("fgc") != 300 || trainStaleAfter("renfe_rodalies") != 180 || trainStaleAfter("other") != trainStaleSec {
+		t.Errorf("bounds: fgc %v renfe %v other %v", trainStaleAfter("fgc"), trainStaleAfter("renfe_rodalies"), trainStaleAfter("other"))
+	}
+}
