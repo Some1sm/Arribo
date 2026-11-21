@@ -76,8 +76,9 @@ class TransitApp {
     this.networkMapSeq = 0;
     this.networkRefreshSec = 30;
 
-    // Trains UI display flag: trains remain fully operational in backend/tests, but hidden from the general transit UI
-    this.showTrainsInUI = false;
+    // Train stations (Rodalies, FGC) appear in the stop search results: the
+    // server returns them (railstations.go). false hides them again.
+    this.showTrainsInUI = true;
 
     // Feature States: Traffic Congestion, Proximity Alarm & Journey Planner
     this.isTrafficVisible = false;
@@ -1255,7 +1256,7 @@ class TransitApp {
                   <div class="landing-line-info">
                     <div class="landing-line-title">${this.esc(s.stopName || s.name)}</div>
                     <div class="landing-line-operator">
-                      <span>${this.esc(s.zone || 'Mataró Urbà')}${s.code ? ` • ${this.esc(t('landing.codeLabel', { code: s.code }))}` : ''}</span>
+                      <span>${this.esc(s.zone || 'Mataró Urbà')}${s.code && !s.isTrain ? ` • ${this.esc(t('landing.codeLabel', { code: s.code }))}` : ''}</span>
                       ${s.directionText ? `<span>• ${this.esc(s.directionText)}</span>` : ''}
                     </div>
                   </div>
@@ -4840,7 +4841,7 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
             <span class="search-result-badge" style="background:${this.esc(r.lineColor)};">${this.esc(r.lineCode)}</span>
             <div class="search-result-info">
               <div class="search-result-name">${this.esc(r.stopName)}</div>
-              <div class="search-result-zone">${this.esc(r.zone)}${r.code ? ` • ${this.esc(t('app.searchCode', { code: r.code }))}` : ''}</div>
+              <div class="search-result-zone">${this.esc(r.zone)}${r.code && !r.isTrain ? ` • ${this.esc(t('app.searchCode', { code: r.code }))}` : ''}</div>
             </div>
           </div>
           <span class="search-result-action">${this.esc(t('app.searchView'))}</span>

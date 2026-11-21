@@ -1319,6 +1319,8 @@ func (s *Server) hSearchStops(q *xreq, res *xres) error {
 		streetGeocoder.setStopsCatalog(s.allStops())
 	}
 	results := s.registry.searchStopsAndLines(qs, 35)
+	// Train stations (Rodalies, FGC) after Mataró's stops and lines.
+	results = append(results, searchRailStations(qs, 10)...)
 	stops := []any{}
 	for _, x := range results {
 		r, _ := x.(*Obj)
