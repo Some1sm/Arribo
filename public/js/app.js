@@ -879,11 +879,8 @@ class TransitApp {
       if (!tab) return;
       e.preventDefault();
       this.landingFilter = tab.getAttribute('data-filter') || 'all';
-      filterDock.querySelectorAll('[data-filter]').forEach(t => {
-        const on = t === tab;
-        t.classList.toggle('is-active', on);
-        t.setAttribute('aria-pressed', String(on));
-      });
+      // Rebuilt rather than toggled: picking an operator adds its line pills.
+      this.renderLandingFilterTabs();
       this.applyLandingFilterToNetworkMap();
       this.renderLandingLines();
     });
@@ -1087,6 +1084,9 @@ class TransitApp {
    * followed live by GPS, trains on the network map and in their line view.
    */
   renderLandingHeader() {
+    // Header pill: every line the app follows (Mataró's and the train lines).
+    const countEl = document.getElementById('header-lines-count');
+    if (countEl) countEl.textContent = window.ArriboI18n ? window.ArriboI18n.t('header.linesCount', { n: this.pickerLines().length }) : `${this.pickerLines().length} línies`;
     const ops = this.catalogOperators();
     if (ops.length <= 1) return;
     const short = o => o.shortName || o.name;
@@ -1114,6 +1114,29 @@ class TransitApp {
     this.networkMap?.setTrainCatalog?.(this.catalogAllLines || []);
     this.renderLandingFilterTabs();
     this.renderPickerFilterTabs();
+    this.loadNetworkRailRoutes();
+  }
+
+  /**
+   * Draws the train lines' paths on the network map, once per page: they
+   * only change when a timetable is re-imported. An empty answer (timetables
+   * still loading at server start) is tried again on the next catalog.
+   */
+  async loadNetworkRailRoutes() {
+    if (!this.networkMap || this._railRoutesLoaded || this._railRoutesLoading) return;
+    this._railRoutesLoading = true;
+    try {
+      const res = await fetch('/api/network/rail-routes', { headers: { Accept: 'application/json' } });
+      const json = res.ok ? await res.json() : null;
+      if (json?.success && Array.isArray(json.lines) && json.lines.length) {
+        this.networkMap?.setRailRoutes?.(json.lines);
+        this._railRoutesLoaded = true;
+      }
+    } catch {
+      // Cosmetic: the map works without the paths.
+    } finally {
+      this._railRoutesLoading = false;
+    }
   }
 
   /**
@@ -1124,16 +1147,31 @@ class TransitApp {
   renderLandingFilterTabs() {
     const dock = document.getElementById('landing-filter-tabs');
     if (!dock) return;
-    const lines = this.availableLines || [];
+    // Every line the app follows: Mataró's and the openable train lines.
+    const lines = this.pickerLines();
     const ops = this.catalogOperators().filter(o => lines.some(l => (l.agencyId || 'mataro') === o.id));
+    const value = l => String(l.lineRef || l.id);
     const items = [{ value: 'all', label: window.ArriboI18n ? window.ArriboI18n.t('filter.allLines', { n: lines.length }) : `Totes les línies (${lines.length})` }];
-    if (ops.length > 1) ops.forEach(o => items.push({ value: `op:${o.id}`, label: o.name }));
-    else lines.forEach(l => items.push({ value: String(l.id), label: l.code || String(l.id) }));
-    if (!items.some(i => i.value === this.landingFilter)) this.landingFilter = 'all';
-    dock.innerHTML = items.map(i => {
+    let lineItems = [];
+    if (ops.length > 1) {
+      ops.forEach(o => items.push({ value: `op:${o.id}`, label: o.shortName || o.name }));
+      // The operator picked (directly or through one of its lines) shows its lines too.
+      const f = this.landingFilter || 'all';
+      const picked = f.startsWith('op:') ? f.slice(3)
+        : (lines.find(l => value(l) === f)?.agencyId || (lines.some(l => value(l) === f) ? 'mataro' : null));
+      if (picked) lineItems = lines.filter(l => (l.agencyId || 'mataro') === picked).map(l => ({ value: value(l), label: l.code || String(l.id), line: l }));
+    } else {
+      lineItems = lines.map(l => ({ value: value(l), label: l.code || String(l.id), line: l }));
+    }
+    const all = [...items, ...lineItems];
+    if (!all.some(i => i.value === this.landingFilter)) this.landingFilter = 'all';
+    const pill = i => {
       const on = i.value === this.landingFilter;
       return `<button type="button" class="pill${on ? ' is-active' : ''}" aria-pressed="${on}" data-filter="${this.esc(i.value)}">${this.esc(i.label)}</button>`;
-    }).join('');
+    };
+    dock.innerHTML = items.map(pill).join('') +
+      (ops.length > 1 && lineItems.length ? '<span class="pill-group-divider" aria-hidden="true"></span>' : '') +
+      lineItems.map(pill).join('');
   }
 
   /** The line picker's filter dock, built like the landing one. */
@@ -1962,42 +2000,77 @@ class TransitApp {
     const etaPillEl = document.getElementById('eta-status-pill');
     const etaStatusText = document.getElementById('eta-status-text');
     const destEl = document.getElementById('next-bus-dest');
-    if (etaBigEl) etaBigEl.textContent = n > 0 ? t(n === 1 ? 'rail.countOne' : 'rail.countMany', { n }) : t('rail.none');
-    if (etaClockEl) {
-      etaClockEl.textContent = (n > 0 ? t('rail.reportedNow') : t('rail.notReported'))
-        + (staleN > 0 ? t('rail.staleMore', { n: staleN }) : '') + t('rail.noTimes');
-    }
-    if (etaPillEl && etaStatusText) {
-      etaPillEl.className = `eta-status-pill ${n > 0 ? 'live' : 'scheduled'}`;
-      etaStatusText.textContent = n > 0 ? t('rail.livePositions') : t('rail.noneReported');
-    }
-    if (destEl) {
-      const d = (lData?.directions || []).find(x => String(x.dirId) === String(this.activeDirection));
-      destEl.textContent = d ? d.name.replace(/^Cap a /, '') : t('line.both');
-    }
-
     const badge = document.getElementById('dep-count-badge');
     const container = document.getElementById('departures-list-container');
-    if (badge) badge.textContent = t(n === 1 ? 'rail.countOne' : 'rail.countMany', { n });
-    if (!container) return;
-    if (n === 0) {
-      container.innerHTML = `<p class="rail-departures-note">${esc(t('rail.listNone') + (staleN > 0 ? t(staleN === 1 ? 'rail.staleOne' : 'rail.staleMany', { n: staleN }) : ''))}</p>`;
-      return;
-    }
+
+    // The trains on the line now, kept under the station's departures.
     const chipFor = (b) => {
       const cls = b.delayStatus === 'delayed' ? (Number(b.delayMins) > 15 ? 'chip-severe' : 'chip-late')
         : (b.delayStatus === 'on_time' ? 'chip-on-time' : (b.delayStatus === 'early' ? 'chip-on-time' : 'chip-neutral chip-plain'));
       return `<span class="chip ${cls}">${esc(b.delayBadgeText || t('rail.noDelay'))}</span>`;
     };
     const ageText = (s) => (Number.isFinite(Number(s)) ? (Number(s) < 60 ? t('rail.ageSec', { n: Math.round(s) }) : t('rail.ageMin', { n: Math.round(s / 60) })) : t('rail.ageUnknown'));
-    container.innerHTML = trains.map(b => `
+    const trainsHtml = () => `<h4 class="rail-section-title">${esc(t('rail.trainsOnLine', { n }))}</h4>` + (n === 0
+      ? `<p class="rail-departures-note">${esc(t('rail.listNone') + (staleN > 0 ? t(staleN === 1 ? 'rail.staleOne' : 'rail.staleMany', { n: staleN }) : ''))}</p>`
+      : trains.map(b => `
       <div class="rail-train-row">
         <div class="rail-train-main">
           <strong>${esc(b.toStop ? t(b.currentStatus === 'STOPPED_AT' ? 'rail.at' : 'rail.toward', { name: b.toStop }) : t('rail.noStation'))}</strong>
           <span class="rail-train-sub">${esc(b.destination ? t('rail.dest', { name: b.destination }) : '')}${b.destination ? ' · ' : ''}${esc(t('rail.position', { age: ageText(b.ageSec) }))}${b.delaySource === 'timetable' ? esc(` · ${t('rail.delayTimetable')}`) : ''}</span>
         </div>
         ${chipFor(b)}
-      </div>`).join('') + (lData?.railData?.attribution ? `<p class="rail-departures-note">${esc(lData.railData.attribution)}</p>` : '');
+      </div>`).join('')) + (lData?.railData?.attribution ? `<p class="rail-departures-note">${esc(lData.railData.attribution)}</p>` : '');
+
+    // The station the visitor picked: its next departures in this direction,
+    // as the bus view shows the chosen stop's arrivals.
+    const stop = this.currentTargetStop || {};
+    const stopId = stop.id || stop.code || null;
+    const dir = String(this.activeDirection) === 'both' ? 'both' : String(this.activeDirection ?? '0');
+    const key = `${this.activeLineId}|${stopId}|${dir}`;
+    const draw = (deps, failed) => {
+      const next = Array.isArray(deps) ? deps[0] : null;
+      if (title) title.textContent = stop.name ? t('rail.departuresAt', { name: stop.name }) : t('rail.trainsNow');
+      if (etaBigEl) etaBigEl.textContent = next ? (Number(next.minutesAway) <= 0 ? t('common.now') : `${next.minutesAway} min`) : (failed ? '--' : t('rail.noDepartures'));
+      if (etaClockEl) {
+        etaClockEl.textContent = next
+          ? t('rail.nextAt', { time: next.departureTime, dest: next.destination || '--' }) + (next.scheduledTime && next.scheduledTime !== next.departureTime ? ` · ${t('dep.officialBracket', { time: next.scheduledTime }).trim()}` : '')
+          : (failed ? t('rail.departuresError') : t('rail.noDeparturesHint'));
+      }
+      if (etaPillEl && etaStatusText) {
+        // Live only with the operator's forecast for that train; else timetable, or a discarded delay.
+        const live = Boolean(next?.isRealTime);
+        etaPillEl.className = `eta-status-pill ${live ? 'live' : 'scheduled'}`;
+        etaStatusText.textContent = !next ? t('rail.noneReported')
+          : (next.delayDiscarded ? t('trainPopup.delayDiscarded') : (live ? t('rail.forecast') : t('rail.scheduled')));
+      }
+      if (destEl) {
+        const d = (lData?.directions || []).find(x => String(x.dirId) === String(this.activeDirection));
+        destEl.textContent = next?.destination || (d ? d.name.replace(/^Cap a /, '') : t('line.both'));
+      }
+      if (!container) return;
+      if (Array.isArray(deps) && deps.length) {
+        this.renderDeparturesInto('departures-list-container', 'dep-count-badge', deps.slice(0, 12));
+      } else {
+        if (badge) badge.textContent = '0';
+        container.innerHTML = `<p class="rail-departures-note">${esc(failed ? t('rail.departuresError') : t('rail.noDepartures'))}</p>`;
+      }
+      container.insertAdjacentHTML('beforeend', trainsHtml());
+    };
+
+    if (!stopId) { draw(null, false); return; }
+    // Redraw at once from the last answer for this station, then refresh.
+    const cached = this._railStationCache?.key === key ? this._railStationCache.deps : null;
+    if (cached) draw(cached, false);
+    const seq = (this._railStationSeq = (this._railStationSeq || 0) + 1);
+    fetch(`/api/line/${encodeURIComponent(this.activeLineId)}/stop/${encodeURIComponent(stopId)}/departures?direction=${dir}`, { headers: { Accept: 'application/json' } })
+      .then(r => (r.ok ? r.json() : null))
+      .then(res => {
+        if (seq !== this._railStationSeq) return; // another station, direction or line since
+        const deps = res?.success && Array.isArray(res.data?.departures) ? res.data.departures : null;
+        if (deps) this._railStationCache = { key, deps };
+        draw(deps, !deps);
+      })
+      .catch(() => { if (seq === this._railStationSeq && !cached) draw(null, true); });
   }
 
   async checkUpstreamStatus() {
@@ -5592,6 +5665,7 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
     this.networkMap.setLineCatalog(this.availableLines || []);
     this.networkMap.setTrainCatalog(this.catalogAllLines || []);
     this.networkMap.setTrainsShown(this.readTrainsShown());
+    this.loadNetworkRailRoutes();
     // Honour a filter the visitor picked before scrolling the map into view.
     this.networkMap.setLineFilter(this.landingFilter || 'all');
     if (this.currentTheme) this.networkMap.setTheme(this.currentTheme);
