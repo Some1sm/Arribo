@@ -410,6 +410,12 @@ func (k *Worker) executeDbOperation(op string, rawArgs any) (res any, err error)
 		return db.getDelayIncidents(args), nil
 	case "inspectDelayIncident":
 		return db.inspectDelayIncident(args), nil
+	case "getRailLineStats":
+		st, err := db.getRailLineStats(jsString(args.Get("agencyId")), jsString(args.Get("line")), jsNumber(args.Get("hours")))
+		if st == nil {
+			return nil, err // an untyped nil: the answer is null
+		}
+		return st, err
 	case "getOperatorLineReport":
 		return db.getOperatorLineReport(jsString(args.Get("agencyId")), jsString(args.Get("line")), jsNumber(args.Get("hours")))
 	case "getRailDepartures":

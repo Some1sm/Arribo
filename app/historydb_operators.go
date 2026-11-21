@@ -226,3 +226,46 @@ func (h *HistoryDB) getOperatorLineReport(agencyID, line string, hours float64) 
 	empty.Set("byHour", byHour)
 	return empty, nil
 }
+
+// getRailLineStats is the line header's summary for a train line over the
+// last hours: the shape the single-line view reads for Mataró's lines
+// (totalVisits, avgDelayMins, latePct), with the operator's on-time bound
+// (rail: late means more than OnTimeMaxMins). Early is below -1 min, as in
+// the Dades train report. nil when the operator is unknown or nothing was
+// recorded.
+func (h *HistoryDB) getRailLineStats(agencyID, line string, hours float64) (*Obj, error) {
+	var op *operatorInfo
+	for i := range reportOperators {
+		if reportOperators[i].ID == agencyID {
+			op = &reportOperators[i]
+		}
+	}
+	if op == nil || !h.ensureOpen() {
+		return nil, nil
+	}
+	on := op.OnTimeMaxMins
+	r, err := h.get(`SELECT COUNT(*) AS n, AVG(delay_mins) AS avgDelay, MAX(delay_mins) AS maxDelay,
+	    SUM(CASE WHEN delay_mins > ? THEN 1 ELSE 0 END) AS late,
+	    SUM(CASE WHEN delay_mins < -1 THEN 1 ELSE 0 END) AS early
+	  FROM stop_visits WHERE agency_id = ? AND line_code = ? AND last_ts >= ?`,
+		on, agencyID, line, float64(nowMs())-hours*3600000)
+	if err != nil || r == nil {
+		return nil, err
+	}
+	n := jsNumber(r.Get("n"))
+	if !(n > 0) {
+		return nil, nil
+	}
+	pct := func(v any) any { return jsRound(jsNumber(v)*1000/n) / 10 }
+	late, early := pct(r.Get("late")), pct(r.Get("early"))
+	return O(
+		"totalVisits", n,
+		"avgDelayMins", jsRound(jsNumber(r.Get("avgDelay"))*10)/10,
+		"maxDelayMins", r.Get("maxDelay"),
+		"latePct", late,
+		"earlyPct", early,
+		"onTimePct", jsRound((100-jsNumber(late)-jsNumber(early))*10)/10,
+		"onTimeMaxMins", on,
+		"source", "gtfsrt_trip_update",
+	), nil
+}

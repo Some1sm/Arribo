@@ -315,9 +315,14 @@ func (s *Server) hRailLine(q *xreq, res *xres, kind string) bool {
 		}
 		res.json(O("success", true, "data", railLineDetails(info, op, code, direction, liveTrainFeeds(), time.Now())))
 	case "stats":
-		// No bus-style delay statistics for trains here: Dades has the
-		// operators' punctuality (/api/analytics/operators).
-		res.json(O("success", true, "stats", nil))
+		// The line header's 24 h summary, from the station visits the
+		// operator's trip updates produced (the Dades train report's data),
+		// with rail's on-time bound. null when nothing was recorded.
+		var stats any
+		if data, err := s.historyQuery("getRailLineStats", O("agencyId", info.ID, "line", code, "hours", 24.0), 8000); err == nil {
+			stats = data
+		}
+		res.json(O("success", true, "lineId", info.ID+":"+code, "code", code, "hoursMonitored", 24.0, "stats", stats))
 	case "departures":
 		s.railDepartures(q, res, info, op, code)
 	case "eta":
