@@ -20,11 +20,17 @@
       global.TransitJourneys.addRecent(this.endpoint('page-planner-origin'), this.endpoint('page-planner-dest'), this.app.selectedPreference, this.walkingSettings());
       this.render();
     }
+    t(key, vars, fallback) {
+      return global.ArriboI18n ? global.ArriboI18n.t(key, vars) : fallback;
+    }
     render() {
       if (!this.root) return;
       const esc = global.TransitUtils.esc;
-      const rows = (list, saved) => list.map(item => `<div class="journey-row"><button type="button" data-journey="${esc(item.id)}" data-saved="${saved}">${esc(item.label || `${item.from.name} → ${item.to.name}`)}</button>${saved ? `<button type="button" data-rename="${esc(item.id)}" aria-label="Canviar el nom">✎</button><button type="button" data-remove="${esc(item.id)}" aria-label="Eliminar trajecte">×</button>` : ''}</div>`).join('');
-      this.root.innerHTML = `<h3>Els teus trajectes</h3><p>Desats només en aquest dispositiu; poden contenir ubicacions personals.</p><button type="button" data-save>Desar trajecte actual</button><label><input type="checkbox" id="journey-keep-time"> Conservar data i hora</label><button type="button" data-clear>Esborrar tot</button><h4>Desats</h4>${rows(global.TransitJourneys.listSaved(), true)}<h4>Recents</h4>${rows(global.TransitJourneys.listRecent(), false)}`;
+      const keepChecked = Boolean(document.getElementById('journey-keep-time')?.checked);
+      const renameAria = esc(this.t('journey.renameAria', null, 'Canviar el nom'));
+      const removeAria = esc(this.t('journey.removeAria', null, 'Eliminar trajecte'));
+      const rows = (list, saved) => list.map(item => `<div class="journey-row"><button type="button" data-journey="${esc(item.id)}" data-saved="${saved}">${esc(item.label || `${item.from.name} → ${item.to.name}`)}</button>${saved ? `<button type="button" data-rename="${esc(item.id)}" aria-label="${renameAria}">✎</button><button type="button" data-remove="${esc(item.id)}" aria-label="${removeAria}">×</button>` : ''}</div>`).join('');
+      this.root.innerHTML = `<h3>${esc(this.t('journey.title', null, 'Els teus trajectes'))}</h3><p>${esc(this.t('journey.privacy', null, 'Desats només en aquest dispositiu; poden contenir ubicacions personals.'))}</p><button type="button" data-save>${esc(this.t('journey.save', null, 'Desar trajecte actual'))}</button><label><input type="checkbox" id="journey-keep-time"${keepChecked ? ' checked' : ''}> ${esc(this.t('journey.keepTime', null, 'Conservar data i hora'))}</label><button type="button" data-clear>${esc(this.t('journey.clearAll', null, 'Esborrar tot'))}</button><h4>${esc(this.t('journey.savedHeading', null, 'Desats'))}</h4>${rows(global.TransitJourneys.listSaved(), true)}<h4>${esc(this.t('journey.recentHeading', null, 'Recents'))}</h4>${rows(global.TransitJourneys.listRecent(), false)}`;
     }
     handle(event) {
       const button = event.target.closest('button');
@@ -36,10 +42,10 @@
         const keep = document.getElementById('journey-keep-time')?.checked;
         journeys.save(from, to, null, { ...this.walkingSettings(), preference: this.app.selectedPreference, departureDate: keep ? document.getElementById('plan-date-val')?.value : null, departureTime: keep ? document.getElementById('plan-time-val')?.value : null });
       } else if (button.hasAttribute('data-clear')) {
-        if (!global.confirm('Esborrar tots els trajectes desats i recents?')) return;
+        if (!global.confirm(this.t('journey.clearConfirm', null, 'Esborrar tots els trajectes desats i recents?'))) return;
         journeys.clearAll();
       } else if (button.dataset.remove) journeys.remove(button.dataset.remove);
-      else if (button.dataset.rename) journeys.rename(button.dataset.rename, global.prompt('Nom del trajecte:'));
+      else if (button.dataset.rename) journeys.rename(button.dataset.rename, global.prompt(this.t('journey.renamePrompt', null, 'Nom del trajecte:')));
       else if (button.dataset.journey) {
         const list = button.dataset.saved === 'true' ? journeys.listSaved() : journeys.listRecent();
         const item = list.find(entry => entry.id === button.dataset.journey);

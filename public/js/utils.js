@@ -8,6 +8,55 @@
   const THEME_STORAGE_KEY = 'arribo_theme';
   const LEGACY_THEME_KEYS = ['bad_amb_theme', 'transit-theme'];
 
+  const t = (key, vars, fallback) => {
+    if (global.ArriboI18n && typeof global.ArriboI18n.t === 'function') {
+      return global.ArriboI18n.t(key, vars);
+    }
+    return vars ? fallback.replace(/\{(\w+)\}/g, (m, k) => (vars[k] !== undefined ? String(vars[k]) : m)) : fallback;
+  };
+
+  const seasonPillState = new Map();
+
+  function renderSeasonPill(id, schedule) {
+    const doc = global.document;
+    const pill = doc?.getElementById(id);
+    if (!pill || !schedule?.season) return null;
+
+    const known = schedule.seasonKnown !== false;
+    const label = schedule.season === 'summer'
+      ? t('util.season.summer', null, 'Estiu')
+      : t('util.season.winter', null, 'Hivern');
+    pill.textContent = known ? label : `${label}?`;
+    pill.hidden = false;
+
+    const rawSrc = String(schedule.seasonSource || '').trim();
+    const localizedSrc = !rawSrc
+      ? t('util.season.srcUnknown', null, 'desconeguda')
+      : rawSrc === 'calendar'
+        ? t('util.season.srcCalendar', null, 'calendari')
+        : rawSrc === 'default'
+          ? t('util.season.srcDefault', null, 'per defecte')
+          : rawSrc;
+
+    // The tooltip carries the provenance: which grid, chosen how, and
+    // whether the server considers the date covered.
+    pill.title = [
+      t('util.season.active', { label }, 'Horari en vigor: {label}'),
+      t('util.season.source', { src: localizedSrc }, 'Font: {src}'),
+      known ? null : t('util.season.unverified', null, 'Fora del període cobert per les dades: horari no verificat')
+    ].filter(Boolean).join(' · ');
+    pill.classList.toggle('is-unverified', !known);
+    return { season: schedule.season, known };
+  }
+
+  if (global.document && typeof global.document.addEventListener === 'function') {
+    global.document.addEventListener('arribo:lang', () => {
+      for (const [id, schedule] of seasonPillState.entries()) {
+        renderSeasonPill(id, schedule);
+      }
+    });
+  }
+
   const TransitUtils = {
     THEME_STORAGE_KEY,
 
@@ -16,13 +65,24 @@
       const source = f?.source || (item?.isRealTime ? 'live' : item?.isEstimated ? 'position' : 'timetable');
       const fetched = f?.fetchedAt;
       const observed = f?.observedAt;
-      const valid = t => Number.isFinite(t) && t > 0 && t <= now + 60000;
+      const valid = ts => Number.isFinite(ts) && ts > 0 && ts <= now + 60000;
       const timestamp = valid(fetched) ? (valid(observed) ? Math.min(fetched, observed) : fetched) : null;
       const age = timestamp === null ? null : Math.max(0, now - timestamp);
       const stale = source !== 'timetable' && (offline || age === null || age > 60000 || f?.fallback === true);
-      const ageText = age === null ? 'actualització desconeguda' : age < 60000 ? `fa ${Math.floor(age / 1000)} s` : `fa ${Math.floor(age / 60000)} min`;
-      const label = source === 'timetable' ? 'Horari programat' : stale ? 'Última previsió coneguda' : source === 'position' ? 'Estimació de posició' : 'En directe';
-      return { source, stale, age, label: `${offline ? 'Sense connexió · ' : ''}${label}${source === 'timetable' ? '' : ` · ${ageText}`}` };
+      const ageText = age === null
+        ? t('util.fresh.unknown', null, 'actualització desconeguda')
+        : age < 60000
+          ? t('util.fresh.agoSec', { n: Math.floor(age / 1000) }, 'fa {n} s')
+          : t('util.fresh.agoMin', { n: Math.floor(age / 60000) }, 'fa {n} min');
+      const label = source === 'timetable'
+        ? t('util.fresh.timetable', null, 'Horari programat')
+        : stale
+          ? t('util.fresh.lastKnown', null, 'Última previsió coneguda')
+          : source === 'position'
+            ? t('util.fresh.position', null, 'Estimació de posició')
+            : t('util.fresh.live', null, 'En directe');
+      const prefix = offline ? t('util.fresh.offlinePrefix', null, 'Sense connexió · ') : '';
+      return { source, stale, age, label: `${prefix}${label}${source === 'timetable' ? '' : ` · ${ageText}`}` };
     },
 
     /**
@@ -177,19 +237,8 @@
         const schedule = data?.schedule;
         if (!schedule?.season) return null;
 
-        const known = schedule.seasonKnown !== false;
-        const label = schedule.season === 'summer' ? 'Estiu' : 'Hivern';
-        pill.textContent = known ? label : `${label}?`;
-        pill.hidden = false;
-        // The tooltip carries the provenance: which grid, chosen how, and
-        // whether the server considers the date covered.
-        pill.title = [
-          `Horari en vigor: ${label}`,
-          `Font: ${schedule.seasonSource || 'desconeguda'}`,
-          known ? null : 'Fora del període cobert per les dades: horari no verificat'
-        ].filter(Boolean).join(' · ');
-        if (!known) pill.classList.add('is-unverified');
-        return { season: schedule.season, known };
+        seasonPillState.set(id, schedule);
+        return renderSeasonPill(id, schedule);
       } catch {
         return null;
       }

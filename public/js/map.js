@@ -18,6 +18,23 @@ function escHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
+function mapT(key, vars, fallback) {
+  if (typeof window !== 'undefined' && window.ArriboI18n && typeof window.ArriboI18n.t === 'function') {
+    return window.ArriboI18n.t(key, vars);
+  }
+  return fallback !== undefined ? fallback : key;
+}
+
+function mapFmtMeters(meters) {
+  const n = Math.round(Number(meters) || 0);
+  const lang = (typeof window !== 'undefined' && window.ArriboI18n && window.ArriboI18n.lang) || 'ca';
+  try {
+    return `${new Intl.NumberFormat(lang).format(n)} m`;
+  } catch {
+    return `${n} m`;
+  }
+}
+
 const CANONICAL_BUS_ICON_INNER_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle;"><path d="M4.7 17.5H3.4A1.4 1.4 0 0 1 2 16.1V6.4A1.4 1.4 0 0 1 3.4 5H17.5A4.5 4.5 0 0 1 22 9.5v6.6a1.4 1.4 0 0 1-1.4 1.4h-1.3"/><path d="M9.3 17.5h5.4"/><path d="M2 11.6h20"/><path d="M7.5 5v6.6M12.5 5v6.6M17.6 5.2v6.4"/><circle cx="7" cy="17.5" r="2.3"/><circle cx="17" cy="17.5" r="2.3"/></svg>';
 // Trains (GTFS-RT, Rodalies / FGC) get their own front-view drawing, so a
 // train on a rail line never looks like a bus.
@@ -68,6 +85,9 @@ class TransitMap {
     this.trafficLayerGroup = null;
     this.isTrafficEnabled = false;
     this.currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+    this._lastLocHintState = null;
+    this._lastGeometryInfo = null;
+    this._lastItinerary = null;
     this.initMap();
   }
 
@@ -92,6 +112,8 @@ class TransitMap {
     this.setupResizeObserver();
     this.requestUserLocation();
 
+    document.addEventListener('arribo:lang', () => this.onLangChange());
+
     // Delegated handler replacing inline onclick in map popups (CSP compliance)
     this.map.on('popupopen', (e) => {
       const root = e.popup.getElement();
@@ -103,6 +125,24 @@ class TransitMap {
         }
       });
     });
+  }
+
+  onLangChange() {
+    if (this._lastGeometryInfo) {
+      this.updateRouteSourceBadge(this._lastGeometryInfo);
+    }
+    const locBadge = document.getElementById('user-location-badge');
+    if (this._lastLocHintState && locBadge && locBadge.style.display !== 'none') {
+      this.showLocationPermissionHint(this._lastLocHintState);
+    }
+    if (this.isItineraryMode && this._lastItinerary && !window.planApp) {
+      this.renderItinerary(this._lastItinerary, { fitBounds: false });
+    }
+    for (const [, obj] of this.busMarkersMap.entries()) {
+      if (obj.marker && obj.busData && obj.popupCtx) {
+        obj.marker.setPopupContent(this.buildBusPopupHtml(obj.busData, obj.popupCtx));
+      }
+    }
   }
 
   /**
@@ -170,6 +210,7 @@ class TransitMap {
 
   showLocationPermissionHint(state = 'denied') {
     if (!this.map || !this.map.getContainer()) return;
+    this._lastLocHintState = state;
     let badge = document.getElementById('user-location-badge');
     if (!badge) {
       badge = document.createElement('div');
@@ -183,6 +224,7 @@ class TransitMap {
         if (e.target && e.target.closest('.user-location-badge-close')) {
           try { sessionStorage.setItem('arribo_loc_hint_dismissed', '1'); } catch {}
           badge.style.display = 'none';
+          this._lastLocHintState = null;
           return;
         }
         badge.style.display = 'none';
@@ -190,18 +232,20 @@ class TransitMap {
       });
     }
     const messages = {
-      denied: '📍 Ubicació blocada: permet-la des del candau 🔒 de la barra d\'adreces del navegador',
-      insecure: '📍 La geolocalització només funciona per HTTPS o localhost',
-      unsupported: '📍 El teu navegador no suporta geolocalització',
-      error: '📍 Clica aquí per activar la teva ubicació al mapa'
+      denied: mapT('map.loc.denied', null, '📍 Ubicació blocada: permet-la des del candau 🔒 de la barra d\'adreces del navegador'),
+      insecure: mapT('map.loc.insecure', null, '📍 La geolocalització només funciona per HTTPS o localhost'),
+      unsupported: mapT('map.loc.unsupported', null, '📍 El teu navegador no suporta geolocalització'),
+      error: mapT('map.loc.error', null, '📍 Clica aquí per activar la teva ubicació al mapa')
     };
     const msg = messages[state] || messages.error;
-    badge.innerHTML = `<span class="user-location-badge-msg">${msg}</span>` +
-      `<button type="button" class="user-location-badge-close" aria-label="Tanca l'avís">✕</button>`;
+    const closeAria = escHtml(mapT('map.loc.closeAria', null, 'Tanca l\'avís'));
+    badge.innerHTML = `<span class="user-location-badge-msg">${escHtml(msg)}</span>` +
+      `<button type="button" class="user-location-badge-close" aria-label="${closeAria}">✕</button>`;
     badge.style.display = 'flex';
   }
 
   hideLocationPermissionHint() {
+    this._lastLocHintState = null;
     const badge = document.getElementById('user-location-badge');
     if (badge) badge.style.display = 'none';
   }
@@ -494,10 +538,10 @@ class TransitMap {
         const tooltipHtml = isCancelled ? `
           <div style="display:flex; flex-direction:column; gap:2px;">
             <div style="display:flex; align-items:center; gap:6px;">
-              <span style="background:#ef4444; color:#fff; font-size:10px; font-weight:800; padding:1px 5px; border-radius:3px;">❌ FORA DE SERVEI</span>
+              <span style="background:#ef4444; color:#fff; font-size:10px; font-weight:800; padding:1px 5px; border-radius:3px;">${escHtml(mapT('map.stop.outOfService', null, '❌ FORA DE SERVEI'))}</span>
               <span style="text-decoration:line-through; color:#f87171; font-weight:700;">${escHtml(stop.name)}</span>
             </div>
-            <div style="font-size:10px; color:#cbd5e1;">Parada anul·lada temporalment per obres/tall</div>
+            <div style="font-size:10px; color:#cbd5e1;">${escHtml(mapT('map.stop.cancelledDesc', null, 'Parada anul·lada temporalment per obres/tall'))}</div>
           </div>
         ` : `
           <div style="display:flex; align-items:center; gap:6px;">
@@ -574,7 +618,7 @@ class TransitMap {
 
           marker.bindTooltip(`
             <div style="display:flex; align-items:center; gap:6px;">
-              <span style="background:${secondaryColor}; color:#fff; font-size:10px; font-weight:800; padding:1px 5px; border-radius:3px;">Sentit 2</span>
+              <span style="background:${secondaryColor}; color:#fff; font-size:10px; font-weight:800; padding:1px 5px; border-radius:3px;">${escHtml(mapT('map.stop.dir2', null, 'Sentit 2'))}</span>
               <span>${escHtml(stop.name)}</span>
             </div>
           `, {
@@ -681,9 +725,10 @@ class TransitMap {
     }
   }
 
-  renderItinerary(itinerary) {
+  renderItinerary(itinerary, opts = {}) {
     if (!this.map || !itinerary || !Array.isArray(itinerary.legs)) return;
     this.isItineraryMode = true;
+    this._lastItinerary = itinerary;
 
     // Clear standard line layers & stops
     this.clearAll();
@@ -723,7 +768,14 @@ class TransitMap {
           lineCap: 'round',
           lineJoin: 'round'
         });
-        line.bindTooltip(`<strong>${escHtml(leg.lineCode)}</strong> Cap a ${escHtml(leg.destination || '')} (${leg.stopsCount || leg.stopCount} parades, ~${leg.durationMinutes || leg.travelTimeMins} min)`, {
+        const stopsN = leg.stopsCount || leg.stopCount || 0;
+        const legTooltip = mapT(stopsN === 1 ? 'map.itin.legTooltipOne' : 'map.itin.legTooltipMany', {
+          line: `<strong>${escHtml(leg.lineCode)}</strong>`,
+          dest: escHtml(leg.destination || ''),
+          n: stopsN,
+          min: leg.durationMinutes || leg.travelTimeMins || 0
+        });
+        line.bindTooltip(legTooltip, {
           sticky: true,
           className: 'stop-hover-tooltip'
         });
@@ -774,7 +826,10 @@ class TransitMap {
           dashArray: '6, 8',
           lineCap: 'round'
         });
-        walkLine.bindTooltip(`🚶 Caminar des d'origen (~${itinerary.walkToFirstStop.distanceMeters} m, ~${itinerary.walkToFirstStop.walkingMinutes} min a peu)`, {
+        const origApprox = Boolean(itinerary.walkToFirstStop.approximate);
+        const origDist = mapFmtMeters(itinerary.walkToFirstStop.distanceMeters);
+        const origMin = itinerary.walkToFirstStop.walkingMinutes;
+        walkLine.bindTooltip(mapT(origApprox ? 'map.itin.walkOriginApprox' : 'map.itin.walkOrigin', { dist: origDist, min: origMin }), {
           sticky: true,
           className: 'stop-hover-tooltip'
         });
@@ -792,7 +847,11 @@ class TransitMap {
           iconAnchor: [14, 14]
         });
         const mOrig = L.marker(walkFrom, { icon: origPinIcon, zIndexOffset: 2500 });
-        mOrig.bindTooltip(`📍 <strong>Origen</strong>: ${escHtml(itinerary.walkToFirstStop.fromName || 'Punt d\'origen')}<br><span style="color:#94a3b8; font-size:11px;">(~${itinerary.walkToFirstStop.distanceMeters} m • ${itinerary.walkToFirstStop.walkingMinutes} min a peu)</span>`, {
+        const origPinHeader = mapT('map.itin.originPin', {
+          name: escHtml(itinerary.walkToFirstStop.fromName || mapT('map.itin.originFallback', null, 'Punt d\'origen'))
+        });
+        const origPinMeta = mapT(origApprox ? 'map.itin.walkPinMetaApprox' : 'map.itin.walkPinMeta', { dist: origDist, min: origMin });
+        mOrig.bindTooltip(`${origPinHeader}<br><span style="color:#94a3b8; font-size:11px;">${escHtml(origPinMeta)}</span>`, {
           direction: 'top',
           offset: [0, -12],
           className: 'stop-hover-tooltip'
@@ -816,7 +875,11 @@ class TransitMap {
           dashArray: '6, 8',
           lineCap: 'round'
         });
-        walkLine.bindTooltip(`🚶 Caminada de transbordament (~${itinerary.transferWalk.distanceMeters} m, ~${itinerary.transferWalk.walkingMinutes} min)`, {
+        const trApprox = Boolean(itinerary.transferWalk.approximate);
+        walkLine.bindTooltip(mapT(trApprox ? 'map.itin.walkTransferApprox' : 'map.itin.walkTransfer', {
+          dist: mapFmtMeters(itinerary.transferWalk.distanceMeters),
+          min: itinerary.transferWalk.walkingMinutes
+        }), {
           sticky: true,
           className: 'stop-hover-tooltip'
         });
@@ -839,7 +902,10 @@ class TransitMap {
           dashArray: '6, 8',
           lineCap: 'round'
         });
-        walkLine.bindTooltip(`🚶 Caminar fins a destinació (~${itinerary.walkFromLastStop.distanceMeters} m, ~${itinerary.walkFromLastStop.walkingMinutes} min a peu)`, {
+        const destApprox = Boolean(itinerary.walkFromLastStop.approximate);
+        const destDist = mapFmtMeters(itinerary.walkFromLastStop.distanceMeters);
+        const destMin = itinerary.walkFromLastStop.walkingMinutes;
+        walkLine.bindTooltip(mapT(destApprox ? 'map.itin.walkDestApprox' : 'map.itin.walkDest', { dist: destDist, min: destMin }), {
           sticky: true,
           className: 'stop-hover-tooltip'
         });
@@ -857,7 +923,11 @@ class TransitMap {
           iconAnchor: [14, 14]
         });
         const mDest = L.marker(walkTo, { icon: destPinIcon, zIndexOffset: 2500 });
-        mDest.bindTooltip(`🏁 <strong>Destinació</strong>: ${escHtml(itinerary.walkFromLastStop.toName || 'Punt de destinació')}<br><span style="color:#94a3b8; font-size:11px;">(~${itinerary.walkFromLastStop.distanceMeters} m • ${itinerary.walkFromLastStop.walkingMinutes} min a peu)</span>`, {
+        const destPinHeader = mapT('map.itin.destPin', {
+          name: escHtml(itinerary.walkFromLastStop.toName || mapT('map.itin.destFallback', null, 'Punt de destinació'))
+        });
+        const destPinMeta = mapT(destApprox ? 'map.itin.walkPinMetaApprox' : 'map.itin.walkPinMeta', { dist: destDist, min: destMin });
+        mDest.bindTooltip(`${destPinHeader}<br><span style="color:#94a3b8; font-size:11px;">${escHtml(destPinMeta)}</span>`, {
           direction: 'top',
           offset: [0, -12],
           className: 'stop-hover-tooltip'
@@ -870,6 +940,8 @@ class TransitMap {
     const legs = itinerary.legs;
     const firstLeg = legs[0];
     const lastLeg = legs[legs.length - 1];
+    const liveLabel = escHtml(mapT('map.itin.live', null, '🟢 En viu'));
+    const schedLabel = escHtml(mapT('map.itin.timetable', null, '📅 Horari'));
 
     // 🟢 Origin / Boarding Marker
     if (firstLeg && firstLeg.fromStop) {
@@ -885,8 +957,8 @@ class TransitMap {
           ? `<span style="font-size:11px; font-weight:800; color:#10b981; background:rgba(16,185,129,0.15); padding:1px 5px; border-radius:4px; margin-left:auto;">🕐 ${escHtml(firstLeg.departureTime)}</span>`
           : '';
         const rtBadge = firstLeg.isRealTime
-          ? '<span style="font-size:10px; color:#10b981; font-weight:700;">🟢 En viu</span>'
-          : '<span style="font-size:10px; color:#94a3b8;">📅 Horari</span>';
+          ? `<span style="font-size:10px; color:#10b981; font-weight:700;">${liveLabel}</span>`
+          : `<span style="font-size:10px; color:#94a3b8;">${schedLabel}</span>`;
 
         const originIcon = L.divIcon({
           className: 'custom-itinerary-marker',
@@ -895,7 +967,7 @@ class TransitMap {
               <span class="node-icon">🟢</span>
               <div class="node-label">
                 <div class="node-action" style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
-                  <span>Pujar a ${escHtml(firstLeg.lineCode)}</span>
+                  <span>${escHtml(mapT('map.itin.boardLine', { line: firstLeg.lineCode }, `Pujar a ${firstLeg.lineCode}`))}</span>
                   ${depTimeHtml}
                 </div>
                 <div class="node-name" style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
@@ -928,8 +1000,8 @@ class TransitMap {
             ? `<span style="font-size:11px; font-weight:800; color:#f59e0b; background:rgba(245,158,11,0.15); padding:1px 5px; border-radius:4px; margin-left:auto;">🕐 ${escHtml(nextLeg.departureTime)}</span>`
             : '';
           const tRtBadge = nextLeg.isRealTime
-            ? '<span style="font-size:10px; color:#10b981; font-weight:700;">🟢 En viu</span>'
-            : '<span style="font-size:10px; color:#94a3b8;">📅 Horari</span>';
+            ? `<span style="font-size:10px; color:#10b981; font-weight:700;">${liveLabel}</span>`
+            : `<span style="font-size:10px; color:#94a3b8;">${schedLabel}</span>`;
 
           const transferIcon = L.divIcon({
             className: 'custom-itinerary-marker',
@@ -938,7 +1010,7 @@ class TransitMap {
                 <span class="node-icon">🔄</span>
                 <div class="node-label">
                   <div class="node-action" style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
-                    <span>Pujar a ${escHtml(nextLeg.lineCode)}</span>
+                    <span>${escHtml(mapT('map.itin.boardLine', { line: nextLeg.lineCode }, `Pujar a ${nextLeg.lineCode}`))}</span>
                     ${tDepTimeHtml}
                   </div>
                   <div class="node-name" style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
@@ -969,7 +1041,7 @@ class TransitMap {
             <div class="itinerary-node-badge node-destination" style="--node-color:#ef4444">
               <span class="node-icon">🏁</span>
               <div class="node-label">
-                <div class="node-action">Baixar de ${escHtml(lastLeg.lineCode)}</div>
+                <div class="node-action">${escHtml(mapT('map.itin.alightLine', { line: lastLeg.lineCode }, `Baixar de ${lastLeg.lineCode}`))}</div>
                 <div class="node-name">${escHtml(lastLeg.toStop.name)}</div>
               </div>
             </div>
@@ -983,7 +1055,7 @@ class TransitMap {
     }
 
     // 6. Fit bounds
-    if (allPoints.length > 1) {
+    if (opts.fitBounds !== false && allPoints.length > 1) {
       const bounds = L.latLngBounds(allPoints);
       if (bounds && bounds.isValid()) {
         this.map.fitBounds(bounds, { padding: [60, 60], maxZoom: 16 });
@@ -993,6 +1065,7 @@ class TransitMap {
 
   clearItinerary() {
     this.isItineraryMode = false;
+    this._lastItinerary = null;
     if (this.itineraryLayerGroup) {
       this.itineraryLayerGroup.clearLayers();
     }
@@ -1095,6 +1168,7 @@ class TransitMap {
    */
   updateRouteSourceBadge(geometryInfo) {
     if (!this.map) return;
+    this._lastGeometryInfo = geometryInfo;
     let badge = document.getElementById('route-source-badge');
     if (!badge && this.map.getContainer()) {
       badge = document.createElement('div');
@@ -1104,8 +1178,8 @@ class TransitMap {
     }
     if (!badge) return;
     if (geometryInfo && geometryInfo.estimated) {
-      badge.textContent = '⚠️ Traçat estimat';
-      badge.title = "Aquest traçat està calculat (OSRM o interpolació entre parades) i pot no coincidir exactament amb la ruta real de l'operador.";
+      badge.textContent = mapT('map.routeEst.badge', null, '⚠️ Traçat estimat');
+      badge.title = mapT('map.routeEst.title', null, "Aquest traçat està calculat (OSRM o interpolació entre parades) i pot no coincidir exactament amb la ruta real de l'operador.");
       badge.style.display = 'block';
     } else {
       badge.style.display = 'none';
@@ -1231,39 +1305,67 @@ class TransitMap {
     const hasMeasuredSpeed = bus.speedKmh !== undefined && bus.speedKmh !== null && Number.isFinite(Number(bus.speedKmh));
     let speedValue;
     if (isGhost) {
-      speedValue = '— (Estimat)';
+      speedValue = mapT('map.popup.speedTimetable', null, '— (Horari teòric)');
     } else if (isEst && !hasMeasuredSpeed) {
-      speedValue = '— (Estimat)';
+      speedValue = mapT('map.popup.speedEst', null, '— (Estimat)');
     } else if (hasMeasuredSpeed) {
       speedValue = `${Math.round(Number(bus.speedKmh))} km/h`;
     } else if (bus.isTerminalLayover) {
-      speedValue = '0 km/h (Aturat)';
+      speedValue = mapT('map.popup.speedStopped', null, '0 km/h (Aturat)');
     } else {
-      speedValue = '— (Sense dada)';
+      speedValue = mapT('map.popup.speedNoData', null, '— (Sense dada)');
     }
 
     let delayClass = 'on-time';
-    let delayBadgeText = bus.delayFormatted || 'Puntual';
+    let delayBadgeText = bus.delayFormatted || mapT('map.popup.onTime', null, 'Puntual');
     const dMins = Number(bus.delayMins !== undefined ? bus.delayMins : (bus.delayMinutes !== undefined ? bus.delayMinutes : 0));
 
     if (isGhost) {
       delayClass = 'ghost';
-      delayBadgeText = '⚡ Sense GPS (Horari)';
+      delayBadgeText = mapT('map.popup.noGpsTimetable', null, '⚡ Sense GPS (Horari)');
     } else if (bus.isTerminalLayover || bus.delayStatus === 'regulating') {
       delayClass = 'layover';
-      delayBadgeText = 'Regulant';
+      delayBadgeText = mapT('map.popup.regulating', null, 'Regulant');
     } else if (bus.delayStatus === 'delayed' || dMins >= 2) {
       delayClass = dMins >= 5 ? 'critical' : 'delayed';
-      delayBadgeText = `+${dMins} min retard`;
+      delayBadgeText = mapT('map.popup.delayLate', { n: dMins }, `+${dMins} min retard`);
     } else if (bus.delayStatus === 'early' || dMins <= -1) {
       delayClass = 'early';
-      delayBadgeText = `${dMins} min avançat`;
+      delayBadgeText = mapT('map.popup.delayEarly', { n: dMins }, `${dMins} min avançat`);
     } else if (String(delayBadgeText).toLowerCase().includes('puntual')) {
       delayClass = 'on-time';
-      delayBadgeText = 'Puntual';
+      delayBadgeText = mapT('map.popup.onTime', null, 'Puntual');
     }
 
     const hasChips = Boolean(bus.isAccessible || bus.isElectric || bus.isHybrid || bus.propulsion || bus.modelName || bus.tripStartTime);
+    const layoverSubtitle = isGhost
+      ? mapT('map.popup.layoverNoGps', null, 'Capçalera / Regulació (Sense GPS)')
+      : mapT('map.popup.layoverTitle', null, 'Capçalera / Regulació');
+    const noGpsBadgeText = mapT('map.popup.noGpsBadge', null, '⚡ Sense GPS');
+    const speedLabel = escHtml(mapT('map.popup.speedLabel', null, 'Velocitat'));
+    const statusLabel = escHtml(mapT('map.popup.statusLabel', null, 'Estat'));
+    const shareBusLabel = escHtml(mapT('map.popup.shareBus', null, "Compartir seguiment d'aquest bus"));
+    const layoverDepHtml = bus.departureTime
+      ? mapT('map.popup.layoverGhostDep', { time: escHtml(bus.departureTime) })
+      : '';
+    const ghostDepHtml = bus.departureTime
+      ? mapT('map.popup.ghostDep', { time: escHtml(bus.departureTime) })
+      : '';
+    const statusValSubtitle = isGhost
+      ? mapT('map.popup.officialNoGps', null, 'Horari Oficial (Sense GPS)')
+      : (isSecDir
+          ? mapT('map.popup.oppositeDir', null, 'Sentit contrari')
+          : (bus.destination
+              ? mapT('map.popup.destPrefix', { dest: escHtml(bus.destination) }, `Dest: ${escHtml(bus.destination)}`)
+              : mapT('map.popup.inService', null, 'En servei')));
+    const statusBadgeText = isGhost
+      ? noGpsBadgeText
+      : (isEst ? mapT('map.popup.statusEstimated', null, 'Estimació') : mapT('map.popup.statusLive', null, 'En directe'));
+    const sourceTagText = isGhost
+      ? mapT('map.popup.sourceGhost', null, '⚡ Horari Oficial (Sense GPS)')
+      : (isEst
+          ? mapT('map.popup.sourceDeadReckoning', null, 'Estimació per estima (GPS perdut)')
+          : mapT('map.popup.sourceLiveGps', null, 'GPS Directe (SIRI)'));
 
     const popupHtml = bus.isTerminalLayover ? `
       <div class="map-popup-card">
@@ -1277,13 +1379,13 @@ class TransitMap {
                 ${lineBadge ? `<span class="map-popup-line-pill" style="background:${busColor || '#3b82f6'};">${escHtml(lineBadge)}</span>` : ''}
                 <span class="map-popup-bus-id">Bus ${bus.vehicleId ? `#${escHtml(bus.vehicleId)}` : ''}</span>
               </div>
-              <div class="map-popup-subtitle" title="${isGhost ? 'Capçalera / Regulació (Sense GPS)' : 'Capçalera / Regulació'}">${isGhost ? 'Capçalera / Regulació (Sense GPS)' : 'Capçalera / Regulació'}</div>
+              <div class="map-popup-subtitle" title="${escHtml(layoverSubtitle)}">${escHtml(layoverSubtitle)}</div>
             </div>
           </div>
           <div class="map-popup-header-status">
             <span class="map-popup-status-badge ${isGhost ? 'ghost' : 'layover'}">
               <span class="status-pulse-dot"></span>
-              <span>${isGhost ? '⚡ Sense GPS' : 'Aturat'}</span>
+              <span>${escHtml(isGhost ? noGpsBadgeText : mapT('map.popup.stoppedBadge', null, 'Aturat'))}</span>
             </span>
           </div>
         </div>
@@ -1291,31 +1393,31 @@ class TransitMap {
         ${isGhost ? `
         <div class="map-popup-ghost-notice">
           <span class="ghost-icon">⚡</span>
-          <span><strong>Vehicle estimat a capçalera (sense GPS):</strong> Aquest autobús està programat en regulació a la capçalera${bus.departureTime ? ` (propera sortida <strong>${escHtml(bus.departureTime)}</strong>)` : ''}, però no transmet senyal GPS. La seva posició al mapa s'estima segons l'horari oficial.</span>
+          <span>${mapT('map.popup.layoverGhostNotice', { dep: layoverDepHtml })}</span>
         </div>` : ''}
 
         <div class="map-popup-route-ribbon">
           <div class="map-popup-route-stop from">
             <span class="map-popup-stop-dot"></span>
-            <span class="map-popup-stop-name">${((bus.totalProgress >= 90 && bus.toStop) ? toStop : fromStop) || 'Capçalera de Línia'}</span>
+            <span class="map-popup-stop-name">${((bus.totalProgress >= 90 && bus.toStop) ? toStop : fromStop) || escHtml(mapT('map.popup.terminusFallback', null, 'Capçalera de Línia'))}</span>
           </div>
-          <div class="map-popup-route-badge-layover">${bus.departureTime ? `Sortida: ${escHtml(bus.departureTime)}` : 'Pausa de servei'}</div>
+          <div class="map-popup-route-badge-layover">${bus.departureTime ? escHtml(mapT('map.popup.departureTime', { time: bus.departureTime })) : escHtml(mapT('map.popup.servicePause', null, 'Pausa de servei'))}</div>
         </div>
 
         <div class="map-popup-metrics-grid">
-          <div class="map-popup-metric-tile" title="Velocitat: 0 km/h">
+          <div class="map-popup-metric-tile" title="${escHtml(mapT('map.popup.speedTitle', { val: '0 km/h' }))}">
             <div class="map-popup-metric-header">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-              <span>Velocitat</span>
+              <span>${speedLabel}</span>
             </div>
             <div class="map-popup-metric-val"><span>0 km/h</span></div>
           </div>
-          <div class="map-popup-metric-tile" title="Estat: Regulant horari">
+          <div class="map-popup-metric-tile" title="${escHtml(mapT('map.popup.statusTitle', { val: mapT('map.popup.regulatingSchedule', null, 'Regulant horari') }))}">
             <div class="map-popup-metric-header">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-              <span>Estat</span>
+              <span>${statusLabel}</span>
             </div>
-            <div class="map-popup-metric-val layover"><span>Regulant horari</span></div>
+            <div class="map-popup-metric-val layover"><span>${escHtml(mapT('map.popup.regulatingSchedule', null, 'Regulant horari'))}</span></div>
           </div>
         </div>
 
@@ -1324,7 +1426,7 @@ class TransitMap {
             <span class="radar-dot"></span>
             <span>${coordsText}</span>
           </div>
-          <span class="source-tag">Capçalera</span>
+          <span class="source-tag">${escHtml(mapT('map.popup.terminusTag', null, 'Capçalera'))}</span>
         </div>
 
         <button type="button" class="map-popup-btn-share" data-share-vehicle="${escHtml(bus.vehicleId)}">
@@ -1332,7 +1434,7 @@ class TransitMap {
             <circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle>
             <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
           </svg>
-          <span>Compartir seguiment d'aquest bus</span>
+          <span>${shareBusLabel}</span>
         </button>
       </div>
     ` : `
@@ -1355,7 +1457,7 @@ class TransitMap {
                 <span class="map-popup-bus-id">Bus ${bus.vehicleId ? `#${escHtml(bus.vehicleId)}` : ''}</span>
               </div>
               <div class="map-popup-subtitle" title="${bus.destination ? escHtml(bus.destination) : ''}">
-                ${isGhost ? 'Horari Oficial (Sense GPS)' : (isSecDir ? 'Sentit contrari' : (bus.destination ? `Dest: ${escHtml(bus.destination)}` : 'En servei'))}
+                ${statusValSubtitle}
               </div>
             </div>
           </div>
@@ -1363,7 +1465,7 @@ class TransitMap {
           <div class="map-popup-header-status">
             <span class="map-popup-status-badge ${isGhost ? 'ghost' : (isEst ? 'estimated' : 'live')}">
               <span class="status-pulse-dot"></span>
-              <span>${isGhost ? '⚡ Sense GPS' : (isEst ? 'Estimació' : 'En directe')}</span>
+              <span>${escHtml(statusBadgeText)}</span>
             </span>
           </div>
         </div>
@@ -1371,13 +1473,13 @@ class TransitMap {
         ${isGhost ? `
         <div class="map-popup-ghost-notice">
           <span class="ghost-icon">⚡</span>
-          <span><strong>Vehicle estimat segons horari oficial (sense GPS):</strong> Aquest autobús està programat en servei actiu${bus.departureTime ? ` (sortida <strong>${escHtml(bus.departureTime)}</strong>)` : ''}, però no transmet dades GPS en directe a la xarxa SAE. La seva posició al mapa es calcula teòricament segons la sortida oficial.</span>
+          <span>${mapT('map.popup.ghostNotice', { dep: ghostDepHtml })}</span>
         </div>` : ''}
 
         ${bus.offRoute ? `
         <div class="map-popup-offroute-notice">
           <span class="ghost-icon">↯</span>
-          <span><strong>Fora del recorregut:</strong> el GPS el situa a ${Number(bus.offRouteM) || 'més de 75'} m de la ruta de la línia (desviament, drecera o obres). Es mostra on és, no sobre la ruta.</span>
+          <span>${mapT('map.popup.offRouteNotice', { m: Number(bus.offRouteM) || mapT('map.popup.offRouteFallback', null, 'més de 75') })}</span>
         </div>` : ''}
 
         ${(fromStop && toStop) ? `
@@ -1402,26 +1504,26 @@ class TransitMap {
         </div>` : '')}
 
         <div class="map-popup-metrics-grid">
-          <div class="map-popup-metric-tile" title="Velocitat: ${speedValue}">
+          <div class="map-popup-metric-tile" title="${escHtml(mapT('map.popup.speedTitle', { val: speedValue }))}">
             <div class="map-popup-metric-header">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-              <span>Velocitat</span>
+              <span>${speedLabel}</span>
             </div>
-            <div class="map-popup-metric-val"><span>${speedValue}</span></div>
+            <div class="map-popup-metric-val"><span>${escHtml(speedValue)}</span></div>
           </div>
 
-          <div class="map-popup-metric-tile" title="Estat: ${escHtml(delayBadgeText)}">
+          <div class="map-popup-metric-tile" title="${escHtml(mapT('map.popup.statusTitle', { val: delayBadgeText }))}">
             <div class="map-popup-metric-header">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-              <span>Estat</span>
+              <span>${statusLabel}</span>
             </div>
             <div class="map-popup-metric-val ${delayClass}"><span>${escHtml(delayBadgeText)}</span></div>
           </div>
 
-          <div class="map-popup-metric-tile" title="Rumb: ${escHtml(compassLabel)} (${bearingAngle}°)">
+          <div class="map-popup-metric-tile" title="${escHtml(mapT('map.popup.headingTitle', { compass: compassLabel, deg: bearingAngle }))}">
             <div class="map-popup-metric-header">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 19 21 12 17 5 21 12 2"/></svg>
-              <span>Rumb</span>
+              <span>${escHtml(mapT('map.popup.headingLabel', null, 'Rumb'))}</span>
             </div>
             <div class="map-popup-metric-val map-popup-compass-val">
               <svg class="map-popup-compass-arrow" style="transform: rotate(${bearingAngle}deg);" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -1431,10 +1533,10 @@ class TransitMap {
             </div>
           </div>
 
-          <div class="map-popup-metric-tile" title="Progrés del recorregut: ${progressNum}%">
+          <div class="map-popup-metric-tile" title="${escHtml(mapT('map.popup.progressTitle', { pct: progressNum }))}">
             <div class="map-popup-metric-header">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-              <span>Progrés</span>
+              <span>${escHtml(mapT('map.popup.progressLabel', null, 'Progrés'))}</span>
             </div>
             <div class="map-popup-metric-val"><span>${progressNum}%</span></div>
             <div class="map-popup-progress-track">
@@ -1445,15 +1547,15 @@ class TransitMap {
 
         ${(hasChips || isGhost) ? `
         <div class="map-popup-fleet-chips">
-          ${isGhost ? '<span class="map-popup-chip ghost" title="Vehicle sense telemetria GPS"><span class="chip-icon">⚡</span> Sense senyal GPS</span>' : ''}
-          ${bus.isAccessible ? '<span class="map-popup-chip pmr" title="Vehicle Adaptat PMR"><span class="chip-icon">♿</span> Adaptat PMR</span>' : ''}
+          ${isGhost ? `<span class="map-popup-chip ghost" title="${escHtml(mapT('map.popup.chipNoGpsTitle', null, 'Vehicle sense telemetria GPS'))}"><span class="chip-icon">⚡</span> ${escHtml(mapT('map.popup.chipNoGps', null, 'Sense senyal GPS'))}</span>` : ''}
+          ${bus.isAccessible ? `<span class="map-popup-chip pmr" title="${escHtml(mapT('map.popup.chipPmrTitle', null, 'Vehicle Adaptat PMR'))}"><span class="chip-icon">♿</span> ${escHtml(mapT('map.popup.chipPmr', null, 'Adaptat PMR'))}</span>` : ''}
           ${bus.isElectric 
-            ? '<span class="map-popup-chip electric"><span class="chip-icon">⚡</span> 100% Elèctric</span>' 
+            ? `<span class="map-popup-chip electric"><span class="chip-icon">⚡</span> ${escHtml(mapT('map.popup.chipElectric', null, '100% Elèctric'))}</span>` 
             : (bus.isHybrid 
-              ? '<span class="map-popup-chip hybrid"><span class="chip-icon">🌱</span> Híbrid Eco</span>' 
+              ? `<span class="map-popup-chip hybrid"><span class="chip-icon">🌱</span> ${escHtml(mapT('map.popup.chipHybrid', null, 'Híbrid Eco'))}</span>` 
               : (bus.propulsion ? `<span class="map-popup-chip propulsion"><span class="chip-icon">${CANONICAL_BUS_ICON_INNER_SVG}</span> ${escHtml(bus.propulsion)}</span>` : ''))}
           ${bus.modelName ? `<span class="map-popup-chip model" title="${escHtml(bus.modelName)}"><span class="chip-icon">🚍</span> ${escHtml(bus.modelName)}</span>` : ''}
-          ${bus.tripStartTime || bus.departureTime ? `<span class="map-popup-chip start-time"><span class="chip-icon">🕐</span> Sortida ${escHtml(bus.tripStartTime || bus.departureTime)}</span>` : ''}
+          ${bus.tripStartTime || bus.departureTime ? `<span class="map-popup-chip start-time"><span class="chip-icon">🕐</span> ${escHtml(mapT('map.popup.chipDeparture', { time: bus.tripStartTime || bus.departureTime }))}</span>` : ''}
         </div>` : ''}
 
         <div class="map-popup-coords-footer">
@@ -1461,7 +1563,7 @@ class TransitMap {
             <span class="radar-dot ${isGhost ? 'ghost' : (isEst ? 'estimated' : '')}"></span>
             <span>${coordsText}</span>
           </div>
-          <span class="source-tag">${isGhost ? '⚡ Horari Oficial (Sense GPS)' : (isEst ? 'Estimació Dead-Reckoning' : 'GPS Directe (SIRI)')}</span>
+          <span class="source-tag">${escHtml(sourceTagText)}</span>
         </div>
 
         <button type="button" class="map-popup-btn-share" data-share-vehicle="${escHtml(bus.vehicleId)}">
@@ -1469,7 +1571,7 @@ class TransitMap {
             <circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle>
             <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
           </svg>
-          <span>Compartir seguiment d'aquest bus</span>
+          <span>${shareBusLabel}</span>
         </button>
 
         ${ctx.showLineLink && lineBadge ? `
@@ -1477,7 +1579,7 @@ class TransitMap {
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polygon points="3 11 22 2 13 21 11 13 3 11"></polygon>
           </svg>
-          <span>Obre la línia ${escHtml(lineBadge)}</span>
+          <span>${escHtml(mapT('map.popup.openLine', { line: lineBadge }, `Obre la línia ${lineBadge}`))}</span>
         </button>` : ''}
       </div>
     `;
@@ -1623,7 +1725,7 @@ class TransitMap {
       const reportedBearing = (bus.bearing !== undefined && bus.bearing !== null && Number.isFinite(Number(bus.bearing))) ? Number(bus.bearing) : null;
       const roadBearing = (snapped.bearing !== undefined && snapped.bearing !== null && Number.isFinite(Number(snapped.bearing))) ? Number(snapped.bearing) : null;
       const bearingAngle = Math.round(reportedBearing !== null ? reportedBearing : (roadBearing !== null ? roadBearing : 0));
-      const popupHtml = this.buildBusPopupHtml(bus, {
+      const popupCtx = {
         isGhost,
         isEst,
         isSecDir,
@@ -1632,7 +1734,8 @@ class TransitMap {
         bearingAngle,
         lineCode: this.currentLineId,
         showLineLink: false
-      });
+      };
+      const popupHtml = this.buildBusPopupHtml(bus, popupCtx);
 
       const pinBg = isGhost
         ? 'rgba(15, 23, 42, 0.88)'
@@ -1670,6 +1773,7 @@ class TransitMap {
       if (this.busMarkersMap.has(markerKey)) {
         const obj = this.busMarkersMap.get(markerKey);
         obj.busData = bus;
+        obj.popupCtx = popupCtx;
         obj.targetLat = snapped.lat;
         obj.targetLon = snapped.lon;
         obj.targetBearing = bearingAngle;
@@ -1763,6 +1867,7 @@ class TransitMap {
         this.busMarkersMap.set(markerKey, {
           marker,
           busData: bus,
+          popupCtx,
           targetLat: snapped.lat,
           targetLon: snapped.lon,
           targetBearing: bearingAngle,

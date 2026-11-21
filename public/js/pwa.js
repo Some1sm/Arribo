@@ -3,6 +3,9 @@
   let initialized = false;
   let accepted = false;
   let reloaded = false;
+  function t(key, fallback) {
+    return global.ArriboI18n ? global.ArriboI18n.t(key) : fallback;
+  }
   function init() {
     if (initialized) return;
     initialized = true;
@@ -14,15 +17,20 @@
     const update = document.createElement('button');
     update.type = 'button';
     update.className = 'update-banner';
-    update.textContent = 'Nova versió disponible · Actualitzar';
     update.hidden = true;
     update.addEventListener('click', applyUpdate);
     document.body.appendChild(update);
+    const applyLabels = () => {
+      update.textContent = t('pwa.updateAvailable', 'Nova versió disponible · Actualitzar');
+      banner.textContent = t('pwa.offlineBanner', 'Sense connexió · Les arribades no estan actualitzades. Els trajectes desats continuen disponibles.');
+    };
+    applyLabels();
+    document.addEventListener('arribo:lang', applyLabels);
     const state = () => {
       const offline = global.navigator.onLine === false;
       document.documentElement.classList.toggle('is-offline', offline);
       banner.hidden = !offline;
-      banner.textContent = 'Sense connexió · Les arribades no estan actualitzades. Els trajectes desats continuen disponibles.';
+      applyLabels();
       const planner = global.planApp;
       if (offline) planner?.stopPolling();
       else if (planner?.lastSearchUrl) { planner.refreshLiveDepartures(); planner.startPolling(); }

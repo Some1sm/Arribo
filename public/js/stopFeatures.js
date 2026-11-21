@@ -36,7 +36,7 @@
       this.favoriteStops.push({
         id: sId,
         code: sId,
-        name: stopName || `Parada ${sId}`,
+        name: stopName || (global.ArriboI18n ? global.ArriboI18n.t('stopFeat.stopFallback', { id: sId }) : `Parada ${sId}`),
         lines: lines || [],
         addedAt: Date.now()
       });
@@ -50,16 +50,18 @@
     const badge = document.getElementById('header-favs-count-text');
     if (badge) {
       const count = this.favoriteStops.length;
-      badge.textContent = count > 0 ? `Preferides (${count})` : 'Preferides';
+      const t = (k, v, fb) => (global.ArriboI18n ? global.ArriboI18n.t(k, v) : fb);
+      badge.textContent = count > 0 ? t('stopFeat.favCount', { n: count }, `Preferides (${count})`) : t('stopFeat.favLabel', null, 'Preferides');
     }
   },
 
   handleNearbyStopsRequest() {
+    const t = (k, v, fb) => (global.ArriboI18n ? global.ArriboI18n.t(k, v) : fb);
     const geoBtn = document.getElementById('btn-hero-geo');
     const originalHtml = geoBtn ? geoBtn.innerHTML : '';
 
     if (geoBtn) {
-      geoBtn.innerHTML = '<span class="loading-spinner-inline" style="width:12px;height:12px;"></span> <span>Localitzant...</span>';
+      geoBtn.innerHTML = `<span class="loading-spinner-inline" style="width:12px;height:12px;"></span> <span>${this.esc(t('stopFeat.locating', null, 'Localitzant...'))}</span>`;
     }
 
     const fallbackToZonePicker = () => {
@@ -75,7 +77,7 @@
           // Inside the area the operators serve (from the line catalog); Mataró's box until one is known.
           const area = window.TransitUtils?.serviceArea?.();
           if (area ? area.contains(latitude, longitude) : (latitude >= 41.45 && latitude <= 41.60 && longitude >= 2.35 && longitude <= 2.52)) {
-            this.loadNearbyStops(latitude, longitude, 'La teva posició GPS 📍');
+            this.loadNearbyStops(latitude, longitude, t('stopFeat.yourGps', null, 'La teva posició GPS 📍'));
           } else {
             this.openZonePicker();
           }
@@ -113,21 +115,23 @@
     const modal = document.getElementById('zone-picker-modal-backdrop');
     if (modal) modal.classList.remove('active');
   },
-  async loadNearbyStops(lat, lon, label = 'A prop') {
+  async loadNearbyStops(lat, lon, label) {
+    const t = (k, v, fb) => (global.ArriboI18n ? global.ArriboI18n.t(k, v) : fb);
+    const resolvedLabel = label || t('stopFeat.nearbyDefault', null, 'A prop');
     const section = document.getElementById('landing-nearby-section');
     const titleEl = document.getElementById('nearby-zone-title');
     const grid = document.getElementById('landing-nearby-grid');
     if (!section || !grid) return;
 
-    this.activeNearbyZone = { lat, lon, label };
-    if (titleEl) titleEl.textContent = label;
+    this.activeNearbyZone = { lat, lon, label: resolvedLabel };
+    if (titleEl) titleEl.textContent = resolvedLabel;
     section.style.display = 'block';
     section.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
     grid.innerHTML = `
       <div style="grid-column: 1 / -1; padding: 2rem; text-align: center; color: var(--text-muted);">
         <span class="loading-spinner-inline" style="width:16px;height:16px;margin-bottom:0.5rem;"></span>
-        <div>Cercant parades properes i horaris en directe...</div>
+        <div>${this.esc(t('stopFeat.loadingNearby', null, 'Cercant parades properes i horaris en directe...'))}</div>
       </div>
     `;
 
@@ -140,8 +144,8 @@
         grid.innerHTML = `
           <div style="grid-column: 1 / -1; padding: 2rem; text-align: center; color: var(--text-muted); background:var(--bg-surface-elevated); border-radius:var(--radius-sm);">
             <div style="font-size:1.6rem; margin-bottom:0.4rem;">🚏</div>
-            <div style="font-weight:700; color:var(--text-primary); margin-bottom:0.25rem;">Cap parada a menys de 800m</div>
-            <div style="font-size:0.82rem;">Tria un altre barri o zona de Mataró per consultar les parades.</div>
+            <div style="font-weight:700; color:var(--text-primary); margin-bottom:0.25rem;">${this.esc(t('stopFeat.noneNearbyTitle', null, 'Cap parada a menys de 800m'))}</div>
+            <div style="font-size:0.82rem;">${this.esc(t('stopFeat.noneNearbyHint', null, 'Tria un altre barri o zona de Mataró per consultar les parades.'))}</div>
           </div>
         `;
         return;
@@ -158,24 +162,24 @@
               const lineCode = d.lineId ? `L${String(d.lineId).replace(/^L/i, '')}` : 'Bus';
               const minsAway = d.minutesAway !== undefined && d.minutesAway !== null ? d.minutesAway : null;
               const minsText = minsAway !== null
-                ? (minsAway <= 0 ? 'Ara' : (minsAway === 1 ? '1 min' : `${minsAway} min`))
+                ? (minsAway <= 0 ? t('common.now', null, 'Ara') : (minsAway === 1 ? '1 min' : `${minsAway} min`))
                 : (d.departureTime || '--:--');
 
               return `
                 <div class="landing-fav-arrival-pill">
-                  <span><strong>${this.esc(lineCode)}</strong> cap a ${this.esc((d.destination || 'Destí').replace(/^Cap a\s+/i, ''))}</span>
-                  <strong style="color:${minsAway !== null && minsAway <= 3 ? '#10b981' : 'var(--text-primary)'};">${minsText}</strong>
+                  <span><strong>${this.esc(lineCode)}</strong> ${this.esc(t('stopFeat.towards', null, 'cap a'))} ${this.esc((d.destination || t('common.destination', null, 'Destí')).replace(/^Cap a\s+/i, ''))}</span>
+                  <strong style="color:${minsAway !== null && minsAway <= 3 ? '#10b981' : 'var(--text-primary)'};">${this.esc(minsText)}</strong>
                 </div>
               `;
             }).join('')
-          : '<div style="font-size:0.75rem; color:var(--text-muted);">Fes clic per veure sortides completes</div>';
+          : `<div style="font-size:0.75rem; color:var(--text-muted);">${this.esc(t('stopFeat.clickFull', null, 'Fes clic per veure sortides completes'))}</div>`;
 
         return `
           <div class="landing-nearby-card" data-stop-id="${this.esc(s.id)}" data-stop-name="${this.esc(s.name)}">
             <div class="landing-nearby-card-header">
               <div>
                 <div class="landing-nearby-title">${this.esc(s.name)}</div>
-                <div class="landing-nearby-code">Codi #${this.esc(s.code || s.id)}</div>
+                <div class="landing-nearby-code">${this.esc(t('stopFeat.code', { code: s.code || s.id }, `Codi #${s.code || s.id}`))}</div>
               </div>
               <span class="nearby-dist-badge">🚶 ${s.distanceMeters}m • ${s.walkingMinutes} min</span>
             </div>
@@ -187,7 +191,7 @@
     } catch (err) {
       if (err.name === 'AbortError') return;
       console.error('Nearby stops fetch error:', err);
-      grid.innerHTML = '<div style="color:var(--danger); padding:1rem; text-align:center;">Error en carregar les parades properes.</div>';
+      grid.innerHTML = `<div style="color:var(--danger); padding:1rem; text-align:center;">${this.esc(t('stopFeat.nearbyError', null, 'Error en carregar les parades properes.'))}</div>`;
     }
   },
 

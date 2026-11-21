@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Com anar-hi a Mataró — Planificador de Rutes | Arribo!</title>
+  <title data-i18n="plan.pageTitle">Com anar-hi a Mataró — Planificador de Rutes | Arribo!</title>
   <meta name="description" content="Planificador de viatges i connexions d'autobús urbà i Rodalies a Mataró. Descobreix la millor ruta directa o amb transbordament.">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2310b981' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M4.7 17.5H3.4A1.4 1.4 0 0 1 2 16.1V6.4A1.4 1.4 0 0 1 3.4 5H17.5A4.5 4.5 0 0 1 22 9.5v6.6a1.4 1.4 0 0 1-1.4 1.4h-1.3'/><path d='M9.3 17.5h5.4'/><path d='M2 11.6h20'/><path d='M7.5 5v6.6M12.5 5v6.6M17.6 5.2v6.4'/><circle cx='7' cy='17.5' r='2.3'/><circle cx='17' cy='17.5' r='2.3'/></svg>">
   
@@ -13,13 +13,13 @@
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-  <link rel="stylesheet" href="/css/style.css?v=9.4.60">
+  <link rel="stylesheet" href="/css/style.css?v=9.4.61">
 </head>
 <body class="planner-page-body">
   <!-- Top Navigation Bar -->
   <header class="app-header plan-header">
     <div class="header-container">
-      <a href="/" class="brand-title-wrap" id="header-logo-group" title="Arribo! - Tornar al mapa en temps real">
+      <a href="/" class="brand-title-wrap" id="header-logo-group" title="Arribo! - Tornar al mapa en temps real" data-i18n-title="plan.brandTitle">
         <div class="brand-mark-box" id="header-line-badge">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M4.7 17.5H3.4A1.4 1.4 0 0 1 2 16.1V6.4A1.4 1.4 0 0 1 3.4 5H17.5A4.5 4.5 0 0 1 22 9.5v6.6a1.4 1.4 0 0 1-1.4 1.4h-1.3"/>
@@ -31,25 +31,25 @@
           </svg>
         </div>
         <span>Arribo!</span>
-        <span class="brand-badge-pill" id="header-city-pill">Rutes</span>
+        <span class="brand-badge-pill" id="header-city-pill" data-i18n="plan.headerPill">Rutes</span>
       </a>
 
       <div class="header-actions">
         <!-- Back to Main Map -->
-        <a href="/" class="btn-header-nav map-btn" id="btn-header-map" title="Tornar al mapa en temps real" style="text-decoration:none;">
+        <a href="/" class="btn-header-nav map-btn" id="btn-header-map" title="Tornar al mapa en temps real" data-i18n-title="plan.navMapTitle" style="text-decoration:none;">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/></svg>
-          <span>Mapa general</span>
+          <span data-i18n="plan.navMap">Mapa general</span>
         </a>
 
         <!-- Journalism & Delay Analytics Link -->
-        <a href="/dades" class="btn-header-nav journalism-btn" id="btn-open-journalism" title="Veure anàlisi de retards històrics, puntualitat i dades" style="text-decoration:none;">
+        <a href="/dades" class="btn-header-nav journalism-btn" id="btn-open-journalism" title="Veure anàlisi de retards històrics, puntualitat i dades" data-i18n-title="plan.navDadesTitle" style="text-decoration:none;">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-          <span>Dades</span>
+          <span data-i18n="plan.navDades">Dades</span>
         </a>
 
         <!-- Theme Toggle Button -->
         <select class="lang-select" data-lang-picker aria-label="Idioma"></select>
-        <button type="button" class="btn-icon btn-theme-toggle" id="btn-page-theme-toggle" title="Canviar tema clar / fosc" aria-label="Canviar tema clar o fosc">
+        <button type="button" class="btn-icon btn-theme-toggle" id="btn-page-theme-toggle" title="Canviar tema clar / fosc" data-i18n-title="plan.themeTitle" aria-label="Canviar tema clar o fosc" data-i18n-aria-label="plan.themeAria">
           <svg class="theme-icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="5"></circle>
             <line x1="12" y1="1" x2="12" y2="3"></line>
@@ -73,20 +73,20 @@
     <!-- Left Sidebar: Search & Results -->
     <aside class="plan-sidebar sheet-split" id="plan-sidebar">
       <!-- Mobile Sheet Drag Handle & View Switcher -->
-      <div class="plan-sheet-bar" id="plan-sheet-bar" title="Arrossega o prem per canviar mida">
+      <div class="plan-sheet-bar" id="plan-sheet-bar" title="Arrossega o prem per canviar mida" data-i18n-title="plan.sheetBarTitle">
         <div class="sheet-drag-pill" id="sheet-drag-pill"></div>
         <div class="sheet-view-toggles">
-          <button type="button" class="sheet-toggle-btn" id="btn-sheet-map" title="Veure mapa ampliat">
+          <button type="button" class="sheet-toggle-btn" id="btn-sheet-map" title="Veure mapa ampliat" data-i18n-title="plan.sheetMapTitle">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/></svg>
-            <span>Mapa</span>
+            <span data-i18n="plan.sheetMap">Mapa</span>
           </button>
-          <button type="button" class="sheet-toggle-btn active" id="btn-sheet-split" title="Vista dividida">
+          <button type="button" class="sheet-toggle-btn active" id="btn-sheet-split" title="Vista dividida" data-i18n-title="plan.sheetSplitTitle">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
-            <span>Mig</span>
+            <span data-i18n="plan.sheetSplit">Mig</span>
           </button>
-          <button type="button" class="sheet-toggle-btn" id="btn-sheet-routes" title="Veure rutes a pantalla completa">
+          <button type="button" class="sheet-toggle-btn" id="btn-sheet-routes" title="Veure rutes a pantalla completa" data-i18n-title="plan.sheetRoutesTitle">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-            <span id="label-sheet-routes">Rutes</span>
+            <span id="label-sheet-routes" data-i18n="plan.sheetRoutes">Rutes</span>
           </button>
         </div>
       </div>
@@ -94,19 +94,19 @@
       <div class="plan-search-box" id="plan-search-box">
         <!-- Compact Summary Header (displayed after search on mobile) -->
         <div class="plan-trip-summary" id="plan-trip-summary" style="display:none;">
-          <div class="trip-summary-content" id="btn-expand-search" role="button" tabindex="0" title="Prem per modificar origen o destinació">
+          <div class="trip-summary-content" id="btn-expand-search" role="button" tabindex="0" title="Prem per modificar origen o destinació" data-i18n-title="plan.summaryExpandTitle">
             <div class="trip-summary-line">
               <span class="trip-summary-dot dot-origin"></span>
-              <span class="trip-summary-text" id="trip-summary-from">Origen</span>
+              <span class="trip-summary-text" id="trip-summary-from" data-i18n="plan.summaryFromDefault">Origen</span>
             </div>
             <div class="trip-summary-arrow">➔</div>
             <div class="trip-summary-line">
               <span class="trip-summary-dot dot-dest"></span>
-              <span class="trip-summary-text" id="trip-summary-to">Destinació</span>
+              <span class="trip-summary-text" id="trip-summary-to" data-i18n="plan.summaryToDefault">Destinació</span>
             </div>
           </div>
-          <button type="button" class="btn-trip-edit" id="btn-trip-edit" title="Modificar adreces">
-            <span>✏️ Canviar</span>
+          <button type="button" class="btn-trip-edit" id="btn-trip-edit" title="Modificar adreces" data-i18n-title="plan.summaryEditTitle">
+            <span data-i18n="plan.summaryEdit">✏️ Canviar</span>
           </button>
         </div>
 
@@ -117,11 +117,11 @@
             <div class="planner-input-group" style="margin-bottom:0.6rem;">
               <label class="planner-label" for="page-planner-origin">
                 <span class="planner-dot dot-origin"></span>
-                <span>ORIGEN:</span>
+                <span data-i18n="plan.originLabel">ORIGEN:</span>
               </label>
               <div class="planner-input-wrapper">
-                <input type="text" id="page-planner-origin" class="planner-input" placeholder="Parada d'origen (ex: Roca Blanca)" autocomplete="off">
-                <button type="button" class="btn-planner-geo btn-planner-gps" id="btn-page-planner-gps" title="Utilitzar la meva ubicació actual">
+                <input type="text" id="page-planner-origin" class="planner-input" placeholder="Parada d'origen (ex: Roca Blanca)" data-i18n-placeholder="plan.originPlaceholder" autocomplete="off">
+                <button type="button" class="btn-planner-geo btn-planner-gps" id="btn-page-planner-gps" title="Utilitzar la meva ubicació actual" data-i18n-title="plan.gpsTitle">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
                   <span>GPS</span>
                 </button>
@@ -131,7 +131,7 @@
 
             <!-- Swap Button -->
             <div style="display:flex; justify-content:center; margin:-6px 0 2px 0;">
-              <button type="button" class="btn-planner-swap" id="btn-page-planner-swap" title="Intercanviar origen i destinació">
+              <button type="button" class="btn-planner-swap" id="btn-page-planner-swap" title="Intercanviar origen i destinació" data-i18n-title="plan.swapTitle" aria-label="Intercanviar origen i destinació" data-i18n-aria-label="plan.swapTitle">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg>
               </button>
             </div>
@@ -140,29 +140,29 @@
             <div class="planner-input-group" style="margin-bottom:0.75rem;">
               <label class="planner-label" for="page-planner-dest">
                 <span class="planner-dot dot-dest"></span>
-                <span>DESTINACIÓ:</span>
+                <span data-i18n="plan.destLabel">DESTINACIÓ:</span>
               </label>
               <div class="planner-input-wrapper">
-                <input type="text" id="page-planner-dest" class="planner-input" placeholder="Parada de destí (ex: Rodalies)" autocomplete="off">
+                <input type="text" id="page-planner-dest" class="planner-input" placeholder="Parada de destí (ex: Rodalies)" data-i18n-placeholder="plan.destPlaceholder" autocomplete="off">
               </div>
               <div id="page-planner-dest-dropdown" class="planner-dropdown" style="display:none;"></div>
             </div>
 
             <!-- Preferences Selection Pills -->
             <div class="planner-prefs-container">
-              <span class="planner-prefs-label">PREFERÈNCIA:</span>
+              <span class="planner-prefs-label" data-i18n="plan.prefLabel">PREFERÈNCIA:</span>
               <div class="planner-prefs-pills" id="planner-prefs-group">
-                <button type="button" class="plan-pref-pill active" data-pref="fastest" title="Troba la ruta amb menys temps total">
+                <button type="button" class="plan-pref-pill active" data-pref="fastest" title="Troba la ruta amb menys temps total" data-i18n-title="plan.prefFastestTitle">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                  <span>Més ràpid</span>
+                  <span data-i18n="plan.prefFastest">Més ràpid</span>
                 </button>
-                <button type="button" class="plan-pref-pill" data-pref="least_walking" title="Prioritza rutes amb menys distància caminant">
+                <button type="button" class="plan-pref-pill" data-pref="least_walking" title="Prioritza rutes amb menys distància caminant" data-i18n-title="plan.prefLeastWalkTitle">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="2"/><path d="m9 20 3-6 3 2 2 4"/></svg>
-                  <span>Menys caminar</span>
+                  <span data-i18n="plan.prefLeastWalk">Menys caminar</span>
                 </button>
-                <button type="button" class="plan-pref-pill" data-pref="direct_only" title="Mostra només línies directes sense transbordament">
+                <button type="button" class="plan-pref-pill" data-pref="direct_only" title="Mostra només línies directes sense transbordament" data-i18n-title="plan.prefDirectTitle">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
-                  <span>Sense transbord</span>
+                  <span data-i18n="plan.prefDirect">Sense transbord</span>
                 </button>
               </div>
             </div>
@@ -170,15 +170,15 @@
             <!-- Search Button -->
             <button type="button" class="btn-planner-search" id="btn-page-planner-search" style="padding:0.75rem; font-size:0.92rem; margin-top:0.6rem;">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              <span>Cercar la millor ruta</span>
+              <span data-i18n="plan.searchBtn">Cercar la millor ruta</span>
             </button>
 
             <!-- Collapsible Secondary Options Toggle Bar -->
             <div class="planner-options-toggle-bar" id="planner-options-toggle-bar">
-              <button type="button" class="btn-toggle-secondary-options" id="btn-toggle-secondary-options" aria-expanded="false" title="Canviar horari de sortida, ritme a peu o consultar trajectes desats">
+              <button type="button" class="btn-toggle-secondary-options" id="btn-toggle-secondary-options" aria-expanded="false" title="Canviar horari de sortida, ritme a peu o consultar trajectes desats" data-i18n-title="plan.moreOptionsTitle">
                 <span style="display:flex; align-items:center; gap:6px;">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                  <span id="label-secondary-toggle">Més opcions (Horari, a peu, trajectes)</span>
+                  <span id="label-secondary-toggle" data-i18n="plan.moreOptions">Més opcions (Horari, a peu, trajectes)</span>
                 </span>
                 <svg class="toggle-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
               </button>
@@ -188,7 +188,7 @@
             <div class="planner-secondary-options" id="planner-secondary-options">
               <!-- Quick Presets -->
               <div class="plan-presets">
-                <span style="font-size:0.7rem; color:var(--text-muted); font-weight:700;">DESTINACIONS:</span>
+                <span style="font-size:0.7rem; color:var(--text-muted); font-weight:700;" data-i18n="plan.presetsLabel">DESTINACIONS:</span>
                 <button type="button" class="plan-preset-chip" data-stop="Hospital de Mataró">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 6v12"/><path d="M6 12h12"/></svg>
                   <span>Hospital</span>
@@ -210,27 +210,27 @@
               <!-- Departure Time Switcher -->
               <div class="planner-time-container">
                 <div class="planner-time-toggle-row">
-                  <span class="planner-prefs-label">HORARI:</span>
+                  <span class="planner-prefs-label" data-i18n="plan.timeLabel">HORARI:</span>
                   <div class="planner-time-tabs" id="planner-time-tabs">
                     <button type="button" class="plan-time-tab active" id="btn-time-now" data-time-mode="now">
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                      <span>Ara mateix</span>
+                      <span data-i18n="plan.timeNow">Ara mateix</span>
                     </button>
                     <button type="button" class="plan-time-tab" id="btn-time-future" data-time-mode="future">
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                      <span>Sortir a les...</span>
+                      <span data-i18n="plan.timeFuture">Sortir a les...</span>
                     </button>
                   </div>
                 </div>
                 <div class="planner-time-inputs" id="planner-time-inputs" style="display:none;">
                   <div class="planner-time-inputs-grid">
                     <div class="time-field-wrapper">
-                      <label for="plan-time-val" class="time-field-label">Hora:</label>
-                      <input type="time" id="plan-time-val" class="planner-native-input" aria-label="Hora de sortida">
+                      <label for="plan-time-val" class="time-field-label" data-i18n="plan.hourLabel">Hora:</label>
+                      <input type="time" id="plan-time-val" class="planner-native-input" aria-label="Hora de sortida" data-i18n-aria-label="plan.hourAria">
                     </div>
                     <div class="time-field-wrapper">
-                      <label for="plan-date-val" class="time-field-label">Dia:</label>
-                      <input type="date" id="plan-date-val" class="planner-native-input" aria-label="Data de sortida">
+                      <label for="plan-date-val" class="time-field-label" data-i18n="plan.dateLabel">Dia:</label>
+                      <input type="date" id="plan-date-val" class="planner-native-input" aria-label="Data de sortida" data-i18n-aria-label="plan.dateAria">
                     </div>
                   </div>
                 </div>
@@ -240,32 +240,32 @@
               <div class="planner-walking-settings">
                 <div class="walking-settings-header">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="2"/><path d="m9 20 3-6 3 2 2 4"/><path d="m6 16 3-4-1-4 4-2 3 3"/></svg>
-                  <span>Paràmetres a peu</span>
+                  <span data-i18n="plan.walkSettingsTitle">Paràmetres a peu</span>
                 </div>
                 <div class="walking-settings-grid">
                   <div class="setting-field">
-                    <label for="plan-walking-speed" class="setting-label">Ritme a peu</label>
+                    <label for="plan-walking-speed" class="setting-label" data-i18n="plan.walkPaceLabel">Ritme a peu</label>
                     <div class="select-wrapper">
                       <select id="plan-walking-speed" class="planner-select">
-                        <option value="50">Tranquil (3.0 km/h)</option>
-                        <option value="80" selected>Normal (4.8 km/h)</option>
-                        <option value="100">Ràpid (6.0 km/h)</option>
+                        <option value="50" data-i18n="plan.walkSlow">Tranquil (3.0 km/h)</option>
+                        <option value="80" selected data-i18n="plan.walkNormal">Normal (4.8 km/h)</option>
+                        <option value="100" data-i18n="plan.walkFast">Ràpid (6.0 km/h)</option>
                       </select>
                     </div>
                   </div>
                   <div class="setting-field">
-                    <label for="plan-max-walk" class="setting-label">Distància màx. (metres)</label>
+                    <label for="plan-max-walk" class="setting-label" data-i18n="plan.walkMaxDistLabel">Distància màx. (metres)</label>
                     <input id="plan-max-walk" class="planner-number-input" type="number" min="50" max="5000" step="50" value="2000">
                   </div>
                 </div>
                 <div class="accessibility-note">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                  <span>Accessibilitat sense esglaons segons vehicle assignat.</span>
+                  <span data-i18n="plan.accessibilityNote">Accessibilitat sense esglaons segons vehicle assignat.</span>
                 </div>
               </div>
 
               <!-- Saved Trips Section -->
-              <section id="journey-library" class="journey-library-card" aria-label="Trajectes desats"></section>
+              <section id="journey-library" class="journey-library-card" aria-label="Trajectes desats" data-i18n-aria-label="plan.savedTripsAria"></section>
             </div>
           </div>
         </div>
@@ -276,22 +276,22 @@
         <div class="plan-results-area" id="page-planner-results">
           <div style="text-align:center; padding:3rem 1rem; color:var(--text-secondary);">
             <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--c10-primary)" stroke-width="1.8" style="margin-bottom:0.75rem;"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
-            <div style="font-weight:700; font-size:1rem; color:var(--text-primary); margin-bottom:0.35rem;">On vols anar a Mataró?</div>
-            <div style="font-size:0.85rem; line-height:1.4;">Introdueix una parada d'origen i una de destinació per calcular la combinació més ràpida de bus.</div>
+            <div style="font-weight:700; font-size:1rem; color:var(--text-primary); margin-bottom:0.35rem;" data-i18n="plan.emptyTitle">On vols anar a Mataró?</div>
+            <div style="font-size:0.85rem; line-height:1.4;" data-i18n="plan.emptyDesc">Introdueix una parada d'origen i una de destinació per calcular la combinació més ràpida de bus.</div>
           </div>
         </div>
         <div class="plan-scroll-hint" id="plan-scroll-hint">
-          <span>↕ Llisca per veure totes les opcions</span>
+          <span data-i18n="plan.scrollHint">↕ Llisca per veure totes les opcions</span>
         </div>
       </div>
     </aside>
 
     <!-- Right Area: Interactive Leaflet Map -->
-    <section class="plan-map-view" aria-label="Visualització del mapa del trajecte">
+    <section class="plan-map-view" aria-label="Visualització del mapa del trajecte" data-i18n-aria-label="plan.mapAria">
       <div id="plan-map"></div>
-      <button type="button" class="btn-floating-routes" id="btn-floating-routes" title="Veure llistat de rutes">
+      <button type="button" class="btn-floating-routes" id="btn-floating-routes" title="Veure llistat de rutes" data-i18n-title="plan.floatingRoutesTitle">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-        <span>Veure rutes</span>
+        <span data-i18n="plan.floatingRoutes">Veure rutes</span>
         <span class="floating-routes-badge" id="floating-routes-badge"></span>
       </button>
     </section>
@@ -304,11 +304,11 @@
         <div class="nav-guide-title-row">
           <span class="nav-guide-badge">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
-            <span>Guia de Viatge Pas a Pas</span>
+            <span data-i18n="plan.guideTitle">Guia de Viatge Pas a Pas</span>
           </span>
           <span class="nav-guide-step-counter" id="nav-guide-step-counter">Pas 1 de 3</span>
         </div>
-        <button type="button" class="nav-guide-close-btn" id="btn-close-nav-guide" title="Tancar guia">&times;</button>
+        <button type="button" class="nav-guide-close-btn" id="btn-close-nav-guide" title="Tancar guia" data-i18n-title="plan.guideCloseTitle" aria-label="Tancar guia" data-i18n-aria-label="plan.guideCloseTitle">&times;</button>
       </div>
 
       <!-- Progress Bar -->
@@ -322,26 +322,26 @@
       <!-- Step Controls -->
       <div class="nav-guide-footer">
         <button type="button" class="btn-nav-step" id="btn-nav-prev" disabled>
-          <span>← Pas anterior</span>
+          <span data-i18n="plan.guidePrev">← Pas anterior</span>
         </button>
         <button type="button" class="btn-nav-step primary" id="btn-nav-next">
-          <span>Següent pas →</span>
+          <span data-i18n="plan.guideNextStatic">Següent pas →</span>
         </button>
       </div>
     </div>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="/js/utils.js?v=9.4.60"></script>
-  <script src="/js/i18n.js?v=9.4.60"></script>
-  <script src="/js/storage.js?v=9.4.60"></script>
-  <script src="/js/requests.js?v=9.4.60"></script>
-  <script src="/js/stopFeatures.js?v=9.4.60"></script>
-  <script src="/js/journeys.js?v=9.4.60"></script>
-  <script src="/js/journeyControls.js?v=9.4.60"></script>
-  <script src="/js/pwa.js?v=9.4.60"></script>
+  <script src="/js/utils.js?v=9.4.61"></script>
+  <script src="/js/i18n.js?v=9.4.61"></script>
+  <script src="/js/storage.js?v=9.4.61"></script>
+  <script src="/js/requests.js?v=9.4.61"></script>
+  <script src="/js/stopFeatures.js?v=9.4.61"></script>
+  <script src="/js/journeys.js?v=9.4.61"></script>
+  <script src="/js/journeyControls.js?v=9.4.61"></script>
+  <script src="/js/pwa.js?v=9.4.61"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="/js/map.js?v=9.4.60"></script>
-  <script src="/js/plan.js?v=9.4.60"></script>
+  <script src="/js/map.js?v=9.4.61"></script>
+  <script src="/js/plan.js?v=9.4.61"></script>
 </body>
 </html>

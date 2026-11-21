@@ -16,8 +16,63 @@ class PlannerPageApp {
     this.lastSearchUrl = null;
     this.lastOriginStop = null;
     this.lastDestStop = null;
+    this.lastResultView = null;
     this.currentSheetState = 'split';
     this.init();
+  }
+
+  t(key, vars) {
+    return window.ArriboI18n ? window.ArriboI18n.t(key, vars) : key;
+  }
+
+  lang() {
+    return (window.ArriboI18n && window.ArriboI18n.lang) || 'ca';
+  }
+
+  fmtMeters(meters) {
+    const n = Math.round(Number(meters) || 0);
+    try {
+      return `${new Intl.NumberFormat(this.lang()).format(n)} m`;
+    } catch {
+      return `${n} m`;
+    }
+  }
+
+  fmtKm(val) {
+    const num = Number(val);
+    if (!Number.isFinite(num)) return String(val || '3.5');
+    try {
+      return new Intl.NumberFormat(this.lang(), { maximumFractionDigits: 1 }).format(num);
+    } catch {
+      return String(num);
+    }
+  }
+
+  fmtClock(isoOrMs) {
+    if (!isoOrMs) return '--:--';
+    try {
+      return new Date(isoOrMs).toLocaleTimeString(this.lang(), { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit', hour12: false });
+    } catch {
+      return '--:--';
+    }
+  }
+
+  fmtCo2(it) {
+    const g = Number(it?.co2SavedGrams);
+    if (Number.isFinite(g) && g > 0) {
+      try {
+        const nf = new Intl.NumberFormat(this.lang(), { maximumFractionDigits: 1 });
+        return g >= 1000 ? `~${nf.format(g / 1000)} kg` : `~${nf.format(Math.round(g))} g`;
+      } catch {
+        return g >= 1000 ? `~${(g / 1000).toFixed(1)} kg` : `~${Math.round(g)} g`;
+      }
+    }
+    return it?.co2Formatted || '~350 g';
+  }
+
+  fmtDepartureTime(dep) {
+    if (!dep || dep === 'En breu') return this.t('plan.guideSoon');
+    return dep;
   }
 
   async init() {
@@ -26,6 +81,7 @@ class PlannerPageApp {
     this.bindEvents();
     this.journeyControls = new window.JourneyControls(this);
     window.TransitPwa?.init();
+    document.addEventListener('arribo:lang', () => this.onLangChange());
     this.checkUrlParams();
 
     // Suspend polling when tab is hidden, resume when visible
@@ -47,6 +103,38 @@ class PlannerPageApp {
         if (summary) summary.style.display = 'none';
       }
     });
+  }
+
+  onLangChange() {
+    const secondary = document.getElementById('planner-secondary-options');
+    const isVisible = secondary ? !secondary.classList.contains('is-collapsed') : true;
+    const toggleLabel = document.getElementById('label-secondary-toggle');
+    if (toggleLabel) {
+      toggleLabel.textContent = isVisible ? this.t('plan.lessOptions') : this.t('plan.moreOptions');
+    }
+
+    this.journeyControls?.render();
+
+    const routesCountLabel = document.getElementById('label-sheet-routes');
+    if (routesCountLabel && this.currentItineraries.length > 0) {
+      routesCountLabel.textContent = this.t('plan.routesCount', { n: this.currentItineraries.length });
+    }
+
+    if (this.currentItineraries.length > 0) {
+      this.renderItineraries(this.currentItineraries, this.lastOriginStop, this.lastDestStop);
+      this.selectItinerary(this.activeItineraryIndex, false);
+      const activeIt = this.currentItineraries[this.activeItineraryIndex];
+      if (activeIt && this.mapController && typeof this.mapController.renderItinerary === 'function') {
+        this.mapController.renderItinerary(activeIt, { fitBounds: false });
+      }
+      const guideModal = document.getElementById('nav-guide-modal');
+      if (guideModal && guideModal.style.display !== 'none' && this.currentGuideItinerary) {
+        this.guideSteps = this.buildGuideSteps(this.currentGuideItinerary);
+        this.renderCurrentGuideStep(false);
+      }
+    } else if (this.lastResultView) {
+      this.renderResultErrorView(this.lastResultView);
+    }
   }
 
   initTheme() {
@@ -398,7 +486,7 @@ class PlannerPageApp {
         toggleBtn.setAttribute('aria-expanded', 'true');
       }
       if (toggleLabel) {
-        toggleLabel.textContent = 'Menys opcions (Amagar detalls)';
+        toggleLabel.textContent = this.t('plan.lessOptions');
       }
     } else {
       secondaryOptions.classList.add('is-collapsed');
@@ -407,7 +495,7 @@ class PlannerPageApp {
         toggleBtn.setAttribute('aria-expanded', 'false');
       }
       if (toggleLabel) {
-        toggleLabel.textContent = 'Més opcions (Horari, a peu, trajectes)';
+        toggleLabel.textContent = this.t('plan.moreOptions');
       }
     }
   }
@@ -460,7 +548,7 @@ class PlannerPageApp {
           const streets = Array.isArray(data.streets) ? data.streets.slice(0, 4) : [];
 
           if (stops.length === 0 && streets.length === 0) {
-            dropdownElem.innerHTML = '<div class="planner-dropdown-item" style="color:var(--text-muted); cursor:default;">No s\'han trobat parades ni carrers</div>';
+            dropdownElem.innerHTML = `<div class="planner-dropdown-item" style="color:var(--text-muted); cursor:default;">${this.esc(this.t('plan.noStopsOrStreets'))}</div>`;
           } else {
             let html = '';
 
@@ -495,11 +583,11 @@ class PlannerPageApp {
                       <span style="color:#06b6d4; font-weight:700;">•</span> <span>${this.esc(st.name)}</span>
                     </div>
                     <div style="font-size:0.75rem; color:var(--text-muted); padding-left:0.85rem;">
-                      ${this.esc(st.subtitle || `Carrer a ${st.cityName}`)}
+                      ${this.esc(st.subtitle || this.t('plan.streetInCity', { city: st.cityName || 'Mataró' }))}
                     </div>
                   </div>
                   <div style="text-align:right;">
-                    <span style="font-size:0.72rem; color:#06b6d4; background:rgba(6,182,212,0.12); padding:2px 6px; border-radius:4px; font-weight:600;">Carrer</span>
+                    <span style="font-size:0.72rem; color:#06b6d4; background:rgba(6,182,212,0.12); padding:2px 6px; border-radius:4px; font-weight:600;">${this.esc(this.t('plan.streetBadge'))}</span>
                   </div>
                 </div>
               `).join('');
@@ -585,7 +673,7 @@ class PlannerPageApp {
 
   handleGpsLocation() {
     if (!navigator.geolocation) {
-      alert('La geolocalització no està disponible al teu navegador.');
+      alert(this.t('plan.geoUnavailable'));
       return;
     }
 
@@ -613,7 +701,7 @@ class PlannerPageApp {
         if (gpsBtn) gpsBtn.innerHTML = '<span>GPS</span>';
       },
       () => {
-        alert("No s'ha pogut obtenir la teva ubicació.");
+        alert(this.t('plan.geoError'));
         if (gpsBtn) gpsBtn.innerHTML = '<span>GPS</span>';
       },
       { timeout: 8000, enableHighAccuracy: true }
@@ -634,14 +722,15 @@ class PlannerPageApp {
     if (!resultsContainer) return;
 
     if (!originVal || !destVal) {
-      alert("Si us plau, especifica tant la parada d'origen com la de destinació.");
+      alert(this.t('plan.enterBothStops'));
       return;
     }
 
+    this.lastResultView = null;
     resultsContainer.innerHTML = `
       <div style="text-align:center; padding:3rem 1rem;">
         <div style="width:28px; height:28px; border:2px solid var(--border-subtle); border-top-color:var(--brand-primary); border-radius:50%; animation:spin 0.8s linear infinite; margin:0 auto;"></div>
-        <div style="margin-top:0.75rem; font-weight:600; color:var(--text-primary); font-size:0.9rem;">Calculant les millors connexions...</div>
+        <div style="margin-top:0.75rem; font-weight:600; color:var(--text-primary); font-size:0.9rem;">${this.esc(this.t('plan.calculating'))}</div>
       </div>
     `;
 
@@ -664,30 +753,26 @@ class PlannerPageApp {
       url += `&walkingSpeed=${encodeURIComponent(document.getElementById('plan-walking-speed')?.value || 80)}&maxWalkingDistance=${encodeURIComponent(document.getElementById('plan-max-walk')?.value || 2000)}`;
       const res = await fetch(url, { signal: this.searchAbortController.signal });
       if (!res.ok) {
-        let serverErrorMsg = `El servidor d'Arribo! ha retornat un codi d'error HTTP ${res.status}.`;
+        let serverErrorMsg = null;
         try {
           const errJson = await res.json();
           if (errJson.error) serverErrorMsg = errJson.error;
         } catch {}
-        throw new Error(serverErrorMsg);
+        const httpErr = new Error(serverErrorMsg || this.t('plan.httpError', { status: res.status }));
+        httpErr._httpStatus = serverErrorMsg ? null : res.status;
+        throw httpErr;
       }
 
       const data = await res.json();
       if (requestId !== this.searchGeneration) return;
 
       if (!data.success) {
+        this.currentItineraries = [];
         const searchBox = document.getElementById('plan-search-box');
         if (searchBox) searchBox.classList.remove('has-results');
         this.setSecondaryOptionsVisibility(true);
-        const errorReason = data.error || data.message || "No s'ha pogut trobar la parada o adreça especificada.";
-        resultsContainer.innerHTML = `
-          <div style="text-align:center; padding:2.5rem 1rem;">
-            <div style="width:36px; height:36px; border-radius:50%; background:rgba(239,68,68,0.12); color:#ef4444; display:flex; align-items:center; justify-content:center; margin:0 auto 0.75rem auto; font-size:1.1rem; font-weight:800;">!</div>
-            <div style="font-weight:700; color:var(--text-primary); font-size:1.05rem; margin-bottom:0.4rem;">Parada o carrer no trobat</div>
-            <div style="font-size:0.85rem; color:var(--text-secondary); max-width:340px; margin:0 auto 0.75rem auto; line-height:1.4;">${this.esc(errorReason)}</div>
-            <div style="font-size:0.78rem; color:var(--text-muted); line-height:1.4;">Comprova l'ortografia d'origen i destinació, o tria directament una opció suggerida del menú desplegable.</div>
-          </div>
-        `;
+        this.lastResultView = { kind: 'not_found', serverMessage: data.error || data.message || null };
+        this.renderResultErrorView(this.lastResultView);
         return;
       }
 
@@ -697,13 +782,8 @@ class PlannerPageApp {
         const searchBox = document.getElementById('plan-search-box');
         if (searchBox) searchBox.classList.remove('has-results');
         this.setSecondaryOptionsVisibility(true);
-        resultsContainer.innerHTML = `
-          <div style="text-align:center; padding:2.5rem 1rem; color:var(--text-secondary);">
-            <div style="width:36px; height:36px; border-radius:50%; background:rgba(148,163,184,0.12); color:var(--text-muted); display:flex; align-items:center; justify-content:center; margin:0 auto 0.75rem auto; font-size:1rem; font-weight:800;">?</div>
-            <div style="font-weight:700; color:var(--text-primary); font-size:1.05rem; margin-bottom:0.4rem;">Cap combinació disponible</div>
-            <div style="font-size:0.85rem; max-width:340px; margin:0 auto; line-height:1.4;">${this.esc(data.message || 'No s\'ha trobat cap ruta directa ni amb 1 sol transbordament entre aquestes dues ubicacions actualment.')}</div>
-          </div>
-        `;
+        this.lastResultView = { kind: 'no_routes', serverMessage: data.message || null };
+        this.renderResultErrorView(this.lastResultView);
         if (this.mapController && typeof this.mapController.clearItinerary === 'function') {
           this.mapController.clearItinerary();
         }
@@ -719,6 +799,7 @@ class PlannerPageApp {
       this.lastSearchUrl = url;
       this.lastOriginStop = data.originStop;
       this.lastDestStop = data.destStop;
+      this.lastResultView = null;
       this.startPolling();
 
       // Update mobile trip summary text
@@ -729,7 +810,7 @@ class PlannerPageApp {
 
       const routesCountLabel = document.getElementById('label-sheet-routes');
       if (routesCountLabel) {
-        routesCountLabel.textContent = `Rutes (${this.currentItineraries.length})`;
+        routesCountLabel.textContent = this.t('plan.routesCount', { n: this.currentItineraries.length });
       }
       const floatBadge = document.getElementById('floating-routes-badge');
       if (floatBadge) {
@@ -765,33 +846,81 @@ class PlannerPageApp {
     } catch (err) {
       if (err.name === 'AbortError' || requestId !== this.searchGeneration) return;
       console.error('Plan search error:', err);
+      this.currentItineraries = [];
       const searchBox = document.getElementById('plan-search-box');
       if (searchBox) searchBox.classList.remove('has-results');
       this.setSecondaryOptionsVisibility(true);
-      let errorTitle = "No s'ha pogut connectar amb el servei";
-      let errorDesc = "No s'ha pogut obtenir la planificació del servidor d'Arribo!.";
 
+      let errKind = 'connect';
       if (!navigator.onLine) {
-        errorTitle = "Sense connexió a Internet";
-        errorDesc = "El teu dispositiu està sense connexió. Comprova la teva xarxa Wi-Fi o dades mòbils.";
+        errKind = 'offline';
       } else if (err.name === 'TypeError' && String(err.message).toLowerCase().includes('fetch')) {
-        errorTitle = "Servidor d'Arribo! no disponible";
-        errorDesc = "El navegador no ha pogut contactar amb el servidor local/API d'Arribo!. Comprova que el servei estigui en funcionament.";
-      } else if (err.message) {
-        errorDesc = err.message;
+        errKind = 'unavailable';
+      } else if (err._httpStatus) {
+        errKind = 'http';
       }
+      this.lastResultView = {
+        kind: 'network_error',
+        errKind,
+        httpStatus: err._httpStatus || null,
+        serverMessage: errKind === 'connect' && err.message ? err.message : null
+      };
+      this.renderResultErrorView(this.lastResultView);
+    }
+  }
 
+  renderResultErrorView(view) {
+    const resultsContainer = document.getElementById('page-planner-results');
+    if (!resultsContainer || !view) return;
+
+    if (view.kind === 'not_found') {
+      const errorReason = view.serverMessage || this.t('plan.notFoundFallback');
       resultsContainer.innerHTML = `
-        <div style="text-align:center; padding:2.5rem 1.2rem; background:rgba(239, 68, 68, 0.06); border:1px solid rgba(239, 68, 68, 0.2); border-radius:12px; margin:1rem 0;">
+        <div style="text-align:center; padding:2.5rem 1rem;">
           <div style="width:36px; height:36px; border-radius:50%; background:rgba(239,68,68,0.12); color:#ef4444; display:flex; align-items:center; justify-content:center; margin:0 auto 0.75rem auto; font-size:1.1rem; font-weight:800;">!</div>
-          <div style="font-weight:700; color:#ef4444; font-size:1.05rem; margin-bottom:0.4rem;">${this.esc(errorTitle)}</div>
-          <div style="font-size:0.85rem; color:var(--text-secondary); max-width:340px; margin:0 auto 1.25rem auto; line-height:1.4;">${this.esc(errorDesc)}</div>
-          <button type="button" class="btn-primary plan-retry-btn" style="display:inline-flex; align-items:center; gap:6px; font-size:0.85rem; padding:0.45rem 1.1rem; cursor:pointer;">
-            <span>Reintentar connexió</span>
-          </button>
+          <div style="font-weight:700; color:var(--text-primary); font-size:1.05rem; margin-bottom:0.4rem;">${this.esc(this.t('plan.notFoundTitle'))}</div>
+          <div style="font-size:0.85rem; color:var(--text-secondary); max-width:340px; margin:0 auto 0.75rem auto; line-height:1.4;">${this.esc(errorReason)}</div>
+          <div style="font-size:0.78rem; color:var(--text-muted); line-height:1.4;">${this.esc(this.t('plan.notFoundHint'))}</div>
         </div>
       `;
+      return;
     }
+
+    if (view.kind === 'no_routes') {
+      resultsContainer.innerHTML = `
+        <div style="text-align:center; padding:2.5rem 1rem; color:var(--text-secondary);">
+          <div style="width:36px; height:36px; border-radius:50%; background:rgba(148,163,184,0.12); color:var(--text-muted); display:flex; align-items:center; justify-content:center; margin:0 auto 0.75rem auto; font-size:1rem; font-weight:800;">?</div>
+          <div style="font-weight:700; color:var(--text-primary); font-size:1.05rem; margin-bottom:0.4rem;">${this.esc(this.t('plan.noRoutesTitle'))}</div>
+          <div style="font-size:0.85rem; max-width:340px; margin:0 auto; line-height:1.4;">${this.esc(view.serverMessage || this.t('plan.noRoutesFallback'))}</div>
+        </div>
+      `;
+      return;
+    }
+
+    let errorTitle = this.t('plan.connectErrTitle');
+    let errorDesc = this.t('plan.connectErrDesc');
+    if (view.errKind === 'offline') {
+      errorTitle = this.t('plan.offlineErrTitle');
+      errorDesc = this.t('plan.offlineErrDesc');
+    } else if (view.errKind === 'unavailable') {
+      errorTitle = this.t('plan.serverUnavailableTitle');
+      errorDesc = this.t('plan.serverUnavailableDesc');
+    } else if (view.errKind === 'http' && view.httpStatus) {
+      errorDesc = this.t('plan.httpError', { status: view.httpStatus });
+    } else if (view.serverMessage) {
+      errorDesc = view.serverMessage;
+    }
+
+    resultsContainer.innerHTML = `
+      <div style="text-align:center; padding:2.5rem 1.2rem; background:rgba(239, 68, 68, 0.06); border:1px solid rgba(239, 68, 68, 0.2); border-radius:12px; margin:1rem 0;">
+        <div style="width:36px; height:36px; border-radius:50%; background:rgba(239,68,68,0.12); color:#ef4444; display:flex; align-items:center; justify-content:center; margin:0 auto 0.75rem auto; font-size:1.1rem; font-weight:800;">!</div>
+        <div style="font-weight:700; color:#ef4444; font-size:1.05rem; margin-bottom:0.4rem;">${this.esc(errorTitle)}</div>
+        <div style="font-size:0.85rem; color:var(--text-secondary); max-width:340px; margin:0 auto 1.25rem auto; line-height:1.4;">${this.esc(errorDesc)}</div>
+        <button type="button" class="btn-primary plan-retry-btn" style="display:inline-flex; align-items:center; gap:6px; font-size:0.85rem; padding:0.45rem 1.1rem; cursor:pointer;">
+          <span>${this.esc(this.t('plan.retryConn'))}</span>
+        </button>
+      </div>
+    `;
   }
 
   renderItineraries(itineraries, originStop, destStop) {
@@ -800,17 +929,24 @@ class PlannerPageApp {
     const container = document.getElementById('page-planner-results');
     if (!container) return;
 
+    const statusLabel = navigator.onLine === false
+      ? this.t('plan.statusOffline')
+      : this.timeMode === 'future'
+        ? this.t('plan.statusScheduled')
+        : this.t('plan.statusUpdating');
+
     container.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
         <span style="font-size:0.82rem; color:var(--text-muted); font-weight:700;">
-          ${itineraries.length} ${itineraries.length === 1 ? 'OPCIÓ TROBADA' : 'OPCIONS TROBADES'}:
+          ${this.esc(this.t(itineraries.length === 1 ? 'plan.optionsOne' : 'plan.optionsMany', { n: itineraries.length }))}
         </span>
         <span style="font-size:0.72rem; color:var(--text-muted); display:inline-flex; align-items:center; gap:4px;">
-          <span style="width:6px; height:6px; background:#10b981; border-radius:50%; display:inline-block;"></span> ${navigator.onLine === false ? 'Sense connexió' : this.timeMode === 'future' ? 'Horari programat' : 'Actualitzant previsions'}
+          <span style="width:6px; height:6px; background:#10b981; border-radius:50%; display:inline-block;"></span> ${this.esc(statusLabel)}
         </span>
       </div>
       ${itineraries.map((it, idx) => {
         const isDirect = it.type === 'direct';
+        const transferCount = Math.max(1, (it.legs?.length || 2) - 1);
         const firstLeg = it.legs[0];
         const waitMin = Number.isFinite(firstLeg?.nextDepartureMins) 
           ? firstLeg.nextDepartureMins 
@@ -819,14 +955,37 @@ class PlannerPageApp {
               : (Number.isFinite(it.nextDepartureMins) ? it.nextDepartureMins : null));
 
         const isRealTime = Boolean(firstLeg?.isRealTime ?? it.isRealTime);
+        const schedVal = firstLeg?.departureTime
+          ? this.fmtDepartureTime(firstLeg.departureTime)
+          : (Number.isFinite(waitMin) ? `${waitMin} min` : this.t('plan.theoretical'));
         const waitBadge = isRealTime
           ? `<span style="display:inline-flex; align-items:center; gap:5px; font-size:0.75rem; color:#10b981; font-weight:700; background:rgba(16,185,129,0.12); border:1px solid rgba(16,185,129,0.25); padding:2px 7px; border-radius:4px;">
                <span style="width:6px; height:6px; background:#10b981; border-radius:50%; box-shadow:0 0 6px #10b981;"></span>
-               ${Number.isFinite(waitMin) ? `En temps real: ${waitMin} min` : 'En temps real'}
+               ${this.esc(Number.isFinite(waitMin) ? this.t('plan.rtInMins', { n: waitMin }) : this.t('plan.rtLabel'))}
              </span>`
           : `<span style="display:inline-flex; align-items:center; gap:5px; font-size:0.75rem; color:#f59e0b; font-weight:600; background:rgba(245,158,11,0.1); border:1px solid rgba(245,158,11,0.2); padding:2px 7px; border-radius:4px;">
-               Horari oficial: ${firstLeg?.departureTime || (Number.isFinite(waitMin) ? `${waitMin} min` : 'Teòric')}
+               ${this.esc(this.t('plan.officialSched', { val: schedVal }))}
              </span>`;
+
+        const tagText = isDirect
+          ? this.t('plan.directRoute')
+          : (transferCount === 1 ? this.t('plan.oneTransfer') : this.t('plan.nTransfers', { n: transferCount }));
+
+        const hasApproxWalk = ['walkToFirstStop', 'transferWalk', 'walkFromLastStop'].some(key => it[key]?.approximate);
+        const walkTimingLine = `${hasApproxWalk ? this.t('plan.approxWalkPrefix') : ''}${it.timingSource === 'heuristic' ? this.t('plan.timingHeuristic') : this.t('plan.timingAvailable')}`;
+        const timelineLine = this.t('plan.timelineSummary', {
+          time: this.fmtClock(it.arrivalAt),
+          walk: it.walkingMinutes || 0,
+          wait: it.waitMinutes || 0,
+          ride: Math.ceil(it.rideMinutes || 0)
+        });
+
+        const originWalkName = (it.walkToFirstStop?.fromName && !/^\d+$/.test(it.walkToFirstStop.fromName.trim()))
+          ? it.walkToFirstStop.fromName
+          : (originVal || this.t('plan.originFallback'));
+        const destWalkName = (it.walkFromLastStop?.toName && !/^\d+$/.test(it.walkFromLastStop.toName.trim()))
+          ? it.walkFromLastStop.toName
+          : (destVal || this.t('plan.destFallback'));
 
         return `
           <div class="planner-itinerary-card ${idx === this.activeItineraryIndex ? 'plan-itinerary-active' : ''}" data-itinerary-index="${idx}" style="cursor:pointer;">
@@ -836,30 +995,32 @@ class PlannerPageApp {
                 ${waitBadge}
               </div>
               <span class="${isDirect ? 'planner-tag-direct' : 'planner-tag-transfer'}">
-                ${isDirect ? 'Ruta Directa' : '1 Transbordament'}
+                ${this.esc(tagText)}
               </span>
             </div>
 
-            <p class="journey-timeline">Arribada: ${it.arrivalAt ? new Date(it.arrivalAt).toLocaleTimeString('ca', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit' }) : '--:--'} · A peu ${it.walkingMinutes || 0} min · Espera ${it.waitMinutes || 0} min · Bus ${Math.ceil(it.rideMinutes || 0)} min</p>
-            <p>${['walkToFirstStop', 'transferWalk', 'walkFromLastStop'].some(key => it[key]?.approximate) ? 'Caminada aproximada · ' : ''}${it.timingSource === 'heuristic' ? 'Durada estimada' : 'Temps segons horari i dades disponibles'}</p>
+            <p class="journey-timeline">${this.esc(timelineLine)}</p>
+            <p>${this.esc(walkTimingLine)}</p>
             <div class="planner-legs-flow">
               ${it.walkToFirstStop && it.walkToFirstStop.distanceMeters > 15 ? `
                 <div style="display:flex; align-items:center; gap:8px; padding:4px 0 6px 0; color:var(--text-secondary); font-size:0.83rem; border-bottom:1px dashed var(--border-subtle); margin-bottom:6px;">
-                  <span style="font-size:0.75rem; color:var(--text-muted); font-weight:700;">A PEU</span>
+                  <span style="font-size:0.75rem; color:var(--text-muted); font-weight:700;">${this.esc(this.t('plan.walkBadge'))}</span>
                   <div>
-                    <span>Caminar des de <strong>${this.esc((it.walkToFirstStop.fromName && !/^\d+$/.test(it.walkToFirstStop.fromName.trim())) ? it.walkToFirstStop.fromName : (originVal || 'l\'origen'))}</strong></span>
-                    <span style="font-size:0.75rem; color:var(--text-muted); margin-left:4px;">(~${it.walkToFirstStop.walkingMinutes} min • ${it.walkToFirstStop.distanceMeters} m)</span>
+                    <span>${this.t('plan.walkFrom', { name: `<strong>${this.esc(originWalkName)}</strong>` })}</span>
+                    <span style="font-size:0.75rem; color:var(--text-muted); margin-left:4px;">${this.esc(this.t(it.walkToFirstStop.approximate ? 'plan.walkMetaApprox' : 'plan.walkMeta', { min: it.walkToFirstStop.walkingMinutes, dist: this.fmtMeters(it.walkToFirstStop.distanceMeters) }))}</span>
                   </div>
                 </div>
               ` : ''}
 
               ${it.legs.map((leg, lIdx) => {
                 const destText = leg.destination || (leg.toStop && leg.toStop.name) || '';
+                const stopsN = Number(leg.stopsCount || leg.stopCount || 0);
+                const rideMin = Math.round(leg.travelTimeMins || leg.durationMinutes || 0);
                 return `
                   ${lIdx > 0 && it.transferWalk && it.transferWalk.distanceMeters > 15 ? `
                     <div style="display:flex; align-items:center; gap:8px; padding:4px 0 6px 0; color:var(--text-muted); font-size:0.8rem; margin-bottom:4px;">
-                      <span style="font-size:0.75rem; color:var(--text-muted); font-weight:700;">ENLLAÇ</span>
-                      <span>Enllaç a peu fins a <strong>${this.esc(leg.fromStop.name)}</strong> (~${it.transferWalk.walkingMinutes} min • ${it.transferWalk.distanceMeters} m)</span>
+                      <span style="font-size:0.75rem; color:var(--text-muted); font-weight:700;">${this.esc(this.t('plan.transferBadge'))}</span>
+                      <span>${this.t(it.transferWalk.approximate ? 'plan.transferWalkToApprox' : 'plan.transferWalkTo', { stop: `<strong>${this.esc(leg.fromStop.name)}</strong>`, min: it.transferWalk.walkingMinutes, dist: this.esc(this.fmtMeters(it.transferWalk.distanceMeters)) })}</span>
                     </div>
                   ` : ''}
                   <div class="planner-leg-item">
@@ -870,20 +1031,20 @@ class PlannerPageApp {
                             ${this.esc(leg.lineCode)}
                           </span>
                           <span style="font-size:0.85rem; font-weight:700; color:var(--text-primary);">
-                            ${destText ? `Cap a ${this.esc(destText)}` : ''}
+                            ${destText ? this.esc(this.t('plan.towards', { dest: destText })) : ''}
                           </span>
                         </div>
                         ${leg.departureTime && leg.departureTime !== 'En breu' ? `
                           <span style="font-size:0.75rem; font-weight:700; color:${leg.isRealTime ? '#10b981' : '#f59e0b'}; background:${leg.isRealTime ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)'}; padding:2px 6px; border-radius:4px;">
-                            ${this.esc(leg.departureTime)}${leg.isRealTime ? ' • En viu' : ' • Horari'}
+                            ${this.esc(leg.departureTime)}${this.esc(leg.isRealTime ? this.t('plan.legLive') : this.t('plan.legTimetable'))}
                           </span>
                         ` : ''}
                       </div>
                       <div style="font-size:0.82rem; color:var(--text-secondary); margin-top:3px;">
-                        Pujar a: <strong>${this.esc(leg.fromStop.name)}</strong>
+                        ${this.t('plan.boardAt', { stop: `<strong>${this.esc(leg.fromStop.name)}</strong>` })}
                       </div>
                       <div style="font-size:0.82rem; color:var(--text-secondary);">
-                        Baixar a: <strong>${this.esc(leg.toStop.name)}</strong> (${leg.stopsCount || leg.stopCount} parades, ~${Math.round(leg.travelTimeMins || leg.durationMinutes || 0)} min)
+                        ${this.t(stopsN === 1 ? 'plan.alightAtOne' : 'plan.alightAtMany', { stop: `<strong>${this.esc(leg.toStop.name)}</strong>`, n: stopsN, min: rideMin })}
                       </div>
                     </div>
                   </div>
@@ -892,10 +1053,10 @@ class PlannerPageApp {
 
               ${it.walkFromLastStop && it.walkFromLastStop.distanceMeters > 15 ? `
                 <div style="display:flex; align-items:center; gap:8px; padding:6px 0 2px 0; color:var(--text-secondary); font-size:0.83rem; border-top:1px dashed var(--border-subtle); margin-top:6px;">
-                  <span style="font-size:0.75rem; color:var(--text-muted); font-weight:700;">A PEU</span>
+                  <span style="font-size:0.75rem; color:var(--text-muted); font-weight:700;">${this.esc(this.t('plan.walkBadge'))}</span>
                   <div>
-                    <span>Caminar fins a <strong>${this.esc((it.walkFromLastStop.toName && !/^\d+$/.test(it.walkFromLastStop.toName.trim())) ? it.walkFromLastStop.toName : (destVal || 'la destinació'))}</strong></span>
-                    <span style="font-size:0.75rem; color:var(--text-muted); margin-left:4px;">(~${it.walkFromLastStop.walkingMinutes} min • ${it.walkFromLastStop.distanceMeters} m)</span>
+                    <span>${this.t('plan.walkTo', { name: `<strong>${this.esc(destWalkName)}</strong>` })}</span>
+                    <span style="font-size:0.75rem; color:var(--text-muted); margin-left:4px;">${this.esc(this.t(it.walkFromLastStop.approximate ? 'plan.walkMetaApprox' : 'plan.walkMeta', { min: it.walkFromLastStop.walkingMinutes, dist: this.fmtMeters(it.walkFromLastStop.distanceMeters) }))}</span>
                   </div>
                 </div>
               ` : ''}
@@ -907,7 +1068,7 @@ class PlannerPageApp {
                   <div class="disruption-banner-card" style="margin-bottom:0.4rem; padding:0.5rem 0.75rem; background:linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(220, 38, 38, 0.1) 100%); border:1px solid rgba(245, 158, 11, 0.35); border-radius:var(--radius-sm);">
                     <span class="disruption-banner-icon" style="font-size:1rem; margin-right:6px;">⚠️</span>
                     <div class="disruption-banner-content" style="flex:1;">
-                      <strong style="color:#d97706; font-size:0.8rem; font-weight:700;">Avís de servei a la línia</strong>
+                      <strong style="color:#d97706; font-size:0.8rem; font-weight:700;">${this.esc(this.t('plan.serviceNotice'))}</strong>
                       <span style="font-size:0.75rem; line-height:1.3;">
                         <a href="${this.safeUrl(notice.url || 'https://mataro.avanzagrupo.com/ca/avisos')}" target="_blank" rel="noopener noreferrer" style="color:inherit; text-decoration:underline; font-weight:600;">
                           ${this.esc(notice.title)}
@@ -921,16 +1082,16 @@ class PlannerPageApp {
 
             <!-- Eco-Impact CO2 Savings Badge (clearly indicated as approximate) -->
             <div class="planner-eco-strip" style="display:flex; align-items:center; gap:6px; margin-top:0.75rem; font-size:0.75rem; color:#10b981; background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.2); padding:4px 8px; border-radius:5px;">
-              <span>Estalvi aprox. <strong>${this.esc(it.co2Formatted || (it.co2SavedGrams ? (it.co2SavedGrams >= 1000 ? '~' + it.co2SavedKg + ' kg' : '~' + it.co2SavedGrams + ' g') : '~350 g'))}</strong> CO₂ respecte al cotxe</span>
-              <span style="color:var(--text-muted); font-size:0.7rem; margin-left:auto;">(${it.transitDistanceKm || '3.5'} km bus)</span>
+              <span>${this.t('plan.co2Savings', { amount: `<strong>${this.esc(this.fmtCo2(it))}</strong>` })}</span>
+              <span style="color:var(--text-muted); font-size:0.7rem; margin-left:auto;">${this.esc(this.t('plan.busDistance', { km: this.fmtKm(it.transitDistanceKm || 3.5) }))}</span>
             </div>
 
             <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.75rem; border-top:1px solid var(--border-subtle); padding-top:0.6rem; gap:8px;">
-              <button type="button" class="btn-start-guided-nav" data-itinerary-index="${idx}" title="Iniciar guia interactiva pas a pas d'aquest viatge" style="display:inline-flex; align-items:center; gap:5px; background:linear-gradient(135deg, #0ea5e9, #0284c7); color:#fff; border:none; border-radius:6px; padding:6px 12px; font-size:0.82rem; font-weight:700; cursor:pointer; box-shadow:0 2px 6px rgba(14,165,233,0.3);">
-                <span>Iniciar viatge</span>
+              <button type="button" class="btn-start-guided-nav" data-itinerary-index="${idx}" title="${this.esc(this.t('plan.startTripTitle'))}" style="display:inline-flex; align-items:center; gap:5px; background:linear-gradient(135deg, #0ea5e9, #0284c7); color:#fff; border:none; border-radius:6px; padding:6px 12px; font-size:0.82rem; font-weight:700; cursor:pointer; box-shadow:0 2px 6px rgba(14,165,233,0.3);">
+                <span>${this.esc(this.t('plan.startTrip'))}</span>
               </button>
               <span style="font-size:0.73rem; color:var(--text-muted); font-weight:600; text-align:right;">
-                ${idx === this.activeItineraryIndex ? 'Mostrant al mapa' : 'Fes clic per veure la ruta'}
+                ${this.esc(idx === this.activeItineraryIndex ? this.t('plan.showingOnMap') : this.t('plan.clickToView'))}
               </span>
             </div>
           </div>
@@ -1005,7 +1166,7 @@ class PlannerPageApp {
 
       if (generation !== this.searchGeneration) return;
       const selected = data.itineraries.findIndex(it => it.id === selectedId);
-      if (selectedId && selected < 0) { this.closeGuidedNavigation(); alert('La connexió seleccionada ja no està disponible. Tria una alternativa.'); }
+      if (selectedId && selected < 0) { this.closeGuidedNavigation(); alert(this.t('plan.connectionLostAlert')); }
       this.activeItineraryIndex = Math.max(0, selected);
       this.currentItineraries = data.itineraries;
       this.lastOriginStop = data.originStop || this.lastOriginStop;
@@ -1019,25 +1180,25 @@ class PlannerPageApp {
     } catch {}
   }
 
-  startGuidedNavigation(index) {
-    const itin = this.currentItineraries[index];
-    if (!itin) return;
-
-    this.selectItinerary(index, true);
-    this.currentGuideItinerary = itin;
-    this.currentGuideStepIdx = 0;
-
-    const originVal = document.getElementById('page-planner-origin')?.value.trim() || 'l\'origen';
-    const destVal = document.getElementById('page-planner-dest')?.value.trim() || 'la destinació';
+  buildGuideSteps(itin) {
+    const originVal = document.getElementById('page-planner-origin')?.value.trim() || this.t('plan.originFallback');
+    const destVal = document.getElementById('page-planner-dest')?.value.trim() || this.t('plan.destFallback');
 
     const steps = [];
     if (itin.walkToFirstStop && itin.walkToFirstStop.distanceMeters > 15) {
+      const distStr = this.fmtMeters(itin.walkToFirstStop.distanceMeters);
       steps.push({
         type: 'walk',
-        title: 'Camina fins a la primera parada',
+        title: this.t('plan.guideWalkFirstTitle'),
         icon: '•',
-        desc: `Camina des de <strong>${this.esc(itin.walkToFirstStop.fromName || originVal)}</strong> fins a la parada <strong>${this.esc(itin.legs[0].fromStop.name)}</strong>.`,
-        details: `${itin.walkToFirstStop.distanceMeters} metres • aproximadament ${itin.walkToFirstStop.walkingMinutes} minuts`,
+        desc: this.t('plan.guideWalkFirstDesc', {
+          from: `<strong>${this.esc(itin.walkToFirstStop.fromName || originVal)}</strong>`,
+          stop: `<strong>${this.esc(itin.legs[0].fromStop.name)}</strong>`
+        }),
+        details: this.esc(this.t(
+          itin.walkToFirstStop.approximate ? 'plan.guideWalkFirstDetailsApprox' : 'plan.guideWalkFirstDetails',
+          { dist: distStr, min: itin.walkToFirstStop.walkingMinutes }
+        )),
         coord: itin.walkToFirstStop.to
       });
     }
@@ -1045,34 +1206,49 @@ class PlannerPageApp {
     itin.legs.forEach((leg, lIdx) => {
       const isLastLeg = lIdx === itin.legs.length - 1;
       const destName = leg.destination || (leg.toStop && leg.toStop.name) || '';
+      const stopsN = Number(leg.stopsCount || leg.stopCount || 0);
+      const rideMin = Math.round(leg.travelTimeMins || leg.durationMinutes || 0);
+      const badgeHtml = `<span class="planner-leg-badge" style="background:${leg.lineColor || '#009485'}; display:inline-block; padding:1px 6px; border-radius:4px; font-weight:700; color:#fff;">${this.esc(leg.lineCode)}</span>`;
 
       steps.push({
         type: 'bus_board',
-        title: `Puja a l'autobús ${leg.lineCode}`,
+        title: this.t('plan.guideBoardTitle', { line: leg.lineCode }),
         icon: '•',
         lineColor: leg.lineColor || '#009485',
         lineCode: leg.lineCode,
-        desc: `Agafa la línia <span class="planner-leg-badge" style="background:${leg.lineColor || '#009485'}; display:inline-block; padding:1px 6px; border-radius:4px; font-weight:700; color:#fff;">${this.esc(leg.lineCode)}</span> a <strong>${this.esc(leg.fromStop.name)}</strong> cap a <strong>${this.esc(destName)}</strong>.`,
-        details: `Sortida: ${leg.departureTime || 'En breu'}${leg.isRealTime ? ' • En temps real' : ' • Horari oficial'}`,
+        desc: this.t('plan.guideBoardDesc', {
+          badge: badgeHtml,
+          stop: `<strong>${this.esc(leg.fromStop.name)}</strong>`,
+          dest: `<strong>${this.esc(destName)}</strong>`
+        }),
+        details: this.esc(this.t('plan.guideDeparture', {
+          time: this.fmtDepartureTime(leg.departureTime),
+          source: leg.isRealTime ? this.t('plan.guideSourceRt') : this.t('plan.guideSourceOfficial')
+        })),
         coord: [leg.fromStop.lat, leg.fromStop.lon]
       });
 
       steps.push({
         type: 'bus_ride',
-        title: `Trajecte de ${leg.stopsCount || leg.stopCount} parades`,
+        title: this.t(stopsN === 1 ? 'plan.guideRideTitleOne' : 'plan.guideRideTitleMany', { n: stopsN }),
         icon: '•',
-        desc: `Viatja a bord del bus durant ${leg.stopsCount || leg.stopCount} parades (~${leg.travelTimeMins || leg.durationMinutes} min).`,
-        details: `Prepara't per baixar a: <strong>${this.esc(leg.toStop.name)}</strong>`,
+        desc: this.esc(this.t(stopsN === 1 ? 'plan.guideRideDescOne' : 'plan.guideRideDescMany', { n: stopsN, min: rideMin })),
+        details: this.t('plan.guideAlightPrep', { stop: `<strong>${this.esc(leg.toStop.name)}</strong>` }),
         coord: [leg.toStop.lat, leg.toStop.lon]
       });
 
       if (!isLastLeg && itin.transferWalk && itin.transferWalk.distanceMeters > 10) {
         steps.push({
           type: 'transfer_walk',
-          title: 'Transbordament a peu',
+          title: this.t('plan.guideTransferTitle'),
           icon: '•',
-          desc: `Camina ${itin.transferWalk.distanceMeters} m (~${itin.transferWalk.walkingMinutes} min) des de <strong>${this.esc(leg.toStop.name)}</strong> fins a <strong>${this.esc(itin.legs[lIdx + 1].fromStop.name)}</strong>.`,
-          details: `Enllaç amb la línia ${itin.legs[lIdx + 1].lineCode}`,
+          desc: this.t(itin.transferWalk.approximate ? 'plan.guideTransferDescApprox' : 'plan.guideTransferDesc', {
+            dist: this.esc(this.fmtMeters(itin.transferWalk.distanceMeters)),
+            min: itin.transferWalk.walkingMinutes,
+            from: `<strong>${this.esc(leg.toStop.name)}</strong>`,
+            to: `<strong>${this.esc(itin.legs[lIdx + 1].fromStop.name)}</strong>`
+          }),
+          details: this.esc(this.t('plan.guideTransferDetails', { line: itin.legs[lIdx + 1].lineCode })),
           coord: itin.transferWalk.to
         });
       }
@@ -1081,21 +1257,36 @@ class PlannerPageApp {
     if (itin.walkFromLastStop && itin.walkFromLastStop.distanceMeters > 15) {
       steps.push({
         type: 'walk_dest',
-        title: 'Arribada a la destinació',
+        title: this.t('plan.guideDestTitle'),
         icon: '•',
-        desc: `Camina ${itin.walkFromLastStop.distanceMeters} m (~${itin.walkFromLastStop.walkingMinutes} min) des de <strong>${this.esc(itin.walkFromLastStop.fromName)}</strong> fins a <strong>${this.esc(itin.walkFromLastStop.toName || destVal)}</strong>.`,
-        details: 'Has completat el teu trajecte amb Arribo!.',
+        desc: this.t(itin.walkFromLastStop.approximate ? 'plan.guideDestDescApprox' : 'plan.guideDestDesc', {
+          dist: this.esc(this.fmtMeters(itin.walkFromLastStop.distanceMeters)),
+          min: itin.walkFromLastStop.walkingMinutes,
+          from: `<strong>${this.esc(itin.walkFromLastStop.fromName)}</strong>`,
+          to: `<strong>${this.esc(itin.walkFromLastStop.toName || destVal)}</strong>`
+        }),
+        details: this.esc(this.t('plan.guideDestDetails')),
         coord: itin.walkFromLastStop.to
       });
     }
 
-    this.guideSteps = steps;
-    const modal = document.getElementById('nav-guide-modal');
-    if (modal) modal.style.display = 'flex';
-    this.renderCurrentGuideStep();
+    return steps;
   }
 
-  renderCurrentGuideStep() {
+  startGuidedNavigation(index) {
+    const itin = this.currentItineraries[index];
+    if (!itin) return;
+
+    this.selectItinerary(index, true);
+    this.currentGuideItinerary = itin;
+    this.currentGuideStepIdx = 0;
+    this.guideSteps = this.buildGuideSteps(itin);
+    const modal = document.getElementById('nav-guide-modal');
+    if (modal) modal.style.display = 'flex';
+    this.renderCurrentGuideStep(true);
+  }
+
+  renderCurrentGuideStep(shouldPan = true) {
     if (!this.guideSteps || this.guideSteps.length === 0) return;
     const idx = this.currentGuideStepIdx;
     const total = this.guideSteps.length;
@@ -1107,7 +1298,7 @@ class PlannerPageApp {
     const prevBtn = document.getElementById('btn-nav-prev');
     const nextBtn = document.getElementById('btn-nav-next');
 
-    if (counterEl) counterEl.textContent = `Pas ${idx + 1} de ${total}`;
+    if (counterEl) counterEl.textContent = this.t('plan.guideStepCounter', { cur: idx + 1, total });
     if (fillEl) fillEl.style.width = `${Math.round(((idx + 1) / total) * 100)}%`;
 
     if (bodyEl) {
@@ -1128,15 +1319,12 @@ class PlannerPageApp {
     }
 
     if (nextBtn) {
-      if (idx === total - 1) {
-        nextBtn.innerHTML = '<span>Completar viatge 🎉</span>';
-      } else {
-        nextBtn.innerHTML = '<span>Següent pas ➔</span>';
-      }
+      const label = idx === total - 1 ? this.t('plan.guideFinish') : this.t('plan.guideNext');
+      nextBtn.innerHTML = `<span>${this.esc(label)}</span>`;
     }
 
     // Pan map to step position if available
-    if (step.coord && this.mapController && this.mapController.map) {
+    if (shouldPan && step.coord && this.mapController && this.mapController.map) {
       try {
         this.mapController.map.panTo([step.coord[0], step.coord[1]], { animate: true, duration: 0.6 });
       } catch {}
