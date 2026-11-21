@@ -418,6 +418,8 @@ func (k *Worker) executeDbOperation(op string, rawArgs any) (res any, err error)
 		return st, err
 	case "getOperatorLineReport":
 		return db.getOperatorLineReport(jsString(args.Get("agencyId")), jsString(args.Get("line")), jsNumber(args.Get("hours")))
+	case "planRail":
+		return k.railPlanOp(args)
 	case "getRailDepartures":
 		return k.railDeparturesOp(args)
 	case "getOperatorReport":

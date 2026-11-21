@@ -9,6 +9,7 @@ package main
 import (
 	"sort"
 	"strings"
+	"unicode"
 )
 
 // railStationHit is one station: its name per operator, the lines that
@@ -27,7 +28,7 @@ type railStationHit struct {
 // then those served by more lines, then by name. Each is a stop result in
 // the shape the search lists read, opening the station on its first line.
 func searchRailStations(q string, limit int) []any {
-	fq := foldAccents(q)
+	fq := foldStationName(q)
 	if utf16Count(fq) < 2 || limit <= 0 {
 		return nil
 	}
@@ -46,7 +47,7 @@ func searchRailStations(q string, limit int) []any {
 			}
 			for _, d := range prof.Directions {
 				for _, st := range d.Stops {
-					f := foldAccents(st.Name)
+					f := foldStationName(st.Name)
 					if f == "" || !strings.Contains(f, fq) {
 						continue
 					}
@@ -114,4 +115,25 @@ func searchRailStations(q string, limit int) []any {
 		))
 	}
 	return out
+}
+
+// foldStationName is a station name for matching: accents and case
+// ignored, and any run of punctuation or spaces one space, so "Terrassa
+// Rambla" finds FGC's "Terrassa - Rambla" and "Sants" finds "Barcelona-Sants".
+func foldStationName(s string) string {
+	f := foldAccents(s)
+	var b strings.Builder
+	space := false
+	for _, r := range f {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			if space && b.Len() > 0 {
+				b.WriteByte(' ')
+			}
+			space = false
+			b.WriteRune(r)
+			continue
+		}
+		space = true
+	}
+	return b.String()
 }

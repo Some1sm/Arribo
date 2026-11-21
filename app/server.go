@@ -1691,8 +1691,13 @@ func (s *Server) hPlan(q *xreq, res *xres) error {
 	if truthy(qv(q, "toLat")) && truthy(qv(q, "toLon")) {
 		destination = O("lat", parseFloatJS(qv(q, "toLat")), "lon", parseFloatJS(qv(q, "toLon")), "name", or(qv(q, "toName"), to))
 	}
+	_, explicitFrom := origin.(*Obj)
+	_, explicitTo := destination.(*Obj)
 	origin = s.geocodeEndpoint(origin)
 	destination = s.geocodeEndpoint(destination)
+	// Train journeys (Rodalies, FGC), merged with the bus planner's below.
+	departMs, _ := requestedInstant(or(qv(q, "departureDate"), qv(q, "date")), or(qv(q, "departureTime"), qv(q, "time")), float64(nowMs()))
+	railItins := s.railPlanFor(from, to, origin, destination, explicitFrom, explicitTo, departMs, qv(q, "walkingSpeed"), qv(q, "maxWalkingDistance"))
 
 	err := tryJS(func() {
 		label := func(v any, nameKey string, raw any) any {
@@ -1714,6 +1719,7 @@ func (s *Server) hPlan(q *xreq, res *xres) error {
 		if perr != nil {
 			panic(perr)
 		}
+		mergeRailItineraries(plan, railItins, jsString(or(qv(q, "preference"), "fastest")))
 		res.json(plan)
 	})
 	if err != nil {

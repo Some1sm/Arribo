@@ -18,7 +18,7 @@ Without date/time the search leaves now. Missing date uses today; missing time u
 the current local clock. Invalid inputs return 400. Nonexistent spring-DST times are
 rejected; repeated autumn times select the earlier occurrence. The horizon is 24 hours
 from the requested instant; no feasible service returns no itineraries rather than a
-missed connection. Only direct and one-transfer Mataró journeys are supported.
+missed connection. Bus journeys are Mataró's, direct or with one transfer. Train journeys (Rodalies, FGC) are added when an endpoint names a station (as typed, accents, case and punctuation ignored) or is a point within 1.5 km of stations, and the two points are at least 3 km apart: direct or with one change, at the same station (3 min minimum) or at a nearby station up to 400 m away, across operators too. They use the operators' timetables, with the live delay only for trains the operator reports running (`timingSource` `live`, else `timetable`); walks to, from and between stations are straight lines with a detour factor, marked `approximate`. Train itineraries carry `mode: "rail"`, legs `mode: "rail"`, `agencyId`, `lineId` = the line's ref (`renfe_rodalies:R1`) and `tripId`. A journey needing two changes is not found yet.
 
 Boarding follows access walking plus 60 seconds, or previous alighting plus transfer
 walking plus 120 seconds. Cumulative timetable offsets supply ride durations when

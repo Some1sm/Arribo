@@ -59,3 +59,11 @@ func TestSimplifyPath(t *testing.T) {
 		t.Errorf("corner: %v", got)
 	}
 }
+
+func TestFoldStationName(t *testing.T) {
+	for in, want := range map[string]string{"Terrassa - Rambla": "terrassa rambla", "Barcelona-Sants": "barcelona sants", "  Gràcia ": "gracia", "Pl. Catalunya": "pl catalunya"} {
+		if got := foldStationName(in); got != want {
+			t.Errorf("%q -> %q, want %q", in, got, want)
+		}
+	}
+}
