@@ -663,11 +663,23 @@ class NetworkMap extends TransitMap {
 /** Bound on train markers, far above the ~200 trains both feeds report. */
 const MAX_TRAIN_MARKERS = 1500;
 
+function netT(key, vars, fallback) {
+  return window.ArriboI18n ? window.ArriboI18n.t(key, vars) : fallback;
+}
+
 function formatAge(sec) {
   if (!Number.isFinite(sec)) return null;
-  if (sec < 60) return `fa ${Math.round(sec)} s`;
-  if (sec < 3600) return `fa ${Math.round(sec / 60)} min`;
-  return `fa ${Math.floor(sec / 3600)} h ${Math.round((sec % 3600) / 60)} min`;
+  if (sec < 60) {
+    const n = Math.round(sec);
+    return netT('trainPopup.ageSec', { n }, `fa ${n} s`);
+  }
+  if (sec < 3600) {
+    const n = Math.round(sec / 60);
+    return netT('trainPopup.ageMin', { n }, `fa ${n} min`);
+  }
+  const h = Math.floor(sec / 3600);
+  const m = Math.round((sec % 3600) / 60);
+  return netT('trainPopup.ageHourMin', { h, m }, `fa ${h} h ${m} min`);
 }
 
 /**
@@ -680,34 +692,34 @@ function buildTrainPopupHtml(t, op, lineRef) {
   const esc = (v) => window.TransitUtils.esc(v);
   const line = t.lineCode
     ? `<span class="line-badge" data-line="${esc(`${t.agencyId}:${t.lineCode}`)}">${esc(t.lineCode)}</span>`
-    : '<span class="chip chip-plain chip-neutral">Línia desconeguda</span>';
+    : `<span class="chip chip-plain chip-neutral">${esc(netT('trainPopup.unknownLine', null, 'Línia desconeguda'))}</span>`;
   const age = formatAge(Number(t.ageSec));
   let position;
   if (t.ageSec === null || t.ageSec === undefined) {
-    position = '<span class="chip chip-neutral">Hora de la posició desconeguda</span>';
+    position = `<span class="chip chip-neutral">${esc(netT('trainPopup.posUnknown', null, 'Hora de la posició desconeguda'))}</span>`;
   } else if (t.stale) {
-    position = `<span class="chip chip-neutral">Posició antiga · ${esc(age)}</span>`;
+    position = `<span class="chip chip-neutral">${esc(netT('trainPopup.posStale', { age }, `Posició antiga · ${age}`))}</span>`;
   } else {
-    position = `<span class="chip chip-live">En directe · ${esc(age)}</span>`;
+    position = `<span class="chip chip-live">${esc(netT('trainPopup.posLive', { age }, `En directe · ${age}`))}</span>`;
   }
   let delay;
   let delayNote = '';
   if (t.delayDiscarded) {
-    delay = '<span class="chip chip-plain chip-neutral">Retard descartat</span>';
-    delayNote = "L'operador ha publicat un retard impossible (més de 10 min d'avançament o més de 3 h de retard).";
+    delay = `<span class="chip chip-plain chip-neutral">${esc(netT('trainPopup.delayDiscarded', null, 'Retard descartat'))}</span>`;
+    delayNote = netT('trainPopup.delayDiscardedNote', null, "L'operador ha publicat un retard impossible (més de 10 min d'avançament o més de 3 h de retard).");
   } else if (Number.isFinite(t.delayMins)) {
     const m = t.delayMins;
     const cls = m > 15 ? 'chip-severe' : (m > 5 ? 'chip-late' : 'chip-on-time');
-    const label = m === 0 ? "A l'hora" : `${m > 0 ? '+' : '−'}${Math.abs(m)} min`;
+    const label = m === 0 ? netT('trainPopup.onTime', null, "A l'hora") : `${m > 0 ? '+' : '−'}${Math.abs(m)} min`;
     delay = `<span class="chip ${cls}">${esc(label)}</span>`;
     delayNote = t.delaySource === 'timetable'
-      ? "Calculat amb l'hora prevista de l'operador i el seu horari oficial."
-      : "Retard publicat per l'operador.";
+      ? netT('trainPopup.delayNoteTimetable', null, "Calculat amb l'hora prevista de l'operador i el seu horari oficial.")
+      : netT('trainPopup.delayNoteOperator', null, "Retard publicat per l'operador.");
   } else {
-    delay = '<span class="chip chip-plain chip-neutral">Sense dada de retard</span>';
+    delay = `<span class="chip chip-plain chip-neutral">${esc(netT('trainPopup.noDelay', null, 'Sense dada de retard'))}</span>`;
   }
   const where = t.stopName
-    ? `<div class="train-popup-row">${t.currentStatus === 'STOPPED_AT' ? 'A' : 'Cap a'} <strong>${esc(t.stopName)}</strong></div>`
+    ? `<div class="train-popup-row">${esc(t.currentStatus === 'STOPPED_AT' ? netT('trainPopup.atStop', null, 'A') : netT('trainPopup.towards', null, 'Cap a'))} <strong>${esc(t.stopName)}</strong></div>`
     : '';
   const name = op?.name || t.agencyId;
   return `<div class="train-popup">
@@ -715,7 +727,7 @@ function buildTrainPopupHtml(t, op, lineRef) {
     ${where}
     <div class="train-popup-chips">${position}${delay}</div>
     ${delayNote ? `<div class="train-popup-note">${esc(delayNote)}</div>` : ''}
-    ${lineRef ? `<button type="button" class="btn btn-secondary btn-sm" data-open-rail-line="${esc(lineRef)}">Obre la línia ${esc(t.lineCode)}</button>` : ''}
+    ${lineRef ? `<button type="button" class="btn btn-secondary btn-sm" data-open-rail-line="${esc(lineRef)}">${esc(netT('trainPopup.openLine', { code: t.lineCode }, `Obre la línia ${t.lineCode}`))}</button>` : ''}
     ${op?.attribution ? `<div class="train-popup-credit">${esc(op.attribution)}</div>` : ''}
   </div>`;
 }

@@ -729,12 +729,38 @@ class TransitApp {
     const filterDock = document.getElementById('landing-filter-tabs');
     // Language change (i18n.js): redraw the texts built from the catalog.
     document.addEventListener('arribo:lang', () => {
+      const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
+      this.updateHeaderFavoritesBadge?.();
+      this.renderLandingFavorites?.();
       this.renderLandingFilterTabs();
       this.renderLandingHeader();
       this.renderLandingLines();
       this.renderPickerFilterTabs();
       this.renderLinePickerHeader();
       this.renderLinePicker();
+      if (this.networkMap) {
+        this.updateNetworkMapBadge();
+        this.renderNetworkTrainToggle();
+        this.networkMap.renderTrains?.();
+        for (const code of this.networkMap.busesByLine?.keys?.() || []) {
+          this.networkMap.redrawLineBuses(code);
+        }
+      }
+      if (!this.activeLineId) {
+        const chipCount = document.getElementById('incidents-count-text');
+        if (chipCount && !/\d/.test(chipCount.textContent || '')) {
+          chipCount.textContent = t('banner.notices');
+        }
+      }
+      const disruptionsModal = document.getElementById('disruptions-modal-backdrop');
+      if (disruptionsModal?.classList.contains('active') && Array.isArray(this._lastDisruptions)) {
+        const q = document.getElementById('disruptions-search-input')?.value || '';
+        this.renderDisruptionsList(this._lastDisruptions, q);
+      }
+      const plannerModal = document.getElementById('planner-modal-backdrop');
+      if (plannerModal?.classList.contains('active') && Array.isArray(this._lastPlannedItineraries)) {
+        this.renderPlannerResults(this._lastPlannedItineraries, this._lastPlannerOrigin, this._lastPlannerDest);
+      }
       // Line view: redraw from the data already in memory (no refetch).
       if (this.activeLineId) {
         this.renderDirectionButtons([], this.activeDirection);
@@ -765,10 +791,10 @@ class TransitApp {
           this.setStopsViewMode(this.stopsViewMode || 'schematic');
           this.renderStopsBrowser(lData, this.activeLineId);
         }
-        // An open stop window is redrawn from the departures cache (one quiet refresh follows).
-        const stopModal = document.getElementById('stop-modal-backdrop');
-        if (stopModal?.classList.contains('active') && this._inspectArgs) this.inspectStop(...this._inspectArgs);
       }
+      // An open stop window is redrawn from the departures cache (works from both line view and landing).
+      const stopModal = document.getElementById('stop-modal-backdrop');
+      if (stopModal?.classList.contains('active') && this._inspectArgs) this.inspectStop(...this._inspectArgs);
     });
     const container = document.getElementById('landing-lines-container');
     const favGrid = document.getElementById('landing-favorites-grid');
@@ -2044,10 +2070,12 @@ class TransitApp {
       searchInput.value = filterQuery;
     }
 
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     try {
-      container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);">Carregant avisos de servei en temps real...</div>';
+      container.innerHTML = `<div style="text-align:center; padding:2rem; color:var(--text-muted);">${this.esc(t('app.disruptionsLoading'))}</div>`;
       const res = await fetch('/api/disruptions').then(r => r.json());
       const disruptions = (res.disruptions || []).filter(d => this.isDisruptionActive(d));
+      this._lastDisruptions = disruptions;
 
       this.renderDisruptionsList(disruptions, searchInput ? searchInput.value : '');
 
@@ -2057,11 +2085,12 @@ class TransitApp {
         };
       }
     } catch(err) {
-      container.innerHTML = `<div style="text-align:center; padding:2rem; color:var(--text-muted);">Error en carregar incidències: ${this.esc(err.message)}</div>`;
+      container.innerHTML = `<div style="text-align:center; padding:2rem; color:var(--text-muted);">${this.esc(t('app.disruptionsError', { err: err.message }))}</div>`;
     }
   }
 
   renderDisruptionsList(disruptions, query = '') {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     const container = document.getElementById('disruptions-list-container');
     if (!container) return;
 
@@ -2076,7 +2105,7 @@ class TransitApp {
     });
 
     if (filtered.length === 0) {
-      container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);">No s\'ha trobat cap incidència amb aquest filtre.</div>';
+      container.innerHTML = `<div style="text-align:center; padding:2rem; color:var(--text-muted);">${this.esc(t('app.disruptionsEmpty'))}</div>`;
       return;
     }
 
@@ -2612,11 +2641,9 @@ class TransitApp {
       } else if (isTomorrow) {
         pillLabel = t('dep.scheduled');
       } else if (dep.isEstimated) {
-        const hasExplicitDelay = Boolean(dep.delayBadgeText && (dep.delayBadgeText.includes('retard') || dep.delayBadgeText.includes('avançat')));
-        const estDelayBadge = hasExplicitDelay ? dep.delayBadgeText : delayText;
-        pillLabel = rawDelayMins >= 2 ? estDelayBadge : `⚡ ${t('dep.enRoute')}`;
+        pillLabel = rawDelayMins >= 2 ? delayText : `⚡ ${t('dep.enRoute')}`;
       } else {
-        pillLabel = dep.delayBadgeText || 'Puntual';
+        pillLabel = delayText;
       }
 
       const pillClass = isRegulating
@@ -3174,18 +3201,19 @@ class TransitApp {
     if (lineDataOrStops && typeof lineDataOrStops === 'object' && !Array.isArray(lineDataOrStops)) {
       const lineData = lineDataOrStops;
       const isBoth = this.activeDirection === 'both' || lineData.direction === 'both';
+      const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
       const allDirs = (isBoth && lineData.allDirections && lineData.allDirections.length > 1) 
         ? lineData.allDirections 
         : ((isBoth && lineData.secondaryStops && lineData.secondaryStops.length > 0)
             ? [
-                { dirId: '1', name: lineData.directionName || 'Sentit 1', stops: lineData.stops || [] },
-                { dirId: '0', name: 'Sentit 2', stops: lineData.secondaryStops || [] }
+                { dirId: '1', name: lineData.directionName || t('timeline.dir1'), stops: lineData.stops || [] },
+                { dirId: '0', name: t('timeline.dir2'), stops: lineData.secondaryStops || [] }
               ]
             : null);
 
       if (isBoth && allDirs) {
         select.innerHTML = allDirs.map(d => {
-          const dirName = d.name || `Sentit ${d.dirId}`;
+          const dirName = d.name || t('app.dirN', { id: d.dirId });
           const options = (d.stops || []).map(s => {
             const id = String(s.mouteStopId || s.id || s.code);
             const isSel = id === String(selectedId);
@@ -3310,6 +3338,7 @@ class TransitApp {
 
   shareLiveBus(vehicleId) {
     if (!vehicleId) return;
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     const line = this.activeLineData || {};
     const lineCode = line.code || (this.activeLineId ? `L${this.activeLineId}` : '');
     const lineHash = `l${this.activeLineId}`;
@@ -3319,7 +3348,7 @@ class TransitApp {
     const shareUrl = `${origin}${window.location.pathname}#${lineHash}?bus=${encodeURIComponent(vehicleId)}`;
 
     const shareTitle = `Arribo! — Bus #${vehicleId} (${lineCode})`;
-    const shareText = `Segueix en directe el Bus #${vehicleId} de la línia ${lineCode} a Mataró:`;
+    const shareText = t('app.shareText', { id: vehicleId, line: lineCode });
 
     if (navigator.share && /mobile|android|iphone|ipad/i.test(navigator.userAgent)) {
       navigator.share({
@@ -3327,28 +3356,31 @@ class TransitApp {
         text: shareText,
         url: shareUrl
       }).then(() => {
-        this.showToast(`✅ Enllaç compartit`);
+        this.showToast(t('app.shareDone'));
       }).catch((err) => {
         if (err.name !== 'AbortError') {
-          this.copyToClipboard(shareUrl, `📋 Enllaç copiat: Bus #${vehicleId}`);
+          this.copyToClipboard(shareUrl, t('app.shareCopiedBus', { id: vehicleId }));
         }
       });
     } else {
-      this.copyToClipboard(shareUrl, `📋 Enllaç copiat al porta-retalls!`);
+      this.copyToClipboard(shareUrl, t('app.shareCopied'));
     }
   }
 
-  copyToClipboard(text, successMsg = '📋 Enllaç copiat al porta-retalls!') {
+  copyToClipboard(text, successMsg) {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
+    const msg = successMsg || t('app.shareCopied');
     if (navigator.clipboard && window.isSecureContext) {
       navigator.clipboard.writeText(text)
-        .then(() => this.showToast(successMsg))
-        .catch(() => this.fallbackCopyText(text, successMsg));
+        .then(() => this.showToast(msg))
+        .catch(() => this.fallbackCopyText(text, msg));
     } else {
-      this.fallbackCopyText(text, successMsg);
+      this.fallbackCopyText(text, msg);
     }
   }
 
   fallbackCopyText(text, successMsg) {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     try {
       const ta = document.createElement('textarea');
       ta.value = text;
@@ -3360,11 +3392,12 @@ class TransitApp {
       document.body.removeChild(ta);
       this.showToast(successMsg);
     } catch {
-      prompt('Copia aquest enllaç de seguiment en directe:', text);
+      prompt(t('app.sharePrompt'), text);
     }
   }
 
   showToast(message, duration = 3500) {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     let toast = document.getElementById('app-toast-container');
     if (!toast) {
       toast = document.createElement('div');
@@ -3376,7 +3409,7 @@ class TransitApp {
     item.className = 'app-toast-item';
     item.innerHTML = `
       <span class="app-toast-msg">${this.esc(message)}</span>
-      <button type="button" class="app-toast-close" aria-label="Tancar">✕</button>
+      <button type="button" class="app-toast-close" aria-label="${this.esc(t('common.close'))}">✕</button>
     `;
     item.querySelector('.app-toast-close')?.addEventListener('click', () => {
       item.classList.add('hide');
@@ -3394,6 +3427,7 @@ class TransitApp {
   }
 
   processPendingSharedFocus(lData) {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     if (this.pendingDirection && this.pendingDirection !== this.activeDirection) {
       const targetDir = this.pendingDirection;
       this.pendingDirection = null;
@@ -3414,9 +3448,9 @@ class TransitApp {
           this.focusBusOnMap(vId, { lat: found.lat, lon: found.lon });
           this.mapController?.openBusPopup(vId);
           this.highlightSchematicBus(vId);
-          this.showToast(`🚌 Seguint en directe el Bus #${vId} (${lData?.code || 'Línia'})`);
+          this.showToast(t('app.focusBusLive', { id: vId, line: lData?.code || t('timeline.lineFallback') }));
         } else {
-          this.showToast(`ℹ️ Bus #${busId} no localitzat en circulació en aquest moment`);
+          this.showToast(t('app.focusBusNotFound', { id: busId }));
         }
       }, 400);
     }
@@ -4018,7 +4052,8 @@ class TransitApp {
     } else {
       const stopObj = foundStop || this.allStops.find(s => String(s.id || s.mouteStopId || s.code) === resolvedId);
       if (stopObj) {
-        const destName = this.activeLineData?.directions?.[0]?.name || this.activeLineData?.name || 'Destí';
+        const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
+        const destName = this.activeLineData?.directions?.[0]?.name || this.activeLineData?.name || t('common.destination');
         this.renderTargetCardLoading(this.activeLineData, stopObj.name, stopObj.code || stopObj.id, destName);
       }
     }
@@ -4385,11 +4420,9 @@ class TransitApp {
       } else if (isTomorrow) {
         pillLabel = t('dep.scheduled');
       } else if (d.isEstimated) {
-        const hasExplicitDelay = Boolean(d.delayBadgeText && (d.delayBadgeText.includes('retard') || d.delayBadgeText.includes('avançat')));
-        const estDelayBadge = hasExplicitDelay ? d.delayBadgeText : delayText;
-        pillLabel = rawDelayMins >= 2 ? estDelayBadge : `⚡ ${t('dep.enRoute')}`;
+        pillLabel = rawDelayMins >= 2 ? delayText : `⚡ ${t('dep.enRoute')}`;
       } else {
-        pillLabel = d.delayBadgeText || t('dep.onTime');
+        pillLabel = delayText;
       }
 
       const pillClass = isRegulating
@@ -4744,13 +4777,14 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
   }
 
   renderSearchResults(results, dropdown, input) {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     let itemsToRender = results;
     if (!this.showTrainsInUI) {
       itemsToRender = results.filter(r => !r.isTrain && !r.lineCode?.startsWith('R') && !r.agency?.toLowerCase().includes('rodalies') && !r.agency?.toLowerCase().includes('renfe'));
     }
 
     if (itemsToRender.length === 0) {
-      dropdown.innerHTML = '<div style="padding:0.75rem 1rem; color:var(--text-muted); font-size:0.8rem;">Cap línia ni parada trobada.</div>';
+      dropdown.innerHTML = `<div style="padding:0.75rem 1rem; color:var(--text-muted); font-size:0.8rem;">${this.esc(t('app.searchNoResults'))}</div>`;
       dropdown.classList.add('active');
       return;
     }
@@ -4763,10 +4797,10 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
               <span class="search-result-badge" style="background:${this.esc(r.lineColor)};">${this.esc(r.lineCode)}</span>
               <div class="search-result-info">
                 <div class="search-result-name">${this.esc(r.lineName)}</div>
-                <div class="search-result-zone">${this.esc(r.zone || r.agency || 'Línia de transport')}</div>
+                <div class="search-result-zone">${this.esc(r.zone || r.agency || t('app.searchLineFallback'))}</div>
               </div>
             </div>
-            <span class="search-result-action">Canviar ➔</span>
+            <span class="search-result-action">${this.esc(t('app.searchSwitch'))}</span>
           </div>
         `;
       }
@@ -4776,10 +4810,10 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
             <span class="search-result-badge" style="background:${this.esc(r.lineColor)};">${this.esc(r.lineCode)}</span>
             <div class="search-result-info">
               <div class="search-result-name">${this.esc(r.stopName)}</div>
-              <div class="search-result-zone">${this.esc(r.zone)}${r.code ? ` • Codi: ${this.esc(r.code)}` : ''}</div>
+              <div class="search-result-zone">${this.esc(r.zone)}${r.code ? ` • ${this.esc(t('app.searchCode', { code: r.code }))}` : ''}</div>
             </div>
           </div>
-          <span class="search-result-action">Veure ➔</span>
+          <span class="search-result-action">${this.esc(t('app.searchView'))}</span>
         </div>
       `;
     }).join('');
@@ -5117,9 +5151,10 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
 
     document.getElementById('btn-target-toggle-fav')?.addEventListener('click', (e) => {
       e.preventDefault();
+      const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
       const stopObj = this.getCurrentTargetStop();
       const sId = stopObj?.id || stopObj?.code;
-      const sName = stopObj?.name || document.getElementById('target-stop-title')?.textContent || `Parada ${sId}`;
+      const sName = stopObj?.name || document.getElementById('target-stop-title')?.textContent || t('stopFeat.stopFallback', { id: sId });
       if (sId) {
         this.toggleFavoriteStop(sId, sName, [this.activeLineId || 'L1']);
         this.updateTargetFavButton(sId);
@@ -5667,6 +5702,7 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
   }
 
   updateNetworkMapBadge() {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     const badge = document.getElementById('network-map-fleet-badge');
     if (!badge || !this.networkMap) return;
     const { live, estimated, total } = this.networkMap.fleetCounts();
@@ -5679,15 +5715,15 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
     // "fix" is what made a 5-bus fleet read "6 en servei" (see AGENTS.md §3).
     const trains = this.networkMap.trainCounts();
     const trainText = trains.total > 0
-      ? ` · ${trains.total} ${trains.total === 1 ? 'tren' : 'trens'}${trains.inView ? ' a la vista' : ''}${trains.stale > 0 ? ` (${trains.stale} sense actualitzar)` : ''}`
+      ? ` · ${t(trains.total === 1 ? 'netMap.trainOne' : 'netMap.trainMany', { n: trains.total })}${trains.inView ? t('netMap.inView') : ''}${trains.stale > 0 ? t('netMap.staleCount', { n: trains.stale }) : ''}`
       : '';
     if (total === 0) {
-      badge.textContent = `${scope}Sense autobusos ara${trainText}`;
+      badge.textContent = `${scope}${t('netMap.noBusesNow')}${trainText}`;
       return;
     }
     badge.textContent = scope + (estimated > 0
-      ? `${total} autobusos · ${live} GPS · ${estimated} estimats`
-      : `${total} autobusos · ${live} en GPS directe`) + trainText;
+      ? t('netMap.busesSplit', { total, live, estimated })
+      : t('netMap.busesLive', { total, live })) + trainText;
   }
 
   readTrainsShown() {
@@ -5699,12 +5735,13 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
    * has train data (polling on), so a Mataró-only deployment looks unchanged.
    */
   renderNetworkTrainToggle() {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     const btn = document.getElementById('network-map-trains-toggle');
     const map = this.networkMap;
     if (!btn || !map) return;
     btn.hidden = !map.trainFeed;
     btn.setAttribute('aria-pressed', String(map.trainsShown));
-    btn.textContent = map.trainsShown ? 'Amaga els trens' : 'Mostra els trens';
+    btn.textContent = map.trainsShown ? t('netMap.hideTrains') : t('netMap.showTrains');
     if (!btn.dataset.bound) {
       btn.dataset.bound = '1';
       btn.addEventListener('click', () => {
@@ -6090,25 +6127,30 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
         const tmpCoords = this._plannerOriginCoords;
         this._plannerOriginCoords = this._plannerDestCoords;
         this._plannerDestCoords = tmpCoords;
+        const tmpGps = this._plannerOriginIsGps;
+        this._plannerOriginIsGps = this._plannerDestIsGps;
+        this._plannerDestIsGps = tmpGps;
       }
     });
 
     originGeoBtn?.addEventListener('click', (e) => {
       e.preventDefault();
+      const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
       if (!navigator.geolocation) {
-        alert("La geolocalització no està disponible al teu navegador.");
+        alert(t('plannerModal.geoUnsupported'));
         return;
       }
       originGeoBtn.textContent = '⌛ ...';
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           this._plannerOriginCoords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-          if (originInput) originInput.value = '📍 La meva ubicació actual';
+          this._plannerOriginIsGps = true;
+          if (originInput) originInput.value = t('plannerModal.myLocation');
           originGeoBtn.textContent = '📍 GPS';
         },
         () => {
           originGeoBtn.textContent = '📍 GPS';
-          alert("No s'ha pogut obtenir la teva ubicació GPS.");
+          alert(t('plannerModal.geoError'));
         },
         { timeout: 8000 }
       );
@@ -6116,15 +6158,16 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
 
     submitBtn?.addEventListener('click', async (e) => {
       e.preventDefault();
+      const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
       const origin = originInput?.value?.trim();
       const dest = destInput?.value?.trim();
       if (!origin || !dest) {
-        alert("Si us plau, indica tant l'origen com la destinació.");
+        alert(t('plannerModal.missingInputs'));
         return;
       }
 
       if (resultsContainer) {
-        resultsContainer.innerHTML = '<div style="text-align:center; padding:2rem;"><span class="loading-spinner-inline"></span> Calculant la millor combinació de trajecte...</div>';
+        resultsContainer.innerHTML = `<div style="text-align:center; padding:2rem;"><span class="loading-spinner-inline"></span> ${this.esc(t('plannerModal.calculating'))}</div>`;
       }
 
       const fromQuery = originInput?.dataset?.stopId || origin.replace(/\s*\([^)]*\)$/, '').trim();
@@ -6132,19 +6175,19 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
       let url = `/api/mataro/plan?from=${encodeURIComponent(fromQuery)}&to=${encodeURIComponent(toQuery)}&fromName=${encodeURIComponent(origin)}&toName=${encodeURIComponent(dest)}`;
       if (originInput?.dataset?.lat && originInput?.dataset?.lon) {
         url += `&fromLat=${originInput.dataset.lat}&fromLon=${originInput.dataset.lon}`;
-      } else if (this._plannerOriginCoords && origin.includes('ubicació')) {
+      } else if (this._plannerOriginCoords && (this._plannerOriginIsGps || origin === t('plannerModal.myLocation'))) {
         url += `&fromLat=${this._plannerOriginCoords.lat}&fromLon=${this._plannerOriginCoords.lon}`;
       }
       if (destInput?.dataset?.lat && destInput?.dataset?.lon) {
         url += `&toLat=${destInput.dataset.lat}&toLon=${destInput.dataset.lon}`;
-      } else if (this._plannerDestCoords && dest.includes('ubicació')) {
+      } else if (this._plannerDestCoords && (this._plannerDestIsGps || dest === t('plannerModal.myLocation'))) {
         url += `&toLat=${this._plannerDestCoords.lat}&toLon=${this._plannerDestCoords.lon}`;
       }
 
       try {
         const fetchRes = await fetch(url);
         if (!fetchRes.ok) {
-          let serverMsg = `El servidor d'Arribo! ha retornat error HTTP ${fetchRes.status}.`;
+          let serverMsg = t('plannerModal.httpError', { status: fetchRes.status });
           try {
             const errBody = await fetchRes.json();
             if (errBody.error) serverMsg = errBody.error;
@@ -6158,9 +6201,9 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
             resultsContainer.innerHTML = `
               <div style="text-align:center; padding:2rem; color:var(--text-secondary);">
                 <div style="font-size:1.8rem; margin-bottom:0.4rem;">🔍</div>
-                <div style="font-weight:700; color:var(--text-primary); margin-bottom:0.25rem;">Cap ruta trobada</div>
-                <div style="font-size:0.85rem; max-width:340px; margin:0 auto;">${this.esc(res.message || res.error || 'No s\'ha trobat cap combinació directa o amb 1 sol transbordament.')}</div>
-                <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.4rem;">Consell: prova de triar la parada o carrer directament del menú desplegable.</div>
+                <div style="font-weight:700; color:var(--text-primary); margin-bottom:0.25rem;">${this.esc(t('plannerModal.noRouteTitle'))}</div>
+                <div style="font-size:0.85rem; max-width:340px; margin:0 auto;">${this.esc(res.message || res.error || t('plannerModal.noRouteDefault'))}</div>
+                <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.4rem;">${this.esc(t('plannerModal.noRouteTip'))}</div>
               </div>
             `;
           }
@@ -6169,15 +6212,15 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
 
         this.renderPlannerResults(res.itineraries, res.originStop, res.destStop);
       } catch (err) {
-        let errTitle = "No s'ha pogut connectar amb el servei";
-        let errDetail = "No s'ha pogut obtenir la planificació del servidor d'Arribo!.";
+        let errTitle = t('plannerModal.errConnectTitle');
+        let errDetail = t('plannerModal.errConnectDetail');
 
         if (!navigator.onLine) {
-          errTitle = "Sense connexió a Internet";
-          errDetail = "El teu dispositiu no té connexió. Revisa el Wi-Fi o les dades mòbils.";
+          errTitle = t('plannerModal.errOfflineTitle');
+          errDetail = t('plannerModal.errOfflineDetail');
         } else if (err.name === 'TypeError' && String(err.message).toLowerCase().includes('fetch')) {
-          errTitle = "Servidor d'Arribo! no disponible";
-          errDetail = "El navegador no ha pogut contactar amb el servidor local/API d'Arribo!. Comprova que el servei estigui actiu.";
+          errTitle = t('plannerModal.errUnavailableTitle');
+          errDetail = t('plannerModal.errUnavailableDetail');
         } else if (err.message) {
           errDetail = err.message;
         }
@@ -6196,9 +6239,11 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
 
     this.setupPlannerAutocomplete(originInput, 'planner-origin-dropdown', () => {
       this._plannerOriginCoords = null;
+      this._plannerOriginIsGps = false;
     });
     this.setupPlannerAutocomplete(destInput, 'planner-dest-dropdown', () => {
       this._plannerDestCoords = null;
+      this._plannerDestIsGps = false;
     });
   }
 
@@ -6229,12 +6274,13 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
         const seen = new Set();
         const matches = [];
 
+        const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
         const pois = [
-          { name: 'Estació Rodalies Mataró (Renfe)', id: '1016', directionText: 'Intercanviador Tren / Bus' },
-          { name: 'Plaça de les Tereses (Centre)', id: '1060', directionText: 'Centre Urbà' },
-          { name: 'Hospital de Mataró', id: '1001', directionText: 'Zona Hospitalària' },
-          { name: 'Mataró Parc (Centre Comercial)', id: '1002', directionText: 'Centre Comercial' },
-          { name: 'TecnoCampus Mataró', id: '1080', directionText: 'Campus Universitari' },
+          { name: 'Estació Rodalies Mataró (Renfe)', id: '1016', directionText: t('plannerModal.poiRail') },
+          { name: 'Plaça de les Tereses (Centre)', id: '1060', directionText: t('plannerModal.poiCentre') },
+          { name: 'Hospital de Mataró', id: '1001', directionText: t('plannerModal.poiHospital') },
+          { name: 'Mataró Parc (Centre Comercial)', id: '1002', directionText: t('plannerModal.poiMall') },
+          { name: 'TecnoCampus Mataró', id: '1080', directionText: t('plannerModal.poiCampus') },
           { name: 'Parc Central', id: '1015', directionText: 'Parc Central' }
         ];
 
@@ -6291,9 +6337,9 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
               <div class="planner-dropdown-item" data-id="${this.esc(m.id)}" data-name="${this.esc(m.name)}" data-type="street" data-lat="${m.lat}" data-lon="${m.lon}" data-nearest-id="${this.esc(m.nearestId || '')}">
                 <div style="display:flex; flex-direction:column; gap:2px;">
                   <span style="display:flex; align-items:center; gap:6px;"><span style="color:#f59e0b;">🛣️</span> <strong>${this.esc(m.name)}</strong></span>
-                  <span style="font-size:0.75rem; color:var(--text-muted); padding-left:1.35rem;">${this.esc(m.subtitle || `Carrer a ${m.cityName || 'Mataró'}`)}</span>
+                  <span style="font-size:0.75rem; color:var(--text-muted); padding-left:1.35rem;">${this.esc(m.subtitle || t('plannerModal.streetIn', { city: m.cityName || 'Mataró' }))}</span>
                 </div>
-                <span style="font-size:0.72rem; color:#f59e0b; background:rgba(245,158,11,0.12); padding:2px 6px; border-radius:4px; font-weight:600;">Carrer</span>
+                <span style="font-size:0.72rem; color:#f59e0b; background:rgba(245,158,11,0.12); padding:2px 6px; border-radius:4px; font-weight:600;">${this.esc(t('plannerModal.streetBadge'))}</span>
               </div>
             `;
           }
@@ -6386,6 +6432,7 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
   }
 
   renderPlannerResults(itineraries, originStop, destStop) {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     const container = document.getElementById('planner-results-container');
     if (!container) return;
 
@@ -6394,7 +6441,7 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
     this._lastPlannerDest = destStop;
 
     if (!Array.isArray(itineraries) || itineraries.length === 0) {
-      container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);">No s\'ha trobat cap combinació de trajecte.</div>';
+      container.innerHTML = `<div style="text-align:center; padding:2rem; color:var(--text-muted);">${this.esc(t('plannerModal.noCombo'))}</div>`;
       return;
     }
 
@@ -6403,9 +6450,9 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
 
     container.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; padding:0 4px;">
-        <span style="font-size:0.8rem; font-weight:700; color:var(--text-muted);">${itineraries.length} ${itineraries.length === 1 ? 'OPCIÓ' : 'OPCIONS'}:</span>
-        <a href="/plan?from=${encodeURIComponent(origName)}&to=${encodeURIComponent(destName)}" target="_blank" class="maps-link" style="font-size:0.75rem; text-decoration:none; display:inline-flex; align-items:center; gap:4px;" title="Obrir planificador a pantalla completa">
-          <span>↗️ Pàgina completa</span>
+        <span style="font-size:0.8rem; font-weight:700; color:var(--text-muted);">${this.esc(t(itineraries.length === 1 ? 'plannerModal.optionOne' : 'plannerModal.optionMany', { n: itineraries.length }))}</span>
+        <a href="/plan?from=${encodeURIComponent(origName)}&to=${encodeURIComponent(destName)}" target="_blank" class="maps-link" style="font-size:0.75rem; text-decoration:none; display:inline-flex; align-items:center; gap:4px;" title="${this.esc(t('plannerModal.fullPageTitle'))}">
+          <span>${this.esc(t('plannerModal.fullPage'))}</span>
         </a>
       </div>
     ` + itineraries.map((it, idx) => {
@@ -6416,17 +6463,18 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
         : (Number.isFinite(it.nextDepartureMinutes) 
             ? it.nextDepartureMinutes 
             : (Number.isFinite(it.nextDepartureMins) ? it.nextDepartureMins : null));
-      const waitText = Number.isFinite(waitMin) ? ` • Surt en ${waitMin} min` : '';
+      const waitText = Number.isFinite(waitMin) ? t('plannerModal.leavesIn', { min: waitMin }) : '';
+      const isWalkApprox = (w) => Boolean(w && (w.isApproximate || w.approximate || w.geometrySource === 'approximate'));
 
       return `
-        <div class="planner-itinerary-card" data-itinerary-idx="${idx}" style="cursor:pointer;" title="Fes clic per veure la ruta al mapa">
+        <div class="planner-itinerary-card" data-itinerary-idx="${idx}" style="cursor:pointer;" title="${this.esc(t('plannerModal.cardTitle'))}">
           <div class="planner-card-header">
             <div class="planner-total-duration">
               <span>⏱️ ~${it.totalDurationMins} min</span>
-              <span style="font-size:0.85rem; font-weight:600; color:var(--text-secondary);">${waitText}</span>
+              <span style="font-size:0.85rem; font-weight:600; color:var(--text-secondary);">${this.esc(waitText)}</span>
             </div>
             <span class="${isDirect ? 'planner-tag-direct' : 'planner-tag-transfer'}">
-              ${isDirect ? '✓ Ruta Directa' : '🔄 1 Transbordament'}
+              ${this.esc(isDirect ? t('plannerModal.directRoute') : t('plannerModal.oneTransfer'))}
             </span>
           </div>
 
@@ -6435,19 +6483,21 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
               <div style="display:flex; align-items:center; gap:8px; padding:3px 0 5px 0; color:var(--text-secondary); font-size:0.8rem; border-bottom:1px dashed var(--border-subtle); margin-bottom:5px;">
                 <span style="font-size:1rem; line-height:1;">🚶</span>
                 <div>
-                  <span>Caminar des de <strong>${this.esc((it.walkToFirstStop.fromName && !/^\d+$/.test(it.walkToFirstStop.fromName.trim())) ? it.walkToFirstStop.fromName : (origName || 'l\'origen'))}</strong></span>
-                  <span style="font-size:0.75rem; color:var(--text-muted); margin-left:4px;">(~${it.walkToFirstStop.walkingMinutes} min • ${it.walkToFirstStop.distanceMeters} m)</span>
+                  <span>${this.esc(t('plan.walkFrom', { name: (it.walkToFirstStop.fromName && !/^\d+$/.test(it.walkToFirstStop.fromName.trim())) ? it.walkToFirstStop.fromName : (origName || t('plan.originFallback')) }))}</span>
+                  <span style="font-size:0.75rem; color:var(--text-muted); margin-left:4px;">${this.esc(t(isWalkApprox(it.walkToFirstStop) ? 'plan.walkMetaApprox' : 'plan.walkMeta', { min: it.walkToFirstStop.walkingMinutes, dist: `${it.walkToFirstStop.distanceMeters} m` }))}</span>
                 </div>
               </div>
             ` : ''}
 
             ${it.legs.map((leg, lIdx) => {
               const destText = leg.destination || (leg.toStop && leg.toStop.name) || '';
+              const stopsN = leg.stopCount || leg.stopsCount || 0;
+              const legMins = Math.round(leg.travelTimeMins || leg.durationMinutes || 0);
               return `
               ${lIdx > 0 && it.transferWalk && it.transferWalk.distanceMeters > 15 ? `
                 <div style="display:flex; align-items:center; gap:8px; padding:3px 0 5px 0; color:var(--text-muted); font-size:0.78rem; margin-bottom:4px;">
                   <span>🔄🚶</span>
-                  <span>Enllaç a peu fins a <strong>${this.esc(leg.fromStop.name)}</strong> (~${it.transferWalk.walkingMinutes} min • ${it.transferWalk.distanceMeters} m)</span>
+                  <span>${this.esc(t(isWalkApprox(it.transferWalk) ? 'plan.transferWalkToApprox' : 'plan.transferWalkTo', { stop: leg.fromStop.name, min: it.transferWalk.walkingMinutes, dist: `${it.transferWalk.distanceMeters} m` }))}</span>
                 </div>
               ` : ''}
               <div class="planner-leg-item">
@@ -6458,20 +6508,20 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
                         ${this.esc(leg.lineCode)}
                       </span>
                       <span style="font-size:0.82rem; font-weight:700; color:var(--text-primary);">
-                        ${destText ? `Cap a ${this.esc(destText)}` : ''}
+                        ${destText ? this.esc(t('plan.towards', { dest: destText })) : ''}
                       </span>
                     </div>
                     ${leg.departureTime && leg.departureTime !== 'En breu' ? `
                       <span style="font-size:0.72rem; font-weight:700; color:${leg.isRealTime ? '#10b981' : '#f59e0b'}; background:${leg.isRealTime ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)'}; padding:2px 5px; border-radius:4px;">
-                        🕐 ${this.esc(leg.departureTime)}${leg.isRealTime ? ' • En viu' : ' • Horari'}
+                        🕐 ${this.esc(leg.departureTime)}${this.esc(leg.isRealTime ? t('plan.legLive') : t('plan.legTimetable'))}
                       </span>
                     ` : ''}
                   </div>
                   <div style="font-size:0.82rem; color:var(--text-secondary); margin-top:2px;">
-                    🟢 Pujar a: <strong>${this.esc(leg.fromStop.name)}</strong>
+                    🟢 ${this.esc(t('plan.boardAt', { stop: leg.fromStop.name }))}
                   </div>
                   <div style="font-size:0.82rem; color:var(--text-secondary);">
-                    ${lIdx === it.legs.length - 1 ? '🏁' : '🔄'} Baixar a: <strong>${this.esc(leg.toStop.name)}</strong> (${leg.stopCount || leg.stopsCount} parades, ~${Math.round(leg.travelTimeMins || leg.durationMinutes || 0)} min)
+                    ${lIdx === it.legs.length - 1 ? '🏁' : '🔄'} ${this.esc(t(stopsN === 1 ? 'plan.alightAtOne' : 'plan.alightAtMany', { stop: leg.toStop.name, n: stopsN, min: legMins }))}
                   </div>
                 </div>
               </div>
@@ -6482,17 +6532,17 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
               <div style="display:flex; align-items:center; gap:8px; padding:5px 0 2px 0; color:var(--text-secondary); font-size:0.8rem; border-top:1px dashed var(--border-subtle); margin-top:5px;">
                 <span style="font-size:1rem; line-height:1;">🚶</span>
                 <div>
-                  <span>Caminar fins a <strong>${this.esc((it.walkFromLastStop.toName && !/^\d+$/.test(it.walkFromLastStop.toName.trim())) ? it.walkFromLastStop.toName : (destName || 'la destinació'))}</strong></span>
-                  <span style="font-size:0.75rem; color:var(--text-muted); margin-left:4px;">(~${it.walkFromLastStop.walkingMinutes} min • ${it.walkFromLastStop.distanceMeters} m)</span>
+                  <span>${this.esc(t('plan.walkTo', { name: (it.walkFromLastStop.toName && !/^\d+$/.test(it.walkFromLastStop.toName.trim())) ? it.walkFromLastStop.toName : (destName || t('plan.destFallback')) }))}</span>
+                  <span style="font-size:0.75rem; color:var(--text-muted); margin-left:4px;">${this.esc(t(isWalkApprox(it.walkFromLastStop) ? 'plan.walkMetaApprox' : 'plan.walkMeta', { min: it.walkFromLastStop.walkingMinutes, dist: `${it.walkFromLastStop.distanceMeters} m` }))}</span>
                 </div>
               </div>
             ` : ''}
           </div>
 
           <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.75rem; border-top:1px solid var(--border-subtle); padding-top:0.6rem;">
-            <span style="font-size:0.75rem; color:var(--text-muted); font-weight:600;">Fes clic per veure al mapa</span>
+            <span style="font-size:0.75rem; color:var(--text-muted); font-weight:600;">${this.esc(t('plannerModal.clickMap'))}</span>
             <button type="button" class="btn-primary btn-view-itinerary-map" data-itinerary-idx="${idx}" style="padding:0.35rem 0.8rem; font-size:0.82rem;">
-              <span>🗺️ Veure ruta al mapa</span>
+              <span>${this.esc(t('plannerModal.viewMapBtn'))}</span>
             </button>
           </div>
         </div>
@@ -6567,6 +6617,7 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
 
   toggleProximityAlarm(stop) {
     if (!stop || !stop.id) return;
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     const sId = String(stop.id);
 
     if (this.activeProximityAlarm && this.activeProximityAlarm.stopId === sId) {
@@ -6574,7 +6625,7 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
       const alarmBtn = document.getElementById('modal-proximity-alarm-btn');
       const alarmBtnText = document.getElementById('modal-alarm-btn-text');
       if (alarmBtn) alarmBtn.classList.remove('active');
-      if (alarmBtnText) alarmBtnText.textContent = "Avisa'm en arribar";
+      if (alarmBtnText) alarmBtnText.textContent = t('modal.alarmOff');
       return;
     }
 
@@ -6584,7 +6635,7 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
 
     this.activeProximityAlarm = {
       stopId: sId,
-      stopName: stop.name || 'Parada',
+      stopName: stop.name || t('stop.fallbackName'),
       lat: stop.lat,
       lon: stop.lon
     };
@@ -6592,7 +6643,7 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
     const alarmBtn = document.getElementById('modal-proximity-alarm-btn');
     const alarmBtnText = document.getElementById('modal-alarm-btn-text');
     if (alarmBtn) alarmBtn.classList.add('active');
-    if (alarmBtnText) alarmBtnText.textContent = 'Alarma Activada ⏰';
+    if (alarmBtnText) alarmBtnText.textContent = t('modal.alarmOn');
 
     if (navigator.geolocation) {
       this.alarmWatchId = navigator.geolocation.watchPosition(
@@ -6624,6 +6675,7 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
   }
 
   triggerProximityAlert(stop) {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     if (navigator.vibrate) {
       try {
         navigator.vibrate([400, 200, 400, 200, 800, 200, 800]);
@@ -6634,13 +6686,14 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
 
     const alertModal = document.getElementById('alarm-alert-backdrop');
     const stopNameEl = document.getElementById('alarm-alert-stop-name');
-    if (stopNameEl) stopNameEl.textContent = stop.stopName || stop.name || 'La teva parada';
+    const stopLabel = stop.stopName || stop.name || t('alarm.yourStop');
+    if (stopNameEl) stopNameEl.textContent = stopLabel;
     if (alertModal) alertModal.style.display = 'flex';
 
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
       try {
-        new Notification("Arribo! Mataró: Propera Parada!", {
-          body: `Estàs arribant a ${stop.stopName || stop.name}! Prepara't per baixar.`,
+        new Notification(t('alarm.notifTitle'), {
+          body: t('alarm.notifBody', { stop: stopLabel }),
           icon: '/favicon.ico'
         });
       } catch {}

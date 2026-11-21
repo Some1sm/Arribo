@@ -17,6 +17,37 @@
 
   const seasonPillState = new Map();
 
+  function localizeSeasonSource(rawSource) {
+    const rawSrc = String(rawSource || '').trim();
+    if (!rawSrc) return t('util.season.srcUnknown', null, 'desconeguda');
+    const lower = rawSrc.toLowerCase();
+    if (lower === 'calendar') return t('util.season.srcCalendar', null, 'calendari');
+    if (lower === 'default') return t('util.season.srcDefault', null, 'per defecte');
+    const defMatch = rawSrc.match(/^default\s*\((.+)\)$/i);
+    if (defMatch) {
+      const reason = defMatch[1].trim();
+      if (/no summer window covers this date/i.test(reason)) {
+        return t('util.season.srcDefaultNoSummer', null, "per defecte (cap període d'estiu cobreix avui)");
+      }
+      return t('util.season.srcDefaultReason', { reason }, 'per defecte ({reason})');
+    }
+    const noticeMatch = rawSrc.match(/^notice\b(?:\s*[:(-]?\s*(.+?)\)?)?$/i);
+    if (noticeMatch) {
+      const detail = (noticeMatch[1] || '').trim();
+      return detail
+        ? t('util.season.srcNoticeDetail', { detail }, "avís de l'operador ({detail})")
+        : t('util.season.srcNotice', null, "avís de l'operador");
+    }
+    const winMatch = rawSrc.match(/^(?:summer[_\s-]?window|calendar[_\s-]?window|window|static)\b(?:\s*[:(-]?\s*(.+?)\)?)?$/i);
+    if (winMatch) {
+      const detail = (winMatch[1] || '').trim();
+      return detail
+        ? t('util.season.srcWindowDetail', { detail }, 'calendari de temporada ({detail})')
+        : t('util.season.srcWindow', null, 'calendari de temporada');
+    }
+    return rawSrc;
+  }
+
   function renderSeasonPill(id, schedule) {
     const doc = global.document;
     const pill = doc?.getElementById(id);
@@ -29,14 +60,7 @@
     pill.textContent = known ? label : `${label}?`;
     pill.hidden = false;
 
-    const rawSrc = String(schedule.seasonSource || '').trim();
-    const localizedSrc = !rawSrc
-      ? t('util.season.srcUnknown', null, 'desconeguda')
-      : rawSrc === 'calendar'
-        ? t('util.season.srcCalendar', null, 'calendari')
-        : rawSrc === 'default'
-          ? t('util.season.srcDefault', null, 'per defecte')
-          : rawSrc;
+    const localizedSrc = localizeSeasonSource(schedule.seasonSource);
 
     // The tooltip carries the provenance: which grid, chosen how, and
     // whether the server considers the date covered.

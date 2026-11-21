@@ -26,14 +26,14 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
   
   <!-- App Styles -->
-  <link rel="stylesheet" href="/css/style.css?v=9.4.61">
+  <link rel="stylesheet" href="/css/style.css?v=9.4.62">
 </head>
 <body>
 
   <!-- Top Navigation Header -->
   <header class="app-header">
     <div class="header-container">
-      <a href="/" class="brand-title-wrap" id="header-logo-group" title="Arribo! - Tornar a l'inici">
+      <a href="/" class="brand-title-wrap" id="header-logo-group" data-i18n-title="index.homeTitle" title="Arribo! - Tornar a l'inici">
         <div class="brand-mark-box" id="header-line-badge">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M4.7 17.5H3.4A1.4 1.4 0 0 1 2 16.1V6.4A1.4 1.4 0 0 1 3.4 5H17.5A4.5 4.5 0 0 1 22 9.5v6.6a1.4 1.4 0 0 1-1.4 1.4h-1.3"/>
@@ -55,45 +55,45 @@
           <span class="beacon-pulse-ring"></span>
           <span class="beacon-pulse-dot"></span>
         </span>
-        <span><span data-i18n="beacon.live">En viu</span> • <strong>8 línies actives</strong></span>
+        <span><span data-i18n="beacon.live">En viu</span> • <strong data-i18n="index.activeLines8">8 línies actives</strong></span>
       </div>
 
       <!-- Universal Stop & Line Search Input -->
       <div class="global-search-container">
         <svg class="search-icon-svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="text" id="global-search-input" class="global-search-input" placeholder="Cercar línia o parada (ex: L1, Hospital, Rodalies, 7, Tereses)..." autocomplete="off">
+        <input type="text" id="global-search-input" class="global-search-input" data-i18n-placeholder="index.globalSearchPlaceholder" placeholder="Cercar línia o parada (ex: L1, Hospital, Rodalies, 7, Tereses)..." autocomplete="off">
         <span class="search-shortcut-hint"><kbd>⌘</kbd><kbd>K</kbd></span>
         <div class="search-results-dropdown" id="search-results-dropdown"></div>
       </div>
 
       <div class="header-actions">
         <!-- Journey Planner Navigation Button -->
-        <a href="/plan" class="btn-header-nav planner-btn" id="btn-header-planner" title="Com anar-hi: Planificador de viatges A a B" style="text-decoration:none;">
+        <a href="/plan" class="btn-header-nav planner-btn" id="btn-header-planner" data-i18n-title="index.headerPlannerTitle" title="Com anar-hi: Planificador de viatges A a B" style="text-decoration:none;">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
-          <span>Com anar-hi</span>
+          <span data-i18n="hero.planner">Com anar-hi</span>
         </a>
 
         <!-- Favorite Stops Hub Button -->
-        <button type="button" class="btn-header-nav favorites-btn" id="btn-header-favorites" title="Veure les meves parades preferides">
+        <button type="button" class="btn-header-nav favorites-btn" id="btn-header-favorites" data-i18n-title="index.headerFavsTitle" title="Veure les meves parades preferides">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
           <span id="header-favs-count-text">Preferides</span>
         </button>
 
         <!-- Journalism & Delay Analytics Link -->
-        <a href="/dades" class="btn-header-nav journalism-btn" id="btn-open-journalism" title="Veure anàlisi de retards històrics, puntualitat i dades" style="text-decoration:none;">
+        <a href="/dades" class="btn-header-nav journalism-btn" id="btn-open-journalism" data-i18n-title="index.headerDadesTitle" title="Veure anàlisi de retards històrics, puntualitat i dades" style="text-decoration:none;">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-          <span>Dades</span>
+          <span data-i18n="index.headerDades">Dades</span>
         </a>
 
         <!-- Live Incidents / Disruptions Button -->
-        <button type="button" class="btn-header-nav incidents-btn" id="btn-open-incidents" title="Veure avisos de servei i incidències en temps real">
+        <button type="button" class="btn-header-nav incidents-btn" id="btn-open-incidents" data-i18n-title="index.headerIncidentsTitle" title="Veure avisos de servei i incidències en temps real">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
           <span id="incidents-count-text">Avisos</span>
         </button>
 
         <!-- Utility Actions -->
         <select class="lang-select" data-lang-picker aria-label="Idioma"></select>
-        <button type="button" class="btn-icon btn-theme-toggle" id="btn-theme-toggle" title="Canviar tema clar / fosc" aria-label="Canviar tema clar o fosc">
+        <button type="button" class="btn-icon btn-theme-toggle" id="btn-theme-toggle" data-i18n-title="index.themeToggleTitle" title="Canviar tema clar / fosc" data-i18n-aria-label="index.themeToggleAria" aria-label="Canviar tema clar o fosc">
           <svg class="theme-icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="5"></circle>
             <line x1="12" y1="1" x2="12" y2="3"></line>
@@ -110,7 +110,7 @@
           </svg>
         </button>
 
-        <button type="button" class="btn-icon" id="btn-sound" title="Activar avis sonor d'arribada" aria-label="Alarma sonora">
+        <button type="button" class="btn-icon" id="btn-sound" data-i18n-title="index.soundTitle" title="Activar avis sonor d'arribada" data-i18n-aria-label="index.soundAria" aria-label="Alarma sonora">
           <svg id="sound-icon-off" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
             <line x1="23" y1="9" x2="17" y2="15"></line>
@@ -134,9 +134,9 @@
     <div class="page-view active" id="view-landing">
       
       <!-- Landing Hero Card -->
-      <section class="landing-hero-card" aria-label="Benvinguda a Arribo!">
+      <section class="landing-hero-card" data-i18n-aria-label="index.heroAria" aria-label="Benvinguda a Arribo!">
         <!-- A Mataró Bus Volvo 7900 Hybrid in the service livery, with its destination sign -->
-        <svg class="bus-illustration landing-hero-bus" viewBox="0 0 320 100" role="img" aria-label="Autobús urbà de Mataró">
+        <svg class="bus-illustration landing-hero-bus" viewBox="0 0 320 100" role="img" aria-label="Autobús urbà de Mataró" data-i18n-aria-label="index.heroBusAria">
           <defs><clipPath id="hero-bus-body"><path d="M20 12H286a22 22 0 0 1 22 22V80a8 8 0 0 1-8 8H18a8 8 0 0 1-8-8V22a10 10 0 0 1 10-10z"/></clipPath></defs>
           <ellipse cx="160" cy="96" rx="150" ry="3.5" fill="var(--bus-tyre)" opacity=".25"/>
           <rect x="58" y="5" width="66" height="9" rx="3" fill="var(--bus-roof)"/>
@@ -206,7 +206,7 @@
         <!-- Network & Operator Filter Tabs -->
         <!-- Filled from the line catalog (app.js renderLandingFilterTabs) -->
         <div class="landing-filter-tabs">
-          <div class="pill-group" id="landing-filter-tabs" role="group" aria-label="Filtra el mapa de la xarxa"></div>
+          <div class="pill-group" id="landing-filter-tabs" role="group" data-i18n-aria-label="index.filterMapAria" aria-label="Filtra el mapa de la xarxa"></div>
         </div>
       </section>
 
@@ -229,7 +229,7 @@
       </section>
 
       <!-- Favorite Stops Dynamic Section -->
-      <section class="landing-favorites-section" id="landing-favorites-section" style="display:none;" aria-label="Parades preferides">
+      <section class="landing-favorites-section" id="landing-favorites-section" style="display:none;" data-i18n-aria-label="index.favsSectionAria" aria-label="Parades preferides">
         <div class="landing-group-header">
           <h3>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
@@ -241,7 +241,7 @@
       </section>
 
       <!-- Nearby Stops Dynamic Section -->
-      <section class="landing-nearby-section" id="landing-nearby-section" style="display:none;" aria-label="Parades a prop">
+      <section class="landing-nearby-section" id="landing-nearby-section" style="display:none;" data-i18n-aria-label="index.nearbySectionAria" aria-label="Parades a prop">
         <div class="landing-group-header">
           <h3>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
@@ -256,17 +256,17 @@
       </section>
 
       <!-- Dynamic Categorized Lines Grid -->
-      <section class="landing-lines-section" aria-label="Llistat de línies disponibles">
+      <section class="landing-lines-section" data-i18n-aria-label="index.linesSectionAria" aria-label="Llistat de línies disponibles">
         <div id="landing-lines-container" class="landing-lines-container">
           <div style="padding:2.5rem 1rem; text-align:center; color:var(--text-muted);">
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--c10-primary)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:0.5rem;"><path d="M4.7 17.5H3.4A1.4 1.4 0 0 1 2 16.1V6.4A1.4 1.4 0 0 1 3.4 5H17.5A4.5 4.5 0 0 1 22 9.5v6.6a1.4 1.4 0 0 1-1.4 1.4h-1.3"/><path d="M9.3 17.5h5.4"/><path d="M2 11.6h20"/><path d="M7.5 5v6.6M12.5 5v6.6M17.6 5.2v6.4"/><circle cx="7" cy="17.5" r="2.3"/><circle cx="17" cy="17.5" r="2.3"/></svg>
-            <div>Carregant línies de Mataró Bus...</div>
+            <div data-i18n="index.loadingLines">Carregant línies de Mataró Bus...</div>
           </div>
         </div>
       </section>
 
       <!-- Platform Features & Live Status Highlights -->
-      <section class="landing-stats-grid" aria-label="Característiques de la plataforma">
+      <section class="landing-stats-grid" data-i18n-aria-label="index.statsAria" aria-label="Característiques de la plataforma">
         <div class="landing-stat-card">
           <div class="stat-icon-badge">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--c10-primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -279,8 +279,8 @@
             </svg>
           </div>
           <div class="stat-card-text">
-            <strong>8 Línies Urbanes</strong>
-            <span>Cobertura completa de tota la xarxa urbana de Mataró Bus (L1 a L8)</span>
+            <strong data-i18n="index.feat1Title">8 Línies Urbanes</strong>
+            <span data-i18n="index.feat1Desc">Cobertura completa de tota la xarxa urbana de Mataró Bus (L1 a L8)</span>
           </div>
         </div>
 
@@ -289,8 +289,8 @@
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"/></svg>
           </div>
           <div class="stat-card-text">
-            <strong>Telemetria GPS en Directe</strong>
-            <span>Posició exacta dels autobusos i velocitat en temps real via SIRI</span>
+            <strong data-i18n="index.feat2Title">Telemetria GPS en Directe</strong>
+            <span data-i18n="index.feat2Desc">Posició exacta dels autobusos i velocitat en temps real via SIRI</span>
           </div>
         </div>
 
@@ -299,8 +299,8 @@
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
           </div>
           <div class="stat-card-text">
-            <strong>Horaris Oficials per Expedició</strong>
-            <span>Minuts d'espera calculats amb dades oficials feiners, dissabtes i diumenges</span>
+            <strong data-i18n="index.feat3Title">Horaris Oficials per Expedició</strong>
+            <span data-i18n="index.feat3Desc">Minuts d'espera calculats amb dades oficials feiners, dissabtes i diumenges</span>
           </div>
         </div>
 
@@ -309,8 +309,8 @@
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f43f5e" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
           </div>
           <div class="stat-card-text">
-            <strong>Avisos i Desviaments</strong>
-            <span>Incidències oficials i avisos de Mataró Bus al moment</span>
+            <strong data-i18n="index.feat4Title">Avisos i Desviaments</strong>
+            <span data-i18n="index.feat4Desc">Incidències oficials i avisos de Mataró Bus al moment</span>
           </div>
         </div>
       </section>
@@ -377,7 +377,7 @@
           <strong id="disruption-banner-title">Avís de servei a la línia</strong>
           <span id="disruption-banner-desc"></span>
         </div>
-        <button type="button" class="disruption-banner-btn" id="btn-view-disruption-details">Veure detall</button>
+        <button type="button" class="disruption-banner-btn" id="btn-view-disruption-details" data-i18n="banner.details">Veure detall</button>
       </div>
 
       <!-- Dynamic Direction Selector Bar -->
@@ -444,9 +444,9 @@
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
               <span>Google Maps</span>
             </a>
-            <button type="button" class="btn-target-action" id="btn-target-toggle-fav" title="Afegir o treure de preferides">
+            <button type="button" class="btn-target-action" id="btn-target-toggle-fav" data-i18n-title="modal.favAddTitle" title="Afegir o treure de preferides">
               <span id="target-fav-star">⭐</span>
-              <span id="target-fav-text">Preferida</span>
+              <span id="target-fav-text" data-i18n="fav.label">Preferida</span>
             </button>
           </div>
         </div>
@@ -550,7 +550,7 @@
       </section>
 
       <!-- Shared Map and Stops Explorer Grid -->
-      <section class="explorer-grid" id="view-explorer-grid" aria-label="Mapa interactiu i explorador de parades">
+      <section class="explorer-grid" id="view-explorer-grid" data-i18n-aria-label="index.explorerAria" aria-label="Mapa interactiu i explorador de parades">
         
         <!-- Interactive Leaflet Map -->
         <div class="map-card" id="map-card">
@@ -624,7 +624,7 @@
           <!-- Prominent Direction Buttons / Tabs directly inside Stops Card -->
           <!-- Search & Filter bar (integrated for both Thermometer and List modes) -->
           <div class="stops-search-wrapper">
-            <input type="text" id="stop-search-input" class="stops-search-input" placeholder="🔍 Cercar parada al termòmetre (ex: Tereses, 1016, Hospital)..." data-i18n-aria-label="line.stopSearchAria" aria-label="Cercar parada">
+            <input type="text" id="stop-search-input" class="stops-search-input" data-i18n-placeholder="stops.searchSchematic" placeholder="🔍 Cercar parada al termòmetre (ex: Tereses, 1016, Hospital)..." data-i18n-aria-label="line.stopSearchAria" aria-label="Cercar parada">
             <button type="button" id="btn-clear-stop-search" class="btn-clear-search" style="display:none;" data-i18n-title="line.clearSearch" title="Netejar cerca">✕</button>
           </div>
 
@@ -658,7 +658,7 @@
       <!-- City & Network Filter Pills -->
       <!-- Filled from the line catalog (app.js renderPickerFilterTabs) -->
       <div class="line-picker-filter-tabs">
-        <div class="pill-group" id="line-picker-filter-tabs" role="group" aria-label="Filtra les línies"></div>
+        <div class="pill-group" id="line-picker-filter-tabs" role="group" data-i18n-aria-label="index.pickerFilterAria" aria-label="Filtra les línies"></div>
       </div>
 
       <!-- Scrollable Lines Grid & Categories -->
@@ -673,37 +673,37 @@
     <div class="stop-modal">
       <!-- Previous & Next Stop Navigation Bar with Clean Close Button -->
       <div class="stop-modal-nav-bar">
-        <button type="button" class="btn-stop-nav" id="modal-prev-stop-btn" title="Parada anterior">
+        <button type="button" class="btn-stop-nav" id="modal-prev-stop-btn" data-i18n-title="modal.prevStopTitle" title="Parada anterior">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-          <span class="stop-nav-label" id="modal-prev-stop-name">Anterior</span>
+          <span class="stop-nav-label" id="modal-prev-stop-name" data-i18n="modal.prevStop">Anterior</span>
         </button>
 
         <span class="stop-nav-seq-badge" id="modal-stop-seq-badge">Parada #--</span>
 
         <div class="stop-modal-nav-right">
-          <button type="button" class="btn-stop-nav" id="modal-next-stop-btn" title="Parada següent">
-            <span class="stop-nav-label" id="modal-next-stop-name">Següent</span>
+          <button type="button" class="btn-stop-nav" id="modal-next-stop-btn" data-i18n-title="modal.nextStopTitle" title="Parada següent">
+            <span class="stop-nav-label" id="modal-next-stop-name" data-i18n="modal.nextStop">Següent</span>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
           </button>
-          <button type="button" class="modal-close-btn stop-modal-close-btn" id="modal-close-btn" aria-label="Tancar finestra" title="Tancar">&times;</button>
+          <button type="button" class="modal-close-btn stop-modal-close-btn" id="modal-close-btn" data-i18n-aria-label="common.closeWindow" aria-label="Tancar finestra" data-i18n-title="common.close" title="Tancar">&times;</button>
         </div>
       </div>
 
-      <div class="target-badge" id="modal-stop-badge">Detalls de parada</div>
+      <div class="target-badge" id="modal-stop-badge" data-i18n="modal.stopBadge">Detalls de parada</div>
       <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:0.5rem; margin-top:0.3rem;">
         <div>
           <h3 class="target-name" id="modal-stop-title" style="font-size:1.3rem; margin-top:0;">Nom de la parada</h3>
           <p class="target-subname" id="modal-stop-subtitle" style="margin-bottom:0.75rem;">Codi parada: --</p>
         </div>
-        <button type="button" class="btn-star-fav" id="modal-toggle-fav-btn" title="Afegir / treure de parades preferides" aria-label="Afegir a parades preferides">
+        <button type="button" class="btn-star-fav" id="modal-toggle-fav-btn" data-i18n-title="modal.favAddTitle" title="Afegir / treure de parades preferides" data-i18n-aria-label="modal.favAria" aria-label="Afegir a parades preferides">
           <span class="star-icon" id="modal-star-icon">☆</span>
-          <span class="star-label" id="modal-star-label">Preferida</span>
+          <span class="star-label" id="modal-star-label" data-i18n="fav.label">Preferida</span>
         </button>
       </div>
 
       <div style="margin-bottom:1rem;">
         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.5rem;">
-          <h4 style="font-size:0.82rem; font-weight:700; color:var(--text-secondary); text-transform:uppercase;">
+          <h4 data-i18n="modal.arrivalsHeading" style="font-size:0.82rem; font-weight:700; color:var(--text-secondary); text-transform:uppercase;">
             Arribades (Temps Real + Horari Teòric)
           </h4>
           <span class="dep-type-badge" id="modal-departures-count-badge">Carregant...</span>
@@ -713,19 +713,19 @@
 
       <div class="modal-actions-footer" style="display:flex; align-items:center; justify-content:space-between; gap:0.5rem; margin-top:1rem; padding-top:0.85rem; border-top:1px solid var(--border-subtle); flex-wrap:wrap;">
         <div style="display:flex; gap:0.4rem; flex-wrap:wrap; align-items:center;">
-          <button type="button" class="btn-set-favorite-target" id="modal-set-target-btn" title="Fixar com a parada principal per al seguiment d'aquesta línia">
+          <button type="button" class="btn-set-favorite-target" id="modal-set-target-btn" data-i18n="modal.setTarget" data-i18n-title="modal.setTargetTitle" title="Fixar com a parada principal per al seguiment d'aquesta línia">
             📌 Fixar Principal
           </button>
-          <button type="button" class="btn-toggle-favorite-action" id="modal-footer-fav-btn" title="Afegir o treure aquesta parada de les teves parades preferides">
+          <button type="button" class="btn-toggle-favorite-action" id="modal-footer-fav-btn" data-i18n-title="modal.favAddTitle" title="Afegir o treure aquesta parada de les teves parades preferides">
             <span class="fav-action-icon" id="modal-footer-fav-icon">☆</span>
-            <span id="modal-footer-fav-text">Preferida</span>
+            <span id="modal-footer-fav-text" data-i18n="fav.label">Preferida</span>
           </button>
-          <button type="button" class="btn-proximity-alarm" id="modal-proximity-alarm-btn" title="Avisa'm amb so i vibració quan el bus s'apropi a aquesta parada">
+          <button type="button" class="btn-proximity-alarm" id="modal-proximity-alarm-btn" data-i18n-title="modal.alarmTitle" title="Avisa'm amb so i vibració quan el bus s'apropi a aquesta parada">
             <span class="alarm-icon">⏰</span>
-            <span id="modal-alarm-btn-text">Avisa'm en arribar</span>
+            <span id="modal-alarm-btn-text" data-i18n="modal.alarmOff">Avisa'm en arribar</span>
           </button>
         </div>
-        <a id="modal-maps-link" href="#" target="_blank" rel="noopener noreferrer" class="maps-link" style="font-size:0.75rem;">
+        <a id="modal-maps-link" href="#" target="_blank" rel="noopener noreferrer" class="maps-link" data-i18n-title="stop.mapsTitle" title="Obrir la ubicació a Google Maps" style="font-size:0.75rem;">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
           <span>Google Maps</span>
         </a>
@@ -747,12 +747,12 @@
       <!-- Quick Search Bar -->
       <div class="line-picker-search-bar" style="margin-bottom: 0.85rem;">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="text" id="disruptions-search-input" class="line-picker-search-input" placeholder="🔍 Cerca per línia (ex: L95, B25, e11.1) o municipi (ex: Badalona, Mataró, Barcelona)..." autocomplete="off">
+        <input type="text" id="disruptions-search-input" class="line-picker-search-input" data-i18n-placeholder="disruptions.searchPlaceholder" placeholder="🔍 Cerca per línia (ex: L1, L2, L3) o zona (ex: Hospital, Centre, Rodalies)..." autocomplete="off">
       </div>
 
       <!-- Scrollable Disruptions List -->
       <div class="modal-body" id="disruptions-list-container" style="overflow-y:auto; padding-right:0.25rem; flex:1; min-height:200px;">
-        <div style="text-align:center; padding:2rem; color:var(--text-muted);">Carregant incidències en temps real...</div>
+        <div style="text-align:center; padding:2rem; color:var(--text-muted);" data-i18n="disruptions.loading">Carregant incidències en temps real...</div>
       </div>
     </div>
   </div>
@@ -781,38 +781,38 @@
       
       <div class="line-picker-header" style="margin-bottom:0.75rem; display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:0.5rem;">
         <div>
-          <div class="target-badge" style="background:rgba(16, 185, 129, 0.15); color:#10b981; border:1px solid rgba(16, 185, 129, 0.35);">🧭 Planificador de Rutes</div>
+          <div class="target-badge" style="background:rgba(16, 185, 129, 0.15); color:#10b981; border:1px solid rgba(16, 185, 129, 0.35);" data-i18n="planner.modalBadge">🧭 Planificador de Rutes</div>
           <h3 class="line-picker-title" id="planner-modal-title" data-i18n="planner.modalTitle">Com anar-hi a Mataró</h3>
           <p class="line-picker-subtitle" data-i18n="planner.modalSubtitle">Cerca el millor trajecte directe o amb transbordament entre dues parades</p>
         </div>
-        <a href="/plan" class="btn-itinerary-back" style="text-decoration:none; padding:0.4rem 0.8rem; font-size:0.8rem; margin-right:2rem;" title="Obrir planificador en pàgina completa">
-          <span>↗️ Pàgina completa</span>
+        <a href="/plan" class="btn-itinerary-back" style="text-decoration:none; padding:0.4rem 0.8rem; font-size:0.8rem; margin-right:2rem;" data-i18n-title="planner.modalFullPageTitle" title="Obrir planificador en pàgina completa">
+          <span data-i18n="planner.modalFullPage">↗️ Pàgina completa</span>
         </a>
       </div>
 
       <!-- Route Inputs Row -->
       <div class="planner-form-container">
         <div class="planner-input-group">
-          <label for="planner-origin-input" class="planner-label">🟢 Origen:</label>
+          <label for="planner-origin-input" class="planner-label" data-i18n="planner.modalOriginLabel">🟢 Origen:</label>
           <div class="planner-input-wrapper">
-            <input type="text" id="planner-origin-input" class="planner-input" placeholder="Parada d'origen (ex: Hospital, Tereses, 1016, Cerdanyola)..." autocomplete="off">
-            <button type="button" class="btn-planner-geo" id="btn-planner-origin-geo" title="Utilitzar la meva ubicació GPS actual">📍 GPS</button>
+            <input type="text" id="planner-origin-input" class="planner-input" data-i18n-placeholder="planner.modalOriginPlaceholder" placeholder="Parada d'origen (ex: Hospital, Tereses, 1016, Cerdanyola)..." autocomplete="off">
+            <button type="button" class="btn-planner-geo" id="btn-planner-origin-geo" data-i18n-title="planner.modalGpsTitle" title="Utilitzar la meva ubicació GPS actual">📍 GPS</button>
           </div>
           <div class="planner-dropdown" id="planner-origin-dropdown"></div>
         </div>
 
-        <button type="button" class="btn-planner-swap" id="btn-planner-swap" title="Invertir origen i destinació">⇅</button>
+        <button type="button" class="btn-planner-swap" id="btn-planner-swap" data-i18n-title="planner.modalSwapTitle" title="Invertir origen i destinació">⇅</button>
 
         <div class="planner-input-group">
-          <label for="planner-dest-input" class="planner-label">🔴 Destinació:</label>
+          <label for="planner-dest-input" class="planner-label" data-i18n="planner.modalDestLabel">🔴 Destinació:</label>
           <div class="planner-input-wrapper">
-            <input type="text" id="planner-dest-input" class="planner-input" placeholder="Parada de destinació (ex: Estació Rodalies, Parc Central, 1)..." autocomplete="off">
+            <input type="text" id="planner-dest-input" class="planner-input" data-i18n-placeholder="planner.modalDestPlaceholder" placeholder="Parada de destinació (ex: Estació Rodalies, Parc Central, 1)..." autocomplete="off">
           </div>
           <div class="planner-dropdown" id="planner-dest-dropdown"></div>
         </div>
 
         <button type="button" class="btn-primary btn-planner-search" id="btn-planner-submit">
-          <span>🔍 Cercar la millor ruta</span>
+          <span data-i18n="planner.modalSubmit">🔍 Cercar la millor ruta</span>
         </button>
       </div>
 
@@ -820,7 +820,7 @@
       <div class="modal-body" id="planner-results-container" style="overflow-y:auto; padding-right:0.25rem; flex:1; min-height:220px; margin-top:0.75rem;">
         <div style="text-align:center; padding:2rem; color:var(--text-muted);">
           <div style="font-size:1.8rem; margin-bottom:0.5rem;">🧭</div>
-          <div>Tria l'origen i la destinació per veure les línies recomanades, temps d'espera i transbordaments.</div>
+          <div data-i18n="planner.modalEmpty">Tria l'origen i la destinació per veure les línies recomanades, temps d'espera i transbordaments.</div>
         </div>
       </div>
     </div>
@@ -830,11 +830,11 @@
   <div class="modal-backdrop alarm-alert-backdrop" id="alarm-alert-backdrop" style="display:none; z-index:9999;" role="alertdialog">
     <div class="alarm-alert-card">
       <div class="alarm-bell-pulse">⏰</div>
-      <h2 class="alarm-alert-title">Estàs arribant a la teva parada!</h2>
-      <p class="alarm-alert-desc" id="alarm-alert-stop-name">Parada de destinació</p>
-      <div class="alarm-alert-sub" id="alarm-alert-subtext">Prepara't per baixar de l'autobús.</div>
+      <h2 class="alarm-alert-title" data-i18n="alarm.title">Estàs arribant a la teva parada!</h2>
+      <p class="alarm-alert-desc" id="alarm-alert-stop-name" data-i18n="alarm.destFallback">Parada de destinació</p>
+      <div class="alarm-alert-sub" id="alarm-alert-subtext" data-i18n="alarm.subtext">Prepara't per baixar de l'autobús.</div>
       <button type="button" class="btn-primary btn-alarm-dismiss" id="btn-alarm-dismiss">
-        <span>✓ D'acord, he arribat</span>
+        <span data-i18n="alarm.dismiss">✓ D'acord, he arribat</span>
       </button>
     </div>
   </div>
@@ -843,12 +843,12 @@
   <footer class="app-footer">
     <div class="footer-content">
       <div>
-        <span><strong>Arribo! Mataró</strong> • Dades oficials en temps real: Mataró Bus Urbà (Avanza / Ajuntament de Mataró)</span>
+        <span><strong>Arribo! Mataró</strong><span data-i18n="index.footerData"> • Dades oficials en temps real: Mataró Bus Urbà (Avanza / Ajuntament de Mataró)</span></span>
       </div>
       <div class="footer-links">
-        <a href="#" id="footer-link-home">Totes les línies</a>
-        <a href="#" id="footer-link-incidents">Avisos de servei</a>
-        <a href="/dades" id="footer-link-journalism">Observatori de retards</a>
+        <a href="#" id="footer-link-home" data-i18n="picker.allLines">Totes les línies</a>
+        <a href="#" id="footer-link-incidents" data-i18n="index.footerIncidents">Avisos de servei</a>
+        <a href="/dades" id="footer-link-journalism" data-i18n="index.footerObservatori">Observatori de retards</a>
       </div>
     </div>
   </footer>
@@ -857,16 +857,16 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   
   <!-- App Scripts -->
-  <script src="/js/utils.js?v=9.4.61"></script>
-  <script src="/js/i18n.js?v=9.4.61"></script>
-  <script src="/js/storage.js?v=9.4.61"></script>
-  <script src="/js/requests.js?v=9.4.61"></script>
-  <script src="/js/stopFeatures.js?v=9.4.61"></script>
-  <script src="/js/journeys.js?v=9.4.61"></script>
-  <script src="/js/journeyControls.js?v=9.4.61"></script>
-  <script src="/js/pwa.js?v=9.4.61"></script>
-  <script src="/js/map.js?v=9.4.61"></script>
-  <script src="/js/networkMap.js?v=9.4.61"></script>
-  <script src="/js/app.js?v=9.4.61"></script>
+  <script src="/js/utils.js?v=9.4.62"></script>
+  <script src="/js/i18n.js?v=9.4.62"></script>
+  <script src="/js/storage.js?v=9.4.62"></script>
+  <script src="/js/requests.js?v=9.4.62"></script>
+  <script src="/js/stopFeatures.js?v=9.4.62"></script>
+  <script src="/js/journeys.js?v=9.4.62"></script>
+  <script src="/js/journeyControls.js?v=9.4.62"></script>
+  <script src="/js/pwa.js?v=9.4.62"></script>
+  <script src="/js/map.js?v=9.4.62"></script>
+  <script src="/js/networkMap.js?v=9.4.62"></script>
+  <script src="/js/app.js?v=9.4.62"></script>
 </body>
 </html>

@@ -9,9 +9,10 @@ function read(rel) {
   return fs.readFileSync(path.join(ROOT, rel), 'utf8');
 }
 
-function loadI18nAndUtils() {
+function loadI18nAndUtils(opts = {}) {
   const listeners = new Map();
   const elements = new Map();
+  const staticEls = opts.staticEls || [];
 
   function makeEl(id) {
     return {
@@ -38,12 +39,16 @@ function loadI18nAndUtils() {
   }
 
   const documentObj = {
+    readyState: opts.readyState || 'complete',
     documentElement: { lang: 'ca', setAttribute() {} },
     getElementById(id) {
       if (!elements.has(id)) elements.set(id, makeEl(id));
       return elements.get(id);
     },
-    querySelectorAll() { return []; },
+    querySelectorAll(sel) {
+      if (sel === '[data-i18n]') return staticEls;
+      return [];
+    },
     addEventListener(type, fn) {
       if (!listeners.has(type)) listeners.set(type, []);
       listeners.get(type).push(fn);
@@ -59,6 +64,9 @@ function loadI18nAndUtils() {
     seasonSource: 'calendar',
     seasonUntil: '2026-09-10'
   };
+
+  const storageMap = new Map();
+  if (opts.storedLang) storageMap.set('arribo_lang', opts.storedLang);
 
   const sandbox = {
     console,
@@ -80,12 +88,15 @@ function loadI18nAndUtils() {
       }
     },
     localStorage: {
-      _m: new Map(),
+      _m: storageMap,
       getItem(k) { return this._m.has(k) ? this._m.get(k) : null; },
       setItem(k, v) { this._m.set(k, String(v)); }
     },
-    navigator: { languages: ['ca-ES'], language: 'ca-ES' },
-    location: { search: '' },
+    navigator: {
+      languages: opts.languages !== undefined ? opts.languages : ['ca-ES'],
+      language: opts.language !== undefined ? opts.language : 'ca-ES'
+    },
+    location: { search: opts.search || '' },
     document: documentObj,
     fetch: async () => {
       fetchCalls++;
@@ -99,7 +110,9 @@ function loadI18nAndUtils() {
   sandbox.self = sandbox;
 
   vm.createContext(sandbox);
-  vm.runInContext(read('public/js/utils.js'), sandbox, { filename: 'public/js/utils.js' });
+  if (!opts.i18nOnly) {
+    vm.runInContext(read('public/js/utils.js'), sandbox, { filename: 'public/js/utils.js' });
+  }
   vm.runInContext(read('public/js/i18n.js'), sandbox, { filename: 'public/js/i18n.js' });
 
   return {
@@ -114,6 +127,7 @@ function extractStringsTable(i18nSrc) {
   const sandbox = {
     window: {},
     document: {
+      readyState: 'complete',
       documentElement: { lang: 'ca' },
       querySelectorAll: () => [],
       addEventListener: () => {},
@@ -144,22 +158,57 @@ async function run() {
   const i18nSrc = read('public/js/i18n.js');
   const { STRINGS, AUTO_DETECT } = extractStringsTable(i18nSrc);
 
-  // 1. AUTO_DETECT must remain false
-  assert.equal(AUTO_DETECT, false, 'AUTO_DETECT must remain false');
+  // 1. AUTO_DETECT must now be enabled
+  assert.equal(AUTO_DETECT, true, 'AUTO_DETECT must be true');
 
-  // 2. Static keys in public/plan.html must exist in es and en
-  const planHtml = read('public/plan.html');
-  const staticKeys = [...planHtml.matchAll(/data-i18n(?:-[a-z-]+)?="([^"]+)"/g)].map(m => m[1]);
-  assert.ok(staticKeys.length >= 40, `Expected >=40 static data-i18n keys in plan.html, found ${staticKeys.length}`);
+  // 2. Static keys across index.html, dades.html, and plan.html must exist in es and en
+  const htmlFiles = [
+    { rel: 'public/index.html', minKeys: 90 },
+    { rel: 'public/dades.html', minKeys: 30 },
+    { rel: 'public/plan.html', minKeys: 40 }
+  ];
+  const allStaticKeys = new Set();
   const missingStatic = [];
-  for (const key of new Set(staticKeys)) {
-    if (!(key in STRINGS.es)) missingStatic.push(`es:${key}`);
-    if (!(key in STRINGS.en)) missingStatic.push(`en:${key}`);
+  for (const { rel, minKeys } of htmlFiles) {
+    const html = read(rel);
+    const keys = [...html.matchAll(/data-i18n(?:-[a-z-]+)?="([^"]+)"/g)].map(m => m[1]);
+    assert.ok(keys.length >= minKeys, `Expected >=${minKeys} static data-i18n keys in ${rel}, found ${keys.length}`);
+    for (const key of new Set(keys)) {
+      allStaticKeys.add(key);
+      if (!(key in STRINGS.es)) missingStatic.push(`${rel}:es:${key}`);
+      if (!(key in STRINGS.en)) missingStatic.push(`${rel}:en:${key}`);
+    }
   }
-  assert.deepEqual(missingStatic, [], `Missing static plan.html keys: ${missingStatic.join(', ')}`);
+  assert.deepEqual(missingStatic, [], `Missing static HTML keys: ${missingStatic.join(', ')}`);
 
-  // 3. JS keys in planner/shared scripts must exist in ca, es, and en
+  // 2b. Verify index.html stop modal specifically has static data-i18n keys covered
+  const indexHtml = read('public/index.html');
+  const stopModalStart = indexHtml.indexOf('id="stop-modal-backdrop"');
+  const stopModalEnd = indexHtml.indexOf('id="disruptions-modal-backdrop"', stopModalStart);
+  assert.ok(stopModalStart > 0 && stopModalEnd > stopModalStart, 'Stop modal section not found in public/index.html');
+  const stopModalHtml = indexHtml.slice(stopModalStart, stopModalEnd);
+  const stopModalKeys = [...stopModalHtml.matchAll(/data-i18n(?:-[a-z-]+)?="([^"]+)"/g)].map(m => m[1]);
+  for (const requiredKey of [
+    'modal.prevStopTitle',
+    'modal.prevStop',
+    'modal.nextStopTitle',
+    'modal.nextStop',
+    'modal.stopBadge',
+    'modal.arrivalsHeading',
+    'modal.setTarget',
+    'modal.setTargetTitle',
+    'modal.alarmTitle',
+    'modal.alarmOff'
+  ]) {
+    assert.ok(stopModalKeys.includes(requiredKey), `Stop modal in index.html must include ${requiredKey}`);
+    assert.ok(requiredKey in STRINGS.es, `STRINGS.es missing ${requiredKey}`);
+    assert.ok(requiredKey in STRINGS.en, `STRINGS.en missing ${requiredKey}`);
+  }
+
+  // 3. JS keys across all app/planner/map/shared scripts must exist in ca, es, and en
   const jsFiles = [
+    'public/js/app.js',
+    'public/js/networkMap.js',
     'public/js/plan.js',
     'public/js/map.js',
     'public/js/utils.js',
@@ -167,7 +216,7 @@ async function run() {
     'public/js/stopFeatures.js',
     'public/js/pwa.js'
   ];
-  const jsKeyRegex = /\b(?:this\.t|mapT|ArriboI18n\??\.t|t)\(\s*['"]([a-zA-Z0-9_.]+)['"]/g;
+  const jsKeyRegex = /\b(?:this\.t|mapT|netT|ArriboI18n\??\.t|t)\(\s*['"]([a-zA-Z0-9_]+\.[a-zA-Z0-9_.]+)['"]/g;
   const foundJsKeys = new Set();
   for (const rel of jsFiles) {
     const src = read(rel);
@@ -175,7 +224,7 @@ async function run() {
       foundJsKeys.add(m[1]);
     }
   }
-  assert.ok(foundJsKeys.size >= 120, `Expected >=120 JS i18n keys across planner/shared scripts, found ${foundJsKeys.size}`);
+  assert.ok(foundJsKeys.size >= 250, `Expected >=250 JS i18n keys across app/planner/shared scripts, found ${foundJsKeys.size}`);
   const missingJs = [];
   for (const key of foundJsKeys) {
     for (const lang of ['ca', 'es', 'en']) {
@@ -239,10 +288,10 @@ async function run() {
     }
   }
 
-  // 6. Asset version sync (9.4.61 across sw.js and all three HTML files)
+  // 6. Asset version sync (9.4.62 across sw.js and all three HTML files)
   const swSrc = read('public/sw.js');
   const swVer = swSrc.match(/const VERSION = '([^']+)';/)?.[1];
-  assert.equal(swVer, '9.4.61', `Expected sw.js VERSION 9.4.61, got ${swVer}`);
+  assert.equal(swVer, '9.4.62', `Expected sw.js VERSION 9.4.62, got ${swVer}`);
   for (const htmlFile of ['public/index.html', 'public/dades.html', 'public/plan.html']) {
     const html = read(htmlFile);
     const versions = [...html.matchAll(/\?v=([0-9.]+)/g)].map(m => m[1]);
@@ -252,7 +301,40 @@ async function run() {
     }
   }
 
-  // 7. Runtime tests for TransitUtils.freshness() and showSeasonPill() across ca / es / en
+  // 7. AUTO_DETECT language precedence & zero-flash synchronous application
+  const detectCases = [
+    // Stored visitor choice always wins over browser languages
+    { name: 'stored ca beats en-GB', storedLang: 'ca', languages: ['en-GB', 'es-ES'], expected: 'ca' },
+    { name: 'stored es beats ca-ES', storedLang: 'es', languages: ['ca-ES', 'en-US'], expected: 'es' },
+    { name: 'stored en beats ca-ES', storedLang: 'en', languages: ['ca-ES'], expected: 'en' },
+    // Browser languages when no stored choice
+    { name: 'ca-ES detects ca', languages: ['ca-ES', 'es-ES'], expected: 'ca' },
+    { name: 'es-ES detects es', languages: ['es-ES', 'en-GB'], expected: 'es' },
+    { name: 'en-GB detects en', languages: ['en-GB', 'es-ES'], expected: 'en' },
+    { name: 'first supported wins (fr -> es -> en)', languages: ['fr-FR', 'es-MX', 'en-US'], expected: 'es' },
+    { name: 'first supported wins (de -> en_GB)', languages: ['de-DE', 'en_GB'], expected: 'en' },
+    { name: 'unsupported languages fall back to ca', languages: ['fr-FR', 'de-DE', 'ja'], expected: 'ca' },
+    { name: 'empty navigator.languages falls back to navigator.language', languages: [], language: 'en-US', expected: 'en' }
+  ];
+  for (const tc of detectCases) {
+    const sampleEl = { dataset: { i18n: 'modal.stopBadge' }, textContent: 'Detalls de parada' };
+    const env = loadI18nAndUtils({
+      i18nOnly: true,
+      readyState: 'loading',
+      storedLang: tc.storedLang,
+      languages: tc.languages,
+      language: tc.language || (tc.languages?.[0] || ''),
+      staticEls: [sampleEl]
+    });
+    assert.equal(env.sandbox.ArriboI18n.lang, tc.expected, `Detection failed for case: ${tc.name}`);
+    assert.equal(env.documentObj.documentElement.lang, tc.expected, `<html lang> mismatch for case: ${tc.name}`);
+    // Synchronous application before DOMContentLoaded prevents wrong-language flash
+    if (tc.expected === 'es') assert.equal(sampleEl.textContent, STRINGS.es['modal.stopBadge']);
+    if (tc.expected === 'en') assert.equal(sampleEl.textContent, STRINGS.en['modal.stopBadge']);
+    if (tc.expected === 'ca') assert.equal(sampleEl.textContent, 'Detalls de parada');
+  }
+
+  // 8. Runtime tests for TransitUtils.freshness() and showSeasonPill() (including seasonSource localization)
   const env = loadI18nAndUtils();
   const { TransitUtils, ArriboI18n } = env.sandbox;
 
@@ -265,7 +347,10 @@ async function run() {
       offline: 'Sense connexió · Última previsió coneguda · fa 12 s',
       seasonSummer: 'Estiu',
       seasonWinter: 'Hivern',
-      seasonSrcCal: 'calendari'
+      seasonSrcCal: 'calendari',
+      seasonSrcNoSummer: "per defecte (cap període d'estiu cobreix avui)",
+      seasonSrcNotice: "avís de l'operador (horari especial)",
+      seasonSrcWindow: 'calendari de temporada (2026)'
     },
     es: {
       live: 'En directo · hace 12 s',
@@ -275,7 +360,10 @@ async function run() {
       offline: 'Sin conexión · Última previsión conocida · hace 12 s',
       seasonSummer: 'Verano',
       seasonWinter: 'Invierno',
-      seasonSrcCal: 'calendario'
+      seasonSrcCal: 'calendario',
+      seasonSrcNoSummer: 'por defecto (ningún periodo de verano cubre hoy)',
+      seasonSrcNotice: 'aviso del operador (horari especial)',
+      seasonSrcWindow: 'calendario de temporada (2026)'
     },
     en: {
       live: 'Live · 12 s ago',
@@ -285,7 +373,10 @@ async function run() {
       offline: 'Offline · Last known forecast · 12 s ago',
       seasonSummer: 'Summer',
       seasonWinter: 'Winter',
-      seasonSrcCal: 'calendar'
+      seasonSrcCal: 'calendar',
+      seasonSrcNoSummer: 'default (no summer window covers today)',
+      seasonSrcNotice: 'operator notice (horari especial)',
+      seasonSrcWindow: 'season calendar (2026)'
     }
   };
 
@@ -330,16 +421,46 @@ async function run() {
   }
   assert.equal(env.getFetchCalls(), 1, 'Language switching must NOT refetch /api/health for season pill');
 
-  // Verify winter season pill as well
-  env.setMockSchedule({ season: 'winter', seasonSource: 'default', seasonKnown: false });
+  // Verify default (no summer window covers this date) localization
+  env.setMockSchedule({ season: 'winter', seasonSource: 'default (no summer window covers this date)', seasonKnown: true });
+  await TransitUtils.showSeasonPill('header-season-pill');
+  for (const lang of ['ca', 'es', 'en']) {
+    ArriboI18n.setLang(lang);
+    const pill = env.documentObj.getElementById('header-season-pill');
+    assert.equal(pill.textContent, expectations[lang].seasonWinter);
+    assert.ok(
+      pill.title.includes(expectations[lang].seasonSrcNoSummer),
+      `Season tooltip in ${lang} should localize default-no-summer source, got: ${pill.title}`
+    );
+  }
+
+  // Verify notice, window, and unknown raw fallback sources
+  env.setMockSchedule({ season: 'summer', seasonSource: 'notice (horari especial)', seasonKnown: true });
+  await TransitUtils.showSeasonPill('header-season-pill');
+  for (const lang of ['ca', 'es', 'en']) {
+    ArriboI18n.setLang(lang);
+    const pill = env.documentObj.getElementById('header-season-pill');
+    assert.ok(pill.title.includes(expectations[lang].seasonSrcNotice), `Notice source in ${lang}: ${pill.title}`);
+  }
+
+  env.setMockSchedule({ season: 'summer', seasonSource: 'summer window 2026', seasonKnown: true });
+  await TransitUtils.showSeasonPill('header-season-pill');
+  for (const lang of ['ca', 'es', 'en']) {
+    ArriboI18n.setLang(lang);
+    const pill = env.documentObj.getElementById('header-season-pill');
+    assert.ok(pill.title.includes(expectations[lang].seasonSrcWindow), `Window source in ${lang}: ${pill.title}`);
+  }
+
+  env.setMockSchedule({ season: 'winter', seasonSource: 'custom-unknown-source', seasonKnown: false });
   await TransitUtils.showSeasonPill('header-season-pill');
   for (const lang of ['ca', 'es', 'en']) {
     ArriboI18n.setLang(lang);
     const pill = env.documentObj.getElementById('header-season-pill');
     assert.equal(pill.textContent, `${expectations[lang].seasonWinter}?`);
+    assert.ok(pill.title.includes('custom-unknown-source'), `Unknown source must fall back to raw text in ${lang}: ${pill.title}`);
   }
 
-  console.log(`i18n_plan_test: OK (${staticKeys.length} static keys, ${foundJsKeys.size} JS keys, ${allKeys.size} total STRINGS checked)`);
+  console.log(`i18n_plan_test: OK (${allStaticKeys.size} static keys across 3 HTML files, ${foundJsKeys.size} JS keys, ${allKeys.size} total STRINGS, ${detectCases.length} auto-detect cases checked)`);
 }
 
 run().catch((err) => {
