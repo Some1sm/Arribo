@@ -313,7 +313,20 @@ func (s *Server) hRailLine(q *xreq, res *xres, kind string) bool {
 		if v := qv(q, "direction"); !isUndef(v) {
 			direction = jsTrim(jsString(v))
 		}
-		res.json(O("success", true, "data", railLineDetails(info, op, code, direction, liveTrainFeeds(), time.Now())))
+		now := time.Now()
+		data := railLineDetails(info, op, code, direction, liveTrainFeeds(), now)
+		// The operator's active service alerts for this line: those naming
+		// it, and those naming only stations it stops at.
+		lineStops := map[string]bool{}
+		if prof := op.Profiles[code]; prof != nil {
+			for _, d := range prof.Directions {
+				for _, st := range d.Stops {
+					lineStops[st.ID] = true
+				}
+			}
+		}
+		data.Set("railAlerts", railAlertsJSON(info.ID, code, lineStops, now))
+		res.json(O("success", true, "data", data))
 	case "stats":
 		// The line header's 24 h summary, from the station visits the
 		// operator's trip updates produced (the Dades train report's data),

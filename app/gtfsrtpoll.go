@@ -59,7 +59,9 @@ type rtSource struct {
 	AgencyID, Mode string
 	// vehicleURL / tripURL return the protobuf URL to fetch (FGC's file URL
 	// is looked up from its dataset record and cached).
-	vehicleURL, tripURL     func(context.Context) (string, error)
+	vehicleURL, tripURL func(context.Context) (string, error)
+	// alertURL returns the service-alerts feed (nil: none); fetched every railAlertEvery.
+	alertURL                func(context.Context) (string, error)
 	vehicleEvery, tripEvery time.Duration
 	bounds                  *GeoBounds // keep only vehicles inside (Renfe covers all of Spain)
 	// staticURL is the operator's static GTFS zip, imported daily into the
@@ -71,7 +73,8 @@ type rtSource struct {
 type rtPoller struct {
 	src                                      rtSource
 	snap                                     atomic.Pointer[rtSnapshot]
-	mu                                       sync.Mutex // guards trips between the two loops
+	alerts                                   atomic.Pointer[[]railAlert] // latest service alerts (railalerts.go)
+	mu                                       sync.Mutex                  // guards trips between the two loops
 	trip                                     map[string]int32
 	trips                                    int
 	terr                                     string
@@ -156,6 +159,7 @@ func fgcFileURL(dataset string) (resolve func(context.Context) (string, error), 
 func defaultRtSources() []rtSource {
 	fgcVP, fgcVPReset := fgcFileURL("vehicle-positions-gtfs_realtime")
 	fgcTU, fgcTUReset := fgcFileURL("trip-updates-gtfs_realtime")
+	fgcAL, fgcALReset := fgcFileURL("alerts-gtfs_realtime")
 	retry := func(resolve func(context.Context) (string, error), reset func()) func(context.Context) (string, error) {
 		return func(ctx context.Context) (string, error) {
 			u, err := resolve(ctx)
@@ -170,6 +174,7 @@ func defaultRtSources() []rtSource {
 			AgencyID: "renfe_rodalies", Mode: "rail",
 			vehicleURL:   fixedURL("https://gtfsrt.renfe.com/vehicle_positions.pb"),
 			tripURL:      fixedURL("https://gtfsrt.renfe.com/trip_updates.pb"),
+			alertURL:     fixedURL("https://gtfsrt.renfe.com/alerts.pb"),
 			vehicleEvery: 30 * time.Second, tripEvery: 30 * time.Second,
 			bounds:     &cataloniaBounds,
 			staticURL:  "https://ssl.renfe.com/ftransit/Fichero_CER_FOMENTO/fomento_transit.zip",
@@ -181,6 +186,7 @@ func defaultRtSources() []rtSource {
 			AgencyID: "fgc", Mode: "rail",
 			vehicleURL:   retry(fgcVP, fgcVPReset),
 			tripURL:      retry(fgcTU, fgcTUReset),
+			alertURL:     retry(fgcAL, fgcALReset),
 			vehicleEvery: 30 * time.Second, tripEvery: 90 * time.Second,
 			staticURL: "https://www.fgc.cat/google/google_transit.zip",
 		},
@@ -401,11 +407,14 @@ func (p *rtPoller) run(ctx context.Context, wg *sync.WaitGroup) {
 	}()
 	p.pollTrips(ctx)
 	p.pollVehicles(ctx)
+	p.pollAlerts(ctx)
 	p.logSnapshot()
 	vt := time.NewTicker(p.src.vehicleEvery)
 	tt := time.NewTicker(p.src.tripEvery)
+	at := time.NewTicker(railAlertEvery)
 	defer vt.Stop()
 	defer tt.Stop()
+	defer at.Stop()
 	polls := 0
 	for {
 		select {
@@ -413,6 +422,8 @@ func (p *rtPoller) run(ctx context.Context, wg *sync.WaitGroup) {
 			return
 		case <-tt.C:
 			p.pollTrips(ctx)
+		case <-at.C:
+			p.pollAlerts(ctx)
 		case <-vt.C:
 			p.pollVehicles(ctx)
 			polls++

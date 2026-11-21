@@ -184,6 +184,12 @@ func (t *rtTimetable) tripLine(ctx context.Context, tripID string) string {
 	  FROM trips t JOIN routes r ON r.route_id = t.route_id WHERE t.trip_id = ? LIMIT 1`, tripID)
 }
 
+// routeLine is a route id's line code as the catalog names it (short name,
+// else route id), or "" when the timetable has no such route.
+func (t *rtTimetable) routeLine(ctx context.Context, routeID string) string {
+	return t.lookupString(ctx, "Q\x00"+routeID, `SELECT COALESCE(NULLIF(short_name, ''), route_id) FROM routes WHERE route_id = ? LIMIT 1`, routeID)
+}
+
 // tripDirection is the trip's direction_id, -1 if unknown.
 func (t *rtTimetable) tripDirection(ctx context.Context, tripID string) int {
 	v := t.lookupString(ctx, "D\x00"+tripID, `SELECT CAST(direction_id AS TEXT) FROM trips WHERE trip_id = ? LIMIT 1`, tripID)

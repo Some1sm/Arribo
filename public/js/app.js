@@ -1923,8 +1923,15 @@ class TransitApp {
     const descEl = document.getElementById('disruption-banner-desc');
     const chipCount = document.getElementById('incidents-count-text');
 
+    // A train line shows its operator's GTFS-RT service alerts (railAlerts
+    // from /api/line/<agency>:<code>), in the operator's own words.
+    if (window.TransitUtils?.isRailLineId?.(this.activeLineId)) {
+      this.renderRailAlertsBanner(lData, { banner, titleEl, descEl, chipCount, t });
+      return;
+    }
+
     const lId = String(lData.lineId || lData.id || this.activeLineId || '');
-    const disruptions = (lData.disruptions || []).filter(d => 
+    const disruptions = (lData.disruptions || []).filter(d =>
       this.isDisruptionActive(d) &&
       d.severity === 'warning' && (
         (Array.isArray(d.linesAffected) && d.linesAffected.includes(lId)) ||
@@ -1957,6 +1964,58 @@ class TransitApp {
     } else {
       banner.style.display = 'none';
     }
+  }
+
+  /**
+   * The disruption banner on a train line: the first active alert, and a
+   * button that lists them all inside the banner. Text is the operator's,
+   * marked with its language when it is not the visitor's.
+   */
+  renderRailAlertsBanner(lData, { banner, titleEl, descEl, chipCount, t }) {
+    const alerts = Array.isArray(lData?.railAlerts) ? lData.railAlerts : [];
+    if (chipCount) {
+      chipCount.textContent = alerts.length > 0
+        ? t(alerts.length === 1 ? 'banner.noticesOne' : 'banner.noticesMany', { n: alerts.length })
+        : t('banner.notices');
+    }
+    if (!banner || !titleEl || !descEl) return;
+    let list = document.getElementById('rail-alerts-list');
+    if (alerts.length === 0) {
+      banner.style.display = 'none';
+      list?.remove();
+      return;
+    }
+    const lang = window.ArriboI18n?.lang || 'ca';
+    const firstSentence = (s) => {
+      const m = String(s || '').match(/^(.{20,140}?[.!?])(\s|$)/);
+      return m ? m[1] : String(s || '').slice(0, 140);
+    };
+    const titleOf = (a) => a.header || firstSentence(a.description) || t('banner.defaultDesc');
+    const langTag = (a) => (a.lang && a.lang !== lang ? ` [${String(a.lang).toUpperCase()}]` : '');
+    const stopsOf = (a) => (Array.isArray(a.stops) && a.stops.length ? t('railAlert.stations', { names: a.stops.map(s => s.name).join(', ') }) : '');
+    // The link comes from the operator's feed: web links only.
+    const safeUrl = (u) => /^https?:\/\//i.test(String(u || ''));
+    const first = alerts[0];
+    titleEl.textContent = t('banner.alert', { title: titleOf(first) }) + langTag(first);
+    descEl.textContent = [first.header ? first.description : '', stopsOf(first)].filter(Boolean).join(' · ');
+    const btn = document.getElementById('btn-view-disruption-details');
+    if (btn) {
+      btn.hidden = false;
+      btn.textContent = alerts.length > 1 ? t('railAlert.showAll', { n: alerts.length }) : t('banner.details');
+      btn.onclick = (e) => {
+        e.preventDefault();
+        list = document.getElementById('rail-alerts-list');
+        if (list) { list.remove(); return; }
+        list = document.createElement('ul');
+        list.id = 'rail-alerts-list';
+        list.className = 'rail-alerts-list';
+        list.innerHTML = alerts.map(a => `<li><strong>${this.esc(titleOf(a))}${this.esc(langTag(a))}</strong>${a.description && a.header ? `<p>${this.esc(a.description)}</p>` : (a.description && titleOf(a) !== a.description ? `<p>${this.esc(a.description)}</p>` : '')}${stopsOf(a) ? `<p class="rail-alerts-stops">${this.esc(stopsOf(a))}</p>` : ''}${safeUrl(a.url) ? `<a href="${this.esc(a.url)}" target="_blank" rel="noopener noreferrer">${this.esc(t('railAlert.more'))}</a>` : ''}</li>`).join('');
+        banner.querySelector('.disruption-banner-content')?.appendChild(list);
+      };
+    }
+    // A redraw (new data, language) closes an open list rather than leaving stale text.
+    list?.remove();
+    banner.style.display = 'flex';
   }
 
   renderUpstreamOutageBanner(isOutage) {
