@@ -507,7 +507,6 @@ const historySchema = `
             trip_agrees INTEGER
           );
           CREATE INDEX IF NOT EXISTS idx_visits_time_line ON stop_visits(last_ts, line_code);
-          CREATE INDEX IF NOT EXISTS idx_visits_stop ON stop_visits(stop_name, last_ts);
 
           -- Incremental visit rollup progress
           CREATE TABLE IF NOT EXISTS hourly_visit_rollup_progress (
@@ -753,6 +752,24 @@ func (h *HistoryDB) migrate() error {
 		}
 	}
 	if err := h.exec("CREATE INDEX IF NOT EXISTS idx_delay_veh_time ON delay_logs(vehicle_id, timestamp);"); err != nil {
+		return err
+	}
+	// Every report reads one operator's visits over a time window, often
+	// grouped by stop. With rail polling on, trains write about five times as
+	// many visits as Mataró's buses, and with only (last_ts, line_code) and
+	// (stop_name, last_ts) each Mataró report also read every train row in
+	// its window. (agency_id, stop_name, last_ts) replaces (stop_name,
+	// last_ts): the one query that filters by stop names also filters by
+	// agency. On a synthetic 30-day table at today's volume (1.7M rows, with
+	// ANALYZE run, as PRAGMA optimize does here): Mataró per-stop 7 d
+	// 272 -> 57 ms and 30 d 1346 -> 252 ms, counts about 2x faster, a
+	// Rodalies line's stations 285 -> 131 ms; Rodalies per-station 24 h
+	// 18 -> 33 ms; file +23%.
+	if err := h.exec(`
+          DROP INDEX IF EXISTS idx_visits_stop;
+          CREATE INDEX IF NOT EXISTS idx_visits_agency_stop ON stop_visits(agency_id, stop_name, last_ts);
+          CREATE INDEX IF NOT EXISTS idx_visits_agency_time ON stop_visits(agency_id, last_ts);
+        `); err != nil {
 		return err
 	}
 	return h.exec(`
