@@ -52,11 +52,56 @@
     render();
   }
 
+  const TIER_CHIPS = {
+    measured: 'chip-live',
+    predicted: 'chip-estimated',
+    timetable: 'chip-scheduled'
+  };
+  const KNOWN_METHODS = new Set(['gps', 'operator_delay', 'operator_prediction']);
+
+  function tierBadge(tier, title) {
+    const mod = TIER_CHIPS[tier];
+    if (!mod) return '';
+    const tip = title ? ` title="${esc(title)}"` : '';
+    return `<span class="chip chip-plain ${mod}" data-tier="${esc(tier)}"${tip}>${esc(t(`tier.${tier}`))}</span>`;
+  }
+
+  function methodLine(method) {
+    if (!KNOWN_METHODS.has(method)) return '';
+    return `<p class="op-method" data-method="${esc(method)}">${esc(t(`tier.method.${method}`))}</p>`;
+  }
+
+  function renderTierGroup(tier, ops, headingKey, noteKey) {
+    if (!ops.length) return '';
+    const headingId = `op-tier-heading-${tier}`;
+    return `<section class="op-tier-group" data-tier-group="${esc(tier)}" aria-labelledby="${headingId}">
+      <header class="op-tier-group-head">
+        <h4 id="${headingId}" class="op-tier-group-title">${esc(t(headingKey))}</h4>
+        ${tierBadge(tier)}
+      </header>
+      ${noteKey ? `<p class="op-tier-group-note">${esc(t(noteKey))}</p>` : ''}
+      <div class="op-grid">${ops.map(card).join('')}</div>
+    </section>`;
+  }
+
   function render() {
     applyScope(lastOps);
     const shown = scope === 'all' || scope === 'mataro' ? lastOps : lastOps.filter(o => o.id === scope);
-    body.innerHTML = shown.map(card).join('');
-    if (openLine && !shown.some(o => o.id === openLine.agency)) openLine = null;
+    const predicted = shown.filter(o => o.tier === 'predicted');
+    const timetable = shown.filter(o => o.tier === 'timetable');
+    const measured = shown.filter(o => o.tier !== 'predicted' && o.tier !== 'timetable');
+    const needsGrouping = predicted.length > 0 || (timetable.length > 0 && measured.length > 0);
+    body.classList.toggle('op-grid-grouped', needsGrouping);
+    if (needsGrouping) {
+      body.innerHTML = [
+        renderTierGroup('measured', measured, 'tier.groupMeasured', ''),
+        renderTierGroup('predicted', predicted, 'tier.groupPredicted', 'tier.predictedNote'),
+        renderTierGroup('timetable', timetable, 'tier.groupTimetable', '')
+      ].join('');
+    } else {
+      body.innerHTML = shown.map(card).join('');
+    }
+    if (openLine && !shown.some(o => o.id === openLine.agency && o.tier !== 'timetable')) openLine = null;
     if (openLine && lastLineData && lastLineData.key === lineKey()) {
       const host = document.getElementById(`op-line-detail-${openLine.agency}`);
       if (host) host.innerHTML = lineDetailHtml(lastLineData.data);
@@ -192,13 +237,25 @@
   }
 
   function card(op) {
+    const isTimetable = op.tier === 'timetable';
     const empty = !op.visits;
-    return `<article class="card-inset op-operator" aria-labelledby="op-${esc(op.id)}">
-      <header class="op-card-head">
-        <h4 id="op-${esc(op.id)}" class="op-name">${esc(op.name)}</h4>
-        <span class="chip chip-scheduled" title="${esc(op.source)}">${esc(t('ops.realtimeForecast'))}</span>
+    const badge = tierBadge(op.tier, op.source);
+    const method = methodLine(op.method);
+    const fallbackChip = badge || isTimetable
+      ? ''
+      : `<span class="chip chip-scheduled" title="${esc(op.source)}">${esc(t('ops.realtimeForecast'))}</span>`;
+    return `<article class="card-inset op-operator" aria-labelledby="op-${esc(op.id)}"${op.tier ? ` data-operator-tier="${esc(op.tier)}"` : ''}>
+      <header class="op-card-header">
+        <div class="op-card-head">
+          <div class="op-head-title">
+            <h4 id="op-${esc(op.id)}" class="op-name">${esc(op.name)}</h4>
+            ${badge}
+          </div>
+          ${fallbackChip}
+        </div>
+        ${method}
       </header>
-      ${empty ? `<p class="op-empty">${esc(t('ops.noVisitsPeriod'))}</p>` : `
+      ${isTimetable ? `<p class="op-empty" data-tier-empty="timetable">${esc(t('tier.noRealtime'))}</p>` : (empty ? `<p class="op-empty">${esc(t('ops.noVisitsPeriod'))}</p>` : `
       <div class="op-kpis">
         <div class="kpi"><span class="kpi-label">${esc(t('ops.kpiPunctuality', { max: op.onTimeMaxMins }))}</span><span class="kpi-value">${esc(fmtPct(op.onTimePct))}</span></div>
         <div class="kpi"><span class="kpi-label">${esc(t('ops.kpiAvgDelay'))}</span><span class="kpi-value${delayVerdict(op.avgDelay)}">${esc(fmtMin(op.avgDelay))}</span></div>
@@ -209,9 +266,9 @@
       ${bucketBar(op)}
       ${linesTable(op)}
       <div class="op-line-detail" id="op-line-detail-${esc(op.id)}" aria-live="polite"></div>
-      ${stationsList(op)}`}
-      <details class="op-source"><summary>${esc(t('ops.sourceQuestion'))}</summary><p>${esc(op.source)}</p></details>
-      ${feedLine(op)}
+      ${stationsList(op)}`)}
+      ${op.source ? `<details class="op-source"><summary>${esc(t('ops.sourceQuestion'))}</summary><p>${esc(op.source)}</p></details>` : ''}
+      ${isTimetable ? '' : feedLine(op)}
     </article>`;
   }
 
@@ -221,7 +278,7 @@
   // With train data the page header names every network shown and says where
   // each figure comes from; without it the static Mataró wording stays.
   function wordHeader(ops) {
-    const withData = new Set(ops.filter(o => o.visits > 0 || o.feed).map(o => o.id));
+    const withData = new Set(ops.filter(o => o.visits > 0 || o.feed || o.tier === 'timetable').map(o => o.id));
     if (!withData.size) return;
     const named = (catalogOps || []).filter(o => o.trackable !== false || withData.has(o.id));
     if (!named.length) return;
@@ -251,7 +308,7 @@
       const data = await res.json();
       if (seq !== loadSeq) return;
       const ops = Array.isArray(data.operators) ? data.operators : [];
-      const active = ops.some(o => o.visits > 0 || o.feed);
+      const active = ops.some(o => o.visits > 0 || o.feed || o.tier === 'timetable');
       section.hidden = !active;
       if (!active) {
         if (scopeWrap) scopeWrap.hidden = true;

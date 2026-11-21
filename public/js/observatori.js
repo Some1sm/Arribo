@@ -2120,7 +2120,7 @@ class ObservatoriApp {
                 const onTime = a.onTimePct !== undefined && a.onTimePct !== null ? Number(a.onTimePct) : null;
                 return `
                 <tr>
-                  <td class="sticky-col" style="font-weight:700; color:var(--text-primary);">${this.esc(a.agency)}</td>
+                  <td class="sticky-col" style="font-weight:700; color:var(--text-primary);">${this.esc(a.agency)} <span class="chip chip-plain chip-live op-inline-chip" data-tier="measured">${this.esc(this.t('tier.measured'))}</span></td>
                   <td class="observatori-col-desktop" style="color:var(--text-muted); text-align:center;">${a.linesCount || 0}</td>
                   <td class="observatori-col-desktop" style="color:var(--text-muted);">${(a.totalVisits || a.totalSamples || 0).toLocaleString(loc)}</td>
                   <td style="font-weight:700; color:${Number(a.avgDelay) > 0 ? 'var(--accent-danger)' : 'var(--accent-live)'}; white-space:nowrap;">${aAvg}</td>

@@ -214,7 +214,8 @@ async function run() {
     'public/js/utils.js',
     'public/js/journeyControls.js',
     'public/js/stopFeatures.js',
-    'public/js/pwa.js'
+    'public/js/pwa.js',
+    'public/js/operators.js'
   ];
   const jsKeyRegex = /\b(?:this\.t|mapT|netT|ArriboI18n\??\.t|t)\(\s*['"]([a-zA-Z0-9_]+\.[a-zA-Z0-9_.]+)['"]/g;
   const foundJsKeys = new Set();
@@ -259,7 +260,8 @@ async function run() {
     'plan.theoretical',
     'plan.officialSched',
     'plan.legTimetable',
-    'plan.guideSourceOfficial'
+    'plan.guideSourceOfficial',
+    'tier.timetable'
   ]) {
     for (const lang of ['ca', 'es', 'en']) {
       const val = STRINGS[lang][key].toLowerCase();
@@ -461,7 +463,187 @@ async function run() {
     assert.ok(pill.title.includes('custom-unknown-source'), `Unknown source must fall back to raw text in ${lang}: ${pill.title}`);
   }
 
-  console.log(`i18n_plan_test: OK (${allStaticKeys.size} static keys across 3 HTML files, ${foundJsKeys.size} JS keys, ${allKeys.size} total STRINGS, ${detectCases.length} auto-detect cases checked)`);
+  // 9. Data-quality tier keys and operators.js runtime rules
+  for (const key of [
+    'tier.measured',
+    'tier.predicted',
+    'tier.timetable',
+    'tier.method.gps',
+    'tier.method.operator_delay',
+    'tier.method.operator_prediction',
+    'tier.noRealtime',
+    'tier.groupMeasured',
+    'tier.groupPredicted',
+    'tier.groupTimetable',
+    'tier.predictedNote'
+  ]) {
+    for (const lang of ['ca', 'es', 'en']) {
+      assert.ok(key in STRINGS[lang] && STRINGS[lang][key].length > 0, `Missing ${lang}.${key}`);
+    }
+  }
+
+  // Verify dades.html carries Mataró Bus measured/gps data-i18n attributes
+  const dadesHtml = read('public/dades.html');
+  assert.ok(dadesHtml.includes('data-i18n="tier.measured"'), 'dades.html must show Mataró Bus tier.measured badge');
+  assert.ok(dadesHtml.includes('data-i18n="tier.method.gps"'), 'dades.html must show Mataró Bus tier.method.gps explanation');
+
+  async function runOperatorsScenario(operatorsPayload) {
+    const listeners = new Map();
+    const elements = new Map();
+    function makeEl(id) {
+      return {
+        id,
+        hidden: true,
+        innerHTML: '',
+        textContent: '',
+        title: '',
+        dataset: {},
+        classList: {
+          _set: new Set(),
+          toggle(cls, force) { if (force) this._set.add(cls); else this._set.delete(cls); },
+          contains(cls) { return this._set.has(cls); }
+        },
+        setAttribute() {},
+        removeAttribute() {},
+        querySelectorAll() { return []; },
+        addEventListener() {}
+      };
+    }
+    const documentObj = {
+      readyState: 'complete',
+      hidden: false,
+      title: '',
+      body: { dataset: {} },
+      documentElement: { lang: 'ca', setAttribute() {} },
+      getElementById(id) {
+        if (!elements.has(id)) elements.set(id, makeEl(id));
+        return elements.get(id);
+      },
+      querySelectorAll() { return []; },
+      addEventListener(type, fn) {
+        if (!listeners.has(type)) listeners.set(type, []);
+        listeners.get(type).push(fn);
+      },
+      dispatchEvent(ev) {
+        for (const fn of listeners.get(ev.type) || []) fn(ev);
+      }
+    };
+    const sandbox = {
+      console, Date, Math, Number, String, Array, Object, Map, Set, RegExp, Intl, URL, URLSearchParams,
+      CustomEvent: class CustomEvent { constructor(type, init = {}) { this.type = type; this.detail = init.detail; } },
+      localStorage: { getItem: () => null, setItem: () => {} },
+      navigator: { languages: ['ca-ES'], language: 'ca-ES' },
+      location: { search: '', href: 'http://localhost:3000/dades.html' },
+      history: { replaceState() {} },
+      setInterval: () => 0,
+      clearInterval: () => {},
+      document: documentObj,
+      fetch: async (url) => {
+        if (String(url).startsWith('/api/analytics/operators')) {
+          return { ok: true, json: async () => ({ operators: operatorsPayload, generatedAt: 1760000000000 }) };
+        }
+        return { ok: true, json: async () => ({ lines: [], operators: [] }) };
+      }
+    };
+    sandbox.window = sandbox;
+    sandbox.self = sandbox;
+    vm.createContext(sandbox);
+    vm.runInContext(read('public/js/utils.js'), sandbox, { filename: 'public/js/utils.js' });
+    vm.runInContext(read('public/js/i18n.js'), sandbox, { filename: 'public/js/i18n.js' });
+    vm.runInContext(read('public/js/operators.js'), sandbox, { filename: 'public/js/operators.js' });
+    await new Promise(r => setImmediate(r));
+    return {
+      sandbox,
+      body: documentObj.getElementById('operators-body'),
+      section: documentObj.getElementById('operators-section')
+    };
+  }
+
+  const baseOp = {
+    visits: 42,
+    trips: 12,
+    onTimeMaxMins: 5,
+    onTimePct: 88,
+    avgDelay: 2.1,
+    maxDelay: 11,
+    buckets: { early: 2, onTime: 35, late15: 5, late30: 0, late60: 0, lateOver60: 0 },
+    lines: [{ line: 'R1', avgDelay: 2.1, onTimePct: 88, maxDelay: 11, visits: 42 }],
+    worstStations: [{ station: 'Mataró', avgDelay: 2.4, visits: 20 }],
+    source: 'GTFS-RT',
+    feed: { vehiclesNow: 8, fetchAgeSec: 12 }
+  };
+
+  // 9a. Missing tier/method works cleanly and renders nothing for tier/method
+  {
+    const res = await runOperatorsScenario([{ ...baseOp, id: 'renfe_rodalies', name: 'Rodalies de Catalunya' }]);
+    assert.equal(res.section.hidden, false);
+    assert.ok(!res.body.innerHTML.includes('data-tier='), 'Missing tier must render no tier badge');
+    assert.ok(!res.body.innerHTML.includes('data-method='), 'Missing method must render no method line');
+    assert.ok(res.body.innerHTML.includes('class="op-kpis"'), 'KPIs must still render when tier/method absent');
+  }
+
+  // 9b. Measured operators show localized tier badge + method explanation and redraw on arribo:lang
+  const unesc = s => String(s).replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  {
+    const res = await runOperatorsScenario([
+      { ...baseOp, id: 'renfe_rodalies', name: 'Rodalies de Catalunya', tier: 'measured', method: 'operator_delay' },
+      { ...baseOp, id: 'fgc', name: 'FGC', tier: 'measured', method: 'operator_prediction' }
+    ]);
+    assert.equal(res.body.classList.contains('op-grid-grouped'), false, 'Same-tier measured ops stay in standard grid');
+    for (const lang of ['ca', 'es', 'en']) {
+      res.sandbox.ArriboI18n.setLang(lang);
+      const html = res.body.innerHTML;
+      const text = unesc(html);
+      assert.ok(text.includes(STRINGS[lang]['tier.measured']), `Missing measured badge in ${lang}`);
+      assert.ok(text.includes(STRINGS[lang]['tier.method.operator_delay']), `Missing operator_delay method in ${lang}`);
+      assert.ok(text.includes(STRINGS[lang]['tier.method.operator_prediction']), `Missing operator_prediction method in ${lang}`);
+      assert.ok(html.includes('class="op-kpis"'), `Measured ops must show KPIs in ${lang}`);
+    }
+  }
+
+  // 9c. Timetable-tier operator shows NO punctuality numbers at all (even if payload includes stats)
+  {
+    const res = await runOperatorsScenario([
+      { ...baseOp, id: 'regional_tt', name: 'Regional Bus', tier: 'timetable', source: 'Static GTFS' }
+    ]);
+    assert.equal(res.section.hidden, false, 'Timetable-only operator must still display section');
+    for (const lang of ['ca', 'es', 'en']) {
+      res.sandbox.ArriboI18n.setLang(lang);
+      const html = res.body.innerHTML;
+      assert.ok(html.includes(STRINGS[lang]['tier.timetable']), `Missing timetable badge in ${lang}`);
+      assert.ok(html.includes(STRINGS[lang]['tier.noRealtime']), `Missing no-realtime text in ${lang}`);
+      assert.ok(!html.includes('class="op-kpis"'), `Timetable tier must NOT render KPIs in ${lang}`);
+      assert.ok(!html.includes('class="op-bar"'), `Timetable tier must NOT render bucket bar in ${lang}`);
+      assert.ok(!html.includes('class="op-table"'), `Timetable tier must NOT render lines table in ${lang}`);
+      assert.ok(!html.includes('class="op-stations"'), `Timetable tier must NOT render worst stations in ${lang}`);
+      assert.ok(!html.includes('88%') && !html.includes('88 %'), `Timetable tier must NOT leak onTimePct in ${lang}`);
+      assert.ok(!html.includes(STRINGS[lang]['ops.realtimeForecast']), `Timetable tier must NOT show realtimeForecast chip in ${lang}`);
+    }
+  }
+
+  // 9d. Predicted operator is separated into its own tier group and never mixed with measured ones
+  {
+    const res = await runOperatorsScenario([
+      { ...baseOp, id: 'renfe_rodalies', name: 'Rodalies de Catalunya', tier: 'measured', method: 'operator_delay' },
+      { ...baseOp, id: 'pred_rail', name: 'Predicted Rail', tier: 'predicted', method: 'operator_prediction' }
+    ]);
+    assert.equal(res.body.classList.contains('op-grid-grouped'), true, 'Mixed measured+predicted must enable grouped layout');
+    for (const lang of ['ca', 'es', 'en']) {
+      res.sandbox.ArriboI18n.setLang(lang);
+      const html = res.body.innerHTML;
+      const mStart = html.indexOf('data-tier-group="measured"');
+      const pStart = html.indexOf('data-tier-group="predicted"');
+      assert.ok(mStart >= 0 && pStart > mStart, `Measured and predicted must be in separate tier groups in ${lang}`);
+      const measuredBlock = html.slice(mStart, pStart);
+      const predictedBlock = html.slice(pStart);
+      assert.ok(measuredBlock.includes('Rodalies de Catalunya') && !measuredBlock.includes('Predicted Rail'), 'Measured group must only contain measured ops');
+      assert.ok(predictedBlock.includes('Predicted Rail') && !predictedBlock.includes('Rodalies de Catalunya'), 'Predicted group must only contain predicted ops');
+      assert.ok(predictedBlock.includes(STRINGS[lang]['tier.predicted']), `Predicted group must show predicted badge in ${lang}`);
+      assert.ok(predictedBlock.includes(STRINGS[lang]['tier.predictedNote']), `Predicted group must show separation note in ${lang}`);
+    }
+  }
+
+  console.log(`i18n_plan_test: OK (${allStaticKeys.size} static keys across 3 HTML files, ${foundJsKeys.size} JS keys, ${allKeys.size} total STRINGS, ${detectCases.length} auto-detect cases, 4 operator tier scenarios checked)`);
 }
 
 run().catch((err) => {
