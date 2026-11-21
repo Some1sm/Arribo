@@ -325,6 +325,16 @@ In June of each year, the operator publishes the summer service window notice (e
 4. Run `node scripts/scrape_maresme_timetables.js --diff` to check that both directions of every line come from the same season, then build and vet the server.
 5. Deploy the updated configuration.
 
+### Yearly holiday upkeep
+
+`src/data/holidays.json` holds the regional holidays and Mataró's two local days per year. The Generalitat publishes both as open data (Socrata, no key): `yf2b-mjr6` (regional, usually by spring) and `b4eh-r8up` (local days of every municipality by INE code, usually by December).
+
+```bash
+node scripts/update_holidays.js --check
+```
+
+reports any date the open data and the file disagree on (exit 1) and the years not published yet; without `--check` it adds published dates the file lacks (generic name, dataset as source) and never removes one. `--ine <code>` and `--years 2026,2027` choose another municipality or years. Review the diff, give new entries their proper name and legal source, and deploy.
+
 ## Vercel domain (proxy only)
 
 The Vercel project for the `bad-amb-bus-tracker` domain does not run Arribo: the Go server, its polling, SQLite and SSE need the always-on VPS, and Vercel functions are short-lived with no persistent disk. `vercel.json` makes each deployment a proxy instead: no install or build (the build only writes an empty `.vercel-proxy/` output folder, so no stale copy of `public/` is ever served from Vercel), and every path is rewritten to the live app on the VPS (`http://87.106.33.66:3000`). Change that address there if the VPS moves.
