@@ -79,3 +79,46 @@ func TestRailVisitTracker(t *testing.T) {
 		t.Fatalf("vanished trip: closed %v, open %d", got, len(tr2.open))
 	}
 }
+
+// TestStuTimesTimetableChecks: trip "long" of the rail test timetable leaves
+// A at 09:00 and reaches B at 09:05 and C at 09:09, every day.
+func TestStuTimesTimetableChecks(t *testing.T) {
+	tt := openRailTestTimetable(t)
+	ctx := context.Background()
+	ref, err := gtfsServiceDayRef("20261123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := func(hms int64) int64 { return ref.Unix() + hms }
+	stu := func(stop string, tm *int64, d *int32) StopTimeUpdate {
+		return StopTimeUpdate{StopID: stop, Arrival: &StopTimeEvent{Time: tm, Delay: d}}
+	}
+	i64 := func(v int64) *int64 { return &v }
+	i32 := func(v int32) *int32 { return &v }
+	renfe := &TripUpdate{Trip: TripDescriptor{TripID: "long"}}
+	fgc := &TripUpdate{Trip: TripDescriptor{TripID: "long", StartDate: "20261123"}}
+	b, c := int64(9*3600+5*60), int64(9*3600+9*60)
+	cases := []struct {
+		name        string
+		tu          *TripUpdate
+		s           StopTimeUpdate
+		ok          bool
+		sched, pred int64
+	}{
+		{"feed delay agrees", renfe, stu("B", i64(at(b+120)), i32(120)), true, at(b), at(b + 120)},
+		{"feed rounding: timetable's seconds kept", renfe, stu("B", i64(at(b+130)), i32(120)), true, at(b), at(b + 130)},
+		{"before the origin departure", renfe, stu("B", i64(at(b-15*60)), i32(-900)), false, 0, 0},
+		{"within the origin slack", renfe, stu("B", i64(at(9*3600-30)), i32(-330)), true, at(b), at(9*3600 - 30)},
+		{"feed delay contradicts its time", renfe, stu("B", i64(at(b+840)), i32(-360)), false, 0, 0},
+		{"origin stop itself may be early", renfe, stu("A", i64(at(9*3600-120)), i32(-120)), true, at(9 * 3600), at(9*3600 - 120)},
+		{"stop not in the timetable: feed as sent", renfe, stu("Z", i64(at(b)), i32(60)), true, at(b - 60), at(b)},
+		{"time only with start_date", fgc, stu("C", i64(at(c+60)), nil), true, at(c), at(c + 60)},
+		{"time only, before the origin departure", fgc, stu("C", i64(at(8*3600)), nil), false, 0, 0},
+	}
+	for _, k := range cases {
+		sched, pred, ok := stuTimes(ctx, tt, k.tu, k.s)
+		if ok != k.ok || (ok && (sched != k.sched || pred != k.pred)) {
+			t.Errorf("%s: got %v %d %d, want %v %d %d", k.name, ok, sched-ref.Unix(), pred-ref.Unix(), k.ok, k.sched-ref.Unix(), k.pred-ref.Unix())
+		}
+	}
+}

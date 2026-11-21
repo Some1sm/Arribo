@@ -65,6 +65,32 @@ func (t *rtTimetable) scheduledSec(ctx context.Context, tripID, stopID string) (
 	return v, v >= 0
 }
 
+// originSec is the trip's scheduled departure (else arrival) from its first
+// stop, in seconds after the service day's reference time (cached, bounded).
+func (t *rtTimetable) originSec(ctx context.Context, tripID string) (int64, bool) {
+	key := "\x02" + tripID
+	t.mu.Lock()
+	if v, hit := t.cache[key]; hit {
+		t.mu.Unlock()
+		return v, v >= 0
+	}
+	t.mu.Unlock()
+	var sec sql.NullInt64
+	err := t.db.QueryRowContext(ctx, `SELECT COALESCE(departure_sec, arrival_sec) FROM stop_times
+	  WHERE trip_id = ? ORDER BY stop_sequence LIMIT 1`, tripID).Scan(&sec)
+	v := int64(-1)
+	if err == nil && sec.Valid {
+		v = sec.Int64
+	}
+	t.mu.Lock()
+	if len(t.cache) > 50000 {
+		t.cache = map[string]int64{}
+	}
+	t.cache[key] = v
+	t.mu.Unlock()
+	return v, v >= 0
+}
+
 // gtfsServiceDayRef is the reference instant of a GTFS service date
 // (YYYYMMDD) in Europe/Madrid: "noon minus 12 hours", which is local
 // midnight except on DST change days, where GTFS times count from it.

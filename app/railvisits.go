@@ -54,9 +54,36 @@ func newRailVisitTracker(agencyID, mode string) *railVisitTracker {
 	return &railVisitTracker{agencyID: agencyID, mode: mode, open: map[string]*openRailVisit{}}
 }
 
-// stuTimes is the scheduled and predicted unix time of one stop update:
-// from its time and delay when the feed sends both (Renfe), else from its
-// time or delay plus the imported timetable (FGC sends times only).
+// railOriginSlack: how much earlier than the trip's scheduled departure from
+// its origin a prediction for a later stop may be before it is rejected.
+// railFeedDisagree: how far a feed's own delay may differ from its predicted
+// time against the timetable before the update is dropped as contradictory.
+const (
+	railOriginSlack  = 60     // seconds
+	railFeedDisagree = 5 * 60 // seconds
+)
+
+// stuTimes is the scheduled and predicted unix time of one stop update.
+//
+// With the stop in the imported timetable, the scheduled time is the
+// timetable's and the delay is predicted minus scheduled. Renfe sends both a
+// time and a delay, but its delay has been seen disagreeing with its own
+// time against the timetable. Small differences are its rounding (it sends
+// whole minutes), so the timetable's second-precise delay is kept; beyond
+// railFeedDisagree the two contradict each other (seen: "6 min early" by its
+// delay, 14 min late by its time) and the update is dropped, since nothing
+// says which one is right. Without a start_date (Renfe sends none) the
+// service day is the one the feed's own scheduled time (time minus delay)
+// falls in. FGC sends times only and a start_date. Without the stop in the
+// timetable, a feed that sends time and delay is taken as it is.
+//
+// A prediction for a later stop that is earlier than the trip's scheduled
+// departure from its first stop is rejected: the train cannot get there
+// before it leaves, and trains do not leave their origin early. Renfe sends
+// such predictions while a train waits at its origin (seen 2026-11-21: 10
+// of the 13 trains waiting at their origin were predicted 9 to 73 minutes
+// "early" at the next stop), and the small ones used to pass the −10 min
+// bound and be recorded as early arrivals.
 func stuTimes(ctx context.Context, tt *rtTimetable, tu *TripUpdate, s StopTimeUpdate) (sched, pred int64, ok bool) {
 	ev := s.Arrival
 	if ev == nil || (ev.Time == nil && ev.Delay == nil) {
@@ -65,28 +92,51 @@ func stuTimes(ctx context.Context, tt *rtTimetable, tu *TripUpdate, s StopTimeUp
 	if ev == nil || s.StopID == "" {
 		return 0, 0, false
 	}
-	if ev.Time != nil && ev.Delay != nil {
-		return *ev.Time - int64(*ev.Delay), *ev.Time, true
+	feedTimes := ev.Time != nil && ev.Delay != nil
+	var sec int64
+	found := false
+	if tt != nil {
+		sec, found = tt.scheduledSec(ctx, tu.Trip.TripID, s.StopID)
 	}
-	if tt == nil || tu.Trip.StartDate == "" {
-		return 0, 0, false
-	}
-	ref, err := gtfsServiceDayRef(tu.Trip.StartDate)
-	if err != nil {
-		return 0, 0, false
-	}
-	sec, found := tt.scheduledSec(ctx, tu.Trip.TripID, s.StopID)
 	if !found {
+		if feedTimes {
+			return *ev.Time - int64(*ev.Delay), *ev.Time, true
+		}
+		return 0, 0, false
+	}
+	var ref time.Time
+	var err error
+	switch {
+	case tu.Trip.StartDate != "":
+		ref, err = gtfsServiceDayRef(tu.Trip.StartDate)
+	case feedTimes:
+		// The feed's scheduled time minus the timetable's offset is near the
+		// service day's reference (local midnight); +12 h lands mid-day so a
+		// few seconds either side cannot pick the wrong date.
+		at := time.Unix(*ev.Time-int64(*ev.Delay)-sec, 0).Add(12 * time.Hour).In(madrid)
+		ref, err = gtfsServiceDayRef(at.Format("20060102"))
+	default:
+		return 0, 0, false
+	}
+	if err != nil {
 		return 0, 0, false
 	}
 	sched = ref.Unix() + sec
 	switch {
 	case ev.Time != nil:
-		return sched, *ev.Time, true
-	case ev.Delay != nil:
-		return sched, sched + int64(*ev.Delay), true
+		pred = *ev.Time
+	default:
+		pred = sched + int64(*ev.Delay)
 	}
-	return 0, 0, false
+	if feedTimes {
+		if diff := (pred - sched) - int64(*ev.Delay); diff > railFeedDisagree || diff < -railFeedDisagree {
+			return 0, 0, false
+		}
+	}
+	if orig, has := tt.originSec(ctx, tu.Trip.TripID); has && sec > orig && pred < ref.Unix()+orig-railOriginSlack {
+		return 0, 0, false
+	}
+	return sched, pred, true
 }
 
 // observe folds one trip-update feed in and returns the visits that closed.
