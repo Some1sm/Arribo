@@ -117,7 +117,8 @@ func runTimetableRefresher(ctx context.Context, srcs []rtSource) {
 			if src.staticURL == "" || ctx.Err() != nil {
 				continue
 			}
-			if !gtfsStale(gtfsTimetablePath(src.AgencyID), gtfsStaleAfter) {
+			p := gtfsTimetablePath(src.AgencyID)
+			if !gtfsStale(p, gtfsStaleAfter) && gtfsImportCurrent(p) {
 				continue
 			}
 			start := time.Now()

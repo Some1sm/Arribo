@@ -217,6 +217,7 @@ CREATE TABLE shapes (agency_id TEXT, shape_id TEXT, seq INTEGER, lat REAL, lon R
 CREATE INDEX idx_stop_times_stop ON stop_times(stop_id, departure_sec);
 CREATE INDEX idx_stop_times_trip ON stop_times(trip_id, stop_sequence);
 CREATE INDEX idx_trips_route ON trips(route_id);
+CREATE INDEX idx_trips_trip ON trips(trip_id);
 CREATE INDEX idx_trips_service ON trips(service_id);
 CREATE INDEX idx_calendar_dates_service ON calendar_dates(service_id, date);
 CREATE INDEX idx_shapes_shape_seq ON shapes(shape_id, seq);
@@ -631,6 +632,22 @@ func importGTFS(agencyID, zipPath, outPath string, bbox *bboxFilter, bboxStr str
 	}
 	if _, err := db.Exec(gtfsIndexes); err != nil {
 		return fmt.Errorf("create indexes: %w", err)
+	}
+	inferred, err := inferDirections(db)
+	if err != nil {
+		return fmt.Errorf("infer directions: %w", err)
+	}
+	// A trip without a headsign (all of Renfe's) gets its own last station's
+	// name, so departures and trains show where they go.
+	filled, err := db.Exec(`UPDATE trips SET headsign = (SELECT s.name FROM stop_times st JOIN stops s ON s.stop_id = st.stop_id
+	  WHERE st.trip_id = trips.trip_id ORDER BY st.stop_sequence DESC LIMIT 1) WHERE COALESCE(headsign, '') = ''`)
+	if err != nil {
+		return fmt.Errorf("fill headsigns: %w", err)
+	}
+	nFilled, _ := filled.RowsAffected()
+	if _, err := db.Exec(`INSERT OR REPLACE INTO gtfs_meta (key, value) VALUES ('import_format', ?), ('directions_inferred', ?), ('headsigns_from_last_stop', ?)`,
+		gtfsImportFormat, strconv.Itoa(inferred), strconv.FormatInt(nFilled, 10)); err != nil {
+		return fmt.Errorf("meta: %w", err)
 	}
 	if err := db.Close(); err != nil {
 		return fmt.Errorf("close db: %w", err)
