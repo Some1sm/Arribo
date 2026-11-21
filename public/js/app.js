@@ -2642,6 +2642,12 @@ class TransitApp {
         pillLabel = t('dep.scheduled');
       } else if (dep.isEstimated) {
         pillLabel = rawDelayMins >= 2 ? delayText : `⚡ ${t('dep.enRoute')}`;
+      } else if (dep.delayDiscarded) {
+        // The operator published an impossible delay: say so, never "on time".
+        pillLabel = t('trainPopup.delayDiscarded');
+      } else if (dep.delayMins === null || dep.delayMins === undefined) {
+        // No live delay for this departure: timetable only, never "on time".
+        pillLabel = dep.isRealTime ? t('trainPopup.noDelay') : t('dep.scheduled');
       } else {
         pillLabel = delayText;
       }
@@ -2689,10 +2695,10 @@ class TransitApp {
       } else if (dep.isRealTime) {
         if (schedTime && isDiff) {
           subtextHtml = `<span>📅 ${this.esc(t('dep.timetableLabel'))} <strong class="sched-strong">${schedTime}</strong> <span class="dep-delay-note ${rawDelayMins >= 2 ? 'delay' : (rawDelayMins <= -1 ? 'early' : 'on-time')}">(${this.esc(delayText)})</span></span>`;
-          subtextTitle = t('dep.tRealDiff', { time: schedTime, delay: delayText });
+          subtextTitle = t(this.rtSourceKey('dep.tRealDiff'), { time: schedTime, delay: delayText });
         } else {
-          subtextHtml = `<span>🟢 ${this.esc(t('dep.realtimeSub'))}</span>`;
-          subtextTitle = t('dep.realtimeTitle');
+          subtextHtml = `<span>🟢 ${this.esc(t(this.rtSourceKey('dep.realtimeSub')))}</span>`;
+          subtextTitle = t(this.rtSourceKey('dep.realtimeTitle'));
         }
       } else if (dep.isEstimated) {
         subtextHtml = `<span>⚡ ${this.esc(t('dep.estSub'))}</span>`;
@@ -4065,6 +4071,12 @@ class TransitApp {
   // 7. STOP INSPECTION MODAL (UNIVERSAL)
   // ==========================================
 
+  /** Real-time source labels: Mataró's buses come from Avanza's SIRI feed;
+   *  a train line's times are the operator's GTFS-RT forecasts, not GPS. */
+  rtSourceKey(key) {
+    return window.TransitUtils?.isRailLineId?.(this.activeLineId) ? `${key}Rail` : key;
+  }
+
   async inspectStop(stopId, stopName, stopSeq = null) {
     const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     this._inspectArgs = [stopId, stopName, stopSeq];
@@ -4421,6 +4433,12 @@ class TransitApp {
         pillLabel = t('dep.scheduled');
       } else if (d.isEstimated) {
         pillLabel = rawDelayMins >= 2 ? delayText : `⚡ ${t('dep.enRoute')}`;
+      } else if (d.delayDiscarded) {
+        // The operator published an impossible delay: say so, never "on time".
+        pillLabel = t('trainPopup.delayDiscarded');
+      } else if (d.delayMins === null || d.delayMins === undefined) {
+        // No live delay for this departure: timetable only, never "on time".
+        pillLabel = d.isRealTime ? t('trainPopup.noDelay') : t('dep.scheduled');
       } else {
         pillLabel = delayText;
       }
@@ -4468,10 +4486,10 @@ class TransitApp {
       } else if (d.isRealTime) {
         if (schedTime && isDiff) {
           subtextHtml = `<span>📅 ${this.esc(t('dep.timetableLabel'))} <strong class="sched-strong">${schedTime}</strong> <span class="dep-delay-note ${rawDelayMins >= 2 ? 'delay' : (rawDelayMins <= -1 ? 'early' : 'on-time')}">(${this.esc(delayText)})</span></span>`;
-          subtextTitle = t('dep.tRealDiff', { time: schedTime, delay: delayText });
+          subtextTitle = t(this.rtSourceKey('dep.tRealDiff'), { time: schedTime, delay: delayText });
         } else {
-          subtextHtml = `<span>🟢 ${this.esc(t('dep.realtimeSub'))}</span>`;
-          subtextTitle = t('dep.realtimeTitle');
+          subtextHtml = `<span>🟢 ${this.esc(t(this.rtSourceKey('dep.realtimeSub')))}</span>`;
+          subtextTitle = t(this.rtSourceKey('dep.realtimeTitle'));
         }
       } else if (d.isEstimated) {
         subtextHtml = `<span>⚡ ${this.esc(t('dep.estSub'))}</span>`;
