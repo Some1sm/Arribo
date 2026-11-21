@@ -945,3 +945,6 @@ func printSummary(msg *FeedMessage) {
 
 // wheelchairNames is VehicleDescriptor.WheelchairAccessible.
 var wheelchairNames = []string{"NO_VALUE", "UNKNOWN", "WHEELCHAIR_ACCESSIBLE", "WHEELCHAIR_INACCESSIBLE"}
+
+// gtfsTripCanceled is TripDescriptor.ScheduleRelationship CANCELED.
+const gtfsTripCanceled = 3

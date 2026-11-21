@@ -444,8 +444,8 @@ func (k *Worker) railPlanOp(args *Obj) (any, error) {
 		}
 		second = append(second, ls...)
 	}
-	applyLiveRailDelays(first)
-	applyLiveRailDelays(second)
+	first = applyLiveRailDelays(first)
+	second = applyLiveRailDelays(second)
 	itins := combineRailLegs(first, second, k.expandRailEnds(ctx, origins), k.expandRailEnds(ctx, dests), depart, speed)
 	list := make([]any, 0, len(itins))
 	for _, it := range itins {
@@ -473,12 +473,13 @@ func (k *Worker) expandRailEnds(ctx context.Context, m map[string]railEnd) map[s
 	return out
 }
 
-// applyLiveRailDelays shifts the legs of trips the operator reports a
-// train for by that trip's delay (when plausible); others stay timetable.
-func applyLiveRailDelays(legs []railLeg) {
+// applyLiveRailDelays drops the legs of trips the operator has cancelled
+// and shifts those of trips it reports a train for by that trip's delay
+// (when plausible); others stay timetable.
+func applyLiveRailDelays(legs []railLeg) []railLeg {
 	pp := rtLivePollers.Load()
 	if pp == nil {
-		return
+		return legs
 	}
 	snaps := map[string]*rtSnapshot{}
 	running := map[string]bool{}
@@ -490,16 +491,20 @@ func applyLiveRailDelays(legs []railLeg) {
 			}
 		}
 	}
-	for i := range legs {
-		l := &legs[i]
+	kept := legs[:0]
+	for _, l := range legs {
 		s := snaps[l.Agency]
-		if s == nil || !running[l.Agency+"\x00"+l.Trip] {
+		if s != nil && s.Canceled[l.Trip] {
 			continue
 		}
-		if d, ok := s.TripDelays[l.Trip]; ok && int(d) >= railMinDelaySec && int(d) <= railMaxDelaySec {
-			l.Delay, l.Live = int64(d), true
+		if s != nil && running[l.Agency+"\x00"+l.Trip] {
+			if d, ok := s.TripDelays[l.Trip]; ok && int(d) >= railMinDelaySec && int(d) <= railMaxDelaySec {
+				l.Delay, l.Live = int64(d), true
+			}
 		}
+		kept = append(kept, l)
 	}
+	return kept
 }
 
 // railItinJSON writes an itinerary in the planner's response format

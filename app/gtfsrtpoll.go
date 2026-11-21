@@ -50,6 +50,7 @@ type rtSnapshot struct {
 	TripUpdates   int              // trip updates in the last feed, with or without a delay
 	Computed      int              // of TripDelays, how many came from predicted times vs the timetable
 	ComputedTrips map[string]bool  // trip ids whose delay was computed (immutable once stored)
+	Canceled      map[string]bool  // trip ids the operator marks cancelled (schedule_relationship CANCELED)
 	VehiclesErr   string
 	TripsErr      string
 }
@@ -86,6 +87,7 @@ type rtPoller struct {
 	closedVisits, droppedVisits, implausible int               // counters (guarded by mu)
 	computed                                 int               // delays derived from predicted times in the last trip feed
 	computedTrips                            map[string]bool   // which trips those were (guarded by mu; replaced, never mutated)
+	canceled                                 map[string]bool   // trips marked CANCELED in the last trip feed (guarded by mu; replaced, never mutated)
 }
 
 var cataloniaBounds = GeoBounds{MinLat: 40.5, MaxLat: 42.9, MinLon: 0.15, MaxLon: 3.4}
@@ -236,6 +238,7 @@ func (p *rtPoller) pollTrips(ctx context.Context) {
 	p.syncTimetable()
 	total, computed := 0, 0
 	computedTrips := map[string]bool{}
+	canceled := map[string]bool{}
 	delays, err := func() (map[string]int32, error) {
 		u, err := p.src.tripURL(ctx)
 		if err != nil {
@@ -256,6 +259,12 @@ func (p *rtPoller) pollTrips(ctx context.Context) {
 				continue
 			}
 			total++
+			// A cancelled trip (schedule_relationship CANCELED) has no delay:
+			// departure boards and the planner must not offer it as running.
+			if e.TripUpdate.Trip.ScheduleRelationship == gtfsTripCanceled {
+				canceled[e.TripUpdate.Trip.TripID] = true
+				continue
+			}
 			// Some feeds (FGC) send predicted times only, no delay: those
 			// delays need the static timetable (slice 3).
 			if d := tripUpdateDelay(e.TripUpdate); d != nil {
@@ -274,7 +283,7 @@ func (p *rtPoller) pollTrips(ctx context.Context) {
 		p.terr = err.Error()
 		return
 	}
-	p.trip, p.trips, p.computed, p.computedTrips, p.terr = delays, total, computed, computedTrips, ""
+	p.trip, p.trips, p.computed, p.computedTrips, p.canceled, p.terr = delays, total, computed, computedTrips, canceled, ""
 }
 
 // tripUpdateDelay is the trip-level delay, else the first stop event's.
@@ -298,6 +307,7 @@ func (p *rtPoller) pollVehicles(ctx context.Context) {
 	snap := &rtSnapshot{AgencyID: p.src.AgencyID, FetchedAt: time.Now()}
 	p.mu.Lock()
 	snap.TripDelays, snap.TripUpdates, snap.Computed, snap.ComputedTrips, snap.TripsErr = p.trip, p.trips, p.computed, p.computedTrips, p.terr
+	snap.Canceled = p.canceled
 	p.mu.Unlock()
 	fm, err := func() (*FeedMessage, error) {
 		u, err := p.src.vehicleURL(ctx)

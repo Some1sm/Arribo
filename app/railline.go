@@ -253,7 +253,7 @@ func railDelayLabel(mins any, discarded bool) (status, label string) {
 	m, ok := mins.(float64)
 	switch {
 	case discarded:
-		return "unknown", "Retard descartat"
+		return "unknown", "Previsió no fiable"
 	case !ok:
 		return "unknown", "Sense dada de retard"
 	case m > 5:

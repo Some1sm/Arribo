@@ -221,6 +221,12 @@ func railDeparturesResponse(info operatorInfo, stop rtLineStop, sched []any, sna
 		if !isRT && !discarded {
 			status, badge = "scheduled", "Horari"
 		}
+		// The operator cancelled this trip: shown as cancelled, never as running.
+		cancelled := snap != nil && snap.Canceled[trip]
+		if cancelled {
+			status, badge, delayMins, isRT, discarded, delaySource = "cancelled", "Cancel·lat", nil, false, false, nil
+			expected = aimed
+		}
 		hhmm := func(u int64) string { return time.Unix(u, 0).In(madrid).Format("15:04") }
 		deps = append(deps, O(
 			"tripId", trip,
@@ -240,7 +246,8 @@ func railDeparturesResponse(info operatorInfo, stop rtLineStop, sched []any, sna
 			"delayDiscarded", discarded,
 			"isRealTime", isRT,
 			"isEstimated", false,
-			"isTheoretical", !isRT,
+			"isTheoretical", !isRT && !cancelled,
+			"isCancelled", cancelled,
 		))
 	}
 	return O(

@@ -174,7 +174,7 @@ func TestRailDelayLabel(t *testing.T) {
 		label     string
 	}{
 		{nil, false, "unknown", "Sense dada de retard"},
-		{3.0, true, "unknown", "Retard descartat"},
+		{3.0, true, "unknown", "Previsió no fiable"},
 		{0.0, false, "on_time", "A l'hora"},
 		{4.0, false, "on_time", "+4 min"},
 		{-1.0, false, "on_time", "−1 min"},
@@ -285,10 +285,23 @@ func TestRailDeparturesResponse(t *testing.T) {
 	if plain.Get("isRealTime") != false || plain.Get("isTheoretical") != true || plain.Get("delayMins") != nil || plain.Get("delayBadgeText") != "Horari" || plain.Get("delayStatus") != "scheduled" {
 		t.Errorf("timetable only: %s", string(toJSON(plain)))
 	}
-	if weird.Get("delayDiscarded") != true || weird.Get("delayBadgeText") != "Retard descartat" || weird.Get("destination") != nil || weird.Get("direction") != "1" {
+	if weird.Get("delayDiscarded") != true || weird.Get("delayBadgeText") != "Previsió no fiable" || weird.Get("destination") != nil || weird.Get("direction") != "1" {
 		t.Errorf("discarded: %s", string(toJSON(weird)))
 	}
 	if stop := o.Get("stop").(*Obj); stop.Get("name") != "Sarrià" {
 		t.Errorf("stop: %s", string(toJSON(stop)))
+	}
+}
+
+// TestRailDeparturesCancelled: a trip the operator cancelled is listed as
+// cancelled, not live and not timetable.
+func TestRailDeparturesCancelled(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	sched := []any{O("tripId", "gone", "headsign", "Pl. Catalunya", "directionId", 0.0, "departUnix", float64(now.Unix()+600))}
+	snap := &rtSnapshot{Vehicles: []rtVehicle{{TripID: "gone"}}, TripDelays: map[string]int32{"gone": 120}, Canceled: map[string]bool{"gone": true}}
+	o := railDeparturesResponse(reportOperators[1], rtLineStop{ID: "A", Name: "Sarrià"}, sched, snap, now)
+	d := o.Get("departures").([]any)[0].(*Obj)
+	if d.Get("isCancelled") != true || d.Get("delayStatus") != "cancelled" || d.Get("isRealTime") != false || d.Get("delayMins") != nil || d.Get("isTheoretical") != false {
+		t.Errorf("cancelled: %s", string(toJSON(d)))
 	}
 }

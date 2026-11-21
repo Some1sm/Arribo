@@ -2087,7 +2087,8 @@ class TransitApp {
     const dir = String(this.activeDirection) === 'both' ? 'both' : String(this.activeDirection ?? '0');
     const key = `${this.activeLineId}|${stopId}|${dir}`;
     const draw = (deps, failed) => {
-      const next = Array.isArray(deps) ? deps[0] : null;
+      // The next train that actually runs: a cancelled one stays in the list, marked.
+      const next = Array.isArray(deps) ? (deps.find(d => !d.isCancelled) || null) : null;
       if (title) title.textContent = stop.name ? t('rail.departuresAt', { name: stop.name }) : t('rail.trainsNow');
       if (etaBigEl) etaBigEl.textContent = next ? (Number(next.minutesAway) <= 0 ? t('common.now') : `${next.minutesAway} min`) : (failed ? '--' : t('rail.noDepartures'));
       if (etaClockEl) {
@@ -2796,6 +2797,9 @@ class TransitApp {
       } else {
         pillLabel = delayText;
       }
+
+      // The operator cancelled this trip: say so whatever else is known.
+      if (dep.isCancelled) pillLabel = t('dep.cancelled');
 
       const pillClass = isRegulating
         ? (rawDelayMins >= 2 ? 'delayed' : (rawDelayMins <= -1 ? 'early' : 'regulating'))
@@ -4587,6 +4591,9 @@ class TransitApp {
       } else {
         pillLabel = delayText;
       }
+
+      // The operator cancelled this trip: say so whatever else is known.
+      if (d.isCancelled) pillLabel = t('dep.cancelled');
 
       const pillClass = isRegulating
         ? (rawDelayMins >= 2 ? 'delayed' : (rawDelayMins <= -1 ? 'early' : 'regulating'))

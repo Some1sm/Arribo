@@ -1840,6 +1840,13 @@ body {
   color: var(--accent-danger);
 }
 
+/* A trip the operator cancelled (GTFS-RT CANCELED). */
+.dep-delay-pill.cancelled {
+  background: transparent;
+  color: var(--accent-danger);
+  border: 1px solid var(--accent-danger);
+}
+
 .dep-delay-pill.early {
   background: rgba(245, 158, 11, 0.15);
   color: var(--accent-warning);

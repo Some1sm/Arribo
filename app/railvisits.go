@@ -145,7 +145,8 @@ func (t *railVisitTracker) observe(ctx context.Context, now time.Time, tt *rtTim
 	tripsSeen := map[string]bool{} // trips present in this feed
 	for _, e := range fm.Entities {
 		tu := e.TripUpdate
-		if e.IsDeleted || tu == nil || tu.Trip.TripID == "" {
+		// A cancelled trip makes no station visits.
+		if e.IsDeleted || tu == nil || tu.Trip.TripID == "" || tu.Trip.ScheduleRelationship == gtfsTripCanceled {
 			continue
 		}
 		tripsSeen[tu.Trip.TripID] = true
