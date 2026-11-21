@@ -261,13 +261,20 @@ func TestRailDeparturesResponse(t *testing.T) {
 		O("tripId", "plain", "headsign", "Pl. Catalunya", "directionId", 0.0, "departUnix", float64(now.Unix()+600)),
 		O("tripId", "gone", "headsign", "Pl. Catalunya", "directionId", 0.0, "departUnix", float64(now.Unix()-600)),
 		O("tripId", "weird", "headsign", "", "directionId", 1.0, "departUnix", float64(now.Unix()+900)),
+		// In the trip updates with a delay of 0, but no train running yet.
+		O("tripId", "notStarted", "headsign", "Pl. Catalunya", "directionId", 0.0, "departUnix", float64(now.Unix()+5400)),
 	}
 	snap := &rtSnapshot{
-		TripDelays:    map[string]int32{"live": 120, "gone": 60, "weird": -40 * 60},
+		Vehicles:      []rtVehicle{{TripID: "live"}, {TripID: "gone"}, {TripID: "weird"}},
+		TripDelays:    map[string]int32{"live": 120, "gone": 60, "weird": -40 * 60, "notStarted": 0},
 		ComputedTrips: map[string]bool{"live": true},
 	}
 	o := railDeparturesResponse(reportOperators[1], rtLineStop{ID: "A", Name: "Sarrià", Lat: 41.4, Lon: 2.12}, sched, snap, now)
 	deps := o.Get("departures").([]any)
+	if ns := deps[len(deps)-1].(*Obj); ns.Get("tripId") != "notStarted" || ns.Get("isRealTime") != false || ns.Get("delayMins") != nil || ns.Get("delayStatus") != "scheduled" {
+		t.Errorf("a trip with no train running is timetable only: %s", string(toJSON(ns)))
+	}
+	deps = deps[:len(deps)-1]
 	if len(deps) != 3 {
 		t.Fatalf("departures: %s", string(toJSON(o)))
 	}

@@ -1044,6 +1044,7 @@ func (s *Server) buildRoutes() {
 	s.get(p("/api/lines"), s.hLines)
 	s.get(p("/api/search/stops"), s.hSearchStops)
 	s.get(p("/api/network/vehicles"), s.hNetworkVehicles)
+	s.get(p("/api/network/rail-routes"), s.hRailRoutes)
 	s.get(p("/api/line/:lineId"), s.hLine)
 	s.get(p("/api/line/:lineId/target-eta"), s.hLineTargetEta)
 	s.get(p("/api/line/:lineId/vehicles"), s.hLineVehicles)

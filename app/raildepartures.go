@@ -173,6 +173,18 @@ func (k *Worker) railDeparturesOp(args *Obj) (any, error) {
 // with no live delay is shown as timetable only, never as on time.
 func railDeparturesResponse(info operatorInfo, stop rtLineStop, sched []any, snap *rtSnapshot, now time.Time) *Obj {
 	deps := []any{}
+	// Trips the operator reports a train for. Renfe's trip updates also list
+	// trips that have not started, with a delay of 0: shown as live, a train
+	// two hours away read "real time, on time". A delay counts as a live
+	// forecast only for a trip with a train in the positions feed.
+	running := map[string]bool{}
+	if snap != nil {
+		for i := range snap.Vehicles {
+			if id := snap.Vehicles[i].TripID; id != "" {
+				running[id] = true
+			}
+		}
+	}
 	for _, raw := range sched {
 		o, ok := raw.(*Obj)
 		if !ok {
@@ -185,7 +197,7 @@ func railDeparturesResponse(info operatorInfo, stop rtLineStop, sched []any, sna
 		delaySource := any(nil)
 		discarded := false
 		isRT := false
-		if snap != nil {
+		if snap != nil && running[trip] {
 			if d, ok := snap.TripDelays[trip]; ok {
 				if int(d) < railMinDelaySec || int(d) > railMaxDelaySec {
 					discarded = true

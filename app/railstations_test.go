@@ -46,3 +46,16 @@ func TestSearchRailStations(t *testing.T) {
 		t.Errorf("limit 1: %d", len(r))
 	}
 }
+
+func TestSimplifyPath(t *testing.T) {
+	// A straight line with a 1 m wobble collapses to its ends; a 200 m
+	// corner is kept.
+	line := [][2]float64{{41.0, 2.0}, {41.001, 2.000005}, {41.002, 2.0}, {41.003, 2.0}}
+	if got := simplifyPath(line, railRouteTolerance); len(got) != 2 {
+		t.Errorf("straight: %v", got)
+	}
+	corner := [][2]float64{{41.0, 2.0}, {41.002, 2.0}, {41.002, 2.003}}
+	if got := simplifyPath(corner, railRouteTolerance); len(got) != 3 {
+		t.Errorf("corner: %v", got)
+	}
+}
