@@ -20,15 +20,24 @@ type operatorInfo struct {
 	OnTimeMaxMins float64
 	// Source explains how a delay is obtained, in the app's language.
 	Source string
+	// Tier is the data-quality tier of docs/catalonia-review/REPORT.md,
+	// section 3: "measured" (vehicle positions or official per-trip delays
+	// or predictions), "predicted" (stop-level ETAs only) or "timetable"
+	// (no real-time data: no delay statistics). Method says how a delay is
+	// obtained: "gps" (positions matched to the timetable), "operator_delay"
+	// (the operator publishes each trip's delay) or "operator_prediction"
+	// (the operator publishes predicted times; the delay is computed against
+	// its official timetable).
+	Tier, Method string
 }
 
 var reportOperators = []operatorInfo{
 	{
-		ID: "renfe_rodalies", Name: "Rodalies de Catalunya (Renfe)", ShortName: "Rodalies", Mode: "rail", OnTimeMaxMins: 5,
+		ID: "renfe_rodalies", Name: "Rodalies de Catalunya (Renfe)", ShortName: "Rodalies", Mode: "rail", OnTimeMaxMins: 5, Tier: "measured", Method: "operator_delay",
 		Source: "Retard que Renfe publica en temps real (GTFS-RT) per a cada tren, pres a l'estació just quan el tren hi passa. Els valors impossibles (més de 10 min d'avançament o més de 3 h de retard) es descarten i es compten.",
 	},
 	{
-		ID: "fgc", Name: "Ferrocarrils de la Generalitat (FGC)", ShortName: "FGC", Mode: "rail", OnTimeMaxMins: 5,
+		ID: "fgc", Name: "Ferrocarrils de la Generalitat (FGC)", ShortName: "FGC", Mode: "rail", OnTimeMaxMins: 5, Tier: "measured", Method: "operator_prediction",
 		Source: "Hora prevista que FGC publica en temps real (GTFS-RT), comparada amb l'horari oficial publicat (GTFS) a cada estació, just quan el tren hi passa.",
 	},
 }
@@ -109,6 +118,7 @@ func (h *HistoryDB) getOperatorReport(hours float64, feeds map[string]*Obj) (*Ob
 			"id", op.ID, "name", op.Name, "shortName", op.ShortName, "mode", op.Mode,
 			"onTimeMaxMins", on,
 			"source", op.Source,
+			"tier", op.Tier, "method", op.Method,
 			"visits", visits, "trips", field(sum, "trips"),
 			"avgDelay", round1(field(sum, "avgDelay")), "maxDelay", field(sum, "maxDelay"),
 			"onTimePct", pct("onTime"), "earlyPct", pct("early"),
