@@ -751,7 +751,21 @@ func (h *HistoryDB) migrate() error {
 			return err
 		}
 	}
-	if err := h.exec("CREATE INDEX IF NOT EXISTS idx_delay_veh_time ON delay_logs(vehicle_id, timestamp);"); err != nil {
+	// The incident and phantom-stretch readers walk delay_logs vehicle by
+	// vehicle in time order (window functions PARTITION BY vehicle_id ORDER
+	// BY timestamp, per-vehicle sample reads), and with (vehicle_id,
+	// timestamp) alone every row also cost a table lookup. This index
+	// replaces it and carries the columns those readers use, so they read
+	// the index alone. id follows timestamp so rows with equal timestamps
+	// keep the order the old index gave them (by rowid): the window
+	// functions' "previous sample" must not change. Rebuilt from 7 days of
+	// production delay logs (190k rows): 7-day phantom candidates 340 -> 228
+	// ms, backward legs 101 -> 11 ms, data quality 55 -> 34 ms (C SQLite;
+	// the Go build gains more), file +11%.
+	if err := h.exec(`
+          DROP INDEX IF EXISTS idx_delay_veh_time;
+          CREATE INDEX IF NOT EXISTS idx_delay_veh_cover ON delay_logs(vehicle_id, timestamp, id, line_code, line_id, agency_id, direction, delay_mins, stop_name);
+        `); err != nil {
 		return err
 	}
 	// Every report reads one operator's visits over a time window, often

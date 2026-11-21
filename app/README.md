@@ -112,6 +112,12 @@ Known differences, all at the transport level:
 
 Deliberate changes made after the Node code was removed:
 
+- `/api/analytics/incidents` serves a cached result up to 10 minutes old at
+  once, with `X-Cache: STALE`, while one background query per cache key
+  replaces it (under 60 s it is still `HIT`; older than 10 minutes it is
+  computed on the spot, `MISS`). The analysis covers past hours or days and
+  takes about 2 s for a 7-day view, which with the 60 s cache nearly every
+  visit used to wait for. Responses are otherwise unchanged.
 - Static files from `public/` are compressed like API responses (gzip or br by
   `Accept-Encoding`, compressible types of 1 KiB or more, with
   `Vary: Accept-Encoding`). Express served them uncompressed. Range (206), HEAD

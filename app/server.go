@@ -34,21 +34,22 @@ type routeEntry struct {
 var errNext = errors.New("next")
 
 type Server struct {
-	w             *World
-	reports       *ReportCache
-	bridge        *WorkerBridge
-	registry      *TrackerRegistry
-	router        *TransitRouter
-	fleet         *fleetBroadcaster
-	trust         []netip.Prefix
-	limiter       *apiLimiter
-	publicDir     string
-	shuttingDown  bool
-	incidentCache *JSMap
-	gpsGapCache   *JSMap
-	operatorCache *JSMap
-	sseRoute      *routeEntry
-	routes        []*routeEntry
+	w               *World
+	reports         *ReportCache
+	bridge          *WorkerBridge
+	registry        *TrackerRegistry
+	router          *TransitRouter
+	fleet           *fleetBroadcaster
+	trust           []netip.Prefix
+	limiter         *apiLimiter
+	publicDir       string
+	shuttingDown    bool
+	incidentCache   *JSMap
+	incidentRefresh map[string]bool // incident cache keys being recomputed in the background
+	gpsGapCache     *JSMap
+	operatorCache   *JSMap
+	sseRoute        *routeEntry
+	routes          []*routeEntry
 }
 
 type cachedData struct {
@@ -841,12 +842,13 @@ func newServer() (*Server, error) {
 		return nil, err
 	}
 	s := &Server{
-		trust:         trust,
-		limiter:       newAPILimiter(),
-		publicDir:     filepath.Join(appRoot, "public"),
-		incidentCache: newJSMap(),
-		gpsGapCache:   newJSMap(),
-		operatorCache: newJSMap(),
+		trust:           trust,
+		limiter:         newAPILimiter(),
+		publicDir:       filepath.Join(appRoot, "public"),
+		incidentCache:   newJSMap(),
+		incidentRefresh: map[string]bool{},
+		gpsGapCache:     newJSMap(),
+		operatorCache:   newJSMap(),
 	}
 	s.w = newWorld("server")
 	s.w.mu.Lock()
@@ -2014,6 +2016,17 @@ func cacheGetFresh(c *JSMap, key string, now float64) (any, bool) {
 	return nil, false
 }
 
+// incidentStaleMs: how old a cached incidents result may be and still be
+// served (marked X-Cache: STALE) while a background query refreshes it.
+const incidentStaleMs = 10 * 60 * 1000
+
+func (s *Server) storeIncidents(key string, data any, at float64) {
+	s.incidentCache.Set(key, &cachedData{data: data, timestamp: at})
+	if s.incidentCache.Len() > 40 {
+		s.incidentCache.Delete(s.incidentCache.Keys()[0])
+	}
+}
+
 func (s *Server) hIncidents(q *xreq, res *xres) error {
 	lineParam := or(or(field(q.params, "lineId"), qv(q, "line")), "all")
 	hours := clampHours(qv(q, "hours"), 168, 720)
@@ -2027,17 +2040,36 @@ func (s *Server) hIncidents(q *xreq, res *xres) error {
 		res.json(spreadAny(O("success", true), data))
 		return nil
 	}
-	data, err := s.historyQuery("getDelayIncidents", O("lineCode", lineParam, "hours", hours, "limit", limit, "minDelay", minDelay), 35000)
+	args := O("lineCode", lineParam, "hours", hours, "limit", limit, "minDelay", minDelay)
+	// A result up to incidentStaleMs old is served at once while one
+	// background query replaces it: the analysis covers past hours or days,
+	// and computing it takes seconds (a 7-day view about 2 s on the VPS),
+	// which with a 60 s cache nearly every visit used to wait for.
+	if v, ok := s.incidentCache.Get(cacheKey); ok {
+		if e := v.(*cachedData); now-e.timestamp < incidentStaleMs {
+			if !s.incidentRefresh[cacheKey] {
+				s.incidentRefresh[cacheKey] = true
+				s.w.spawn(func() {
+					defer delete(s.incidentRefresh, cacheKey)
+					fresh, err := s.historyQuery("getDelayIncidents", args, 35000)
+					if err == nil && truthy(fresh) {
+						s.storeIncidents(cacheKey, fresh, float64(nowMs()))
+					}
+				})
+			}
+			res.h.Set("X-Cache", "STALE")
+			res.json(spreadAny(O("success", true), e.data))
+			return nil
+		}
+	}
+	data, err := s.historyQuery("getDelayIncidents", args, 35000)
 	if err != nil {
 		s.sendInternalError(q, res, err, O("success", false, "lineCode", upper, "hoursAnalyzed", hours,
 			"summary", O(), "topIncidents", []any{}, "incidentTrips", []any{}))
 		return nil
 	}
 	if truthy(data) {
-		s.incidentCache.Set(cacheKey, &cachedData{data: data, timestamp: now})
-		if s.incidentCache.Len() > 40 {
-			s.incidentCache.Delete(s.incidentCache.Keys()[0])
-		}
+		s.storeIncidents(cacheKey, data, now)
 	}
 	res.h.Set("X-Cache", "MISS")
 	res.json(spreadAny(O("success", true), data))
