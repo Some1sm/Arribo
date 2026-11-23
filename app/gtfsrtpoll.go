@@ -87,6 +87,8 @@ type rtPoller struct {
 	pending                                  []railVisit            // closed visits waiting for the worker (guarded by mu)
 	pendingCancels                           []railCancel           // cancelled trips waiting for the worker (guarded by mu)
 	pendingPlatforms                         []railPlatformSighting // platform announcements waiting for the worker (guarded by mu)
+	pendingGaps                              []*Obj                 // position losses waiting for the worker (guarded by mu; railgaps.go)
+	gapDet                                   *GpsGapDetector        // this operator's position-loss detector (poller goroutine only)
 	platSeen                                 map[string]int64       // trip+station already counted (poll goroutine only)
 	closedVisits, droppedVisits, implausible int                    // counters (guarded by mu)
 	computed                                 int                    // delays derived from predicted times in the last trip feed
@@ -382,6 +384,7 @@ func (p *rtPoller) pollVehicles(ctx context.Context) {
 		snap.Vehicles = append(snap.Vehicles, v)
 	}
 	p.notePlatforms(snap.Vehicles, time.Now())
+	p.noteGaps(snap)
 	p.snap.Store(snap)
 }
 

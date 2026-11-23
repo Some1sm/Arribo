@@ -2173,10 +2173,27 @@ var reGapVehicle = regexp.MustCompile(`^\d{3,6}$`)
 
 func (s *Server) hGpsGaps(q *xreq, res *xres) error {
 	days := clampHours(qv(q, "days"), 7, 30)
+	// ?agency=<train operator> reads that operator's position losses
+	// (railgaps.go); without it, Mataró's buses as before.
+	agency := ""
+	if a := jsTrim(jsString(or(qv(q, "agency"), ""))); a != "" && a != mataroAgency.ID {
+		for _, op := range reportOperators {
+			if op.ID == a {
+				agency = a
+			}
+		}
+		if agency == "" {
+			res.status = 400
+			res.json(O("success", false, "error", "Unknown operator"))
+			return nil
+		}
+	}
 	rawLine := jsUpper(jsTrim(jsString(or(qv(q, "line"), "all"))))
 	lineCode := ""
-	if reGapLine.MatchString(rawLine) {
+	if agency == "" && reGapLine.MatchString(rawLine) {
 		lineCode = "L" + strings.TrimPrefix(rawLine, "L")
+	} else if agency != "" && rawLine != "ALL" && reRailLineCode.MatchString(rawLine) {
+		lineCode = rawLine
 	}
 	rawVehicle := jsTrim(jsString(or(qv(q, "vehicle"), "")))
 	vehicleID := ""
@@ -2199,13 +2216,20 @@ func (s *Server) hGpsGaps(q *xreq, res *xres) error {
 		keyHide = "none"
 	}
 	cacheKey := keyLine + "_" + numToString(days) + "_" + keyVeh + "_" + keyHide
+	if agency != "" {
+		cacheKey = agency + ":" + cacheKey
+	}
 	now := float64(nowMs())
 	if data, ok := cacheGetFresh(s.gpsGapCache, cacheKey, now); ok {
 		res.h.Set("X-Cache", "HIT")
 		res.json(spreadAny(O("success", true), data))
 		return nil
 	}
-	data, err := s.historyQuery("getGpsGapHotspots", O("days", days, "lineCode", lineCode, "vehicleId", vehicleID, "hide", hide), 15000)
+	args := O("days", days, "lineCode", lineCode, "vehicleId", vehicleID, "hide", hide)
+	if agency != "" {
+		args.Set("agency", agency)
+	}
+	data, err := s.historyQuery("getGpsGapHotspots", args, 15000)
 	if err != nil {
 		s.sendInternalError(q, res, err, O("success", false, "cells", []any{}, "gaps", []any{}, "totals", O()))
 		return nil

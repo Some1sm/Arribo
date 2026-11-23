@@ -628,7 +628,6 @@ const (
 	gapMinMs        = 90 * 1000
 	gapMaxMs        = 15 * 60 * 1000
 	gapEdgeMarginMs = 15 * 1000
-	gapRetentionMs  = gapMaxMs + 5*60*1000
 )
 
 var reHasDigit = regexp.MustCompile(`\d`)
@@ -650,12 +649,21 @@ type fixTime struct {
 }
 
 type GpsGapDetector struct {
-	last     map[string]*gapFix
-	order    []string // insertion order of last (Map iteration)
-	fixTimes []fixTime
+	minMs, maxMs float64 // a gap is at least minMs and at most maxMs (buses: gapMinMs, gapMaxMs)
+	last         map[string]*gapFix
+	order        []string // insertion order of last (Map iteration)
+	fixTimes     []fixTime
 }
 
-func newGpsGapDetector() *GpsGapDetector { return &GpsGapDetector{last: map[string]*gapFix{}} }
+func newGpsGapDetector() *GpsGapDetector {
+	return &GpsGapDetector{minMs: gapMinMs, maxMs: gapMaxMs, last: map[string]*gapFix{}}
+}
+
+// newGpsGapDetectorFor is a detector with other bounds (trains: from the
+// operator's own staleness bound, see railgaps.go).
+func newGpsGapDetectorFor(minMs, maxMs float64) *GpsGapDetector {
+	return &GpsGapDetector{minMs: minMs, maxMs: maxMs, last: map[string]*gapFix{}}
+}
 
 // observe feeds one tracker emission (a vehicle object); returns a gap or nil.
 func (g *GpsGapDetector) observe(bus *Obj) *Obj {
@@ -692,7 +700,7 @@ func (g *GpsGapDetector) observe(bus *Obj) *Obj {
 		return nil
 	}
 	gapMs := t - prev.t
-	if gapMs < gapMinMs || gapMs > gapMaxMs {
+	if gapMs < g.minMs || gapMs > g.maxMs {
 		return nil
 	}
 	if prev.lineCode != "" && fix.lineCode != "" && prev.lineCode != fix.lineCode {
@@ -747,7 +755,7 @@ func (g *GpsGapDetector) othersReported(vID string, from, to float64) bool {
 }
 
 func (g *GpsGapDetector) evict(now float64) {
-	cutoff := now - gapRetentionMs
+	cutoff := now - (g.maxMs + 5*60*1000)
 	k := 0
 	for k < len(g.fixTimes) && g.fixTimes[k].t < cutoff {
 		k++

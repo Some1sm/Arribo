@@ -430,7 +430,7 @@ func (k *Worker) executeDbOperation(op string, rawArgs any) (res any, err error)
 		return db.getOperatorReport(jsNumber(args.Get("hours")), gtfsRtFeedStats())
 	case "getGpsGapHotspots":
 		return db.getGpsGapHotspots(gapOpts{days: args.Get("days"), lineCode: args.Get("lineCode"),
-			vehicleID: args.Get("vehicleId"), hide: args.Get("hide"), now: float64(nowMs())}), nil
+			vehicleID: args.Get("vehicleId"), hide: args.Get("hide"), now: float64(nowMs()), agency: jsString(or(args.Get("agency"), ""))}), nil
 	case "getGpsGapPasses":
 		return db.getGpsGapPasses(args.Get("ids"), args.Get("days"), float64(nowMs())), nil
 	case "getGpsGapPaths":

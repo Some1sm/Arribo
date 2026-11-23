@@ -52,6 +52,7 @@ func (h *HistoryDB) emptyGapHotspots(days any, now float64) *Obj {
 type gapOpts struct {
 	days, lineCode, vehicleID, hide any
 	now                             float64
+	agency                          string // whose gaps ("" = Mataró's buses)
 }
 
 func gapRowsFor(rows []*Obj, shared map[string]bool) []GapRow {
@@ -98,11 +99,19 @@ func (h *HistoryDB) getGpsGapHotspots(o gapOpts) *Obj {
 			d = math.Min(30, math.Max(1, 7))
 		}
 		since := now - d*86400*1000
-		code := reSingleDigit.ReplaceAllString(jsUpper(jsTrim(jsString(or(o.lineCode, "")))), "L$1")
-		lineSQL := ""
-		params := []any{since, now}
+		agency := o.agency
+		if agency == "" {
+			agency = mataroAgency.ID
+		}
+		code := jsUpper(jsTrim(jsString(or(o.lineCode, ""))))
+		if agency == mataroAgency.ID {
+			code = reSingleDigit.ReplaceAllString(code, "L$1")
+		}
+		// One operator's gaps: line codes repeat across operators (L6).
+		lineSQL := " AND agency_id = ?"
+		params := []any{since, now, agency}
 		if code != "" && code != "ALL" {
-			lineSQL = " AND line_code = ?"
+			lineSQL += " AND line_code = ?"
 			params = append(params, code)
 		}
 		rows, err := h.all(`
@@ -138,7 +147,7 @@ func (h *HistoryDB) getGpsGapHotspots(o gapOpts) *Obj {
 		visitRows, err := h.all(`
         SELECT vehicle_id AS vehicleId, line_code AS lineCode, COUNT(*) AS n
         FROM stop_visits
-        WHERE last_ts >= ? AND last_ts < ?`+mataroAgencySQL+lineSQL+`
+        WHERE last_ts >= ? AND last_ts < ?`+lineSQL+`
         GROUP BY vehicle_id, line_code
       `, params...)
 		if err != nil {
@@ -428,7 +437,7 @@ func (h *HistoryDB) getGpsGapPasses(ids any, days any, now float64) *Obj {
 		}
 		gapRows, err := h.all(`
         SELECT vehicle_id AS vehicleId, stop_name AS stopName, lost_ts AS lostTs
-        FROM gps_gaps WHERE stop_name IN (`+marks+`) AND lost_ts >= ? AND lost_ts < ?
+        FROM gps_gaps WHERE stop_name IN (`+marks+`) AND lost_ts >= ? AND lost_ts < ?`+mataroAgencySQL+`
       `, append(append([]any{}, args...), since-20*60000, now)...)
 		if err != nil {
 			return nil, err

@@ -1154,7 +1154,7 @@ func (h *HistoryDB) signalEvidence(vehicleID, fromTs, toTs any) *Obj {
         SELECT lost_ts AS lostTs, regained_ts AS regainedTs, gap_sec AS gapSec, stop_name AS stopName,
                at_terminal AS atTerminal, feed_wide AS feedWide
         FROM gps_gaps
-        WHERE vehicle_id = ? AND lost_ts <= ? AND regained_ts >= ?
+        WHERE vehicle_id = ? AND lost_ts <= ? AND regained_ts >= ?`+mataroAgencySQL+`
         ORDER BY lost_ts ASC
         LIMIT 5
       `, jsString(vehicleID), t+signalMarginMs, f-signalMarginMs)
