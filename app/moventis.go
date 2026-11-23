@@ -156,7 +156,7 @@ func startMoventisPoller() (stop func()) {
 			}
 		}
 	}
-	p := &movPoller{lineIDs: ids, dir: filepath.Join(filepath.Dir(gtfsDir()), "moventis"), preds: map[[3]int]movPrediction{}}
+	p := &movPoller{lineIDs: ids, dir: movCacheDir(), preds: map[[3]int]movPrediction{}}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
@@ -906,4 +906,14 @@ func (p *movPoller) record(s *movStatic, stopID int, etas []movStopETA, at time.
 			delete(p.preds, k)
 		}
 	}
+}
+
+// movCacheDir is where the routes are cached: DATA_DIR/moventis (the data
+// directory, like the history database), not under the timetables' folder.
+func movCacheDir() string {
+	dataDir := os.Getenv("DATA_DIR")
+	if dataDir == "" {
+		dataDir = filepath.Join(appRoot, "data")
+	}
+	return filepath.Join(dataDir, "moventis")
 }

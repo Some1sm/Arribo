@@ -150,7 +150,7 @@ class ObservatoriApp {
       this.updateUrl();
     }
     // A train operator has only the report: leave the bus-only tabs for it.
-    if (document.body.dataset.dadesScope === 'rail' && this.currentTab !== 'journalism') {
+    if ((document.body.dataset.dadesScope === 'rail' || document.body.dataset.dadesScope === 'est') && this.currentTab !== 'journalism') {
       document.querySelector(`#journalism-timeframe-tabs [data-hours="${this.currentHours || 24}"]`)?.click();
       return;
     }
@@ -863,6 +863,10 @@ class ObservatoriApp {
 
   renderDataHealth(data) {
     this._lastDataHealth = data;
+    if (document.body.dataset.dadesScope === 'est') {
+      this.renderMovHealth(this.moventisData);
+      return;
+    }
     const railOp = this.railOpInScope();
     if (railOp) {
       this.renderRailHealth(railOp);
@@ -1109,6 +1113,16 @@ class ObservatoriApp {
 
   bindEvents() {
     document.addEventListener('arribo:lang', () => this.onLangChange());
+    // The Moventis scope follows the scraper's state (every minute while shown).
+    setInterval(async () => {
+      if (document.hidden || document.body.dataset.dadesScope !== 'est') return;
+      const m = await fetch('/api/moventis').then(r => (r.ok ? r.json() : null)).catch(() => null);
+      if (!m || document.body.dataset.dadesScope !== 'est') return;
+      this.moventisData = m;
+      this.renderMovHealth(m);
+      const container = document.getElementById('journalism-content-container');
+      if (container && this.currentTab === 'journalism') this.renderMoventisScope(container, m);
+    }, 60000);
     document.addEventListener('arribo:scope', () => this.onScopeChange());
 
     // Refresh Button
@@ -1477,6 +1491,8 @@ class ObservatoriApp {
         fetch(`/api/analytics/network?hours=${hours}`).then(r => (r.ok ? r.json() : null))
       ]);
       this.networkReport = net.status === 'fulfilled' && net.value?.success ? net.value : null;
+      // Moventis (scraped predictions, estimated buses): its Dades scope.
+      this.moventisData = await fetch('/api/moventis').then(r => (r.ok ? r.json() : null)).catch(() => null);
 
       const journalismData = res.status === 'fulfilled' && res.value?.success ? (res.value.report || res.value) : null;
 
@@ -1647,6 +1663,79 @@ class ObservatoriApp {
     }
   }
 
+  // The data-status panel for Moventis: the scraper's own checks.
+  renderMovHealth(m) {
+    const grid = document.getElementById('data-health-grid');
+    if (!grid) return;
+    const timeEl = document.getElementById('data-health-timestamp');
+    if (timeEl) timeEl.textContent = new Date().toLocaleTimeString(this.locale(), { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const TONE = { 'status-success': 'ok', 'status-warning': 'warn', 'status-danger': 'bad', 'status-neutral': 'none' };
+    const item = (title, badgeClass, badge, desc) => ({
+      tone: TONE[badgeClass],
+      html: `<div class="data-health-item dh-${TONE[badgeClass]}"><div class="data-health-header"><span class="data-health-title"><span class="dh-dot" aria-hidden="true"></span><span>${this.esc(title)}</span></span><span class="data-health-badge ${badgeClass}">${this.esc(badge)}</span></div><p class="data-health-desc">${this.esc(desc)}</p></div>`
+    });
+    const items = [];
+    if (!m || !m.enabled) {
+      items.push(item(this.t('dades.mhConnTitle'), 'status-neutral', this.t('dades.rhFeedOff'), this.t('dades.mhOffDesc')));
+    } else {
+      const st = m.status || {};
+      const age = st.lastOkAt ? Math.round((Date.now() - st.lastOkAt) / 1000) : null;
+      items.push(age === null
+        ? item(this.t('dades.mhConnTitle'), 'status-neutral', this.t('dades.dhNoData'), this.t('dades.mhConnNone'))
+        : (st.lastError && age > 300
+          ? item(this.t('dades.mhConnTitle'), 'status-danger', this.t('dades.rhFeedErr'), this.t('dades.mhConnErr', { err: st.lastError }))
+          : item(this.t('dades.mhConnTitle'), age <= 300 ? 'status-success' : 'status-warning', age <= 300 ? this.t('dades.rhFeedOk') : this.t('dades.rhFreshLate'), this.t('dades.mhConnDesc', { n: age }))));
+      const backoff = Number(st.backoffSec) || 0;
+      items.push(backoff > 0
+        ? item(this.t('dades.mhLimitTitle'), 'status-warning', this.t('dades.mhLimitWait'), this.t('dades.mhLimitWaitDesc', { n: backoff, t: st.throttled || 0 }))
+        : item(this.t('dades.mhLimitTitle'), 'status-success', this.t('dades.mhLimitOk'), this.t('dades.mhLimitOkDesc', { gap: st.requestGapSec || 11, t: st.throttled || 0 })));
+      const stops = Number(st.sampledStops) || 0;
+      const cycleMin = Math.max(1, Math.round(((st.lastCycleSec || stops * (st.requestGapSec || 11)) / 60)));
+      items.push(stops > 0
+        ? item(this.t('dades.mhStopsTitle'), 'status-success', String(stops), this.t('dades.mhStopsDesc', { min: cycleMin }))
+        : item(this.t('dades.mhStopsTitle'), 'status-neutral', this.t('dades.dhNoData'), this.t('dades.mhLoading')));
+      const lines = m.lines || [];
+      const missing = lines.filter(l => !(l.routes || []).length);
+      items.push(!lines.length
+        ? item(this.t('dades.mhRoutesTitle'), 'status-neutral', this.t('dades.dhNoData'), this.t('dades.mhLoading'))
+        : missing.length
+        ? item(this.t('dades.mhRoutesTitle'), 'status-warning', `${lines.length - missing.length}/${lines.length}`, this.t('dades.mhRoutesMissing', { lines: missing.map(l => l.code).join(', ') }))
+        : item(this.t('dades.mhRoutesTitle'), 'status-success', `${lines.length}/${lines.length}`, this.t('dades.mhRoutesOk')));
+      const n = (m.vehicles || []).length;
+      items.push(item(this.t('dades.mhBusesTitle'), n > 0 ? 'status-success' : 'status-neutral', String(n), this.t(n > 0 ? 'dades.mhBusesDesc' : 'dades.mhBusesNone')));
+      items.push(item(this.t('dades.rhTierTitle'), 'status-neutral', this.t('tier.predicted'), this.t('tier.method.stop_predictions')));
+    }
+    const problems = items.filter(i => i.tone === 'warn' || i.tone === 'bad').length;
+    const tone = items.some(i => i.tone === 'bad') ? 'bad' : (problems ? 'warn' : 'ok');
+    const summary = problems ? this.t(problems === 1 ? 'dades.dhSummaryWarnOne' : 'dades.dhSummaryWarnMany', { n: problems }) : this.t('dades.dhSummaryOk');
+    grid.innerHTML = `<p class="dh-summary dh-${tone}"><span class="dh-dot" aria-hidden="true"></span>${this.esc(summary)}</p><div class="dh-list${items.length % 3 === 0 ? ' dh-cols-3' : ''}">${items.map(i => i.html).join('')}</div>`;
+  }
+
+  // The Moventis scope's content: why there is no punctuality yet, and the
+  // lines followed with their routes and the buses estimated now.
+  renderMoventisScope(container, m) {
+    const lines = m?.lines || [];
+    const counts = new Map();
+    for (const v of m?.vehicles || []) counts.set(v.lineCode, (counts.get(v.lineCode) || 0) + 1);
+    const rows = lines.map(l => {
+      const routes = l.routes || [];
+      const n = counts.get(l.code) || 0;
+      return `<tr><td class="sticky-col"><span class="observatori-line-badge" data-line="${this.esc(`moventis:${l.code}`)}">${this.esc(l.code)}</span> <span class="dades-mov-name">${this.esc(l.name || '')}</span></td>
+        <td>${routes.length ? this.esc([...new Set(routes.map(r => r.dest).filter(Boolean))].join(' · ')) : `<span class="dades-mov-muted">${this.esc(this.t('dades.movNoRoutes'))}</span>`}</td>
+        <td>${routes.reduce((a, r) => a + (r.stops || 0), 0)}</td>
+        <td>${n}</td>
+        <td>${l.lineRef && routes.length ? `<a class="btn-secondary dades-mov-open" href="/#l${this.esc(l.lineRef)}">${this.esc(this.t('dades.movOpen'))}</a>` : ''}</td></tr>`;
+    }).join('');
+    container.innerHTML = `
+      <p class="dades-rail-scope-note">${this.esc(this.t('dades.movScopeNote'))}</p>
+      <div class="observatori-table-container">
+        <div class="observatori-table-header-row"><h4 class="observatori-table-title"><span>${this.esc(this.t('dades.movLinesTitle'))}</span></h4></div>
+        ${lines.length ? `<div class="observatori-table-wrapper"><table class="observatori-table"><thead><tr>
+          <th class="sticky-col">${this.esc(this.t('dades.colLine'))}</th><th>${this.esc(this.t('dades.movColRoutes'))}</th><th>${this.esc(this.t('dades.movColStops'))}</th><th>${this.esc(this.t('dades.movColBuses'))}</th><th></th>
+        </tr></thead><tbody>${rows}</tbody></table></div>` : `<p class="dades-mov-muted">${this.esc(this.t('dades.movNoLines'))}</p>`}
+      </div>`;
+  }
+
   // The data-status panel for a train operator, from its live feed: the
   // same rows as Mataró's (dot, title, badge, one line), its own checks.
   renderRailHealth(op) {
@@ -1684,13 +1773,14 @@ class ObservatoriApp {
     }
     const cancelled = op.agencyStats?.cancelled;
     if (typeof cancelled === 'number') {
-      items.push(item(this.t('dades.rhCancelTitle'), cancelled > 0 ? 'status-warning' : 'status-success', String(cancelled), this.t('dades.rhCancelDesc', { h: this.currentHours })));
+      // Cancellations describe the service, not our data: shown, not counted as a fault.
+      items.push(item(this.t('dades.rhCancelTitle'), 'status-neutral', String(cancelled), this.t('dades.rhCancelDesc', { h: this.currentHours })));
     }
     items.push(item(this.t('dades.rhTierTitle'), 'status-success', this.t(`tier.${op.tier || 'measured'}`), this.t(`tier.method.${op.method}`)));
     const problems = items.filter(i => i.tone === 'warn' || i.tone === 'bad').length;
     const tone = items.some(i => i.tone === 'bad') ? 'bad' : (problems ? 'warn' : 'ok');
     const summary = problems ? this.t(problems === 1 ? 'dades.dhSummaryWarnOne' : 'dades.dhSummaryWarnMany', { n: problems }) : this.t('dades.dhSummaryOk');
-    grid.innerHTML = `<p class="dh-summary dh-${tone}"><span class="dh-dot" aria-hidden="true"></span>${this.esc(summary)}</p><div class="dh-list">${items.map(i => i.html).join('')}</div>`;
+    grid.innerHTML = `<p class="dh-summary dh-${tone}"><span class="dh-dot" aria-hidden="true"></span>${this.esc(summary)}</p><div class="dh-list${items.length % 3 === 0 ? ' dh-cols-3' : ''}">${items.map(i => i.html).join('')}</div>`;
   }
 
   clearOperatorComparison() {
@@ -1702,6 +1792,16 @@ class ObservatoriApp {
     const container = document.getElementById('journalism-content-container');
     if (!container) return;
 
+    if (!report.isRail && document.body.dataset.dadesScope === 'est') {
+      // Moventis: no delays (its predictions come without a timetable), so
+      // its own view: the scraper's state, the lines followed, and why.
+      this.currentReport = report;
+      this.updateScopeHeader({ agency: 'Moventis', tier: 'predicted', method: 'stop_predictions' });
+      this.renderMovHealth(this.moventisData);
+      this.renderMoventisScope(container, this.moventisData);
+      this._railHealthShown = true;
+      return;
+    }
     if (!report.isRail) {
       this.currentReport = report;
       const railOp = this.railOpInScope();

@@ -30,10 +30,24 @@
     try { return new URLSearchParams(window.location.search).get('xarxa') || 'all'; } catch { return 'all'; }
   })();
 
+  // Moventis (/api/moventis): followed when enabled; its own Dades scope
+  // ("est": estimated buses, no delays yet).
+  let movEnabled = false;
+  let opsLoaded = false; // the train operators' answer has arrived (applyScope then knows every id)
+  fetch('/api/moventis').then(r => (r.ok ? r.json() : null)).then(j => {
+    movEnabled = Boolean(j && j.enabled);
+    // Not before the train operators are known: an early call would drop a
+    // train scope asked for in the URL (?xarxa=fgc).
+    if (movEnabled && opsLoaded) {
+      if (lastOps.length) render();
+      else applyScope([]);
+    }
+  }).catch(() => {});
+
   function applyScope(ops) {
-    const ids = ops.map(o => o.id);
+    const ids = ops.map(o => o.id).concat(movEnabled ? ['moventis'] : []);
     if (scope !== 'all' && scope !== 'mataro' && !ids.includes(scope)) scope = 'all';
-    const nextDadesScope = scope === 'all' ? 'all' : (scope === 'mataro' ? 'bus' : 'rail');
+    const nextDadesScope = scope === 'all' ? 'all' : (scope === 'mataro' ? 'bus' : (scope === 'moventis' ? 'est' : 'rail'));
     const prevDadesScope = document.body.dataset.dadesScope;
     document.body.dataset.dadesScope = nextDadesScope;
     // Also between two train operators: the report shows the one chosen.
@@ -42,7 +56,7 @@
       document.dispatchEvent(new CustomEvent('arribo:scope', { detail: { scope, dadesScope: nextDadesScope } }));
     }
     if (!scopeDock || !scopeWrap) return;
-    const items = [['all', t('ops.scopeAll')], ['mataro', 'Mataró Bus'], ...ops.map(o => [o.id, o.shortName || o.name])];
+    const items = [['all', t('ops.scopeAll')], ['mataro', 'Mataró Bus'], ...ops.map(o => [o.id, o.shortName || o.name]), ...(movEnabled ? [['moventis', 'Moventis']] : [])];
     scopeDock.innerHTML = items.map(([v, label]) => {
       const on = v === scope;
       return `<button type="button" class="pill${on ? ' is-active' : ''}" aria-pressed="${on}" data-dades-scope="${esc(v)}">${esc(label)}</button>`;
@@ -477,7 +491,15 @@
       if (seq !== loadSeq) return;
       const ops = Array.isArray(data.operators) ? data.operators : [];
       const active = ops.some(o => o.visits > 0 || o.feed || o.tier === 'timetable');
+      opsLoaded = true;
       section.hidden = !active;
+      if (!active && movEnabled) {
+        // No train data, but Moventis is followed: the scope selector still
+        // offers it (the train section stays hidden).
+        lastOps = [];
+        applyScope([]);
+        return;
+      }
       if (!active) {
         if (scopeWrap) scopeWrap.hidden = true;
         if (document.body.dataset.dadesScope !== undefined) {

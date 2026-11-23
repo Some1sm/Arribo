@@ -11652,6 +11652,17 @@ body:not([data-dades-scope="all"]) .dades-all-only { display: none; }
 .dades-scope[hidden] { display: none; }
 .dades-scope-label { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); }
 body[data-dades-scope="rail"] .dades-bus-only { display: none !important; }
+/* Moventis ("est": buses estimated from stop predictions, no delays yet): its
+   own panel and line list; the period tools and the train card do not apply. */
+body[data-dades-scope="est"] .dades-bus-only,
+body[data-dades-scope="est"] .observatori-toolbar,
+body[data-dades-scope="est"] #journalism-search-bar-wrap,
+body[data-dades-scope="est"] #operators-section,
+body[data-dades-scope="est"] .dades-bus-scope-only { display: none !important; }
+.dades-mov-name { margin-left: var(--space-2); color: var(--text-secondary); font-weight: 500; }
+.dades-mov-muted { color: var(--text-muted); }
+.dades-mov-open { white-space: nowrap; }
+@media (min-width: 900px) { .dh-list.dh-cols-3 { grid-template-columns: repeat(3, 1fr); } }
 /* A train operator in Mataró's layout: the bus-only tools go, and the train
    card keeps only what the report above does not show (daily chart, line
    drill-down, feed line). */
