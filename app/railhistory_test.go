@@ -87,3 +87,54 @@ func TestRailHistoryMatchesReport(t *testing.T) {
 		t.Errorf("Mataró hourly visits: %s", toJSON(r))
 	}
 }
+
+// TestRailHistoryDaily: per-day figures from the folded history; days
+// without visits are absent, today is partial, a line filter applies.
+func TestRailHistoryDaily(t *testing.T) {
+	t.Setenv("DB_PATH", filepath.Join(t.TempDir(), "h.db"))
+	h := newHistoryDB()
+	if !h.init() {
+		t.Fatal("init")
+	}
+	defer h.close()
+	now := float64(nowMs())
+	add := func(line string, delay, daysAgo float64) {
+		h.recordStopVisit(O("vehicleId", "v"+numToString(delay)+line, "lineCode", line, "stopName", "Sarrià",
+			"delayMins", delay, "firstTs", now-daysAgo*86400000, "lastTs", now-daysAgo*86400000, "agencyId", "fgc", "mode", "rail"))
+	}
+	add("S1", 0, 0)
+	add("S1", 10, 0)
+	add("S2", 2, 0)
+	add("S1", 4, 3) // three days ago; one and two days ago have nothing
+	if _, err := h.aggregateRailHistory(); err != nil {
+		t.Fatal(err)
+	}
+	all, err := h.getRailHistory("fgc", "", 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	daily := all.Get("daily").([]any)
+	if len(daily) != 2 {
+		t.Fatalf("days: %s", toJSON(all))
+	}
+	old, today := daily[0].(*Obj), daily[1].(*Obj)
+	if old.Get("partial") != true || old.Get("partialReason") != "first_day" || old.Get("visits") != 1.0 || old.Get("onTimePct") != 100.0 {
+		t.Errorf("old day: %s", toJSON(old))
+	}
+	if today.Get("partialReason") != "today" || today.Get("visits") != 3.0 || today.Get("avgDelay") != 4.0 || today.Get("onTimePct") != 66.7 || today.Get("late15Pct") != 33.3 {
+		t.Errorf("today: %s", toJSON(today))
+	}
+	if all.Get("to") != today.Get("date") || all.Get("firstDate") != old.Get("date") {
+		t.Errorf("range: %s", toJSON(all))
+	}
+	if tot := all.Get("total").(*Obj); tot.Get("visits") != 4.0 || tot.Get("onTimePct") != 75.0 || tot.Get("avgDelay") != 4.0 || tot.Get("daysWithData") != 2.0 {
+		t.Errorf("total: %s", toJSON(tot))
+	}
+	s2, _ := h.getRailHistory("fgc", "S2", 30)
+	if d := s2.Get("daily").([]any); len(d) != 1 || d[0].(*Obj).Get("avgDelay") != 2.0 {
+		t.Errorf("S2: %s", toJSON(s2))
+	}
+	if _, err := h.getRailHistory("nope", "", 30); err == nil {
+		t.Error("unknown operator accepted")
+	}
+}

@@ -19,6 +19,7 @@ package main
 // deleted, and its first run folds every visit still on disk.
 
 import (
+	"errors"
 	"strings"
 )
 
@@ -125,4 +126,101 @@ func (h *HistoryDB) foldRailChunk(in, cols string, from, to float64) error {
 		return err
 	}
 	return h.exec("COMMIT")
+}
+
+// getRailHistory is one operator's (or one of its lines') punctuality per
+// Madrid day over the last `days` days, today included, from
+// rail_daily_station_stats. Only days with visits are listed: a day the
+// feed was down is missing, never shown as zero. Today and the history's first day are marked partial.
+func (h *HistoryDB) getRailHistory(agencyID, line string, days float64) (*Obj, error) {
+	var op *operatorInfo
+	for i := range reportOperators {
+		if reportOperators[i].ID == agencyID {
+			op = &reportOperators[i]
+		}
+	}
+	if op == nil {
+		return nil, errors.New("Unknown operator")
+	}
+	today := madridTime(nowMs())
+	from := today.AddDate(0, 0, -int(days)+1).Format("2006-01-02")
+	to := today.Format("2006-01-02")
+	out := O("agencyId", agencyID, "line", strOrNil(line), "days", days, "from", from, "to", to,
+		"onTimeMaxMins", op.OnTimeMaxMins, "firstDate", nil, "daily", []any{})
+	if !h.ensureOpen() {
+		return out, nil
+	}
+	where, args := "agency_id = ?", []any{agencyID}
+	if line != "" {
+		where += " AND line_code = ?"
+		args = append(args, line)
+	}
+	first, err := h.get(`SELECT MIN(service_date) AS d FROM rail_daily_station_stats WHERE `+where, args...)
+	if err != nil {
+		return nil, err
+	}
+	if first != nil && !isNullish(first.Get("d")) {
+		out.Set("firstDate", first.Get("d"))
+	}
+	rows, err := h.all(`SELECT service_date AS date, SUM(visits) AS visits, SUM(delay_sum) AS delay_sum,
+	    MAX(max_delay) AS max_delay, SUM(early) AS early, SUM(on_time) AS on_time, SUM(late15) AS late15,
+	    SUM(late30) AS late30, SUM(late60) AS late60, SUM(late_over60) AS late_over60
+	  FROM rail_daily_station_stats WHERE `+where+` AND service_date >= ? AND service_date <= ?
+	  GROUP BY service_date ORDER BY service_date`, append(args, from, to)...)
+	if err != nil {
+		return nil, err
+	}
+	// Today is still running, and the first day of the history started when
+	// collection did: both are partial days, said so rather than compared.
+	firstDay := jsString(out.Get("firstDate"))
+	partialReason := func(date string) any {
+		switch date {
+		case to:
+			return "today"
+		case firstDay:
+			return "first_day"
+		}
+		return nil
+	}
+	daily := make([]any, 0, len(rows))
+	var totVisits, totOnTime, totDelay float64
+	for _, r := range rows {
+		n := jsNumber(r.Get("visits"))
+		totVisits += n
+		totOnTime += jsNumber(r.Get("on_time"))
+		totDelay += jsNumber(r.Get("delay_sum"))
+		pct := func(k string) any {
+			if !(n > 0) {
+				return nil
+			}
+			return jsRound(jsNumber(r.Get(k))*1000/n) / 10
+		}
+		var avg any
+		if n > 0 {
+			avg = jsRound(jsNumber(r.Get("delay_sum"))*10/n) / 10
+		}
+		daily = append(daily, O(
+			"date", r.Get("date"),
+			"visits", n,
+			"avgDelay", avg,
+			"maxDelay", r.Get("max_delay"),
+			"onTimePct", pct("on_time"),
+			"earlyPct", pct("early"),
+			"late15Pct", pct("late15"),
+			"late30Pct", pct("late30"),
+			"late60Pct", pct("late60"),
+			"lateOver60Pct", pct("late_over60"),
+			"partial", partialReason(jsString(r.Get("date"))) != nil,
+			"partialReason", partialReason(jsString(r.Get("date"))),
+		))
+	}
+	out.Set("daily", daily)
+	// The period as a whole, from the counts (not from the rounded days).
+	if totVisits > 0 {
+		out.Set("total", O("visits", totVisits, "daysWithData", float64(len(daily)),
+			"onTimePct", jsRound(totOnTime*1000/totVisits)/10, "avgDelay", jsRound(totDelay*10/totVisits)/10))
+	} else {
+		out.Set("total", nil)
+	}
+	return out, nil
 }

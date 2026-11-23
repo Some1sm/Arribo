@@ -119,3 +119,63 @@ func (s *Server) hOperatorLine(q *xreq, res *xres) error {
 	res.json(spreadAny(O("success", true), data))
 	return nil
 }
+
+// hOperatorHistory serves /api/analytics/operators/history?agency=<id>
+// [&line=<code>][&days=30]: punctuality per day from the train history kept
+// beyond the raw retention (railhistory.go). days is 7, 30, 90 or 365 (anything else is 30).
+// Cached 60 s per operator, line and days, for known lines only.
+func (s *Server) hOperatorHistory(q *xreq, res *xres) error {
+	agency := jsTrim(jsString(or(qv(q, "agency"), "")))
+	line := jsTrim(jsString(or(qv(q, "line"), "")))
+	var info *operatorInfo
+	for i := range reportOperators {
+		if reportOperators[i].ID == agency {
+			info = &reportOperators[i]
+		}
+	}
+	if info == nil || (line != "" && !reRailLineCode.MatchString(line)) {
+		res.status = 400
+		res.json(O("success", false, "error", "Unknown operator or line"))
+		return nil
+	}
+	known := line == ""
+	if v, ok := rtCatalog.Load(agency); ok && line != "" {
+		for _, r := range v.(*rtCatalogOp).Lines {
+			if r.Code == line {
+				known = true
+			}
+		}
+		if !known {
+			res.status = 404
+			res.json(O("success", false, "error", "Unknown line"))
+			return nil
+		}
+	}
+	days := 30.0
+	switch v := parseIntOr(qv(q, "days"), 30); v {
+	case 7, 30, 90, 365:
+		days = v
+	}
+	key := "history:" + agency + ":" + line + ":" + numToString(days)
+	now := float64(nowMs())
+	if data, ok := cacheGetFresh(s.operatorCache, key, now); known && ok {
+		res.h.Set("X-Cache", "HIT")
+		res.json(spreadAny(O("success", true), data))
+		return nil
+	}
+	data, err := s.historyQuery("getRailHistory", O("agencyId", agency, "line", line, "days", days), 15000)
+	if err != nil {
+		s.sendInternalError(q, res, err, O("success", false))
+		return nil
+	}
+	if o, ok := data.(*Obj); ok {
+		o.Set("name", info.Name)
+		o.Set("shortName", info.ShortName)
+	}
+	if known {
+		s.operatorCache.Set(key, &cachedData{data: data, timestamp: now})
+	}
+	res.h.Set("X-Cache", "MISS")
+	res.json(spreadAny(O("success", true), data))
+	return nil
+}

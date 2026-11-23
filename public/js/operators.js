@@ -106,6 +106,94 @@
       const host = document.getElementById(`op-line-detail-${openLine.agency}`);
       if (host) host.innerHTML = lineDetailHtml(lastLineData.data);
     }
+    loadTrends();
+  }
+
+  // Daily trend (the history kept beyond the 30-day raw retention,
+  // /api/analytics/operators/history): one chart per operator card and one
+  // for the open line. Days without data are drawn as gaps, never as zero.
+  let trendDays = 30;
+  const trendData = new Map(); // "<agency>:<line>:<days>" -> { at, data }
+  const trendPending = new Set();
+  const trendFailed = new Set(); // keys whose last load failed (retried on the next refresh)
+  const TREND_TTL_MS = 5 * 60 * 1000;
+  const trendKey = (agency, line) => `${agency}:${line || ''}:${trendDays}`;
+
+  function dayList(from, to) {
+    const out = [];
+    const d = new Date(`${from}T00:00:00Z`);
+    const end = new Date(`${to}T00:00:00Z`);
+    for (let i = 0; d <= end && i < 400; i++) {
+      out.push(d.toISOString().slice(0, 10));
+      d.setUTCDate(d.getUTCDate() + 1);
+    }
+    return out;
+  }
+
+  const fmtDay = iso => new Date(`${iso}T12:00:00Z`).toLocaleDateString(locale(), { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const punctClass = pct => pct >= 90 ? 'op-seg-ontime' : pct >= 75 ? 'op-seg-late30' : 'op-seg-severe';
+
+  function trendHtml(d, failed) {
+    const pills = [30, 90].map(n => `<button type="button" class="pill${n === trendDays ? ' is-active' : ''}" aria-pressed="${n === trendDays}" data-op-trend-days="${n}">${esc(t('ops.trendDays', { n }))}</button>`).join('');
+    const head = `<div class="op-trend-head"><h5>${esc(t('ops.trendTitle', { max: d ? d.onTimeMaxMins : 5 }))}</h5><div class="op-trend-pills" role="group" aria-label="${esc(t('ops.trendPeriod'))}">${pills}</div></div>`;
+    if (!d) return `${head}<p class="op-empty">${esc(t(failed ? 'ops.loadError' : 'ops.loading'))}</p>`;
+    if (!d.firstDate || !d.total) return `${head}<p class="op-empty">${esc(t('ops.trendEmpty'))}</p>`;
+    const start = d.firstDate > d.from ? d.firstDate : d.from;
+    const days = dayList(start, d.to);
+    const byDate = new Map((d.daily || []).map(r => [r.date, r]));
+    const n = days.length;
+    const bars = days.map((day, i) => {
+      const r = byDate.get(day);
+      if (!r) {
+        return `<rect class="op-seg op-seg-missing" x="${(i + 0.15).toFixed(3)}" y="97" width="0.7" height="3"><title>${esc(t('ops.trendNoData', { day: fmtDay(day) }))}</title></rect>`;
+      }
+      const pct = Number(r.onTimePct) || 0;
+      const h = Math.max(2, pct);
+      const tip = t(r.partialReason === 'first_day' ? 'ops.trendTooltipFirst' : (r.partial ? 'ops.trendTooltipPartial' : 'ops.trendTooltip'), { day: fmtDay(day), pct: fmtPct(r.onTimePct), avg: fmtMin(r.avgDelay), visits: r.visits });
+      return `<rect class="op-seg ${punctClass(pct)}${r.partial ? ' op-seg-partial' : ''}" x="${(i + 0.15).toFixed(3)}" y="${(100 - h).toFixed(3)}" width="0.7" height="${h.toFixed(3)}"><title>${esc(tip)}</title></rect>`;
+    }).join('');
+    const tot = d.total;
+    const summary = t('ops.trendSummary', { pct: fmtPct(tot.onTimePct), avg: fmtMin(tot.avgDelay), days: tot.daysWithData, visits: tot.visits });
+    const since = d.firstDate > d.from ? `<p class="op-muted op-trend-note">${esc(t('ops.trendSince', { day: fmtDay(d.firstDate) }))}</p>` : '';
+    return `${head}<p class="op-trend-summary">${esc(summary)}</p>
+      <figure class="op-hours op-trend"><svg class="op-hours-svg" role="img" aria-label="${esc(t('ops.trendAria', { summary }))}" viewBox="0 0 ${n} 100" preserveAspectRatio="none"><line class="op-trend-ref" x1="0" x2="${n}" y1="10" y2="10"></line>${bars}</svg>
+      <figcaption><span>${esc(fmtDay(start))}</span><span>${esc(t('ops.trendCaption'))}</span><span>${esc(t('ops.trendToday'))}</span></figcaption></figure>
+      <ul class="op-legend"><li><span class="op-dot op-seg-ontime" aria-hidden="true"></span>${esc(t('ops.trendBandGood'))}</li><li><span class="op-dot op-seg-late30" aria-hidden="true"></span>${esc(t('ops.trendBandMid'))}</li><li><span class="op-dot op-seg-severe" aria-hidden="true"></span>${esc(t('ops.trendBandBad'))}</li><li><span class="op-dot op-seg-missing" aria-hidden="true"></span>${esc(t('ops.trendBandNone'))}</li></ul>${since}`;
+  }
+
+  function fillTrend(agency, line) {
+    const host = document.getElementById(line ? `op-trend-line-${agency}` : `op-trend-${agency}`);
+    if (!host || (line && host.dataset.line !== line)) return;
+    const hit = trendData.get(trendKey(agency, line));
+    host.innerHTML = trendHtml(hit ? hit.data : null, trendFailed.has(trendKey(agency, line)));
+  }
+
+  async function loadTrend(agency, line) {
+    const key = trendKey(agency, line);
+    const hit = trendData.get(key);
+    fillTrend(agency, line);
+    if ((hit && Date.now() - hit.at < TREND_TTL_MS) || trendPending.has(key)) return;
+    trendPending.add(key);
+    try {
+      const q = `agency=${encodeURIComponent(agency)}${line ? `&line=${encodeURIComponent(line)}` : ''}&days=${trendDays}`;
+      const res = await fetch(`/api/analytics/operators/history?${q}`, { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok || !data || !data.success) throw new Error(`HTTP ${res.status}`);
+      trendFailed.delete(key);
+      trendData.set(key, { at: Date.now(), data });
+      if (trendData.size > 40) trendData.delete(trendData.keys().next().value);
+    } catch {
+      // A stale chart stays as it was; one never loaded says it failed.
+      if (!trendData.has(key)) trendFailed.add(key);
+    }
+    trendPending.delete(key);
+    if (key === trendKey(agency, line)) fillTrend(agency, line);
+  }
+
+  function loadTrends() {
+    const shown = scope === 'all' || scope === 'mataro' ? lastOps : lastOps.filter(o => o.id === scope);
+    shown.filter(o => o.tier !== 'timetable').forEach(o => loadTrend(o.id, ''));
+    if (openLine) loadTrend(openLine.agency, openLine.line);
   }
 
   // Line drill-down: one open line at a time, kept across refreshes.
@@ -134,6 +222,7 @@
     const order = d.stationOrder === 'line' ? t('ops.orderLine') : t('ops.orderDelay');
     return `<div class="op-line-detail-head"><h5><span class="line-badge" data-line="${esc(`${d.agencyId}:${d.line}`)}">${esc(d.line)}</span> ${esc(t('ops.visitsCount', { n: d.visits }))}</h5><button type="button" class="btn btn-ghost btn-sm" data-op-line-close>${esc(t('ops.close'))}</button></div>
       ${hourStrip(d.byHour || [], d.onTimeMaxMins || 5)}
+      <div class="op-trend-block" id="op-trend-line-${esc(d.agencyId)}" data-line="${esc(d.line)}">${trendHtml(trendData.get(trendKey(d.agencyId, d.line))?.data || null)}</div>
       <div class="op-table-wrap"><table class="op-table"><caption>${esc(t('ops.byStationCaption', { order }))}</caption><thead><tr><th scope="col">${esc(t('ops.colStation'))}</th><th scope="col">${esc(t('ops.colAvgDelay'))}</th><th scope="col">${esc(t('ops.colPunctuality'))}</th><th scope="col">${esc(t('ops.colMax'))}</th><th scope="col">${esc(t('ops.colVisits'))}</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
 
@@ -150,7 +239,10 @@
       const el = document.getElementById(`op-line-detail-${agency}`);
       if (!el) return;
       el.innerHTML = data.success ? lineDetailHtml(data) : `<p class="op-empty">${esc(t('ops.lineError'))}</p>`;
-      if (data.success) lastLineData = { key: lineKey(), data };
+      if (data.success) {
+        lastLineData = { key: lineKey(), data };
+        loadTrend(agency, line);
+      }
     } catch {
       if (seq !== lineSeq) return;
       const el = document.getElementById(`op-line-detail-${agency}`);
@@ -159,6 +251,12 @@
   }
 
   body.addEventListener('click', ev => {
+    const days = ev.target.closest('[data-op-trend-days]');
+    if (days) {
+      trendDays = Number(days.dataset.opTrendDays) === 90 ? 90 : 30;
+      loadTrends();
+      return;
+    }
     if (ev.target.closest('[data-op-line-close]')) {
       openLine = null;
       lastLineData = null;
@@ -267,6 +365,7 @@
         ${typeof op.cancelled === 'number' ? `<div class="kpi" title="${esc(t('ops.kpiCancelledTitle'))}"><span class="kpi-label">${esc(t('ops.kpiCancelled'))}</span><span class="kpi-value${op.cancelled > 0 ? ' is-bad' : ''}">${op.cancelled}</span></div>` : ''}
       </div>
       ${bucketBar(op)}
+      <div class="op-trend-block" id="op-trend-${esc(op.id)}">${trendHtml(trendData.get(trendKey(op.id, ''))?.data || null)}</div>
       ${linesTable(op)}
       <div class="op-line-detail" id="op-line-detail-${esc(op.id)}" aria-live="polite"></div>
       ${stationsList(op)}`)}

@@ -11761,6 +11761,16 @@ input#plan-max-walk:focus {
 .op-hours { margin: var(--space-3) 0; }
 .op-hours-svg { width: 100%; height: 64px; display: block; }
 .op-hours figcaption { display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--text-muted); }
+/* Daily trend (railhistory.go): one bar per day; a missing day is a low muted tick. */
+.op-trend-block { margin: var(--space-4) 0; }
+.op-trend-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.op-trend-head h5 { margin: 0; font-size: 0.85rem; color: var(--text-primary); }
+.op-trend-pills { display: flex; gap: var(--space-2); }
+.op-trend-summary { margin: var(--space-2) 0 0; font-size: 0.78rem; color: var(--text-secondary); }
+.op-trend-note { margin: var(--space-2) 0 0; font-size: 0.72rem; }
+.op-trend-ref { stroke: var(--border-subtle); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.op-seg-missing { fill: var(--text-muted); background: var(--text-muted); opacity: 0.35; }
+.op-seg-partial { opacity: 0.5; }
 .op-off-profile th { color: var(--text-muted); font-weight: 500; }
 /* Dades network scope (public/js/operators.js). The bus blocks' own scripts
    set inline display on some of them, hence !important. */
