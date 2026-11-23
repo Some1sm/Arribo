@@ -106,6 +106,7 @@
       const host = document.getElementById(`op-line-detail-${openLine.agency}`);
       if (host) host.innerHTML = lineDetailHtml(lastLineData.data);
     }
+    applyBarHeights(body);
     loadTrends();
   }
 
@@ -131,28 +132,33 @@
   }
 
   const fmtDay = iso => new Date(`${iso}T12:00:00Z`).toLocaleDateString(locale(), { day: 'numeric', month: 'short', timeZone: 'UTC' });
-  const punctClass = pct => pct >= 90 ? 'op-seg-ontime' : pct >= 75 ? 'op-seg-late30' : 'op-seg-severe';
 
   function trendHtml(d, failed) {
     const pills = [30, 90].map(n => `<button type="button" class="pill${n === trendDays ? ' is-active' : ''}" aria-pressed="${n === trendDays}" data-op-trend-days="${n}">${esc(t('ops.trendDays', { n }))}</button>`).join('');
-    const head = `<div class="op-trend-head"><h5>${esc(t('ops.trendTitle', { max: d ? d.onTimeMaxMins : 5 }))}</h5><div class="op-trend-pills" role="group" aria-label="${esc(t('ops.trendPeriod'))}">${pills}</div></div>`;
-    if (!d) return `${head}<p class="op-empty">${esc(t(failed ? 'ops.loadError' : 'ops.loading'))}</p>`;
-    if (!d.firstDate || !d.total) return `${head}<p class="op-empty">${esc(t('ops.trendEmpty'))}</p>`;
+    const pillGroup = `<div class="op-trend-pills" role="group" aria-label="${esc(t('ops.trendPeriod'))}">${pills}</div>`;
+    const title = t('ops.trendTitle', { max: d ? d.onTimeMaxMins : 5 });
+    if (!d || !d.firstDate || !d.total) {
+      const msg = !d ? t(failed ? 'ops.loadError' : 'ops.loading') : t('ops.trendEmpty');
+      return `<div class="hourly-chart-header"><h5 class="hourly-chart-title">${esc(title)}</h5>${pillGroup}</div><p class="op-empty">${esc(msg)}</p>`;
+    }
     const start = d.firstDate > d.from ? d.firstDate : d.from;
     const days = dayList(start, d.to);
     const byDate = new Map((d.daily || []).map(r => [r.date, r]));
-    const n = days.length;
-    const bars = days.map((day, i) => {
+    const dense = days.length > 31;
+    const dayLabel = (day, i) => {
+      const dt = new Date(`${day}T12:00:00Z`);
+      if (day === d.to) return t('ops.trendToday');
+      if (dense && dt.getUTCDay() !== 1) return ''; // dense: Mondays only
+      return i === 0 || dt.getUTCDate() === 1 ? `${dt.getUTCDate()}/${dt.getUTCMonth() + 1}` : String(dt.getUTCDate());
+    };
+    const cols = days.map((day, i) => {
       const r = byDate.get(day);
-      if (!r) {
-        return `<rect class="op-seg op-seg-missing" x="${(i + 0.15).toFixed(3)}" y="97" width="0.7" height="3"><title>${esc(t('ops.trendNoData', { day: fmtDay(day) }))}</title></rect>`;
-      }
+      if (!r) return { tone: 'none', h: 4, val: '—', label: dayLabel(day, i), tip: t('ops.trendNoData', { day: fmtDay(day) }) };
       const pct = Number(r.onTimePct) || 0;
-      const h = Math.max(2, pct);
       const tip = t(r.partialReason === 'first_day' ? 'ops.trendTooltipFirst' : (r.partial ? 'ops.trendTooltipPartial' : 'ops.trendTooltip'), { day: fmtDay(day), pct: fmtPct(r.onTimePct), avg: fmtMin(r.avgDelay), visits: r.visits })
         + (typeof r.cancelled === 'number' ? ` · ${t('ops.trendCancelled', { n: r.cancelled })}` : '');
-      return `<rect class="op-seg ${punctClass(pct)}${r.partial ? ' op-seg-partial' : ''}" x="${(i + 0.15).toFixed(3)}" y="${(100 - h).toFixed(3)}" width="0.7" height="${h.toFixed(3)}"><title>${esc(tip)}</title></rect>`;
-    }).join('');
+      return { tone: pct >= 90 ? 'good' : pct >= 75 ? 'mid' : 'bad', partial: r.partial, h: Math.max(6, pct), val: `${Math.round(pct)}%`, label: dayLabel(day, i), tip };
+    });
     const tot = d.total;
     const summary = t('ops.trendSummary', { pct: fmtPct(tot.onTimePct), avg: fmtMin(tot.avgDelay), days: tot.daysWithData, visits: tot.visits })
       + (typeof tot.cancelled === 'number' ? ` · ${t('ops.trendSummaryCancelled', { n: tot.cancelled })}` : '');
@@ -160,18 +166,26 @@
     if (d.firstDate > d.from) notes.push(t('ops.trendSince', { day: fmtDay(d.firstDate) }));
     // Cancellations were collected later than visits: said, so earlier days are not read as none.
     if (d.cancellationsSince && d.cancellationsSince > start) notes.push(t('ops.trendCancelSince', { day: fmtDay(d.cancellationsSince) }));
+    if (days.some(day => byDate.get(day)?.partial)) notes.push(t('ops.trendPartialNote'));
     const since = notes.length ? `<p class="op-muted op-trend-note">${esc(notes.join(' '))}</p>` : '';
-    return `${head}<p class="op-trend-summary">${esc(summary)}</p>
-      <figure class="op-hours op-trend"><svg class="op-hours-svg" role="img" aria-label="${esc(t('ops.trendAria', { summary }))}" viewBox="0 0 ${n} 100" preserveAspectRatio="none"><line class="op-trend-ref" x1="0" x2="${n}" y1="10" y2="10"></line>${bars}</svg>
-      <figcaption><span>${esc(fmtDay(start))}</span><span>${esc(t('ops.trendCaption'))}</span><span>${esc(t('ops.trendToday'))}</span></figcaption></figure>
-      <ul class="op-legend"><li><span class="op-dot op-seg-ontime" aria-hidden="true"></span>${esc(t('ops.trendBandGood'))}</li><li><span class="op-dot op-seg-late30" aria-hidden="true"></span>${esc(t('ops.trendBandMid'))}</li><li><span class="op-dot op-seg-severe" aria-hidden="true"></span>${esc(t('ops.trendBandBad'))}</li><li><span class="op-dot op-seg-missing" aria-hidden="true"></span>${esc(t('ops.trendBandNone'))}</li></ul>${since}`;
+    return columnChart({
+      title,
+      legend: [['good', t('ops.trendBandGood')], ['mid', t('ops.trendBandMid')], ['bad', t('ops.trendBandBad')], ['none', t('ops.trendBandNone')]],
+      cols,
+      dense,
+      trend: true,
+      aria: t('ops.trendAria', { summary }),
+      extra: `<div class="op-trend-sub"><p class="op-trend-summary">${esc(summary)}</p>${pillGroup}</div>`
+    }) + since;
   }
+
 
   function fillTrend(agency, line) {
     const host = document.getElementById(line ? `op-trend-line-${agency}` : `op-trend-${agency}`);
     if (!host || (line && host.dataset.line !== line)) return;
     const hit = trendData.get(trendKey(agency, line));
     host.innerHTML = trendHtml(hit ? hit.data : null, trendFailed.has(trendKey(agency, line)));
+    applyBarHeights(host);
   }
 
   async function loadTrend(agency, line) {
@@ -208,19 +222,51 @@
   let lastLineData = null; // { key, data }: the open line's last payload, re-rendered on scope or language change
   const lineKey = () => (openLine ? `${openLine.agency}:${openLine.line}:${hours}` : '');
 
+  // Column chart in the component Mataró's hourly delay chart uses
+  // (.hourly-chart-*: value above each bar, label under it, gradient fill),
+  // so the train charts read like the bus ones. Colours are classes
+  // (op-fill-good / mid / bad / none) and heights are set after rendering
+  // from data-bar-h (applyBarHeights): no inline style attributes.
+  function columnChart({ title, legend, cols, aria, dense, extra, trend }) {
+    const legendHtml = legend.map(([tone, label]) => `<div class="hourly-legend-item"><span class="hourly-legend-dot op-fill-${tone}" aria-hidden="true"></span><span>${esc(label)}</span></div>`).join('');
+    const colsHtml = cols.map(c => `<div class="hourly-bar-col" title="${esc(c.tip)}"><div class="hourly-bar-track"><span class="hourly-bar-val">${esc(c.val)}</span><div class="hourly-bar-fill op-fill-${c.tone}${c.partial ? ' is-partial' : ''}" data-bar-h="${Math.round(c.h)}"></div></div><span class="hourly-bar-label">${esc(c.label)}</span></div>`).join('');
+    return `<div class="hourly-chart-header"><h5 class="hourly-chart-title">${esc(title)}</h5><div class="hourly-chart-legend">${legendHtml}</div></div>
+      ${extra || ''}
+      <div class="hourly-chart-container op-chart${dense ? ' is-dense' : ''}${trend ? ' is-trend' : ''}" role="img" aria-label="${esc(aria)}">${colsHtml}</div>`;
+  }
+
+  function applyBarHeights(root) {
+    root?.querySelectorAll('[data-bar-h]').forEach(el => { el.style.height = `${el.dataset.barH}%`; });
+  }
+
+  // Average delay by hour of the day for one line. Tones by the hour's
+  // average delay: up to 2 min, 2 to the rail on-time bound, beyond it.
   function hourStrip(rows, onTimeMax) {
     if (!rows.length) return '';
-    const max = Math.max(5, ...rows.map(r => Math.abs(Number(r.avgDelay) || 0)));
-    const w = 100 / 24;
-    const bars = rows.map(r => {
-      const hr = Number(r.hour);
+    const byHour = new Map(rows.map(r => [Number(r.hour), r]));
+    const hoursSeen = rows.map(r => Number(r.hour));
+    const first = Math.min(...hoursSeen);
+    const last = Math.max(...hoursSeen);
+    const max = Math.max(2, ...rows.map(r => Math.abs(Number(r.avgDelay) || 0)));
+    const cols = [];
+    for (let hr = first; hr <= last; hr++) {
+      const r = byHour.get(hr);
+      if (!r) {
+        cols.push({ tone: 'none', h: 4, val: '—', label: `${hr}h`, tip: t('ops.hourNoData', { hour: hr }) });
+        continue;
+      }
       const d = Number(r.avgDelay) || 0;
-      const h = Math.max(2, (Math.abs(d) / max) * 100);
-      const cls = d > 15 ? 'op-seg-severe' : d > onTimeMax ? 'op-seg-late' : d < -1 ? 'op-seg-early' : 'op-seg-ontime';
-      return `<rect class="op-seg ${cls}" x="${(hr * w + w * 0.15).toFixed(3)}" y="${(100 - h).toFixed(3)}" width="${(w * 0.7).toFixed(3)}" height="${h.toFixed(3)}"><title>${esc(t('ops.hourTooltip', { hour: r.hour, avg: fmtMin(r.avgDelay), visits: r.visits }))}</title></rect>`;
-    }).join('');
-    return `<figure class="op-hours"><svg class="op-hours-svg" role="img" aria-label="${esc(t('ops.hourStripAria'))}" viewBox="0 0 100 100" preserveAspectRatio="none">${bars}</svg><figcaption><span>0 h</span><span>${esc(t('ops.hourStripCaption'))}</span><span>23 h</span></figcaption></figure>`;
+      const tone = d > onTimeMax ? 'bad' : d > 2 ? 'mid' : 'good';
+      cols.push({ tone, h: Math.max(6, (Math.abs(d) / max) * 100), val: `${d > 0 ? '+' : d < 0 ? '−' : ''}${dec(Math.abs(d))}m`, label: `${hr}h`, tip: t('ops.hourTooltip', { hour: hr, avg: fmtMin(r.avgDelay), visits: r.visits }) });
+    }
+    return columnChart({
+      title: t('ops.hourStripCaption'),
+      legend: [['good', t('ops.hourBandGood')], ['mid', t('ops.hourBandMid', { max: onTimeMax })], ['bad', t('ops.hourBandBad', { max: onTimeMax })]],
+      cols,
+      aria: t('ops.hourStripAria')
+    });
   }
+
 
   function lineDetailHtml(d) {
     if (!d.visits) return `<p class="op-empty">${esc(t('ops.lineEmpty', { line: d.line }))}</p>`;
@@ -245,6 +291,7 @@
       const el = document.getElementById(`op-line-detail-${agency}`);
       if (!el) return;
       el.innerHTML = data.success ? lineDetailHtml(data) : `<p class="op-empty">${esc(t('ops.lineError'))}</p>`;
+      applyBarHeights(el);
       if (data.success) {
         lastLineData = { key: lineKey(), data };
         loadTrend(agency, line);

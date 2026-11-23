@@ -11758,19 +11758,29 @@ input#plan-max-walk:focus {
 .op-line-detail { margin: var(--space-3) 0; padding: var(--space-3); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); }
 .op-line-detail-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
 .op-line-detail-head h5 { margin: 0; display: flex; align-items: center; gap: var(--space-2); font-size: 0.9rem; }
-.op-hours { margin: var(--space-3) 0; }
-.op-hours-svg { width: 100%; height: 64px; display: block; }
-.op-hours figcaption { display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--text-muted); }
-/* Daily trend (railhistory.go): one bar per day; a missing day is a low muted tick. */
+/* Train charts (operators.js columnChart) reuse Mataró's .hourly-chart-*
+   component; these add its tones as classes, from the punctuality tokens. */
 .op-trend-block { margin: var(--space-4) 0; }
-.op-trend-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
-.op-trend-head h5 { margin: 0; font-size: 0.85rem; color: var(--text-primary); }
+.op-fill-good { background: linear-gradient(180deg, var(--punct-on-time) 0%, color-mix(in srgb, var(--punct-on-time) 65%, black) 100%); }
+.op-fill-mid { background: linear-gradient(180deg, var(--punct-late) 0%, color-mix(in srgb, var(--punct-late) 65%, black) 100%); }
+.op-fill-bad { background: linear-gradient(180deg, var(--punct-severe) 0%, color-mix(in srgb, var(--punct-severe) 65%, black) 100%); }
+.op-fill-none { background: var(--border-subtle); }
+.hourly-legend-dot.op-fill-none { background: var(--text-muted); opacity: 0.5; }
+.hourly-bar-fill.is-partial { opacity: 0.55; }
+.op-trend-sub { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-2); }
+.op-trend-sub .op-trend-summary { margin: 0; }
+/* Few columns (a short history, a few service hours) stay bar-sized; days sit
+   at the right, today last, so the chart fills leftwards as history grows. */
+.op-chart .hourly-bar-col { max-width: 56px; }
+.op-chart.is-trend > .hourly-bar-col:first-child { margin-left: auto; } /* not flex-end: that clips an overflowing start */
+/* 90 days: narrow columns, no values (they are in each column's tooltip). */
+.op-chart.is-dense { gap: 2px; }
+.op-chart.is-dense .hourly-bar-col { min-width: 6px; }
+.op-chart.is-dense .hourly-bar-val { visibility: hidden; }
+.op-chart.is-dense .hourly-bar-label { overflow: visible; white-space: nowrap; }
 .op-trend-pills { display: flex; gap: var(--space-2); }
 .op-trend-summary { margin: var(--space-2) 0 0; font-size: 0.78rem; color: var(--text-secondary); }
 .op-trend-note { margin: var(--space-2) 0 0; font-size: 0.72rem; }
-.op-trend-ref { stroke: var(--border-subtle); stroke-width: 1; vector-effect: non-scaling-stroke; }
-.op-seg-missing { fill: var(--text-muted); background: var(--text-muted); opacity: 0.35; }
-.op-seg-partial { opacity: 0.5; }
 .op-off-profile th { color: var(--text-muted); font-weight: 500; }
 /* Dades network scope (public/js/operators.js). The bus blocks' own scripts
    set inline display on some of them, hence !important. */
