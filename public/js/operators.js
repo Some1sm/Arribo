@@ -32,7 +32,12 @@
   function applyScope(ops) {
     const ids = ops.map(o => o.id);
     if (scope !== 'all' && scope !== 'mataro' && !ids.includes(scope)) scope = 'all';
-    document.body.dataset.dadesScope = scope === 'all' ? 'all' : (scope === 'mataro' ? 'bus' : 'rail');
+    const next = scope === 'all' ? 'all' : (scope === 'mataro' ? 'bus' : 'rail');
+    // The bus report (observatori.js) lists the trains beside Mataró under "Tot": tell it.
+    if (document.body.dataset.dadesScope !== next) {
+      document.body.dataset.dadesScope = next;
+      document.dispatchEvent(new CustomEvent('arribo:dades-scope', { detail: { scope } }));
+    }
     if (!scopeDock || !scopeWrap) return;
     const items = [['all', t('ops.scopeAll')], ['mataro', 'Mataró Bus'], ...ops.map(o => [o.id, o.shortName || o.name])];
     scopeDock.innerHTML = items.map(([v, label]) => {

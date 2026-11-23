@@ -11758,6 +11758,12 @@ input#plan-max-walk:focus {
 .op-line-detail { margin: var(--space-3) 0; padding: var(--space-3); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); }
 .op-line-detail-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
 .op-line-detail-head h5 { margin: 0; display: flex; align-items: center; gap: var(--space-2); font-size: 0.9rem; }
+/* Dades with the network scope "Tot": trains listed beside Mataró (observatori.js). */
+body:not([data-dades-scope="all"]) .dades-all-only { display: none; }
+.observatori-line-badge[data-line] { background: var(--line-color, var(--brand-primary)); color: var(--line-ink, var(--text-primary)); }
+.dades-op-rule { margin-left: var(--space-2); font-size: 0.7rem; font-weight: 500; color: var(--text-muted); }
+.dades-bus-only-note { margin: 0 0 var(--space-2); font-size: 0.72rem; color: var(--text-muted); }
+.dades-rail-hourly { margin-bottom: 1.5rem; }
 /* Train charts (operators.js columnChart) reuse Mataró's .hourly-chart-*
    component; these add its tones as classes, from the punctuality tokens. */
 .op-trend-block { margin: var(--space-4) 0; }

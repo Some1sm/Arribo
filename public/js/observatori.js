@@ -1077,6 +1077,8 @@ class ObservatoriApp {
 
   bindEvents() {
     document.addEventListener('arribo:lang', () => this.onLangChange());
+    // The network scope (operators.js) decides whether the trains are listed beside Mataró.
+    document.addEventListener('arribo:dades-scope', () => { if (this.currentReport && this.currentTab !== 'termometre' && this.currentTab !== 'incidents' && this.currentTab !== 'monthly') this.renderJournalismReport(this.currentReport); });
 
     // Refresh Button
     document.getElementById('btn-observatori-refresh')?.addEventListener('click', (e) => {
@@ -1432,9 +1434,12 @@ class ObservatoriApp {
     }
 
     try {
-      const [res] = await Promise.allSettled([
-        fetch(`/api/analytics/journalism?hours=${hours}`).then(r => r.json())
+      const [res, net] = await Promise.allSettled([
+        fetch(`/api/analytics/journalism?hours=${hours}`).then(r => r.json()),
+        // The trains' figures in the same shapes (networkreport.go); optional.
+        fetch(`/api/analytics/network?hours=${hours}`).then(r => (r.ok ? r.json() : null))
       ]);
+      this.networkReport = net.status === 'fulfilled' && net.value?.success ? net.value : null;
 
       const journalismData = res.status === 'fulfilled' && res.value?.success ? (res.value.report || res.value) : null;
 
@@ -1476,6 +1481,46 @@ class ObservatoriApp {
     }
   }
 
+  // The train operators to list beside Mataró: only with the network scope
+  // "Tot" (operators.js sets body[data-dades-scope]) and with visits.
+  networkOpsInScope() {
+    if (document.body.dataset.dadesScope !== 'all') return [];
+    return (this.networkReport?.operators || []).filter(o => (o.agencyStats?.totalVisits || 0) > 0);
+  }
+
+  // A train operator's delay by hour of the day, in the hourly chart's
+  // component (.hourly-chart-*), coloured by its own rule: up to 2 min,
+  // up to its on-time bound, beyond. Heights are set after rendering
+  // (data-bar-h), so no inline styles.
+  renderRailHourly(op) {
+    const rows = (op.hourlyDelays || []).filter(h => h.visitCount > 0);
+    if (!rows.length) return '';
+    const first = Math.min(...rows.map(h => Number(h.hour)));
+    const last = Math.max(...rows.map(h => Number(h.hour)));
+    const byHour = new Map(rows.map(h => [Number(h.hour), h]));
+    const max = Math.max(2, ...rows.map(h => Math.abs(Number(h.avgDelay) || 0)));
+    const on = op.onTimeMaxMins || 5;
+    const cols = [];
+    for (let hr = first; hr <= last; hr++) {
+      const h = byHour.get(hr);
+      const label = `${String(hr).padStart(2, '0')}h`;
+      if (!h) {
+        cols.push(`<div class="hourly-bar-col" title="${this.esc(this.t('ops.hourNoData', { hour: hr }))}"><div class="hourly-bar-track"><span class="hourly-bar-val">—</span><div class="hourly-bar-fill op-fill-none" data-bar-h="4"></div></div><span class="hourly-bar-label">${label}</span></div>`);
+        continue;
+      }
+      const d = Number(h.avgDelay) || 0;
+      const tone = d > on ? 'bad' : d > 2 ? 'mid' : 'good';
+      const tip = this.t('dades.railHourTip', { win: h.timeWindow, d, pct: h.latePercentage ?? 0, n: h.visitCount });
+      cols.push(`<div class="hourly-bar-col" title="${this.esc(tip)}"><div class="hourly-bar-track"><span class="hourly-bar-val">${d > 0 ? '+' : ''}${d}m</span><div class="hourly-bar-fill op-fill-${tone}" data-bar-h="${Math.round(Math.max(6, (Math.abs(d) / max) * 100))}"></div></div><span class="hourly-bar-label">${label}</span></div>`);
+    }
+    const legend = [['good', this.t('ops.hourBandGood')], ['mid', this.t('ops.hourBandMid', { max: on })], ['bad', this.t('ops.hourBandBad', { max: on })]]
+      .map(([tone, text]) => `<div class="hourly-legend-item"><span class="hourly-legend-dot op-fill-${tone}" aria-hidden="true"></span><span>${this.esc(text)}</span></div>`).join('');
+    return `<div class="hourly-delays-section dades-rail-hourly">
+      <div class="hourly-chart-header"><h4 class="hourly-chart-title"><span>${this.esc(this.t('dades.hourlyTitleOp', { op: op.shortName || op.agency }))}</span></h4><div class="hourly-chart-legend">${legend}</div></div>
+      <div class="hourly-chart-container op-chart" role="img" aria-label="${this.esc(this.t('dades.hourlyTitleOp', { op: op.shortName || op.agency }))}">${cols.join('')}</div>
+    </div>`;
+  }
+
   clearOperatorComparison() {
     const operators = document.getElementById('journalism-operators-container');
     if (operators) operators.innerHTML = '';
@@ -1496,12 +1541,20 @@ class ObservatoriApp {
 
     const s = report.summary || {};
     const isAllStopsMode = this.stopFilterMode === 'all';
-    const allStopsSource = (report.allStopDelays && report.allStopDelays.length > 0)
+    // Network scope "Tot": the blocks below list every operator, Mataró's
+    // report plus the trains' figures in the same shapes, each row naming
+    // its operator (each keeps its own on-time rule).
+    const netOps = this.networkOpsInScope();
+    const byDelay = (a, b) => (Number(b.avgDelay) || 0) - (Number(a.avgDelay) || 0);
+    const railStops = netOps.flatMap(o => o.allStopDelays || []);
+    const busAllStops = (report.allStopDelays && report.allStopDelays.length > 0)
       ? report.allStopDelays
       : (report.rankingWorstStops || []);
-    const bottlenecksSource = (report.rankingWorstStops && report.rankingWorstStops.length > 0)
+    const allStopsSource = netOps.length ? [...busAllStops, ...railStops].sort(byDelay) : busAllStops;
+    const busBottlenecks = (report.rankingWorstStops && report.rankingWorstStops.length > 0)
       ? report.rankingWorstStops
-      : allStopsSource.filter(st => st.isBottleneck);
+      : busAllStops.filter(st => st.isBottleneck);
+    const bottlenecksSource = netOps.length ? [...busBottlenecks, ...railStops.filter(st => st.isBottleneck)].sort(byDelay) : busBottlenecks;
 
     // Calculate full matching stops vs bottleneck matching stops for contextual notice
     let matchingAllStops = allStopsSource.filter(st => (st.arrivalCount || 0) > 0);
@@ -1519,11 +1572,15 @@ class ObservatoriApp {
 
     const activeStopsSource = isAllStopsMode ? allStopsSource : bottlenecksSource;
 
-    let mostDelayed = [...(report.rankingMostDelayed || [])].filter(l => (l.sampleCount || 0) > 0 || (l.avgDelay || 0) > 0);
+    let mostDelayed = [...(report.rankingMostDelayed || []), ...netOps.flatMap(o => (o.rankingMostDelayed || []).map(l => ({ ...l, name: l.name || o.agency })))]
+      .filter(l => (l.sampleCount || 0) > 0 || (l.avgDelay || 0) > 0);
+    if (netOps.length) mostDelayed.sort(byDelay);
     let worstStops = [...activeStopsSource]
       .filter(st => (st.arrivalCount || 0) > 0)
       .map((st, idx) => ({ ...st, overallRank: idx + 1 }));
-    let agencies = [...(report.agencyStats || [])].filter(a => (a.totalSamples || 0) > 0);
+    let agencies = [...(report.agencyStats || []).map(a => ({ onTimeMaxMins: 3, tier: 'measured', ...a })),
+      ...netOps.map(o => ({ ...o.agencyStats, onTimeMaxMins: o.onTimeMaxMins, tier: o.tier }))]
+      .filter(a => (a.totalSamples || 0) > 0);
 
     // Filter by search text
     if (filterText) {
@@ -1653,6 +1710,7 @@ class ObservatoriApp {
               ${this.esc(this.t('dades.contrastAgree', { pct: pctStr(comp.agreementPct) }))}
             </span>
           </div>
+          ${netOps.length ? `<p class="dades-bus-only-note">${this.esc(this.t('dades.contrastBusOnly'))}</p>` : ''}
           <div>
             ${this.t('dades.contrastBody', {
               visits: this.esc(num(comp.comparedVisits)),
@@ -1819,6 +1877,8 @@ class ObservatoriApp {
         `;
       })()}
 
+      ${netOps.map(o => this.renderRailHourly(o)).join('')}
+
       <!-- Ranking: Lines with Most Delays -->
       <div class="observatori-table-container" style="margin-bottom:1.5rem;">
         <div class="observatori-table-header-row">
@@ -1857,7 +1917,7 @@ class ObservatoriApp {
                     <td class="sticky-col" style="font-weight:700; color:var(--text-primary);">
                       <div class="observatori-line-cell">
                         <span class="observatori-rank-num">#${i + 1}</span>
-                        <span class="observatori-line-badge" style="background:var(--brand-primary);">${this.esc(l.lineCode)}</span>
+                        <span class="observatori-line-badge"${l.agencyId && l.agencyId !== 'mataro' ? ` data-line="${this.esc(`${l.agencyId}:${l.lineCode}`)}"` : ' style="background:var(--brand-primary);"'}>${this.esc(l.lineCode)}</span>
                         <span class="observatori-line-name" title="${this.esc(l.name)}">${this.esc(l.name)}</span>
                       </div>
                     </td>
@@ -1939,7 +1999,7 @@ class ObservatoriApp {
           const sAvg = Number(st.avgDelay) || 0;
           const sAvgStr = sAvg > 0 ? `+${st.avgDelay} min` : (sAvg < 0 ? `${st.avgDelay} min` : '0.0 min');
           const sMaxStr = Number(st.maxDelay) > 0 ? `+${st.maxDelay} min` : `${st.maxDelay || 0} min`;
-          const lColor = this.getLineColor(st.lineCode);
+          const lColor = this.getLineColor(st.lineCode, st.agencyId);
           const badgeTextColor = this.chipInk(lColor);
           const isSevereStop = sAvg >= 1.5 || (st.severeLatePct || 0) >= 20;
           const avgDelayColor = sAvg >= 1.5 ? 'var(--accent-danger)' : (sAvg >= 0.8 ? 'var(--accent-warning)' : 'var(--accent-live)');
@@ -1980,25 +2040,31 @@ class ObservatoriApp {
         } else {
           const lineGroups = new Map();
           for (const st of displayedWorstStops) {
-            const lCode = st.lineCode || this.t('dades.stopsOther');
+            // Grouped per operator and line: codes repeat across operators.
+            const lCode = `${st.agencyId || 'mataro'}|${st.lineCode || this.t('dades.stopsOther')}`;
             if (!lineGroups.has(lCode)) {
               lineGroups.set(lCode, []);
             }
             lineGroups.get(lCode).push(st);
           }
 
-          const sortedLineCodes = Array.from(lineGroups.keys()).sort((a, b) => {
+          // Mataró's lines first, then each operator's; numeric within one.
+          const sortedLineCodes = Array.from(lineGroups.keys()).sort((ka, kb) => {
+            const [agA, a] = ka.split('|');
+            const [agB, b] = kb.split('|');
+            if (agA !== agB) return agA === 'mataro' ? -1 : (agB === 'mataro' ? 1 : agA.localeCompare(agB));
             const numA = parseInt(a.replace(/\D/g, ''), 10);
             const numB = parseInt(b.replace(/\D/g, ''), 10);
             if (!isNaN(numA) && !isNaN(numB) && numA !== numB) return numA - numB;
             return a.localeCompare(b);
           });
 
-          tableBodyHtml = sortedLineCodes.map(lineCode => {
-            const lineStops = lineGroups.get(lineCode);
-            const lColor = this.getLineColor(lineCode);
+          tableBodyHtml = sortedLineCodes.map(groupKey => {
+            const lineStops = lineGroups.get(groupKey);
+            const [groupAgency, lineCode] = groupKey.split('|');
+            const lColor = this.getLineColor(lineCode, groupAgency);
             const badgeTextColor = this.chipInk(lColor);
-            const lineMatch = (this.availableLines || []).find(l => String(l.code || l.id).toUpperCase() === String(lineCode).toUpperCase());
+            const lineMatch = (this.availableLines || []).find(l => (l.agencyId || 'mataro') === groupAgency && String(l.code || l.id).toUpperCase() === String(lineCode).toUpperCase());
             const lineTitle = lineMatch?.name || this.t('dades.lineNameFallback', { code: lineCode });
             const lineAvg = (lineStops.reduce((sum, st) => sum + (Number(st.avgDelay) || 0), 0) / lineStops.length).toFixed(1);
             const slowestStop = lineStops.reduce((prev, curr) => (prev.overallRank < curr.overallRank ? prev : curr), lineStops[0]);
@@ -2120,7 +2186,7 @@ class ObservatoriApp {
                 const onTime = a.onTimePct !== undefined && a.onTimePct !== null ? Number(a.onTimePct) : null;
                 return `
                 <tr>
-                  <td class="sticky-col" style="font-weight:700; color:var(--text-primary);">${this.esc(a.agency)} <span class="chip chip-plain chip-live op-inline-chip" data-tier="measured">${this.esc(this.t('tier.measured'))}</span></td>
+                  <td class="sticky-col" style="font-weight:700; color:var(--text-primary);">${this.esc(a.agency)} <span class="chip chip-plain chip-live op-inline-chip" data-tier="${this.esc(a.tier || 'measured')}">${this.esc(this.t(`tier.${a.tier || 'measured'}`))}</span>${netOps.length ? `<span class="dades-op-rule">${this.esc(this.t('dades.opRule', { n: a.onTimeMaxMins }))}</span>` : ''}</td>
                   <td class="observatori-col-desktop" style="color:var(--text-muted); text-align:center;">${a.linesCount || 0}</td>
                   <td class="observatori-col-desktop" style="color:var(--text-muted);">${(a.totalVisits || a.totalSamples || 0).toLocaleString(loc)}</td>
                   <td style="font-weight:700; color:${Number(a.avgDelay) > 0 ? 'var(--accent-danger)' : 'var(--accent-live)'}; white-space:nowrap;">${aAvg}</td>
@@ -2146,6 +2212,7 @@ class ObservatoriApp {
       html = html.slice(0, operatorsAt);
     }
     container.innerHTML = html;
+    container.querySelectorAll('[data-bar-h]').forEach(el => { el.style.height = `${el.dataset.barH}%`; });
     this.initObservatoriTableScrolls();
   }
 
@@ -2153,8 +2220,10 @@ class ObservatoriApp {
   // 2. STOP DELAY HEATMAP MATRIX & DRILLDOWNS
   // ==========================================
 
-  getLineColor(code) {
-    const match = (this.availableLines || []).find(l => String(l.code || l.id).toUpperCase() === String(code).toUpperCase());
+  // A line's colour by code within its operator: FGC's L6 is not Mataró's L6.
+  getLineColor(code, agencyId = 'mataro') {
+    const match = (this.availableLines || []).find(l => (l.agencyId || 'mataro') === (agencyId || 'mataro')
+      && String(l.code || l.id).toUpperCase() === String(code).toUpperCase());
     return match?.color || 'var(--brand-primary)';
   }
 
@@ -2215,7 +2284,7 @@ class ObservatoriApp {
     const visibleHours = this._heatmapVisibleHours || Array.from({ length: 24 }, (_, i) => i);
     const selH = this._activeDrilldownHour;
     const selectedBucket = selH !== null ? stop.hourly?.[selH] : null;
-    const lColor = this.getLineColor(stop.lineCode);
+    const lColor = this.getLineColor(stop.lineCode, stop.agencyId);
 
     content.innerHTML = `
       <button type="button" class="modal-close-btn" id="stop-drilldown-close-btn" aria-label="${this.esc(this.t('dades.modalCloseAria'))}">&times;</button>
