@@ -354,3 +354,52 @@ func lineStop(op *rtCatalogOp, code, stopID string) (rtLineStop, bool) {
 	}
 	return rtLineStop{}, false
 }
+
+// railScheduledHours is, per train operator with an imported timetable,
+// the clock hours (0-23) in which trains are scheduled within the last
+// `hours`: each service day from the one before the period (its trips run
+// past midnight) to today, keeping only the hours inside the period.
+func (k *Worker) railScheduledHours(hours float64) map[string][]int {
+	out := map[string][]int{}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	now := time.UnixMilli(nowMs()).In(madrid)
+	start := now.Add(-time.Duration(hours * float64(time.Hour)))
+	first := start.AddDate(0, 0, -1)
+	for _, op := range reportOperators {
+		tt, err := k.railTT.get(op.ID)
+		if err != nil || tt == nil {
+			continue
+		}
+		seen := map[int]bool{}
+		ok := true
+		for d := time.Date(first.Year(), first.Month(), first.Day(), 12, 0, 0, 0, madrid); !d.After(now); d = d.AddDate(0, 0, 1) {
+			hs, err := tt.scheduledHoursOn(ctx, d)
+			if err == nil {
+				var ref time.Time
+				ref, err = gtfsServiceDayRef(d.Format("20060102"))
+				for _, h := range hs {
+					from := ref.Add(time.Duration(h) * time.Hour)
+					if err == nil && from.Add(time.Hour).After(start) && !from.After(now) {
+						seen[from.In(madrid).Hour()] = true
+					}
+				}
+			}
+			if err != nil {
+				ok = false
+				break
+			}
+		}
+		if !ok {
+			continue
+		}
+		list := []int{}
+		for h := 0; h < 24; h++ {
+			if seen[h] {
+				list = append(list, h)
+			}
+		}
+		out[op.ID] = list
+	}
+	return out
+}

@@ -11635,10 +11635,8 @@ body:not([data-dades-scope="all"]) .dades-all-only { display: none; }
 .hourly-bar-fill.is-partial { opacity: 0.55; }
 .op-trend-sub { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-2); }
 .op-trend-sub .op-trend-summary { margin: 0; }
-/* Few columns (a short history, a few service hours) stay bar-sized; days sit
-   at the right, today last, so the chart fills leftwards as history grows. */
-.op-chart .hourly-bar-col { max-width: 56px; }
-.op-chart.is-trend > .hourly-bar-col:first-child { margin-left: auto; } /* not flex-end: that clips an overflowing start */
+/* The train charts fill the width like Mataró's hourly chart, also with a
+   short history (a few days). */
 /* 90 days: narrow columns, no values (they are in each column's tooltip). */
 .op-chart.is-dense { gap: 2px; }
 .op-chart.is-dense .hourly-bar-col { min-width: 6px; }

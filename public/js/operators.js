@@ -252,12 +252,17 @@
   function hourStrip(rows, onTimeMax) {
     if (!rows.length) return '';
     const byHour = new Map(rows.map(r => [Number(r.hour), r]));
-    const hoursSeen = rows.map(r => Number(r.hour));
-    const first = Math.min(...hoursSeen);
-    const last = Math.max(...hoursSeen);
+    // In service-day order (from 04 h, after-midnight trains last), the
+    // span between the first and the last hour with data on that order:
+    // the night hours with no trains are not drawn as gaps.
+    const serviceOrder = hr => (hr + 20) % 24;
+    const ordered = rows.map(r => serviceOrder(Number(r.hour)));
+    const first = Math.min(...ordered);
+    const last = Math.max(...ordered);
     const max = Math.max(2, ...rows.map(r => Math.abs(Number(r.avgDelay) || 0)));
     const cols = [];
-    for (let hr = first; hr <= last; hr++) {
+    for (let k = first; k <= last; k++) {
+      const hr = (k + 4) % 24;
       const r = byHour.get(hr);
       if (!r) {
         cols.push({ tone: 'none', h: 4, val: '—', label: `${hr}h`, tip: t('ops.hourNoData', { hour: hr }) });

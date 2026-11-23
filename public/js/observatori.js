@@ -1532,13 +1532,21 @@ class ObservatoriApp {
   renderRailHourly(op, inner = false) {
     const rows = (op.hourlyDelays || []).filter(h => h.visitCount > 0);
     if (!rows.length) return '';
-    const first = Math.min(...rows.map(h => Number(h.hour)));
-    const last = Math.max(...rows.map(h => Number(h.hour)));
     const byHour = new Map(rows.map(h => [Number(h.hour), h]));
     const max = Math.max(2, ...rows.map(h => Math.abs(Number(h.avgDelay) || 0)));
     const on = op.onTimeMaxMins || 5;
+    // The hours trains are scheduled in this period (from the operator's
+    // timetable) and any hour with data; a scheduled hour without data is
+    // a "—" gap, an hour with nothing scheduled is left out. In service-day
+    // order: from 04 h, after-midnight trains last.
+    const scheduled = Array.isArray(op.scheduledHours) ? op.scheduledHours.map(Number) : null;
+    const shown = scheduled
+      ? [...new Set([...scheduled, ...byHour.keys()])]
+      : (() => { const hs = [...byHour.keys()]; const a = Math.min(...hs); const b = Math.max(...hs); return Array.from({ length: b - a + 1 }, (_, i) => a + i); })();
+    const serviceOrder = hr => (hr + 20) % 24; // 04 h first
+    shown.sort((a, b) => serviceOrder(a) - serviceOrder(b));
     const cols = [];
-    for (let hr = first; hr <= last; hr++) {
+    for (const hr of shown) {
       const h = byHour.get(hr);
       const label = `${String(hr).padStart(2, '0')}h`;
       if (!h) {

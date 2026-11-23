@@ -417,7 +417,7 @@ func (k *Worker) executeDbOperation(op string, rawArgs any) (res any, err error)
 		}
 		return st, err
 	case "getNetworkReport":
-		return db.getNetworkReport(jsNumber(args.Get("hours")), gtfsRtFeedStats())
+		return db.getNetworkReport(jsNumber(args.Get("hours")), gtfsRtFeedStats(), k.railScheduledHours(jsNumber(args.Get("hours"))))
 	case "getRailHistory":
 		return db.getRailHistory(jsString(args.Get("agencyId")), jsString(args.Get("line")), jsNumber(args.Get("days")))
 	case "getOperatorLineReport":

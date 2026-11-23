@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // TestNetworkReport: the train blocks in the bus report's shapes, with the
@@ -31,7 +34,7 @@ func TestNetworkReport(t *testing.T) {
 	add("renfe_rodalies", "R2", "Clot", 30) // one visit: below the station minimum
 	add("mataro", "L1", "Rambla", 9)        // another operator's: not counted
 
-	rep, err := h.getNetworkReport(24, nil)
+	rep, err := h.getNetworkReport(24, nil, map[string][]int{"renfe_rodalies": {5, 6, 23}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +88,31 @@ func TestNetworkReport(t *testing.T) {
 	if len(hrs) != 24 || total != 8 {
 		t.Errorf("hourly: %d rows, %v visits", len(hrs), total)
 	}
+	if hs := renfe.Get("scheduledHours").([]any); len(hs) != 3 || hs[0] != 5.0 {
+		t.Errorf("scheduled hours: %s", toJSON(hs))
+	}
 	if renfe.Get("onTimeMaxMins") != 5.0 || renfe.Get("severeLateMins") != 15.0 || renfe.Get("delayMeasurementComparison") != nil {
 		t.Errorf("rules: %s", toJSON(renfe))
+	}
+}
+
+// TestScheduledHoursOn: the hours trains run on a service day, from its
+// calendar; a trip past midnight counts in the next morning's hours, and a
+// service not running that weekday adds nothing.
+func TestScheduledHoursOn(t *testing.T) {
+	feed := railTestFeed()
+	feed["trips.txt"] += "RL6,W,night,Sarrià,1,\n"
+	feed["stop_times.txt"] += "night,24:40:00,24:40:00,C,1\nnight,24:49:00,24:49:00,A,2\n"
+	feed["calendar.txt"] += "W,0,0,0,0,0,1,0,20260101,20271231\n" // Saturdays only
+	tt := openRailTestTimetableWith(t, feed)
+	ctx := context.Background()
+	sat := time.Date(2026, 11, 21, 12, 0, 0, 0, madrid)
+	mon := time.Date(2026, 11, 23, 12, 0, 0, 0, madrid)
+	hs, err := tt.scheduledHoursOn(ctx, sat)
+	if err != nil || fmt.Sprint(hs) != "[8 9 10 24]" {
+		t.Errorf("Saturday: %v %v", hs, err)
+	}
+	if hs, _ := tt.scheduledHoursOn(ctx, mon); fmt.Sprint(hs) != "[8 9 10]" {
+		t.Errorf("Monday: %v", hs)
 	}
 }

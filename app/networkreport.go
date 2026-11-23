@@ -29,7 +29,9 @@ const (
 // getNetworkReport builds the per-operator blocks for the last `hours`.
 // feeds is each poller's live state (gtfsRtFeedStats), for the operator's
 // data-status panel.
-func (h *HistoryDB) getNetworkReport(hours float64, feeds map[string]*Obj) (*Obj, error) {
+// sched is each operator's scheduled hours (scheduledHours; missing when its
+// timetable is not imported).
+func (h *HistoryDB) getNetworkReport(hours float64, feeds map[string]*Obj, sched map[string][]int) (*Obj, error) {
 	if !h.ensureOpen() {
 		return nil, errors.New("History database unavailable")
 	}
@@ -211,6 +213,7 @@ func (h *HistoryDB) getNetworkReport(hours float64, feeds map[string]*Obj) (*Obj
 			// train's position counts as stale, for the data-status panel.
 			"feed", feedOrNil(feeds, op.ID),
 			"staleAfterSec", trainStaleAfter(op.ID),
+			"scheduledHours", hoursOrNil(sched, op.ID),
 		))
 	}
 	// Operators with no visits in the period come last, in registry order.
@@ -268,4 +271,17 @@ func feedOrNil(feeds map[string]*Obj, id string) any {
 		return f
 	}
 	return nil
+}
+
+// hoursOrNil is an operator's scheduled hours as JSON values (nil: unknown).
+func hoursOrNil(sched map[string][]int, id string) any {
+	hs, ok := sched[id]
+	if !ok {
+		return nil
+	}
+	out := make([]any, 0, len(hs))
+	for _, h := range hs {
+		out = append(out, float64(h))
+	}
+	return out
 }

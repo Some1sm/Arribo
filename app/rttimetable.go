@@ -22,6 +22,7 @@ type rtTimetable struct {
 	cache                        map[string]int64  // trip_id + "\x00" + stop_id -> scheduled seconds (-1 = none)
 	names                        map[string]string // line and stop name lookups
 	platformChecked, platformCol bool              // stops.platform_code looked up / present
+	hours                        map[string][]int  // scheduledHoursOn per service day (YYYYMMDD)
 }
 
 // openRtTimetable opens the imported timetable at path read-only, or
@@ -496,5 +497,54 @@ func (t *rtTimetable) platformCodes(ctx context.Context, stopID string) ([][2]st
 			out = append(out, [2]string{id, code.String})
 		}
 	}
+	return out, nil
+}
+
+// scheduledHoursOn is the hours after the service day's reference time
+// (0, 1, ... 24, 25 for trips past midnight) in which trains run on one
+// service day (calendar and calendar_dates, as for the departures), cached
+// per day for the life of the opened timetable. The Dades charts show only
+// the clock hours these fall in: an hour with nothing scheduled is not a
+// gap in the data.
+func (t *rtTimetable) scheduledHoursOn(ctx context.Context, day time.Time) ([]int, error) {
+	date := day.Format("20060102")
+	t.mu.Lock()
+	if h, ok := t.hours[date]; ok {
+		t.mu.Unlock()
+		return h, nil
+	}
+	t.mu.Unlock()
+	col := gtfsWeekdayColumn[day.Weekday()]
+	rows, err := t.db.QueryContext(ctx, `WITH active(service_id) AS (
+	    SELECT service_id FROM calendar WHERE start_date <= ?1 AND end_date >= ?1 AND `+col+` = 1
+	    UNION SELECT service_id FROM calendar_dates WHERE date = ?1 AND exception_type = 1
+	    EXCEPT SELECT service_id FROM calendar_dates WHERE date = ?1 AND exception_type = 2
+	  )
+	  SELECT DISTINCT COALESCE(st.departure_sec, st.arrival_sec) / 3600 AS h
+	    FROM stop_times st JOIN trips tr ON tr.trip_id = st.trip_id
+	   WHERE tr.service_id IN (SELECT service_id FROM active)
+	     AND COALESCE(st.departure_sec, st.arrival_sec) IS NOT NULL
+	   ORDER BY h`, date)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []int{}
+	for rows.Next() {
+		var h int
+		if err := rows.Scan(&h); err != nil {
+			return nil, err
+		}
+		out = append(out, h)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	t.mu.Lock()
+	if t.hours == nil || len(t.hours) > 32 {
+		t.hours = map[string][]int{}
+	}
+	t.hours[date] = out
+	t.mu.Unlock()
 	return out, nil
 }
