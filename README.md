@@ -107,6 +107,9 @@ The repository targets a long-running Docker deployment; retired serverless conf
 | `VEHICLE_SNAPSHOT_INTERVAL_MS` | `60000` | Minimum interval between stored snapshots per vehicle |
 | `SNAPSHOT_RETENTION_HOURS` | `6` | Raw vehicle snapshot retention (GPS positions behind the /dades edge-case table) |
 | `DELAY_RETENTION_DAYS` | `30` | Delay-log retention |
+| `ARRIBO_GTFSRT` | `1` in compose | Rodalies and FGC feeds (GTFS-RT pollers and timetable imports) |
+| `ARRIBO_MOVENTIS` | `1` in compose | Moventis buses, estimated from the arrival predictions of moventis.es (`app/moventis.go`); `/api/moventis` |
+| `ARRIBO_MOVENTIS_LINES` | `47,48,51,53,57,59,68` | Moventis line ids to follow (the seven lines through Mataró). Each line costs about one request per 1.5 km of route, and requests are 11 s apart (the site's crawl delay) |
 
 Storage sampling does not reduce live polling frequency. The ingestion daemon polls Mataró vehicles every 20 seconds, refreshes notices every five minutes, and schedules analytics reports every 30 minutes.
 

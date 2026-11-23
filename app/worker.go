@@ -167,6 +167,7 @@ type Worker struct {
 	registry *TrackerRegistry
 	daemon   *IngestionDaemon
 	stopRt   func()         // stops the GTFS-RT pollers (a no-op unless ARRIBO_GTFSRT=1)
+	stopMov  func()         // stops the Moventis poller (a no-op unless ARRIBO_MOVENTIS=1)
 	railTT   railTimetables // read-only rail timetables for station departures (worker lock)
 	inbox    *msgQueue[workerMsg]
 	out      func(serverMsg)
@@ -224,6 +225,7 @@ func (k *Worker) boot() {
 	k.registry.isInitialized = true
 	k.daemon.start()
 	k.stopRt = startGtfsRtPollers()
+	k.stopMov = startMoventisPoller()
 	k.sendToMaster("WORKER_READY", O("pid", float64(os.Getpid()), "version", "3.0.0-mataro"))
 	log.Printf("[Worker] ✅ Ingestion Worker Ready and Listening.")
 	k.w.mu.Unlock()
@@ -279,6 +281,9 @@ func (k *Worker) handleMasterMessage(m workerMsg) {
 	case "SHUTDOWN":
 		log.Printf("[Worker] Graceful shutdown requested by master...")
 		if k.stopRt != nil {
+			if k.stopMov != nil {
+				k.stopMov()
+			}
 			k.stopRt()
 		}
 		k.railTT.close()

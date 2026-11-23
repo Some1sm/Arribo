@@ -1,0 +1,161 @@
+package main
+
+import (
+	"errors"
+	"math"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+)
+
+// Answers captured from moventis.es on 2026-11-23 (C-10, line 53).
+const (
+	movTestPlaceholder = `[{"idLinea":"A","desc_linea":"A","trayectos":{"A":{"0A":{"minutos":"' ''","adaptada":"A","real":"N","hora":"A","tiempo":"A h  min"}}},"incidencias":null,"selected":0}]`
+	movTestTimetable   = `[{"idLinea":53,"desc_linea":"C-10","trayectos":{"(C10) BCN - MATARÓ (PER LA NII)":{"00044":{"minutos":"44' 00''","adaptada":null,"real":"N","hora":"22:08","tiempo":"00 h 44 min"}}},"incidencias":null,"selected":1}]`
+	movTestTwoBuses    = `[{"idLinea":53,"desc_linea":"C-10","trayectos":{"Mataró":[{"minutos":"26 min 42.3781659 s","adaptada":null,"real":"S"},{"minutos":"37 min 05.0064306 s","adaptada":null,"real":"S"}]},"incidencias":null,"selected":1}]`
+	movTestMixed       = `[{"idLinea":53,"desc_linea":"C-10","trayectos":{"Mataró":[{"minutos":"00 min 45.0624534 s","adaptada":null,"real":"S"}],"(C10) BCN - MATARÓ (PER LA NII)":{"00049":{"minutos":"49' 00''","adaptada":null,"real":"N","hora":"22:14","tiempo":"00 h 49 min"}}},"incidencias":null,"selected":1},{"idLinea":59,"desc_linea":"C-30","trayectos":{"Vilassar de Mar":[{"minutos":"37 min 59.3 s","adaptada":null,"real":"S"}]},"incidencias":null,"selected":0}]`
+)
+
+func movTestRoutes(t *testing.T) []movRoute {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("testdata", "moventis_c10_trayectos.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes, err := parseMovRoutes(53, b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return routes
+}
+
+func TestMovParseRoutes(t *testing.T) {
+	routes := movTestRoutes(t)
+	if len(routes) != 2 {
+		t.Fatalf("routes: %d", len(routes))
+	}
+	var toMataro *movRoute
+	for i := range routes {
+		if routes[i].Trayecto == 2 {
+			toMataro = &routes[i]
+		}
+	}
+	if toMataro == nil || toMataro.Dest != "MATARÓ" || len(toMataro.Stops) < 30 || toMataro.Stops[0].ID != 19946 {
+		t.Fatalf("route 2: %+v", toMataro)
+	}
+	for i := 1; i < len(toMataro.Stops); i++ {
+		if toMataro.Stops[i].Km < toMataro.Stops[i-1].Km {
+			t.Errorf("stops out of order at %d", i)
+		}
+	}
+	if _, err := parseMovRoutes(53, []byte(`[{"numLinea":"53"}]`)); !errors.Is(err, errMovNoRoutes) {
+		t.Errorf("empty answer: %v", err)
+	}
+}
+
+func TestMovParseStopTimes(t *testing.T) {
+	if _, err := parseMovStopTimes([]byte(movTestPlaceholder)); !errors.Is(err, errMovThrottled) {
+		t.Errorf("placeholder: %v", err)
+	}
+	if e, err := parseMovStopTimes([]byte(movTestTimetable)); err != nil || len(e) != 0 {
+		t.Errorf("timetable-only times must be ignored: %+v %v", e, err)
+	}
+	e, err := parseMovStopTimes([]byte(movTestTwoBuses))
+	if err != nil || len(e) != 1 || e[0].LineID != 53 || e[0].Dest != "Mataró" || len(e[0].EtaSec) != 2 || math.Abs(e[0].EtaSec[0]-1602.378) > 0.01 {
+		t.Errorf("two buses: %+v %v", e, err)
+	}
+	e, err = parseMovStopTimes([]byte(movTestMixed))
+	if err != nil || len(e) != 2 {
+		t.Fatalf("mixed: %+v %v", e, err)
+	}
+	for _, x := range e {
+		if x.LineID == 53 && (len(x.EtaSec) != 1 || math.Abs(x.EtaSec[0]-45.06) > 0.01) {
+			t.Errorf("C-10 at the stop: %+v", x)
+		}
+	}
+}
+
+func TestMovSamples(t *testing.T) {
+	routes := movTestRoutes(t)
+	s := &movStatic{Lines: map[int]movLine{53: {ID: 53, Code: "C-10"}}, Routes: map[int][]movRoute{53: routes}}
+	sm := movSamples(s, []int{53})
+	seen := map[int]bool{}
+	for _, x := range sm {
+		if seen[x.StopID] {
+			t.Errorf("stop %d asked twice", x.StopID)
+		}
+		seen[x.StopID] = true
+	}
+	for _, rt := range routes {
+		if !seen[rt.Stops[0].ID] || !seen[rt.Stops[len(rt.Stops)-1].ID] {
+			t.Errorf("route %d: first or last stop not sampled", rt.Trayecto)
+		}
+	}
+	total := len(routes[0].Stops) + len(routes[1].Stops)
+	if len(sm) >= total || len(sm) < 10 {
+		t.Errorf("%d samples of %d stops", len(sm), total)
+	}
+}
+
+// TestMovEstimate: the probe's C-10 countdowns towards Mataró give one bus,
+// just before El Masnou (0:45 from Camil Fabra); the bus 20 minutes from the
+// route's second stop has not left its terminus and is not drawn. Positions
+// run with the countdown, and never go behind the previous sampled stop.
+func TestMovEstimate(t *testing.T) {
+	routes := movTestRoutes(t)
+	s := &movStatic{Lines: map[int]movLine{53: {ID: 53, Code: "C-10", Color: "#9AFF1F"}}, Routes: map[int][]movRoute{53: routes}}
+	at := time.Date(2026, 11, 23, 21, 25, 0, 0, madrid)
+	eta := map[int]float64{7187: 1252, 7188: 1602, 7189: 1740, 7190: 1826, 7191: 2018, 7192: 2221, 7193: 2273, 7194: 2453, 7201: 45, 7204: 242, 7205: 279}
+	preds := map[[3]int]movPrediction{}
+	for stop, e := range eta {
+		preds[[3]int{53, 2, stop}] = movPrediction{LineID: 53, Trayecto: 2, StopID: stop, EtaSec: []float64{e}, At: at}
+	}
+	vs := movEstimate(s, []int{53}, preds, at)
+	if len(vs) != 1 {
+		t.Fatalf("buses: %s", toJSON(vs))
+	}
+	v := vs[0].(*Obj)
+	if v.Get("stopName") != "C. de Camil Fabra (Laboratoris Alcon-Cusí)" || v.Get("isEstimated") != true || v.Get("positionSource") != "stop_predictions" || v.Get("lineRef") != "moventis:C-10" {
+		t.Errorf("bus: %s", toJSON(v))
+	}
+	// Between St.Bru/Prim (the previous sampled stop) and Camil Fabra.
+	if lat := jsNumber(v.Get("lat")); lat < 41.453 || lat > 41.4724 {
+		t.Errorf("position: %s", toJSON(v))
+	}
+	// A minute later the countdown has passed: the bus is at the stop.
+	later := movEstimate(s, []int{53}, preds, at.Add(time.Minute))
+	if len(later) != 1 || jsNumber(later[0].(*Obj).Get("nextStopEtaSec")) != 0 {
+		t.Errorf("a minute later: %s", toJSON(later))
+	}
+	// Predictions older than movObsMaxAge are not used.
+	if old := movEstimate(s, []int{53}, preds, at.Add(movObsMaxAge+time.Minute)); len(old) != 0 {
+		t.Errorf("stale predictions used: %s", toJSON(old))
+	}
+}
+
+// TestMovRouteFor: a prediction at a stop both directions share goes to the
+// route whose destination matches.
+func TestMovRouteFor(t *testing.T) {
+	routes := movTestRoutes(t)
+	s := &movStatic{Routes: map[int][]movRoute{53: routes}}
+	if rt, ok := s.routeFor(53, 7201, "Mataró"); !ok || rt.Trayecto != 2 {
+		t.Errorf("only route through the stop: %+v %v", rt.Trayecto, ok)
+	}
+	if _, ok := s.routeFor(53, 999999, "Mataró"); ok {
+		t.Error("unknown stop matched")
+	}
+}
+
+func TestMovRouteDest(t *testing.T) {
+	cases := map[string]string{
+		"(C10) BCN - MATARÓ (PER LA NII)": "MATARÓ",
+		"865 MATARÓ-BELLATERRA":           "BELLATERRA",
+		"(C30) MATARÓ - VILASSAR DE DALT": "VILASSAR DE DALT",
+	}
+	for desc, want := range cases {
+		if got := movRouteDest(movRoute{Desc: desc}); got != want {
+			t.Errorf("%q -> %q, want %q", desc, got, want)
+		}
+	}
+}

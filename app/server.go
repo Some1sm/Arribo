@@ -1087,6 +1087,7 @@ func (s *Server) buildRoutes() {
 	s.get(p("/api/analytics/operators/line"), s.hOperatorLine)
 	s.get(p("/api/analytics/operators/history"), s.hOperatorHistory)
 	s.get(p("/api/analytics/network"), s.hNetwork)
+	s.get(p("/api/moventis"), s.hMoventis)
 	s.get(p("/api/analytics/gps-gaps/paths"), s.hGpsGapPaths)
 	s.get(p("/api/analytics/gps-gaps/passes"), s.hGpsGapPasses)
 	s.get(p("/api/diagnostics/upstream"), s.hDiagUpstream)

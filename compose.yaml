@@ -33,6 +33,8 @@ services:
       # daily into ./data/gtfs/ (~60 MB) and record train station visits for
       # the Dades "Trens" section. Measured ~36 MiB with it on. 0 to turn off.
       - ARRIBO_GTFSRT=${ARRIBO_GTFSRT:-1}
+      # Moventis buses (moventis.es arrival predictions, see app/moventis.go)
+      - ARRIBO_MOVENTIS=${ARRIBO_MOVENTIS:-1}
     ulimits:
       core:
         soft: 0

@@ -71,6 +71,11 @@ class NetworkMap extends TransitMap {
     // operators reported, never snapped or animated.
     this.trainLayer = L.layerGroup().addTo(this.map);
     this.trainMarkers = new Map();     // train id -> { marker, popupHtml }
+    // Moventis buses from /api/moventis: positions estimated from the
+    // operator's arrival predictions (app/moventis.go), their own layer.
+    this.movLayer = L.layerGroup().addTo(this.map);
+    this.movMarkers = new Map();       // bus id -> { marker, popupHtml }
+    this.movFeed = null;
     this.trainColors = new Map();      // "<agencyId>:<line code>" -> line colour (from the catalog)
     this.trainLineRefs = new Map();    // "<agencyId>:<line code>" -> lineRef, for lines the line view can open
     this.trainFeed = null;             // last /api/trains body with enabled:true, else null
@@ -282,13 +287,7 @@ class NetworkMap extends TransitMap {
         }
         continue;
       }
-      const html = `
-        <div class="live-bus-marker-wrap train-marker${stale ? ' stale-train' : ''}">
-          <div class="live-bus-pin" style="background: ${pinBg};">
-            <span class="bus-icon-inner">${TRAIN_ICON_INNER_SVG}</span>
-            <span class="bus-status-dot ${stale ? 'stale' : 'live'}"></span>
-          </div>
-        </div>`;
+      const html = vehiclePinHtml({ cls: `train-marker${stale ? ' stale-train' : ''}`, bg: pinBg, icon: TRAIN_ICON_INNER_SVG, dot: stale ? 'stale' : 'live' });
       const marker = L.marker([lat, lon], {
         icon: L.divIcon({ html, className: 'c10-live-bus-icon', iconSize: [44, 44], iconAnchor: [22, 22] }),
         zIndexOffset: stale ? 900 : 1000,
@@ -306,6 +305,54 @@ class NetworkMap extends TransitMap {
     const onMap = this.map.hasLayer(this.trainLayer);
     if (this.trainsVisible() && !onMap) this.map.addLayer(this.trainLayer);
     if (!this.trainsVisible() && onMap) this.map.removeLayer(this.trainLayer);
+  }
+
+  /** Takes an /api/moventis body; null (or enabled:false) clears the layer. */
+  applyMoventis(feed) {
+    this.movFeed = feed && feed.enabled && Array.isArray(feed.vehicles) ? feed : null;
+    this.renderMoventis();
+  }
+
+  /** Moventis buses: a bus pin in the line's colour with the "estimated"
+   *  dot, as Mataró's estimated buses: the position comes from the
+   *  operator's arrival predictions, not from a GPS. */
+  renderMoventis() {
+    if (!this.map || !this.movLayer) return;
+    const buses = this.movFeed ? this.movFeed.vehicles : [];
+    const neutral = getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim();
+    const hex = v => (typeof v === 'string' && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(v) ? v : null);
+    const seen = new Set();
+    for (const b of buses) {
+      const lat = Number(b?.lat);
+      const lon = Number(b?.lon);
+      if (!b || !b.id || !Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+      if (!this.isRailLineVisible(b.agencyId, b.lineCode)) continue;
+      seen.add(b.id);
+      const popupHtml = buildMoventisPopupHtml(b, this.movFeed);
+      const existing = this.movMarkers.get(b.id);
+      if (existing) {
+        existing.marker.setLatLng([lat, lon]);
+        if (existing.popupHtml !== popupHtml) {
+          existing.marker.setPopupContent(popupHtml);
+          existing.popupHtml = popupHtml;
+        }
+        continue;
+      }
+      const html = vehiclePinHtml({ cls: 'moventis-marker', bg: hex(b.color) || neutral, icon: CANONICAL_BUS_ICON_INNER_SVG, dot: 'estimated' });
+      const marker = L.marker([lat, lon], {
+        icon: L.divIcon({ html, className: 'c10-live-bus-icon', iconSize: [44, 44], iconAnchor: [22, 22] }),
+        zIndexOffset: 950,
+        keyboard: false
+      });
+      marker.bindPopup(popupHtml, { className: 'arribo-bus-popup', minWidth: 290, maxWidth: 350, autoPan: true, autoPanPadding: [20, 20], closeButton: true });
+      marker.addTo(this.movLayer);
+      this.movMarkers.set(b.id, { marker, popupHtml });
+    }
+    for (const [id, obj] of Array.from(this.movMarkers.entries())) {
+      if (seen.has(id)) continue;
+      this.movLayer.removeLayer(obj.marker);
+      this.movMarkers.delete(id);
+    }
   }
 
   /** Trains drawn now: total and how many have a position older than the live window. */
@@ -767,6 +814,7 @@ class NetworkMap extends TransitMap {
     }
     this.busMarkersMap.clear();
     this.trainMarkers.clear();
+    this.movMarkers.clear();
     this.lineGeometries.clear();
     this.lineLayers.clear();
     this.busesByLine.clear();
@@ -893,6 +941,67 @@ function buildTrainPopupHtml(t, op, lineRef) {
       </div>`;
 }
 window.buildTrainPopupHtml = buildTrainPopupHtml;
+
+/** A vehicle pin (train or bus): the markup Mataró's bus pins use. */
+function vehiclePinHtml({ cls, bg, icon, dot }) {
+  return `
+        <div class="live-bus-marker-wrap ${cls}">
+          <div class="live-bus-pin" style="background: ${bg};">
+            <span class="bus-icon-inner">${icon}</span>
+            <span class="bus-status-dot ${dot}"></span>
+          </div>
+        </div>`;
+}
+
+/** A Moventis bus's popup, in the bus popup's card: line, operator, next
+ *  stop and when it gets there, and that the position is estimated. */
+function buildMoventisPopupHtml(b, feed) {
+  const esc = (v) => window.TransitUtils.esc(v);
+  const eta = Number(b.nextStopEtaSec);
+  const age = Number(b.predictionAgeSec);
+  const mins = s => (s < 60 ? netT('movPopup.lessThanMin', null, 'menys d’1 min') : netT('movPopup.minutes', { n: Math.round(s / 60) }, `${Math.round(s / 60)} min`));
+  const tile = (label, value) => `
+          <div class="map-popup-metric-tile">
+            <div class="map-popup-metric-header"><span>${esc(label)}</span></div>
+            <div class="map-popup-metric-val"><span>${esc(value)}</span></div>
+          </div>`;
+  return `
+      <div class="map-popup-card moventis-popup-card">
+        <div class="map-popup-header">
+          <div class="map-popup-title-group">
+            <div class="map-popup-bus-icon">${CANONICAL_BUS_ICON_INNER_SVG}</div>
+            <div class="map-popup-title-text">
+              <div class="map-popup-title">
+                <span class="map-popup-line-pill">${esc(b.lineCode)}</span>
+                <span class="map-popup-bus-id">${esc(netT('movPopup.bus', null, 'Bus'))}</span>
+              </div>
+              <div class="map-popup-subtitle">${esc(b.lineName || 'Moventis')}</div>
+            </div>
+          </div>
+          <div class="map-popup-header-status">
+            <span class="map-popup-status-badge ghost"><span class="status-pulse-dot"></span><span>${esc(netT('movPopup.estimated', null, 'Posició estimada'))}</span></span>
+          </div>
+        </div>
+        ${b.stopName ? `
+        <div class="map-popup-route-ribbon single">
+          <div class="map-popup-route-stop from">
+            <span class="map-popup-stop-dot dest"></span>
+            <span class="map-popup-stop-name">${esc(netT('trainPopup.towards', null, 'Cap a'))} ${esc(b.stopName)}</span>
+          </div>
+        </div>` : ''}
+        <div class="map-popup-metrics-grid">
+          ${tile(netT('movPopup.tileNext', null, 'Propera parada'), Number.isFinite(eta) ? mins(eta) : '--')}
+          ${tile(netT('movPopup.tileDest', null, 'Destinació'), b.destination || '--')}
+          ${tile(netT('trainPopup.tileOperator', null, 'Operador'), 'Moventis')}
+          ${tile(netT('movPopup.tileAge', null, 'Previsió de fa'), Number.isFinite(age) ? mins(age) : '--')}
+        </div>
+        <div class="train-popup-note">${esc(netT('movPopup.note', null, "Posició estimada a partir de les previsions d'arribada que Moventis publica per a cada parada: no és una posició GPS."))}</div>
+        ${feed?.attribution ? `
+        <div class="map-popup-coords-footer">
+          <span class="source-tag">${esc(feed.attribution)}</span>
+        </div>` : ''}
+      </div>`;
+}
 
 /** Staleness backstop for entries carried across a physical-only SSE snapshot.
  *  Comfortably longer than this map's 30 s REST cadence, so a carried entry

@@ -5826,6 +5826,10 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
     const trainsReq = fetch(this.networkTrainsUrl())
       .then(r => (r.ok ? r.json() : null))
       .catch(() => undefined);
+    // Moventis buses (estimated from the operator's arrival predictions).
+    const movReq = fetch('/api/moventis')
+      .then(r => (r.ok ? r.json() : null))
+      .catch(() => undefined);
 
     try {
       // Geometry once (full line views); after that one request for every
@@ -5864,6 +5868,9 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
       // undefined = network error: keep the last trains (each says how old it is).
       // A pan refetch (refreshNetworkTrains) may have drawn a newer area meanwhile.
       if (trains !== undefined && trainSeq === this.networkTrainsSeq) map.applyTrains(trains);
+      const mov = await movReq;
+      if (seq !== this.networkMapSeq || map !== this.networkMap) return;
+      if (mov !== undefined) map.applyMoventis(mov);
       this.renderNetworkTrainToggle();
       this.updateNetworkMapBadge();
 
