@@ -92,7 +92,54 @@ func (h *HistoryDB) aggregateRailHistory() (float64, error) {
 		}
 		last = to
 	}
+	if err := h.foldRailCancels(); err != nil {
+		return last - start, err
+	}
 	return last - start, nil
+}
+
+// foldRailCancels adds the cancellations recorded since the last run to
+// rail_daily_cancellations, by the Madrid day of the scheduled start (the
+// day the train report counts them in). A cancellation is one row per trip
+// and service day in rail_cancellations, inserted once and only refreshed
+// (last_seen) afterwards, so folding by id counts each one once.
+func (h *HistoryDB) foldRailCancels() error {
+	p, err := h.get("SELECT last_id FROM rail_cancel_rollup_progress WHERE singleton = 1")
+	if err != nil {
+		return err
+	}
+	last := 0.0
+	if p != nil {
+		last = jsNumber(p.Get("last_id"))
+	}
+	mx, err := h.get("SELECT COALESCE(MAX(id), 0) AS id FROM rail_cancellations")
+	if err != nil {
+		return err
+	}
+	maxID := jsNumber(mx.Get("id"))
+	if maxID <= last {
+		return nil
+	}
+	if err := h.exec("BEGIN IMMEDIATE"); err != nil {
+		return err
+	}
+	err = func() error {
+		if _, err := h.run(`INSERT INTO rail_daily_cancellations (agency_id, line_code, service_date, cancelled)
+		  SELECT agency_id, line_code, substr(madrid_datetime(scheduled_start), 1, 10) AS day, COUNT(*)
+		  FROM rail_cancellations WHERE id > ? AND id <= ? AND scheduled_start IS NOT NULL
+		  GROUP BY agency_id, line_code, day
+		  ON CONFLICT(agency_id, line_code, service_date) DO UPDATE SET cancelled = cancelled + excluded.cancelled`, last, maxID); err != nil {
+			return err
+		}
+		_, err := h.run(`INSERT INTO rail_cancel_rollup_progress (singleton, last_id) VALUES (1, ?)
+		  ON CONFLICT(singleton) DO UPDATE SET last_id = excluded.last_id`, maxID)
+		return err
+	}()
+	if err != nil {
+		_ = h.exec("ROLLBACK")
+		return err
+	}
+	return h.exec("COMMIT")
 }
 
 // foldRailChunk folds visit ids (from, to] in one transaction.
@@ -182,6 +229,32 @@ func (h *HistoryDB) getRailHistory(agencyID, line string, days float64) (*Obj, e
 		}
 		return nil
 	}
+	// Cancellations per day. Before the first recorded one for this operator
+	// they were not collected: those days say null, not 0.
+	cancelSince := ""
+	if c, err := h.get(`SELECT MIN(service_date) AS d FROM rail_daily_cancellations WHERE agency_id = ?`, agencyID); err == nil && c != nil && !isNullish(c.Get("d")) {
+		cancelSince = jsString(c.Get("d"))
+	}
+	out.Set("cancellationsSince", strOrNil(cancelSince))
+	cancelled := map[string]float64{}
+	if cancelSince != "" {
+		crows, err := h.all(`SELECT service_date AS date, SUM(cancelled) AS n FROM rail_daily_cancellations
+		  WHERE `+where+` AND service_date >= ? AND service_date <= ? GROUP BY service_date`, append(args, from, to)...)
+		if err != nil {
+			return nil, err
+		}
+		for _, c := range crows {
+			cancelled[jsString(c.Get("date"))] = jsNumber(c.Get("n"))
+		}
+	}
+	var totCancelled float64
+	cancelKnown := false
+	dayCancelled := func(date string) any {
+		if cancelSince == "" || date < cancelSince {
+			return nil
+		}
+		return cancelled[date]
+	}
 	daily := make([]any, 0, len(rows))
 	var totVisits, totOnTime, totDelay float64
 	for _, r := range rows {
@@ -189,6 +262,10 @@ func (h *HistoryDB) getRailHistory(agencyID, line string, days float64) (*Obj, e
 		totVisits += n
 		totOnTime += jsNumber(r.Get("on_time"))
 		totDelay += jsNumber(r.Get("delay_sum"))
+		if c := dayCancelled(jsString(r.Get("date"))); c != nil {
+			cancelKnown = true
+			totCancelled += c.(float64)
+		}
 		pct := func(k string) any {
 			if !(n > 0) {
 				return nil
@@ -212,13 +289,18 @@ func (h *HistoryDB) getRailHistory(agencyID, line string, days float64) (*Obj, e
 			"lateOver60Pct", pct("late_over60"),
 			"partial", partialReason(jsString(r.Get("date"))) != nil,
 			"partialReason", partialReason(jsString(r.Get("date"))),
+			"cancelled", dayCancelled(jsString(r.Get("date"))),
 		))
 	}
 	out.Set("daily", daily)
+	var cancelledTotal any // null when no shown day had cancellations recorded
+	if cancelKnown {
+		cancelledTotal = totCancelled
+	}
 	// The period as a whole, from the counts (not from the rounded days).
 	if totVisits > 0 {
 		out.Set("total", O("visits", totVisits, "daysWithData", float64(len(daily)),
-			"onTimePct", jsRound(totOnTime*1000/totVisits)/10, "avgDelay", jsRound(totDelay*10/totVisits)/10))
+			"onTimePct", jsRound(totOnTime*1000/totVisits)/10, "avgDelay", jsRound(totDelay*10/totVisits)/10, "cancelled", cancelledTotal))
 	} else {
 		out.Set("total", nil)
 	}

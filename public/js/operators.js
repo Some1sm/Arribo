@@ -149,12 +149,18 @@
       }
       const pct = Number(r.onTimePct) || 0;
       const h = Math.max(2, pct);
-      const tip = t(r.partialReason === 'first_day' ? 'ops.trendTooltipFirst' : (r.partial ? 'ops.trendTooltipPartial' : 'ops.trendTooltip'), { day: fmtDay(day), pct: fmtPct(r.onTimePct), avg: fmtMin(r.avgDelay), visits: r.visits });
+      const tip = t(r.partialReason === 'first_day' ? 'ops.trendTooltipFirst' : (r.partial ? 'ops.trendTooltipPartial' : 'ops.trendTooltip'), { day: fmtDay(day), pct: fmtPct(r.onTimePct), avg: fmtMin(r.avgDelay), visits: r.visits })
+        + (typeof r.cancelled === 'number' ? ` · ${t('ops.trendCancelled', { n: r.cancelled })}` : '');
       return `<rect class="op-seg ${punctClass(pct)}${r.partial ? ' op-seg-partial' : ''}" x="${(i + 0.15).toFixed(3)}" y="${(100 - h).toFixed(3)}" width="0.7" height="${h.toFixed(3)}"><title>${esc(tip)}</title></rect>`;
     }).join('');
     const tot = d.total;
-    const summary = t('ops.trendSummary', { pct: fmtPct(tot.onTimePct), avg: fmtMin(tot.avgDelay), days: tot.daysWithData, visits: tot.visits });
-    const since = d.firstDate > d.from ? `<p class="op-muted op-trend-note">${esc(t('ops.trendSince', { day: fmtDay(d.firstDate) }))}</p>` : '';
+    const summary = t('ops.trendSummary', { pct: fmtPct(tot.onTimePct), avg: fmtMin(tot.avgDelay), days: tot.daysWithData, visits: tot.visits })
+      + (typeof tot.cancelled === 'number' ? ` · ${t('ops.trendSummaryCancelled', { n: tot.cancelled })}` : '');
+    const notes = [];
+    if (d.firstDate > d.from) notes.push(t('ops.trendSince', { day: fmtDay(d.firstDate) }));
+    // Cancellations were collected later than visits: said, so earlier days are not read as none.
+    if (d.cancellationsSince && d.cancellationsSince > start) notes.push(t('ops.trendCancelSince', { day: fmtDay(d.cancellationsSince) }));
+    const since = notes.length ? `<p class="op-muted op-trend-note">${esc(notes.join(' '))}</p>` : '';
     return `${head}<p class="op-trend-summary">${esc(summary)}</p>
       <figure class="op-hours op-trend"><svg class="op-hours-svg" role="img" aria-label="${esc(t('ops.trendAria', { summary }))}" viewBox="0 0 ${n} 100" preserveAspectRatio="none"><line class="op-trend-ref" x1="0" x2="${n}" y1="10" y2="10"></line>${bars}</svg>
       <figcaption><span>${esc(fmtDay(start))}</span><span>${esc(t('ops.trendCaption'))}</span><span>${esc(t('ops.trendToday'))}</span></figcaption></figure>

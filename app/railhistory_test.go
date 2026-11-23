@@ -106,6 +106,8 @@ func TestRailHistoryDaily(t *testing.T) {
 	add("S1", 10, 0)
 	add("S2", 2, 0)
 	add("S1", 4, 3) // three days ago; one and two days ago have nothing
+	h.recordRailCancel(railCancel{AgencyID: "fgc", TripID: "c1", ServiceDate: "x", Line: "S1", Start: int64(now / 1000), Seen: int64(now / 1000)})
+	h.recordRailCancel(railCancel{AgencyID: "fgc", TripID: "c1", ServiceDate: "x", Line: "S1", Start: int64(now / 1000), Seen: int64(now/1000) + 60}) // seen again: still one
 	if _, err := h.aggregateRailHistory(); err != nil {
 		t.Fatal(err)
 	}
@@ -126,6 +128,18 @@ func TestRailHistoryDaily(t *testing.T) {
 	}
 	if all.Get("to") != today.Get("date") || all.Get("firstDate") != old.Get("date") {
 		t.Errorf("range: %s", toJSON(all))
+	}
+	if old.Get("cancelled") != nil || today.Get("cancelled") != 1.0 {
+		t.Errorf("cancelled: old %v, today %v", old.Get("cancelled"), today.Get("cancelled"))
+	}
+	if all.Get("total").(*Obj).Get("cancelled") != 1.0 {
+		t.Errorf("total cancelled: %s", toJSON(all.Get("total")))
+	}
+	if _, err := h.aggregateRailHistory(); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := h.getRailHistory("fgc", "", 30); again.Get("total").(*Obj).Get("cancelled") != 1.0 {
+		t.Error("a refold counted the cancellation twice")
 	}
 	if tot := all.Get("total").(*Obj); tot.Get("visits") != 4.0 || tot.Get("onTimePct") != 75.0 || tot.Get("avgDelay") != 4.0 || tot.Get("daysWithData") != 2.0 {
 		t.Errorf("total: %s", toJSON(tot))

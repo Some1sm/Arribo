@@ -850,6 +850,19 @@ func (h *HistoryDB) migrate() error {
             singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
             last_id INTEGER NOT NULL
           );
+          -- Cancellations per operator, line and Madrid day of the scheduled
+          -- start, kept beyond the raw retention (railhistory.go).
+          CREATE TABLE IF NOT EXISTS rail_daily_cancellations (
+            agency_id TEXT NOT NULL,
+            line_code TEXT NOT NULL,
+            service_date TEXT NOT NULL,
+            cancelled INTEGER NOT NULL,
+            PRIMARY KEY (agency_id, line_code, service_date)
+          );
+          CREATE TABLE IF NOT EXISTS rail_cancel_rollup_progress (
+            singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+            last_id INTEGER NOT NULL
+          );
           -- The Mataró hourly visit rollup is Mataró's only: train rows there
           -- used the bus on-time rule and nothing read them.
           DELETE FROM hourly_line_visit_stats WHERE agency_id <> 'mataro';
