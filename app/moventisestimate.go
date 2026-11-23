@@ -83,7 +83,9 @@ func movEstimate(s *movStatic, lineIDs []int, preds map[[3]int]movPrediction, no
 					} else {
 						km = math.Min(math.Max(km, prev.stop.Km), pt.stop.Km)
 					}
-					out = append(out, movVehicleJSON(line, rt, pt, km, now))
+					b := movVehicleJSON(line, rt, pt, km, now)
+					b.Set("directionId", numToString(float64(movDirectionOf(s.Routes[id], rt.Trayecto))))
+					out = append(out, b)
 				}
 				prev = pt
 			}
@@ -256,7 +258,7 @@ func (s *Server) hMoventis(q *xreq, res *xres) error {
 			"requestGapSec", movMinGap.Seconds(), "staticAt", movStaticAt(snap.Static))
 	}
 	res.json(O("success", true, "enabled", true, "agencyId", movAgencyID, "mode", "bus",
-		"attribution", "Moventis (prediccions del seu web de temps real)",
+		"attribution", movAttribution,
 		"positionsEstimated", true, "lines", lines, "vehicles", vehicles, "status", status))
 	return nil
 }

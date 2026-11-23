@@ -1092,14 +1092,19 @@ class TransitApp {
     const short = o => o.shortName || o.name;
     const listed = this.availableLines || [];
     const busOps = ops.filter(o => listed.some(l => (l.agencyId || 'mataro') === o.id));
-    const railOps = ops.filter(o => !busOps.includes(o));
+    const otherOps = ops.filter(o => !busOps.includes(o));
+    // Operators without GPS buses: buses with estimated positions (Moventis)
+    // and trains (Rodalies, FGC), each said for what it is.
+    const estOps = otherOps.filter(o => o.mode === 'bus');
+    const railOps = otherOps.filter(o => o.mode !== 'bus');
     const i18n = window.ArriboI18n;
     const t = (key, vars) => (i18n ? i18n.t(key, vars) : key);
     const list = names => (i18n ? i18n.list(names) : names.join(', '));
     const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
     set('landing-hero-eyebrow', t('hero.eyebrow.multi', { ops: ops.map(short).join(' · ') }));
-    set('landing-hero-title', t(railOps.length ? 'hero.title.trains' : 'hero.title.lines'));
+    set('landing-hero-title', t(otherOps.length ? 'hero.title.trains' : 'hero.title.lines'));
     set('landing-hero-subtitle', t('hero.subtitle.buses', { n: listed.length, buses: list(busOps.map(short)) }) +
+      (estOps.length ? t('hero.subtitle.estBuses', { ops: list(estOps.map(short)) }) : '') +
       (railOps.length ? t('hero.subtitle.trains', { trains: list(railOps.map(short)) }) : '.'));
     set('header-city-pill', t('header.pill.multi'));
     if (!this.activeLineId) {
@@ -2058,7 +2063,19 @@ class TransitApp {
    * Mataró line it only restores what it changed.
    */
   renderRailPanel(lData) {
-    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
+    // A bus line of the catalog (Moventis) uses the ".bus" wording where it
+    // differs from the trains' (buses estimated from stop predictions).
+    const busLine = lData?.mode === 'Bus';
+    const t = (k, v) => {
+      const i18n = window.ArriboI18n;
+      if (!i18n) return k;
+      if (busLine) {
+        const bk = `${k}.bus`;
+        const r = i18n.t(bk, v);
+        if (r !== bk) return r;
+      }
+      return i18n.t(k, v);
+    };
     const rail = window.TransitUtils?.isRailLineId?.(this.activeLineId);
     const title = document.getElementById('departures-card-title');
     const telemetry = document.getElementById('telemetry-card');

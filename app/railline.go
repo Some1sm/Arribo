@@ -28,7 +28,7 @@ func railLineRef(lineID any) (info operatorInfo, op *rtCatalogOp, code string, o
 		return
 	}
 	agency, want := strings.ToLower(s[:i]), s[i+1:]
-	for _, o := range reportOperators {
+	for _, o := range lineOperators() {
 		if o.ID != agency {
 			continue
 		}
@@ -155,6 +155,11 @@ func railLineDetails(info operatorInfo, op *rtCatalogOp, code, direction string,
 		headsign[d.DirectionID] = d.Headsign
 	}
 	buses, stale := railLineTrains(info, code, ref, direction, headsign, feeds, now)
+	source := "gtfsrt"
+	if info.ID == movAgencyID {
+		// Moventis: buses estimated from its stop predictions.
+		buses, stale, source = movLineBuses(code, direction, now), 0, "moventis_predictions"
+	}
 
 	name := route.Name
 	if name == "" {
@@ -170,7 +175,7 @@ func railLineDetails(info operatorInfo, op *rtCatalogOp, code, direction string,
 		"agency", info.Name,
 		"agencyId", info.ID,
 		"group", info.ID,
-		"mode", "Tren",
+		"mode", catalogModeLabel(info),
 		"direction", direction,
 		"directionName", directionName,
 		"directions", directions,
@@ -189,8 +194,9 @@ func railLineDetails(info operatorInfo, op *rtCatalogOp, code, direction string,
 		"activeBuses", buses,
 		"delayStats", nil,
 		"railData", O(
-			"source", "gtfsrt",
-			"attribution", trainAttribution[info.ID],
+			"source", source,
+			"attribution", railAttribution(info.ID),
+			"positionsEstimated", info.ID == movAgencyID,
 			"stopsFrom", "longest_trip",
 			"staleAfterSec", trainStaleAfter(info.ID),
 			"staleTrains", float64(stale),
@@ -280,6 +286,11 @@ func (s *Server) railDepartures(q *xreq, res *xres, info operatorInfo, op *rtCat
 		res.json(O("success", false, "error", "Unknown station for this line"))
 		return
 	}
+	if info.ID == movAgencyID {
+		// No timetable: the predictions the poller last collected there.
+		res.json(O("success", true, "data", movStopDepartures(stop, code, time.UnixMilli(nowMs()))))
+		return
+	}
 	direction := ""
 	if v := qv(q, "direction"); !isUndef(v) {
 		direction = jsTrim(jsString(v))
@@ -350,4 +361,12 @@ func (s *Server) hRailLine(q *xreq, res *xres, kind string) bool {
 		res.json(O("success", false, "error", "Not available for rail lines yet"))
 	}
 	return true
+}
+
+// railAttribution is the attribution an operator's licence asks for.
+func railAttribution(agencyID string) any {
+	if agencyID == movAgencyID {
+		return movAttribution
+	}
+	return trainAttribution[agencyID]
 }

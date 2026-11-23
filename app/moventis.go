@@ -93,6 +93,9 @@ type movRoute struct {
 	Desc     string    `json:"desc"`
 	Dest     string    `json:"dest"`
 	Stops    []movStop `json:"stops"`
+	// Geometry is the route's path from the site's KML ([lat, lon]); empty
+	// when it could not be fetched (the stops are joined instead).
+	Geometry [][2]float64 `json:"geometry,omitempty"`
 }
 
 // movStatic is the cached lines and routes.
@@ -164,6 +167,7 @@ func startMoventisPoller() (stop func()) {
 	log.Printf("[Moventis] following %d lines (ARRIBO_MOVENTIS=1)", len(ids))
 	return func() {
 		movLive.CompareAndSwap(p, nil)
+		rtCatalog.Delete(movAgencyID)
 		cancel()
 		<-done
 	}
@@ -463,11 +467,20 @@ func (p *movPoller) loadCache() *movStatic {
 		return nil
 	}
 	// Destinations follow the current rule, not the one the cache was written with.
+	paths := true
 	for id, rs := range s.Routes {
 		for i := range rs {
 			rs[i].Dest = movRouteDest(rs[i])
+			if len(rs[i].Geometry) < 2 {
+				paths = false
+			}
 		}
 		s.Routes[id] = rs
+	}
+	if !paths {
+		// A cache written before route paths were fetched: refresh it now
+		// (it is still used until the refresh succeeds).
+		s.FetchedAt = time.Time{}
 	}
 	return &s
 }
@@ -534,10 +547,140 @@ func (p *movPoller) fetchRoutes(ctx context.Context, id int) ([]movRoute, error)
 		}
 		if routes, err := parseMovRoutes(id, body); err == nil {
 			p.ok()
+			for i := range routes {
+				if b, err := p.get(ctx, fmt.Sprintf("/api/json/GetKMLs/%d/%d", id, routes[i].Trayecto)); err == nil {
+					routes[i].Geometry = parseMovKML(b)
+				} else if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
+			}
 			return routes, nil
 		}
 	}
 	return nil, errMovNoRoutes
+}
+
+var reMovKMLCoords = regexp.MustCompile(`(?s)<coordinates>(.*?)</coordinates>`)
+
+// parseMovKML is the path of a route's KML (lon,lat[,alt] tuples), as
+// [lat, lon], at most rtMaxShapePoints points; nil when there is none.
+func parseMovKML(b []byte) [][2]float64 {
+	var pts [][2]float64
+	for _, m := range reMovKMLCoords.FindAllSubmatch(b, -1) {
+		for _, tuple := range strings.Fields(string(m[1])) {
+			parts := strings.Split(tuple, ",")
+			if len(parts) < 2 {
+				continue
+			}
+			lon, err1 := strconv.ParseFloat(parts[0], 64)
+			lat, err2 := strconv.ParseFloat(parts[1], 64)
+			if err1 != nil || err2 != nil || lat < 35 || lat > 45 || lon < -5 || lon > 5 {
+				continue
+			}
+			pts = append(pts, [2]float64{lat, lon})
+		}
+	}
+	if len(pts) < 2 {
+		return nil
+	}
+	if len(pts) > rtMaxShapePoints {
+		step := float64(len(pts)-1) / float64(rtMaxShapePoints-1)
+		thin := make([][2]float64, 0, rtMaxShapePoints)
+		for i := 0; i < rtMaxShapePoints-1; i++ {
+			thin = append(thin, pts[int(float64(i)*step)])
+		}
+		pts = append(thin, pts[len(pts)-1])
+	}
+	return pts
+}
+
+// movOperator is Moventis in the line catalog (catalogOperators). It is
+// not in reportOperators: Dades has no delays for it (its predictions come
+// without the scheduled time).
+var movOperator = operatorInfo{ID: movAgencyID, Name: "Moventis", ShortName: "Moventis", Mode: "bus", Tier: "predicted", Method: "operator_prediction",
+	Source: "Previsions d'arribada a cada parada que Moventis publica al seu web de temps real; la posició dels busos s'estima a partir d'aquestes previsions."}
+
+// lineOperators is the operators whose lines the catalog lists and the
+// line view opens: the train operators, and Moventis while it is followed.
+func lineOperators() []operatorInfo {
+	if _, ok := rtCatalog.Load(movAgencyID); !ok {
+		return reportOperators
+	}
+	return append(append([]operatorInfo(nil), reportOperators...), movOperator)
+}
+
+// publishCatalog puts the followed lines in the line catalog (rtCatalog):
+// code, name, colours, and per route its stops and path, as the train
+// lines' profiles. Directions are the routes in trayecto order (0, 1...).
+func (s *movStatic) publishCatalog(lineIDs []int) {
+	op := &rtCatalogOp{AgencyID: movAgencyID, Mode: "bus", Profiles: map[string]*rtLineProfile{}}
+	for _, id := range lineIDs {
+		l, ok := s.Lines[id]
+		routes := s.Routes[id]
+		if !ok || l.Code == "" || len(routes) == 0 {
+			continue
+		}
+		op.Lines = append(op.Lines, rtRoute{Code: l.Code, Name: l.Name, Color: strings.ToUpper(l.Color), TextColor: strings.ToUpper(l.TextColor), RouteType: 3})
+		prof := &rtLineProfile{Code: l.Code}
+		for i, rt := range movOrderedRoutes(routes) {
+			d := rtLineDirection{DirectionID: i, Headsign: movTitle(rt.Dest)}
+			for _, st := range rt.Stops {
+				d.Stops = append(d.Stops, rtLineStop{ID: numToString(float64(st.ID)), Name: st.Name, Lat: st.Lat, Lon: st.Lon})
+				if len(rt.Geometry) < 2 {
+					d.Geometry = append(d.Geometry, [2]float64{st.Lat, st.Lon})
+				}
+			}
+			if len(rt.Geometry) >= 2 {
+				d.Geometry = rt.Geometry
+			} else {
+				d.GeometryFromStops = true
+			}
+			prof.Directions = append(prof.Directions, d)
+		}
+		op.Profiles[l.Code] = prof
+	}
+	if len(op.Lines) > 0 {
+		rtCatalog.Store(movAgencyID, op)
+	}
+}
+
+// movOrderedRoutes is a line's routes in trayecto order: their index is
+// the line view's direction id.
+func movOrderedRoutes(routes []movRoute) []movRoute {
+	out := append([]movRoute(nil), routes...)
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Trayecto < out[j].Trayecto })
+	return out
+}
+
+// movDirectionOf is the direction id (movOrderedRoutes index) of a route.
+func movDirectionOf(routes []movRoute, trayecto int) int {
+	for i, rt := range movOrderedRoutes(routes) {
+		if rt.Trayecto == trayecto {
+			return i
+		}
+	}
+	return -1
+}
+
+// movTitle turns "VILASSAR DE DALT" into "Vilassar De Dalt"-like title case
+// for headsigns, keeping short words lower case ("de", "del", "la").
+func movTitle(s string) string {
+	if strings.EqualFold(strings.TrimSpace(s), "BCN") {
+		return "Barcelona"
+	}
+	words := strings.Fields(strings.ToLower(s))
+	small := map[string]bool{"de": true, "del": true, "la": true, "les": true, "el": true, "els": true, "i": true, "d'": true}
+	for i, w := range words {
+		if i > 0 && small[w] {
+			continue
+		}
+		r := []rune(w)
+		if len(r) > 0 {
+			r[0] = []rune(strings.ToUpper(string(r[0])))[0]
+		}
+		words[i] = string(r)
+	}
+	return strings.Join(words, " ")
 }
 
 // retryMissing asks again for the followed lines that have no routes
@@ -646,6 +789,13 @@ func (s *movStatic) routeFor(lineID, stopID int, dest string) (movRoute, bool) {
 
 func (p *movPoller) run(ctx context.Context) {
 	static := p.loadCache()
+	if static != nil {
+		// The cached lines are listed at once, also while a refresh runs.
+		p.mu.Lock()
+		p.static = static
+		p.mu.Unlock()
+		static.publishCatalog(p.lineIDs)
+	}
 	p.publish(time.Now())
 	for ctx.Err() == nil {
 		if static == nil || time.Since(static.FetchedAt) > movStaticMaxAge {
@@ -670,6 +820,7 @@ func (p *movPoller) run(ctx context.Context) {
 		p.mu.Lock()
 		p.static = static
 		p.mu.Unlock()
+		static.publishCatalog(p.lineIDs)
 		p.publish(time.Now())
 		samples := movSamples(static, p.lineIDs)
 		p.mu.Lock()

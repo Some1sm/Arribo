@@ -16,7 +16,7 @@ const railRouteTolerance = 0.00025
 
 func (s *Server) hRailRoutes(q *xreq, res *xres) error {
 	lines := []any{}
-	for _, info := range reportOperators {
+	for _, info := range lineOperators() {
 		v, ok := rtCatalog.Load(info.ID)
 		if !ok {
 			continue

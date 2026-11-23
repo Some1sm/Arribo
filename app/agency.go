@@ -154,7 +154,7 @@ func catalogLine(l *Obj) *Obj {
 // of reportOperators. They are not trackable yet (no live line view), so the
 // client lists them for colours and Dades but not as lines to follow.
 func railCatalog() (lines []any, ops []any) {
-	for _, info := range reportOperators {
+	for _, info := range lineOperators() {
 		v, ok := rtCatalog.Load(info.ID)
 		if !ok {
 			continue
@@ -173,7 +173,7 @@ func railCatalog() (lines []any, ops []any) {
 			_, hasProfile := op.Profiles[r.Code]
 			lines = append(lines, O(
 				"id", r.Code, "code", r.Code, "name", r.Name, "color", color, "textColor", ink,
-				"agency", info.Name, "agencyId", info.ID, "group", info.ID, "mode", "Tren",
+				"agency", info.Name, "agencyId", info.ID, "group", info.ID, "mode", catalogModeLabel(info),
 				"directions", []any{}, "trackable", false,
 				"lineRef", info.ID+":"+r.Code, "openable", hasProfile,
 			))
@@ -186,4 +186,12 @@ func railCatalog() (lines []any, ops []any) {
 		))
 	}
 	return lines, ops
+}
+
+// catalogModeLabel is the catalog's mode word for an operator's lines.
+func catalogModeLabel(info operatorInfo) string {
+	if info.Mode == "bus" {
+		return "Bus"
+	}
+	return "Tren"
 }

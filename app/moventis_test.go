@@ -159,3 +159,43 @@ func TestMovRouteDest(t *testing.T) {
 		}
 	}
 }
+
+func TestMovKML(t *testing.T) {
+	kml := []byte(`<kml><Document><Placemark><LineString><coordinates>
+	  2.4416,41.5398,0 2.4420,41.5401,0
+	  2.4431,41.5409,0</coordinates></LineString></Placemark></Document></kml>`)
+	pts := parseMovKML(kml)
+	if len(pts) != 3 || pts[0] != [2]float64{41.5398, 2.4416} {
+		t.Errorf("points: %v", pts)
+	}
+	if parseMovKML([]byte(`<kml><name>x</name></kml>`)) != nil {
+		t.Error("no coordinates should give nil")
+	}
+}
+
+// TestMovCatalog: the followed lines go into the line catalog with their
+// routes as directions, and "moventis:C-10" opens like a train line.
+func TestMovCatalog(t *testing.T) {
+	routes := movTestRoutes(t)
+	s := &movStatic{Lines: map[int]movLine{53: {ID: 53, Code: "C-10", Name: "MATARO - BARCELONA (PER N-II)", Color: "#9AFF1F"}}, Routes: map[int][]movRoute{53: routes}}
+	s.publishCatalog([]int{53})
+	defer rtCatalog.Delete(movAgencyID)
+	if ops := lineOperators(); len(ops) != len(reportOperators)+1 || ops[len(ops)-1].ID != movAgencyID {
+		t.Fatalf("operators: %+v", ops)
+	}
+	info, op, code, ok := railLineRef("moventis:c-10")
+	if !ok || info.ID != movAgencyID || code != "C-10" {
+		t.Fatalf("line ref: %v %v %v", info.ID, code, ok)
+	}
+	prof := op.Profiles["C-10"]
+	if prof == nil || len(prof.Directions) != 2 || prof.Directions[0].Headsign != "Barcelona" || prof.Directions[1].Headsign != "Mataró" {
+		t.Fatalf("profile: %+v", prof)
+	}
+	if !prof.Directions[1].GeometryFromStops || len(prof.Directions[1].Stops) < 30 {
+		t.Errorf("direction 1: %d stops, from stops %v", len(prof.Directions[1].Stops), prof.Directions[1].GeometryFromStops)
+	}
+	d := railLineDetails(info, op, code, "1", nil, time.Now())
+	if d.Get("mode") != "Bus" || d.Get("lineId") != "moventis:C-10" {
+		t.Errorf("line view: mode %v id %v", d.Get("mode"), d.Get("lineId"))
+	}
+}
