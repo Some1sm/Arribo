@@ -186,6 +186,12 @@ func (t *rtTimetable) tripLine(ctx context.Context, tripID string) string {
 
 // routeLine is a route id's line code as the catalog names it (short name,
 // else route id), or "" when the timetable has no such route.
+// tripHeadsign is a trip's headsign (the import fills a missing one with its
+// last station), or "".
+func (t *rtTimetable) tripHeadsign(ctx context.Context, tripID string) string {
+	return t.lookupString(ctx, "H\x00"+tripID, `SELECT COALESCE(headsign, '') FROM trips WHERE trip_id = ? LIMIT 1`, tripID)
+}
+
 func (t *rtTimetable) routeLine(ctx context.Context, routeID string) string {
 	return t.lookupString(ctx, "Q\x00"+routeID, `SELECT COALESCE(NULLIF(short_name, ''), route_id) FROM routes WHERE route_id = ? LIMIT 1`, routeID)
 }

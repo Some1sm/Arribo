@@ -783,6 +783,21 @@ func (h *HistoryDB) migrate() error {
           DROP INDEX IF EXISTS idx_visits_stop;
           CREATE INDEX IF NOT EXISTS idx_visits_agency_stop ON stop_visits(agency_id, stop_name, last_ts);
           CREATE INDEX IF NOT EXISTS idx_visits_agency_time ON stop_visits(agency_id, last_ts);
+          -- Cancellations the operators announce in their GTFS-RT trip updates
+          -- (railcancel.go): one row per operator, trip and service day.
+          CREATE TABLE IF NOT EXISTS rail_cancellations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            agency_id TEXT NOT NULL,
+            trip_id TEXT NOT NULL,
+            service_date TEXT NOT NULL,
+            line_code TEXT NOT NULL,
+            headsign TEXT DEFAULT '',
+            scheduled_start INTEGER,
+            first_seen INTEGER NOT NULL,
+            last_seen INTEGER NOT NULL,
+            UNIQUE(agency_id, trip_id, service_date)
+          );
+          CREATE INDEX IF NOT EXISTS idx_cancel_agency_start ON rail_cancellations(agency_id, scheduled_start);
         `); err != nil {
 		return err
 	}

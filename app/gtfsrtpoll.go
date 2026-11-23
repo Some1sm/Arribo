@@ -84,6 +84,7 @@ type rtPoller struct {
 	logNext                                  bool              // log the next snapshot (after a timetable opens)
 	visits                                   *railVisitTracker // station visits from trip updates (run goroutine only)
 	pending                                  []railVisit       // closed visits waiting for the worker (guarded by mu)
+	pendingCancels                           []railCancel      // cancelled trips waiting for the worker (guarded by mu)
 	closedVisits, droppedVisits, implausible int               // counters (guarded by mu)
 	computed                                 int               // delays derived from predicted times in the last trip feed
 	computedTrips                            map[string]bool   // which trips those were (guarded by mu; replaced, never mutated)
@@ -239,6 +240,7 @@ func (p *rtPoller) pollTrips(ctx context.Context) {
 	total, computed := 0, 0
 	computedTrips := map[string]bool{}
 	canceled := map[string]bool{}
+	var cancels []railCancel // announced cancellations for the history database
 	delays, err := func() (map[string]int32, error) {
 		u, err := p.src.tripURL(ctx)
 		if err != nil {
@@ -263,6 +265,9 @@ func (p *rtPoller) pollTrips(ctx context.Context) {
 			// departure boards and the planner must not offer it as running.
 			if e.TripUpdate.Trip.ScheduleRelationship == gtfsTripCanceled {
 				canceled[e.TripUpdate.Trip.TripID] = true
+				if c, ok := cancelFor(ctx, p.tt, p.src.AgencyID, e.TripUpdate.Trip, time.Now()); ok {
+					cancels = append(cancels, c)
+				}
 				continue
 			}
 			// Some feeds (FGC) send predicted times only, no delay: those
@@ -277,6 +282,9 @@ func (p *rtPoller) pollTrips(ctx context.Context) {
 		}
 		return out, nil
 	}()
+	if err == nil {
+		p.queueCancels(cancels)
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if err != nil {

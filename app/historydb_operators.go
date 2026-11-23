@@ -8,6 +8,7 @@ package main
 import (
 	"errors"
 	"math"
+	"sort"
 	"time"
 )
 
@@ -87,14 +88,32 @@ func (h *HistoryDB) getOperatorReport(hours float64, feeds map[string]*Obj) (*Ob
 		if err != nil {
 			return nil, err
 		}
+		// Cancellations the operator announced for trips scheduled to start in
+		// the window (railcancel.go), per line.
+		cancelled, cancelledByLine := h.railCancelCounts(op.ID, cutoff, float64(nowMs()))
 		lineRows := []any{}
+		listed := map[string]bool{}
 		for _, l := range lines {
 			n := jsNumber(l.Get("visits"))
+			code := jsString(l.Get("line"))
+			listed[code] = true
 			lineRows = append(lineRows, O(
 				"line", l.Get("line"), "visits", n,
 				"avgDelay", round1(l.Get("avgDelay")), "maxDelay", l.Get("maxDelay"),
 				"onTimePct", jsRound(jsNumber(l.Get("onTime"))*1000/math.Max(n, 1))/10,
+				"cancelled", cancelledByLine[code],
 			))
+		}
+		// A line whose every train in the window was cancelled has no visits.
+		var onlyCancelled []string
+		for code := range cancelledByLine {
+			if !listed[code] {
+				onlyCancelled = append(onlyCancelled, code)
+			}
+		}
+		sort.Strings(onlyCancelled)
+		for _, code := range onlyCancelled {
+			lineRows = append(lineRows, O("line", code, "visits", 0.0, "avgDelay", nil, "maxDelay", nil, "onTimePct", nil, "cancelled", cancelledByLine[code]))
 		}
 		stations, err := h.all(`SELECT stop_name AS station, COUNT(*) AS visits, AVG(delay_mins) AS avgDelay,
 		    MAX(delay_mins) AS maxDelay
@@ -120,6 +139,7 @@ func (h *HistoryDB) getOperatorReport(hours float64, feeds map[string]*Obj) (*Ob
 			"source", op.Source,
 			"tier", op.Tier, "method", op.Method,
 			"visits", visits, "trips", field(sum, "trips"),
+			"cancelled", cancelled,
 			"avgDelay", round1(field(sum, "avgDelay")), "maxDelay", field(sum, "maxDelay"),
 			"onTimePct", pct("onTime"), "earlyPct", pct("early"),
 			"buckets", O(

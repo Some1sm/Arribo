@@ -167,6 +167,7 @@ func (d *IngestionDaemon) start() {
 	d.every(stop, 5*time.Minute, d.pollCanary)
 	d.every(stop, 60*time.Second, func() { d.checkScheduleDriftSchedule(float64(nowMs())) })
 	d.every(stop, 30*time.Second, d.writeRailVisits)
+	d.every(stop, 30*time.Second, d.writeRailCancels)
 
 	log.Printf("[IngestionDaemon] ✅ Mataró Bus Ingestion Engine Active.")
 }

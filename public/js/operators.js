@@ -226,8 +226,10 @@
 
   function linesTable(op) {
     if (!op.lines || !op.lines.length) return '';
-    const rows = op.lines.map(l => `<tr><th scope="row"><button type="button" class="op-line-btn" data-op-agency="${esc(op.id)}" data-op-line="${esc(l.line)}" aria-expanded="${openLine && openLine.agency === op.id && openLine.line === l.line}" title="${esc(t('ops.lineDetailTitle', { line: l.line }))}"><span class="line-badge" data-line="${esc(`${op.id}:${l.line}`)}">${esc(l.line)}</span></button></th><td class="${delayClass(l.avgDelay)}">${esc(fmtMin(l.avgDelay))}</td><td>${esc(fmtPct(l.onTimePct))}</td><td>${esc(fmtMin(l.maxDelay))}</td><td>${l.visits}</td></tr>`).join('');
-    return `<div class="op-table-wrap"><table class="op-table"><caption>${esc(t('ops.linesCaption'))}</caption><thead><tr><th scope="col">${esc(t('ops.colLine'))}</th><th scope="col">${esc(t('ops.colAvgDelay'))}</th><th scope="col">${esc(t('ops.colPunctuality'))}</th><th scope="col">${esc(t('ops.colMax'))}</th><th scope="col">${esc(t('ops.colVisits'))}</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    // Cancellations per line, when the server reports them (railcancel.go).
+    const hasCancel = op.lines.some(l => typeof l.cancelled === 'number');
+    const rows = op.lines.map(l => `<tr><th scope="row"><button type="button" class="op-line-btn" data-op-agency="${esc(op.id)}" data-op-line="${esc(l.line)}" aria-expanded="${openLine && openLine.agency === op.id && openLine.line === l.line}" title="${esc(t('ops.lineDetailTitle', { line: l.line }))}"><span class="line-badge" data-line="${esc(`${op.id}:${l.line}`)}">${esc(l.line)}</span></button></th><td class="${delayClass(l.avgDelay)}">${esc(fmtMin(l.avgDelay))}</td><td>${esc(fmtPct(l.onTimePct))}</td><td>${esc(fmtMin(l.maxDelay))}</td><td>${l.visits}</td>${hasCancel ? `<td class="${l.cancelled > 0 ? 'op-severe' : ''}">${Number(l.cancelled) || 0}</td>` : ''}</tr>`).join('');
+    return `<div class="op-table-wrap"><table class="op-table"><caption>${esc(t('ops.linesCaption'))}</caption><thead><tr><th scope="col">${esc(t('ops.colLine'))}</th><th scope="col">${esc(t('ops.colAvgDelay'))}</th><th scope="col">${esc(t('ops.colPunctuality'))}</th><th scope="col">${esc(t('ops.colMax'))}</th><th scope="col">${esc(t('ops.colVisits'))}</th>${hasCancel ? `<th scope="col" title="${esc(t('ops.kpiCancelledTitle'))}">${esc(t('ops.colCancelled'))}</th>` : ''}</tr></thead><tbody>${rows}</tbody></table></div>`;
   }
 
   function stationsList(op) {
@@ -262,6 +264,7 @@
         <div class="kpi"><span class="kpi-label">${esc(t('ops.kpiMaxDelay'))}</span><span class="kpi-value">${esc(fmtMin(op.maxDelay))}</span></div>
         <div class="kpi"><span class="kpi-label">${esc(t('ops.kpiVisits'))}</span><span class="kpi-value">${op.visits}</span></div>
         <div class="kpi"><span class="kpi-label">${esc(t('ops.kpiTrains'))}</span><span class="kpi-value">${op.trips}</span></div>
+        ${typeof op.cancelled === 'number' ? `<div class="kpi" title="${esc(t('ops.kpiCancelledTitle'))}"><span class="kpi-label">${esc(t('ops.kpiCancelled'))}</span><span class="kpi-value${op.cancelled > 0 ? ' is-bad' : ''}">${op.cancelled}</span></div>` : ''}
       </div>
       ${bucketBar(op)}
       ${linesTable(op)}
