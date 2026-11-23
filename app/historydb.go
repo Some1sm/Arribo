@@ -811,6 +811,48 @@ func (h *HistoryDB) migrate() error {
             last_seen INTEGER NOT NULL,
             PRIMARY KEY (agency_id, stop_id, line_code, direction, platform)
           );
+          -- Train punctuality kept beyond the raw retention (railhistory.go).
+          CREATE TABLE IF NOT EXISTS rail_hourly_stats (
+            agency_id TEXT NOT NULL,
+            line_code TEXT NOT NULL,
+            date_hour TEXT NOT NULL,
+            visits INTEGER NOT NULL,
+            delay_sum REAL NOT NULL,
+            max_delay INTEGER NOT NULL,
+            early INTEGER NOT NULL,
+            on_time INTEGER NOT NULL,
+            late15 INTEGER NOT NULL,
+            late30 INTEGER NOT NULL,
+            late60 INTEGER NOT NULL,
+            late_over60 INTEGER NOT NULL,
+            first_ts INTEGER NOT NULL,
+            PRIMARY KEY (agency_id, line_code, date_hour)
+          );
+          CREATE TABLE IF NOT EXISTS rail_daily_station_stats (
+            agency_id TEXT NOT NULL,
+            line_code TEXT NOT NULL,
+            stop_name TEXT NOT NULL,
+            service_date TEXT NOT NULL,
+            visits INTEGER NOT NULL,
+            delay_sum REAL NOT NULL,
+            max_delay INTEGER NOT NULL,
+            early INTEGER NOT NULL,
+            on_time INTEGER NOT NULL,
+            late15 INTEGER NOT NULL,
+            late30 INTEGER NOT NULL,
+            late60 INTEGER NOT NULL,
+            late_over60 INTEGER NOT NULL,
+            first_ts INTEGER NOT NULL,
+            PRIMARY KEY (agency_id, line_code, stop_name, service_date)
+          );
+          CREATE INDEX IF NOT EXISTS idx_rail_daily_agency_date ON rail_daily_station_stats(agency_id, service_date);
+          CREATE TABLE IF NOT EXISTS rail_rollup_progress (
+            singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+            last_id INTEGER NOT NULL
+          );
+          -- The Mataró hourly visit rollup is Mataró's only: train rows there
+          -- used the bus on-time rule and nothing read them.
+          DELETE FROM hourly_line_visit_stats WHERE agency_id <> 'mataro';
         `); err != nil {
 		return err
 	}

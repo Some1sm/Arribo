@@ -46,6 +46,8 @@ type Server struct {
 	shuttingDown    bool
 	incidentCache   *JSMap
 	incidentRefresh map[string]bool // incident cache keys being recomputed in the background
+	monthlyCache    *JSMap          // month ("2026-11") -> monthly report (hMonthly)
+	monthlyRefresh  map[string]bool // months being recomputed in the background
 	gpsGapCache     *JSMap
 	operatorCache   *JSMap
 	sseRoute        *routeEntry
@@ -847,6 +849,8 @@ func newServer() (*Server, error) {
 		publicDir:       filepath.Join(appRoot, "public"),
 		incidentCache:   newJSMap(),
 		incidentRefresh: map[string]bool{},
+		monthlyCache:    newJSMap(),
+		monthlyRefresh:  map[string]bool{},
 		gpsGapCache:     newJSMap(),
 		operatorCache:   newJSMap(),
 	}
@@ -1887,13 +1891,50 @@ func (s *Server) hJournalism(q *xreq, res *xres) error {
 
 var reMonth = regexp.MustCompile(`^\d{4}-\d{2}$`)
 
+// The monthly report reads a whole month of stop visits (about 2.4 s on
+// the VPS) and changes slowly, so it is cached per month: a result under
+// monthlyFreshMs old is served as is (X-Cache: HIT); one under
+// monthlyStaleMs is served at once (X-Cache: STALE) while one background
+// query replaces it. A failed or empty report, or one that carries an
+// error, is never cached.
+const (
+	monthlyFreshMs = 5 * 60 * 1000
+	monthlyStaleMs = 30 * 60 * 1000
+)
+
 func (s *Server) hMonthly(q *xreq, res *xres) error {
 	var month any = nil
 	if m, ok := qv(q, "month").(string); ok && reMonth.MatchString(m) {
 		month = m
 	}
-	allLines := s.registry.getAllLines()
-	report, err := s.historyQuery("getMonthlyReport", O("month", month, "allLinesCatalog", allLines), 30000)
+	key := getMadridMonthRange(month).MonthStr
+	now := float64(nowMs())
+	args := func() *Obj { return O("month", month, "allLinesCatalog", s.registry.getAllLines()) }
+	if v, ok := s.monthlyCache.Get(key); ok {
+		e := v.(*cachedData)
+		switch age := now - e.timestamp; {
+		case age < monthlyFreshMs:
+			res.h.Set("X-Cache", "HIT")
+			res.json(spreadAny(O("success", true), e.data))
+			return nil
+		case age < monthlyStaleMs:
+			if !s.monthlyRefresh[key] {
+				s.monthlyRefresh[key] = true
+				a := args()
+				s.w.spawn(func() {
+					defer delete(s.monthlyRefresh, key)
+					fresh, err := s.historyQuery("getMonthlyReport", a, 30000)
+					if err == nil && reportTruthy(fresh) && isUndef(field(fresh, "error")) {
+						s.storeMonthly(key, fresh, float64(nowMs()))
+					}
+				})
+			}
+			res.h.Set("X-Cache", "STALE")
+			res.json(spreadAny(O("success", true), e.data))
+			return nil
+		}
+	}
+	report, err := s.historyQuery("getMonthlyReport", args(), 30000)
 	if err != nil {
 		s.sendInternalError(q, res, err, nil)
 		return nil
@@ -1903,8 +1944,19 @@ func (s *Server) hMonthly(q *xreq, res *xres) error {
 		res.json(O("success", false, "error", "Monthly report service unavailable."))
 		return nil
 	}
+	if isUndef(field(report, "error")) {
+		s.storeMonthly(key, report, now)
+	}
+	res.h.Set("X-Cache", "MISS")
 	res.json(spreadAny(O("success", true), report))
 	return nil
+}
+
+func (s *Server) storeMonthly(key string, data any, at float64) {
+	s.monthlyCache.Set(key, &cachedData{data: data, timestamp: at})
+	if s.monthlyCache.Len() > 24 {
+		s.monthlyCache.Delete(s.monthlyCache.Keys()[0])
+	}
 }
 
 func (s *Server) hCsv(q *xreq, res *xres, which, prefix string) error {

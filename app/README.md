@@ -118,6 +118,11 @@ Deliberate changes made after the Node code was removed:
   computed on the spot, `MISS`). The analysis covers past hours or days and
   takes about 2 s for a 7-day view, which with the 60 s cache nearly every
   visit used to wait for. Responses are otherwise unchanged.
+- `/api/analytics/report/monthly` is cached per month the same way: `HIT`
+  under 5 minutes, `STALE` (served at once, one background refresh) under
+  30 minutes, `MISS` beyond. It reads a whole month of visits, about 2.4 s
+  on the VPS, and was computed on every request. A report carrying an
+  `error` is not cached. Responses are otherwise unchanged.
 - Static files from `public/` are compressed like API responses (gzip or br by
   `Accept-Encoding`, compressible types of 1 KiB or more, with
   `Vary: Accept-Encoding`). Express served them uncompressed. Range (206), HEAD

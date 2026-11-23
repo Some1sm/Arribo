@@ -189,7 +189,7 @@ func (h *HistoryDB) aggregateHourlyVisitStats() (*Obj, error) {
           SUM(CASE WHEN `+earlySQL+` THEN 1 ELSE 0 END) AS early,
           SUM(CASE WHEN `+lateSQL+` THEN 1 ELSE 0 END) AS late,
           MIN(last_ts) AS timestamp
-        FROM stop_visits WHERE id > ? AND id <= ? AND `+validDelaySQL+`
+        FROM stop_visits WHERE id > ? AND id <= ? AND `+validDelaySQL+` AND agency_id = 'mataro'
         GROUP BY agency_id, line_code, date_hour
       `, true)
 }
@@ -207,6 +207,10 @@ func (h *HistoryDB) pruneOldRecords() {
 		}
 		if _, err := h.aggregateHourlyVisitStats(); err != nil {
 			return err
+		}
+		// A failed train fold is logged, not fatal: it must not stop pruning.
+		if _, err := h.aggregateRailHistory(); err != nil {
+			log.Printf("[HistoryDB] Rail history rollup failed: %s", err.Error())
 		}
 		snapCut := float64(nowMs()) - h.snapshotRetentionHours*3600*1000
 		snaps, err := h.run("DELETE FROM vehicle_snapshots WHERE timestamp < ?", snapCut)
