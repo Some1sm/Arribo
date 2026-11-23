@@ -189,7 +189,7 @@ func (k *Worker) railDeparturesOp(args *Obj) (any, error) {
 			platforms.Set(p[0], p[1])
 		}
 	}
-	return O("departures", list, "platforms", platforms), nil
+	return O("departures", list, "platforms", platforms, "usualPlatforms", k.usualPlatformsFor(ctx, agency, stop, code)), nil
 }
 
 // railDeparturesResponse turns the worker's scheduled departures into the
@@ -197,7 +197,9 @@ func (k *Worker) railDeparturesOp(args *Obj) (any, error) {
 // a live delay where the operator's feed has one for that trip. A trip
 // with no live delay is shown as timetable only, never as on time.
 // platforms maps the station's platform stop ids to their codes (nil: none).
-func railDeparturesResponse(info operatorInfo, stop rtLineStop, sched []any, snap *rtSnapshot, platforms *Obj, now time.Time) *Obj {
+// usual maps a direction ("0", "1") to the platform Renfe usually announces
+// for this line there (nil: none known).
+func railDeparturesResponse(info operatorInfo, stop rtLineStop, sched []any, snap *rtSnapshot, platforms, usual *Obj, now time.Time) *Obj {
 	deps := []any{}
 	// Trips the operator reports a train for. Renfe's trip updates also list
 	// trips that have not started, with a delay of 0: shown as live, a train
@@ -285,6 +287,14 @@ func railDeparturesResponse(info operatorInfo, stop rtLineStop, sched []any, sna
 					platform, platformSource = jsString(code), "live"
 					break
 				}
+			}
+		}
+		// Renfe, before the train announces one: the platform this line
+		// usually uses here in this direction, labelled as usual.
+		if platform == "" && usual != nil && !cancelled {
+			if d := numToString(jsNumber(o.Get("directionId"))); usual.Has(d) && jsString(usual.Get(d)) != "" {
+				u := jsString(usual.Get(d))
+				platform, platformSource = u, "usual"
 			}
 		}
 		deps = append(deps, O(

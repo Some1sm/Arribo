@@ -1863,6 +1863,12 @@ body {
   color: var(--accent-danger);
   border-color: var(--accent-danger);
 }
+/* Renfe's usual platform: not announced yet, so drawn as provisional. */
+.dep-platform.is-usual {
+  border-style: dashed;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
 
 .dep-delay-pill.early {
   background: rgba(245, 158, 11, 0.15);

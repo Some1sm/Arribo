@@ -80,17 +80,19 @@ type rtPoller struct {
 	trip                                     map[string]int32
 	trips                                    int
 	terr                                     string
-	tt                                       *rtTimetable        // imported timetable, for feeds without delays (nil if absent)
-	ttMod                                    time.Time           // modification time of the open timetable file
-	logNext                                  bool                // log the next snapshot (after a timetable opens)
-	visits                                   *railVisitTracker   // station visits from trip updates (run goroutine only)
-	pending                                  []railVisit         // closed visits waiting for the worker (guarded by mu)
-	pendingCancels                           []railCancel        // cancelled trips waiting for the worker (guarded by mu)
-	closedVisits, droppedVisits, implausible int                 // counters (guarded by mu)
-	computed                                 int                 // delays derived from predicted times in the last trip feed
-	computedTrips                            map[string]bool     // which trips those were (guarded by mu; replaced, never mutated)
-	canceled                                 map[string]bool     // trips marked CANCELED in the last trip feed (guarded by mu; replaced, never mutated)
-	tripStops                                map[string][]string // stops each trip update named in the last trip feed (guarded by mu; replaced, never mutated)
+	tt                                       *rtTimetable           // imported timetable, for feeds without delays (nil if absent)
+	ttMod                                    time.Time              // modification time of the open timetable file
+	logNext                                  bool                   // log the next snapshot (after a timetable opens)
+	visits                                   *railVisitTracker      // station visits from trip updates (run goroutine only)
+	pending                                  []railVisit            // closed visits waiting for the worker (guarded by mu)
+	pendingCancels                           []railCancel           // cancelled trips waiting for the worker (guarded by mu)
+	pendingPlatforms                         []railPlatformSighting // platform announcements waiting for the worker (guarded by mu)
+	platSeen                                 map[string]int64       // trip+station already counted (poll goroutine only)
+	closedVisits, droppedVisits, implausible int                    // counters (guarded by mu)
+	computed                                 int                    // delays derived from predicted times in the last trip feed
+	computedTrips                            map[string]bool        // which trips those were (guarded by mu; replaced, never mutated)
+	canceled                                 map[string]bool        // trips marked CANCELED in the last trip feed (guarded by mu; replaced, never mutated)
+	tripStops                                map[string][]string    // stops each trip update named in the last trip feed (guarded by mu; replaced, never mutated)
 }
 
 var cataloniaBounds = GeoBounds{MinLat: 40.5, MaxLat: 42.9, MinLon: 0.15, MaxLon: 3.4}
@@ -379,6 +381,7 @@ func (p *rtPoller) pollVehicles(ctx context.Context) {
 		p.describeVehicle(ctx, &v)
 		snap.Vehicles = append(snap.Vehicles, v)
 	}
+	p.notePlatforms(snap.Vehicles, time.Now())
 	p.snap.Store(snap)
 }
 

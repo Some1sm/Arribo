@@ -297,7 +297,8 @@ func (s *Server) railDepartures(q *xreq, res *xres, info operatorInfo, op *rtCat
 	}
 	sched, _ := field(data, "departures").([]any)
 	platforms, _ := field(data, "platforms").(*Obj)
-	res.json(O("success", true, "data", railDeparturesResponse(info, stop, sched, snap, platforms, time.UnixMilli(nowMs()))))
+	usual, _ := field(data, "usualPlatforms").(*Obj)
+	res.json(O("success", true, "data", railDeparturesResponse(info, stop, sched, snap, platforms, usual, time.UnixMilli(nowMs()))))
 }
 
 // hRailLine answers the /api/line/:lineId family for a rail line. It

@@ -1855,6 +1855,29 @@ class TransitApp {
    * HTML-escapes an upstream/user-derived string so it can never break out of
    * its element context when interpolated into innerHTML templates.
    */
+  // The platform chip of a rail departure: the timetable's or the live
+  // one, a change marked as such, and Renfe's usual platform (before the
+  // train announces one) labelled "habitual" so it is never read as confirmed.
+  platformChip(d) {
+    if (!d || !d.platform) return '';
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
+    let cls = 'dep-platform';
+    let label = t('dep.platform', { n: d.platform });
+    let title = t('dep.platformTimetable');
+    if (d.platformChanged) {
+      cls += ' is-changed';
+      label = t('dep.platformMoved', { n: d.platform });
+      title = t('dep.platformChanged', { from: d.scheduledPlatform });
+    } else if (d.platformSource === 'usual') {
+      cls += ' is-usual';
+      label = t('dep.platformUsual', { n: d.platform });
+      title = t('dep.platformUsualHint');
+    } else if (d.platformSource === 'live') {
+      title = t('dep.platformLive');
+    }
+    return `<span class="${cls}" title="${this.esc(title)}">${this.esc(label)}</span>`;
+  }
+
   esc(value) {
     if (typeof window !== 'undefined' && window.TransitUtils && typeof window.TransitUtils.esc === 'function') {
       return window.TransitUtils.esc(value);
@@ -2878,7 +2901,7 @@ class TransitApp {
                 ? `<span class="dep-regulating-pill" title="${this.esc(regBadgeTitle)}">${regBadgeText}</span>`
                 : (isDiff ? `<span class="dep-sched-pill" title="${this.esc(t('dep.officialTitle', { time: schedTime }))}">${this.esc(t('dep.officialPill', { time: schedTime }))}</span>` : '')}
               ${(!isParkedAtTerminal && tagLabel) ? `<span class="dep-tag-sub ${(isFirstMorning || isFirstToday) ? 'first-service' : ''}" title="${this.esc(tagLabel)}">${tagLabel}</span>` : ''}
-              ${dep.platform ? `<span class="dep-platform${dep.platformChanged ? ' is-changed' : ''}" title="${this.esc(dep.platformChanged ? t('dep.platformChanged', { from: dep.scheduledPlatform }) : (dep.platformSource === 'live' ? t('dep.platformLive') : t('dep.platformTimetable')))}">${this.esc(t(dep.platformChanged ? 'dep.platformMoved' : 'dep.platform', { n: dep.platform }))}</span>` : ''}
+              ${this.platformChip(dep)}
             </div>
             <div class="dep-dest" title="${this.esc(t('dep.towards'))} ${this.esc(cleanDest)}">
               ${this.esc(t('dep.towards'))} <strong>${this.esc(cleanDest)}</strong>
@@ -4673,7 +4696,7 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
                 ? `<span class="dep-regulating-pill" title="${this.esc(regBadgeTitle)}">${this.esc(regBadgeText)}</span>`
                 : (isDiff ? `<span class="dep-sched-pill" title="${this.esc(t('dep.officialTitle', { time: schedTime }))}">${this.esc(t('dep.officialPill', { time: schedTime }))}</span>` : '')}
               ${(!isParkedAtTerminal && tagLabel) ? `<span class="dep-tag-sub ${(isFirstMorning || isFirstToday) ? 'first-service' : ''}" title="${this.esc(tagLabel)}">${this.esc(tagLabel)}</span>` : ''}
-              ${d.platform ? `<span class="dep-platform${d.platformChanged ? ' is-changed' : ''}" title="${this.esc(d.platformChanged ? t('dep.platformChanged', { from: d.scheduledPlatform }) : (d.platformSource === 'live' ? t('dep.platformLive') : t('dep.platformTimetable')))}">${this.esc(t(d.platformChanged ? 'dep.platformMoved' : 'dep.platform', { n: d.platform }))}</span>` : ''}
+              ${this.platformChip(d)}
             </div>
             
             <div class="dep-dest" title="${this.esc(t('dep.towards'))} ${this.esc(cleanDest)}">

@@ -227,6 +227,9 @@ func (h *HistoryDB) pruneOldRecords() {
 		if _, err := h.run("DELETE FROM rail_cancellations WHERE last_seen < ?", cutoff); err != nil {
 			return err
 		}
+		if _, err := h.run("DELETE FROM rail_platforms WHERE last_seen < ?", cutoff); err != nil {
+			return err
+		}
 		if err := h.exec("PRAGMA optimize; PRAGMA incremental_vacuum; PRAGMA shrink_memory;"); err != nil {
 			return err
 		}

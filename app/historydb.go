@@ -798,6 +798,19 @@ func (h *HistoryDB) migrate() error {
             UNIQUE(agency_id, trip_id, service_date)
           );
           CREATE INDEX IF NOT EXISTS idx_cancel_agency_start ON rail_cancellations(agency_id, scheduled_start);
+          -- Platforms Renfe announced for trains approaching a station
+          -- (railplatforms.go): sightings per station, line, direction, platform.
+          CREATE TABLE IF NOT EXISTS rail_platforms (
+            agency_id TEXT NOT NULL,
+            stop_id TEXT NOT NULL,
+            line_code TEXT NOT NULL,
+            direction INTEGER NOT NULL,
+            platform TEXT NOT NULL,
+            sightings INTEGER NOT NULL,
+            first_seen INTEGER NOT NULL,
+            last_seen INTEGER NOT NULL,
+            PRIMARY KEY (agency_id, stop_id, line_code, direction, platform)
+          );
         `); err != nil {
 		return err
 	}
