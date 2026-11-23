@@ -61,11 +61,12 @@ module.exports = [
         // TransitMap via an explicit window assignment).
         MATARO_ZONES: 'readonly',
         TransitMap: 'readonly',
-        // map.js also owns these two; networkMap.js subclasses TransitMap and
-        // reuses its snapping helper and bus-icon markup rather than forking
+        // map.js also owns these; networkMap.js subclasses TransitMap and
+        // reuses its snapping helper and bus/train icon markup rather than forking
         // them, so it reads them from the same shared lexical scope.
         snapStopToPolyline: 'readonly',
-        CANONICAL_BUS_ICON_INNER_SVG: 'readonly'
+        CANONICAL_BUS_ICON_INNER_SVG: 'readonly',
+        TRAIN_ICON_INNER_SVG: 'readonly'
       }
     },
     rules: correctness

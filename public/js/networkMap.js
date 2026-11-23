@@ -255,26 +255,48 @@ class NetworkMap extends TransitMap {
       if (!this.isRailLineVisible(t.agencyId, t.lineCode)) continue;
       seen.add(t.id);
       const lineColor = this.trainColors.get(`${t.agencyId}:${t.lineCode}`) || neutral;
-      // A position the operator has stopped updating is drawn hollow and
-      // dashed, in the neutral colour: it is old, not live.
-      const style = t.stale
-        ? { radius: 6, color: neutral, weight: 2, dashArray: '3 3', fillColor: ring, fillOpacity: 0.6, opacity: 0.9 }
-        : { radius: 6, color: ring, weight: 2, dashArray: null, fillColor: lineColor, fillOpacity: 0.95, opacity: 1 };
+      // The same pin as a bus, with a train icon. A position the operator
+      // has stopped updating is drawn hollow and dashed, in the neutral
+      // colour: it is old, not live.
+      const stale = Boolean(t.stale);
+      const pinBg = stale ? ring : lineColor;
       const popupHtml = buildTrainPopupHtml(t, operators.get(t.agencyId), this.trainLineRefs.get(`${t.agencyId}:${t.lineCode}`));
       const existing = this.trainMarkers.get(t.id);
       if (existing) {
         existing.marker.setLatLng([lat, lon]);
-        existing.marker.setStyle(style);
+        if (existing.stale !== stale || existing.pinBg !== pinBg) {
+          const el = existing.marker.getElement();
+          if (el) {
+            el.querySelector('.live-bus-marker-wrap')?.classList.toggle('stale-train', stale);
+            const pin = el.querySelector('.live-bus-pin');
+            if (pin) pin.style.background = pinBg;
+            const dot = el.querySelector('.bus-status-dot');
+            if (dot) dot.className = `bus-status-dot ${stale ? 'stale' : 'live'}`;
+          }
+          existing.stale = stale;
+          existing.pinBg = pinBg;
+        }
         if (existing.popupHtml !== popupHtml) {
           existing.marker.setPopupContent(popupHtml);
           existing.popupHtml = popupHtml;
         }
         continue;
       }
-      const marker = L.circleMarker([lat, lon], style);
+      const html = `
+        <div class="live-bus-marker-wrap train-marker${stale ? ' stale-train' : ''}">
+          <div class="live-bus-pin" style="background: ${pinBg};">
+            <span class="bus-icon-inner">${TRAIN_ICON_INNER_SVG}</span>
+            <span class="bus-status-dot ${stale ? 'stale' : 'live'}"></span>
+          </div>
+        </div>`;
+      const marker = L.marker([lat, lon], {
+        icon: L.divIcon({ html, className: 'c10-live-bus-icon', iconSize: [44, 44], iconAnchor: [22, 22] }),
+        zIndexOffset: stale ? 900 : 1000,
+        keyboard: false
+      });
       marker.bindPopup(popupHtml, { className: 'arribo-bus-popup', minWidth: 290, maxWidth: 350, autoPan: true, autoPanPadding: [20, 20], closeButton: true });
       marker.addTo(this.trainLayer);
-      this.trainMarkers.set(t.id, { marker, popupHtml });
+      this.trainMarkers.set(t.id, { marker, popupHtml, stale, pinBg });
     }
     for (const [id, obj] of Array.from(this.trainMarkers.entries())) {
       if (seen.has(id)) continue;

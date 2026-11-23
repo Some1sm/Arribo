@@ -4250,6 +4250,18 @@ body {
   box-shadow: 0 0 10px rgba(251, 191, 36, 0.45), 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
+/* A train whose operator stopped updating its position: hollow, dashed, neutral. */
+.live-bus-marker-wrap.stale-train .live-bus-pin {
+  border: 2px dashed var(--text-muted);
+  color: var(--text-muted);
+  box-shadow: var(--shadow-sm);
+  opacity: 0.85;
+}
+
+.bus-status-dot.stale {
+  background: var(--text-muted);
+}
+
 .live-bus-marker-wrap.ghost-bus.selected .live-bus-pin {
   transform: scale(1.35);
   border: 2.5px dashed #fbbf24 !important;
@@ -4387,7 +4399,7 @@ body {
   border-radius: 50%;
   background: #ffffff;
   border: 3px solid var(--c10-primary);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-sm);
   transition: transform var(--transition-fast);
 }
 
