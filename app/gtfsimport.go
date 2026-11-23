@@ -205,7 +205,7 @@ const (
 CREATE TABLE gtfs_meta (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE agencies (agency_id TEXT, gtfs_agency_id TEXT, name TEXT, url TEXT, timezone TEXT);
 CREATE TABLE routes (agency_id TEXT, route_id TEXT, gtfs_agency_id TEXT, short_name TEXT, long_name TEXT, route_type INTEGER, color TEXT, text_color TEXT);
-CREATE TABLE stops (agency_id TEXT, stop_id TEXT, name TEXT, lat REAL, lon REAL, location_type INTEGER, parent_station TEXT);
+CREATE TABLE stops (agency_id TEXT, stop_id TEXT, name TEXT, lat REAL, lon REAL, location_type INTEGER, parent_station TEXT, platform_code TEXT);
 CREATE TABLE trips (agency_id TEXT, trip_id TEXT, route_id TEXT, service_id TEXT, headsign TEXT, direction_id INTEGER, shape_id TEXT);
 CREATE TABLE stop_times (agency_id TEXT, trip_id TEXT, stop_sequence INTEGER, stop_id TEXT, arrival_sec INTEGER, departure_sec INTEGER);
 CREATE TABLE calendar (agency_id TEXT, service_id TEXT, monday INTEGER, tuesday INTEGER, wednesday INTEGER, thursday INTEGER, friday INTEGER, saturday INTEGER, sunday INTEGER, start_date TEXT, end_date TEXT);
@@ -301,7 +301,7 @@ func importGTFS(agencyID, zipPath, outPath string, bbox *bboxFilter, bboxStr str
 
 	stmtAgency := prep("INSERT INTO agencies (agency_id, gtfs_agency_id, name, url, timezone) VALUES (?, ?, ?, ?, ?)")
 	stmtRoute := prep("INSERT INTO routes (agency_id, route_id, gtfs_agency_id, short_name, long_name, route_type, color, text_color) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-	stmtStop := prep("INSERT INTO stops (agency_id, stop_id, name, lat, lon, location_type, parent_station) VALUES (?, ?, ?, ?, ?, ?, ?)")
+	stmtStop := prep("INSERT INTO stops (agency_id, stop_id, name, lat, lon, location_type, parent_station, platform_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
 	stmtTrip := prep("INSERT INTO trips (agency_id, trip_id, route_id, service_id, headsign, direction_id, shape_id) VALUES (?, ?, ?, ?, ?, ?, ?)")
 	stmtStopTime := prep("INSERT INTO stop_times (agency_id, trip_id, stop_sequence, stop_id, arrival_sec, departure_sec) VALUES (?, ?, ?, ?, ?, ?)")
 	stmtCalendar := prep("INSERT INTO calendar (agency_id, service_id, monday, tuesday, wednesday, thursday, friday, saturday, sunday, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
@@ -455,7 +455,7 @@ func importGTFS(agencyID, zipPath, outPath string, bbox *bboxFilter, bboxStr str
 			return nil
 		}
 		kept["stops"]++
-		_, err := stmtStop.Exec(agencyID, id, r.get("stop_name"), lat, lon, locType, r.get("parent_station"))
+		_, err := stmtStop.Exec(agencyID, id, r.get("stop_name"), lat, lon, locType, r.get("parent_station"), r.get("platform_code"))
 		return err
 	}); err != nil {
 		return fmt.Errorf("stops: %w", err)

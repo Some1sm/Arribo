@@ -2878,6 +2878,7 @@ class TransitApp {
                 ? `<span class="dep-regulating-pill" title="${this.esc(regBadgeTitle)}">${regBadgeText}</span>`
                 : (isDiff ? `<span class="dep-sched-pill" title="${this.esc(t('dep.officialTitle', { time: schedTime }))}">${this.esc(t('dep.officialPill', { time: schedTime }))}</span>` : '')}
               ${(!isParkedAtTerminal && tagLabel) ? `<span class="dep-tag-sub ${(isFirstMorning || isFirstToday) ? 'first-service' : ''}" title="${this.esc(tagLabel)}">${tagLabel}</span>` : ''}
+              ${dep.platform ? `<span class="dep-platform${dep.platformChanged ? ' is-changed' : ''}" title="${this.esc(dep.platformChanged ? t('dep.platformChanged', { from: dep.scheduledPlatform }) : (dep.platformSource === 'live' ? t('dep.platformLive') : t('dep.platformTimetable')))}">${this.esc(t(dep.platformChanged ? 'dep.platformMoved' : 'dep.platform', { n: dep.platform }))}</span>` : ''}
             </div>
             <div class="dep-dest" title="${this.esc(t('dep.towards'))} ${this.esc(cleanDest)}">
               ${this.esc(t('dep.towards'))} <strong>${this.esc(cleanDest)}</strong>
@@ -4672,6 +4673,7 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
                 ? `<span class="dep-regulating-pill" title="${this.esc(regBadgeTitle)}">${this.esc(regBadgeText)}</span>`
                 : (isDiff ? `<span class="dep-sched-pill" title="${this.esc(t('dep.officialTitle', { time: schedTime }))}">${this.esc(t('dep.officialPill', { time: schedTime }))}</span>` : '')}
               ${(!isParkedAtTerminal && tagLabel) ? `<span class="dep-tag-sub ${(isFirstMorning || isFirstToday) ? 'first-service' : ''}" title="${this.esc(tagLabel)}">${this.esc(tagLabel)}</span>` : ''}
+              ${d.platform ? `<span class="dep-platform${d.platformChanged ? ' is-changed' : ''}" title="${this.esc(d.platformChanged ? t('dep.platformChanged', { from: d.scheduledPlatform }) : (d.platformSource === 'live' ? t('dep.platformLive') : t('dep.platformTimetable')))}">${this.esc(t(d.platformChanged ? 'dep.platformMoved' : 'dep.platform', { n: d.platform }))}</span>` : ''}
             </div>
             
             <div class="dep-dest" title="${this.esc(t('dep.towards'))} ${this.esc(cleanDest)}">

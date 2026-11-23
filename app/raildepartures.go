@@ -59,7 +59,9 @@ func (r *railTimetables) close() {
 type railDeparture struct {
 	TripID, Headsign string
 	DirectionID      int
-	DepartUnix       int64 // scheduled, absolute
+	DepartUnix       int64  // scheduled, absolute
+	StopID           string // the platform (or station) the timetable sends it from
+	Platform         string // that stop's platform_code ("" when the operator gives none)
 }
 
 var gtfsWeekdayColumn = [...]string{"sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"}
@@ -92,7 +94,7 @@ func (t *rtTimetable) departures(ctx context.Context, code, stopID string, dir i
 		      WHERE COALESCE(p.parent_station, '') != '' AND s.parent_station = p.parent_station
 		  )
 		  SELECT st.trip_id, COALESCE(tr.headsign, ''), COALESCE(tr.direction_id, -1),
-		      COALESCE(st.departure_sec, st.arrival_sec) AS sec
+		      COALESCE(st.departure_sec, st.arrival_sec) AS sec, st.stop_id, ` + t.platformSQL("st.stop_id") + `
 		    FROM stop_times st
 		    JOIN trips tr ON tr.trip_id = st.trip_id
 		    JOIN routes r ON r.route_id = tr.route_id
@@ -110,7 +112,7 @@ func (t *rtTimetable) departures(ctx context.Context, code, stopID string, dir i
 		for rows.Next() {
 			var d railDeparture
 			var sec sql.NullInt64
-			if err := rows.Scan(&d.TripID, &d.Headsign, &d.DirectionID, &sec); err != nil {
+			if err := rows.Scan(&d.TripID, &d.Headsign, &d.DirectionID, &sec, &d.StopID, &d.Platform); err != nil {
 				rows.Close()
 				return nil, err
 			}
@@ -162,16 +164,26 @@ func (k *Worker) railDeparturesOp(args *Obj) (any, error) {
 	}
 	list := make([]any, 0, len(deps))
 	for _, d := range deps {
-		list = append(list, O("tripId", d.TripID, "headsign", d.Headsign, "directionId", float64(d.DirectionID), "departUnix", float64(d.DepartUnix)))
+		list = append(list, O("tripId", d.TripID, "headsign", d.Headsign, "directionId", float64(d.DirectionID), "departUnix", float64(d.DepartUnix),
+			"stopId", d.StopID, "platform", d.Platform))
 	}
-	return O("departures", list), nil
+	// The station's platforms (stop id -> platform code), to name the
+	// platform a live trip update sends a train to.
+	platforms := O()
+	if codes, err := tt.platformCodes(ctx, stop); err == nil {
+		for _, p := range codes {
+			platforms.Set(p[0], p[1])
+		}
+	}
+	return O("departures", list, "platforms", platforms), nil
 }
 
 // railDeparturesResponse turns the worker's scheduled departures into the
 // stop board's departures (the fields renderModalDepartures reads), adding
 // a live delay where the operator's feed has one for that trip. A trip
 // with no live delay is shown as timetable only, never as on time.
-func railDeparturesResponse(info operatorInfo, stop rtLineStop, sched []any, snap *rtSnapshot, now time.Time) *Obj {
+// platforms maps the station's platform stop ids to their codes (nil: none).
+func railDeparturesResponse(info operatorInfo, stop rtLineStop, sched []any, snap *rtSnapshot, platforms *Obj, now time.Time) *Obj {
 	deps := []any{}
 	// Trips the operator reports a train for. Renfe's trip updates also list
 	// trips that have not started, with a delay of 0: shown as live, a train
@@ -228,6 +240,23 @@ func railDeparturesResponse(info operatorInfo, stop rtLineStop, sched []any, sna
 			expected = aimed
 		}
 		hhmm := func(u int64) string { return time.Unix(u, 0).In(madrid).Format("15:04") }
+		// The platform: the timetable's, unless the operator's live trip
+		// update sends the train to another platform of this station (FGC
+		// names platforms in both; Renfe in neither, so its trains get none).
+		scheduledPlatform := jsString(o.Get("platform"))
+		platform, platformSource := scheduledPlatform, ""
+		if platform != "" {
+			platformSource = "timetable"
+		}
+		if snap != nil && platforms != nil && !cancelled {
+			for _, sid := range snap.TripStops[trip] {
+				if platforms.Has(sid) && jsString(platforms.Get(sid)) != "" {
+					code := platforms.Get(sid)
+					platform, platformSource = jsString(code), "live"
+					break
+				}
+			}
+		}
 		deps = append(deps, O(
 			"tripId", trip,
 			"vehicleId", nil,
@@ -248,6 +277,10 @@ func railDeparturesResponse(info operatorInfo, stop rtLineStop, sched []any, sna
 			"isEstimated", false,
 			"isTheoretical", !isRT && !cancelled,
 			"isCancelled", cancelled,
+			"platform", strOrNil(platform),
+			"platformSource", strOrNil(platformSource),
+			"platformChanged", platformSource == "live" && scheduledPlatform != "" && platform != scheduledPlatform,
+			"scheduledPlatform", strOrNil(scheduledPlatform),
 		))
 	}
 	return O(

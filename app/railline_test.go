@@ -269,7 +269,7 @@ func TestRailDeparturesResponse(t *testing.T) {
 		TripDelays:    map[string]int32{"live": 120, "gone": 60, "weird": -40 * 60, "notStarted": 0},
 		ComputedTrips: map[string]bool{"live": true},
 	}
-	o := railDeparturesResponse(reportOperators[1], rtLineStop{ID: "A", Name: "Sarrià", Lat: 41.4, Lon: 2.12}, sched, snap, now)
+	o := railDeparturesResponse(reportOperators[1], rtLineStop{ID: "A", Name: "Sarrià", Lat: 41.4, Lon: 2.12}, sched, snap, nil, now)
 	deps := o.Get("departures").([]any)
 	if ns := deps[len(deps)-1].(*Obj); ns.Get("tripId") != "notStarted" || ns.Get("isRealTime") != false || ns.Get("delayMins") != nil || ns.Get("delayStatus") != "scheduled" {
 		t.Errorf("a trip with no train running is timetable only: %s", string(toJSON(ns)))
@@ -299,9 +299,39 @@ func TestRailDeparturesCancelled(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	sched := []any{O("tripId", "gone", "headsign", "Pl. Catalunya", "directionId", 0.0, "departUnix", float64(now.Unix()+600))}
 	snap := &rtSnapshot{Vehicles: []rtVehicle{{TripID: "gone"}}, TripDelays: map[string]int32{"gone": 120}, Canceled: map[string]bool{"gone": true}}
-	o := railDeparturesResponse(reportOperators[1], rtLineStop{ID: "A", Name: "Sarrià"}, sched, snap, now)
+	o := railDeparturesResponse(reportOperators[1], rtLineStop{ID: "A", Name: "Sarrià"}, sched, snap, nil, now)
 	d := o.Get("departures").([]any)[0].(*Obj)
 	if d.Get("isCancelled") != true || d.Get("delayStatus") != "cancelled" || d.Get("isRealTime") != false || d.Get("delayMins") != nil || d.Get("isTheoretical") != false {
 		t.Errorf("cancelled: %s", string(toJSON(d)))
+	}
+}
+
+// TestRailDeparturesPlatform: the timetable's platform, replaced by the one
+// the live trip update names (marked changed); none when the operator
+// gives none.
+func TestRailDeparturesPlatform(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	sched := []any{
+		O("tripId", "same", "headsign", "X", "directionId", 0.0, "departUnix", float64(now.Unix()+300), "stopId", "GR1", "platform", "1"),
+		O("tripId", "moved", "headsign", "X", "directionId", 0.0, "departUnix", float64(now.Unix()+600), "stopId", "GR1", "platform", "1"),
+		O("tripId", "plain", "headsign", "X", "directionId", 0.0, "departUnix", float64(now.Unix()+900), "stopId", "GR2", "platform", "2"),
+		O("tripId", "renfe", "headsign", "X", "directionId", 0.0, "departUnix", float64(now.Unix()+1200), "stopId", "79500", "platform", ""),
+	}
+	// Other stations' stops come first: they must not be taken for a platform here.
+	snap := &rtSnapshot{TripStops: map[string][]string{"same": {"SR1", "GR1", "PC1"}, "moved": {"SR2", "GR3"}, "plain": {"PC2"}}}
+	platforms := O("GR1", "1", "GR2", "2", "GR3", "3")
+	deps := railDeparturesResponse(reportOperators[1], rtLineStop{ID: "GR1", Name: "Gràcia"}, sched, snap, platforms, now).Get("departures").([]any)
+	get := func(i int, k string) any { return deps[i].(*Obj).Get(k) }
+	if get(0, "platform") != "1" || get(0, "platformSource") != "live" || get(0, "platformChanged") != false {
+		t.Errorf("confirmed: %s", toJSON(deps[0]))
+	}
+	if get(1, "platform") != "3" || get(1, "platformChanged") != true || get(1, "scheduledPlatform") != "1" {
+		t.Errorf("moved: %s", toJSON(deps[1]))
+	}
+	if get(2, "platform") != "2" || get(2, "platformSource") != "timetable" {
+		t.Errorf("timetable: %s", toJSON(deps[2]))
+	}
+	if get(3, "platform") != nil || get(3, "platformSource") != nil {
+		t.Errorf("no platform: %s", toJSON(deps[3]))
 	}
 }

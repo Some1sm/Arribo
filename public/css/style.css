@@ -1847,6 +1847,23 @@ body {
   border: 1px solid var(--accent-danger);
 }
 
+/* A train's platform (FGC publishes them; Renfe does not), and a live change. */
+.dep-platform {
+  display: inline-flex;
+  align-items: center;
+  margin-left: var(--space-2);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.dep-platform.is-changed {
+  color: var(--accent-danger);
+  border-color: var(--accent-danger);
+}
+
 .dep-delay-pill.early {
   background: rgba(245, 158, 11, 0.15);
   color: var(--accent-warning);

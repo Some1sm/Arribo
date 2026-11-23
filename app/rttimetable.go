@@ -17,10 +17,11 @@ import (
 
 // rtTimetable answers scheduled-time lookups from one imported GTFS file.
 type rtTimetable struct {
-	db    *sql.DB
-	mu    sync.Mutex
-	cache map[string]int64  // trip_id + "\x00" + stop_id -> scheduled seconds (-1 = none)
-	names map[string]string // line and stop name lookups
+	db                           *sql.DB
+	mu                           sync.Mutex
+	cache                        map[string]int64  // trip_id + "\x00" + stop_id -> scheduled seconds (-1 = none)
+	names                        map[string]string // line and stop name lookups
+	platformChecked, platformCol bool              // stops.platform_code looked up / present
 }
 
 // openRtTimetable opens the imported timetable at path read-only, or
@@ -439,4 +440,61 @@ func (t *rtTimetable) shapePoints(ctx context.Context, shapeID string) ([][2]flo
 		pts = thin
 	}
 	return pts, nil
+}
+
+// hasPlatformCodes reports whether this timetable has stops.platform_code
+// (imported since format 3; an older file lacks it until its next import).
+func (t *rtTimetable) hasPlatformCodes(ctx context.Context) bool {
+	t.mu.Lock()
+	if t.platformChecked {
+		v := t.platformCol
+		t.mu.Unlock()
+		return v
+	}
+	t.mu.Unlock()
+	has := false
+	if rows, err := t.db.QueryContext(ctx, `PRAGMA table_info(stops)`); err == nil {
+		for rows.Next() {
+			var cid, notnull, pk int
+			var name, typ string
+			var dflt sql.NullString
+			if rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk) == nil && name == "platform_code" {
+				has = true
+			}
+		}
+		rows.Close()
+	}
+	t.mu.Lock()
+	t.platformChecked, t.platformCol = true, has
+	t.mu.Unlock()
+	return has
+}
+
+// platformSQL is an SQL expression for the platform code of the stop in
+// col ("" when the timetable has none).
+func (t *rtTimetable) platformSQL(col string) string {
+	if !t.hasPlatformCodes(context.Background()) {
+		return "''"
+	}
+	return "COALESCE((SELECT platform_code FROM stops ps WHERE ps.stop_id = " + col + "), '')"
+}
+
+// platformCodes lists the platforms of stopID's station as [stop id, code],
+// only those with a code.
+func (t *rtTimetable) platformCodes(ctx context.Context, stopID string) ([][2]string, error) {
+	if !t.hasPlatformCodes(ctx) {
+		return nil, nil
+	}
+	ids, err := t.stationPlatforms(ctx, []string{stopID})
+	if err != nil {
+		return nil, err
+	}
+	var out [][2]string
+	for _, id := range ids {
+		var code sql.NullString
+		if t.db.QueryRowContext(ctx, `SELECT platform_code FROM stops WHERE stop_id = ?`, id).Scan(&code) == nil && code.String != "" {
+			out = append(out, [2]string{id, code.String})
+		}
+	}
+	return out, nil
 }

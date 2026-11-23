@@ -46,11 +46,12 @@ type rtSnapshot struct {
 	FetchedAt     time.Time
 	FeedTimestamp uint64
 	Vehicles      []rtVehicle
-	TripDelays    map[string]int32 // trip_id -> trip-level delay in seconds
-	TripUpdates   int              // trip updates in the last feed, with or without a delay
-	Computed      int              // of TripDelays, how many came from predicted times vs the timetable
-	ComputedTrips map[string]bool  // trip ids whose delay was computed (immutable once stored)
-	Canceled      map[string]bool  // trip ids the operator marks cancelled (schedule_relationship CANCELED)
+	TripDelays    map[string]int32    // trip_id -> trip-level delay in seconds
+	TripUpdates   int                 // trip updates in the last feed, with or without a delay
+	Computed      int                 // of TripDelays, how many came from predicted times vs the timetable
+	ComputedTrips map[string]bool     // trip ids whose delay was computed (immutable once stored)
+	Canceled      map[string]bool     // trip ids the operator marks cancelled (schedule_relationship CANCELED)
+	TripStops     map[string][]string // stops (FGC: platforms) each trip update names, in feed order
 	VehiclesErr   string
 	TripsErr      string
 }
@@ -79,16 +80,17 @@ type rtPoller struct {
 	trip                                     map[string]int32
 	trips                                    int
 	terr                                     string
-	tt                                       *rtTimetable      // imported timetable, for feeds without delays (nil if absent)
-	ttMod                                    time.Time         // modification time of the open timetable file
-	logNext                                  bool              // log the next snapshot (after a timetable opens)
-	visits                                   *railVisitTracker // station visits from trip updates (run goroutine only)
-	pending                                  []railVisit       // closed visits waiting for the worker (guarded by mu)
-	pendingCancels                           []railCancel      // cancelled trips waiting for the worker (guarded by mu)
-	closedVisits, droppedVisits, implausible int               // counters (guarded by mu)
-	computed                                 int               // delays derived from predicted times in the last trip feed
-	computedTrips                            map[string]bool   // which trips those were (guarded by mu; replaced, never mutated)
-	canceled                                 map[string]bool   // trips marked CANCELED in the last trip feed (guarded by mu; replaced, never mutated)
+	tt                                       *rtTimetable        // imported timetable, for feeds without delays (nil if absent)
+	ttMod                                    time.Time           // modification time of the open timetable file
+	logNext                                  bool                // log the next snapshot (after a timetable opens)
+	visits                                   *railVisitTracker   // station visits from trip updates (run goroutine only)
+	pending                                  []railVisit         // closed visits waiting for the worker (guarded by mu)
+	pendingCancels                           []railCancel        // cancelled trips waiting for the worker (guarded by mu)
+	closedVisits, droppedVisits, implausible int                 // counters (guarded by mu)
+	computed                                 int                 // delays derived from predicted times in the last trip feed
+	computedTrips                            map[string]bool     // which trips those were (guarded by mu; replaced, never mutated)
+	canceled                                 map[string]bool     // trips marked CANCELED in the last trip feed (guarded by mu; replaced, never mutated)
+	tripStops                                map[string][]string // stops each trip update named in the last trip feed (guarded by mu; replaced, never mutated)
 }
 
 var cataloniaBounds = GeoBounds{MinLat: 40.5, MaxLat: 42.9, MinLon: 0.15, MaxLon: 3.4}
@@ -240,7 +242,8 @@ func (p *rtPoller) pollTrips(ctx context.Context) {
 	total, computed := 0, 0
 	computedTrips := map[string]bool{}
 	canceled := map[string]bool{}
-	var cancels []railCancel // announced cancellations for the history database
+	tripStops := map[string][]string{} // stops (platforms, for FGC) each trip update names
+	var cancels []railCancel           // announced cancellations for the history database
 	delays, err := func() (map[string]int32, error) {
 		u, err := p.src.tripURL(ctx)
 		if err != nil {
@@ -270,6 +273,11 @@ func (p *rtPoller) pollTrips(ctx context.Context) {
 				}
 				continue
 			}
+			for _, s := range e.TripUpdate.StopTimeUpdates {
+				if s.StopID != "" {
+					tripStops[e.TripUpdate.Trip.TripID] = append(tripStops[e.TripUpdate.Trip.TripID], s.StopID)
+				}
+			}
 			// Some feeds (FGC) send predicted times only, no delay: those
 			// delays need the static timetable (slice 3).
 			if d := tripUpdateDelay(e.TripUpdate); d != nil {
@@ -292,6 +300,7 @@ func (p *rtPoller) pollTrips(ctx context.Context) {
 		return
 	}
 	p.trip, p.trips, p.computed, p.computedTrips, p.canceled, p.terr = delays, total, computed, computedTrips, canceled, ""
+	p.tripStops = tripStops
 }
 
 // tripUpdateDelay is the trip-level delay, else the first stop event's.
@@ -316,6 +325,7 @@ func (p *rtPoller) pollVehicles(ctx context.Context) {
 	p.mu.Lock()
 	snap.TripDelays, snap.TripUpdates, snap.Computed, snap.ComputedTrips, snap.TripsErr = p.trip, p.trips, p.computed, p.computedTrips, p.terr
 	snap.Canceled = p.canceled
+	snap.TripStops = p.tripStops
 	p.mu.Unlock()
 	fm, err := func() (*FeedMessage, error) {
 		u, err := p.src.vehicleURL(ctx)

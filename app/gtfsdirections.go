@@ -21,7 +21,8 @@ import (
 // gtfsImportFormat is written to gtfs_meta as "import_format". A timetable
 // imported by an older format (no direction inference) is re-imported at
 // the next refresh check, even when it is not yet stale.
-const gtfsImportFormat = "2"
+// 3: stops.platform_code (FGC names each platform; Renfe sends none).
+const gtfsImportFormat = "3"
 
 // inferDirections fills trips.direction_id for routes where no trip has
 // one, and returns how many trips got a direction.
