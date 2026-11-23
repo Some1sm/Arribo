@@ -25,7 +25,7 @@ const css = read('public/css/style.css');
 const sources = ['public/index.html', 'public/plan.html', 'public/dades.html',
   ...fs.readdirSync(path.join(root, 'public/js')).filter(f => f.endsWith('.js')).map(f => `public/js/${f}`)];
 
-const CEILING = { hex: 382, rgba: 520, lightRules: 45, inlineStyles: 735 };
+const CEILING = { hex: 358, rgba: 484, lightRules: 34, inlineStyles: 735 };
 
 console.log('🧪 Testing the design system foundation...');
 

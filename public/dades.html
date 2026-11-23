@@ -13,7 +13,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-  <link rel="stylesheet" href="/css/style.css?v=9.4.78">
+  <link rel="stylesheet" href="/css/style.css?v=9.4.79">
 </head>
 <body class="observatori-page-body observatori-page">
 
@@ -106,8 +106,8 @@
 
     <!-- Timeframe Selector & CSV Download Toolbar -->
     <div class="observatori-toolbar dades-bus-only">
-      <div class="line-picker-filter-tabs" id="journalism-timeframe-tabs" role="tablist" aria-label="Selecció de període d'anàlisi" data-i18n-aria-label="dades.tabsAria">
-        <button type="button" class="line-filter-tab active" data-hours="24" role="tab" aria-selected="true" title="Dades de les darreres 24 hores" data-i18n-title="dades.tab24hTitle">
+      <div class="pill-group line-picker-filter-tabs" id="journalism-timeframe-tabs" role="tablist" aria-label="Selecció de període d'anàlisi" data-i18n-aria-label="dades.tabsAria">
+        <button type="button" class="pill line-filter-tab active is-active" data-hours="24" role="tab" aria-selected="true" title="Dades de les darreres 24 hores" data-i18n-title="dades.tab24hTitle">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <circle cx="12" cy="12" r="10"></circle>
             <polyline points="12 6 12 12 16 14"></polyline>
@@ -115,7 +115,7 @@
           <span class="tab-text-full" data-i18n="dades.tab24h">24 hores</span>
           <span class="tab-text-compact" data-i18n="dades.tab24hCompact">24h</span>
         </button>
-        <button type="button" class="line-filter-tab" data-hours="48" role="tab" aria-selected="false" title="Dades de les darreres 48 hores" data-i18n-title="dades.tab48hTitle">
+        <button type="button" class="pill line-filter-tab" data-hours="48" role="tab" aria-selected="false" title="Dades de les darreres 48 hores" data-i18n-title="dades.tab48hTitle">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M8 2v4"></path>
             <path d="M16 2v4"></path>
@@ -125,7 +125,7 @@
           <span class="tab-text-full" data-i18n="dades.tab48h">48 hores</span>
           <span class="tab-text-compact" data-i18n="dades.tab48hCompact">48h</span>
         </button>
-        <button type="button" class="line-filter-tab" data-hours="168" role="tab" aria-selected="false" title="Dades dels darrers 7 dies" data-i18n-title="dades.tab7dTitle">
+        <button type="button" class="pill line-filter-tab" data-hours="168" role="tab" aria-selected="false" title="Dades dels darrers 7 dies" data-i18n-title="dades.tab7dTitle">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <line x1="18" y1="20" x2="18" y2="10"></line>
             <line x1="12" y1="20" x2="12" y2="4"></line>
@@ -135,14 +135,14 @@
           <span class="tab-text-compact" data-i18n="dades.tab7dCompact">7d</span>
         </button>
         <span class="tab-divider" aria-hidden="true"></span>
-        <button type="button" class="line-filter-tab termometre-tab" id="btn-observatori-termometre" data-tab="termometre" role="tab" aria-selected="false" title="Fitxa resumida i infografia del Termòmetre" data-i18n-title="dades.tabTermometreTitle">
+        <button type="button" class="pill line-filter-tab termometre-tab" id="btn-observatori-termometre" data-tab="termometre" role="tab" aria-selected="false" title="Fitxa resumida i infografia del Termòmetre" data-i18n-title="dades.tabTermometreTitle">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"></path>
           </svg>
           <span class="tab-text-full" data-i18n="dades.tabTermometre">El Termòmetre</span>
           <span class="tab-text-compact" data-i18n="dades.tabTermometreCompact">Termòmetre</span>
         </button>
-        <button type="button" class="line-filter-tab incidents-tab" id="btn-observatori-incidents" data-tab="incidents" role="tab" aria-selected="false" title="Investigador d'incidents de trànsit (0–24m) i auditoria de telemetria" data-i18n-title="dades.tabIncidentsTitle">
+        <button type="button" class="pill line-filter-tab incidents-tab" id="btn-observatori-incidents" data-tab="incidents" role="tab" aria-selected="false" title="Investigador d'incidents de trànsit (0–24m) i auditoria de telemetria" data-i18n-title="dades.tabIncidentsTitle">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path>
             <line x1="12" y1="9" x2="12" y2="13"></line>
@@ -152,7 +152,7 @@
           <span class="tab-text-compact" data-i18n="dades.tabIncidentsCompact">Incidents</span>
           <span class="tab-badge-alert">&ge;5m</span>
         </button>
-        <button type="button" class="line-filter-tab monthly-tab" id="btn-observatori-monthly" data-tab="monthly" role="tab" aria-selected="false" title="Informe mensual oficial de puntualitat per a l'Ajuntament de Mataró" data-i18n-title="dades.tabMonthlyTitle">
+        <button type="button" class="pill line-filter-tab monthly-tab" id="btn-observatori-monthly" data-tab="monthly" role="tab" aria-selected="false" title="Informe mensual oficial de puntualitat per a l'Ajuntament de Mataró" data-i18n-title="dades.tabMonthlyTitle">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
             <polyline points="14 2 14 8 20 8"></polyline>
@@ -165,22 +165,24 @@
         </button>
       </div>
 
-      <a href="/api/analytics/export/visits.csv" class="btn-secondary btn-csv-export" download title="Descarregar fitxer CSV de passos per parada consolidats" data-i18n-title="dades.csvVisitsTitle">
-        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-          <polyline points="7 10 12 15 17 10"></polyline>
-          <line x1="12" y1="15" x2="12" y2="3"></line>
-        </svg>
-        <span data-i18n="dades.csvVisits">CSV Passos</span>
-      </a>
-      <a href="/api/analytics/export/csv" class="btn-secondary btn-csv-export" download title="Descarregar fitxer CSV complet de mostres per a anàlisi detallada" data-i18n-title="dades.csvSamplesTitle">
-        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-          <polyline points="7 10 12 15 17 10"></polyline>
-          <line x1="12" y1="15" x2="12" y2="3"></line>
-        </svg>
-        <span data-i18n="dades.csvSamples">CSV Mostres</span>
-      </a>
+      <div class="observatori-csv-actions">
+        <a href="/api/analytics/export/visits.csv" class="btn btn-secondary btn-csv-export" download title="Descarregar fitxer CSV de passos per parada consolidats" data-i18n-title="dades.csvVisitsTitle">
+          <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          <span data-i18n="dades.csvVisits">CSV Passos</span>
+        </a>
+        <a href="/api/analytics/export/csv" class="btn btn-secondary btn-csv-export" download title="Descarregar fitxer CSV complet de mostres per a anàlisi detallada" data-i18n-title="dades.csvSamplesTitle">
+          <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          <span data-i18n="dades.csvSamples">CSV Mostres</span>
+        </a>
+      </div>
     </div>
 
     <!-- Search Input Filter -->
@@ -189,7 +191,7 @@
       <input type="text" id="journalism-search-input" class="line-picker-search-input" placeholder="Cerca per línia (ex: L1, L2, L3, 5, 8), parada o empresa..." data-i18n-placeholder="dades.searchPlaceholder" autocomplete="off">
     </div>
     <!-- Exact line filter for Mataró's report, built from the catalog (observatori.js renderLineFilter) -->
-    <div class="pill-group journalism-line-filter dades-bus-only" id="journalism-line-filter" role="group" aria-label="Línia" data-i18n-aria-label="dades.lineFilterAria" hidden></div>
+    <div class="pill-group journalism-line-filter dades-bus-only dades-bus-scope-only" id="journalism-line-filter" role="group" aria-label="Línia" data-i18n-aria-label="dades.lineFilterAria" hidden></div>
 
     <!-- Collapsible Methodology Section (Plan 6.7) -->
     <details class="observatori-methodology-card dades-bus-only" id="observatori-methodology-details" style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; margin-bottom:1.5rem; overflow:hidden;">
@@ -370,12 +372,12 @@
   </footer>
 
   <!-- Scripts -->
-  <script src="/js/utils.js?v=9.4.78"></script>
-  <script src="/js/i18n.js?v=9.4.78"></script>
-  <script src="/js/storage.js?v=9.4.78"></script>
-  <script src="/js/pwa.js?v=9.4.78"></script>
+  <script src="/js/utils.js?v=9.4.79"></script>
+  <script src="/js/i18n.js?v=9.4.79"></script>
+  <script src="/js/storage.js?v=9.4.79"></script>
+  <script src="/js/pwa.js?v=9.4.79"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="/js/observatori.js?v=9.4.78"></script>
-  <script src="/js/operators.js?v=9.4.78"></script>
+  <script src="/js/observatori.js?v=9.4.79"></script>
+  <script src="/js/operators.js?v=9.4.79"></script>
 </body>
 </html>

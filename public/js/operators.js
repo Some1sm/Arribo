@@ -32,11 +32,11 @@
   function applyScope(ops) {
     const ids = ops.map(o => o.id);
     if (scope !== 'all' && scope !== 'mataro' && !ids.includes(scope)) scope = 'all';
-    const next = scope === 'all' ? 'all' : (scope === 'mataro' ? 'bus' : 'rail');
-    // The bus report (observatori.js) lists the trains beside Mataró under "Tot": tell it.
-    if (document.body.dataset.dadesScope !== next) {
-      document.body.dataset.dadesScope = next;
-      document.dispatchEvent(new CustomEvent('arribo:dades-scope', { detail: { scope } }));
+    const nextDadesScope = scope === 'all' ? 'all' : (scope === 'mataro' ? 'bus' : 'rail');
+    const prevDadesScope = document.body.dataset.dadesScope;
+    document.body.dataset.dadesScope = nextDadesScope;
+    if (prevDadesScope !== nextDadesScope) {
+      document.dispatchEvent(new CustomEvent('arribo:scope', { detail: { scope, dadesScope: nextDadesScope } }));
     }
     if (!scopeDock || !scopeWrap) return;
     const items = [['all', t('ops.scopeAll')], ['mataro', 'Mataró Bus'], ...ops.map(o => [o.id, o.shortName || o.name])];
@@ -472,7 +472,10 @@
       section.hidden = !active;
       if (!active) {
         if (scopeWrap) scopeWrap.hidden = true;
-        delete document.body.dataset.dadesScope;
+        if (document.body.dataset.dadesScope !== undefined) {
+          delete document.body.dataset.dadesScope;
+          document.dispatchEvent(new CustomEvent('arribo:scope', { detail: { scope: 'mataro', dadesScope: '' } }));
+        }
         return;
       }
       lastOps = ops;

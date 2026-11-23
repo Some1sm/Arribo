@@ -124,23 +124,43 @@ class ObservatoriApp {
 
     // Set initial active tab button UI
     document.querySelectorAll('#journalism-timeframe-tabs button').forEach(btn => {
-      btn.classList.remove('active');
       const dataTab = btn.getAttribute('data-tab');
       const dataHours = parseInt(btn.getAttribute('data-hours') || '0', 10);
-      if (this.currentTab === 'termometre' && dataTab === 'termometre') {
-        btn.classList.add('active');
-      } else if (this.currentTab === 'incidents' && dataTab === 'incidents') {
-        btn.classList.add('active');
-      } else if (this.currentTab === 'monthly' && dataTab === 'monthly') {
-        btn.classList.add('active');
-      } else if (this.currentTab === 'journalism' && dataHours === this.currentHours) {
-        btn.classList.add('active');
-      }
+      const isActive =
+        (this.currentTab === 'termometre' && dataTab === 'termometre') ||
+        (this.currentTab === 'incidents' && dataTab === 'incidents') ||
+        (this.currentTab === 'monthly' && dataTab === 'monthly') ||
+        (this.currentTab === 'journalism' && !dataTab && dataHours === this.currentHours);
+      btn.classList.toggle('active', isActive);
+      btn.classList.toggle('is-active', isActive);
+      btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
     });
+  }
+
+  isLineFilterActive() {
+    const scope = document.body?.dataset?.dadesScope;
+    return !scope || scope === 'bus';
+  }
+
+  onScopeChange() {
+    const active = this.isLineFilterActive();
+    if (this._lastLineFilterActive !== active) {
+      this._lastLineFilterActive = active;
+      this.renderLineFilter();
+      this.updateUrl();
+    }
+    // Any scope change re-renders the report: under "Tot" it lists the trains beside Mataró.
+    if (this.currentReport && this.currentTab === 'journalism') {
+      this.renderJournalismReport(this.currentReport);
+    }
   }
 
   updateUrl() {
     const params = new URLSearchParams();
+    try {
+      const xarxa = new URLSearchParams(window.location.search).get('xarxa');
+      if (xarxa) params.set('xarxa', xarxa);
+    } catch { /* ignore */ }
     if (this.currentTab === 'termometre') {
       params.set('tab', 'termometre');
     } else if (this.currentTab === 'incidents') {
@@ -163,7 +183,7 @@ class ObservatoriApp {
       params.set('q', this.filterText);
     }
 
-    if (this.lineCode && this.currentTab === 'journalism') {
+    if (this.lineCode && this.isLineFilterActive() && this.currentTab === 'journalism') {
       params.set('linia', this.lineCode);
     }
 
@@ -187,7 +207,7 @@ class ObservatoriApp {
     const dock = document.getElementById('journalism-line-filter');
     if (!dock) return;
     const lines = (this.availableLines || []).filter(l => l && l.trackable !== false && l.code);
-    dock.hidden = lines.length < 2;
+    dock.hidden = lines.length < 2 || this.currentTab !== 'journalism';
     if (dock.hidden) return;
     if (this.lineCode && !lines.some(l => String(l.code).toUpperCase() === this.lineCode)) this.lineCode = '';
     const items = [{ code: '', label: this.t('dades.allLines') }, ...lines.map(l => ({ code: String(l.code).toUpperCase(), label: String(l.code) }))];
@@ -1077,8 +1097,7 @@ class ObservatoriApp {
 
   bindEvents() {
     document.addEventListener('arribo:lang', () => this.onLangChange());
-    // The network scope (operators.js) decides whether the trains are listed beside Mataró.
-    document.addEventListener('arribo:dades-scope', () => { if (this.currentReport && this.currentTab !== 'termometre' && this.currentTab !== 'incidents' && this.currentTab !== 'monthly') this.renderJournalismReport(this.currentReport); });
+    document.addEventListener('arribo:scope', () => this.onScopeChange());
 
     // Refresh Button
     document.getElementById('btn-observatori-refresh')?.addEventListener('click', (e) => {
@@ -1092,8 +1111,12 @@ class ObservatoriApp {
     document.querySelectorAll('#journalism-timeframe-tabs button').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.preventDefault();
-        document.querySelectorAll('#journalism-timeframe-tabs button').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
+        document.querySelectorAll('#journalism-timeframe-tabs button').forEach(b => {
+          const on = b === btn;
+          b.classList.toggle('active', on);
+          b.classList.toggle('is-active', on);
+          b.setAttribute('aria-selected', on ? 'true' : 'false');
+        });
 
         const dataTab = btn.getAttribute('data-tab');
         if (dataTab === 'termometre') {
@@ -1419,6 +1442,7 @@ class ObservatoriApp {
     const searchBarWrap = document.getElementById('journalism-search-bar-wrap');
 
     if (searchBarWrap) searchBarWrap.style.display = 'block';
+    this.renderLineFilter();
     this.showGpsGaps(true);
     this.setGpsGapPeriod(hours);
     if (contentContainer) contentContainer.style.display = 'block';
@@ -1535,8 +1559,8 @@ class ObservatoriApp {
     const filterText = (this.filterText || '').trim().toLowerCase();
     const norm = (str) => String(str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     const cleanFilter = norm(filterText);
-    // Exact line from the line pills, applied on top of the text search.
-    const lineFilter = (this.lineCode || '').toUpperCase();
+    // Exact line from the line pills, applied only while the Mataró Bus line selector is active.
+    const lineFilter = this.isLineFilterActive() ? (this.lineCode || '').toUpperCase() : '';
     const onLine = x => !lineFilter || String(x?.lineCode || '').toUpperCase() === lineFilter;
 
     const s = report.summary || {};
@@ -2515,6 +2539,7 @@ class ObservatoriApp {
     const searchBarWrap = document.getElementById('journalism-search-bar-wrap');
 
     if (searchBarWrap) searchBarWrap.style.display = 'none';
+    this.renderLineFilter();
     if (contentContainer) contentContainer.style.display = 'none';
     if (incidentsContainer) incidentsContainer.style.display = 'none';
     const monthlyContainer = document.getElementById('journalism-monthly-container');
@@ -2780,6 +2805,7 @@ class ObservatoriApp {
     const searchBarWrap = document.getElementById('journalism-search-bar-wrap');
 
     if (searchBarWrap) searchBarWrap.style.display = 'none';
+    this.renderLineFilter();
     if (contentContainer) contentContainer.style.display = 'none';
     if (termometreContainer) termometreContainer.style.display = 'none';
     const monthlyContainer = document.getElementById('journalism-monthly-container');
@@ -4386,6 +4412,7 @@ class ObservatoriApp {
     const searchBarWrap = document.getElementById('journalism-search-bar-wrap');
 
     if (searchBarWrap) searchBarWrap.style.display = 'none';
+    this.renderLineFilter();
     if (contentContainer) contentContainer.style.display = 'none';
     if (termometreContainer) termometreContainer.style.display = 'none';
     if (incidentsContainer) incidentsContainer.style.display = 'none';
