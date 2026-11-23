@@ -221,9 +221,16 @@ func TestRailDepartures(t *testing.T) {
 		}
 		return v
 	}
+	// The timetable lists departures from railDepLookbackSec ago (for late
+	// trains; the response drops those whose expected time has passed), so
+	// only those from the asked time on are compared here.
+	var since int64
 	ids := func(d []railDeparture) []string {
 		out := []string{}
 		for _, x := range d {
+			if x.DepartUnix < since {
+				continue
+			}
 			out = append(out, x.TripID+"@"+time.Unix(x.DepartUnix, 0).In(madrid).Format("15:04"))
 		}
 		return out
@@ -231,16 +238,19 @@ func TestRailDepartures(t *testing.T) {
 
 	// Monday 08:50: "long" at 09:00 (the removed "holiday" is not listed;
 	// "short" left at 08:00; "back" ends at A, which is not a departure).
+	since = at("2026-11-23 08:50").Unix()
 	d, err := tt.departures(ctx, "L6", "A", -1, at("2026-11-23 08:50"))
-	if err != nil || len(d) != 1 || ids(d)[0] != "long@09:00" {
+	if got := ids(d); err != nil || len(got) != 1 || got[0] != "long@09:00" {
 		t.Errorf("monday: %v %v", ids(d), err)
 	}
 	// Tuesday the holiday service runs again.
+	since = at("2026-11-24 08:50").Unix()
 	d, _ = tt.departures(ctx, "L6", "A", -1, at("2026-11-24 08:50"))
 	if got := ids(d); len(got) != 2 || got[0] != "long@09:00" || got[1] != "holiday@09:30" {
 		t.Errorf("tuesday: %v", got)
 	}
 	// Tuesday 00:20: Monday's 24:30 trip, found on the previous service day.
+	since = at("2026-11-24 00:20").Unix()
 	d, _ = tt.departures(ctx, "L6", "A", -1, at("2026-11-24 00:20"))
 	if got := ids(d); len(got) != 1 || got[0] != "late@00:30" {
 		t.Errorf("after midnight: %v", got)
@@ -333,5 +343,49 @@ func TestRailDeparturesPlatform(t *testing.T) {
 	}
 	if get(3, "platform") != nil || get(3, "platformSource") != nil {
 		t.Errorf("no platform: %s", toJSON(deps[3]))
+	}
+}
+
+// TestRenfeLabelPlatform: Renfe's "-PLATF.(n)" label suffix is the platform
+// at the station the train is approaching, nowhere else.
+func TestRenfeLabelPlatform(t *testing.T) {
+	if l, p := labelPlatform("R2S-25547-PLATF.(11)"); l != "R2S-25547" || p != "11" {
+		t.Errorf("parsed %q %q", l, p)
+	}
+	if l, p := labelPlatform("R4-77558"); l != "R4-77558" || p != "" {
+		t.Errorf("plain %q %q", l, p)
+	}
+	now := time.Unix(1_800_000_000, 0)
+	sched := []any{
+		O("tripId", "t1", "headsign", "X", "directionId", 0.0, "departUnix", float64(now.Unix()+300), "stopId", "71801", "platform", ""),
+		O("tripId", "t2", "headsign", "X", "directionId", 0.0, "departUnix", float64(now.Unix()+600), "stopId", "71801", "platform", ""),
+	}
+	snap := &rtSnapshot{Vehicles: []rtVehicle{
+		{TripID: "t1", StopID: "71801", Label: "R2S-25547-PLATF.(11)"}, // approaching Sants
+		{TripID: "t2", StopID: "71802", Label: "R2S-25549-PLATF.(3)"},  // approaching another station
+	}}
+	deps := railDeparturesResponse(reportOperators[0], rtLineStop{ID: "71801", Name: "Barcelona-Sants"}, sched, snap, nil, now).Get("departures").([]any)
+	if p := deps[0].(*Obj); p.Get("platform") != "11" || p.Get("platformSource") != "live" {
+		t.Errorf("approaching here: %s", toJSON(p))
+	}
+	if p := deps[1].(*Obj); p.Get("platform") != nil {
+		t.Errorf("platform of another station leaked: %s", toJSON(p))
+	}
+}
+
+// TestRailDeparturesLateTrain: a train scheduled before now but running
+// late is still on the board, in its expected order; one with no live delay
+// whose time has passed is not.
+func TestRailDeparturesLateTrain(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	sched := []any{
+		O("tripId", "late", "headsign", "X", "directionId", 0.0, "departUnix", float64(now.Unix()-300)), // 5 min ago, 12 late
+		O("tripId", "gone", "headsign", "X", "directionId", 0.0, "departUnix", float64(now.Unix()-120)), // 2 min ago, no data
+		O("tripId", "next", "headsign", "X", "directionId", 0.0, "departUnix", float64(now.Unix()+180)), // in 3 min
+	}
+	snap := &rtSnapshot{Vehicles: []rtVehicle{{TripID: "late"}}, TripDelays: map[string]int32{"late": 720}}
+	deps := railDeparturesResponse(reportOperators[0], rtLineStop{ID: "A"}, sched, snap, nil, now).Get("departures").([]any)
+	if len(deps) != 2 || deps[0].(*Obj).Get("tripId") != "next" || deps[1].(*Obj).Get("tripId") != "late" {
+		t.Fatalf("board: %s", toJSON(deps))
 	}
 }

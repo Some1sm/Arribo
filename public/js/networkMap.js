@@ -845,7 +845,7 @@ function buildTrainPopupHtml(t, op, lineRef) {
         <div class="map-popup-route-ribbon single">
           <div class="map-popup-route-stop from">
             <span class="map-popup-stop-dot dest"></span>
-            <span class="map-popup-stop-name">${esc(t.currentStatus === 'STOPPED_AT' ? netT('trainPopup.atStop', null, 'A') : netT('trainPopup.towards', null, 'Cap a'))} ${esc(t.stopName)}</span>
+            <span class="map-popup-stop-name">${esc(t.currentStatus === 'STOPPED_AT' ? netT('trainPopup.atStop', null, 'A') : netT('trainPopup.towards', null, 'Cap a'))} ${esc(t.stopName)}${t.platform ? ` · ${esc(netT('dep.platform', { n: t.platform }, `Via ${t.platform}`))}` : ''}</span>
           </div>
         </div>` : ''}
 

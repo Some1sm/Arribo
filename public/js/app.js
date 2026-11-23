@@ -2074,7 +2074,7 @@ class TransitApp {
       : trains.map(b => `
       <div class="rail-train-row">
         <div class="rail-train-main">
-          <strong>${esc(b.toStop ? t(b.currentStatus === 'STOPPED_AT' ? 'rail.at' : 'rail.toward', { name: b.toStop }) : t('rail.noStation'))}</strong>
+          <strong>${esc(b.toStop ? t(b.currentStatus === 'STOPPED_AT' ? 'rail.at' : 'rail.toward', { name: b.toStop }) : t('rail.noStation'))}${b.platform ? esc(` · ${t('dep.platform', { n: b.platform })}`) : ''}</strong>
           <span class="rail-train-sub">${esc(b.destination ? t('rail.dest', { name: b.destination }) : '')}${b.destination ? ' · ' : ''}${esc(t('rail.position', { age: ageText(b.ageSec) }))}${b.delaySource === 'timetable' ? esc(` · ${t('rail.delayTimetable')}`) : ''}</span>
         </div>
         ${chipFor(b)}

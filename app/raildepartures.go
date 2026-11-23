@@ -12,11 +12,19 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"sort"
 	"time"
 )
 
 // railDepWindowSec is how far ahead departures are listed, as the bus board.
 const railDepWindowSec = 120 * 60
+
+// railDepLookbackSec: scheduled departures this far back are still read, for
+// late trains (the same bound as the largest delay kept, railMaxDelaySec).
+const railDepLookbackSec = railMaxDelaySec
+
+// railDepShown is how many departures a board lists.
+const railDepShown = 30
 
 // railTimetables is the worker's own read-only handles, one per operator,
 // reopened when a refresh replaces the file. Used under the worker lock.
@@ -81,8 +89,12 @@ func (t *rtTimetable) departures(ctx context.Context, code, stopID string, dir i
 		if err != nil {
 			return nil, err
 		}
-		from := now.Unix() - ref.Unix()
-		to := from + railDepWindowSec
+		// Look back as far as a plausible delay: a late train whose scheduled
+		// time has passed has not left yet. The response keeps a departure
+		// only while its expected time (scheduled + live delay) is ahead.
+		from := now.Unix() - ref.Unix() - railDepLookbackSec
+		to := now.Unix() - ref.Unix() + railDepWindowSec
+
 		col := gtfsWeekdayColumn[day.Weekday()]
 		q := `WITH active(service_id) AS (
 		    SELECT service_id FROM calendar WHERE start_date <= ?1 AND end_date >= ?1 AND ` + col + ` = 1
@@ -104,7 +116,7 @@ func (t *rtTimetable) departures(ctx context.Context, code, stopID string, dir i
 		     AND COALESCE(st.departure_sec, st.arrival_sec) BETWEEN ?4 AND ?5
 		     AND (?6 < 0 OR tr.direction_id = ?6)
 		     AND st.stop_sequence < (SELECT MAX(stop_sequence) FROM stop_times s2 WHERE s2.trip_id = st.trip_id)
-		   ORDER BY sec LIMIT 30`
+		   ORDER BY sec LIMIT 200`
 		rows, err := t.db.QueryContext(ctx, q, date, stopID, code, from, to, dir)
 		if err != nil {
 			return nil, err
@@ -134,8 +146,10 @@ func (t *rtTimetable) departures(ctx context.Context, code, stopID string, dir i
 			out[j], out[j-1] = out[j-1], out[j]
 		}
 	}
-	if len(out) > 30 {
-		out = out[:30]
+	// Generous: past departures without a live delay are dropped later, by the
+	// response, which keeps the first railDepShown.
+	if len(out) > 150 {
+		out = out[:150]
 	}
 	return out, nil
 }
@@ -197,6 +211,18 @@ func railDeparturesResponse(info operatorInfo, stop rtLineStop, sched []any, sna
 			}
 		}
 	}
+	// Platforms Renfe announces in the labels of trains approaching a
+	// station: trip -> (that station, platform).
+	type labelPlat struct{ stop, code string }
+	labelPlatforms := map[string]labelPlat{}
+	if snap != nil {
+		for i := range snap.Vehicles {
+			v := &snap.Vehicles[i]
+			if _, code := labelPlatform(v.Label); code != "" && v.TripID != "" && v.StopID != "" {
+				labelPlatforms[v.TripID] = labelPlat{v.StopID, code}
+			}
+		}
+	}
 	for _, raw := range sched {
 		o, ok := raw.(*Obj)
 		if !ok {
@@ -248,6 +274,10 @@ func railDeparturesResponse(info operatorInfo, stop rtLineStop, sched []any, sna
 		if platform != "" {
 			platformSource = "timetable"
 		}
+		// Renfe: the platform in the label of a train approaching this station.
+		if p, ok := labelPlatforms[trip]; ok && !cancelled && (p.stop == stop.ID || p.stop == jsString(o.Get("stopId"))) {
+			platform, platformSource = p.code, "live"
+		}
 		if snap != nil && platforms != nil && !cancelled {
 			for _, sid := range snap.TripStops[trip] {
 				if platforms.Has(sid) && jsString(platforms.Get(sid)) != "" {
@@ -282,6 +312,14 @@ func railDeparturesResponse(info operatorInfo, stop rtLineStop, sched []any, sna
 			"platformChanged", platformSource == "live" && scheduledPlatform != "" && platform != scheduledPlatform,
 			"scheduledPlatform", strOrNil(scheduledPlatform),
 		))
+	}
+	// In the order trains are expected (a late train may now come after a
+	// later scheduled one), then the first railDepShown.
+	sort.SliceStable(deps, func(i, j int) bool {
+		return jsString(deps[i].(*Obj).Get("expectedIso")) < jsString(deps[j].(*Obj).Get("expectedIso"))
+	})
+	if len(deps) > railDepShown {
+		deps = deps[:railDepShown]
 	}
 	return O(
 		"stop", O("id", stop.ID, "name", stop.Name, "lat", stop.Lat, "lon", stop.Lon, "agencyId", info.ID),

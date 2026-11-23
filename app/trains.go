@@ -13,6 +13,7 @@ package main
 
 import (
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -188,19 +189,24 @@ func trainJSON(info operatorInfo, s *rtSnapshot, v *rtVehicle, now time.Time) *O
 		}
 	}
 
+	label, platform := labelPlatform(v.Label)
 	id := v.VehicleID
 	if id == "" {
 		id = v.TripID
 	}
 	if id == "" {
-		id = v.Label
+		id = label
 	}
 	return O(
 		"id", info.ID+":"+id,
 		"agencyId", info.ID,
 		"mode", info.Mode,
 		"vehicleId", strOrNil(v.VehicleID),
-		"label", strOrNil(v.Label),
+		"label", strOrNil(label),
+		// Renfe announces the platform at the next station in the label of a
+		// train approaching it ("R2S-25547-PLATF.(11)"): it is the platform
+		// at stopId, nothing further ahead.
+		"platform", strOrNil(platform),
 		"tripId", strOrNil(v.TripID),
 		"routeId", strOrNil(v.RouteID),
 		"lineCode", strOrNil(v.LineCode),
@@ -257,4 +263,16 @@ func boxJSON(b *trainBox) any {
 		return nil
 	}
 	return []any{b.minLat, b.minLon, b.maxLat, b.maxLon}
+}
+
+var rePlatformLabel = regexp.MustCompile(`^(.*?)-PLATF\.\(([^)]+)\)$`)
+
+// labelPlatform splits Renfe's "R2S-25547-PLATF.(11)" into the label
+// ("R2S-25547") and the platform ("11"); other labels are returned as they
+// are, with no platform.
+func labelPlatform(label string) (string, string) {
+	if m := rePlatformLabel.FindStringSubmatch(strings.TrimSpace(label)); m != nil {
+		return m[1], strings.TrimSpace(m[2])
+	}
+	return label, ""
 }
