@@ -149,9 +149,16 @@ class ObservatoriApp {
       this.renderLineFilter();
       this.updateUrl();
     }
+    // A train operator has only the report: leave the bus-only tabs for it.
+    if (document.body.dataset.dadesScope === 'rail' && this.currentTab !== 'journalism') {
+      document.querySelector(`#journalism-timeframe-tabs [data-hours="${this.currentHours || 24}"]`)?.click();
+      return;
+    }
     // Any scope change re-renders the report: under "Tot" it lists the trains beside Mataró.
     if (this.currentReport && this.currentTab === 'journalism') {
       this.renderJournalismReport(this.currentReport);
+    } else if (this._lastDataHealth !== undefined) {
+      this.renderDataHealth(this._lastDataHealth);
     }
   }
 
@@ -856,6 +863,11 @@ class ObservatoriApp {
 
   renderDataHealth(data) {
     this._lastDataHealth = data;
+    const railOp = this.railOpInScope();
+    if (railOp) {
+      this.renderRailHealth(railOp);
+      return;
+    }
     const grid = document.getElementById('data-health-grid');
     if (!grid) return;
     const timeEl = document.getElementById('data-health-timestamp');
@@ -1436,6 +1448,7 @@ class ObservatoriApp {
 
   async loadJournalismReport(hours = 24, force = false) {
     this.currentHours = hours;
+    document.dispatchEvent(new CustomEvent('arribo:dades-hours', { detail: { hours } }));
     const contentContainer = document.getElementById('journalism-content-container');
     const termometreContainer = document.getElementById('journalism-termometre-container');
     const incidentsContainer = document.getElementById('journalism-incidents-container');
@@ -1516,7 +1529,7 @@ class ObservatoriApp {
   // component (.hourly-chart-*), coloured by its own rule: up to 2 min,
   // up to its on-time bound, beyond. Heights are set after rendering
   // (data-bar-h), so no inline styles.
-  renderRailHourly(op) {
+  renderRailHourly(op, inner = false) {
     const rows = (op.hourlyDelays || []).filter(h => h.visitCount > 0);
     if (!rows.length) return '';
     const first = Math.min(...rows.map(h => Number(h.hour)));
@@ -1539,10 +1552,137 @@ class ObservatoriApp {
     }
     const legend = [['good', this.t('ops.hourBandGood')], ['mid', this.t('ops.hourBandMid', { max: on })], ['bad', this.t('ops.hourBandBad', { max: on })]]
       .map(([tone, text]) => `<div class="hourly-legend-item"><span class="hourly-legend-dot op-fill-${tone}" aria-hidden="true"></span><span>${this.esc(text)}</span></div>`).join('');
-    return `<div class="hourly-delays-section dades-rail-hourly">
-      <div class="hourly-chart-header"><h4 class="hourly-chart-title"><span>${this.esc(this.t('dades.hourlyTitleOp', { op: op.shortName || op.agency }))}</span></h4><div class="hourly-chart-legend">${legend}</div></div>
-      <div class="hourly-chart-container op-chart" role="img" aria-label="${this.esc(this.t('dades.hourlyTitleOp', { op: op.shortName || op.agency }))}">${cols.join('')}</div>
-    </div>`;
+    const title = inner ? this.t('dades.hourlyTitle') : this.t('dades.hourlyTitleOp', { op: op.shortName || op.agency });
+    const body = `<div class="hourly-chart-header"><h4 class="hourly-chart-title"><span>${this.esc(title)}</span></h4><div class="hourly-chart-legend">${legend}</div></div>
+      <div class="hourly-chart-container op-chart" role="img" aria-label="${this.esc(title)}">${cols.join('')}</div>`;
+    return inner ? body : `<div class="hourly-delays-section dades-rail-hourly">${body}</div>`;
+  }
+
+  // The train operator the network scope names (Rodalies, FGC), with its
+  // figures from /api/analytics/network; null for "Tot" and "Mataró Bus".
+  railOpInScope() {
+    if (document.body.dataset.dadesScope !== 'rail') return null;
+    let id = '';
+    try { id = new URLSearchParams(window.location.search).get('xarxa') || ''; } catch { /* none */ }
+    return (this.networkReport?.operators || []).find(o => o.agencyId === id) || null;
+  }
+
+  // A train operator's figures in the shape of Mataró's report, so the page
+  // draws every operator with the same blocks. Peak hours: the three hours
+  // with most average delay among those with a real share of the visits,
+  // with their worst stations from the per-hour cells.
+  railReportFor(op) {
+    const st = op.agencyStats || {};
+    const stops = op.allStopDelays || [];
+    const hourly = op.hourlyDelays || [];
+    const total = hourly.reduce((n, h) => n + (h.visitCount || 0), 0);
+    const minVisits = Math.max(20, total * 0.02);
+    const peakHours = hourly
+      .filter(h => h.visitCount >= minVisits && h.avgDelay !== null && h.avgDelay !== undefined)
+      .sort((a, b) => b.avgDelay - a.avgDelay)
+      .slice(0, 3)
+      .map(h => ({
+        ...h,
+        sampleCount: h.visitCount,
+        latePercentage: h.latePercentage ?? 0,
+        severeFrom: op.onTimeMaxMins || 5,
+        worstStopsDuringHour: stops
+          .map(x => ({ x, c: (x.hourly || [])[Number(h.hour)] }))
+          .filter(e => e.c && e.c.sampleCount >= 2 && e.c.avgDelay !== null)
+          .sort((a, b) => b.c.avgDelay - a.c.avgDelay)
+          .slice(0, 3)
+          .map(e => ({ stopName: e.x.stopName, lineCode: e.x.lineCode, agencyId: op.agencyId, avgDelay: e.c.avgDelay, arrivalCount: e.c.sampleCount }))
+      }));
+    return {
+      isRail: true,
+      railOp: op,
+      summary: {
+        totalRecordedArrivals: st.totalVisits || 0,
+        totalStopVisits: st.totalVisits || 0,
+        monitoredLinesCount: st.linesCount || 0,
+        hoursAnalyzed: this.currentHours,
+        networkPunctualityPct: st.onTimePct,
+        earlyPct: st.earlyPct,
+        latePct: st.latePct,
+        networkAvgDelay: st.avgDelay,
+        networkMaxDelay: st.maxDelay
+      },
+      hourlyDelays: [],
+      peakHours,
+      rankingMostDelayed: op.rankingMostDelayed || [],
+      allStopDelays: stops,
+      rankingWorstStops: stops.filter(x => x.isBottleneck),
+      agencyStats: [{ ...st, onTimeMaxMins: op.onTimeMaxMins, tier: op.tier }]
+    };
+  }
+
+  // The operator header above the toolbar: Mataró Bus, or the train
+  // operator the scope names (name, data tier, method).
+  updateScopeHeader(op) {
+    const name = document.getElementById('mataro-bus-title');
+    const head = document.getElementById('mataro-bus-tier-header');
+    if (!name || !head) return;
+    const chip = head.querySelector('[data-tier]');
+    const method = head.querySelector('.op-method');
+    const tier = op ? (op.tier || 'measured') : 'measured';
+    const methodKey = op ? `tier.method.${op.method}` : 'tier.method.gps';
+    name.textContent = op ? op.agency : 'Mataró Bus';
+    if (chip) {
+      chip.dataset.tier = tier;
+      chip.setAttribute('data-i18n', `tier.${tier}`);
+      chip.textContent = this.t(`tier.${tier}`);
+    }
+    if (method) {
+      method.dataset.method = op ? op.method : 'gps';
+      method.setAttribute('data-i18n', methodKey);
+      method.textContent = this.t(methodKey);
+    }
+  }
+
+  // The data-status panel for a train operator, from its live feed: the
+  // same rows as Mataró's (dot, title, badge, one line), its own checks.
+  renderRailHealth(op) {
+    const grid = document.getElementById('data-health-grid');
+    if (!grid) return;
+    const timeEl = document.getElementById('data-health-timestamp');
+    if (timeEl) timeEl.textContent = new Date().toLocaleTimeString(this.locale(), { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const TONE = { 'status-success': 'ok', 'status-warning': 'warn', 'status-danger': 'bad', 'status-neutral': 'none' };
+    const item = (title, badgeClass, badge, desc) => ({
+      tone: TONE[badgeClass],
+      html: `<div class="data-health-item dh-${TONE[badgeClass]}"><div class="data-health-header"><span class="data-health-title"><span class="dh-dot" aria-hidden="true"></span><span>${this.esc(title)}</span></span><span class="data-health-badge ${badgeClass}">${this.esc(badge)}</span></div><p class="data-health-desc">${this.esc(desc)}</p></div>`
+    });
+    const f = op.feed;
+    const items = [];
+    if (!f) {
+      items.push(item(this.t('dades.rhFeedTitle'), 'status-neutral', this.t('dades.rhFeedOff'), this.t('dades.rhFeedOffDesc')));
+    } else {
+      const err = f.vehiclesError || f.tripUpdatesError;
+      items.push(err
+        ? item(this.t('dades.rhFeedTitle'), 'status-danger', this.t('dades.rhFeedErr'), this.t('dades.rhFeedErrDesc', { err }))
+        : item(this.t('dades.rhFeedTitle'), 'status-success', this.t('dades.rhFeedOk'), this.t('dades.rhFeedOkDesc')));
+      const age = Number(f.fetchAgeSec);
+      const bound = Number(op.staleAfterSec) || 180;
+      items.push(Number.isFinite(age)
+        ? (age <= bound
+          ? item(this.t('dades.rhFreshTitle'), 'status-success', this.t('dades.rhFreshOk'), this.t('dades.rhFreshDesc', { n: age, max: bound }))
+          : item(this.t('dades.rhFreshTitle'), 'status-warning', this.t('dades.rhFreshLate'), this.t('dades.rhFreshDesc', { n: age, max: bound })))
+        : item(this.t('dades.rhFreshTitle'), 'status-neutral', this.t('dades.dhNoData'), this.t('dades.rhFreshNone')));
+      const n = Number(f.vehiclesNow) || 0;
+      items.push(n > 0
+        ? item(this.t('dades.rhTrainsTitle'), 'status-success', String(n), this.t('dades.rhTrainsDesc', { n }))
+        : item(this.t('dades.rhTrainsTitle'), 'status-neutral', '0', this.t('dades.rhTrainsNone')));
+      const dropped = Number(f.implausibleDropped) || 0;
+      items.push(item(this.t('dades.rhDroppedTitle'), dropped > 0 ? 'status-warning' : 'status-success', String(dropped), this.t('dades.rhDroppedDesc')));
+    }
+    const cancelled = op.agencyStats?.cancelled;
+    if (typeof cancelled === 'number') {
+      items.push(item(this.t('dades.rhCancelTitle'), cancelled > 0 ? 'status-warning' : 'status-success', String(cancelled), this.t('dades.rhCancelDesc', { h: this.currentHours })));
+    }
+    items.push(item(this.t('dades.rhTierTitle'), 'status-success', this.t(`tier.${op.tier || 'measured'}`), this.t(`tier.method.${op.method}`)));
+    const problems = items.filter(i => i.tone === 'warn' || i.tone === 'bad').length;
+    const tone = items.some(i => i.tone === 'bad') ? 'bad' : (problems ? 'warn' : 'ok');
+    const summary = problems ? this.t(problems === 1 ? 'dades.dhSummaryWarnOne' : 'dades.dhSummaryWarnMany', { n: problems }) : this.t('dades.dhSummaryOk');
+    grid.innerHTML = `<p class="dh-summary dh-${tone}"><span class="dh-dot" aria-hidden="true"></span>${this.esc(summary)}</p><div class="dh-list">${items.map(i => i.html).join('')}</div>`;
   }
 
   clearOperatorComparison() {
@@ -1554,7 +1694,23 @@ class ObservatoriApp {
     const container = document.getElementById('journalism-content-container');
     if (!container) return;
 
-    this.currentReport = report;
+    if (!report.isRail) {
+      this.currentReport = report;
+      const railOp = this.railOpInScope();
+      this.updateScopeHeader(railOp);
+      if (railOp) {
+        report = this.railReportFor(railOp);
+        this.renderRailHealth(railOp);
+      } else if (document.body.dataset.dadesScope === 'rail') {
+        // A train scope without its figures (the request failed): say so,
+        // never show Mataró's report under a train operator's name.
+        this._setStatusMessage(container, this.t('dades.railNoData'), true);
+        return;
+      } else if (this._railHealthShown) {
+        if (this._lastDataHealth !== undefined) this.renderDataHealth(this._lastDataHealth);
+      }
+      this._railHealthShown = !!railOp;
+    }
     const loc = this.locale();
     const filterText = (this.filterText || '').trim().toLowerCase();
     const norm = (str) => String(str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -1660,6 +1816,7 @@ class ObservatoriApp {
       : '';
 
     let html = `
+      ${report.isRail ? `<p class="dades-rail-scope-note">${this.esc(this.t('dades.railScopeNote', { op: report.railOp.shortName || report.railOp.agency }))}</p>` : ''}
       <!-- Pre-generated Cache Banner -->
       ${report.meta?.generatedAt ? `
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; background:rgba(0,148,133,0.08); border:1px solid rgba(0,148,133,0.22); border-radius:10px; padding:0.6rem 0.95rem; margin-bottom:1.25rem; font-size:0.78rem;">
@@ -1791,7 +1948,7 @@ class ObservatoriApp {
       ${(() => {
         const hourly = report.hourlyDelays || [];
         const peakHours = report.peakHours || [];
-        if (hourly.length === 0 && peakHours.length === 0) return '';
+        if (!report.railOp && hourly.length === 0 && peakHours.length === 0) return '';
 
         const serviceHours = hourly.filter(h => {
           const n = parseInt(h.hour, 10);
@@ -1801,7 +1958,7 @@ class ObservatoriApp {
 
         return `
         <div class="hourly-delays-section" style="margin-bottom:1.5rem;">
-          <div class="hourly-chart-header">
+          ${report.railOp ? this.renderRailHourly(report.railOp, true) : `<div class="hourly-chart-header">
             <h4 class="hourly-chart-title">
               <span>${this.esc(this.t('dades.hourlyTitle'))}</span>
             </h4>
@@ -1847,6 +2004,7 @@ class ObservatoriApp {
             }).join('')}
           </div>
 
+          `}
           <!-- Peak Hours Ranking & Critical Bottlenecks -->
           ${peakHours.length > 0 ? `
             <div style="font-size:0.85rem; font-weight:700; color:var(--text-secondary); margin-top:0.75rem;">
@@ -1866,7 +2024,7 @@ class ObservatoriApp {
                   <div class="peak-hour-metrics">
                     <div class="peak-hour-stat">
                       <span class="stat-label">${this.esc(this.t('dades.peakAvgDelay'))}</span>
-                      <strong class="stat-val ${ph.avgDelay >= 3 ? 'severe' : 'warning'}">+${ph.avgDelay} min</strong>
+                      <strong class="stat-val ${ph.avgDelay >= (ph.severeFrom ?? 3) ? 'severe' : 'warning'}">+${ph.avgDelay} min</strong>
                     </div>
                     <div class="peak-hour-stat">
                       <span class="stat-label">${this.esc(this.t('dades.peakAffected'))}</span>
@@ -1885,7 +2043,7 @@ class ObservatoriApp {
                         ${ph.worstStopsDuringHour.map(bs => `
                           <div class="bottleneck-item">
                             <span class="bottleneck-stop" title="${this.esc(bs.stopName)}">${this.esc(bs.stopName)}</span>
-                            <span class="bottleneck-line" style="background:var(--brand-primary);">${this.esc(bs.lineCode)}</span>
+                            <span class="bottleneck-line"${bs.agencyId && bs.agencyId !== 'mataro' ? ` data-line="${this.esc(`${bs.agencyId}:${bs.lineCode}`)}"` : ' style="background:var(--brand-primary);"'}>${this.esc(bs.lineCode)}</span>
                             <span class="bottleneck-delay">+${bs.avgDelay}m</span>
                           </div>
                         `).join('')}

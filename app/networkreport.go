@@ -27,7 +27,9 @@ const (
 )
 
 // getNetworkReport builds the per-operator blocks for the last `hours`.
-func (h *HistoryDB) getNetworkReport(hours float64) (*Obj, error) {
+// feeds is each poller's live state (gtfsRtFeedStats), for the operator's
+// data-status panel.
+func (h *HistoryDB) getNetworkReport(hours float64, feeds map[string]*Obj) (*Obj, error) {
 	if !h.ensureOpen() {
 		return nil, errors.New("History database unavailable")
 	}
@@ -76,10 +78,13 @@ func (h *HistoryDB) getNetworkReport(hours float64) (*Obj, error) {
 		if err != nil {
 			return nil, err
 		}
+		cancelled, cancelledByLine := h.railCancelCounts(op.ID, cutoff, float64(nowMs()))
+		stats.Set("cancelled", cancelled)
 		lines := make([]any, 0, len(lineRows))
 		for _, r := range lineRows {
 			n := r.Get("visits")
 			lines = append(lines, O(
+				"cancelled", cancelledByLine[jsString(r.Get("line"))],
 				"lineCode", r.Get("line"), "agency", op.ShortName, "agencyId", op.ID,
 				"visitCount", n, "sampleCount", n,
 				"avgDelay", round1(r.Get("avgDelay")), "maxDelay", r.Get("maxDelay"),
@@ -202,6 +207,10 @@ func (h *HistoryDB) getNetworkReport(hours float64) (*Obj, error) {
 			// Trains are timed from the operator's trip updates alone.
 			"delayMeasurementComparison", nil,
 			"gpsGaps", nil,
+			// The live feed (nil: polling is off) and the bound past which a
+			// train's position counts as stale, for the data-status panel.
+			"feed", feedOrNil(feeds, op.ID),
+			"staleAfterSec", trainStaleAfter(op.ID),
 		))
 	}
 	// Operators with no visits in the period come last, in registry order.
@@ -251,5 +260,12 @@ func (s *Server) hNetwork(q *xreq, res *xres) error {
 	s.operatorCache.Set(key, &cachedData{data: data, timestamp: now})
 	res.h.Set("X-Cache", "MISS")
 	res.json(spreadAny(O("success", true), data))
+	return nil
+}
+
+func feedOrNil(feeds map[string]*Obj, id string) any {
+	if f, ok := feeds[id]; ok && f != nil {
+		return f
+	}
 	return nil
 }

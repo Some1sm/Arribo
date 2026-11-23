@@ -11654,6 +11654,17 @@ body:not([data-dades-scope="all"]) .dades-all-only { display: none; }
 .dades-scope[hidden] { display: none; }
 .dades-scope-label { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); }
 body[data-dades-scope="rail"] .dades-bus-only { display: none !important; }
+/* A train operator in Mataró's layout: the bus-only tools go, and the train
+   card keeps only what the report above does not show (daily chart, line
+   drill-down, feed line). */
+body[data-dades-scope="rail"] .dades-bus-tool { display: none !important; }
+body[data-dades-scope="rail"] #operators-section .op-kpis,
+body[data-dades-scope="rail"] #operators-section .op-operator > .op-bar,
+body[data-dades-scope="rail"] #operators-section .op-operator > .op-legend,
+body[data-dades-scope="rail"] #operators-section .op-stations { display: none; }
+.op-own-period[hidden] { display: none; }
+.dades-rail-scope-note { margin: 0 0 1.25rem; padding: 0.6rem 0.95rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-md, 8px); background: var(--bg-elevated); font-size: 0.78rem; color: var(--text-secondary); line-height: 1.5; }
+.bottleneck-item .bottleneck-line[data-line] { background: var(--line-color, var(--brand-primary)); color: var(--line-ink, var(--text-primary)); }
 body[data-dades-scope="all"] .dades-bus-scope-only,
 body[data-dades-scope="rail"] .dades-bus-scope-only { display: none !important; }
 body[data-dades-scope="bus"] #operators-section { display: none !important; }

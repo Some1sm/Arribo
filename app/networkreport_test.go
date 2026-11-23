@@ -31,7 +31,7 @@ func TestNetworkReport(t *testing.T) {
 	add("renfe_rodalies", "R2", "Clot", 30) // one visit: below the station minimum
 	add("mataro", "L1", "Rambla", 9)        // another operator's: not counted
 
-	rep, err := h.getNetworkReport(24)
+	rep, err := h.getNetworkReport(24, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

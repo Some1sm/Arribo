@@ -25,6 +25,7 @@
   // id. Kept in the URL (?xarxa=) so a scoped Dades can be shared.
   const scopeWrap = document.getElementById('dades-scope-wrap');
   const scopeDock = document.getElementById('dades-scope');
+  let announcedScope = null; // the scope id last announced to the report (arribo:scope)
   let scope = (() => {
     try { return new URLSearchParams(window.location.search).get('xarxa') || 'all'; } catch { return 'all'; }
   })();
@@ -35,7 +36,9 @@
     const nextDadesScope = scope === 'all' ? 'all' : (scope === 'mataro' ? 'bus' : 'rail');
     const prevDadesScope = document.body.dataset.dadesScope;
     document.body.dataset.dadesScope = nextDadesScope;
-    if (prevDadesScope !== nextDadesScope) {
+    // Also between two train operators: the report shows the one chosen.
+    if (prevDadesScope !== nextDadesScope || announcedScope !== scope) {
+      announcedScope = scope;
       document.dispatchEvent(new CustomEvent('arribo:scope', { detail: { scope, dadesScope: nextDadesScope } }));
     }
     if (!scopeDock || !scopeWrap) return;
@@ -474,6 +477,7 @@
         if (scopeWrap) scopeWrap.hidden = true;
         if (document.body.dataset.dadesScope !== undefined) {
           delete document.body.dataset.dadesScope;
+          announcedScope = null;
           document.dispatchEvent(new CustomEvent('arribo:scope', { detail: { scope: 'mataro', dadesScope: '' } }));
         }
         return;
@@ -499,6 +503,14 @@
       b.classList.toggle('is-active', on);
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
+    load();
+  });
+
+  // One period for the whole page: the report toolbar's (24 h, 48 h, 7 days).
+  document.addEventListener('arribo:dades-hours', ev => {
+    const h = Number(ev.detail?.hours);
+    if (![24, 48, 168].includes(h) || h === hours) return;
+    hours = h;
     load();
   });
 
