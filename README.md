@@ -110,6 +110,7 @@ The repository targets a long-running Docker deployment; retired serverless conf
 | `ARRIBO_GTFSRT` | `1` in compose | Rodalies and FGC feeds (GTFS-RT pollers and timetable imports) |
 | `ARRIBO_MOVENTIS` | `1` in compose | Moventis buses, estimated from the arrival predictions of moventis.es (`app/moventis.go`); `/api/moventis` |
 | `ARRIBO_MOVENTIS_LINES` | `47,48,51,53,57,59,68` | Moventis line ids to follow (the seven lines through Mataró). A stop's answer shows only the next live bus per line and direction, so stops are sampled about as far apart as consecutive buses (speed × headway, `movSpacingKm` in `app/moventis.go`): 31 stops, a ~6-minute cycle for the seven lines. Requests are 11 s apart (the site's crawl delay) |
+| `ARRIBO_SPECIAL_LINES` | `10,11,12` | Mataró SIRI line refs asked for special services (Les Santes "Bus Focs" lines), shown as "Servei especial" with no timetable. Asked by name every 5 min, and on every 20 s cycle for 30 min after one is seen; empty or `off` turns it off |
 
 Storage sampling does not reduce live polling frequency. The ingestion daemon polls Mataró vehicles every 20 seconds, refreshes notices every five minutes, and schedules analytics reports every 30 minutes.
 
