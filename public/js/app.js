@@ -1034,7 +1034,7 @@ class TransitApp {
    *  "operators"), plus any operator a line names that the list lacks. */
   catalogOperators() {
     const ops = Array.isArray(this.availableOperators)
-      ? this.availableOperators.map(o => ({ id: String(o.id), name: o.name || String(o.id), shortName: o.shortName || o.name || String(o.id), mode: o.mode || '', positions: o.positions || '' }))
+      ? this.availableOperators.map(o => ({ id: String(o.id), name: o.name || String(o.id), shortName: o.shortName || o.name || String(o.id), mode: o.mode || '', positions: o.positions || '', realtime: o.realtime || '', lineCount: Number(o.lineCount) || 0, attribution: typeof o.attribution === 'string' ? o.attribution : '' }))
       : [];
     for (const l of this.availableLines || []) {
       const id = l.agencyId || 'mataro';
@@ -1088,31 +1088,62 @@ class TransitApp {
     const countEl = document.getElementById('header-lines-count');
     if (countEl) countEl.textContent = window.ArriboI18n ? window.ArriboI18n.t('header.linesCount', { n: this.pickerLines().length }) : `${this.pickerLines().length} línies`;
     const ops = this.catalogOperators();
+    this.renderLandingFeatures(ops);
+    window.TransitUtils?.renderFooterSources?.(ops);
     if (ops.length <= 1) return;
     const short = o => o.shortName || o.name;
-    const listed = this.availableLines || [];
-    const busOps = ops.filter(o => listed.some(l => (l.agencyId || 'mataro') === o.id));
-    const otherOps = ops.filter(o => !busOps.includes(o));
-    // Operators without GPS buses: buses with estimated positions (Moventis),
-    // buses with predicted departures only (AMB: no positions at all) and
-    // trains (Rodalies, FGC), each said for what it is.
-    const estOps = otherOps.filter(o => o.mode === 'bus' && o.positions !== 'none');
-    const predOps = otherOps.filter(o => o.mode === 'bus' && o.positions === 'none');
-    const railOps = otherOps.filter(o => o.mode !== 'bus');
+    const i18n = window.ArriboI18n;
+    const t = (key, vars) => (i18n ? i18n.t(key, vars) : key);
+    const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+    // Several operators: a count that stays true as operators are added; the
+    // feature cards below say what kind of live data each one has.
+    const eyebrowOps = ops.slice(0, 4).map(short).join(' · ') + (ops.length > 4 ? ` +${ops.length - 4}` : '');
+    set('landing-hero-eyebrow', t('hero.eyebrow.multi', { ops: eyebrowOps }));
+    const hasRail = ops.some(o => o.mode && o.mode !== 'bus');
+    set('landing-hero-title', t(hasRail ? 'hero.title.trains' : 'hero.title.lines'));
+    set('landing-hero-subtitle', t('hero.subtitle.multi', { n: this.catalogLineTotal(ops), ops: ops.length }));
+    set('header-city-pill', t('header.pill.multi'));
+    if (!this.activeLineId) {
+      document.title = t(hasRail ? 'title.trains' : 'title.lines');
+    }
+  }
+
+  /** Every line of every operator in the catalog. */
+  catalogLineTotal(ops) {
+    const counted = ops.reduce((n, o) => n + (o.lineCount || 0), 0);
+    return counted || (this.catalogAllLines || this.availableLines || []).length;
+  }
+
+  /**
+   * The four feature cards under the landing, from the catalog: how many lines
+   * and operators, what live data each operator has (GPS, positions the
+   * operator reports, estimated positions, predicted times), which ones have a
+   * timetable only, and the notices. Redrawn with the catalog and the language.
+   */
+  renderLandingFeatures(ops) {
     const i18n = window.ArriboI18n;
     const t = (key, vars) => (i18n ? i18n.t(key, vars) : key);
     const list = names => (i18n ? i18n.list(names) : names.join(', '));
+    const short = o => o.shortName || o.name;
     const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
-    set('landing-hero-eyebrow', t('hero.eyebrow.multi', { ops: ops.map(short).join(' · ') }));
-    set('landing-hero-title', t(otherOps.length ? 'hero.title.trains' : 'hero.title.lines'));
-    set('landing-hero-subtitle', t('hero.subtitle.buses', { n: listed.length, buses: list(busOps.map(short)) }) +
-      (estOps.length ? t('hero.subtitle.estBuses', { ops: list(estOps.map(short)) }) : '') +
-      (predOps.length ? t('hero.subtitle.predBuses', { ops: list(predOps.map(short)) }) : '') +
-      (railOps.length ? t('hero.subtitle.trains', { trains: list(railOps.map(short)) }) : '.'));
-    set('header-city-pill', t('header.pill.multi'));
-    if (!this.activeLineId) {
-      document.title = t(railOps.length ? 'title.trains' : 'title.lines');
+    if (!ops.length) return;
+    const names = ops.map(short);
+    const shown = names.length > 6 ? [...names.slice(0, 5), t('feat.lines.more', { n: names.length - 5 })] : names;
+    set('feat-lines-title', t('feat.lines.title', { n: this.catalogLineTotal(ops) }));
+    set('feat-lines-desc', t('feat.lines.desc', { n: ops.length, ops: list(shown) }));
+    const of = kind => ops.filter(o => (o.realtime || (o.id === 'mataro' ? 'gps' : '')) === kind).map(short);
+    const parts = [];
+    for (const kind of ['gps', 'positions', 'estimated', 'predicted']) {
+      const k = of(kind);
+      if (k.length) parts.push(t(`feat.rt.${kind}`, { ops: list(k) }));
     }
+    set('feat-rt-title', t('feat.rt.title'));
+    set('feat-rt-desc', parts.join('. ') + (parts.length ? '.' : ''));
+    const ttOnly = of('timetable');
+    set('feat-tt-title', t('feat.tt.title'));
+    set('feat-tt-desc', t('feat.tt.desc') + (ttOnly.length ? ' ' + t('feat.tt.only', { ops: list(ttOnly) }) : ''));
+    set('feat-alerts-title', t('feat.alerts.title'));
+    set('feat-alerts-desc', t('feat.alerts.desc'));
   }
 
   /** Runs whenever the catalog changes: line colours and the landing filter dock. */

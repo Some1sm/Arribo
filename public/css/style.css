@@ -12042,3 +12042,7 @@ body.network-map-fullscreen-open { overflow: hidden; }
 /* The legend lists only the lines in view (networkMap.js renderLegend) and is
    hidden when there are none; display:flex above would otherwise win. */
 .network-map-legend[hidden] { display: none; }
+
+/* Footer data sources (utils.js renderFooterSources): one credit per operator,
+   so the line can be long; it wraps instead of widening the page. */
+.footer-sources { overflow-wrap: anywhere; }

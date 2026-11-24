@@ -127,6 +127,8 @@ func catalogOperators(lines []any) []any {
 			"bounds", O("minLat", b.MinLat, "maxLat", b.MaxLat, "minLon", b.MinLon, "maxLon", b.MaxLon),
 			"center", []any{a.Center[0], a.Center[1]}, "zoom", a.Zoom,
 			"trackable", true,
+			// Additive: live GPS from the operator's SIRI feed, and the credit.
+			"realtime", "gps", "attribution", mataroAttribution,
 		))
 	}
 	return out
@@ -192,9 +194,34 @@ func railCatalog() (lines []any, ops []any) {
 			movSarfaAgencyID, movCostaAgencyID, movLleidaAgencyID, movTccAgencyID, movSarbusAgencyID:
 			o.Set("positions", "none") // predicted/scheduled departures only
 		}
+		// Additive: what kind of real-time data the operator has, and its credit.
+		o.Set("realtime", catalogRealtime(info))
+		o.Set("attribution", railAttribution(info.ID))
 		ops = append(ops, o)
 	}
 	return lines, ops
+}
+
+// mataroAttribution is the credit for Mataró Bus data.
+const mataroAttribution = "Mataró Bus Urbà (Avanza / Ajuntament de Mataró)"
+
+// catalogRealtime says what an operator's live data is, from its data tier:
+// "gps" (its buses' own GPS), "positions" (vehicle positions the operator
+// reports: Rodalies, FGC), "estimated" (positions estimated from stop
+// predictions: Moventis), "predicted" (predicted times at stops, no positions)
+// or "timetable" (no live data).
+func catalogRealtime(info operatorInfo) string {
+	switch {
+	case info.Tier == "timetable":
+		return "timetable"
+	case info.Method == "gps" || info.Method == "operator_gps":
+		return "gps"
+	case info.ID == movAgencyID:
+		return "estimated"
+	case info.Mode == "rail":
+		return "positions"
+	}
+	return "predicted"
 }
 
 // catalogModeLabel is the catalog's mode word for an operator's lines.

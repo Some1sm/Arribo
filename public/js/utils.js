@@ -73,6 +73,34 @@
     return { season: schedule.season, known };
   }
 
+  // Footer data sources (the #footer-sources element): every operator's
+  // credit, from the catalog's operators (/api/lines "operators", attribution).
+  // The home page passes the operators it already has; a page whose element
+  // carries data-autoload fetches the catalog itself.
+  let footerOps = null;
+  function renderFooterSources(ops) {
+    if (Array.isArray(ops) && ops.length) footerOps = ops;
+    const host = global.document?.getElementById('footer-sources');
+    if (!host || !footerOps) return;
+    const seen = new Set();
+    const items = [];
+    for (const o of footerOps) {
+      const a = (typeof o?.attribution === 'string' && o.attribution.trim()) || o?.name || '';
+      if (a && !seen.has(a)) { seen.add(a); items.push(a); }
+    }
+    if (items.length) host.textContent = `${t('footer.sources', null, 'Fonts de dades')}: ${items.join(' · ')}`;
+  }
+  if (global.document && typeof global.document.addEventListener === 'function') {
+    global.document.addEventListener('DOMContentLoaded', () => {
+      const host = global.document.getElementById('footer-sources');
+      if (!host || !host.hasAttribute('data-autoload') || typeof global.fetch !== 'function') return;
+      global.fetch('/api/lines').then(r => (r.ok ? r.json() : null)).then((d) => {
+        if (d && Array.isArray(d.operators)) renderFooterSources(d.operators);
+      }).catch(() => { /* the static text stays */ });
+    });
+    global.document.addEventListener('arribo:lang', () => renderFooterSources());
+  }
+
   if (global.document && typeof global.document.addEventListener === 'function') {
     global.document.addEventListener('arribo:lang', () => {
       for (const [id, schedule] of seasonPillState.entries()) {
@@ -83,6 +111,7 @@
 
   const TransitUtils = {
     THEME_STORAGE_KEY,
+    renderFooterSources,
 
     freshness(item, now = Date.now(), offline = global.navigator?.onLine === false) {
       const f = item?.freshness;
