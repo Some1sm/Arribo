@@ -1,0 +1,24 @@
+{
+  "validFrom": "2026-01-15",
+  "checkedOn": "2026-11-24",
+  "currency": "EUR",
+  "sources": [
+    "DOGC 9582 (14 Jan 2026): ATM Area de Barcelona fares, in force from 15 Jan 2026",
+    "ATM GTFS-Fares v2 (CGIM feed, fare_products / fare_transfer_rules), via docs/research/catalonia-2026/08-fares-and-ticket-prices.md",
+    "https://mataro.avanzagrupo.com/ca/tarifas-y-titulos (Mataro Bus own tickets)"
+  ],
+  "atm": {
+    "zones": [1,2,3,4,5,6,7],
+    "single": [2.9,4.15,5.4,6.9,8.8,10.25,11.6],
+    "tCasual": [13,25.5,34.7,44.65,51.2,54.45,57.6],
+    "tCasualTrips": 10,
+    "tUsual": [22.8,30.55,42.7,52.15,59.6,63.85,67.65],
+    "tJove": 45.5,
+    "transfer": {"windowSeconds":[4500,5400,6300,7200,8100,9000,12600],"maxTransfers":3,"appliesTo":"tCasual","singleHasTransfers":false,"status":"report 08 section 1.2: fare_transfer_rules of the ATM feed (75 min for 1 zone, +15 min per extra zone up to 6, 3 h 30 for 7 zones); the window is counted here from first to last boarding"}
+  },
+  "mataroBus": {"zone":3,"sector":"3E","single":1.7,"singleTransferSeconds":4500,"t10":4.85,"t10Trips":10,"source":"report 08 section 1.3 (operator site, reported not verified)"},
+  "sectorZones": {"3E":{"1":3,"3E":1,"3D":2,"2E":2,"3C":3,"2A":4,"2B":4,"2C":4,"3A":5,"3B":5,"4H":2,"5H":3,"6G":4}},
+  "sectorZonesNote": "Only the 3E (Mataro) row is checked in: it is the one listed in report 08 section 1.2. A pair absent here has no price. Reverse pairs use the same count (the ATM matrix is asymmetric in 2 of 4761 pairs).",
+  "stations": {"mataro":"3E","arenys de mar":"4H","barcelona sants":"1","barcelona placa de catalunya":"1","placa de catalunya":"1","passeig de gracia":"1","barcelona arc de triomf":"1","arc de triomf":"1","barcelona estacio de franca":"1","barcelona franca":"1"},
+  "stationsNote": "Station name (accents and punctuation folded) to ATM sector. Mataro 3E and Arenys 4H are listed in report 08; the Barcelona stations are in the municipality of Barcelona, which is sector 1. A station not listed has no price: never guessed. A full stop-to-sector table needs the ATM stop_areas file (plan step 4.3)."
+}

@@ -38,6 +38,25 @@ class PlannerPageApp {
     }
   }
 
+  fmtEuro(val) {
+    return new Intl.NumberFormat(this.lang(), { style: 'currency', currency: 'EUR' }).format(Number(val));
+  }
+
+  // Indicative ticket price of an itinerary (server `fare`); nothing when unknown.
+  fareHtml(it) {
+    const f = it && it.fare;
+    if (!f || !f.cheapestSingle) return '';
+    const parts = [this.t('plan.fareSingle', { price: this.fmtEuro(f.cheapestSingle.price) })];
+    if (f.perTripWithTen) parts.push(this.t('plan.farePerTrip', { price: this.fmtEuro(f.perTripWithTen.price) }));
+    const zones = f.zones && f.zones.count ? this.t('plan.fareZones', { n: f.zones.count }) : '';
+    const date = String(f.validFrom || '').split('-').reverse().join('/');
+    const reval = f.needsRevalidation ? ` ${this.esc(this.t('plan.fareRevalidate'))}` : '';
+    return `<div class="planner-fare">
+              <strong>${this.esc(parts.join(' · '))}</strong>${zones ? ` <span>${this.esc(zones)}</span>` : ''}
+              <span class="planner-fare-note">${this.esc(this.t('plan.fareNote', { date }))}${reval}</span>
+            </div>`;
+  }
+
   fmtKm(val) {
     const num = Number(val);
     if (!Number.isFinite(num)) return String(val || '3.5');
@@ -1085,6 +1104,8 @@ class PlannerPageApp {
               <span>${this.t('plan.co2Savings', { amount: `<strong>${this.esc(this.fmtCo2(it))}</strong>` })}</span>
               <span style="color:var(--text-muted); font-size:0.7rem; margin-left:auto;">${this.esc(this.t('plan.busDistance', { km: this.fmtKm(it.transitDistanceKm || 3.5) }))}</span>
             </div>
+
+            ${this.fareHtml(it)}
 
             <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.75rem; border-top:1px solid var(--border-subtle); padding-top:0.6rem; gap:8px;">
               <button type="button" class="btn-start-guided-nav" data-itinerary-index="${idx}" title="${this.esc(this.t('plan.startTripTitle'))}" style="display:inline-flex; align-items:center; gap:5px; background:linear-gradient(135deg, #0ea5e9, #0284c7); color:#fff; border:none; border-radius:6px; padding:6px 12px; font-size:0.82rem; font-weight:700; cursor:pointer; box-shadow:0 2px 6px rgba(14,165,233,0.3);">

@@ -39,6 +39,19 @@ Additive response fields:
 - Walks include `distanceMeters`, `durationSeconds`, `[lat,lon]` `polyline`,
   `source` (`openrouteservice` or `approximate`) and `approximate` boolean.
 
+## Fares
+
+Every planner itinerary (bus and train) carries an additive `fare` object, or `fare: null` when the price is not known. It is always labelled "preu orientatiu" with the date the fares came into force. The table is [src/data/fares.json](src/data/fares.json) and the code is `app/fares.go`.
+
+What is priced: Mataró Bus journeys (own single 1.70 €, which covers line changes within 75 minutes from the first boarding; own T-10 4.85 €, 0.485 €/trip; ATM 1-zone single 2.90 € and T-casual 1.30 €/trip as alternatives) and Rodalies/FGC journeys whose two stations are in `stations` and whose sector pair is in `sectorZones` (single ticket, one per leg, since it has no transfers; T-casual per trip inside the transfer window of 75 min for 1 zone, +15 min per extra zone, 3 h 30 for 7 zones). Anything else is `null`: only the Mataró (3E) row of the sector matrix and a few stations are checked in, and a missing pair is never guessed. The full stop-to-sector import is plan step 4.3.
+
+Yearly update:
+
+1. Fares change around 15 January (DOGC; the ATM board approves in mid-December). From late December look for the new ATM Àrea de Barcelona price list and the Mataró Bus fares at mataro.avanzagrupo.com/ca/tarifas-y-titulos.
+2. The 50% discount on T-usual and T-jove depends on State and Generalitat co-funding, decided year by year (December and June). Recheck it every year. The single ticket, T-casual and own Mataró tickets are not discounted.
+3. Edit `src/data/fares.json`: `validFrom` (the date the new prices apply), `checkedOn`, `sources`, the `atm` price lists (7 zones each), `mataroBus`. Then run `node scripts/lib/dataJson.js src/data/fares.json` and `npm test` (`test/fares_data_test.js` and `app/fares_test.go` pin the invariants and some prices: update those expectations to the new prices).
+4. To price more stations, add `stations` (folded name: lowercase, no accents or punctuation) and the matching `sectorZones` rows from the ATM `stop_areas` / `fare_leg_rules`.
+
 ## Existing OpenRouteService endpoint
 
 Walking routing is **disabled unless ORS_BASE_URL is configured**. In production environments

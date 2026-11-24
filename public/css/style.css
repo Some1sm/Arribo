@@ -11956,3 +11956,23 @@ body[data-dades-scope="bus"] #operators-section { display: none !important; }
   cursor: pointer;
 }
 .lang-select:hover { color: var(--text-primary); border-color: var(--focus-ring); }
+
+/* Indicative ticket price in a planner itinerary card */
+.planner-fare {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  margin-top: var(--space-3);
+  padding: var(--space-1) var(--space-3);
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+.planner-fare-note {
+  flex-basis: 100%;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}

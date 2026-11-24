@@ -657,6 +657,7 @@ func (r *TransitRouter) planJourney(w *World, origin, destination any, opt planO
 		itin.Set("co2BadgeHtml", "🌱 Estalvi aprox. "+formatted+" CO₂ respecte al cotxe")
 		itin.Set("plannedDepartureTime", or(opt.departureTime, nil))
 		itin.Set("plannedDepartureDate", or(opt.departureDate, nil))
+		itin.Set("fare", itineraryFare(itin))
 	}
 	list := make([]any, len(itineraries))
 	for i, x := range itineraries {

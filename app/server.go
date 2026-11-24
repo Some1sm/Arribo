@@ -936,6 +936,7 @@ func runServer() int {
 	startPprof()
 	startMemTrimmer()
 	loadHolidays(filepath.Join(srcDataDir(), "holidays.json"))
+	loadFares(filepath.Join(srcDataDir(), "fares.json"))
 	if err := loadSchedules(filepath.Join(srcDataDir(), "mataro_schedules.seasons.json"), filepath.Join(srcDataDir(), "mataro_schedules.json")); err != nil {
 		fmt.Fprintln(os.Stderr, "[MataroSchedules] Could not load timetables:", err)
 		return 1

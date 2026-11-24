@@ -22,6 +22,7 @@ const FILES = [
   'data/cities/mataro/mataro_routes_full.json',
   'data/cities/mataro/mataro_paradas.json',
   'data/moventis/gencat_casas.json',
+  'src/data/fares.json',
 ];
 
 for (const rel of FILES) {

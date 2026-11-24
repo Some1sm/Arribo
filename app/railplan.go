@@ -594,7 +594,7 @@ func railItinJSON(it railItin, depart int64) *Obj {
 	for _, l := range it.Legs {
 		idParts = append(idParts, l.Agency+":"+l.Line+":"+l.Trip+":"+l.BoardStop+":"+l.AlightStop)
 	}
-	return O(
+	out := O(
 		"type", kind, "mode", "rail", "transfersCount", transfers,
 		"stopsCount", float64(stops), "stopCount", float64(stops),
 		"rideMinutes", mins(ride), "totalDurationMinutes", mins(total), "totalDurationMins", mins(total),
@@ -613,6 +613,8 @@ func railItinJSON(it railItin, depart int64) *Obj {
 		"nextDepartureMinutes", mins(first.boardAt()-depart), "nextDepartureMins", mins(first.boardAt()-depart),
 		"isRealTime", live, "isFutureSchedule", false, "timingSource", timingSource,
 	)
+	out.Set("fare", itineraryFare(out))
+	return out
 }
 
 // railPlanFor asks the worker for train journeys between the planner's two
