@@ -127,7 +127,7 @@ Do each only after 0.1 and as its own poller. Order by value for Mataró users f
 | 6.1 | `[ ]` | **Other Moventis lines via the same poller:** the Maresme Casas urban lines C-12…C-22, then the rest of the 164 | moventis.es `GetTiemposParada` | the crawl delay limits how many lines fit in a cycle; prioritise |
 | 6.2 | `[!]` 0.1 | **Sagalés** (Granollers, Manresa, Vic, Mollet, Pineda–Calella, Lloret…): GPS + delays | `www.sagales.com/es/real-time-bus/{id}/{dir}` | position key misspelt `postion`, timestamps in ms; one bus repeated per upcoming trip; Vic network changes on 1 Dec 2026 |
 | 6.3 | `[x]` | **AMB buses** (open, official) | `www.ambmobilitat.cat/transit/trips-updates/trips.bin` + AMB GTFS (`/OpenData/google_transit.zip`, 6-day window, refresh daily) | predictions only, no GPS; the vehicle positions file does not exist (done 2026-11-24: `app/amb.go`, `ARRIBO_AMB=1` in compose; 140 lines in the catalog and line view, live departures from the trip updates (a trip is live when its update names a bus due within 30 min), AMB alerts as plain text. No map positions; no stored visits (`noHistory`, ~750 000 a day): Dades for AMB needs sampled storage first) |
-| 6.4 | `[ ]` | **FGC occupancy and series** | Opendatasoft `posicionament-dels-trens` (Geotren): `tipus_unitat`, `ut`, occupancy per car | mind the 5,000/day quota already shared with the current FGC polling |
+| 6.4 | `[x]` | **FGC occupancy and series** | Opendatasoft `posicionament-dels-trens` (Geotren): `tipus_unitat`, `ut`, occupancy per car | mind the 5,000/day quota already shared with the current FGC polling (done 2026-11-24: `app/fgcgeotren.go` polls Geotren every 3 min inside the FGC poller (+480 requests a day, ~4 610 of 5 000 in all); joined by `ut` = vehicle id; `/api/trains` FGC trains carry `unit` {series, occupancyPercent, cars}; shown in the train popup) |
 | 6.5 | `[!]` 0.4 | **TMB Metro predictions** (L1–L5, L11) and **TMB bus** | `api.tmb.cat/v1/itransit/...` | free key |
 | 6.6 | `[!]` 0.4 | **TRAM** | opendata.tram.cat OAuth | terms require deleting data when the agreement ends: check before storing history |
 | 6.7 | `[!]` 0.1 | **TMG Girona** | `web2.girona.cat/appbus/cat/busos_json.php` | ETA text in HTML; covers TEISA's L3 too |
@@ -147,6 +147,7 @@ Do each only after 0.1 and as its own poller. Order by value for Mataró users f
 
 Newest first. One line per session: date, who, steps touched, commit.
 
+- 2026-11-24, local session: step 6.4 (FGC series and occupancy from Geotren).
 - 2026-11-24, local session: step 6.3 (AMB buses: catalog, line views, live departures; no history).
 - 2026-11-24, local session: step 5.2 (dated diversions file and notices).
 - 2026-11-24, local session: step 3.3 (usual series per line in the train popup).

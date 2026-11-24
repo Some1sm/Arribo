@@ -5,7 +5,7 @@ First written 2026-11-24 by a cloud session; updated the same day by the local s
 ## 1. Where the work is
 
 - **Everything is on Forgejo `main` and deployed** (`git@git.lan:some1sm/arribo.git`; a push to `main` deploys to production). The local branch `catalonia-plan` is kept equal to `main`.
-- The cloud session's GitHub branch `claude/kind-dirac-k9kco5` (`https://github.com/Some1sm/Arribo`) is **behind**: it lacks every local commit after `dd1c28a`. Do not start from it.
+- The GitHub branch `claude/kind-dirac-k9kco5` (`https://github.com/Some1sm/Arribo`) was pushed to the same commit at the end of the local session, so a cloud session can start from it. Check it against Forgejo `main` first; Forgejo wins.
 
 ### State at the end of the local session (2026-11-24)
 
@@ -13,7 +13,7 @@ Every deploy below passed `gofmt`, `go vet`, `go test`, `npm run test:syntax`, `
 
 | Done `[x]` | Partly done `[~]` (what's left is in each plan row) | Next unblocked `[ ]` | Waiting on the owner `[!]` |
 |---|---|---|---|
-| 1.1–1.5 · 2.1–2.4 (Generalitat shapes and timetable live) · 4.4 · 5.1 · 5.2 (dated diversions) · 5.3 · 6.3 (AMB buses, no history) | 3.3 (usual series in the popup; per-unit data needs 3.2) · 3.5 (Renfe LD feed: matching fixed, but the feed lags ~1 h, so its trains are left out) · 4.1–4.2 fares · 6.4 (see the plan row) | 3.4 · 5.4 · 6.1 · 7.x · Moventis delays in Dades (approved by the owner, not a plan step yet) · AMB in Dades (needs sampled storage) | 0.1–0.5, 1.6, 3.1–3.2, 4.3, 6.2, 6.5–6.7 |
+| 1.1–1.5 · 2.1–2.4 (Generalitat shapes and timetable live) · 4.4 · 5.1 · 5.2 (dated diversions) · 5.3 · 6.3 (AMB buses, no history) · 6.4 (FGC series and occupancy) | 3.3 (usual series in the popup; per-unit data needs 3.2) · 3.5 (Renfe LD feed: matching fixed, but the feed lags ~1 h, so its trains are left out) · 4.1–4.2 fares | 3.4 · 5.4 · 6.1 · 7.x · Moventis delays in Dades (approved by the owner, not a plan step yet) · AMB in Dades (needs sampled storage) | 0.1–0.5, 1.6, 3.1–3.2, 4.3, 6.2, 6.5–6.7 |
 
 Things learnt live that the plan rows record:
 - The Generalitat GTFS gives the C-10 weekday service (184910) no 2026 dates. A day without any trip of a line is read as "unknown" (`lineRuns`).

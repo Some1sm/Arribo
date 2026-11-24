@@ -58,8 +58,10 @@ type rtSnapshot struct {
 	// whose update names a vehicle (trip -> its label, else id): the trips
 	// with a bus on the road. nil for the others.
 	TripVehicles map[string]string
-	VehiclesErr  string
-	TripsErr     string
+	// Units: FGC series and occupancy by vehicle id (fgcgeotren.go); nil for others.
+	Units       map[string]fgcUnit
+	VehiclesErr string
+	TripsErr    string
 	// Renfe long-distance feed (gtfsrtld.go): trains added from it, trains
 	// dropped for lack of a matching Rodalies trip, and its errors.
 	LDVehicles, LDDropped int
@@ -86,14 +88,17 @@ type rtSource struct {
 	// database (AMB buses: about 750 000 stop visits a day, too many to store
 	// as rows); the live line view and departures still use the feed.
 	noHistory bool
+	// geotrenURL: FGC's train series and occupancy dataset, every fgcGeotrenEvery.
+	geotrenURL string
 }
 
 // rtPoller polls one rtSource.
 type rtPoller struct {
 	src                                      rtSource
 	snap                                     atomic.Pointer[rtSnapshot]
-	alerts                                   atomic.Pointer[[]railAlert] // latest service alerts (railalerts.go)
-	mu                                       sync.Mutex                  // guards trips between the two loops
+	alerts                                   atomic.Pointer[[]railAlert]        // latest service alerts (railalerts.go)
+	geotren                                  atomic.Pointer[map[string]fgcUnit] // FGC units by vehicle id (fgcgeotren.go)
+	mu                                       sync.Mutex                         // guards trips between the two loops
 	trip                                     map[string]int32
 	trips                                    int
 	terr                                     string
@@ -218,7 +223,8 @@ func defaultRtSources() []rtSource {
 			tripURL:      retry(fgcTU, fgcTUReset),
 			alertURL:     retry(fgcAL, fgcALReset),
 			vehicleEvery: 30 * time.Second, tripEvery: 90 * time.Second,
-			staticURL: "https://www.fgc.cat/google/google_transit.zip",
+			staticURL:  "https://www.fgc.cat/google/google_transit.zip",
+			geotrenURL: fgcGeotrenURL,
 		},
 	}
 	if amb, ok := ambSource(); ok {
@@ -373,6 +379,9 @@ func (p *rtPoller) pollVehicles(ctx context.Context) {
 	p.mu.Lock()
 	snap.TripDelays, snap.TripUpdates, snap.Computed, snap.ComputedTrips, snap.TripsErr = p.trip, p.trips, p.computed, p.computedTrips, p.terr
 	snap.TripVehicles = p.tripVehicles
+	if u := p.geotren.Load(); u != nil {
+		snap.Units = *u
+	}
 	snap.Canceled = p.canceled
 	snap.TripStops = p.tripStops
 	p.mu.Unlock()
@@ -493,11 +502,20 @@ func (p *rtPoller) run(ctx context.Context, wg *sync.WaitGroup) {
 	}()
 	p.pollTrips(ctx)
 	p.pollVehicles(ctx)
+	if p.src.geotrenURL != "" {
+		p.pollGeotren(ctx)
+	}
 	p.pollAlerts(ctx)
 	p.logSnapshot()
 	vt := time.NewTicker(p.src.vehicleEvery)
 	tt := time.NewTicker(p.src.tripEvery)
 	at := time.NewTicker(railAlertEvery)
+	var geoC <-chan time.Time
+	if p.src.geotrenURL != "" {
+		gt := time.NewTicker(fgcGeotrenEvery)
+		defer gt.Stop()
+		geoC = gt.C
+	}
 	defer vt.Stop()
 	defer tt.Stop()
 	defer at.Stop()
@@ -510,6 +528,8 @@ func (p *rtPoller) run(ctx context.Context, wg *sync.WaitGroup) {
 			p.pollTrips(ctx)
 		case <-at.C:
 			p.pollAlerts(ctx)
+		case <-geoC:
+			p.pollGeotren(ctx)
 		case <-vt.C:
 			p.pollVehicles(ctx)
 			polls++

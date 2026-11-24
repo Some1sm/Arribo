@@ -454,6 +454,23 @@ Ajuntament's avisos (mataro.cat/ca/actualitat/avisos) and add the year's events:
 Not done: the journey planner still only avoids the stops Avanza's notices cancel, not the
 stops these events close.
 
+### FGC series and occupancy (Geotren)
+
+The FGC poller also reads FGC's open dataset `posicionament-dels-trens` (Geotren,
+`https://dadesobertes.fgc.cat/api/explore/v2.1/catalog/datasets/posicionament-dels-trens/records?limit=100`)
+every 3 minutes (`app/fgcgeotren.go`). Per train in service it gives the unit type
+(`tipus_unitat`: the series, 112, 113, 114, 115, 213…) and the occupancy FGC reports per car
+(`ocupacio_<car>_percent`, cars MI, RI, M1, M2…). Its `ut` is the GTFS-RT vehicle id and its
+`id` the trip id, so it joins exactly: 57 of 58 trains on 2026-11-24. `/api/trains` adds an
+additive `unit` key to those trains: `series`, `occupancyPercent` (the mean of the cars),
+`cars`, `observedAt` and `source: "fgc_geotren"`. A record older than 7 minutes is dropped.
+The train popup shows "Unitat de la sèrie 112 · Ocupació segons FGC: 39%".
+
+**Quota.** FGC allows 5 000 anonymous requests a day per address. The poller uses about
+4 610: positions every 30 s (2 880), trip updates every 90 s (960), alerts every 5 min (288),
+Geotren every 3 min (480), plus a few dataset lookups. Do not add another FGC request without
+lowering one of these.
+
 ## AMB Bus Metropolità
 
 With `ARRIBO_AMB=1` (on in compose) and the GTFS-RT pollers (`ARRIBO_GTFSRT=1`), the

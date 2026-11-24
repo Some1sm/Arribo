@@ -934,6 +934,10 @@ function buildTrainPopupHtml(t, op, lineRef) {
 
         ${delayNote ? `<div class="train-popup-note">${esc(delayNote)}</div>` : ''}
 
+        ${t.unit && (t.unit.series || Number.isFinite(t.unit.occupancyPercent)) ? `<div class="train-popup-note">${esc([
+          t.unit.series ? netT('trainPopup.unitSeries', { series: t.unit.series }, `Unitat de la sèrie ${t.unit.series}`) : '',
+          Number.isFinite(t.unit.occupancyPercent) ? netT('trainPopup.unitOccupancy', { pct: t.unit.occupancyPercent }, `Ocupació segons FGC: ${t.unit.occupancyPercent}%`) : '',
+        ].filter(Boolean).join(' · '))}</div>` : ''}
         ${Array.isArray(t.usualSeries) && t.usualSeries.length ? `<div class="train-popup-note">${esc(netT('trainPopup.usualSeries', { list: t.usualSeries.join(', ') }, `Sèries habituals en aquesta línia: ${t.usualSeries.join(', ')}. No se sap quina unitat fa aquest tren.`))}</div>` : ''}
 
         ${op?.attribution ? `

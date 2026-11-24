@@ -238,6 +238,12 @@ func trainJSON(info operatorInfo, s *rtSnapshot, v *rtVehicle, now time.Time) *O
 		// line comes from matching the train number to the Rodalies timetable.
 		o.Set("feedVariant", "ld")
 	}
+	if s != nil && s.Units != nil {
+		// Additive, FGC only: series and occupancy from Geotren (fgcgeotren.go).
+		if u := fgcUnitJSON(s.Units, v.VehicleID, now); u != nil {
+			o.Set("unit", u)
+		}
+	}
 	if info.ID == "renfe_rodalies" && v.LineCode != "" {
 		// Additive: the series usually seen on the line (renfefleet.go), never
 		// this train's own unit, which no public source gives.
