@@ -301,7 +301,7 @@ func (s *Server) railDepartures(q *xreq, res *xres, info operatorInfo, op *rtCat
 		return
 	}
 	var snap *rtSnapshot
-	for _, f := range liveTrainFeeds() {
+	for _, f := range liveLineFeeds() {
 		if f.info.ID == info.ID {
 			snap = f.snap
 		}
@@ -327,7 +327,7 @@ func (s *Server) hRailLine(q *xreq, res *xres, kind string) bool {
 			direction = jsTrim(jsString(v))
 		}
 		now := time.Now()
-		data := railLineDetails(info, op, code, direction, liveTrainFeeds(), now)
+		data := railLineDetails(info, op, code, direction, liveLineFeeds(), now)
 		// The operator's active service alerts for this line: those naming
 		// it, and those naming only stations it stops at.
 		lineStops := map[string]bool{}

@@ -212,6 +212,11 @@ func railDeparturesResponse(info operatorInfo, stop rtLineStop, sched []any, sna
 				running[id] = true
 			}
 		}
+		// A source with no positions feed (AMB): trips whose update names a
+		// bus are on the road.
+		for id := range snap.TripVehicles {
+			running[id] = true
+		}
 	}
 	// Platforms Renfe announces in the labels of trains approaching a
 	// station: trip -> (that station, platform).

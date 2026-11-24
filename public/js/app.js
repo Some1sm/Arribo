@@ -1034,7 +1034,7 @@ class TransitApp {
    *  "operators"), plus any operator a line names that the list lacks. */
   catalogOperators() {
     const ops = Array.isArray(this.availableOperators)
-      ? this.availableOperators.map(o => ({ id: String(o.id), name: o.name || String(o.id), shortName: o.shortName || o.name || String(o.id), mode: o.mode || '' }))
+      ? this.availableOperators.map(o => ({ id: String(o.id), name: o.name || String(o.id), shortName: o.shortName || o.name || String(o.id), mode: o.mode || '', positions: o.positions || '' }))
       : [];
     for (const l of this.availableLines || []) {
       const id = l.agencyId || 'mataro';
@@ -1093,9 +1093,11 @@ class TransitApp {
     const listed = this.availableLines || [];
     const busOps = ops.filter(o => listed.some(l => (l.agencyId || 'mataro') === o.id));
     const otherOps = ops.filter(o => !busOps.includes(o));
-    // Operators without GPS buses: buses with estimated positions (Moventis)
-    // and trains (Rodalies, FGC), each said for what it is.
-    const estOps = otherOps.filter(o => o.mode === 'bus');
+    // Operators without GPS buses: buses with estimated positions (Moventis),
+    // buses with predicted departures only (AMB: no positions at all) and
+    // trains (Rodalies, FGC), each said for what it is.
+    const estOps = otherOps.filter(o => o.mode === 'bus' && o.positions !== 'none');
+    const predOps = otherOps.filter(o => o.mode === 'bus' && o.positions === 'none');
     const railOps = otherOps.filter(o => o.mode !== 'bus');
     const i18n = window.ArriboI18n;
     const t = (key, vars) => (i18n ? i18n.t(key, vars) : key);
@@ -1105,6 +1107,7 @@ class TransitApp {
     set('landing-hero-title', t(otherOps.length ? 'hero.title.trains' : 'hero.title.lines'));
     set('landing-hero-subtitle', t('hero.subtitle.buses', { n: listed.length, buses: list(busOps.map(short)) }) +
       (estOps.length ? t('hero.subtitle.estBuses', { ops: list(estOps.map(short)) }) : '') +
+      (predOps.length ? t('hero.subtitle.predBuses', { ops: list(predOps.map(short)) }) : '') +
       (railOps.length ? t('hero.subtitle.trains', { trains: list(railOps.map(short)) }) : '.'));
     set('header-city-pill', t('header.pill.multi'));
     if (!this.activeLineId) {
@@ -2063,12 +2066,19 @@ class TransitApp {
    * Mataró line it only restores what it changed.
    */
   renderRailPanel(lData) {
-    // A bus line of the catalog (Moventis) uses the ".bus" wording where it
-    // differs from the trains' (buses estimated from stop predictions).
+    // A bus line of the catalog uses its operator's wording first (".amb": no
+    // positions at all, predicted times only), then the ".bus" wording
+    // (Moventis: buses estimated from stop predictions), then the trains'.
     const busLine = lData?.mode === 'Bus';
+    const opKey = String(lData?.agencyId || '');
     const t = (k, v) => {
       const i18n = window.ArriboI18n;
       if (!i18n) return k;
+      if (busLine && opKey) {
+        const ok = `${k}.${opKey}`;
+        const r = i18n.t(ok, v);
+        if (r !== ok) return r;
+      }
       if (busLine) {
         const bk = `${k}.bus`;
         const r = i18n.t(bk, v);
@@ -6225,6 +6235,15 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
       }
     }
 
+    // An operator that publishes no bus positions (AMB): say so, not
+    // "no buses in service".
+    const op = lData?.agencyId ? this.catalogOperators().find(o => o.id === String(lData.agencyId)) : null;
+    if (op && op.positions === 'none') {
+      const name = op.shortName || op.name;
+      if (headerEl) headerEl.textContent = t('map.noPositions', { op: name });
+      if (mapEl) mapEl.textContent = t('map.noPositions', { op: name });
+      return;
+    }
     if (headerEl) {
       headerEl.innerHTML = t('map.hdrNone', { n: strong(0) });
     }

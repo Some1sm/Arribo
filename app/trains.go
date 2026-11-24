@@ -47,6 +47,7 @@ func trainStaleAfter(agencyID string) float64 {
 var trainAttribution = map[string]string{
 	"renfe_rodalies": "Origen de los datos: Renfe Operadora",
 	"fgc":            "Ferrocarrils de la Generalitat de Catalunya",
+	ambAgencyID:      ambAttribution,
 }
 
 // trainFeed is one operator's snapshot as the response builder sees it.

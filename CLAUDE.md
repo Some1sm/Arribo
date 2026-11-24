@@ -124,6 +124,7 @@ Timetables (`src/data/mataro_schedules*.json`), routes and stops (`data/cities/m
 | `ARRIBO_ROOT` | the binary's directory | Holds `public/`, `src/data/` and `data/` |
 | `GOGC` / `GOMEMLIMIT` | `50` / `128MiB` in compose | See *Memory* in [app/README.md](app/README.md) |
 | `ARRIBO_MOVENTIS` / `ARRIBO_MOVENTIS_LINES` | `1` in compose / the 7 lines through Mataró | Moventis buses scraped from moventis.es arrival predictions (`app/moventis.go`): one request at a time, ≥11 s apart (robots.txt crawl delay), backs off when the site answers its placeholder; positions are estimated (`/api/moventis`) |
+| `ARRIBO_AMB` | `1` in compose | AMB Bus Metropolità through the GTFS-RT pollers (needs `ARRIBO_GTFSRT=1`, `app/amb.go`): trip updates and alerts, no positions, no stored visits (`noHistory`) |
 
 The binary does **not** load `.env` — set real environment variables (or Compose `.env`).
 

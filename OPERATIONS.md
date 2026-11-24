@@ -454,6 +454,42 @@ Ajuntament's avisos (mataro.cat/ca/actualitat/avisos) and add the year's events:
 Not done: the journey planner still only avoids the stops Avanza's notices cancel, not the
 stops these events close.
 
+## AMB Bus Metropolità
+
+With `ARRIBO_AMB=1` (on in compose) and the GTFS-RT pollers (`ARRIBO_GTFSRT=1`), the
+pollers follow the Àrea Metropolitana de Barcelona's buses (`app/amb.go`): 140 lines of
+11 operators (TUSGSAL, Baixbus, Monbus, Moventis, Soler i Sauret, TGO, Aerobús…). Sources,
+open and keyless:
+
+- `https://www.ambmobilitat.cat/transit/trips-updates/trips.bin`: GTFS-RT trip updates,
+  every minute (~260 KB; about 870 trips in the evening). Predicted arrival times per stop
+  and a `vehicle` (fleet number), but no delays and **no positions**:
+  `vehicle-positions.bin` does not exist.
+- `https://www.ambmobilitat.cat/transit/alerts/alerts.bin`: service alerts. Their texts
+  come as HTML; `ambAlertText` turns them into plain text.
+- `https://www.ambmobilitat.cat/OpenData/google_transit.zip`: the static GTFS (8 MB, a
+  six-day window, republished daily), imported by the daily timetable refresh. The import
+  takes ~3 s, ~30 MB of memory, and gives a ~95 MB timetable under `DATA_DIR/gtfs/amb.db`.
+
+What it gives: the lines in the catalog (group "AMB", mode "Bus", `positions: "none"`),
+their line views (stops and paths from the GTFS, AMB alerts), and departures at each stop.
+A departure counts as live when the trip's update names a bus whose next predicted stop is
+at most 30 minutes away (`rtNoFeedRunningWindow`). Its delay is the predicted time against
+the timetable (`delaySource: "timetable"`). AMB also lists trips that have not started yet,
+up to two hours ahead; those stay on timetable times.
+
+What it does not give:
+
+- **Buses on the map.** No source publishes AMB GPS. The map counter says "Sense posició
+  dels busos (AMB)".
+- **Dades history.** The source has `noHistory`: about 30 000 trips a day would add some
+  750 000 stop-visit rows a day to the history database. A punctuality report for AMB needs
+  sampled or aggregated storage first.
+- **`/api/trains` and the rail planner.** These stay with the train operators.
+
+The credit is "Àrea Metropolitana de Barcelona (dades obertes)", on the line view and the
+departures.
+
 ## Vercel domain (proxy only)
 
 The Vercel project for the `bad-amb-bus-tracker` domain does not run Arribo: the Go server, its polling, SQLite and SSE need the always-on VPS, and Vercel functions are short-lived with no persistent disk. `vercel.json` makes each deployment a proxy instead: no install or build (the build only writes an empty `.vercel-proxy/` output folder, so no stale copy of `public/` is ever served from Vercel), and every path is rewritten to the live app on the VPS (`http://87.106.33.66:3000`). Change that address there if the VPS moves.

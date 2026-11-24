@@ -680,12 +680,16 @@ var movOperator = operatorInfo{ID: movAgencyID, Name: "Moventis", ShortName: "Mo
 	Source: "Previsions d'arribada a cada parada que Moventis publica al seu web de temps real; la posició dels busos s'estima a partir d'aquestes previsions."}
 
 // lineOperators is the operators whose lines the catalog lists and the
-// line view opens: the train operators, and Moventis while it is followed.
+// line view opens: the train operators, and Moventis and AMB while their
+// lines are in the catalog.
 func lineOperators() []operatorInfo {
-	if _, ok := rtCatalog.Load(movAgencyID); !ok {
-		return reportOperators
+	ops := reportOperators
+	for _, extra := range []operatorInfo{movOperator, ambOperator} {
+		if _, ok := rtCatalog.Load(extra.ID); ok {
+			ops = append(append([]operatorInfo(nil), ops...), extra)
+		}
 	}
-	return append(append([]operatorInfo(nil), reportOperators...), movOperator)
+	return ops
 }
 
 // publishCatalog puts the followed lines in the line catalog (rtCatalog):

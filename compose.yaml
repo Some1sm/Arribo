@@ -35,6 +35,8 @@ services:
       - ARRIBO_GTFSRT=${ARRIBO_GTFSRT:-1}
       # Moventis buses (moventis.es arrival predictions, see app/moventis.go)
       - ARRIBO_MOVENTIS=${ARRIBO_MOVENTIS:-1}
+      # AMB Bus Metropolità (open trip updates, no positions; app/amb.go). Needs ARRIBO_GTFSRT.
+      - ARRIBO_AMB=${ARRIBO_AMB:-1}
     ulimits:
       core:
         soft: 0

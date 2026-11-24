@@ -179,11 +179,19 @@ func railCatalog() (lines []any, ops []any) {
 			))
 		}
 		b := cataloniaBounds
-		ops = append(ops, O(
+		o := O(
 			"id", info.ID, "name", info.Name, "shortName", info.ShortName, "mode", op.Mode, "lineCount", float64(len(op.Lines)),
 			"bounds", O("minLat", b.MinLat, "maxLat", b.MaxLat, "minLon", b.MinLon, "maxLon", b.MaxLon),
 			"center", nil, "zoom", nil, "trackable", false,
-		))
+		)
+		// Additive, for bus operators without GPS: what their map shows.
+		switch info.ID {
+		case movAgencyID:
+			o.Set("positions", "estimated") // estimated from stop predictions
+		case ambAgencyID:
+			o.Set("positions", "none") // predicted departures only
+		}
+		ops = append(ops, o)
 	}
 	return lines, ops
 }

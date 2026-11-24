@@ -102,6 +102,10 @@ func buildRailAlerts(ctx context.Context, agencyID string, tt *rtTimetable, fm *
 		}
 		header, lang := pickText(a.HeaderText)
 		desc, dlang := pickText(a.DescriptionText)
+		if agencyID == ambAgencyID {
+			// AMB sends its alert texts as HTML (entities, some tags).
+			header, desc = ambAlertText(header), ambAlertText(desc)
+		}
 		if lang == "" {
 			lang = dlang
 		}

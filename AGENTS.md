@@ -55,7 +55,12 @@ structured output printed directly to the user:
 
 ## 1. Current scope
 
-Arribo! serves Mataró Bus Urbà **L1–L8**, eight lines and 155 indexed stops.
+Arribo! serves Mataró Bus Urbà **L1–L8**, eight lines and 155 indexed stops, with
+live GPS. Beside it, through separate pollers that do not go through the tracker:
+Rodalies and FGC trains (GTFS-RT, `app/gtfsrtpoll.go`), the seven Moventis lines
+through Mataró (positions estimated from moventis.es predictions, `app/moventis.go`)
+and AMB Bus Metropolità (predicted departures only, no positions and no stored
+visits, `app/amb.go`). Each says what its data is; see README.md for the flags.
 TrackerRegistry registers only Mataró. The Catalonia-wide trackers and their
 GTFS/indexer helpers have been deleted, not left dormant; there is nothing to
 re-enable. [docs/history/ARCHITECTURE.md](docs/history/ARCHITECTURE.md)

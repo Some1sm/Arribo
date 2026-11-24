@@ -54,8 +54,12 @@ type rtSnapshot struct {
 	ComputedTrips map[string]bool     // trip ids whose delay was computed (immutable once stored)
 	Canceled      map[string]bool     // trip ids the operator marks cancelled (schedule_relationship CANCELED)
 	TripStops     map[string][]string // stops (FGC: platforms) each trip update names, in feed order
-	VehiclesErr   string
-	TripsErr      string
+	// TripVehicles: for a source with no positions feed (AMB), the trips
+	// whose update names a vehicle (trip -> its label, else id): the trips
+	// with a bus on the road. nil for the others.
+	TripVehicles map[string]string
+	VehiclesErr  string
+	TripsErr     string
 	// Renfe long-distance feed (gtfsrtld.go): trains added from it, trains
 	// dropped for lack of a matching Rodalies trip, and its errors.
 	LDVehicles, LDDropped int
@@ -78,6 +82,10 @@ type rtSource struct {
 	// staticURL is the operator's static GTFS zip, imported daily into the
 	// timetable the poller uses; staticBBox cuts it down like --bbox.
 	staticURL, staticBBox string
+	// noHistory: keep no station visits or cancellations for the history
+	// database (AMB buses: about 750 000 stop visits a day, too many to store
+	// as rows); the live line view and departures still use the feed.
+	noHistory bool
 }
 
 // rtPoller polls one rtSource.
@@ -103,6 +111,7 @@ type rtPoller struct {
 	computed                                 int                    // delays derived from predicted times in the last trip feed
 	computedTrips                            map[string]bool        // which trips those were (guarded by mu; replaced, never mutated)
 	canceled                                 map[string]bool        // trips marked CANCELED in the last trip feed (guarded by mu; replaced, never mutated)
+	tripVehicles                             map[string]string      // see rtSnapshot.TripVehicles (guarded by mu; replaced, never mutated)
 	ldDelays                                 map[string]int32       // LD trip updates: train number -> delay seconds (guarded by mu)
 	ldTripsErr                               string                 // guarded by mu
 	tripStops                                map[string][]string    // stops each trip update named in the last trip feed (guarded by mu; replaced, never mutated)
@@ -189,7 +198,7 @@ func defaultRtSources() []rtSource {
 			return u, err
 		}
 	}
-	return []rtSource{
+	srcs := []rtSource{
 		{
 			AgencyID: "renfe_rodalies", Mode: "rail",
 			vehicleURL:   fixedURL("https://gtfsrt.renfe.com/vehicle_positions.pb"),
@@ -212,6 +221,10 @@ func defaultRtSources() []rtSource {
 			staticURL: "https://www.fgc.cat/google/google_transit.zip",
 		},
 	}
+	if amb, ok := ambSource(); ok {
+		srcs = append(srcs, amb)
+	}
+	return srcs
 }
 
 // pollTrips refreshes trip-level delays.
@@ -258,6 +271,10 @@ func (p *rtPoller) pollTrips(ctx context.Context) {
 	p.pollLDTrips(ctx)
 	total, computed := 0, 0
 	computedTrips := map[string]bool{}
+	var tripVehicles map[string]string
+	if p.src.vehicleURL == nil {
+		tripVehicles = map[string]string{}
+	}
 	canceled := map[string]bool{}
 	tripStops := map[string][]string{} // stops (platforms, for FGC) each trip update names
 	var cancels []railCancel           // announced cancellations for the history database
@@ -274,7 +291,9 @@ func (p *rtPoller) pollTrips(ctx context.Context) {
 		if err != nil {
 			return nil, err
 		}
-		p.trackVisits(ctx, fm)
+		if !p.src.noHistory {
+			p.trackVisits(ctx, fm)
+		}
 		out := map[string]int32{}
 		for _, e := range fm.Entities {
 			if e.IsDeleted || e.TripUpdate == nil || e.TripUpdate.Trip.TripID == "" {
@@ -289,6 +308,15 @@ func (p *rtPoller) pollTrips(ctx context.Context) {
 					cancels = append(cancels, c)
 				}
 				continue
+			}
+			if tripVehicles != nil && e.TripUpdate.Vehicle != nil && tripUpdateSoon(e.TripUpdate, fm.Header.Timestamp) {
+				id := e.TripUpdate.Vehicle.Label
+				if id == "" {
+					id = e.TripUpdate.Vehicle.ID
+				}
+				if id != "" {
+					tripVehicles[e.TripUpdate.Trip.TripID] = id
+				}
 			}
 			for _, s := range e.TripUpdate.StopTimeUpdates {
 				if s.StopID != "" {
@@ -308,7 +336,9 @@ func (p *rtPoller) pollTrips(ctx context.Context) {
 		return out, nil
 	}()
 	if err == nil {
-		p.queueCancels(cancels)
+		if !p.src.noHistory {
+			p.queueCancels(cancels)
+		}
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -317,6 +347,7 @@ func (p *rtPoller) pollTrips(ctx context.Context) {
 		return
 	}
 	p.trip, p.trips, p.computed, p.computedTrips, p.canceled, p.terr = delays, total, computed, computedTrips, canceled, ""
+	p.tripVehicles = tripVehicles
 	p.tripStops = tripStops
 }
 
@@ -341,9 +372,16 @@ func (p *rtPoller) pollVehicles(ctx context.Context) {
 	snap := &rtSnapshot{AgencyID: p.src.AgencyID, FetchedAt: time.Now()}
 	p.mu.Lock()
 	snap.TripDelays, snap.TripUpdates, snap.Computed, snap.ComputedTrips, snap.TripsErr = p.trip, p.trips, p.computed, p.computedTrips, p.terr
+	snap.TripVehicles = p.tripVehicles
 	snap.Canceled = p.canceled
 	snap.TripStops = p.tripStops
 	p.mu.Unlock()
+	if p.src.vehicleURL == nil {
+		// No vehicle-positions feed (AMB publishes none): the snapshot carries
+		// the trip updates only.
+		p.snap.Store(snap)
+		return
+	}
 	fm, err := func() (*FeedMessage, error) {
 		u, err := p.src.vehicleURL(ctx)
 		if err != nil {
