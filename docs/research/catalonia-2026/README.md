@@ -34,6 +34,8 @@ Full report: [01-c10-moventis-realtime.md](01-c10-moventis-realtime.md).
 | 5 | Moventis developer programme (`moventis.es/ca/eines-desenvolupadors`) | Weekly GTFS plus "dades del transport en temps real" (format unstated), after manual approval | Page confirmed | **The only clean route to official real time for Casas** |
 | – | T-mobilitat open GTFS-RT | Nothing for Casas | **[checked]** 1,702 trip updates: TMB 804, AMB 741, Rodalies 102, FGC 55, **Casas 0**; vehicle positions → 404 | Open |
 
+**For seeing all buses at once** see [report 11](11-moventis-all-buses.md): each per-stop call shows only the next live bus per line, and the current poller's 89-stop cycle takes ~16 min.
+
 **Recommendation:** use the Generalitat GTFS as the static base (shapes, stops, calendar). Overlay the moventis.es stop predictions, and keep positions estimated from them labelled "predicted", never shown as GPS. Re-test the app's GPS endpoint from production. Submit the Moventis developer form asking for GTFS-RT VehiclePositions + TripUpdates (or SIRI) for Empresa Casas. The other Maresme Casas lines (C-20 = 57, C-30 = 59, e11.1 = 47, e11.2 = 48, 865 = 51, N-80 = 68 in Moventis numbering) behave identically.
 
 ### 1.2 Rodalies: what we can know about every train
@@ -205,5 +207,6 @@ A GTFS-only planner gets these wrong.
 | 08 | [Fares and ticket prices](08-fares-and-ticket-prices.md) | ATM GTFS-Fares v2, 2026 prices, other systems, proposed planner approach |
 | 09 | [Irregular and festive lines](09-irregular-and-festive-lines.md) | festivals, events, seasons, structural oddities, data hazards |
 | 10 | [Follow-up on open items](10-follow-up-open-items.md) | second pass on gaps left by the first nine reports |
+| 11 | [Seeing every Moventis bus at once](11-moventis-all-buses.md) | why the per-stop source shows one bus per stop, a faster stop choice (16 → 6–9 min cycle), the GPS server test, official routes after Moventis's silence |
 
 Related earlier documents: [../MOVENTIS_SOURCES.md](../MOVENTIS_SOURCES.md) (Moventis static data, 23 Nov) and [../../catalonia-review/](../../catalonia-review/) (architecture review and data requests).
