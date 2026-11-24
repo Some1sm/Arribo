@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <GetVehicleMonitoringResponse xmlns="http://tempuri.org/">
+      <GetVehicleMonitoringResult>
+        <Answer>
+          <siri:VehicleMonitoringDelivery xmlns:siri="http://www.siri.org.uk/siri" version="2.0">
+            <siri:ResponseTimestamp>{{NOW}}</siri:ResponseTimestamp>
+            <siri:VehicleActivity>
+              <siri:RecordedAtTime>{{NOW}}</siri:RecordedAtTime>
+              <siri:MonitoredVehicleJourney>
+                <siri:LineRef>3</siri:LineRef>
+                <siri:PublishedLineName>L3</siri:PublishedLineName>
+                <siri:DirectionName>Anada</siri:DirectionName>
+                <siri:DestinationName>Cerdanyola</siri:DestinationName>
+                <siri:Delay>PT2M</siri:Delay>
+                <siri:VehicleLocation>
+                  <siri:Longitude>2.4450</siri:Longitude>
+                  <siri:Latitude>41.5400</siri:Latitude>
+                </siri:VehicleLocation>
+                <siri:Bearing>90</siri:Bearing>
+                <siri:Velocity>5.0</siri:Velocity>
+                <siri:VehicleRef>101</siri:VehicleRef>
+              </siri:MonitoredVehicleJourney>
+            </siri:VehicleActivity>
+            <siri:VehicleActivity>
+              <siri:RecordedAtTime>{{NOW}}</siri:RecordedAtTime>
+              <siri:MonitoredVehicleJourney>
+                <siri:LineRef>10</siri:LineRef>
+                <siri:PublishedLineName>Bus Focs</siri:PublishedLineName>
+                <siri:DestinationName>Sant Simo</siri:DestinationName>
+                <siri:Delay>PT7M</siri:Delay>
+                <siri:VehicleLocation>
+                  <siri:Longitude>2.4412</siri:Longitude>
+                  <siri:Latitude>41.5385</siri:Latitude>
+                </siri:VehicleLocation>
+                <siri:Bearing>180</siri:Bearing>
+                <siri:Velocity>6.0</siri:Velocity>
+                <siri:VehicleRef>2210</siri:VehicleRef>
+              </siri:MonitoredVehicleJourney>
+            </siri:VehicleActivity>
+            <siri:VehicleActivity>
+              <siri:RecordedAtTime>{{NOW}}</siri:RecordedAtTime>
+              <siri:MonitoredVehicleJourney>
+                <siri:LineRef>12</siri:LineRef>
+                <siri:DestinationName>Ronda Barcelo</siri:DestinationName>
+                <siri:VehicleLocation>
+                  <siri:Longitude>2.4501</siri:Longitude>
+                  <siri:Latitude>41.5421</siri:Latitude>
+                </siri:VehicleLocation>
+                <siri:VehicleRef>2211</siri:VehicleRef>
+              </siri:MonitoredVehicleJourney>
+            </siri:VehicleActivity>
+            <siri:VehicleActivity>
+              <siri:RecordedAtTime>{{NOW}}</siri:RecordedAtTime>
+              <siri:MonitoredVehicleJourney>
+                <siri:VehicleLocation>
+                  <siri:Longitude>2.4300</siri:Longitude>
+                  <siri:Latitude>41.5300</siri:Latitude>
+                </siri:VehicleLocation>
+                <siri:VehicleRef>999</siri:VehicleRef>
+              </siri:MonitoredVehicleJourney>
+            </siri:VehicleActivity>
+          </siri:VehicleMonitoringDelivery>
+        </Answer>
+      </GetVehicleMonitoringResult>
+    </GetVehicleMonitoringResponse>
+  </soap:Body>
+</soap:Envelope>

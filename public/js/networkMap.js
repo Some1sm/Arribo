@@ -615,6 +615,12 @@ class NetworkMap extends TransitMap {
       byLine.get(code).push(v);
     }
     for (const [code, list] of byLine.entries()) {
+      // A special service (Bus Focs on Les Santes nights...) is in no line
+      // catalog and has no drawn route: give it a bare geometry entry so its
+      // buses are drawn where their GPS puts them.
+      if (!this.lineGeometries.has(code) && list.some(v => v && v.isSpecialService)) {
+        this.lineGeometries.set(code, { color: SPECIAL_SERVICE_COLOR, name: '', primary: [], secondary: [] });
+      }
       const previous = this.busesByLine.get(code) || [];
       const incomingKeys = new Set(list.map(networkBusMarkerKey));
       const carried = previous.filter(b =>
@@ -678,7 +684,7 @@ class NetworkMap extends TransitMap {
         snapped,
         bearingAngle,
         lineCode: code,
-        showLineLink: true
+        showLineLink: !bus.isSpecialService
       });
 
       const pinBg = isGhost
@@ -1007,6 +1013,9 @@ function buildMoventisPopupHtml(b, feed) {
  *  Comfortably longer than this map's 30 s REST cadence, so a carried entry
  *  always gets a chance to be superseded by a real per-line refresh. */
 const CARRIED_ENTRY_TTL_MS = 150000;
+
+/** Neutral slate for a special service: it has no catalog colour. */
+const SPECIAL_SERVICE_COLOR = '#64748b';
 
 function isGhostBus(bus) {
   return Boolean(bus && (bus.isGhostVehicle || bus.isTheoretical ||

@@ -1320,7 +1320,12 @@ class TransitMap {
     let delayBadgeText = bus.delayFormatted || mapT('map.popup.onTime', null, 'Puntual');
     const dMins = Number(bus.delayMins !== undefined ? bus.delayMins : (bus.delayMinutes !== undefined ? bus.delayMinutes : 0));
 
-    if (isGhost) {
+    // A special service has no timetable: there is no delay to state.
+    const isSpecial = Boolean(bus.isSpecialService);
+    if (isSpecial) {
+      delayClass = 'layover';
+      delayBadgeText = mapT('map.popup.specialService', null, 'Servei especial');
+    } else if (isGhost) {
       delayClass = 'ghost';
       delayBadgeText = mapT('map.popup.noGpsTimetable', null, '⚡ Sense GPS (Horari)');
     } else if (bus.isTerminalLayover || bus.delayStatus === 'regulating') {
@@ -1351,7 +1356,11 @@ class TransitMap {
     const ghostDepHtml = bus.departureTime
       ? mapT('map.popup.ghostDep', { time: escHtml(bus.departureTime) })
       : '';
-    const statusValSubtitle = isGhost
+    const statusValSubtitle = isSpecial
+      ? (bus.destination
+          ? mapT('map.popup.specialServiceTo', { dest: escHtml(bus.destination) }, `Servei especial · ${escHtml(bus.destination)}`)
+          : mapT('map.popup.specialService', null, 'Servei especial'))
+      : isGhost
       ? mapT('map.popup.officialNoGps', null, 'Horari Oficial (Sense GPS)')
       : (isSecDir
           ? mapT('map.popup.oppositeDir', null, 'Sentit contrari')
@@ -1533,6 +1542,7 @@ class TransitMap {
             </div>
           </div>
 
+          ${isSpecial ? '' : `
           <div class="map-popup-metric-tile" title="${escHtml(mapT('map.popup.progressTitle', { pct: progressNum }))}">
             <div class="map-popup-metric-header">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
@@ -1543,6 +1553,7 @@ class TransitMap {
               <div class="map-popup-progress-fill" style="width: ${progressNum}%;"></div>
             </div>
           </div>
+          `}
         </div>
 
         ${(hasChips || isGhost) ? `

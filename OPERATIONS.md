@@ -361,6 +361,26 @@ node scripts/update_holidays.js --check
 
 reports any date the open data and the file disagree on (exit 1) and the years not published yet; without `--check` it adds published dates the file lacks (generic name, dataset as source) and never removes one. `--ine <code>` and `--years 2026,2027` choose another municipality or years. Review the diff, give new entries their proper name and legal source, and deploy.
 
+### Service overrides for special days
+
+Each year in `src/data/holidays.json` has a `serviceOverrides` list (empty today). An entry makes one calendar date use another day type's timetable, whatever the weekday or holiday calendar says:
+
+```json
+"serviceOverrides": [
+  { "date": "2026-07-25", "dayType": "saturday" }
+]
+```
+
+`date` is `YYYY-MM-DD` in Europe/Madrid and `dayType` is one of `weekday`, `saturday`, `sunday` (the day types of the timetable grid). `getServiceOverride` (`app/calendar.go`) is read first by `resolveDayType` (`app/schedlogic.go`), so an override wins over a holiday and over the weekend rule, and the day is then not reported as a holiday. It is keyed by the date of the instant being asked about and only chooses which existing grid is used: it adds no trips, so a night that needs trips the grid does not have (for example Les Santes after 22:00) cannot be created this way. Add an entry only when the operator has published that the day runs like another day type, quote its notice in the commit message, and do not guess: a wrong override moves every line's expected departures and the Observatori's delay matching for that day.
+
+Yearly checklist, once the Ajuntament and the operator have published the dates (the 2026 local holidays are Fira, 25 May, and Les Santes, 27 July):
+
+1. Les Santes (July): read the Ajuntament's "Afectacions de Mataró Bus" notice, decide whether any night needs an override (the Nit Boja and Castell de Focs nights are the usual ones), and on the Castell de Focs night check `/api/vehicles` for the special "Bus Focs" lines 10, 11, 12, which are shown as "Servei especial" with no timetable.
+2. Fira (late May): the local holiday is already in `holidays.json`; check the notice for a changed service.
+3. Tots Sants (1 November, a regional holiday): confirm it is in the year's `regional` list (it runs on the `sunday` grid) and read the operator's notice for the eve and the day.
+4. Christmas: read the notice for 24, 25, 26 and 31 December and 1 and 6 January; add overrides only for dates that run unlike their usual day type.
+5. Run `npm test`, then deploy.
+
 ## Vercel domain (proxy only)
 
 The Vercel project for the `bad-amb-bus-tracker` domain does not run Arribo: the Go server, its polling, SQLite and SSE need the always-on VPS, and Vercel functions are short-lived with no persistent disk. `vercel.json` makes each deployment a proxy instead: no install or build (the build only writes an empty `.vercel-proxy/` output folder, so no stale copy of `public/` is ever served from Vercel), and every path is rewritten to the live app on the VPS (`http://87.106.33.66:3000`). Change that address there if the VPS moves.

@@ -596,6 +596,9 @@ func (t *MataroTracker) syncFleetVehicles(vehicles any) {
 		if strings.HasPrefix(vID, "EST_") || truthy(v.Get("isGhostVehicle")) || truthy(v.Get("isTheoretical")) {
 			continue
 		}
+		if truthy(v.Get("isSpecialService")) {
+			continue // no timetable, no line geometry: nothing to dead-reckon on
+		}
 		isMataro := strings.Contains(jsString(or(v.Get("agency"), "")), "Mataró") ||
 			strings.HasPrefix(jsString(or(v.Get("lineCode"), "")), "L")
 		if !isMataro {

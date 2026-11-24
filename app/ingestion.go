@@ -312,6 +312,11 @@ func (d *IngestionDaemon) pollMataroVehicles() {
 			d.pollLine(lID)
 		})
 	}
+	wg.Add(1)
+	d.w.spawn(func() {
+		defer wg.Done()
+		d.pollSpecialServiceVehicles()
+	})
 	d.w.await(wg.Wait)
 	if !d.stopping {
 		now := float64(nowMs())
@@ -612,8 +617,20 @@ func (d *IngestionDaemon) pollCanary() {
 	}
 }
 
+// regularFleetCount is the live buses of L1-L8. A special service has no
+// timetable, so it says nothing about whether the regular fleet is missing.
+func (d *IngestionDaemon) regularFleetCount() int {
+	n := 0
+	for _, v := range d.w.fr.getAllVehicles() {
+		if !isSpecialServiceVehicle(v) {
+			n++
+		}
+	}
+	return n
+}
+
 func (d *IngestionDaemon) checkFleetAnomaly(now float64) *Obj {
-	liveCount := len(d.w.fr.getAllVehicles())
+	liveCount := d.regularFleetCount()
 	net := getNetworkTime(int64(now))
 	nowSec := float64(net.Hour*3600 + net.Minute*60 + net.Second)
 	dayType := resolveDayType(int64(now)).DayType

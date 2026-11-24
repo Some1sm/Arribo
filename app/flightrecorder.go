@@ -143,6 +143,7 @@ func (f *FlightRecorder) ingestVehicle(snap *Obj) {
 		return
 	}
 	lineCode := jsUpper(jsString(or(snap.Get("lineCode"), "")))
+	special := truthy(snap.Get("isSpecialService"))
 	now := float64(nowMs())
 	fresh := !truthy(snap.Get("isEstimated")) && !truthy(snap.Get("isDeadReckoned"))
 	snapObs := jsNumber(snap.Get("observedAt"))
@@ -166,6 +167,7 @@ func (f *FlightRecorder) ingestVehicle(snap *Obj) {
 	var v *Obj
 	if vv, ok := f.vehicles.Get(vID); ok {
 		v = vv.(*Obj)
+		oldLineCode := jsString(v.Get("lineCode"))
 		v.Set("lat", jsNumber(snap.Get("lat")))
 		v.Set("lon", jsNumber(snap.Get("lon")))
 		v.Set("speedKmh", speed)
@@ -196,6 +198,17 @@ func (f *FlightRecorder) ingestVehicle(snap *Obj) {
 		v.Set("lastSeen", now)
 		if lineCode != "" {
 			v.Set("lineCode", lineCode)
+		}
+		if special || isSpecialServiceVehicle(v) {
+			// The same bus changing between a regular line and a special
+			// service must not keep the old line's index entry or flag.
+			if oldLineCode != lineCode && lineCode != "" {
+				if sv, ok := f.lineIndex.Get(oldLineCode); ok {
+					sv.(*JSMap).Delete(vID)
+				}
+				v.Set("lineId", or(snap.Get("lineId"), ""))
+			}
+			v.Set("isSpecialService", special)
 		}
 		v.Set("isTerminalLayover", truthy(snap.Get("isTerminalLayover")))
 		v.Set("offRoute", truthy(snap.Get("offRoute")))
@@ -252,6 +265,9 @@ func (f *FlightRecorder) ingestVehicle(snap *Obj) {
 			"totalProgress", definedOr(snap.Get("totalProgress"), Undefined),
 			"distanceToNextMeters", definedOr(snap.Get("distanceToNextMeters"), Undefined),
 		)
+		if special {
+			v.Set("isSpecialService", true)
+		}
 		f.vehicles.Set(vID, v)
 	}
 
@@ -266,7 +282,8 @@ func (f *FlightRecorder) ingestVehicle(snap *Obj) {
 		f.indexLine(lineCode, vID)
 	}
 
-	if f.db != nil && (!truthy(v.Get("lastPersistedAt")) || now-v.Num("lastPersistedAt") >= f.snapshotIntervalMs) {
+	// A special service has no timetable and stays out of every history table.
+	if f.db != nil && !special && (!truthy(v.Get("lastPersistedAt")) || now-v.Num("lastPersistedAt") >= f.snapshotIntervalMs) {
 		f.db.recordVehicleSnapshot(O(
 			"vehicleId", v.Get("vehicleId"),
 			"lineId", v.Get("lineId"),
