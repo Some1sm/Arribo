@@ -58,19 +58,20 @@ func TestMovParseStopTimes(t *testing.T) {
 	if _, err := parseMovStopTimes([]byte(movTestPlaceholder)); !errors.Is(err, errMovThrottled) {
 		t.Errorf("placeholder: %v", err)
 	}
-	if e, err := parseMovStopTimes([]byte(movTestTimetable)); err != nil || len(e) != 0 {
-		t.Errorf("timetable-only times must be ignored: %+v %v", e, err)
+	// Timetable-only times are not predictions: no EtaSec, only Sched.
+	if e, err := parseMovStopTimes([]byte(movTestTimetable)); err != nil || len(e) != 1 || len(e[0].EtaSec) != 0 || len(e[0].Sched) != 1 || e[0].Sched[0] != "22:08" {
+		t.Errorf("timetable-only times: %+v %v", e, err)
 	}
 	e, err := parseMovStopTimes([]byte(movTestTwoBuses))
 	if err != nil || len(e) != 1 || e[0].LineID != 53 || e[0].Dest != "Mataró" || len(e[0].EtaSec) != 2 || math.Abs(e[0].EtaSec[0]-1602.378) > 0.01 {
 		t.Errorf("two buses: %+v %v", e, err)
 	}
 	e, err = parseMovStopTimes([]byte(movTestMixed))
-	if err != nil || len(e) != 2 {
+	if err != nil || len(e) != 3 {
 		t.Fatalf("mixed: %+v %v", e, err)
 	}
 	for _, x := range e {
-		if x.LineID == 53 && (len(x.EtaSec) != 1 || math.Abs(x.EtaSec[0]-45.06) > 0.01) {
+		if x.LineID == 53 && x.Dest == "Mataró" && (len(x.EtaSec) != 1 || math.Abs(x.EtaSec[0]-45.06) > 0.01) {
 			t.Errorf("C-10 at the stop: %+v", x)
 		}
 	}
@@ -106,7 +107,8 @@ func TestMovSamples(t *testing.T) {
 			if !seen[st.ID] || i == len(rt.Stops)-1 {
 				continue
 			}
-			if i > 0 && st.Km-last < spacing {
+			// a stop may be picked from the window [spacing/2, spacing]
+			if i > 0 && st.Km-last < spacing/2 {
 				t.Errorf("route %d: stop %d at %.1f km is %.1f km after the previous sample (spacing %.1f)", rt.Trayecto, st.ID, st.Km, st.Km-last, spacing)
 			}
 			last = st.Km
@@ -233,5 +235,100 @@ func TestMovCatalog(t *testing.T) {
 	d := railLineDetails(info, op, code, "1", nil, time.Now())
 	if d.Get("mode") != "Bus" || d.Get("lineId") != "moventis:C-10" {
 		t.Errorf("line view: mode %v id %v", d.Get("mode"), d.Get("lineId"))
+	}
+}
+
+// movTestRoute builds a route of stops one km apart, ids from firstID, with
+// the stop at km sharedKm replaced by sharedID.
+func movTestRoute(line, trayecto, firstID, km, sharedKm, sharedID int) movRoute {
+	rt := movRoute{LineID: line, Trayecto: trayecto}
+	for k := 0; k <= km; k++ {
+		id := firstID + k
+		if k == sharedKm {
+			id = sharedID
+		}
+		rt.Stops = append(rt.Stops, movStop{ID: id, Km: float64(k)})
+	}
+	return rt
+}
+
+// TestMovSamplesSharedStop: two lines whose routes share a stop at km 3 (the
+// window for the first sample is km 2.2 to 4.4): the shared stop is asked
+// instead of the stop further on, once.
+func TestMovSamplesSharedStop(t *testing.T) {
+	a := movTestRoute(901, 1, 1000, 20, 3, 500)
+	b := movTestRoute(902, 1, 2000, 20, 3, 500)
+	s := &movStatic{Routes: map[int][]movRoute{901: {a}, 902: {b}}}
+	sm := movSamples(s, []int{901, 902})
+	count := map[int]int{}
+	for _, x := range sm {
+		count[x.StopID]++
+	}
+	if count[500] != 1 {
+		t.Errorf("shared stop asked %d times, want 1", count[500])
+	}
+	for _, id := range []int{1004, 2004, 1002, 2002} {
+		if count[id] != 0 {
+			t.Errorf("stop %d sampled although the shared stop is in its window", id)
+		}
+	}
+	for _, rt := range []movRoute{a, b} {
+		if count[rt.Stops[0].ID] != 1 || count[rt.Stops[len(rt.Stops)-1].ID] != 1 {
+			t.Errorf("first or last stop of line %d missing", rt.LineID)
+		}
+	}
+	for id, n := range count {
+		if n > 1 {
+			t.Errorf("stop %d asked %d times", id, n)
+		}
+	}
+	// With nothing shared the furthest stop of the window wins the tie.
+	c := movTestRoute(903, 1, 3000, 20, -1, 0)
+	sm = movSamples(&movStatic{Routes: map[int][]movRoute{903: {c}}}, []int{903})
+	if len(sm) < 3 || sm[1].StopID != 3004 {
+		t.Errorf("tie: want the furthest stop (3004), got %+v", sm)
+	}
+}
+
+func TestMovNextSched(t *testing.T) {
+	at := time.Date(2026, 11, 23, 21, 25, 0, 0, madrid)
+	if got := movNextSched([]string{"22:30", "22:08"}, at); !got.Equal(time.Date(2026, 11, 23, 22, 8, 0, 0, madrid)) {
+		t.Errorf("same day: %v", got)
+	}
+	late := time.Date(2026, 11, 23, 23, 50, 0, 0, madrid)
+	if got := movNextSched([]string{"00:05"}, late); !got.Equal(time.Date(2026, 11, 24, 0, 5, 0, 0, madrid)) {
+		t.Errorf("after midnight: %v", got)
+	}
+	if !movNextSched([]string{"A", "7:5"}, at).IsZero() {
+		t.Error("bad times parsed")
+	}
+}
+
+func TestMovShouldAsk(t *testing.T) {
+	now := time.Date(2026, 11, 23, 13, 0, 0, 0, madrid)
+	obs := func(age time.Duration, o map[int]movLineObs) movStopObs {
+		return movStopObs{At: now.Add(-age), Lines: o}
+	}
+	idle := map[int]movLineObs{53: {NextSched: now.Add(90 * time.Minute)}, 57: {}}
+	followed := []int{53, 57}
+	if movShouldAsk(now, obs(10*time.Minute, idle), true, followed) {
+		t.Error("no bus due: should skip")
+	}
+	if !movShouldAsk(now, movStopObs{}, false, followed) {
+		t.Error("never asked: should ask")
+	}
+	live := map[int]movLineObs{53: {Live: true}, 57: {}}
+	if !movShouldAsk(now, obs(10*time.Minute, live), true, followed) {
+		t.Error("live bus seen: should ask")
+	}
+	soon := map[int]movLineObs{53: {NextSched: now.Add(40 * time.Minute)}}
+	if !movShouldAsk(now, obs(10*time.Minute, soon), true, followed) {
+		t.Error("departure within 60 min: should ask")
+	}
+	if !movShouldAsk(now, obs(31*time.Minute, idle), true, followed) {
+		t.Error("30 minutes unasked: should ask")
+	}
+	if movShouldAsk(now, obs(29*time.Minute, idle), true, followed) {
+		t.Error("29 minutes: still skipped")
 	}
 }

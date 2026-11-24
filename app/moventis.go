@@ -170,6 +170,7 @@ type movPoller struct {
 	mu      sync.Mutex
 	static  *movStatic
 	preds   map[[3]int]movPrediction // line, trayecto, stop
+	obs     map[int]movStopObs       // stop -> what its last answer showed
 	stats   movStats
 	backoff time.Duration
 	until   time.Time // no request before this (backoff)
@@ -183,7 +184,9 @@ type movStats struct {
 	LastError                   string
 	CycleStarted                time.Time
 	LastCycleSec                float64
-	SampledStops                int
+	SampledStops                int // stops picked by movSamples for a cycle
+	SkippedStops                int // of the last cycle's samples, not asked (no bus due)
+	AskedStops                  int // of the last cycle's samples, asked
 }
 
 var movLive atomic.Pointer[movPoller]
@@ -445,10 +448,17 @@ type movStopETA struct {
 	LineID int
 	Dest   string
 	EtaSec []float64
+	// Sched holds the "HH:MM" departures of the timetable-only entries
+	// ("real":"N", Madrid local time) of the answer, as listed.
+	Sched []string
 }
 
+var reMovHora = regexp.MustCompile(`^\s*(\d{1,2}):(\d{2})\s*$`)
+
 // parseMovStopTimes reads a stop's predictions: every line serving the stop,
-// per destination, keeping only tracked buses ("real":"S", "26 min 42.4 s").
+// per destination: the tracked buses ("real":"S", "26 min 42.4 s") and the
+// scheduled departure times of the timetable-only entries ("real":"N",
+// "hora":"22:08"), which are not predictions of a bus.
 func parseMovStopTimes(body []byte) ([]movStopETA, error) {
 	var rows []struct {
 		IDLinea   any                        `json:"idLinea"`
@@ -471,8 +481,24 @@ func parseMovStopTimes(body []byte) ([]movStopETA, error) {
 		placeholder = false
 		for dest, raw := range r.Trayectos {
 			var list []entry
+			var sched []string
 			if err := json.Unmarshal(raw, &list); err != nil {
 				// Timetable-only times come as an object keyed by minutes.
+				var tt map[string]struct {
+					Real string `json:"real"`
+					Hora string `json:"hora"`
+				}
+				if json.Unmarshal(raw, &tt) == nil {
+					for _, e := range tt {
+						if e.Real == "N" && reMovHora.MatchString(e.Hora) {
+							sched = append(sched, strings.TrimSpace(e.Hora))
+						}
+					}
+				}
+				if len(sched) > 0 {
+					sort.Strings(sched)
+					out = append(out, movStopETA{LineID: int(id), Dest: dest, Sched: sched})
+				}
 				continue
 			}
 			var etas []float64
@@ -771,26 +797,86 @@ type movSample struct {
 	StopID, LineID int
 }
 
+// movStopLines maps each stop id to the followed lines that serve it.
+func movStopLines(s *movStatic, lineIDs []int) map[int][]int {
+	out := map[int][]int{}
+	for _, id := range lineIDs {
+		for _, rt := range s.Routes[id] {
+			for _, st := range rt.Stops {
+				ls := out[st.ID]
+				if len(ls) == 0 || ls[len(ls)-1] != id {
+					dup := false
+					for _, l := range ls {
+						if l == id {
+							dup = true
+						}
+					}
+					if !dup {
+						out[st.ID] = append(ls, id)
+					}
+				}
+			}
+		}
+	}
+	return out
+}
+
+// movPickStops chooses the stops to sample on one route: the first and last
+// always; between them, from each window [last+spacing/2, last+spacing] the
+// stop that serves the most followed lines (the furthest on a tie), so a
+// stop shared by several lines answers for all of them. When the window
+// holds no stop, the first stop at least spacing away.
+func movPickStops(stops []movStop, spacing float64, lines map[int][]int) []int {
+	n := len(stops)
+	if n == 0 {
+		return nil
+	}
+	picks := []int{0}
+	last := 0
+	for last < n-1 {
+		best, bestN := -1, -1
+		next := -1
+		for j := last + 1; j < n-1; j++ {
+			d := stops[j].Km - stops[last].Km
+			if d >= spacing/2 && d <= spacing {
+				if c := len(lines[stops[j].ID]); c >= bestN {
+					best, bestN = j, c
+				}
+			}
+			if d > spacing {
+				next = j
+				break
+			}
+		}
+		if best < 0 {
+			best = next
+		}
+		if best < 0 {
+			break
+		}
+		picks = append(picks, best)
+		last = best
+	}
+	return append(picks, n-1)
+}
+
 // samples picks the stops to ask: per route the first and last stop and
 // about one every movSpacingKm (the distance between consecutive buses),
-// each stop once (a stop answers for every line serving it), the routes
-// interleaved so every line is refreshed throughout a cycle.
+// preferring stops shared by several followed lines, each stop once (a stop
+// answers for every line serving it), the routes interleaved so every line
+// is refreshed throughout a cycle.
 func movSamples(s *movStatic, lineIDs []int) []movSample {
+	stopLines := movStopLines(s, lineIDs)
 	var perRoute [][]movSample
 	for _, id := range lineIDs {
 		for _, rt := range s.Routes[id] {
 			var picks []movSample
-			last := math.Inf(-1)
 			routeKm := 0.0
 			if n := len(rt.Stops); n > 0 {
 				routeKm = rt.Stops[n-1].Km
 			}
-			spacing := movSpacingKm(id, routeKm)
-			for i, st := range rt.Stops {
-				if i == 0 || i == len(rt.Stops)-1 || st.Km-last >= spacing {
-					picks = append(picks, movSample{StopID: st.ID, LineID: id})
-					last = st.Km
-				}
+			for _, i := range movPickStops(rt.Stops, movSpacingKm(id, routeKm), stopLines) {
+				picks = append(picks, movSample{StopID: rt.Stops[i].ID, LineID: id})
 			}
 			perRoute = append(perRoute, picks)
 		}
@@ -812,6 +898,78 @@ func movSamples(s *movStatic, lineIDs []int) []movSample {
 			return out
 		}
 	}
+}
+
+// Skipping stops with no bus due: a sampled stop is not asked in a cycle
+// when its last answer showed no live bus for any followed line and none is
+// scheduled within movSkipAhead, except that every stop is asked at least
+// every movMaxAskGap, to notice extra trips.
+const (
+	movSkipAhead = 60 * time.Minute // next timetable departure further than this
+	movObsFresh  = 60 * time.Minute // an answer older than this tells nothing
+	movMaxAskGap = 30 * time.Minute // longest a stop goes unasked
+)
+
+// movLineObs is what a stop's answer showed for one followed line.
+type movLineObs struct {
+	Live      bool      // a tracked bus (real:"S") was listed
+	NextSched time.Time // the soonest timetable departure listed; zero if none
+}
+
+// movStopObs is a stop's last answer.
+type movStopObs struct {
+	At    time.Time
+	Lines map[int]movLineObs
+}
+
+// movNextSched is the soonest of the "HH:MM" Madrid times at or after at
+// (a time more than 10 minutes past is read as the next day; the answer
+// carries no date), zero when none parses.
+func movNextSched(horas []string, at time.Time) time.Time {
+	var best time.Time
+	c := getDateComponents(at.UnixMilli())
+	for _, h := range horas {
+		m := reMovHora.FindStringSubmatch(h)
+		if m == nil {
+			continue
+		}
+		hh, _ := strconv.Atoi(m[1])
+		mm, _ := strconv.Atoi(m[2])
+		if hh > 23 || mm > 59 {
+			continue
+		}
+		t := time.UnixMilli(localTimeToUtcDate(c.Year, c.MonthIndex, c.Day, hh, mm, 0))
+		if t.Before(at.Add(-10 * time.Minute)) {
+			t = time.UnixMilli(localTimeToUtcDate(c.Year, c.MonthIndex, c.Day+1, hh, mm, 0))
+		}
+		if best.IsZero() || t.Before(best) {
+			best = t
+		}
+	}
+	return best
+}
+
+// movShouldAsk decides whether a sampled stop is asked at now. followed are
+// the followed lines serving it; obs is its last answer (ok false: never
+// asked, or forgotten).
+func movShouldAsk(now time.Time, obs movStopObs, ok bool, followed []int) bool {
+	if !ok || obs.At.IsZero() {
+		return true
+	}
+	age := now.Sub(obs.At)
+	if age < 0 || age >= movMaxAskGap || age >= movObsFresh {
+		return true
+	}
+	for _, l := range followed {
+		o := obs.Lines[l] // a line the answer did not list: no bus shown
+		if o.Live {
+			return true
+		}
+		if !o.NextSched.IsZero() && o.NextSched.Sub(now) <= movSkipAhead {
+			return true
+		}
+	}
+	return false
 }
 
 // routeFor is the route of a followed line that a prediction at stopID
@@ -886,10 +1044,20 @@ func (p *movPoller) run(ctx context.Context) {
 			continue
 		}
 		start := time.Now()
+		stopLines := movStopLines(static, p.lineIDs)
+		asked, skipped := 0, 0
 		for _, sm := range samples {
 			if ctx.Err() != nil {
 				return
 			}
+			p.mu.Lock()
+			obs, seenBefore := p.obs[sm.StopID]
+			p.mu.Unlock()
+			if !movShouldAsk(time.Now(), obs, seenBefore, stopLines[sm.StopID]) {
+				skipped++
+				continue
+			}
+			asked++
 			body, err := p.get(ctx, fmt.Sprintf("/api/json/GetTiemposParada/ca/%d/%d/0", sm.StopID, sm.LineID))
 			if err != nil {
 				if ctx.Err() == nil {
@@ -912,7 +1080,11 @@ func (p *movPoller) run(ctx context.Context) {
 		}
 		p.mu.Lock()
 		p.stats.LastCycleSec = math.Round(time.Since(start).Seconds())
+		p.stats.AskedStops, p.stats.SkippedStops = asked, skipped
 		p.mu.Unlock()
+		if asked == 0 && !movSleep(ctx, movBackoffMin) {
+			return // nothing due: do not spin
+		}
 		static = p.retryMissing(ctx, static)
 	}
 }
@@ -941,8 +1113,18 @@ func (p *movPoller) record(s *movStatic, stopID int, etas []movStopETA, at time.
 			delete(p.preds, k)
 		}
 	}
+	ob := movStopObs{At: at, Lines: map[int]movLineObs{}}
 	for _, e := range etas {
 		if !followed[e.LineID] {
+			continue
+		}
+		lo := ob.Lines[e.LineID]
+		lo.Live = lo.Live || len(e.EtaSec) > 0
+		if t := movNextSched(e.Sched, at); !t.IsZero() && (lo.NextSched.IsZero() || t.Before(lo.NextSched)) {
+			lo.NextSched = t
+		}
+		ob.Lines[e.LineID] = lo
+		if len(e.EtaSec) == 0 {
 			continue
 		}
 		rt, ok := s.routeFor(e.LineID, stopID, e.Dest)
@@ -952,6 +1134,10 @@ func (p *movPoller) record(s *movStatic, stopID int, etas []movStopETA, at time.
 		k := [3]int{e.LineID, rt.Trayecto, stopID}
 		p.preds[k] = movPrediction{LineID: e.LineID, Trayecto: rt.Trayecto, StopID: stopID, EtaSec: e.EtaSec, At: at}
 	}
+	if p.obs == nil {
+		p.obs = map[int]movStopObs{}
+	}
+	p.obs[stopID] = ob
 	// Drop predictions too old to use.
 	for k, v := range p.preds {
 		if at.Sub(v.At) > movObsMaxAge {

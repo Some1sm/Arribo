@@ -56,14 +56,18 @@ Goal: cut the full refresh of the seven lines through Mataró from ~16 min (89 s
 | ID | Status | Step | Files | Done when |
 |---|---|---|---|---|
 | 1.1 | `[x]` | **Headway-based stop spacing.** In `movSamples`, replace the fixed `movStopSpacingKm = 1.5` with a per-route spacing of about speed × headway (the distance between consecutive buses). The headway comes from the timetable in the stop answers or from the static routes (trips per day). Clamp it: at least 1.5 km, at most route length ÷ 2. Always keep the first and last stop. Pass the day-average headway in as data, so the selection stays a pure function that can be tested. | `app/moventis.go`, `app/moventis_test.go` | test: C-10 (~27 km, 26 min headway) picks ~3–4 stops per direction, e11.1 keeps all its stops; total for the 7 lines ≤ 55 (today 89) |
-| 1.2 | `[ ]` | **Prefer stops shared by several followed lines.** Within a spacing window, pick the stop that serves the most followed lines (Hospital 7340 and Brussel·les 23253 serve four). | `app/moventis.go`, test | test with a synthetic two-line route sharing a stop |
-| 1.3 | `[ ]` | **Skip lines with no bus due.** Do not ask stops whose only followed lines have no trip in the next ~60 min, judged from the timetable entries (`real:"N"`, `hora`) of their last answers or from static data (e.g. the N-80 by day). Ask each line at least every 30 min anyway, to notice extra trips. | `app/moventis.go`, test | stats show fewer samples off-peak; `/api/health` or the poller stats expose the current sample count |
-| 1.4 | `[ ]` | **Run each bus's countdown forward between refreshes.** Advance the estimated position from the last `real:"S"` countdown (`app/moventisestimate.go` already maps ETA + `NKM_ORIGEN` to a point). It must stay labelled as estimated from predictions (`positionSource:"stop_predictions"`), and must stop advancing past the stop or after a timeout. | `app/moventisestimate.go`, tests | tests: monotonic progress, no overshoot, stale after N min |
-| 1.5 | `[ ]` | **Expose cycle metrics:** last full cycle duration, samples per cycle, throttle count, in the existing Moventis stats/health. Document them in OPERATIONS.md. | `app/moventis.go`, OPERATIONS.md | visible in `/api/moventis` or health |
+| 1.2 | `[x]` | **Prefer stops shared by several followed lines.** Within a spacing window, pick the stop that serves the most followed lines (Hospital 7340 and Brussel·les 23253 serve four). | `app/moventis.go`, test | test with a synthetic two-line route sharing a stop |
+| 1.3 | `[x]` | **Skip lines with no bus due.** Do not ask stops whose only followed lines have no trip in the next ~60 min, judged from the timetable entries (`real:"N"`, `hora`) of their last answers or from static data (e.g. the N-80 by day). Ask each line at least every 30 min anyway, to notice extra trips. | `app/moventis.go`, test | stats show fewer samples off-peak; `/api/health` or the poller stats expose the current sample count |
+| 1.4 | `[x]` | **Run each bus's countdown forward between refreshes.** Advance the estimated position from the last `real:"S"` countdown (`app/moventisestimate.go` already maps ETA + `NKM_ORIGEN` to a point). It must stay labelled as estimated from predictions (`positionSource:"stop_predictions"`), and must stop advancing past the stop or after a timeout. | `app/moventisestimate.go`, tests | tests: monotonic progress, no overshoot, stale after N min |
+| 1.5 | `[x]` | **Expose cycle metrics:** last full cycle duration, samples per cycle, throttle count, in the existing Moventis stats/health. Document them in OPERATIONS.md. | `app/moventis.go`, OPERATIONS.md | visible in `/api/moventis` or health |
 | 1.6 | `[!]` 0.1+0.2 | **Optional: Moventis app GPS as the measured tier.** Only if 0.2 shows the server answering and 0.1 allows it. Add it behind a flag (`ARRIBO_MOVENTIS_SAE=1`, credential from an env var, never committed): one request per line, real positions labelled as GPS, with the predictions poller as fallback. | new `app/moventissae.go` | flagged off by default |
 
 Notes:
 - 1.1: done. `movSpacingKm` (speed × day-average headway × 0.8, clamped to [1.5 km, route/2]); per-line headways in `movHeadwayMin`, speeds in `movSpeedKmh`. On the 24 Nov routes: 89 → 31 sampled stops, cycle 16.3 → 5.7 min. Headways are a static table from the Generalitat GTFS; step 2.4 can derive them from the timetable instead.
+- 1.2: done. `movPickStops` picks, from each window [spacing/2, spacing] after the last sample, the stop served by most followed lines (`movStopLines`), furthest on a tie; first and last stop always sampled. Test `TestMovSamplesSharedStop`.
+- 1.3: done. `parseMovStopTimes` now also keeps the `real:"N"` `hora` times (`Sched`); per stop the poller keeps `movStopObs`; `movShouldAsk(now, ...)` skips a stop when no followed line showed a live bus and none is scheduled within 60 min, but asks every stop at least every 30 min. A cycle that asks nothing waits a minute.
+- 1.4: already in place before the plan: moventisestimate.go advances positions by the age of each countdown (now - At) and drops predictions older than movObsMaxAge (40 min).
+- 1.5: done. `/api/moventis` status has `sampledStops`, `askedStops`, `skippedStops`, `lastCycleSec`, `throttled`; described in OPERATIONS.md, *Moventis poller metrics*.
 
 ---
 
@@ -143,5 +147,6 @@ Do each only after 0.1 and as its own poller. Order by value for Mataró users f
 
 Newest first. One line per session: date, who, steps touched, commit.
 
+- 2026-11-24, cloud session (agent): steps 1.2, 1.3, 1.5
 - 2026-11-24, cloud session: step 1.1 done (headway-based Moventis stop spacing).
 - 2026-11-24, cloud session: wrote this plan and HANDOFF.md.

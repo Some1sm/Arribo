@@ -254,7 +254,8 @@ func (s *Server) hMoventis(q *xreq, res *xres) error {
 		}
 		status = O("requests", float64(st.Requests), "throttled", float64(st.Throttled), "errors", float64(st.Errors),
 			"lastOkAt", lastOK, "lastError", strOrNil(st.LastError), "backoffSec", backoff,
-			"sampledStops", float64(st.SampledStops), "lastCycleSec", st.LastCycleSec,
+			"sampledStops", float64(st.SampledStops), "askedStops", float64(st.AskedStops), "skippedStops", float64(st.SkippedStops),
+			"lastCycleSec", st.LastCycleSec,
 			"requestGapSec", movMinGap.Seconds(), "staticAt", movStaticAt(snap.Static))
 	}
 	res.json(O("success", true, "enabled", true, "agencyId", movAgencyID, "mode", "bus",

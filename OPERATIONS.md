@@ -90,6 +90,10 @@ Essential shell caching is atomic. New workers wait for the user to press
 once. Cleanup affects only Arribo-owned caches. Update both HTML asset versions and
 service-worker versions together when shell assets change.
 
+## Moventis poller metrics
+
+With `ARRIBO_MOVENTIS=1` the poller asks moventis.es for one stop at a time, at least 11 s apart. `/api/moventis` (field `status`) shows how it is doing: `sampledStops` is how many stops a cycle picks (spaced about as far apart as consecutive buses, preferring stops shared by several followed lines); `askedStops` and `skippedStops` split the last cycle's samples into those asked and those skipped because the stop's last answer showed no live bus and no timetable departure within 60 min (every stop is asked at least every 30 min); `lastCycleSec` is the duration of the last full cycle; `throttled` counts the site's placeholder answers (each starts a back-off, `backoffSec`), `requests` and `errors` count all calls. Off-peak, `skippedStops` rises and `lastCycleSec` falls. If a cycle asks nothing, the poller waits a minute before the next.
+
 ## Health, logs and shutdown
 
 - `/api/health` remains HTTP-200 liveness and the Docker healthcheck target. It also
