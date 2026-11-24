@@ -934,6 +934,8 @@ function buildTrainPopupHtml(t, op, lineRef) {
 
         ${delayNote ? `<div class="train-popup-note">${esc(delayNote)}</div>` : ''}
 
+        ${Array.isArray(t.usualSeries) && t.usualSeries.length ? `<div class="train-popup-note">${esc(netT('trainPopup.usualSeries', { list: t.usualSeries.join(', ') }, `Sèries habituals en aquesta línia: ${t.usualSeries.join(', ')}. No se sap quina unitat fa aquest tren.`))}</div>` : ''}
+
         ${op?.attribution ? `
         <div class="map-popup-coords-footer">
           <span class="source-tag">${esc(op.attribution)}</span>

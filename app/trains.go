@@ -237,6 +237,17 @@ func trainJSON(info operatorInfo, s *rtSnapshot, v *rtVehicle, now time.Time) *O
 		// line comes from matching the train number to the Rodalies timetable.
 		o.Set("feedVariant", "ld")
 	}
+	if info.ID == "renfe_rodalies" && v.LineCode != "" {
+		// Additive: the series usually seen on the line (renfefleet.go), never
+		// this train's own unit, which no public source gives.
+		if series := renfeUsualSeries(v.LineCode); len(series) > 0 {
+			list := make([]any, len(series))
+			for i, s := range series {
+				list[i] = s
+			}
+			o.Set("usualSeries", list)
+		}
+	}
 	return o
 }
 
