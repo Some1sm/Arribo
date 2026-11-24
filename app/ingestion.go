@@ -756,11 +756,20 @@ func (d *IngestionDaemon) checkScheduleDrift() any {
 // timetable yet) are not stored. Runs as a daemon task, under the worker
 // lock, so only the worker writes the history database.
 func (d *IngestionDaemon) writeRailVisits() {
+	var batch []railVisit
 	for _, p := range gtfsRtPollers {
 		for _, v := range p.takeRailVisits() {
 			if v.LineCode == "" || v.StopName == "" {
 				continue
 			}
+			batch = append(batch, v)
+		}
+	}
+	if len(batch) == 0 {
+		return
+	}
+	_ = d.db.withTx(func() error {
+		for _, v := range batch {
 			ms := float64(v.ActualUnix * 1000)
 			delay := math.Round(float64(v.DelaySec) / 60)
 			d.db.recordStopVisit(O(
@@ -782,5 +791,6 @@ func (d *IngestionDaemon) writeRailVisits() {
 				"mode", v.Mode,
 			))
 		}
-	}
+		return nil
+	})
 }

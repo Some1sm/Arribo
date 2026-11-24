@@ -870,6 +870,12 @@ func (h *HistoryDB) migrate() error {
           -- The Mataró hourly visit rollup is Mataró's only: train rows there
           -- used the bus on-time rule and nothing read them.
           DELETE FROM hourly_line_visit_stats WHERE agency_id <> 'mataro';
+          -- Indexes for incident signal lookup, per-line operator queries, and hourly pruning.
+          CREATE INDEX IF NOT EXISTS idx_gps_gaps_veh ON gps_gaps(agency_id, vehicle_id, lost_ts, regained_ts);
+          CREATE INDEX IF NOT EXISTS idx_gps_gaps_agency_time ON gps_gaps(agency_id, lost_ts, line_code);
+          CREATE INDEX IF NOT EXISTS idx_visits_agency_line_time ON stop_visits(agency_id, line_code, last_ts);
+          CREATE INDEX IF NOT EXISTS idx_rail_cancels_seen ON rail_cancellations(last_seen);
+          CREATE INDEX IF NOT EXISTS idx_rail_platforms_seen ON rail_platforms(last_seen);
         `); err != nil {
 		return err
 	}
@@ -879,7 +885,32 @@ func (h *HistoryDB) migrate() error {
           DROP INDEX IF EXISTS idx_delay_line_timestamp;
           DROP INDEX IF EXISTS idx_delay_stop_timestamp;
           DROP INDEX IF EXISTS idx_hourly_stats;
+          DROP INDEX IF EXISTS idx_line_time;
         `)
+}
+
+// withTx runs fn inside a single IMMEDIATE transaction with panic-safe rollback.
+func (h *HistoryDB) withTx(fn func() error) error {
+	if !h.ensureOpen() {
+		return errors.New("database unavailable")
+	}
+	if err := h.exec("BEGIN IMMEDIATE"); err != nil {
+		return err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = h.exec("ROLLBACK")
+		}
+	}()
+	if err := fn(); err != nil {
+		return err
+	}
+	if err := h.exec("COMMIT"); err != nil {
+		return err
+	}
+	committed = true
+	return nil
 }
 
 // ---------------------------------------------------------------- helpers

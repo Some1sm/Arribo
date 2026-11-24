@@ -77,11 +77,19 @@ func (p *rtPoller) takeRailPlatforms() []railPlatformSighting {
 // writeRailPlatforms stores the queued announcements. Runs as a daemon task
 // under the worker lock.
 func (d *IngestionDaemon) writeRailPlatforms() {
+	var batch []railPlatformSighting
 	for _, p := range gtfsRtPollers {
-		for _, s := range p.takeRailPlatforms() {
+		batch = append(batch, p.takeRailPlatforms()...)
+	}
+	if len(batch) == 0 {
+		return
+	}
+	_ = d.db.withTx(func() error {
+		for _, s := range batch {
 			d.db.recordRailPlatform(s)
 		}
-	}
+		return nil
+	})
 }
 
 // recordRailPlatform counts one announcement.

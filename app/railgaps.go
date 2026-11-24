@@ -84,9 +84,17 @@ func (p *rtPoller) takeRailGaps() []*Obj {
 // writeRailGaps stores the queued losses in gps_gaps, with the operator.
 // Runs as a daemon task under the worker lock.
 func (d *IngestionDaemon) writeRailGaps() {
+	var batch []*Obj
 	for _, p := range gtfsRtPollers {
-		for _, g := range p.takeRailGaps() {
+		batch = append(batch, p.takeRailGaps()...)
+	}
+	if len(batch) == 0 {
+		return
+	}
+	_ = d.db.withTx(func() error {
+		for _, g := range batch {
 			d.db.recordGpsGap(g)
 		}
-	}
+		return nil
+	})
 }

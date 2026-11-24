@@ -52,7 +52,7 @@ func (h *HistoryDB) inspectDelayIncident(opts *Obj) *Obj {
 	res, err := h.inspectIncident(opts)
 	if err != nil {
 		log.Printf("[HistoryDB] inspectDelayIncident error: %s", err.Error())
-		return O("found", false, "error", err.Error(), "episode", nil, "dataQuality", O())
+		return O("found", false, "error", "incident inspection failed", "episode", nil, "dataQuality", O())
 	}
 	return res
 }

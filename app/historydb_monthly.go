@@ -34,7 +34,7 @@ func (h *HistoryDB) getMonthlyReport(monthStr any, allLinesCatalog any) *Obj {
 	res, err := h.monthlyReport(monthStr)
 	if err != nil {
 		log.Printf("[HistoryDB] getMonthlyReport error: %s", err.Error())
-		msg := err.Error()
+		msg := "Monthly report query failed"
 		return monthlyShell(getMadridMonthRange(monthStr), &msg)
 	}
 	return res
@@ -232,7 +232,7 @@ func (h *HistoryDB) monthlyReport(monthStr any) (*Obj, error) {
 	feedRows, err := h.all(`
         SELECT DISTINCT substr(madrid_datetime(`+tsCol+`), 1, 13) as hourKey
         FROM `+tbl+`
-        WHERE `+tsCol+` >= ? AND `+tsCol+` < ?
+        WHERE `+tsCol+` >= ? AND `+tsCol+` < ?`+scopeSQL+`
       `, startTs, effectiveEndTs)
 	if err != nil {
 		return nil, err
@@ -329,7 +329,9 @@ func (h *HistoryDB) exportDelayLogsCsv(hoursBack, page, pageSize any) *Obj {
 			total = jsNumber(or(c.Get("total"), 0.0))
 		}
 		totalPages := math.Max(1, math.Ceil(total/limit))
-		rows, err := h.all(`
+		var b strings.Builder
+		b.WriteString(delayLogsCsvHeader)
+		err = h.each(`
         SELECT
           madrid_datetime(timestamp) as formatted_date,
           vehicle_id,
@@ -346,17 +348,15 @@ func (h *HistoryDB) exportDelayLogsCsv(hoursBack, page, pageSize any) *Obj {
         WHERE timestamp >= ? AND delay_mins > -15`+mataroScopeSQL+`
         ORDER BY timestamp DESC
         LIMIT ? OFFSET ?
-      `, cutoff, limit, offset)
+      `, []any{cutoff, limit, offset}, func(_ []string, vals []any) bool {
+			b.WriteString(`"` + jsString(vals[0]) + `","` + csvClean(vals[1]) + `","` + jsString(vals[2]) +
+				`","` + csvClean(vals[3]) + `","` + csvClean(vals[4]) + `","` + csvClean(vals[5]) + `",` +
+				jsString(vals[6]) + `,"` + jsString(or(vals[7], "")) + `","` + jsString(or(vals[8], "")) +
+				`",` + csvQuotedSrc(vals[9]) + `,` + jsString(vals[10]) + "\n")
+			return true
+		})
 		if err != nil {
 			return nil, err
-		}
-		var b strings.Builder
-		b.WriteString(delayLogsCsvHeader)
-		for _, r := range rows {
-			b.WriteString(`"` + jsString(r.Get("formatted_date")) + `","` + csvClean(r.Get("vehicle_id")) + `","` + jsString(r.Get("line_code")) +
-				`","` + csvClean(r.Get("direction")) + `","` + csvClean(r.Get("agency")) + `","` + csvClean(r.Get("stop_name")) + `",` +
-				jsString(r.Get("delay_mins")) + `,"` + jsString(or(r.Get("scheduled_time"), "")) + `","` + jsString(or(r.Get("actual_time"), "")) +
-				`",` + csvQuotedSrc(r.Get("times_source")) + `,` + jsString(r.Get("is_realtime")) + "\n")
 		}
 		return O("csv", b.String(), "total", total, "page", pageNum, "totalPages", totalPages), nil
 	}()
@@ -390,7 +390,9 @@ func (h *HistoryDB) exportStopVisitsCsv(hoursBack, page, pageSize any) *Obj {
 			total = jsNumber(or(c.Get("total"), 0.0))
 		}
 		totalPages := math.Max(1, math.Ceil(total/limit))
-		rows, err := h.all(`
+		var b strings.Builder
+		b.WriteString(stopVisitsCsvHeader)
+		err = h.each(`
         SELECT
           madrid_datetime(last_ts) as formatted_date,
           vehicle_id,
@@ -411,26 +413,24 @@ func (h *HistoryDB) exportStopVisitsCsv(hoursBack, page, pageSize any) *Obj {
         WHERE last_ts >= ? AND `+validDelaySQL+mataroVisitsScopeSQL+`
         ORDER BY last_ts DESC
         LIMIT ? OFFSET ?
-      `, cutoff, limit, offset)
-		if err != nil {
-			return nil, err
-		}
-		var b strings.Builder
-		b.WriteString(stopVisitsCsvHeader)
-		for _, r := range rows {
+      `, []any{cutoff, limit, offset}, func(_ []string, vals []any) bool {
 			var measured any = ""
-			if r.Get("measured_method") == "operator_trip" && !isNullish(r.Get("measured_delay_mins")) {
-				measured = r.Get("measured_delay_mins")
+			if vals[7] == "operator_trip" && !isNullish(vals[6]) {
+				measured = vals[6]
 			}
 			var tripConfirmed any = ""
-			if ta := r.Get("trip_agrees"); strictEq(ta, 1.0) || strictEq(ta, 0.0) {
+			if ta := vals[8]; strictEq(ta, 1.0) || strictEq(ta, 0.0) {
 				tripConfirmed = ta
 			}
-			b.WriteString(`"` + jsString(r.Get("formatted_date")) + `","` + csvClean(r.Get("vehicle_id")) + `","` + jsString(r.Get("line_code")) +
-				`","` + csvClean(r.Get("direction")) + `","` + csvClean(r.Get("stop_name")) + `",` + jsString(r.Get("delay_mins")) +
-				`,"` + jsString(measured) + `",` + jsString(r.Get("sample_count")) + `,"` + jsString(or(r.Get("scheduled_time"), "")) +
-				`","` + jsString(or(r.Get("actual_time"), "")) + `",` + csvQuotedSrc(r.Get("times_source")) + `,` + jsString(r.Get("is_realtime")) +
-				`,"` + jsString(or(r.Get("source"), "live")) + `","` + jsString(tripConfirmed) + "\"\n")
+			b.WriteString(`"` + jsString(vals[0]) + `","` + csvClean(vals[1]) + `","` + jsString(vals[2]) +
+				`","` + csvClean(vals[3]) + `","` + csvClean(vals[4]) + `",` + jsString(vals[5]) +
+				`,"` + jsString(measured) + `",` + jsString(vals[9]) + `,"` + jsString(or(vals[10], "")) +
+				`","` + jsString(or(vals[11], "")) + `",` + csvQuotedSrc(vals[12]) + `,` + jsString(vals[13]) +
+				`,"` + jsString(or(vals[14], "live")) + `","` + jsString(tripConfirmed) + "\"\n")
+			return true
+		})
+		if err != nil {
+			return nil, err
 		}
 		return O("csv", b.String(), "total", total, "page", pageNum, "totalPages", totalPages), nil
 	}()

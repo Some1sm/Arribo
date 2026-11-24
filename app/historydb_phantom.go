@@ -568,11 +568,16 @@ func (h *HistoryDB) setRelinkWindows(rs []*Obj) error {
 	if err := h.exec("DELETE FROM temp.relink_windows"); err != nil {
 		return err
 	}
-	for _, r := range rs {
-		if _, err := h.run("INSERT INTO temp.relink_windows (vehicle_id, line_code, from_ts, to_ts) VALUES (?, ?, ?, ?)",
-			r.Get("vehicleId"), r.Get("lineCode"), r.Get("staleFromTs"), r.Get("staleToTs")); err != nil {
-			return err
-		}
+	if len(rs) == 0 {
+		return nil
 	}
-	return nil
+	return h.withTx(func() error {
+		for _, r := range rs {
+			if _, err := h.run("INSERT INTO temp.relink_windows (vehicle_id, line_code, from_ts, to_ts) VALUES (?, ?, ?, ?)",
+				r.Get("vehicleId"), r.Get("lineCode"), r.Get("staleFromTs"), r.Get("staleToTs")); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }

@@ -97,14 +97,24 @@ func (p *rtPoller) takeRailCancels() []railCancel {
 // inserted, a known one only moves its last_seen. Runs as a daemon task
 // under the worker lock.
 func (d *IngestionDaemon) writeRailCancels() {
+	var batch []railCancel
 	for _, p := range gtfsRtPollers {
 		for _, c := range p.takeRailCancels() {
 			if c.Line == "" {
 				continue
 			}
-			d.db.recordRailCancel(c)
+			batch = append(batch, c)
 		}
 	}
+	if len(batch) == 0 {
+		return
+	}
+	_ = d.db.withTx(func() error {
+		for _, c := range batch {
+			d.db.recordRailCancel(c)
+		}
+		return nil
+	})
 }
 
 // recordRailCancel upserts one cancellation.
