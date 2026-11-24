@@ -25,6 +25,8 @@ package main
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"regexp"
 	"strings"
 	"time"
@@ -77,27 +79,38 @@ func commuterTrainNumbers(vs []rtVehicle) map[string]bool {
 }
 
 // tripsByNumber lists the imported timetable's trips for a train number
-// (built once per open timetable; the number is the digits after "M" in
-// Renfe's trip id).
-func (t *rtTimetable) tripsByNumber(ctx context.Context, number string) []string {
-	t.numOnce.Do(func() {
-		t.byNumber = map[string][]string{}
-		rows, err := t.db.QueryContext(ctx, `SELECT trip_id FROM trips`)
+// (built on first use; the number is the digits after "M" in Renfe's trip
+// id). A failed build is not kept: the next call tries again.
+func (t *rtTimetable) tripsByNumber(ctx context.Context, number string) ([]string, bool) {
+	t.numMu.Lock()
+	defer t.numMu.Unlock()
+	if t.byNumber == nil {
+		byNumber, err := t.loadTripNumbers(ctx)
 		if err != nil {
-			return
+			return nil, false
 		}
-		defer rows.Close()
-		for rows.Next() {
-			var id string
-			if rows.Scan(&id) != nil {
-				continue
-			}
-			if m := reStaticNumber.FindStringSubmatch(strings.TrimSpace(id)); m != nil {
-				t.byNumber[m[1]] = append(t.byNumber[m[1]], id)
-			}
+		t.byNumber = byNumber
+	}
+	return t.byNumber[number], true
+}
+
+func (t *rtTimetable) loadTripNumbers(ctx context.Context) (map[string][]string, error) {
+	rows, err := t.db.QueryContext(ctx, `SELECT trip_id FROM trips`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string][]string{}
+	for rows.Next() {
+		var id string
+		if rows.Scan(&id) != nil {
+			continue
 		}
-	})
-	return t.byNumber[number]
+		if m := reStaticNumber.FindStringSubmatch(strings.TrimSpace(id)); m != nil {
+			out[m[1]] = append(out[m[1]], id)
+		}
+	}
+	return out, rows.Err()
 }
 
 // tripForNumber is the one imported trip that runs train `number` on service
@@ -114,7 +127,7 @@ func (t *rtTimetable) tripForNumber(ctx context.Context, number, date string) st
 		return v
 	}
 	t.mu.Unlock()
-	best, route := "", ""
+	best, route, failed := "", "", false
 	day, err := time.ParseInLocation("20060102", date, madrid)
 	if err == nil {
 		col := gtfsWeekdayColumn[day.Weekday()]
@@ -122,9 +135,14 @@ func (t *rtTimetable) tripForNumber(ctx context.Context, number, date string) st
 		    SELECT service_id FROM calendar WHERE start_date <= ?1 AND end_date >= ?1 AND ` + col + ` = 1
 		    UNION SELECT service_id FROM calendar_dates WHERE date = ?1 AND exception_type = 1
 		    EXCEPT SELECT service_id FROM calendar_dates WHERE date = ?1 AND exception_type = 2) LIMIT 1`
-		for _, id := range t.tripsByNumber(ctx, number) {
+		ids, ok := t.tripsByNumber(ctx, number)
+		failed = !ok
+		for _, id := range ids {
 			var r string
-			if t.db.QueryRowContext(ctx, q, date, id).Scan(&r) != nil {
+			if err := t.db.QueryRowContext(ctx, q, date, id).Scan(&r); err != nil {
+				if !errors.Is(err, sql.ErrNoRows) {
+					failed = true // a read error, not an inactive service
+				}
 				continue
 			}
 			if best == "" {
@@ -134,6 +152,9 @@ func (t *rtTimetable) tripForNumber(ctx context.Context, number, date string) st
 				break
 			}
 		}
+	}
+	if failed {
+		return "" // the candidates were not all read: no line this time, and nothing cached
 	}
 	t.mu.Lock()
 	if t.names == nil || len(t.names) > 50000 {

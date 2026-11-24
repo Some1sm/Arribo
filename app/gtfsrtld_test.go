@@ -119,3 +119,25 @@ func TestLDFeedErrorKeepsCommuterVehicles(t *testing.T) {
 		t.Errorf("%+v", snap)
 	}
 }
+
+// A lookup that fails (here: a cancelled context) must not be remembered:
+// neither the train-number table nor the per-date answer.
+func TestLDTripForNumberRetriesAfterFailure(t *testing.T) {
+	feed := map[string]string{
+		"agency.txt":     "agency_id,agency_name,agency_url,agency_timezone\nA,A,http://e.com,Europe/Madrid\n",
+		"routes.txt":     "route_id,agency_id,route_short_name,route_long_name,route_type\n51_R11,A,R11,R11,2\n",
+		"trips.txt":      "route_id,service_id,trip_id,trip_headsign,direction_id,shape_id\n51_R11,S,5127M15916R11,X,0,\n",
+		"stops.txt":      "stop_id,stop_name,stop_lat,stop_lon,location_type,parent_station\n79300,Girona,41.98,2.82,0,\n",
+		"stop_times.txt": "trip_id,arrival_time,departure_time,stop_id,stop_sequence\n5127M15916R11,08:00:00,08:00:00,79300,1\n",
+		"calendar.txt":   "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\nS,1,1,1,1,1,1,1,20260101,20271231\n",
+	}
+	tt := openRailTestTimetableWith(t, feed)
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if got := tt.tripForNumber(cancelled, "15916", "20261123"); got != "" {
+		t.Fatalf("cancelled lookup = %q, want \"\"", got)
+	}
+	if got := tt.tripForNumber(context.Background(), "15916", "20261123"); got != "5127M15916R11" {
+		t.Fatalf("lookup after a failure = %q, want 5127M15916R11", got)
+	}
+}

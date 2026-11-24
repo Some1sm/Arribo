@@ -38,6 +38,9 @@ func (p *rtPoller) noteGaps(snap *rtSnapshot) {
 		t := float64(v.ObservedAt) * 1000
 		if v.ObservedAt == 0 {
 			t = float64(snap.FeedTimestamp) * 1000 // the feed's time when the train has none
+			if v.Feed == "ld" && v.FeedTS > 0 {
+				t = float64(v.FeedTS) * 1000 // a long-distance train: its own feed's time
+			}
 		}
 		dir := ""
 		if v.DirectionID >= 0 {

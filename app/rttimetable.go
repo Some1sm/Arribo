@@ -23,7 +23,7 @@ type rtTimetable struct {
 	names                        map[string]string   // line and stop name lookups
 	platformChecked, platformCol bool                // stops.platform_code looked up / present
 	hours                        map[string][]int    // scheduledHoursOn per service day (YYYYMMDD)
-	numOnce                      sync.Once           // byNumber is built on first use (gtfsrtld.go)
+	numMu                        sync.Mutex          // guards byNumber, built on first use (gtfsrtld.go)
 	byNumber                     map[string][]string // train number -> trip ids
 }
 
