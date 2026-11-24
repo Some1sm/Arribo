@@ -8,6 +8,8 @@ Arribo! is a real-time transit platform for **Mataró Bus Urbà L1–L8** (8 lin
 
 The Go server was ported from a Node/Express backend (removed 2026-11-13) and kept its HTTP contract byte for byte: JSON key order, number formatting, headers and error texts. [app/README.md](app/README.md) explains how (the `Obj` ordered object, the `World` lock that stands in for the event loop) and lists the few transport-level differences.
 
+**Work in progress:** the Catalonia research is being implemented step by step. The plan, with the status of every step, is [docs/plan/IMPLEMENTATION_PLAN.md](docs/plan/IMPLEMENTATION_PLAN.md); how to pick it up is [docs/plan/HANDOFF.md](docs/plan/HANDOFF.md). Update step statuses in the same commit as the work.
+
 **Read [AGENTS.md](AGENTS.md) first** — it is the authoritative contract for ownership boundaries, domain invariants, and required validation. [README.md](README.md) and [OPERATIONS.md](OPERATIONS.md) are current; [docs/history/ARCHITECTURE.md](docs/history/ARCHITECTURE.md) is historical and describes a retired Catalonia-wide scope and the former Node code. Verify anything against source, not against those older documents.
 
 ## Commands
