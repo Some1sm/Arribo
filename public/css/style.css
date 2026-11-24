@@ -12001,3 +12001,47 @@ body[data-dades-scope="bus"] #operators-section { display: none !important; }
   font-size: 0.7rem;
   color: var(--text-muted);
 }
+
+/* Homepage network map: full-screen toggle (app.js setupNetworkMapFullscreen).
+   The frame goes full screen with the Fullscreen API; where an element cannot
+   (iPhone Safari) it becomes a fixed overlay over the viewport instead. */
+.network-map-fullscreen-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 600; /* above Leaflet's panes and the legend (500) */
+}
+.network-map-fullscreen-btn .fs-icon-exit,
+.network-map-fullscreen-btn[aria-pressed="true"] .fs-icon-enter { display: none; }
+.network-map-fullscreen-btn[aria-pressed="true"] .fs-icon-exit { display: inline; }
+
+.network-map-frame:fullscreen,
+.network-map-frame.is-pseudo-fullscreen {
+  width: 100%;
+  height: 100%;
+  background: var(--bg-surface);
+}
+.network-map-frame.is-pseudo-fullscreen {
+  position: fixed;
+  inset: 0;
+  height: 100dvh;
+  z-index: 1500; /* over the sticky header (1000/1100), under dialogs */
+}
+.network-map-frame:fullscreen #network-map-container,
+.network-map-frame.is-pseudo-fullscreen #network-map-container {
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+}
+.network-map-frame:fullscreen .network-map-fullscreen-btn,
+.network-map-frame.is-pseudo-fullscreen .network-map-fullscreen-btn {
+  top: calc(10px + env(safe-area-inset-top, 0px));
+  right: calc(10px + env(safe-area-inset-right, 0px));
+}
+.network-map-frame:fullscreen .network-map-legend,
+.network-map-frame.is-pseudo-fullscreen .network-map-legend {
+  bottom: calc(0.6rem + env(safe-area-inset-bottom, 0px));
+}
+body.network-map-fullscreen-open { overflow: hidden; }

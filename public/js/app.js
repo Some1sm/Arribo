@@ -5785,6 +5785,7 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
     if (!container || typeof window.NetworkMap !== 'function') return null;
 
     this.networkMap = new window.NetworkMap('network-map-container');
+    this.setupNetworkMapFullscreen();
     // Colours come from the same catalog the single-line map and the landing
     // line cards use, so a line can never be one colour here and another there.
     this.networkMap.setLineCatalog(this.availableLines || []);
@@ -5805,6 +5806,66 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
     this.startNetworkMapTimer();
     this.networkMap.startAnimationLoop?.();
     return this.networkMap;
+  }
+
+  /**
+   * The homepage map's full-screen button: the Fullscreen API on the map frame
+   * (map and legend), or, where an element cannot go full screen (iPhone
+   * Safari) or the request is refused, a fixed overlay over the viewport
+   * (.is-pseudo-fullscreen). Esc leaves either. Leaflet is told the size
+   * changed after every switch.
+   */
+  setupNetworkMapFullscreen() {
+    const btn = document.getElementById('network-map-fullscreen');
+    const frame = btn?.closest('.network-map-frame');
+    if (!btn || !frame || btn.dataset.ready) return;
+    btn.dataset.ready = '1';
+    const t = (k) => (window.ArriboI18n ? window.ArriboI18n.t(k) : k);
+    const native = typeof frame.requestFullscreen === 'function' && document.fullscreenEnabled !== false;
+    const isOn = () => document.fullscreenElement === frame || frame.classList.contains('is-pseudo-fullscreen');
+    const sync = () => {
+      const on = isOn();
+      const key = on ? 'netMap.exitFullscreen' : 'netMap.fullscreen';
+      btn.setAttribute('aria-pressed', String(on));
+      // The i18n pass re-reads these keys when the language changes.
+      btn.dataset.i18nTitle = key;
+      btn.dataset.i18nAriaLabel = key;
+      btn.title = t(key);
+      btn.setAttribute('aria-label', t(key));
+      document.body.classList.toggle('network-map-fullscreen-open', frame.classList.contains('is-pseudo-fullscreen'));
+      requestAnimationFrame(() => this.networkMap?.map?.invalidateSize());
+    };
+    const leavePseudo = () => frame.classList.remove('is-pseudo-fullscreen');
+    btn.addEventListener('click', async () => {
+      if (isOn()) {
+        if (document.fullscreenElement === frame) {
+          try { await document.exitFullscreen(); } catch { /* already left */ }
+        }
+        leavePseudo();
+      } else if (native) {
+        // Some browsers refuse, or never settle the request (embedded views
+        // without fullscreen permission): if the frame is not full screen
+        // shortly after asking, the overlay takes over.
+        try {
+          await Promise.race([
+            frame.requestFullscreen({ navigationUI: 'hide' }),
+            new Promise((resolve) => setTimeout(resolve, 700)),
+          ]);
+        } catch { /* refused: overlay below */ }
+        if (document.fullscreenElement !== frame) frame.classList.add('is-pseudo-fullscreen');
+      } else {
+        frame.classList.add('is-pseudo-fullscreen');
+      }
+      sync();
+    });
+    document.addEventListener('fullscreenchange', sync);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && frame.classList.contains('is-pseudo-fullscreen')) {
+        leavePseudo();
+        sync();
+      }
+    });
+    sync();
   }
 
   /**
