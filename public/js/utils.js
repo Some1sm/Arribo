@@ -149,11 +149,23 @@
      * derived from the colour. No inline styles, so it scales to any number
      * of lines.
      */
+    /**
+     * Validates a hex CSS color (#rgb or #rrggbb) before interpolating into
+     * inline styles or SVG attributes.
+     */
+    safeCssColor(value, fallback = '#009485') {
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(trimmed)) return trimmed;
+      }
+      return fallback;
+    },
+
     applyLineColors(lines) {
       const doc = global.document;
       if (!doc || !Array.isArray(lines)) return;
       const hex = v => (typeof v === 'string' && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(v.trim()) ? v.trim() : null);
-      const quote = s => String(s).replace(/["\\]/g, '\\$&');
+      const quote = s => String(s).replace(/[\r\n]/g, ' ').replace(/["\\]/g, '\\$&');
       const rules = [];
       for (const l of lines) {
         const color = hex(l?.color);

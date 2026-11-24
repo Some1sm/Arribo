@@ -2,7 +2,13 @@
    BAD AMB BUS TRACKER — MODERN DESIGN SYSTEM & MULTI-THEME ENGINE
    =================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+/* Fonts are loaded via non-blocking <link> tags in the HTML head. */
+
+.telemetry-progress-text {
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: var(--text-primary);
+}
 
 .stop-hourly-section { padding: 1rem; }
 .stop-hourly-section p { color: var(--text-secondary); font-size: .85rem; margin: .7rem 0; }
@@ -87,7 +93,8 @@
 .stop-heatmap tbody th[scope="row"]:hover,
 .stop-heatmap tbody th[scope="row"]:focus-visible {
   color: var(--brand-primary);
-  outline: none;
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
 }
 .stop-heatmap thead th[data-hour] {
   cursor: pointer;
@@ -97,7 +104,8 @@
 .stop-heatmap thead th[data-hour]:focus-visible {
   color: var(--brand-primary) !important;
   background: var(--bg-surface-elevated, #1a2337) !important;
-  outline: none;
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
 }
 
 .heat-regular { background: rgba(16,185,129,.16); }
@@ -854,6 +862,11 @@ body {
   transform: translateY(0);
 }
 
+.btn-icon:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
 /* Theme Icon Display Logic */
 [data-theme="dark"] .theme-icon-sun {
   display: block;
@@ -1371,6 +1384,12 @@ body {
   outline: none;
   max-width: 180px;
   min-width: 0;
+}
+
+.target-stop-select:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
 }
 
 .target-stop-select option {
@@ -5989,6 +6008,12 @@ body {
   outline: none;
   font-family: inherit;
   box-sizing: border-box;
+}
+
+.planner-input:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+  border-radius: var(--radius-xs);
 }
 
 .btn-planner-geo,

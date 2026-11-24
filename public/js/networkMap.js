@@ -119,7 +119,8 @@ class NetworkMap extends TransitMap {
 
     this.map.on('popupopen', (e) => {
       const root = e.popup.getElement();
-      if (!root) return;
+      if (!root || root._arriboPopupBound) return;
+      root._arriboPopupBound = true;
       root.addEventListener('click', (ev) => {
         const shareBtn = ev.target.closest('[data-share-vehicle]');
         if (shareBtn && window.transitApp?.shareLiveBus) {

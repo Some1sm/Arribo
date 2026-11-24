@@ -8,7 +8,8 @@
   
   <!-- Web App Manifest & PWA Meta -->
   <link rel="manifest" href="/manifest.webmanifest">
-  <meta name="theme-color" content="#0ea5e9">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <meta name="theme-color" content="#10b981">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -26,7 +27,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
   
   <!-- App Styles -->
-  <link rel="stylesheet" href="/css/style.css?v=9.4.96">
+  <link rel="stylesheet" href="/css/style.css?v=9.4.97">
 </head>
 <body>
 
@@ -538,7 +539,7 @@
                 <span class="telemetry-label" data-i18n="veh.lblProgress">📊 Progrés Trajecte</span>
                 <div style="display:flex; align-items:center; gap:0.5rem; width:100%; margin-top:2px;">
                   <div class="telemetry-progress-track"><div class="telemetry-progress-fill" id="telemetry-progress-bar" style="width: 0%;"></div></div>
-                  <span id="telemetry-progress-text" style="font-weight:700; font-size:0.8rem; color:#fff;">0%</span>
+                  <span id="telemetry-progress-text" class="telemetry-progress-text">0%</span>
                 </div>
               </div>
             </div>
@@ -639,7 +640,7 @@
   </main>
 
   <!-- Universal Multi-City Line Selector Modal / Command Center -->
-  <div class="line-picker-modal-backdrop" id="line-picker-modal-backdrop">
+  <div class="line-picker-modal-backdrop" id="line-picker-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="line-picker-title">
     <div class="line-picker-modal">
       <button type="button" class="modal-close-btn" id="line-picker-close-btn" data-i18n-aria-label="common.closeWindow" aria-label="Tancar finestra">&times;</button>
       
@@ -669,7 +670,7 @@
   </div>
 
   <!-- Stop Departure Details Modal -->
-  <div class="stop-modal-backdrop" id="stop-modal-backdrop">
+  <div class="stop-modal-backdrop" id="stop-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-stop-name">
     <div class="stop-modal">
       <!-- Previous & Next Stop Navigation Bar with Clean Close Button -->
       <div class="stop-modal-nav-bar">
@@ -827,7 +828,7 @@
   </div>
 
   <!-- Active Proximity / Wake-up Alarm Overlay Modal -->
-  <div class="modal-backdrop alarm-alert-backdrop" id="alarm-alert-backdrop" style="display:none; z-index:9999;" role="alertdialog">
+  <div class="modal-backdrop alarm-alert-backdrop" id="alarm-alert-backdrop" style="display:none; z-index:9999;" role="alertdialog" aria-modal="true" aria-labelledby="alarm-alert-stop-name">
     <div class="alarm-alert-card">
       <div class="alarm-bell-pulse">⏰</div>
       <h2 class="alarm-alert-title" data-i18n="alarm.title">Estàs arribant a la teva parada!</h2>
@@ -857,16 +858,16 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   
   <!-- App Scripts -->
-  <script src="/js/utils.js?v=9.4.96"></script>
-  <script src="/js/i18n.js?v=9.4.96"></script>
-  <script src="/js/storage.js?v=9.4.96"></script>
-  <script src="/js/requests.js?v=9.4.96"></script>
-  <script src="/js/stopFeatures.js?v=9.4.96"></script>
-  <script src="/js/journeys.js?v=9.4.96"></script>
-  <script src="/js/journeyControls.js?v=9.4.96"></script>
-  <script src="/js/pwa.js?v=9.4.96"></script>
-  <script src="/js/map.js?v=9.4.96"></script>
-  <script src="/js/networkMap.js?v=9.4.96"></script>
-  <script src="/js/app.js?v=9.4.96"></script>
+  <script src="/js/utils.js?v=9.4.97"></script>
+  <script src="/js/i18n.js?v=9.4.97"></script>
+  <script src="/js/storage.js?v=9.4.97"></script>
+  <script src="/js/requests.js?v=9.4.97"></script>
+  <script src="/js/stopFeatures.js?v=9.4.97"></script>
+  <script src="/js/journeys.js?v=9.4.97"></script>
+  <script src="/js/journeyControls.js?v=9.4.97"></script>
+  <script src="/js/pwa.js?v=9.4.97"></script>
+  <script src="/js/map.js?v=9.4.97"></script>
+  <script src="/js/networkMap.js?v=9.4.97"></script>
+  <script src="/js/app.js?v=9.4.97"></script>
 </body>
 </html>

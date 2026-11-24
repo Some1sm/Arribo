@@ -2632,7 +2632,7 @@ class TransitApp {
         
         if (etaClockEl) {
           if (isDiff) {
-            etaClockEl.innerHTML = `${this.esc(t('stop.estTime'))} <strong>${clockTime}</strong> <span class="eta-sched-tag" title="${this.esc(t('stop.officialTitle'))}">(${this.esc(t('stop.official'))} <strong>${schedTime}</strong>)</span>`;
+            etaClockEl.innerHTML = `${this.esc(t('stop.estTime'))} <strong>${this.esc(clockTime)}</strong> <span class="eta-sched-tag" title="${this.esc(t('stop.officialTitle'))}">(${this.esc(t('stop.official'))} <strong>${this.esc(schedTime)}</strong>)</span>`;
           } else {
             etaClockEl.textContent = `${t('stop.estTime')} ${clockTime}`;
           }
@@ -2651,7 +2651,7 @@ class TransitApp {
             etaStatusText.textContent = next.originTerminalName ? t('stop.regulatingAt', { name: next.originTerminalName }) : t('stop.regulatingTerminus');
             if (next.originTerminalName && next.originDepartureTime) {
               if (etaClockEl) {
-                etaClockEl.innerHTML = `${this.esc(t('stop.arrivesHere'))} <strong>${this.formatTimeHHMM(next.departureTime)}</strong> <span style="color:var(--accent-regulating); font-weight:700; margin-left:6px;">(${this.esc(t('stop.leavesFrom', { name: next.originTerminalName }))} <strong>${this.formatTimeHHMM(next.originDepartureTime)}</strong>)</span>`;
+                etaClockEl.innerHTML = `${this.esc(t('stop.arrivesHere'))} <strong>${this.esc(this.formatTimeHHMM(next.departureTime))}</strong> <span style="color:var(--accent-regulating); font-weight:700; margin-left:6px;">(${this.esc(t('stop.leavesFrom', { name: next.originTerminalName }))} <strong>${this.esc(this.formatTimeHHMM(next.originDepartureTime))}</strong>)</span>`;
               }
             } else if (next.arrivalTime && next.departureTime) {
               const cleanArr = this.formatTimeHHMM(next.arrivalTime);
@@ -2660,11 +2660,11 @@ class TransitApp {
               const dSec = this.timeStringToSeconds(cleanDep);
               if (aSec < dSec) {
                 if (etaClockEl) {
-                  etaClockEl.innerHTML = `${this.esc(t('stop.plannedDeparture'))} <strong>${cleanDep}</strong> <span style="color:var(--accent-regulating); font-weight:700; margin-left:6px;">(${this.esc(t('stop.arrivalLabel'))} <strong>${cleanArr}</strong>)</span>`;
+                  etaClockEl.innerHTML = `${this.esc(t('stop.plannedDeparture'))} <strong>${this.esc(cleanDep)}</strong> <span style="color:var(--accent-regulating); font-weight:700; margin-left:6px;">(${this.esc(t('stop.arrivalLabel'))} <strong>${this.esc(cleanArr)}</strong>)</span>`;
                 }
               } else {
                 if (etaClockEl) {
-                  etaClockEl.innerHTML = `${this.esc(t('stop.plannedDeparture'))} <strong>${cleanDep}</strong>`;
+                  etaClockEl.innerHTML = `${this.esc(t('stop.plannedDeparture'))} <strong>${this.esc(cleanDep)}</strong>`;
                 }
               }
             }
@@ -2893,7 +2893,7 @@ class TransitApp {
         subtextTitle = t('dep.tomorrowTitle', { time: clockTime });
       } else if (dep.isRealTime) {
         if (schedTime && isDiff) {
-          subtextHtml = `<span>📅 ${this.esc(t('dep.timetableLabel'))} <strong class="sched-strong">${schedTime}</strong> <span class="dep-delay-note ${rawDelayMins >= 2 ? 'delay' : (rawDelayMins <= -1 ? 'early' : 'on-time')}">(${this.esc(delayText)})</span></span>`;
+          subtextHtml = `<span>📅 ${this.esc(t('dep.timetableLabel'))} <strong class="sched-strong">${this.esc(schedTime)}</strong> <span class="dep-delay-note ${rawDelayMins >= 2 ? 'delay' : (rawDelayMins <= -1 ? 'early' : 'on-time')}">(${this.esc(delayText)})</span></span>`;
           subtextTitle = t(this.rtSourceKey('dep.tRealDiff'), { time: schedTime, delay: delayText });
         } else {
           subtextHtml = `<span>🟢 ${this.esc(t(this.rtSourceKey('dep.realtimeSub')))}</span>`;
@@ -2907,6 +2907,7 @@ class TransitApp {
         subtextTitle = t('dep.schedTitle');
       }
 
+      const safePillClass = /^[a-z0-9_-]+$/i.test(String(pillClass || '')) ? pillClass : 'scheduled';
       const linePrefix = dep.lineId ? t('dep.linePrefix', { id: dep.lineId }) : (this.activeLineId ? t('dep.linePrefix', { id: this.activeLineId }) : '');
       const etaSuffix = minsText ? `, ${minsText}` : '';
 
@@ -2915,19 +2916,19 @@ class TransitApp {
              data-vehicle-id="${this.esc(resolvedVehicleId)}"
              data-bus-lat="${this.esc(resolvedLat)}"
              data-bus-lon="${this.esc(resolvedLon)}"
-             data-stop-seq="${targetStopSeq || ''}"
-             data-stop-id="${targetStopId || ''}"
+             data-stop-seq="${this.esc(targetStopSeq || '')}"
+             data-stop-id="${this.esc(targetStopId || '')}"
              data-dep-index="${idx}"
              ${hasActiveBus ? 'tabindex="0" role="button"' : 'role="listitem"'}
              aria-label="${this.esc(t(hasActiveBus ? 'dep.ariaLocate' : 'dep.ariaPlain', { prefix: linePrefix, time: depTime, dest: cleanDest, eta: etaSuffix }))}"
              title="${hasActiveBus ? this.esc(t('dep.locateTitle')) : ''}">
           <div class="dep-time-group">
             <div class="dep-time-row">
-              <span class="dep-clock">${depTime}</span>
+              <span class="dep-clock">${this.esc(depTime)}</span>
               ${isRegulating
-                ? `<span class="dep-regulating-pill" title="${this.esc(regBadgeTitle)}">${regBadgeText}</span>`
+                ? `<span class="dep-regulating-pill" title="${this.esc(regBadgeTitle)}">${this.esc(regBadgeText)}</span>`
                 : (isDiff ? `<span class="dep-sched-pill" title="${this.esc(t('dep.officialTitle', { time: schedTime }))}">${this.esc(t('dep.officialPill', { time: schedTime }))}</span>` : '')}
-              ${(!isParkedAtTerminal && tagLabel) ? `<span class="dep-tag-sub ${(isFirstMorning || isFirstToday) ? 'first-service' : ''}" title="${this.esc(tagLabel)}">${tagLabel}</span>` : ''}
+              ${(!isParkedAtTerminal && tagLabel) ? `<span class="dep-tag-sub ${(isFirstMorning || isFirstToday) ? 'first-service' : ''}" title="${this.esc(tagLabel)}">${this.esc(tagLabel)}</span>` : ''}
               ${this.platformChip(dep)}
             </div>
             <div class="dep-dest" title="${this.esc(t('dep.towards'))} ${this.esc(cleanDest)}">
@@ -2938,8 +2939,8 @@ class TransitApp {
             </div>
           </div>
           <div class="dep-status">
-            <span class="dep-mins" style="${(isFirstMorning || isFirstToday) ? 'color:#fbbf24;' : (isTomorrow ? 'color:#94a3b8;' : '')}">${minsText}</span>
-            <span class="dep-delay-pill ${pillClass}" title="${this.esc((dep.isEstimated && rawDelayMins >= 2) ? pillLabel : (dep.delayBadgeText || pillLabel))}">
+            <span class="dep-mins" style="${(isFirstMorning || isFirstToday) ? 'color:#fbbf24;' : (isTomorrow ? 'color:#94a3b8;' : '')}">${this.esc(minsText)}</span>
+            <span class="dep-delay-pill ${safePillClass}" title="${this.esc((dep.isEstimated && rawDelayMins >= 2) ? pillLabel : (dep.delayBadgeText || pillLabel))}">
               ${this.esc(pillLabel)}
             </span>
             ${hasActiveBus ? `
@@ -5520,19 +5521,12 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
 
   setupDisruptionsModal() {
     const openBtn = document.getElementById('btn-open-incidents');
-    const bannerBtn = document.getElementById('btn-view-disruption-details');
     const backdrop = document.getElementById('disruptions-modal-backdrop');
     const closeBtn = document.getElementById('disruptions-modal-close-btn');
 
     openBtn?.addEventListener('click', (e) => {
       e.preventDefault();
       this.openDisruptionsModal('');
-    });
-
-    bannerBtn?.addEventListener('click', (e) => {
-      e.preventDefault();
-      const code = this.activeLineData?.code || this.activeLineData?.id || '';
-      this.openDisruptionsModal(code);
     });
 
     closeBtn?.addEventListener('click', () => {
@@ -5546,8 +5540,17 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
     });
 
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && backdrop?.classList.contains('active')) {
+      if (e.key !== 'Escape') return;
+      if (backdrop?.classList.contains('active')) {
         backdrop.classList.remove('active');
+      } else if (document.getElementById('stop-modal-backdrop')?.classList.contains('active')) {
+        this.closeStopModal?.();
+      } else if (document.getElementById('zone-picker-modal-backdrop')?.classList.contains('active')) {
+        this.closeZonePicker?.();
+      } else if (document.getElementById('planner-modal-backdrop')?.classList.contains('active')) {
+        document.getElementById('planner-modal-backdrop').classList.remove('active');
+      } else if (document.getElementById('alarm-alert-backdrop')?.style.display === 'flex') {
+        this.dismissProximityAlert?.();
       }
     });
   }
@@ -5773,7 +5776,11 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
   }
 
   ensureNetworkMap() {
-    if (this.networkMap) return this.networkMap;
+    if (this.networkMap) {
+      this.startNetworkMapTimer();
+      this.networkMap.startAnimationLoop?.();
+      return this.networkMap;
+    }
     const container = document.getElementById('network-map-container');
     if (!container || typeof window.NetworkMap !== 'function') return null;
 
@@ -5796,6 +5803,7 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
     });
     this.refreshNetworkMap(true);
     this.startNetworkMapTimer();
+    this.networkMap.startAnimationLoop?.();
     return this.networkMap;
   }
 
@@ -6060,9 +6068,10 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
     });
 
     this.fleetSource.onerror = () => {
-      // EventSource auto-reconnects; degrade to polling while disconnected.
+      // EventSource auto-reconnects; startAutoRefresh already shortens its cadence
+      // to this.pollInterval whenever fleetStreamOk is false (avoid double polling).
       this.fleetStreamOk = false;
-      this.startFleetPolling();
+      if (!this.pollTimer) this.startFleetPolling();
     };
   }
 
@@ -6634,26 +6643,22 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
     // Global listeners registered once for all planner autocomplete instances
     if (!this._plannerAutocompleteGlobalBound) {
       this._plannerAutocompleteGlobalBound = true;
-      document.addEventListener('click', (e) => {
-        if (!e.target.closest('.planner-input-wrapper, .planner-input-group, .planner-dropdown')) {
-          document.querySelectorAll('.planner-dropdown').forEach(dd => {
-            dd.classList.remove('active');
-          });
-        }
-      });
-
-      window.addEventListener('blur', () => {
+      const hideAllDropdowns = () => {
         document.querySelectorAll('.planner-dropdown').forEach(dd => {
           dd.classList.remove('active');
+          dd.style.display = 'none';
         });
+      };
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('.planner-input-wrapper, .planner-input-group, .planner-dropdown')) {
+          hideAllDropdowns();
+        }
       });
 
+      window.addEventListener('blur', hideAllDropdowns);
+
       document.addEventListener('visibilitychange', () => {
-        if (document.hidden) {
-          document.querySelectorAll('.planner-dropdown').forEach(dd => {
-            dd.classList.remove('active');
-          });
-        }
+        if (document.hidden) hideAllDropdowns();
       });
     }
 
@@ -6690,7 +6695,7 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
     container.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; padding:0 4px;">
         <span style="font-size:0.8rem; font-weight:700; color:var(--text-muted);">${this.esc(t(itineraries.length === 1 ? 'plannerModal.optionOne' : 'plannerModal.optionMany', { n: itineraries.length }))}</span>
-        <a href="/plan?from=${encodeURIComponent(origName)}&to=${encodeURIComponent(destName)}" target="_blank" class="maps-link" style="font-size:0.75rem; text-decoration:none; display:inline-flex; align-items:center; gap:4px;" title="${this.esc(t('plannerModal.fullPageTitle'))}">
+        <a href="/plan?from=${encodeURIComponent(origName)}&to=${encodeURIComponent(destName)}" target="_blank" rel="noopener noreferrer" class="maps-link" style="font-size:0.75rem; text-decoration:none; display:inline-flex; align-items:center; gap:4px;" title="${this.esc(t('plannerModal.fullPageTitle'))}">
           <span>${this.esc(t('plannerModal.fullPage'))}</span>
         </a>
       </div>
@@ -6866,6 +6871,11 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
       if (alarmBtn) alarmBtn.classList.remove('active');
       if (alarmBtnText) alarmBtnText.textContent = t('modal.alarmOff');
       return;
+    }
+
+    // Clear any prior geolocation watch before starting a new stop alarm.
+    if (this.activeProximityAlarm || this.alarmWatchId !== null && this.alarmWatchId !== undefined) {
+      this.clearProximityAlarm();
     }
 
     if (typeof Notification !== 'undefined' && Notification.permission !== 'granted' && Notification.permission !== 'denied') {

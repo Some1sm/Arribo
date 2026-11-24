@@ -219,6 +219,14 @@ class PlannerPageApp {
         const tmp = originInput.value;
         originInput.value = destInput.value;
         destInput.value = tmp;
+        for (const key of ['stopId', 'lat', 'lon', 'direction']) {
+          const origVal = originInput.dataset[key];
+          const destVal = destInput.dataset[key];
+          if (destVal !== undefined) originInput.dataset[key] = destVal;
+          else delete originInput.dataset[key];
+          if (origVal !== undefined) destInput.dataset[key] = origVal;
+          else delete destInput.dataset[key];
+        }
         if (originInput.value && destInput.value) {
           this.runSearch();
         }
@@ -238,6 +246,10 @@ class PlannerPageApp {
         const stopName = btn.getAttribute('data-stop');
         if (destInput) {
           destInput.value = stopName;
+          delete destInput.dataset.stopId;
+          delete destInput.dataset.lat;
+          delete destInput.dataset.lon;
+          delete destInput.dataset.direction;
           if (originInput && originInput.value.trim()) {
             this.runSearch();
           } else if (originInput) {
@@ -697,7 +709,18 @@ class PlannerPageApp {
     }
 
     const gpsBtn = document.getElementById('btn-page-planner-gps');
-    if (gpsBtn) gpsBtn.innerHTML = '<span>⏳...</span>';
+    if (gpsBtn?.disabled) return;
+    const originalHtml = gpsBtn ? gpsBtn.innerHTML : '';
+    if (gpsBtn) {
+      gpsBtn.disabled = true;
+      gpsBtn.innerHTML = '<span>⏳...</span>';
+    }
+    const restoreBtn = () => {
+      if (gpsBtn) {
+        gpsBtn.disabled = false;
+        gpsBtn.innerHTML = originalHtml;
+      }
+    };
 
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
@@ -717,11 +740,11 @@ class PlannerPageApp {
             }
           }
         } catch {}
-        if (gpsBtn) gpsBtn.innerHTML = '<span>GPS</span>';
+        restoreBtn();
       },
       () => {
         alert(this.t('plan.geoError'));
-        if (gpsBtn) gpsBtn.innerHTML = '<span>GPS</span>';
+        restoreBtn();
       },
       { timeout: 8000, enableHighAccuracy: true }
     );
@@ -1119,19 +1142,6 @@ class PlannerPageApp {
         `;
       }).join('')}
     `;
-
-    // Delegated click on container (AGENTS.md §8 compliant)
-    if (container && !container._hasItineraryDelegation) {
-      container._hasItineraryDelegation = true;
-      container.addEventListener('click', (e) => {
-        const card = e.target.closest('.planner-itinerary-card');
-        if (!card) return;
-        const idx = parseInt(card.getAttribute('data-itinerary-index'), 10);
-        if (!isNaN(idx)) {
-          this.selectItinerary(idx);
-        }
-      });
-    }
   }
 
   selectItinerary(index, repaintMap = true) {
@@ -1187,7 +1197,10 @@ class PlannerPageApp {
 
       if (generation !== this.searchGeneration) return;
       const selected = data.itineraries.findIndex(it => it.id === selectedId);
-      if (selectedId && selected < 0) { this.closeGuidedNavigation(); alert(this.t('plan.connectionLostAlert')); }
+      const connectionLost = Boolean(selectedId && selected < 0);
+      if (connectionLost) {
+        this.closeGuidedNavigation();
+      }
       this.activeItineraryIndex = Math.max(0, selected);
       this.currentItineraries = data.itineraries;
       this.lastOriginStop = data.originStop || this.lastOriginStop;
@@ -1195,6 +1208,16 @@ class PlannerPageApp {
 
       // Re-render itinerary cards with fresh real-time/scheduled data
       this.renderItineraries(this.currentItineraries, this.lastOriginStop, this.lastDestStop);
+      if (connectionLost) {
+        const resultsEl = document.getElementById('page-planner-results');
+        if (resultsEl) {
+          const notice = document.createElement('div');
+          notice.className = 'plan-refresh-notice';
+          notice.setAttribute('role', 'status');
+          notice.textContent = this.t('plan.connectionLostAlert');
+          resultsEl.prepend(notice);
+        }
+      }
 
       // Preserve active card without re-fitting map bounds
       this.selectItinerary(this.activeItineraryIndex, false);

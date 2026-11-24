@@ -66,6 +66,7 @@ class ObservatoriApp {
   }
 
   init() {
+    window.TransitPwa?.init?.();
     this.initTheme();
     this.initUrlState();
     this.bindEvents();
@@ -76,14 +77,20 @@ class ObservatoriApp {
   }
 
   initTheme() {
-    const savedTheme = localStorage.getItem('arribo_theme') || 'dark';
+    const savedTheme = window.TransitUtils?.getStoredTheme
+      ? window.TransitUtils.getStoredTheme()
+      : (localStorage.getItem('arribo_theme') || 'dark');
     document.documentElement.setAttribute('data-theme', savedTheme);
     const themeBtn = document.getElementById('btn-page-theme-toggle');
     themeBtn?.addEventListener('click', () => {
       const current = document.documentElement.getAttribute('data-theme') || 'dark';
       const next = current === 'dark' ? 'light' : 'dark';
       document.documentElement.setAttribute('data-theme', next);
-      localStorage.setItem('arribo_theme', next);
+      if (window.TransitUtils?.setStoredTheme) {
+        window.TransitUtils.setStoredTheme(next);
+      } else {
+        localStorage.setItem('arribo_theme', next);
+      }
     });
   }
 
@@ -576,7 +583,12 @@ class ObservatoriApp {
       try {
         const res = await fetch(`/api/analytics/gps-gaps/paths?ids=${ids.join(',')}`).then(r => r.json());
         failed = !(res && res.success);
-        for (const p of (res && res.paths) || []) this.gpsGapPathCache.set(p.id, p);
+        for (const p of (res && res.paths) || []) {
+          this.gpsGapPathCache.set(p.id, p);
+          if (this.gpsGapPathCache.size > 200) {
+            this.gpsGapPathCache.delete(this.gpsGapPathCache.keys().next().value);
+          }
+        }
       } catch {
         failed = true;
       }
@@ -3117,6 +3129,9 @@ class ObservatoriApp {
       if (res && res.success) {
         if (this._incidentCache) {
           this._incidentCache.set(cacheKey, { data: res, timestamp: Date.now() });
+          if (this._incidentCache.size > 30) {
+            this._incidentCache.delete(this._incidentCache.keys().next().value);
+          }
         }
         this.lastIncidentData = res;
         this.renderDelayIncidentsView(res, lineCode, hours, viewMode);
@@ -4786,7 +4801,7 @@ class ObservatoriApp {
             </div>
           </div>
           <div class="monthly-report-controls">
-            <span class="monthly-controls-label" style="font-size:0.8rem; color:var(--text-secondary);">${this.esc(this.t('dades.mSelectMonth'))}</span>
+            <label for="monthly-report-month-input" class="monthly-controls-label" style="font-size:0.8rem; color:var(--text-secondary);">${this.esc(this.t('dades.mSelectMonth'))}</label>
             <input type="month" id="monthly-report-month-input" class="monthly-report-month-input" value="${this.esc(data.month)}">
             <button type="button" class="btn-print-report" id="btn-print-monthly-report" title="${this.esc(this.t('dades.mPrintTip'))}">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
@@ -4826,6 +4841,7 @@ class ObservatoriApp {
 
         <!-- Per Line Breakdown -->
         <h4 style="margin:1.5rem 0 0.5rem 0; font-size:0.95rem; color:var(--text-primary);">${this.esc(this.t('dades.mSec2'))}</h4>
+        <div class="observatori-table-wrapper">
         <table class="monthly-report-table">
           <thead>
             <tr>
@@ -4843,9 +4859,11 @@ class ObservatoriApp {
             ${linesRows}
           </tbody>
         </table>
+        </div>
 
         <!-- Per Hour Breakdown -->
         <h4 style="margin:1.5rem 0 0.5rem 0; font-size:0.95rem; color:var(--text-primary);">${this.esc(this.t('dades.mSec3'))}</h4>
+        <div class="observatori-table-wrapper">
         <table class="monthly-report-table">
           <thead>
             <tr>
@@ -4862,9 +4880,11 @@ class ObservatoriApp {
             ${hourlyRows}
           </tbody>
         </table>
+        </div>
 
         <!-- Worst Stops (>= 50 visits) -->
         <h4 style="margin:1.5rem 0 0.5rem 0; font-size:0.95rem; color:var(--text-primary);">${this.esc(this.t('dades.mSec4'))}</h4>
+        <div class="observatori-table-wrapper">
         <table class="monthly-report-table">
           <thead>
             <tr>
@@ -4882,6 +4902,7 @@ class ObservatoriApp {
             ${worstRows}
           </tbody>
         </table>
+        </div>
 
         <!-- Methodology & Audit Invariants -->
         <div class="monthly-methodology-box">

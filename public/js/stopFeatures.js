@@ -58,21 +58,30 @@
   handleNearbyStopsRequest() {
     const t = (k, v, fb) => (global.ArriboI18n ? global.ArriboI18n.t(k, v) : fb);
     const geoBtn = document.getElementById('btn-hero-geo');
+    if (geoBtn?.disabled) return;
     const originalHtml = geoBtn ? geoBtn.innerHTML : '';
 
     if (geoBtn) {
+      geoBtn.disabled = true;
       geoBtn.innerHTML = `<span class="loading-spinner-inline" style="width:12px;height:12px;"></span> <span>${this.esc(t('stopFeat.locating', null, 'Localitzant...'))}</span>`;
     }
 
+    const restoreBtn = () => {
+      if (geoBtn) {
+        geoBtn.disabled = false;
+        geoBtn.innerHTML = originalHtml;
+      }
+    };
+
     const fallbackToZonePicker = () => {
-      if (geoBtn) geoBtn.innerHTML = originalHtml;
+      restoreBtn();
       this.openZonePicker();
     };
 
     if (typeof navigator !== 'undefined' && 'geolocation' in navigator && window.isSecureContext !== false) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          if (geoBtn) geoBtn.innerHTML = originalHtml;
+          restoreBtn();
           const { latitude, longitude } = pos.coords;
           // Inside the area the operators serve (from the line catalog); Mataró's box until one is known.
           const area = window.TransitUtils?.serviceArea?.();
@@ -99,7 +108,7 @@
     if (!modal || !grid) return;
 
     grid.innerHTML = MATARO_ZONES.map(z => `
-      <div class="zone-card" data-zone-id="${this.esc(z.id)}" data-lat="${z.lat}" data-lon="${z.lon}" data-name="${this.esc(z.name)}">
+      <div class="zone-card" role="button" tabindex="0" data-zone-id="${this.esc(z.id)}" data-lat="${this.esc(z.lat)}" data-lon="${this.esc(z.lon)}" data-name="${this.esc(z.name)}">
         <div class="zone-card-icon">${z.icon}</div>
         <div class="zone-card-info">
           <div class="zone-card-title">${this.esc(z.name)}</div>
@@ -175,13 +184,13 @@
           : `<div style="font-size:0.75rem; color:var(--text-muted);">${this.esc(t('stopFeat.clickFull', null, 'Fes clic per veure sortides completes'))}</div>`;
 
         return `
-          <div class="landing-nearby-card" data-stop-id="${this.esc(s.id)}" data-stop-name="${this.esc(s.name)}">
+          <div class="landing-nearby-card" role="button" tabindex="0" data-stop-id="${this.esc(s.id)}" data-stop-name="${this.esc(s.name)}">
             <div class="landing-nearby-card-header">
               <div>
                 <div class="landing-nearby-title">${this.esc(s.name)}</div>
                 <div class="landing-nearby-code">${this.esc(t('stopFeat.code', { code: s.code || s.id }, `Codi #${s.code || s.id}`))}</div>
               </div>
-              <span class="nearby-dist-badge">🚶 ${s.distanceMeters}m • ${s.walkingMinutes} min</span>
+              <span class="nearby-dist-badge">🚶 ${this.esc(s.distanceMeters)}m • ${this.esc(s.walkingMinutes)} min</span>
             </div>
             <div class="landing-nearby-lines">${linePills}</div>
             <div class="landing-fav-arrivals">${arrivalsHtml}</div>

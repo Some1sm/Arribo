@@ -117,7 +117,8 @@ class TransitMap {
     // Delegated handler replacing inline onclick in map popups (CSP compliance)
     this.map.on('popupopen', (e) => {
       const root = e.popup.getElement();
-      if (!root) return;
+      if (!root || root._arriboPopupBound) return;
+      root._arriboPopupBound = true;
       root.addEventListener('click', (ev) => {
         const shareBtn = ev.target.closest('[data-share-vehicle]');
         if (shareBtn && window.transitApp?.shareLiveBus) {
@@ -562,11 +563,11 @@ class TransitMap {
           if (onStopClick) {
             onStopClick(stop);
           } else {
-            window.c10App?.inspectStop(stopIdentifier, stop.name);
+            window.transitApp?.inspectStop(stopIdentifier, stop.name);
           }
         });
 
-        marker._stopMeta = { id: stopIdentifier, lineColor, maresme: isMaresme };
+        marker._stopMeta = { id: stopIdentifier, lineColor, maresme: isMaresme, isCancelled };
         const dotRoot = marker.getElement();
         marker._dotEl = dotRoot ? dotRoot.querySelector('.stop-marker-dot') : null;
         this.stopMarkers.push(marker);
@@ -632,7 +633,7 @@ class TransitMap {
             if (onStopClick) {
               onStopClick(stop);
             } else {
-              window.c10App?.inspectStop(stopIdentifier, stop.name);
+              window.transitApp?.inspectStop(stopIdentifier, stop.name);
             }
           });
 
@@ -1104,12 +1105,18 @@ class TransitMap {
     });
   }
 
-  fitRouteBounds() {
+  fitRouteBounds(attempt = 0) {
     if (!this.map) return;
+    if (this._fitBoundsTimer) {
+      clearTimeout(this._fitBoundsTimer);
+      this._fitBoundsTimer = null;
+    }
     this.map.invalidateSize({ pan: false });
     const size = this.map.getSize();
     if (!size || size.x === 0 || size.y === 0) {
-      setTimeout(() => this.fitRouteBounds(), 100);
+      if (attempt < 20) {
+        this._fitBoundsTimer = setTimeout(() => this.fitRouteBounds(attempt + 1), 100);
+      }
       return;
     }
 
@@ -1909,9 +1916,11 @@ class TransitMap {
       const currentPos = obj.marker.getLatLng();
       if (!currentPos) continue;
 
-      // 1. If parked in terminal layover, stay at terminal
+      // 1. If parked in terminal layover, stay at terminal without per-frame DOM writes
       if (bus.isTerminalLayover) {
-        obj.marker.setLatLng([bus.lat, bus.lon]);
+        if (Math.abs(currentPos.lat - bus.lat) > 0.000002 || Math.abs(currentPos.lng - bus.lon) > 0.000002) {
+          obj.marker.setLatLng([bus.lat, bus.lon]);
+        }
         continue;
       }
 
@@ -1959,30 +1968,37 @@ class TransitMap {
       // 3. Smooth shortest-angle rotation interpolation for direction cone
       if (targetBearing !== null) {
         let currentBearing = obj.currentBearing !== undefined ? obj.currentBearing : targetBearing;
-        let delta = (targetBearing - currentBearing + 540) % 360 - 180;
-        currentBearing = (currentBearing + delta * 0.12 + 360) % 360;
-        obj.currentBearing = currentBearing;
+        const delta = (targetBearing - currentBearing + 540) % 360 - 180;
+        if (Math.abs(delta) >= 0.5 || obj._lastRenderedAngle === undefined) {
+          currentBearing = (currentBearing + delta * 0.12 + 360) % 360;
+          obj.currentBearing = currentBearing;
+          const roundedAngle = Math.round(currentBearing);
+          const el = obj.marker.getElement();
+          if (el) {
+            if (roundedAngle !== obj._lastRenderedAngle) {
+              obj._lastRenderedAngle = roundedAngle;
+              const cone = obj.coneEl || (obj.coneEl = el.querySelector('.bus-heading-cone'));
+              if (cone) {
+                cone.style.transform = `rotate(${roundedAngle}deg)`;
+              }
+            }
 
-        const el = obj.marker.getElement();
-        if (el) {
-          const cone = obj.coneEl || (obj.coneEl = el.querySelector('.bus-heading-cone'));
-          if (cone) {
-            cone.style.transform = `rotate(${Math.round(currentBearing)}deg)`;
-          }
+            // Anti-flicker hysteresis for bus icon facing direction:
+            // Switch to West when pointing West (200°-340°), East when pointing East (20°-160°);
+            // preserve prior facing in north (340°-20°) and south (160°-200°) deadbands.
+            if (currentBearing >= 200 && currentBearing <= 340) {
+              obj.isFacingWest = true;
+            } else if (currentBearing >= 20 && currentBearing <= 160) {
+              obj.isFacingWest = false;
+            }
 
-          // Anti-flicker hysteresis for bus emoji facing direction:
-          // Only switch to West if strongly pointing West (> 200° and < 340°)
-          // Only switch to East if strongly pointing East (< 160° or > 20°)
-          // In the deadband zone (160°-200° and 340°-20°), preserve previous facing state to eliminate rapid flipping on curves
-          if (currentBearing >= 200 && currentBearing <= 340) {
-            obj.isFacingWest = true;
-          } else if (currentBearing <= 160 || (currentBearing >= 20 && currentBearing <= 160)) {
-            obj.isFacingWest = false;
-          }
-
-          const icon = obj.iconEl || (obj.iconEl = el.querySelector('.bus-icon-inner'));
-          if (icon) {
-            icon.style.transform = `scaleX(${obj.isFacingWest ? -1 : 1})`;
+            if (obj.isFacingWest !== obj._lastRenderedWest) {
+              obj._lastRenderedWest = obj.isFacingWest;
+              const icon = obj.iconEl || (obj.iconEl = el.querySelector('.bus-icon-inner'));
+              if (icon) {
+                icon.style.transform = `scaleX(${obj.isFacingWest ? -1 : 1})`;
+              }
+            }
           }
         }
       }

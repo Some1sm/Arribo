@@ -34,6 +34,9 @@
       const planner = global.planApp;
       if (offline) planner?.stopPolling();
       else if (planner?.lastSearchUrl) { planner.refreshLiveDepartures(); planner.startPolling(); }
+      if (!offline && global.transitApp?.activeLineId) {
+        global.transitApp.refreshAllData?.(false);
+      }
     };
     global.addEventListener('online', state);
     global.addEventListener('offline', state);
