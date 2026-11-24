@@ -311,24 +311,24 @@ func TestMovShouldAsk(t *testing.T) {
 	}
 	idle := map[int]movLineObs{53: {NextSched: now.Add(90 * time.Minute)}, 57: {}}
 	followed := []int{53, 57}
-	if movShouldAsk(now, obs(10*time.Minute, idle), true, followed) {
+	if movShouldAsk(now, obs(10*time.Minute, idle), true, followed, nil) {
 		t.Error("no bus due: should skip")
 	}
-	if !movShouldAsk(now, movStopObs{}, false, followed) {
+	if !movShouldAsk(now, movStopObs{}, false, followed, nil) {
 		t.Error("never asked: should ask")
 	}
 	live := map[int]movLineObs{53: {Live: true}, 57: {}}
-	if !movShouldAsk(now, obs(10*time.Minute, live), true, followed) {
+	if !movShouldAsk(now, obs(10*time.Minute, live), true, followed, nil) {
 		t.Error("live bus seen: should ask")
 	}
 	soon := map[int]movLineObs{53: {NextSched: now.Add(40 * time.Minute)}}
-	if !movShouldAsk(now, obs(10*time.Minute, soon), true, followed) {
+	if !movShouldAsk(now, obs(10*time.Minute, soon), true, followed, nil) {
 		t.Error("departure within 60 min: should ask")
 	}
-	if !movShouldAsk(now, obs(31*time.Minute, idle), true, followed) {
+	if !movShouldAsk(now, obs(31*time.Minute, idle), true, followed, nil) {
 		t.Error("30 minutes unasked: should ask")
 	}
-	if movShouldAsk(now, obs(29*time.Minute, idle), true, followed) {
+	if movShouldAsk(now, obs(29*time.Minute, idle), true, followed, nil) {
 		t.Error("29 minutes: still skipped")
 	}
 }

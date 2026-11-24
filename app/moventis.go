@@ -143,6 +143,12 @@ type movRoute struct {
 	// Geometry is the route's path from the site's KML ([lat, lon]); empty
 	// when it could not be fetched (the stops are joined instead).
 	Geometry [][2]float64 `json:"geometry,omitempty"`
+	// Shape is the Generalitat road shape that fits the route (gencatEnrich;
+	// nil: none fits), with each stop's distance along it and the shape's
+	// cumulative length, in metres. Not cached: rebuilt from the data file.
+	Shape      [][2]float64 `json:"-"`
+	ShapeAlong []float64    `json:"-"`
+	ShapeCum   []float64    `json:"-"`
 }
 
 // movStatic is the cached lines and routes.
@@ -699,11 +705,13 @@ func (s *movStatic) publishCatalog(lineIDs []int) {
 			d := rtLineDirection{DirectionID: i, Headsign: movTitle(rt.Dest)}
 			for _, st := range rt.Stops {
 				d.Stops = append(d.Stops, rtLineStop{ID: numToString(float64(st.ID)), Name: st.Name, Lat: st.Lat, Lon: st.Lon})
-				if len(rt.Geometry) < 2 {
+				if len(rt.Geometry) < 2 && len(rt.Shape) < 2 {
 					d.Geometry = append(d.Geometry, [2]float64{st.Lat, st.Lon})
 				}
 			}
-			if len(rt.Geometry) >= 2 {
+			if len(rt.Shape) >= 2 {
+				d.Geometry = movShapeTrim(rt) // the Generalitat road shape, first to last stop
+			} else if len(rt.Geometry) >= 2 {
 				d.Geometry = rt.Geometry
 			} else {
 				d.GeometryFromStops = true
@@ -905,9 +913,10 @@ func movSamples(s *movStatic, lineIDs []int) []movSample {
 // scheduled within movSkipAhead, except that every stop is asked at least
 // every movMaxAskGap, to notice extra trips.
 const (
-	movSkipAhead = 60 * time.Minute // next timetable departure further than this
-	movObsFresh  = 60 * time.Minute // an answer older than this tells nothing
-	movMaxAskGap = 30 * time.Minute // longest a stop goes unasked
+	movSkipAhead  = 60 * time.Minute // next timetable departure further than this
+	movObsFresh   = 60 * time.Minute // an answer older than this tells nothing
+	movMaxAskGap  = 30 * time.Minute // longest a stop goes unasked
+	movIdleAskGap = 2 * time.Hour    // the same while the timetable has nothing due there
 )
 
 // movLineObs is what a stop's answer showed for one followed line.
@@ -951,25 +960,48 @@ func movNextSched(horas []string, at time.Time) time.Time {
 
 // movShouldAsk decides whether a sampled stop is asked at now. followed are
 // the followed lines serving it; obs is its last answer (ok false: never
-// asked, or forgotten).
-func movShouldAsk(now time.Time, obs movStopObs, ok bool, followed []int) bool {
+// asked, or forgotten). due, when not nil, is the Generalitat timetable: when
+// a line is next due at the stop (ok false: it does not know). A stop is
+// asked when a bus was live there, or a departure is due within
+// movSkipAhead by the last answer or by the timetable, and at least every
+// movMaxAskGap to notice extra trips; that gap stretches to movIdleAskGap
+// while the timetable knows every followed line there and has none due.
+func movShouldAsk(now time.Time, obs movStopObs, ok bool, followed []int, due func(lineID int) (time.Time, bool)) bool {
 	if !ok || obs.At.IsZero() {
 		return true
 	}
 	age := now.Sub(obs.At)
-	if age < 0 || age >= movMaxAskGap || age >= movObsFresh {
+	if age < 0 {
 		return true
 	}
-	for _, l := range followed {
-		o := obs.Lines[l] // a line the answer did not list: no bus shown
-		if o.Live {
-			return true
-		}
-		if !o.NextSched.IsZero() && o.NextSched.Sub(now) <= movSkipAhead {
-			return true
+	if age < movObsFresh {
+		for _, l := range followed {
+			o := obs.Lines[l] // a line the answer did not list: no bus shown
+			if o.Live {
+				return true
+			}
+			if !o.NextSched.IsZero() && o.NextSched.Sub(now) <= movSkipAhead {
+				return true
+			}
 		}
 	}
-	return false
+	idle := due != nil && len(followed) > 0
+	for _, l := range followed {
+		if due == nil {
+			break
+		}
+		t, known := due(l)
+		if known && !t.IsZero() && t.Sub(now) <= movSkipAhead {
+			return true
+		}
+		if !known || !t.IsZero() && t.Sub(now) <= movIdleAskGap {
+			idle = false
+		}
+	}
+	if idle {
+		return age >= movIdleAskGap
+	}
+	return age >= movMaxAskGap
 }
 
 // routeFor is the route of a followed line that a prediction at stopID
@@ -999,6 +1031,16 @@ func (s *movStatic) routeFor(lineID, stopID int, dest string) (movRoute, bool) {
 
 func (p *movPoller) run(ctx context.Context) {
 	static := p.loadCache()
+	// enriched is the last static given the Generalitat shapes (gencatEnrich
+	// makes a new value, so a changed static is noticed by its pointer).
+	var enriched *movStatic
+	enrich := func() {
+		if static != nil && static != enriched {
+			static = gencatEnrich(static)
+			enriched = static
+		}
+	}
+	enrich()
 	if static != nil {
 		// The cached lines are listed at once, also while a refresh runs.
 		p.mu.Lock()
@@ -1027,6 +1069,7 @@ func (p *movPoller) run(ctx context.Context) {
 				continue
 			}
 		}
+		enrich()
 		p.mu.Lock()
 		p.static = static
 		p.mu.Unlock()
@@ -1053,7 +1096,7 @@ func (p *movPoller) run(ctx context.Context) {
 			p.mu.Lock()
 			obs, seenBefore := p.obs[sm.StopID]
 			p.mu.Unlock()
-			if !movShouldAsk(time.Now(), obs, seenBefore, stopLines[sm.StopID]) {
+			if now := time.Now(); !movShouldAsk(now, obs, seenBefore, stopLines[sm.StopID], movDueFunc(sm.StopID, now)) {
 				skipped++
 				continue
 			}

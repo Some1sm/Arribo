@@ -21,7 +21,7 @@ const FILES = [
   'src/data/mataro_schedules.json',
   'data/cities/mataro/mataro_routes_full.json',
   'data/cities/mataro/mataro_paradas.json',
-  'data/moventis/gencat_casas.json',
+  'src/data/gencat_casas.json',
   'src/data/fares.json',
   'src/data/renfe_fleet.json',
 ];

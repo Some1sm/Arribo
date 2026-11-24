@@ -144,7 +144,8 @@ func movRouteSpeed(pts []movPoint) float64 {
 }
 
 // movAt is the position at km along the route (between its stops) and the
-// heading there.
+// heading there: on the Generalitat road shape when one fits the route,
+// else on the straight line between the two stops.
 func movAt(rt movRoute, km float64) (lat, lon, bearing float64) {
 	st := rt.Stops
 	for i := 1; i < len(st); i++ {
@@ -153,6 +154,12 @@ func movAt(rt movRoute, km float64) (lat, lon, bearing float64) {
 			f := 0.0
 			if b.Km > a.Km {
 				f = math.Min(math.Max((km-a.Km)/(b.Km-a.Km), 0), 1)
+			}
+			if len(rt.Shape) >= 2 && len(rt.ShapeAlong) == len(st) {
+				// Along the road: the same share of the way between the two
+				// stops, measured on the Generalitat shape.
+				m := rt.ShapeAlong[i-1] + f*(rt.ShapeAlong[i]-rt.ShapeAlong[i-1])
+				return movShapeAt(rt.Shape, rt.ShapeCum, m)
 			}
 			lat = a.Lat + (b.Lat-a.Lat)*f
 			lon = a.Lon + (b.Lon-a.Lon)*f
@@ -259,7 +266,7 @@ func (s *Server) hMoventis(q *xreq, res *xres) error {
 			"requestGapSec", movMinGap.Seconds(), "staticAt", movStaticAt(snap.Static))
 	}
 	res.json(O("success", true, "enabled", true, "agencyId", movAgencyID, "mode", "bus",
-		"attribution", movAttribution,
+		"attribution", movAttributionText(),
 		"positionsEstimated", true, "lines", lines, "vehicles", vehicles, "status", status))
 	return nil
 }

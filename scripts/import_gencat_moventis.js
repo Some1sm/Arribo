@@ -3,7 +3,7 @@
 /**
  * Cuts the seven Empresa Casas (Moventis) lines through Mataró out of the
  * Generalitat de Catalunya interurban bus GTFS and writes
- * data/moventis/gencat_casas.json (data-file format, see
+ * src/data/gencat_casas.json (data-file format, see
  * scripts/lib/dataJson.js), with a stop crosswalk to the moventis.es stop ids.
  *
  *   node scripts/import_gencat_moventis.js                 # download + moventis.es
@@ -196,7 +196,7 @@ function nameSimilarity(a, b) {
 // ---- args ------------------------------------------------------------------
 
 function parseArgs(argv) {
-  const o = { out: path.join(ROOT, 'data/moventis/gencat_casas.json'), tolerance: 5 };
+  const o = { out: path.join(ROOT, 'src/data/gencat_casas.json'), tolerance: 5 };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--zip') o.zip = argv[++i];

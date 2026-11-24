@@ -3,7 +3,7 @@
 /**
  * test/gencat_casas_data_test.js
  *
- * data/moventis/gencat_casas.json is cut out of the Generalitat interurban GTFS
+ * src/data/gencat_casas.json is cut out of the Generalitat interurban GTFS
  * by scripts/import_gencat_moventis.js: the seven Empresa Casas lines through
  * Mataró, their stops, shapes, trips, calendar and the crosswalk to the
  * moventis.es stop ids. This guards its format and basic invariants.
@@ -15,11 +15,11 @@ const path = require('node:path');
 const { dataFileText } = require('../scripts/lib/dataJson');
 const { zipEntries, simplify, nameSimilarity } = require('../scripts/import_gencat_moventis');
 
-const FILE = path.join(__dirname, '..', 'data/moventis/gencat_casas.json');
+const FILE = path.join(__dirname, '..', 'src/data/gencat_casas.json');
 const text = fs.readFileSync(FILE, 'utf8').replace(/\r\n/g, '\n');
 const data = JSON.parse(text);
 
-assert.equal(text, dataFileText(data), 'gencat_casas.json is in the data-file format (node scripts/lib/dataJson.js data/moventis/gencat_casas.json)');
+assert.equal(text, dataFileText(data), 'gencat_casas.json is in the data-file format (node scripts/lib/dataJson.js src/data/gencat_casas.json)');
 assert.ok(text.length < 5 * 1024 * 1024, 'file stays under 5 MB');
 
 // Feed metadata

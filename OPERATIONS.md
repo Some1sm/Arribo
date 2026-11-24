@@ -335,7 +335,7 @@ example), rewrite it with `node scripts/lib/dataJson.js <file>`;
 
 ### Moventis static data from the Generalitat GTFS
 
-`data/moventis/gencat_casas.json` holds the seven Empresa Casas (Moventis) lines through
+`src/data/gencat_casas.json` holds the seven Empresa Casas (Moventis) lines through
 Mataró (C-10, C-20, C-30, e11.1, e11.2, 865, N-80), cut out of the Generalitat de
 Catalunya interurban bus GTFS: stops, simplified road shapes, trips with the published
 departure time at every stop, the calendar of the services they use, and a crosswalk from
@@ -352,8 +352,34 @@ run takes about 1.5 minutes. `--moventis-cache DIR` saves and reuses the raw ans
 statistics and the list of unmatched stops, then run `npm test`. Times keep the feed's
 non-zero seconds (they come from a speed/distance export, not from timepoints). The
 data is under the "Llicència oberta d'ús d'informació – Catalunya": credit
-"Generalitat de Catalunya" wherever it is shown and do not alter its meaning. Nothing in
-the Go server reads this file yet.
+"Generalitat de Catalunya" wherever it is shown and do not alter its meaning. It lives
+in `src/data/` (baked into the image) because production mounts `./data` over the
+image's `data/`.
+
+The server (`app/moventisgencat.go`) reads it once at start-up and uses it for two things:
+
+- **Shapes** (plan step 2.3). Each moventis.es route gets the Generalitat shape of its line
+  that fits it best: its stops, in order, are projected onto the shape (never going back, so
+  loops and out-and-back streets keep their order), and the shape is used when at least 90%
+  of the stops lie within 150 m. The line view draws it from the first to the last stop, and
+  an estimated bus between two stops is placed at the same share of the way along the road
+  instead of on the straight line. Without a fitting shape the moventis.es KML is drawn and
+  buses go straight between stops, as before. On 2026-11-24 every route fitted; the stops
+  off their shape were the "(Habilitada)" temporary stops of a diversion and the N-80
+  terminus at Mataró station.
+- **When a line is due** (plan step 2.4). Before asking a sampled stop, the poller looks up
+  when each followed line is next due there by the timetable. A departure due within 60 min
+  makes it ask, like a timetable time in the stop's last answer; while the timetable knows
+  every line at the stop and has none due within two hours, the "ask every 30 min anyway"
+  re-ask stretches to every two hours (night hours, the N-80 by day). A line or stop not in
+  the file keeps the old rules.
+- **Feed gaps.** A day on which the file has no trip of a line at all is read as "the
+  timetable does not know", never as "no bus": the 23 Nov 2026 feed gave the C-10's weekday
+  service (184910) dates only from January 2027, so by the file the C-10 ran no weekday trip
+  in 2026. Check this after each refresh (`TestGencatTimetable` uses a Saturday).
+
+The Moventis attribution in the API (`attribution`) reads "… · Recorreguts i horaris:
+Generalitat de Catalunya" while the file is loaded.
 
 ### Yearly seasonal upkeep checklist
 

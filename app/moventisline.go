@@ -46,7 +46,7 @@ func movLineBuses(code, direction string, now time.Time) []any {
 		b.Set("delayFormatted", "Posició estimada")
 		b.Set("isGhostVehicle", false)
 		b.Set("agency", movOperator.Name)
-		b.Set("attribution", movAttribution)
+		b.Set("attribution", movAttributionText())
 		out = append(out, b)
 	}
 	return out
@@ -130,7 +130,7 @@ func movStopDepartures(stop rtLineStop, code string, now time.Time) *Obj {
 		// not_sampled: the poller does not ask this stop (it samples about
 		// one stop per 1.5 km); no_tracked_bus: asked, no tracked bus coming.
 		"note", strOrNil(note),
-		"attribution", movAttribution,
+		"attribution", movAttributionText(),
 	)
 }
 

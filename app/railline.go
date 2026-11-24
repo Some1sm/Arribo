@@ -366,7 +366,7 @@ func (s *Server) hRailLine(q *xreq, res *xres, kind string) bool {
 // railAttribution is the attribution an operator's licence asks for.
 func railAttribution(agencyID string) any {
 	if agencyID == movAgencyID {
-		return movAttribution
+		return movAttributionText()
 	}
 	return trainAttribution[agencyID]
 }

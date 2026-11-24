@@ -79,8 +79,8 @@ Goal: official stops, calendar and road-accurate shapes for the seven lines, und
 |---|---|---|---|---|
 | 2.1 | `[x]` | **Script to cut the seven lines out of the Generalitat GTFS.** Source: `busos-interurbans-GTFS.zip`, no key. Route ids: 0498 C-10, 0501 C-20, 0495 C-30, 0496 e11.1, 0497 e11.2, 0502 865, 0109 N-80. The script writes a compact checked-in data file in the `scripts/lib/dataJson.js` format. Quirks to handle: leading spaces in the `stop_times.txt` header, non-zero seconds in times, rider-facing codes found only inside `route_long_name`, and `nota.txt`. | new `scripts/import_gencat_moventis.js`, `data/…` | the file exists; a test guards its format (done 2026-11-24: `scripts/import_gencat_moventis.js` -> `data/moventis/gencat_casas.json`, 362 KB, 650 trips, 12 services, shapes simplified at 5 m; guarded by `test/gencat_casas_data_test.js`; documented in OPERATIONS.md) |
 | 2.2 | `[x]` | **Stop crosswalk:** GTFS `stop_code` ↔ Moventis `COD_PARADA` (83/88 match for C-10). Match the rest by coordinates and name, then review by hand. | same script, data file | every sampled stop has a GTFS stop or an explicit "unmatched" entry (done 2026-11-24: 188 Moventis stop ids, 169 by stop_code, 9 by 60 m + name, 10 listed as unmatched in the file; C-10 84 of 86) |
-| 2.3 | `[ ]` | **Use the GTFS shapes for drawing and position estimates** instead of the moventis.es KML, keeping the KML as fallback. | `app/moventisline.go`, `app/moventisestimate.go` | maps unchanged or better; tests pass |
-| 2.4 | `[ ]` | **Use the GTFS timetable to know when each line runs** (feeds 1.3), and attribute the Generalitat. | `app/moventis.go`, about/credits page | — |
+| 2.3 | `[x]` | **Use the GTFS shapes for drawing and position estimates** instead of the moventis.es KML, keeping the KML as fallback. | `app/moventisline.go`, `app/moventisestimate.go` | maps unchanged or better; tests pass (done 2026-11-24: `app/moventisgencat.go` fits each route to its line's shapes, ordered projection, 90% of stops within 150 m; drawn trimmed to the route; buses placed along the road between stops; KML and straight lines stay the fallback. All 15 production routes fitted. The data file moved to `src/data/gencat_casas.json`, since `./data` is a volume in production) |
+| 2.4 | `[x]` | **Use the GTFS timetable to know when each line runs** (feeds 1.3), and attribute the Generalitat. | `app/moventis.go`, about/credits page | — (done 2026-11-24: `movShouldAsk` takes the timetable's next departure per line; due within 60 min asks, nothing due stretches the 30-min re-ask to 2 h; a day with no trip of a line in the file reads as unknown, because the feed gave the C-10 weekday service no 2026 dates. Credit added to every Moventis `attribution`; there is no separate credits page. Headways in `movHeadwayMin` are still the static table) |
 
 ---
 
@@ -147,6 +147,8 @@ Do each only after 0.1 and as its own poller. Order by value for Mataró users f
 
 Newest first. One line per session: date, who, steps touched, commit.
 
+- 2026-11-24, local session: steps 2.3, 2.4 (Generalitat shapes and timetable in the server; data file moved to `src/data/`).
+- 2026-11-24, local session: deployed the cloud branch after the VPS comparison (1 669 requests, only expected differences); fixed 3.5 (LD trip-id date a day behind, LD feed an hour late: left out while it lags).
 - 2026-11-24, cloud session (agent): steps 3.5, 3.3 (data)
 - 2026-11-24, cloud session (agent): steps 4.1, 4.2, 4.4
 - 2026-11-24, cloud session (agent): steps 5.1, 5.3
