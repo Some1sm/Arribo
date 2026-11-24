@@ -162,6 +162,8 @@ func trainJSON(info operatorInfo, s *rtSnapshot, v *rtVehicle, now time.Time) *O
 	switch {
 	case v.ObservedAt > 0:
 		observed, timeSource = v.ObservedAt, "vehicle"
+	case v.Feed == "ld" && v.FeedTS > 0:
+		observed, timeSource = int64(v.FeedTS), "feed" // the LD feed's own header time
 	case s.FeedTimestamp > 0:
 		observed, timeSource = int64(s.FeedTimestamp), "feed"
 	}
@@ -197,7 +199,7 @@ func trainJSON(info operatorInfo, s *rtSnapshot, v *rtVehicle, now time.Time) *O
 	if id == "" {
 		id = label
 	}
-	return O(
+	o := O(
 		"id", info.ID+":"+id,
 		"agencyId", info.ID,
 		"mode", info.Mode,
@@ -230,6 +232,12 @@ func trainJSON(info operatorInfo, s *rtSnapshot, v *rtVehicle, now time.Time) *O
 		"delaySource", delaySource,
 		"delayDiscarded", discarded,
 	)
+	if v.Feed == "ld" {
+		// Additive, only on trains read from Renfe's long-distance feed: the
+		// line comes from matching the train number to the Rodalies timetable.
+		o.Set("feedVariant", "ld")
+	}
+	return o
 }
 
 // hTrains serves /api/trains. Not cached server-side (the snapshot is

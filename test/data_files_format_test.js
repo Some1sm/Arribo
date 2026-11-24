@@ -23,6 +23,7 @@ const FILES = [
   'data/cities/mataro/mataro_paradas.json',
   'data/moventis/gencat_casas.json',
   'src/data/fares.json',
+  'src/data/renfe_fleet.json',
 ];
 
 for (const rel of FILES) {

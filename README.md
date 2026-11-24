@@ -107,7 +107,7 @@ The repository targets a long-running Docker deployment; retired serverless conf
 | `VEHICLE_SNAPSHOT_INTERVAL_MS` | `60000` | Minimum interval between stored snapshots per vehicle |
 | `SNAPSHOT_RETENTION_HOURS` | `6` | Raw vehicle snapshot retention (GPS positions behind the /dades edge-case table) |
 | `DELAY_RETENTION_DAYS` | `30` | Delay-log retention |
-| `ARRIBO_GTFSRT` | `1` in compose | Rodalies and FGC feeds (GTFS-RT pollers and timetable imports) |
+| `ARRIBO_GTFSRT` | `1` in compose | Rodalies and FGC feeds (GTFS-RT pollers and timetable imports). The Rodalies poller also reads Renfe's long-distance feeds (`vehicle_positions_LD.pb`, `trip_updates_LD.pb`) for regional trains missing from the commuter feed: see [OPERATIONS.md](OPERATIONS.md#renfe-long-distance-feed-regional-trains) |
 | `ARRIBO_MOVENTIS` | `1` in compose | Moventis buses, estimated from the arrival predictions of moventis.es (`app/moventis.go`); `/api/moventis` |
 | `ARRIBO_MOVENTIS_LINES` | `47,48,51,53,57,59,68` | Moventis line ids to follow (the seven lines through Mataró). A stop's answer shows only the next live bus per line and direction, so stops are sampled about as far apart as consecutive buses (speed × headway, `movSpacingKm` in `app/moventis.go`): 31 stops, a ~6-minute cycle for the seven lines. Requests are 11 s apart (the site's crawl delay) |
 | `ARRIBO_SPECIAL_LINES` | `10,11,12` | Mataró SIRI line refs asked for special services (Les Santes "Bus Focs" lines), shown as "Servei especial" with no timetable. Asked by name every 5 min, and on every 20 s cycle for 30 min after one is seen; empty or `off` turns it off |

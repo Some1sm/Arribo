@@ -38,6 +38,8 @@ type rtVehicle struct {
 	DelayComputed          bool   // the delay was derived from predicted times and the timetable
 	LineCode, StopName     string // from the imported timetable (line: else the label's prefix); "" if unknown
 	DirectionID            int    // the trip's GTFS direction_id from the timetable; -1 if unknown
+	Feed                   string // "ld" for a train read from Renfe's long-distance feed; "" for the main feed
+	FeedTS                 uint64 // that feed's header time, the only time an LD train has
 }
 
 // rtSnapshot is a feed's latest state.
@@ -54,6 +56,10 @@ type rtSnapshot struct {
 	TripStops     map[string][]string // stops (FGC: platforms) each trip update names, in feed order
 	VehiclesErr   string
 	TripsErr      string
+	// Renfe long-distance feed (gtfsrtld.go): trains added from it, trains
+	// dropped for lack of a matching Rodalies trip, and its errors.
+	LDVehicles, LDDropped int
+	LDErr, LDTripsErr     string
 }
 
 // rtSource describes one operator's feeds.
@@ -63,7 +69,9 @@ type rtSource struct {
 	// is looked up from its dataset record and cached).
 	vehicleURL, tripURL func(context.Context) (string, error)
 	// alertURL returns the service-alerts feed (nil: none); fetched every railAlertEvery.
-	alertURL                func(context.Context) (string, error)
+	alertURL func(context.Context) (string, error)
+	// ldVehicleURL / ldTripURL: optional second feed with the trains the first lacks (Renfe long distance).
+	ldVehicleURL, ldTripURL string
 	vehicleEvery, tripEvery time.Duration
 	bounds                  *GeoBounds // keep only vehicles inside (Renfe covers all of Spain)
 	// staticURL is the operator's static GTFS zip, imported daily into the
@@ -94,6 +102,8 @@ type rtPoller struct {
 	computed                                 int                    // delays derived from predicted times in the last trip feed
 	computedTrips                            map[string]bool        // which trips those were (guarded by mu; replaced, never mutated)
 	canceled                                 map[string]bool        // trips marked CANCELED in the last trip feed (guarded by mu; replaced, never mutated)
+	ldDelays                                 map[string]int32       // LD trip updates: train number -> delay seconds (guarded by mu)
+	ldTripsErr                               string                 // guarded by mu
 	tripStops                                map[string][]string    // stops each trip update named in the last trip feed (guarded by mu; replaced, never mutated)
 }
 
@@ -184,6 +194,7 @@ func defaultRtSources() []rtSource {
 			vehicleURL:   fixedURL("https://gtfsrt.renfe.com/vehicle_positions.pb"),
 			tripURL:      fixedURL("https://gtfsrt.renfe.com/trip_updates.pb"),
 			alertURL:     fixedURL("https://gtfsrt.renfe.com/alerts.pb"),
+			ldVehicleURL: renfeLDVehicleURL, ldTripURL: renfeLDTripURL,
 			vehicleEvery: 30 * time.Second, tripEvery: 30 * time.Second,
 			bounds:     &cataloniaBounds,
 			staticURL:  "https://ssl.renfe.com/ftransit/Fichero_CER_FOMENTO/fomento_transit.zip",
@@ -243,6 +254,7 @@ func (p *rtPoller) syncTimetable() {
 
 func (p *rtPoller) pollTrips(ctx context.Context) {
 	p.syncTimetable()
+	p.pollLDTrips(ctx)
 	total, computed := 0, 0
 	computedTrips := map[string]bool{}
 	canceled := map[string]bool{}
@@ -383,6 +395,7 @@ func (p *rtPoller) pollVehicles(ctx context.Context) {
 		p.describeVehicle(ctx, &v)
 		snap.Vehicles = append(snap.Vehicles, v)
 	}
+	p.appendLDVehicles(ctx, snap)
 	p.notePlatforms(snap.Vehicles, time.Now())
 	p.noteGaps(snap)
 	p.snap.Store(snap)
@@ -489,6 +502,12 @@ func (p *rtPoller) logSnapshot() {
 		}
 		sort.Ints(ds)
 		msg += fmt.Sprintf("; trip delay s min/median/max %d/%d/%d", ds[0], ds[len(ds)/2], ds[len(ds)-1])
+	}
+	if s.LDVehicles > 0 || s.LDDropped > 0 || s.LDErr != "" {
+		msg += fmt.Sprintf("; long-distance feed: %d trains added, %d without a Rodalies trip", s.LDVehicles, s.LDDropped)
+		if s.LDErr != "" {
+			msg += ", error: " + s.LDErr
+		}
 	}
 	if s.VehiclesErr != "" {
 		msg += "; vehicles error: " + s.VehiclesErr

@@ -19,10 +19,12 @@ import (
 type rtTimetable struct {
 	db                           *sql.DB
 	mu                           sync.Mutex
-	cache                        map[string]int64  // trip_id + "\x00" + stop_id -> scheduled seconds (-1 = none)
-	names                        map[string]string // line and stop name lookups
-	platformChecked, platformCol bool              // stops.platform_code looked up / present
-	hours                        map[string][]int  // scheduledHoursOn per service day (YYYYMMDD)
+	cache                        map[string]int64    // trip_id + "\x00" + stop_id -> scheduled seconds (-1 = none)
+	names                        map[string]string   // line and stop name lookups
+	platformChecked, platformCol bool                // stops.platform_code looked up / present
+	hours                        map[string][]int    // scheduledHoursOn per service day (YYYYMMDD)
+	numOnce                      sync.Once           // byNumber is built on first use (gtfsrtld.go)
+	byNumber                     map[string][]string // train number -> trip ids
 }
 
 // openRtTimetable opens the imported timetable at path read-only, or
