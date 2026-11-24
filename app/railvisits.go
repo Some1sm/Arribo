@@ -89,6 +89,9 @@ func stuTimes(ctx context.Context, tt *rtTimetable, tu *TripUpdate, s StopTimeUp
 	if ev == nil || (ev.Time == nil && ev.Delay == nil) {
 		ev = s.Departure
 	}
+	if d := s.Departure; d != nil && (d.Time != nil || d.Delay != nil) && tt != nil && tt.originStop(ctx, tu.Trip.TripID) == s.StopID {
+		ev = d // at the trip's first stop: its departure (see originStop)
+	}
 	if ev == nil || s.StopID == "" {
 		return 0, 0, false
 	}

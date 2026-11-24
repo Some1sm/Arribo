@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -123,6 +124,9 @@ func tripUpdateComputedDelay(ctx context.Context, tt *rtTimetable, tu *TripUpdat
 		ev := s.Arrival
 		if ev == nil || ev.Time == nil {
 			ev = s.Departure
+		}
+		if d := s.Departure; d != nil && d.Time != nil && tt.originStop(ctx, tu.Trip.TripID) == s.StopID {
+			ev = d // at the trip's first stop: its departure (see originStop)
 		}
 		if ev == nil || ev.Time == nil || s.StopID == "" {
 			continue
@@ -549,4 +553,37 @@ func (t *rtTimetable) scheduledHoursOn(ctx context.Context, day time.Time) ([]in
 	t.hours[date] = out
 	t.mu.Unlock()
 	return out, nil
+}
+
+// originStop is the trip's first stop ("" if unknown), cached and bounded.
+// At that stop a feed's arrival time is the vehicle reaching its terminus
+// before it sets off, so it reads as early by the layover: TRAM sent
+// arrivals 3 to 8 minutes before the scheduled departure and departures on
+// time (2026-11-24), and every Trambesòs trip read 2 to 15 minutes early.
+// The trip's departure is the time that compares with the timetable there.
+func (t *rtTimetable) originStop(ctx context.Context, tripID string) string {
+	if t == nil || tripID == "" {
+		return ""
+	}
+	key := "\x04" + tripID
+	t.mu.Lock()
+	if v, hit := t.names[key]; hit {
+		t.mu.Unlock()
+		return v
+	}
+	t.mu.Unlock()
+	var stop string
+	if err := t.db.QueryRowContext(ctx, `SELECT stop_id FROM stop_times WHERE trip_id = ? ORDER BY stop_sequence LIMIT 1`, tripID).Scan(&stop); err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			return "" // a read error: not cached
+		}
+	}
+	stop = strings.TrimSpace(stop)
+	t.mu.Lock()
+	if t.names == nil || len(t.names) > 50000 {
+		t.names = map[string]string{}
+	}
+	t.names[key] = stop
+	t.mu.Unlock()
+	return stop
 }
