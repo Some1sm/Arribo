@@ -77,8 +77,8 @@ Goal: official stops, calendar and road-accurate shapes for the seven lines, und
 
 | ID | Status | Step | Files | Done when |
 |---|---|---|---|---|
-| 2.1 | `[ ]` | **Script to cut the seven lines out of the Generalitat GTFS.** Source: `busos-interurbans-GTFS.zip`, no key. Route ids: 0498 C-10, 0501 C-20, 0495 C-30, 0496 e11.1, 0497 e11.2, 0502 865, 0109 N-80. The script writes a compact checked-in data file in the `scripts/lib/dataJson.js` format. Quirks to handle: leading spaces in the `stop_times.txt` header, non-zero seconds in times, rider-facing codes found only inside `route_long_name`, and `nota.txt`. | new `scripts/import_gencat_moventis.js`, `data/…` | the file exists; a test guards its format |
-| 2.2 | `[ ]` | **Stop crosswalk:** GTFS `stop_code` ↔ Moventis `COD_PARADA` (83/88 match for C-10). Match the rest by coordinates and name, then review by hand. | same script, data file | every sampled stop has a GTFS stop or an explicit "unmatched" entry |
+| 2.1 | `[x]` | **Script to cut the seven lines out of the Generalitat GTFS.** Source: `busos-interurbans-GTFS.zip`, no key. Route ids: 0498 C-10, 0501 C-20, 0495 C-30, 0496 e11.1, 0497 e11.2, 0502 865, 0109 N-80. The script writes a compact checked-in data file in the `scripts/lib/dataJson.js` format. Quirks to handle: leading spaces in the `stop_times.txt` header, non-zero seconds in times, rider-facing codes found only inside `route_long_name`, and `nota.txt`. | new `scripts/import_gencat_moventis.js`, `data/…` | the file exists; a test guards its format (done 2026-11-24: `scripts/import_gencat_moventis.js` -> `data/moventis/gencat_casas.json`, 362 KB, 650 trips, 12 services, shapes simplified at 5 m; guarded by `test/gencat_casas_data_test.js`; documented in OPERATIONS.md) |
+| 2.2 | `[x]` | **Stop crosswalk:** GTFS `stop_code` ↔ Moventis `COD_PARADA` (83/88 match for C-10). Match the rest by coordinates and name, then review by hand. | same script, data file | every sampled stop has a GTFS stop or an explicit "unmatched" entry (done 2026-11-24: 188 Moventis stop ids, 169 by stop_code, 9 by 60 m + name, 10 listed as unmatched in the file; C-10 84 of 86) |
 | 2.3 | `[ ]` | **Use the GTFS shapes for drawing and position estimates** instead of the moventis.es KML, keeping the KML as fallback. | `app/moventisline.go`, `app/moventisestimate.go` | maps unchanged or better; tests pass |
 | 2.4 | `[ ]` | **Use the GTFS timetable to know when each line runs** (feeds 1.3), and attribute the Generalitat. | `app/moventis.go`, about/credits page | — |
 
@@ -147,6 +147,7 @@ Do each only after 0.1 and as its own poller. Order by value for Mataró users f
 
 Newest first. One line per session: date, who, steps touched, commit.
 
+- 2026-11-24, cloud session (agent): steps 2.1, 2.2
 - 2026-11-24, cloud session (agent): steps 1.2, 1.3, 1.5
 - 2026-11-24, cloud session: step 1.1 done (headway-based Moventis stop spacing).
 - 2026-11-24, cloud session: wrote this plan and HANDOFF.md.

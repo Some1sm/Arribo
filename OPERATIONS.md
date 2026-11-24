@@ -320,6 +320,28 @@ server rebuilds the Catalan alias keys (`Feiners`, `Dissabtes`, `Diumenges i Fes
 example), rewrite it with `node scripts/lib/dataJson.js <file>`;
 `test/data_files_format_test.js` fails until you do.
 
+### Moventis static data from the Generalitat GTFS
+
+`data/moventis/gencat_casas.json` holds the seven Empresa Casas (Moventis) lines through
+Mataró (C-10, C-20, C-30, e11.1, e11.2, 865, N-80), cut out of the Generalitat de
+Catalunya interurban bus GTFS: stops, simplified road shapes, trips with the published
+departure time at every stop, the calendar of the services they use, and a crosswalk from
+moventis.es stop ids (`ID_PARADA`) to GTFS stop ids. Refresh it (the feed is updated every
+few days; the calendar runs to 2027-06-30) with:
+
+    node scripts/import_gencat_moventis.js            # downloads the 24 MB zip, then asks moventis.es
+    node scripts/import_gencat_moventis.js --zip busos-interurbans-GTFS.zip --last-modified "<HTTP date>"
+
+It needs Node 22 and no packages. moventis.es is asked for 7 `GetTrayectos` answers, one
+request at a time, 11.5 s apart (its robots.txt asks for a 10 s crawl delay; keep it), so a
+run takes about 1.5 minutes. `--moventis-cache DIR` saves and reuses the raw answers;
+`--skip-moventis` keeps the crosswalk already in the file. Check the printed match
+statistics and the list of unmatched stops, then run `npm test`. Times keep the feed's
+non-zero seconds (they come from a speed/distance export, not from timepoints). The
+data is under the "Llicència oberta d'ús d'informació – Catalunya": credit
+"Generalitat de Catalunya" wherever it is shown and do not alter its meaning. Nothing in
+the Go server reads this file yet.
+
 ### Yearly seasonal upkeep checklist
 
 In June of each year, the operator publishes the summer service window notice (e.g. "HORARIS ESTIU <year>").
