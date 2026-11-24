@@ -38,6 +38,11 @@ type walkCacheEntry struct {
 	expires float64
 }
 
+type walkFlight struct {
+	done chan struct{}
+	val  *walkResult
+}
+
 type pedestrianRouter struct {
 	url, key string
 	timeout  time.Duration
@@ -45,8 +50,7 @@ type pedestrianRouter struct {
 	mu       sync.Mutex
 	cache    map[string]*walkCacheEntry
 	order    []string
-	pending  map[string]chan struct{}
-	pendingV map[string]*walkResult
+	pending  map[string]*walkFlight
 	active   int
 }
 
@@ -56,8 +60,7 @@ var walkRouter = &pedestrianRouter{
 	timeout:  2500 * time.Millisecond,
 	maxEntry: 256,
 	cache:    map[string]*walkCacheEntry{},
-	pending:  map[string]chan struct{}{},
-	pendingV: map[string]*walkResult{},
+	pending:  map[string]*walkFlight{},
 }
 
 type walkBudget struct{ remaining int }
@@ -111,12 +114,10 @@ func (pr *pedestrianRouter) route(from, to []float64, speed float64, budget *wal
 	if c, ok := pr.cache[cacheKey]; ok && c.expires > float64(nowMs()) {
 		result = c.value
 		pr.mu.Unlock()
-	} else if ch, ok := pr.pending[cacheKey]; ok {
+	} else if fl, ok := pr.pending[cacheKey]; ok {
 		pr.mu.Unlock()
-		<-ch
-		pr.mu.Lock()
-		result = pr.pendingV[cacheKey]
-		pr.mu.Unlock()
+		<-fl.done
+		result = fl.val
 	} else {
 		if budget.remaining <= 0 || pr.active >= 3 {
 			pr.mu.Unlock()
@@ -124,33 +125,29 @@ func (pr *pedestrianRouter) route(from, to []float64, speed float64, budget *wal
 		}
 		budget.remaining--
 		pr.active++
-		ch := make(chan struct{})
-		pr.pending[cacheKey] = ch
+		fl := &walkFlight{done: make(chan struct{})}
+		pr.pending[cacheKey] = fl
 		pr.mu.Unlock()
-		res, err := pr.fetchRoute(from, to)
-		if err != nil {
-			res = nil
-		}
-		pr.mu.Lock()
-		ttl := 15000.0
-		if res != nil {
-			ttl = 3600000
-		}
-		pr.cacheSet(cacheKey, &walkCacheEntry{value: res, expires: float64(nowMs()) + ttl})
-		pr.pendingV[cacheKey] = res
-		delete(pr.pending, cacheKey)
-		pr.active--
-		close(ch)
-		// waiters read pendingV right after the close; keep it briefly
-		go func(k string, v *walkResult) {
-			time.Sleep(5 * time.Second)
-			pr.mu.Lock()
-			if pr.pendingV[k] == v {
-				delete(pr.pendingV, k)
+		var res *walkResult
+		func() {
+			defer func() {
+				pr.mu.Lock()
+				ttl := 15000.0
+				if res != nil {
+					ttl = 3600000
+				}
+				pr.cacheSet(cacheKey, &walkCacheEntry{value: res, expires: float64(nowMs()) + ttl})
+				fl.val = res
+				delete(pr.pending, cacheKey)
+				pr.active--
+				close(fl.done)
+				pr.mu.Unlock()
+			}()
+			r, err := pr.fetchRoute(from, to)
+			if err == nil {
+				res = r
 			}
-			pr.mu.Unlock()
-		}(cacheKey, res)
-		pr.mu.Unlock()
+		}()
 		result = res
 	}
 	if result == nil {
@@ -360,7 +357,7 @@ func (g *streetGeocoderT) searchStreets(query string, limit int, catalog func() 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return []*Obj{}
 	}
-	text, err := readBoundedBody(resp.Body, 64*1024*1024)
+	text, err := readBoundedBody(resp.Body, 1<<20)
 	if err != nil {
 		return []*Obj{}
 	}

@@ -73,10 +73,14 @@ type rtSnapshot struct {
 type rtSource struct {
 	AgencyID, Mode string
 	// vehicleURL / tripURL return the protobuf URL to fetch (FGC's file URL
-	// is looked up from its dataset record and cached).
+	// is looked up from its dataset record and cached). Reset callbacks clear
+	// a cached URL when a subsequent fetch fails (e.g. rotated file URL).
 	vehicleURL, tripURL func(context.Context) (string, error)
+	vehicleReset        func()
+	tripReset           func()
 	// alertURL returns the service-alerts feed (nil: none); fetched every railAlertEvery.
-	alertURL func(context.Context) (string, error)
+	alertURL   func(context.Context) (string, error)
+	alertReset func()
 	// ldVehicleURL / ldTripURL: optional second feed with the trains the first lacks (Renfe long distance).
 	ldVehicleURL, ldTripURL string
 	vehicleEvery, tripEvery time.Duration
@@ -190,19 +194,30 @@ func fgcFileURL(dataset string) (resolve func(context.Context) (string, error), 
 	return resolve, invalidate
 }
 
+// fetchResolved resolves a source URL and fetches it, invalidating the cached
+// URL when either step fails so rotated URLs (e.g. FGC datasets) are re-looked up.
+func fetchResolved(ctx context.Context, resolve func(context.Context) (string, error), reset func()) ([]byte, error) {
+	u, err := resolve(ctx)
+	if err != nil {
+		if reset != nil {
+			reset()
+		}
+		return nil, err
+	}
+	b, err := rtFetch(ctx, u)
+	if err != nil {
+		if reset != nil {
+			reset()
+		}
+		return nil, err
+	}
+	return b, nil
+}
+
 func defaultRtSources() []rtSource {
 	fgcVP, fgcVPReset := fgcFileURL("vehicle-positions-gtfs_realtime")
 	fgcTU, fgcTUReset := fgcFileURL("trip-updates-gtfs_realtime")
 	fgcAL, fgcALReset := fgcFileURL("alerts-gtfs_realtime")
-	retry := func(resolve func(context.Context) (string, error), reset func()) func(context.Context) (string, error) {
-		return func(ctx context.Context) (string, error) {
-			u, err := resolve(ctx)
-			if err != nil {
-				reset()
-			}
-			return u, err
-		}
-	}
 	srcs := []rtSource{
 		{
 			AgencyID: "renfe_rodalies", Mode: "rail",
@@ -219,9 +234,12 @@ func defaultRtSources() []rtSource {
 			// FGC's open-data API allows 5,000 anonymous requests a day:
 			// positions every 30 s (2,880) + trip updates every 90 s (960).
 			AgencyID: "fgc", Mode: "rail",
-			vehicleURL:   retry(fgcVP, fgcVPReset),
-			tripURL:      retry(fgcTU, fgcTUReset),
-			alertURL:     retry(fgcAL, fgcALReset),
+			vehicleURL:   fgcVP,
+			vehicleReset: fgcVPReset,
+			tripURL:      fgcTU,
+			tripReset:    fgcTUReset,
+			alertURL:     fgcAL,
+			alertReset:   fgcALReset,
 			vehicleEvery: 30 * time.Second, tripEvery: 90 * time.Second,
 			staticURL:  "https://www.fgc.cat/google/google_transit.zip",
 			geotrenURL: fgcGeotrenURL,
@@ -237,7 +255,7 @@ func defaultRtSources() []rtSource {
 // syncTimetable (re)opens the imported timetable when the file appears or
 // is replaced by a refresh; an open handle keeps reading the old file until
 // then, so a refresh never breaks a lookup in progress.
-func (p *rtPoller) syncTimetable() {
+func (p *rtPoller) syncTimetable(ctx context.Context) {
 	path := gtfsTimetablePath(p.src.AgencyID)
 	fi, err := os.Stat(path)
 	if err != nil || fi.ModTime().Equal(p.ttMod) {
@@ -252,11 +270,11 @@ func (p *rtPoller) syncTimetable() {
 		_ = p.tt.db.Close()
 	}
 	p.tt, p.ttMod = tt, fi.ModTime()
-	if routes, err := tt.catalogRoutes(context.Background()); err == nil {
+	if routes, err := tt.catalogRoutes(ctx); err == nil {
 		op := &rtCatalogOp{AgencyID: p.src.AgencyID, Mode: p.src.Mode, Lines: routes}
 		// Line profiles (stations and geometry per direction) for the line
 		// view; a failure leaves the catalog without them, not without lines.
-		if profiles, err := tt.lineProfiles(context.Background()); err == nil {
+		if profiles, err := tt.lineProfiles(ctx); err == nil {
 			op.Profiles = map[string]*rtLineProfile{}
 			for i := range profiles {
 				op.Profiles[profiles[i].Code] = &profiles[i]
@@ -273,7 +291,7 @@ func (p *rtPoller) syncTimetable() {
 }
 
 func (p *rtPoller) pollTrips(ctx context.Context) {
-	p.syncTimetable()
+	p.syncTimetable(ctx)
 	p.pollLDTrips(ctx)
 	total, computed := 0, 0
 	computedTrips := map[string]bool{}
@@ -285,11 +303,7 @@ func (p *rtPoller) pollTrips(ctx context.Context) {
 	tripStops := map[string][]string{} // stops (platforms, for FGC) each trip update names
 	var cancels []railCancel           // announced cancellations for the history database
 	delays, err := func() (map[string]int32, error) {
-		u, err := p.src.tripURL(ctx)
-		if err != nil {
-			return nil, err
-		}
-		b, err := rtFetch(ctx, u)
+		b, err := fetchResolved(ctx, p.src.tripURL, p.src.tripReset)
 		if err != nil {
 			return nil, err
 		}
@@ -392,11 +406,7 @@ func (p *rtPoller) pollVehicles(ctx context.Context) {
 		return
 	}
 	fm, err := func() (*FeedMessage, error) {
-		u, err := p.src.vehicleURL(ctx)
-		if err != nil {
-			return nil, err
-		}
-		b, err := rtFetch(ctx, u)
+		b, err := fetchResolved(ctx, p.src.vehicleURL, p.src.vehicleReset)
 		if err != nil {
 			return nil, err
 		}

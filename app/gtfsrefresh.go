@@ -105,7 +105,7 @@ func refreshTimetable(ctx context.Context, src rtSource) error {
 	if err := downloadFile(ctx, src.staticURL, zipPath); err != nil {
 		return fmt.Errorf("download: %w", err)
 	}
-	return importGTFS(src.AgencyID, zipPath, db, bbox, src.staticBBox)
+	return importGTFSContext(ctx, src.AgencyID, zipPath, db, bbox, src.staticBBox)
 }
 
 // runTimetableRefresher imports stale timetables now and keeps checking

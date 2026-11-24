@@ -259,9 +259,13 @@ func (p *movPoller) get(ctx context.Context, path string) ([]byte, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	const movMaxBody = 8 << 20
+	body, err := io.ReadAll(io.LimitReader(resp.Body, movMaxBody+1))
 	if err != nil {
 		return nil, err
+	}
+	if len(body) > movMaxBody {
+		return nil, fmt.Errorf("response body exceeded %d bytes", movMaxBody)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)

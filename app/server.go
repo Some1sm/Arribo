@@ -1747,7 +1747,7 @@ func (s *Server) hPlan(q *xreq, res *xres) error {
 	destination = s.geocodeEndpoint(destination)
 	// Train journeys (Rodalies, FGC), merged with the bus planner's below.
 	departMs, _ := requestedInstant(or(qv(q, "departureDate"), qv(q, "date")), or(qv(q, "departureTime"), qv(q, "time")), float64(nowMs()))
-	railItins := s.railPlanFor(from, to, origin, destination, explicitFrom, explicitTo, departMs, qv(q, "walkingSpeed"), qv(q, "maxWalkingDistance"))
+	railItins := s.railPlanFor(from, to, origin, destination, explicitFrom, explicitTo, departMs, qv(q, "walkingSpeed"), qv(q, "maxWalkingDistance"), preference)
 
 	err := tryJS(func() {
 		label := func(v any, nameKey string, raw any) any {

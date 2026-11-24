@@ -736,6 +736,10 @@ func (r *TransitRouter) buildCandidates(orig, dest []*stopCand, opt planOptions,
 						if r2.lineID == r1.lineID {
 							continue
 						}
+						di := stopIndexIn(r2.stops, d.id)
+						if di == -1 {
+							continue
+						}
 						type pt2 struct {
 							idx  int
 							stop *graphStop
@@ -743,6 +747,9 @@ func (r *TransitRouter) buildCandidates(orig, dest []*stopCand, opt planOptions,
 						}
 						var possible []pt2
 						for i, s2 := range r2.stops {
+							if i >= di {
+								continue
+							}
 							if s2.id == ts.id || s2.sh == ts.id {
 								possible = append(possible, pt2{i, s2, 0})
 							} else if s2.lname == ts.lname {
@@ -752,8 +759,7 @@ func (r *TransitRouter) buildCandidates(orig, dest []*stopCand, opt planOptions,
 							}
 						}
 						for _, p := range possible {
-							di := stopIndexIn(r2.stops, d.id)
-							if di == -1 || di <= p.idx {
+							if di <= p.idx {
 								continue
 							}
 							key := r1.lineID + "_" + r2.lineID + "_" + ts.id + "_" + p.stop.id + "_" + o.id + "_" + d.id
@@ -1039,14 +1045,16 @@ func evaluateJourneys(w *World, candidates []*Obj, trk *MataroTracker, opt planO
 				for _, day := range serviceDays {
 					dayType := dayTypeByDate[day.DateStr]
 					sch := getDirectionSchedule(lineID, direction, dayType, "")
-					// The source looks the stop ids up in schedule.stops, whose
-					// entries are stop objects: String(object) never equals an
-					// id, so the per-trip branch never runs and every leg takes
-					// the median-profile fallback below.
 					fromIdx, toIdx := -1, -1
 					if sch != nil {
-						fromIdx = stringIndexOf(sch.StopsRaw, fromID)
-						toIdx = stringIndexOf(sch.StopsRaw, toID)
+						for idx, st := range sch.Stops {
+							if fromIdx < 0 && st.ID == fromID {
+								fromIdx = idx
+							}
+							if toIdx < 0 && st.ID == toID {
+								toIdx = idx
+							}
+						}
 					}
 					if sch != nil && len(sch.Trips) > 0 && fromIdx >= 0 && toIdx > fromIdx {
 						for ti, trip := range sch.Trips {

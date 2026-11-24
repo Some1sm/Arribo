@@ -12,6 +12,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"sort"
 	"strconv"
 	"strings"
@@ -75,10 +76,12 @@ func parseGeotren(b []byte, at time.Time) (map[string]fgcUnit, error) {
 func (p *rtPoller) pollGeotren(ctx context.Context) {
 	b, err := rtFetch(ctx, p.src.geotrenURL)
 	if err != nil {
+		log.Printf("[GTFS-RT] %s: geotren fetch failed: %v", p.src.AgencyID, err)
 		return
 	}
 	units, err := parseGeotren(b, time.Now())
 	if err != nil {
+		log.Printf("[GTFS-RT] %s: geotren parse failed: %v", p.src.AgencyID, err)
 		return
 	}
 	p.geotren.Store(&units)

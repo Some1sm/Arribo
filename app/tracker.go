@@ -1026,6 +1026,12 @@ func (t *MataroTracker) getLineDetails(lineID any, direction any, opts *Obj) *Ob
 	if pending == nil || pending.source != source {
 		pending = &inflight{done: make(chan struct{}), source: source}
 		t.lineDetailsInflight[inflightKey] = pending
+		defer func() {
+			if t.lineDetailsInflight[inflightKey] == pending {
+				delete(t.lineDetailsInflight, inflightKey)
+			}
+			close(pending.done)
+		}()
 		result := t.computeLineDetails(lID, dirKey, nil)
 		cur := t.w.siri.cacheEntry("veh_" + lID)
 		if generation == t.lineCacheGen && bucket == int64(math.Floor(float64(nowMs())/1000)) && source == cur {
@@ -1035,10 +1041,6 @@ func (t *MataroTracker) getLineDetails(lineID any, direction any, opts *Obj) *Ob
 			}
 		}
 		pending.val = result
-		close(pending.done)
-		if t.lineDetailsInflight[inflightKey] == pending {
-			delete(t.lineDetailsInflight, inflightKey)
-		}
 		return deepClone(result).(*Obj)
 	}
 	p := pending

@@ -85,7 +85,28 @@ func newSiriClient(w *World) *SiriClient {
 	}
 }
 
+const siriMaxCacheEntries = 256
+
 func (c *SiriClient) cacheEntry(key string) *siriCacheEntry { return c.cache[key] }
+
+func (c *SiriClient) setCache(key string, entry *siriCacheEntry) {
+	if _, exists := c.cache[key]; !exists && len(c.cache) >= siriMaxCacheEntries {
+		// Evict expired entries first, then the oldest entry.
+		now := float64(nowMs())
+		oldestKey, oldestTs := "", math.Inf(1)
+		for k, v := range c.cache {
+			if now-v.ts >= c.staleFallbackTtlMs {
+				delete(c.cache, k)
+			} else if v.ts < oldestTs {
+				oldestKey, oldestTs = k, v.ts
+			}
+		}
+		if len(c.cache) >= siriMaxCacheEntries && oldestKey != "" {
+			delete(c.cache, oldestKey)
+		}
+	}
+	c.cache[key] = entry
+}
 
 func (c *SiriClient) setRpcBackend(fn func(op string, args *Obj) (any, error)) { c.rpc = fn }
 
@@ -415,11 +436,13 @@ func (c *SiriClient) coalesce(key string, fn func() *[]any) *[]any {
 	}
 	f := &siriFlight{done: make(chan struct{})}
 	c.inflight[key] = f
+	defer func() {
+		if c.inflight[key] == f {
+			delete(c.inflight, key)
+		}
+		close(f.done)
+	}()
 	f.val = fn()
-	close(f.done)
-	if c.inflight[key] == f {
-		delete(c.inflight, key)
-	}
 	return f.val
 }
 
@@ -528,7 +551,7 @@ func (c *SiriClient) getLiveVehicles(lineRef string) (*[]any, error) {
 			} else if arr, ok := res.([]any); ok {
 				c.recordSuccess("vehicles")
 				p := &arr
-				c.cache[key] = &siriCacheEntry{ts: float64(nowMs()), data: p}
+				c.setCache(key, &siriCacheEntry{ts: float64(nowMs()), data: p})
 				return p
 			}
 			if cached != nil && now-cached.ts < c.staleFallbackTtlMs {
@@ -547,8 +570,8 @@ func (c *SiriClient) getLiveVehicles(lineRef string) (*[]any, error) {
       <tem:request>
         <ServiceRequestInfo>
           <siri:RequestTimestamp>` + ts + `</siri:RequestTimestamp>
-          <siri:AccountId>` + c.accountID + `</siri:AccountId>
-          <siri:AccountKey>` + c.accountKey + `</siri:AccountKey>
+          <siri:AccountId>` + xmlEscape(c.accountID) + `</siri:AccountId>
+          <siri:AccountKey>` + xmlEscape(c.accountKey) + `</siri:AccountKey>
         </ServiceRequestInfo>
         <Request version="2.0">
           <siri:RequestTimestamp>` + ts + `</siri:RequestTimestamp>
@@ -571,7 +594,7 @@ func (c *SiriClient) getLiveVehicles(lineRef string) (*[]any, error) {
 		}
 		c.recordSuccess("vehicles")
 		p := &vehicles
-		c.cache[key] = &siriCacheEntry{ts: float64(nowMs()), data: p}
+		c.setCache(key, &siriCacheEntry{ts: float64(nowMs()), data: p})
 		return p
 	}), nil
 }
@@ -752,7 +775,7 @@ func (c *SiriClient) getStopArrivalsOpt(stopID, lineRef string, bypassCache, dir
 			} else if arr, ok := res.([]any); ok {
 				c.recordSuccess("arrivals")
 				p := &arr
-				c.cache[key] = &siriCacheEntry{ts: float64(nowMs()), data: p}
+				c.setCache(key, &siriCacheEntry{ts: float64(nowMs()), data: p})
 				return p
 			}
 			if cached != nil && now-cached.ts < c.staleFallbackTtlMs {
@@ -770,8 +793,8 @@ func (c *SiriClient) getStopArrivalsOpt(stopID, lineRef string, bypassCache, dir
       <request>
         <ServiceRequestInfo xmlns="">
           <RequestTimestamp xmlns="http://www.siri.org.uk/siri">` + ts + `</RequestTimestamp>
-          <AccountId xmlns="http://www.siri.org.uk/siri">` + c.accountID + `</AccountId>
-          <AccountKey xmlns="http://www.siri.org.uk/siri">` + c.accountKey + `</AccountKey>
+          <AccountId xmlns="http://www.siri.org.uk/siri">` + xmlEscape(c.accountID) + `</AccountId>
+          <AccountKey xmlns="http://www.siri.org.uk/siri">` + xmlEscape(c.accountKey) + `</AccountKey>
         </ServiceRequestInfo>
         <Request xmlns="">
           <RequestTimestamp xmlns="http://www.siri.org.uk/siri">` + ts + `</RequestTimestamp>
@@ -794,7 +817,7 @@ func (c *SiriClient) getStopArrivalsOpt(stopID, lineRef string, bypassCache, dir
 		}
 		c.recordSuccess("arrivals")
 		p := &arrivals
-		c.cache[key] = &siriCacheEntry{ts: float64(nowMs()), data: p}
+		c.setCache(key, &siriCacheEntry{ts: float64(nowMs()), data: p})
 		return p
 	}), nil
 }

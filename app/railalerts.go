@@ -169,12 +169,8 @@ func (p *rtPoller) pollAlerts(ctx context.Context) {
 	if p.src.alertURL == nil {
 		return
 	}
-	p.syncTimetable()
-	u, err := p.src.alertURL(ctx)
-	if err != nil {
-		return
-	}
-	b, err := rtFetch(ctx, u)
+	p.syncTimetable(ctx)
+	b, err := fetchResolved(ctx, p.src.alertURL, p.src.alertReset)
 	if err != nil {
 		return
 	}

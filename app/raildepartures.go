@@ -13,6 +13,7 @@ import (
 	"math"
 	"os"
 	"sort"
+	"sync"
 	"time"
 )
 
@@ -27,13 +28,16 @@ const railDepLookbackSec = railMaxDelaySec
 const railDepShown = 30
 
 // railTimetables is the worker's own read-only handles, one per operator,
-// reopened when a refresh replaces the file. Used under the worker lock.
+// reopened when a refresh replaces the file. Safe for concurrent readers.
 type railTimetables struct {
+	mu   sync.Mutex
 	open map[string]*rtTimetable
 	mod  map[string]time.Time
 }
 
 func (r *railTimetables) get(agencyID string) (*rtTimetable, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.open == nil {
 		r.open, r.mod = map[string]*rtTimetable{}, map[string]time.Time{}
 	}
@@ -57,6 +61,8 @@ func (r *railTimetables) get(agencyID string) (*rtTimetable, error) {
 }
 
 func (r *railTimetables) close() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	for _, tt := range r.open {
 		_ = tt.db.Close()
 	}

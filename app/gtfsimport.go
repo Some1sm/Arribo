@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/zip"
+	"context"
 	"database/sql"
 	"encoding/csv"
 	"errors"
@@ -227,6 +228,13 @@ CREATE INDEX idx_routes_route ON routes(route_id);
 )
 
 func importGTFS(agencyID, zipPath, outPath string, bbox *bboxFilter, bboxStr string) error {
+	return importGTFSContext(context.Background(), agencyID, zipPath, outPath, bbox, bboxStr)
+}
+
+func importGTFSContext(ctx context.Context, agencyID, zipPath, outPath string, bbox *bboxFilter, bboxStr string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	startTime := time.Now()
 	zr, err := zip.OpenReader(zipPath)
 	if err != nil {
@@ -268,11 +276,11 @@ func importGTFS(agencyID, zipPath, outPath string, bbox *bboxFilter, bboxStr str
 		}
 	}()
 
-	if _, err := db.Exec("PRAGMA journal_mode = OFF; PRAGMA synchronous = OFF; " + gtfsSchema); err != nil {
+	if _, err := db.ExecContext(ctx, "PRAGMA journal_mode = OFF; PRAGMA synchronous = OFF; "+gtfsSchema); err != nil {
 		return fmt.Errorf("init db: %w", err)
 	}
 
-	tx, err := db.Begin()
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
@@ -630,8 +638,11 @@ func importGTFS(agencyID, zipPath, outPath string, bbox *bboxFilter, bboxStr str
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit tx: %w", err)
 	}
-	if _, err := db.Exec(gtfsIndexes); err != nil {
+	if _, err := db.ExecContext(ctx, gtfsIndexes); err != nil {
 		return fmt.Errorf("create indexes: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	inferred, err := inferDirections(db)
 	if err != nil {
@@ -639,7 +650,7 @@ func importGTFS(agencyID, zipPath, outPath string, bbox *bboxFilter, bboxStr str
 	}
 	// A trip without a headsign (all of Renfe's) gets its own last station's
 	// name, so departures and trains show where they go.
-	filled, err := db.Exec(`UPDATE trips SET headsign = (SELECT s.name FROM stop_times st JOIN stops s ON s.stop_id = st.stop_id
+	filled, err := db.ExecContext(ctx, `UPDATE trips SET headsign = (SELECT s.name FROM stop_times st JOIN stops s ON s.stop_id = st.stop_id
 	  WHERE st.trip_id = trips.trip_id ORDER BY st.stop_sequence DESC LIMIT 1) WHERE COALESCE(headsign, '') = ''`)
 	if err != nil {
 		return fmt.Errorf("fill headsigns: %w", err)

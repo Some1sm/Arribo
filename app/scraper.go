@@ -8,8 +8,8 @@ package main
 // an error, which the drift check treats the same way.
 
 import (
+	"context"
 	"errors"
-	"io"
 	"math"
 	"net/http"
 	"net/url"
@@ -30,13 +30,25 @@ var errTypeError = errors.New("Cannot read properties of undefined")
 
 // fetchTimetablePage downloads a page and decodes it as ISO-8859-1.
 func fetchTimetablePage(u string) (string, error) {
-	for hops := 0; hops < 20; hops++ {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	initURL, err := url.Parse(u)
+	if err != nil {
+		return "", errors.New("invalid timetable URL")
+	}
+	allowedHost := strings.ToLower(initURL.Hostname())
+	for hops := 0; hops < 10; hops++ {
 		pu, err := url.Parse(u)
 		if err != nil {
-			return "", err
+			return "", errors.New("invalid timetable redirect URL")
+		}
+		scheme := strings.ToLower(pu.Scheme)
+		host := strings.ToLower(pu.Hostname())
+		if (scheme != "http" && scheme != "https") || (host != allowedHost && !strings.HasSuffix(host, "."+allowedHost)) {
+			return "", errors.New("timetable redirect outside allowed host")
 		}
 		client := nodeRequestClient(pu.Hostname(), srcDataDir(), 30*time.Second)
-		req, err := http.NewRequest("GET", u, nil)
+		req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 		if err != nil {
 			return "", err
 		}
@@ -49,27 +61,28 @@ func fetchTimetablePage(u string) (string, error) {
 			res.Body.Close()
 			next, err := pu.Parse(loc)
 			if err != nil {
-				return "", err
+				return "", errors.New("invalid redirect location")
 			}
 			u = next.String()
 			continue
 		}
 		if res.StatusCode != 200 {
 			res.Body.Close()
-			return "", errors.New("HTTP " + strconv.Itoa(res.StatusCode) + " for " + u)
+			return "", errors.New("HTTP " + strconv.Itoa(res.StatusCode) + " fetching timetable page")
 		}
-		b, err := io.ReadAll(res.Body)
+		raw, err := readBoundedBody(res.Body, defaultMaxBodyBytes)
 		res.Body.Close()
 		if err != nil {
 			return "", err
 		}
+		b := []byte(raw)
 		r := make([]rune, len(b))
 		for i, c := range b {
 			r[i] = rune(c)
 		}
 		return string(r), nil
 	}
-	return "", errors.New("too many redirects for " + u)
+	return "", errors.New("too many redirects fetching timetable page")
 }
 
 var scraperEntities = map[string]string{

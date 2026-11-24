@@ -40,7 +40,9 @@ const (
 // railEnd is a station at one end of the journey, with the walk to or from it.
 type railEnd struct {
 	Agency, StopID, Name string
-	Lat, Lon             float64
+	Lat, Lon             float64 // station coordinates
+	PointLat, PointLon   float64 // user's origin/destination point (when WalkM > 0)
+	PointName            string
 	WalkM                float64 // walking metres from the origin point / to the destination point (0 for a named station)
 }
 
@@ -184,7 +186,7 @@ func pickRailItins(all []railItin) []railItin {
 	for _, c := range all {
 		dominated := false
 		for _, k := range out {
-			if k.Leave >= c.Leave && k.Arrive <= c.Arrive && len(k.Legs) <= len(c.Legs) {
+			if k.Leave >= c.Leave && k.Arrive <= c.Arrive && len(k.Legs) <= len(c.Legs) && k.WalkM <= c.WalkM {
 				dominated = true
 				break
 			}
@@ -215,7 +217,12 @@ func (t *rtTimetable) railLegsQuery(ctx context.Context, agency string, stops []
 	marks := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
 	var out []railLeg
 	start := time.Unix(from, 0).In(madrid)
-	for _, back := range []int{1, 0} {
+	endT := time.Unix(to, 0).In(madrid)
+	days := []int{1, 0}
+	if endT.Year() != start.Year() || endT.Month() != start.Month() || endT.Day() != start.Day() {
+		days = append(days, -1)
+	}
+	for _, back := range days {
 		day := time.Date(start.Year(), start.Month(), start.Day()-back, 12, 0, 0, 0, madrid)
 		date := day.Format("20060102")
 		ref, err := gtfsServiceDayRef(date)
@@ -248,6 +255,7 @@ func (t *rtTimetable) railLegsQuery(ctx context.Context, agency string, stops []
 		   WHERE ` + anchor + `.stop_id IN (` + marks + `)
 		     AND tr.service_id IN (SELECT service_id FROM active)
 		     AND ` + timeCol + ` BETWEEN ? AND ?
+		   ORDER BY ` + timeCol + ` ASC
 		   LIMIT 20000`
 		args := []any{date, date, date, date}
 		for _, id := range ids {
@@ -345,7 +353,12 @@ func railEndsFor(name string, lat, lon float64, hasPoint bool, maxWalk float64) 
 					}
 					seen[st.ID] = true
 					if m := distM(lat, lon, st.Lat, st.Lon); m <= limit {
-						near = append(near, railEnd{Agency: info.ID, StopID: st.ID, Name: st.Name, Lat: st.Lat, Lon: st.Lon, WalkM: math.Round(m)})
+						near = append(near, railEnd{
+							Agency: info.ID, StopID: st.ID, Name: st.Name,
+							Lat: st.Lat, Lon: st.Lon,
+							PointLat: lat, PointLon: lon, PointName: name,
+							WalkM: math.Round(m),
+						})
 					}
 				}
 			}
@@ -371,8 +384,12 @@ func railEndsFor(name string, lat, lon float64, hasPoint bool, maxWalk float64) 
 // maxWalkingDistance. It answers with the itineraries, ready to merge.
 func (k *Worker) railPlanOp(args *Obj) (any, error) {
 	speed := orF(jsNumber(args.Get("walkingSpeed")), 80)
+	if speed <= 0 {
+		speed = 80
+	}
 	maxWalk := orF(jsNumber(args.Get("maxWalkingDistance")), 2000)
 	depart := int64(jsNumber(args.Get("departUnix")))
+	preference := jsString(or(args.Get("preference"), "fastest"))
 	end := func(key string) map[string]railEnd {
 		o := args.ObjAt(key)
 		if o == nil {
@@ -422,34 +439,54 @@ func (k *Worker) railPlanOp(args *Obj) (any, error) {
 		return out
 	}
 	var first, second []railLeg
-	for agency, stops := range byAgency(origins) {
-		tt, err := k.railTT.get(agency)
-		if err != nil {
-			continue
+	var expOrigins, expDests map[string]railEnd
+	var queryErr error
+	// Run read-only GTFS SQLite queries outside the worker World lock so
+	// heavy planner queries cannot stall SIRI polling or PING heartbeats.
+	runQueries := func() {
+		for agency, stops := range byAgency(origins) {
+			tt, err := k.railTT.get(agency)
+			if err != nil {
+				continue
+			}
+			ls, err := tt.railLegsQuery(ctx, agency, stops, true, depart, depart+railPlanLeaveWindow)
+			if err != nil {
+				queryErr = err
+				return
+			}
+			first = append(first, ls...)
 		}
-		ls, err := tt.railLegsQuery(ctx, agency, stops, true, depart, depart+railPlanLeaveWindow)
-		if err != nil {
-			return nil, err
+		if preference != "direct_only" {
+			for agency, stops := range byAgency(dests) {
+				tt, err := k.railTT.get(agency)
+				if err != nil {
+					continue
+				}
+				ls, err := tt.railLegsQuery(ctx, agency, stops, false, depart, depart+railPlanArriveWindow)
+				if err != nil {
+					queryErr = err
+					return
+				}
+				second = append(second, ls...)
+			}
 		}
-		first = append(first, ls...)
+		expOrigins = k.expandRailEnds(ctx, origins)
+		expDests = k.expandRailEnds(ctx, dests)
 	}
-	for agency, stops := range byAgency(dests) {
-		tt, err := k.railTT.get(agency)
-		if err != nil {
-			continue
-		}
-		ls, err := tt.railLegsQuery(ctx, agency, stops, false, depart, depart+railPlanArriveWindow)
-		if err != nil {
-			return nil, err
-		}
-		second = append(second, ls...)
+	if k.w != nil {
+		k.w.await(runQueries)
+	} else {
+		runQueries()
+	}
+	if queryErr != nil {
+		return nil, queryErr
 	}
 	first = applyLiveRailDelays(first)
 	second = applyLiveRailDelays(second)
-	itins := combineRailLegs(first, second, k.expandRailEnds(ctx, origins), k.expandRailEnds(ctx, dests), depart, speed)
+	itins := combineRailLegs(first, second, expOrigins, expDests, depart, speed)
 	list := make([]any, 0, len(itins))
 	for _, it := range itins {
-		list = append(list, railItinJSON(it, depart))
+		list = append(list, railItinJSON(it, depart, speed))
 	}
 	return O("itineraries", list), nil
 }
@@ -510,10 +547,14 @@ func applyLiveRailDelays(legs []railLeg) []railLeg {
 // railItinJSON writes an itinerary in the planner's response format
 // (OPERATIONS.md, "Planner contract"): legs with boardAt / alightAt, walks
 // marked approximate (straight lines with a detour factor), timingSource.
-func railItinJSON(it railItin, depart int64) *Obj {
+func railItinJSON(it railItin, depart int64, speed float64) *Obj {
+	if speed <= 0 {
+		speed = 80
+	}
 	iso := func(u int64) string { return isoString(u * 1000) }
 	clock := func(u int64) string { return time.Unix(u, 0).In(madrid).Format("15:04") }
 	mins := func(s int64) float64 { return math.Max(0, math.Round(float64(s)/60)) }
+	signedMins := func(s int64) float64 { return math.Round(float64(s) / 60) }
 	pt := func(lat, lon float64) []any { return []any{lat, lon} }
 	stopObj := func(id, name string, lat, lon float64) *Obj {
 		return O("id", id, "name", name, "lat", lat, "lon", lon)
@@ -522,7 +563,7 @@ func railItinJSON(it railItin, depart int64) *Obj {
 		if m <= 0 {
 			return nil
 		}
-		secs := math.Round(m * railWalkDetour / 80 * 60)
+		secs := walkSecsFor(m, speed)
 		return O("from", pt(fromLat, fromLon), "to", pt(toLat, toLon), "fromName", fromName, "toName", toName,
 			"distanceMeters", math.Round(m*railWalkDetour), "walkingMinutes", math.Max(1, math.Round(secs/60)),
 			"durationSeconds", secs, "polyline", []any{pt(fromLat, fromLon), pt(toLat, toLon)},
@@ -533,6 +574,7 @@ func railItinJSON(it railItin, depart int64) *Obj {
 	ride := int64(0)
 	stops := 0
 	prevAlight := int64(0)
+	accessWalkSec := int64(walkSecsFor(it.From.WalkM, speed))
 	for i, l := range it.Legs {
 		ref := l.Agency + ":" + l.Line
 		color := any(nil)
@@ -543,7 +585,7 @@ func railItinJSON(it railItin, depart int64) *Obj {
 				}
 			}
 		}
-		wait := l.boardAt() - (it.Leave + int64(walkSecsFor(it.From.WalkM, 80)))
+		wait := l.boardAt() - (depart + accessWalkSec)
 		if i > 0 {
 			wait = l.boardAt() - prevAlight
 		}
@@ -574,7 +616,7 @@ func railItinJSON(it railItin, depart int64) *Obj {
 			"travelTimeMins", mins(l.alightAt()-l.boardAt()),
 			"boardAt", iso(l.boardAt()), "alightAt", iso(l.alightAt()),
 			"departureTime", clock(l.boardAt()), "scheduledDepartureTime", clock(l.Board),
-			"delayMinutes", mins(l.Delay), "isRealTime", l.Live, "timingSource", timing,
+			"delayMinutes", signedMins(l.Delay), "isRealTime", l.Live, "timingSource", timing,
 			"waitMinutes", mins(wait), "nextDepartureMinutes", mins(l.boardAt()-depart), "nextDepartureMins", mins(l.boardAt()-depart),
 		))
 	}
@@ -594,16 +636,24 @@ func railItinJSON(it railItin, depart int64) *Obj {
 	for _, l := range it.Legs {
 		idParts = append(idParts, l.Agency+":"+l.Line+":"+l.Trip+":"+l.BoardStop+":"+l.AlightStop)
 	}
+	fromWalkLat, fromWalkLon := it.From.PointLat, it.From.PointLon
+	if fromWalkLat == 0 && fromWalkLon == 0 {
+		fromWalkLat, fromWalkLon = it.From.Lat, it.From.Lon
+	}
+	toWalkLat, toWalkLon := it.To.PointLat, it.To.PointLon
+	if toWalkLat == 0 && toWalkLon == 0 {
+		toWalkLat, toWalkLon = it.To.Lat, it.To.Lon
+	}
 	out := O(
 		"type", kind, "mode", "rail", "transfersCount", transfers,
 		"stopsCount", float64(stops), "stopCount", float64(stops),
 		"rideMinutes", mins(ride), "totalDurationMinutes", mins(total), "totalDurationMins", mins(total),
 		"originStop", stopObj(first.BoardStop, first.BoardName, first.BoardLat, first.BoardLon),
 		"destStop", stopObj(last.AlightStop, last.AlightName, last.AlightLat, last.AlightLon),
-		"walkToFirstStop", walk(it.From.Lat, it.From.Lon, first.BoardLat, first.BoardLon, "", first.BoardName, it.From.WalkM),
-		"walkFromLastStop", walk(last.AlightLat, last.AlightLon, it.To.Lat, it.To.Lon, last.AlightName, "", it.To.WalkM),
+		"walkToFirstStop", walk(fromWalkLat, fromWalkLon, first.BoardLat, first.BoardLon, it.From.PointName, first.BoardName, it.From.WalkM),
+		"walkFromLastStop", walk(last.AlightLat, last.AlightLon, toWalkLat, toWalkLon, last.AlightName, it.To.PointName, it.To.WalkM),
 		"legs", legs, "transferWalk", transferWalk,
-		"initialWaitMinutes", mins(first.boardAt()-it.Leave-int64(walkSecsFor(it.From.WalkM, 80))),
+		"initialWaitMinutes", mins(first.boardAt()-depart-accessWalkSec),
 		"id", strings.Join(idParts, "|"),
 		"requestedDepartureAt", iso(depart), "arrivalAt", iso(it.Arrive),
 		"notices", []any{},
@@ -621,7 +671,7 @@ func railItinJSON(it railItin, depart int64) *Obj {
 // endpoints (a name, or an *Obj with lat/lon/name after geocoding). Nothing
 // when the endpoints are points less than railPlanMinTripM apart: a trip
 // across one town is the bus planner's.
-func (s *Server) railPlanFor(typedFrom, typedTo, origin, destination any, explicitFrom, explicitTo bool, departMs float64, speed, maxWalk any) []any {
+func (s *Server) railPlanFor(typedFrom, typedTo, origin, destination any, explicitFrom, explicitTo bool, departMs float64, speed, maxWalk, preference any) []any {
 	end := func(typed, v any, explicit bool) *Obj {
 		e := O("typed", jsString(or(typed, "")), "explicitPoint", explicit)
 		if o, ok := v.(*Obj); ok {
@@ -638,7 +688,8 @@ func (s *Server) railPlanFor(typedFrom, typedTo, origin, destination any, explic
 	}
 	args := O("from", end(typedFrom, origin, explicitFrom), "to", end(typedTo, destination, explicitTo),
 		"departUnix", math.Floor(departMs/1000),
-		"walkingSpeed", parseFloatJS(or(speed, "80")), "maxWalkingDistance", parseFloatJS(or(maxWalk, "2000")))
+		"walkingSpeed", parseFloatJS(or(speed, "80")), "maxWalkingDistance", parseFloatJS(or(maxWalk, "2000")),
+		"preference", jsString(or(preference, "fastest")))
 	data, err := s.historyQuery("planRail", args, 10000)
 	if err != nil {
 		return nil
