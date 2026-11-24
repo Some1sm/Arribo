@@ -74,6 +74,16 @@ If it works, the cost is one request per line (7 per cycle), and it gives true p
 - **EU travel-information rules.** Delegated Regulation (EU) 2017/1926, as amended by (EU) 2024/490, requires operators to provide real-time data through the National Access Point (nap.transportes.gob.es) on a set timetable. Check which deadline applies before citing it. A request to the Ministry's NAP team, asking why Casas real-time data is not on the NAP, puts pressure on Moventis from a direction it has to answer.
 - **Moventis again**, by a named contact rather than the web form: their press or customer office, quoting the August request date and asking only for read access to the same feed they give Google.
 
+## 5b. The expired planner server: is there a valid copy?
+
+Certificate Transparency logs (crt.sh, query `%.geoactio.com`) show that GeoActio holds a **valid** wildcard certificate for `*.pre.geoactio.com` (until 2027-05-03) and for `*.geoactio.com` (until 2026-12-29). So `otp-client.pre.geoactio.com` still serving an expired certificate means that server was not updated, which suggests it is abandoned. Other names found under those certificates:
+
+- `moventis.geoactio.com` → 302 to `/index.php/site/login`: a **private login page** for an operator back office (Apache/PHP). Not probed further.
+- `sarfa.ocupaciones.geoactio.com`, `sagales.ocupaciones.geoactio.com`: an internal occupancy API (`{"code":404,"message":"The current request is not defined by this API."}` on public paths).
+- `otp.geoactio.com` and `otp-client.geoactio.com` do not exist (the proxy cannot connect).
+
+No production planner backend with a valid certificate was found. This session may not disable certificate checks. To look inside the expired server, run `curl -sk` once from the VPS on `/otp/routers/default`, `/otp/routers/default/index/agencies` and a stop's `/stoptimes`. Any `"realtime":true` would show it receives live data. Treat it as a one-off check, never something Arribo connects to: nothing proves who answers when checks are off, and it is a pre-production server that may hold stale data.
+
 ## 6. Evidence (24 Nov 2026, Europe/Madrid)
 
 - `www.moventis.es/robots.txt` → `Crawl-delay: 10`; `/api/json/` not disallowed.
