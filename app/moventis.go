@@ -54,7 +54,7 @@ const (
 	movMinGap        = 11 * time.Second // robots.txt: Crawl-delay: 10
 	movBackoffMin    = time.Minute
 	movBackoffMax    = 10 * time.Minute
-	movStopSpacingKm = 1.5              // sample a stop about every 1.5 km of route
+	movStopSpacingKm = 1.5              // the closest stops are ever sampled (see movSpacingKm)
 	movStaticMaxAge  = 20 * time.Hour   // routes and stops are refetched after this
 	movObsMaxAge     = 40 * time.Minute // a stop's predictions are not used after this
 	movRetryMissing  = 30 * time.Minute // a followed line without routes is asked again after this
@@ -66,6 +66,53 @@ const (
 var movDefaultLines = []int{47, 48, 51, 53, 57, 59, 68}
 
 var movHTTP = &http.Client{Timeout: 20 * time.Second}
+
+// A stop's answer holds only the next live bus of each line and direction
+// (one real:"S" entry), so a bus is seen from any sampled stop between it
+// and the bus ahead. Sampled stops therefore need to be no further apart
+// than consecutive buses: about speed x headway. Asking every 1.5 km took
+// 89 stops, a 16-minute cycle at one request per movMinGap, for the 7 lines
+// through Mataró.
+//
+// movHeadwayMin is each line's day-average headway in minutes, from the
+// Generalitat interurban GTFS (17 service hours / trips per direction,
+// November 2026): C-10 78 trips a day, C-20 42, C-30 57, e11.1 268, e11.2
+// 170, 865 29, N-80 6. A line not listed uses movDefaultHeadwayMin.
+var movHeadwayMin = map[int]float64{53: 26, 57: 49, 59: 36, 47: 8, 48: 12, 51: 70, 68: 340}
+
+// movSpeedKmh is a line's average commercial speed: the motorway expresses
+// (e11.1, e11.2, 865) run faster than the N-II and town lines.
+var movSpeedKmh = map[int]float64{47: 40, 48: 40, 51: 40}
+
+const (
+	movDefaultHeadwayMin = 15 // movDefaultSpeedKmh is in moventisestimate.go
+	// movSpacingFactor keeps the spacing under the day-average gap between
+	// buses, since peak headways are shorter than the day's average.
+	movSpacingFactor = 0.8
+)
+
+// movSpacingKm is the distance between sampled stops on a route of routeKm
+// of the line: speed x headway x movSpacingFactor, at least movStopSpacingKm
+// and at most half the route (so a route keeps a middle stop besides its
+// first and last).
+func movSpacingKm(lineID int, routeKm float64) float64 {
+	h, ok := movHeadwayMin[lineID]
+	if !ok {
+		h = movDefaultHeadwayMin
+	}
+	v, ok := movSpeedKmh[lineID]
+	if !ok {
+		v = movDefaultSpeedKmh
+	}
+	d := v * h / 60 * movSpacingFactor
+	if max := routeKm / 2; d > max {
+		d = max
+	}
+	if d < movStopSpacingKm {
+		d = movStopSpacingKm
+	}
+	return d
+}
 
 // movLine is one line of the lines list.
 type movLine struct {
@@ -725,17 +772,22 @@ type movSample struct {
 }
 
 // samples picks the stops to ask: per route the first and last stop and
-// about one every movStopSpacingKm, each stop once (a stop answers for every
-// line serving it), the routes interleaved so every line is refreshed
-// throughout a cycle.
+// about one every movSpacingKm (the distance between consecutive buses),
+// each stop once (a stop answers for every line serving it), the routes
+// interleaved so every line is refreshed throughout a cycle.
 func movSamples(s *movStatic, lineIDs []int) []movSample {
 	var perRoute [][]movSample
 	for _, id := range lineIDs {
 		for _, rt := range s.Routes[id] {
 			var picks []movSample
 			last := math.Inf(-1)
+			routeKm := 0.0
+			if n := len(rt.Stops); n > 0 {
+				routeKm = rt.Stops[n-1].Km
+			}
+			spacing := movSpacingKm(id, routeKm)
 			for i, st := range rt.Stops {
-				if i == 0 || i == len(rt.Stops)-1 || st.Km-last >= movStopSpacingKm {
+				if i == 0 || i == len(rt.Stops)-1 || st.Km-last >= spacing {
 					picks = append(picks, movSample{StopID: st.ID, LineID: id})
 					last = st.Km
 				}

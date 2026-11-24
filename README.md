@@ -109,7 +109,7 @@ The repository targets a long-running Docker deployment; retired serverless conf
 | `DELAY_RETENTION_DAYS` | `30` | Delay-log retention |
 | `ARRIBO_GTFSRT` | `1` in compose | Rodalies and FGC feeds (GTFS-RT pollers and timetable imports) |
 | `ARRIBO_MOVENTIS` | `1` in compose | Moventis buses, estimated from the arrival predictions of moventis.es (`app/moventis.go`); `/api/moventis` |
-| `ARRIBO_MOVENTIS_LINES` | `47,48,51,53,57,59,68` | Moventis line ids to follow (the seven lines through Mataró). Each line costs about one request per 1.5 km of route, and requests are 11 s apart (the site's crawl delay) |
+| `ARRIBO_MOVENTIS_LINES` | `47,48,51,53,57,59,68` | Moventis line ids to follow (the seven lines through Mataró). A stop's answer shows only the next live bus per line and direction, so stops are sampled about as far apart as consecutive buses (speed × headway, `movSpacingKm` in `app/moventis.go`): 31 stops, a ~6-minute cycle for the seven lines. Requests are 11 s apart (the site's crawl delay) |
 
 Storage sampling does not reduce live polling frequency. The ingestion daemon polls Mataró vehicles every 20 seconds, refreshes notices every five minutes, and schedules analytics reports every 30 minutes.
 

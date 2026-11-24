@@ -92,9 +92,45 @@ func TestMovSamples(t *testing.T) {
 			t.Errorf("route %d: first or last stop not sampled", rt.Trayecto)
 		}
 	}
+	// C-10 (about 27 km a direction, 26-minute day-average headway at
+	// 22 km/h) is sampled about every 7.6 km: 4 or 5 stops a direction, not
+	// the 19 or 20 of the old fixed 1.5 km spacing.
 	total := len(routes[0].Stops) + len(routes[1].Stops)
-	if len(sm) >= total || len(sm) < 10 {
-		t.Errorf("%d samples of %d stops", len(sm), total)
+	if len(sm) > 12 || len(sm) < 6 {
+		t.Errorf("%d samples of %d stops, want 6..12", len(sm), total)
+	}
+	for _, rt := range routes {
+		spacing := movSpacingKm(53, rt.Stops[len(rt.Stops)-1].Km)
+		last := math.Inf(-1)
+		for i, st := range rt.Stops {
+			if !seen[st.ID] || i == len(rt.Stops)-1 {
+				continue
+			}
+			if i > 0 && st.Km-last < spacing {
+				t.Errorf("route %d: stop %d at %.1f km is %.1f km after the previous sample (spacing %.1f)", rt.Trayecto, st.ID, st.Km, st.Km-last, spacing)
+			}
+			last = st.Km
+		}
+	}
+}
+
+// TestMovSpacingKm: speed x headway x factor, clamped to [1.5 km, route/2].
+func TestMovSpacingKm(t *testing.T) {
+	cases := []struct {
+		line    int
+		routeKm float64
+		want    float64
+	}{
+		{53, 27, 22 * 26.0 / 60 * movSpacingFactor}, // C-10
+		{47, 32, 40 * 8.0 / 60 * movSpacingFactor},  // e11.1, every 8 minutes
+		{68, 38, 19}, // N-80: capped at half the route
+		{999, 20, 22 * 15.0 / 60 * movSpacingFactor}, // an unlisted line: the defaults
+		{53, 2, movStopSpacingKm},                    // never under 1.5 km
+	}
+	for _, c := range cases {
+		if got := movSpacingKm(c.line, c.routeKm); math.Abs(got-c.want) > 1e-9 {
+			t.Errorf("movSpacingKm(%d, %v) = %v, want %v", c.line, c.routeKm, got, c.want)
+		}
 	}
 }
 
