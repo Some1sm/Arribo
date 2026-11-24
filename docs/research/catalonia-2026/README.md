@@ -29,7 +29,7 @@ Full report: [01-c10-moventis-realtime.md](01-c10-moventis-realtime.md).
 |---|---|---|---|---|
 | 1 | `www.moventis.es/api/json/GetTiemposParada/ca/{ID_PARADA}/{ID_LINEA}/0` (C-10 = `ID_LINEA` 53) | Live arrival countdown per stop. `real:"S"` = GPS-tracked bus, with seconds precision. `real:"N"` = timetable only | **[checked]** live `real:"S"` predictions for C-10 at Premià de Mar | Grey: the backend of Moventis's own "Temps real" page. `robots.txt` asks for a 10 s crawl delay. Arribo's current Moventis poller already uses it |
 | 2 | `app.moventis.es/sae/api/posicion/linea/502` (502 = C-10 in the app's numbering) | **Real GPS**: lat/lon, speed, vehicle number | **Unreachable from this cloud network** (proxy 502, twice). Worked in older Arribo versions. Re-test from a Spanish/production IP | Reverse-engineered: the Moventis mobile app's built-in credential (already in git history; not reprinted) |
-| 3 | Mou-te (Generalitat) `mou-te.gencat.cat/MouteAPI/rest/infrastructure/nextdeparturesNEW?paradaId=…&useRealTime=true` | Stop predictions with a `realtime` flag, no GPS | API alive and the derived `AT` header still accepted. A C-10 stop board was not yet obtained | Reverse-engineered token on a government site |
+| 3 | Mou-te (Generalitat) `mou-te.gencat.cat/MouteAPI/rest/infrastructure/nextdeparturesNEW?paradaId=…&useRealTime=true` | Stop departures with a `realtime` flag, no GPS | **Checked in report 10:** at plaça de França (Mou-te stop 10026783) all 52 C10/N80 departures had `realtime:false`. **Mou-te has only timetable times for C-10**, so it is not a real-time source for it. `paradaId` must be Mou-te's own numeric id, not the GTFS `PF…` id | Reverse-engineered token on a government site |
 | 4 | Generalitat interurban GTFS (`territori.gencat.cat/…/busos-interurbans-GTFS.zip`) | **Static**: stops, timetable, exact road shapes for all 7 Casas lines (C-10 = route 0498). Its `stop_code` matches Moventis `COD_PARADA` for 83 of 88 C-10 stops | Verified 23 Nov | **Open licence** (attribution "Generalitat de Catalunya") |
 | 5 | Moventis developer programme (`moventis.es/ca/eines-desenvolupadors`) | Weekly GTFS plus "dades del transport en temps real" (format unstated), after manual approval | Page confirmed | **The only clean route to official real time for Casas** |
 | – | T-mobilitat open GTFS-RT | Nothing for Casas | **[checked]** 1,702 trip updates: TMB 804, AMB 741, Rodalies 102, FGC 55, **Casas 0**; vehicle positions → 404 | Open |
@@ -69,8 +69,8 @@ Full reports: [03](03-barcelona-province-urban-buses.md) (Barcelona province out
 | **Avanza** | full SIRI (GPS) in Mataró | Mataró SIRI (already in production in Arribo). Terrassa (TMESA) and Rubí have apps, but their back ends were not found | Mataró; Terrassa and Rubí unknown |
 | **Sagalés group** (Transgran, BusManresa, Urbà de Vic, Barcelona Bus, LloretBus, Sagalés Costa) | **GPS positions + stop delays + route polyline** | Grey: `www.sagales.com/es/real-time-bus/{routeId}/{dir}` (GTFS-RT-shaped JSON; position key misspelt `postion`, timestamps in ms). All 96 Catalan urban lines answered and ~55 had live vehicles at 11:10 on 24 Nov | Granollers conurbation, Manresa, Vic (new 10-line network from 1 Dec 2026), Mollet, Caldes, Lliçà, Bigues, Parets, Sant Celoni, Cardedeu, Pineda–Calella, Lloret, Girona airport lines and more |
 | **Moventis group** (Casas, Sarbus/La Vallesana, Sarfa, Moventis Costa/Pujol, TCC, Autobusos de Lleida) | stop predictions only, no GPS | Grey: `moventis.es/api/json/GetTiemposParada/…` (164 lines; every line is flagged real-time-capable, so the flag means nothing). Only AMB-contracted Moventis lines are in open GTFS-RT | Maresme (C-10 etc. and urban lines in Vilassar, Cabrera, Premià, Masnou), Sitges, Sant Sadurní, Castellar, Malgrat, Palafolls, Blanes, Costa Brava (Sarfa), **Lleida city** |
-| **TMG Girona** | ETA text inside HTML-in-JSON | Grey: `web2.girona.cat/appbus/cat/busos_json.php?linia=…&dir=anada|torna&codi=…` | Girona city L1–L12 (TEISA-run L3/L4/L9 uncertain) |
-| **EMT Tarragona, Reus Transport, TUS Sabadell, TEISA, Direxis (Olesa, Igualada), Monbus (Abrera, Esparreguera)** | ETA or map in their own apps | back end **not identified** | Tarragona, Reus, Sabadell, Girona/Salt TEISA lines, Olot, Igualada, Olesa, Abrera, Esparreguera |
+| **TMG Girona** | ETA text inside HTML-in-JSON | Grey: `web2.girona.cat/appbus/cat/busos_json.php?linia=…&dir=anada|torna&codi=…` | Girona city L1–L12 **and TEISA's L3** (checked in report 10). The Generalitat GTFS stop code equals the appbus stop number, so TEISA L3/L4/L6/L9/L16 can be joined |
+| **EMT Tarragona, Reus Transport, TUS Sabadell, TMESA Terrassa, Direxis (Olesa, Igualada), Monbus (Abrera, Esparreguera)** | ETA or map in their own apps | back end **not identified**, except that the TUS and TMESA apps are built by GeoActio, whose backend only accepts the official app's key. Using it would mean posing as the app: **do not**. Avanza also runs a shared SIRI server (`sirigmv.avanzagrupo.com/Siriv2`, used in Benidorm); whether Terrassa or Rubí are on it is unverified | Tarragona, Reus, Sabadell, Girona/Salt TEISA lines, Olot, Igualada, Olesa, Abrera, Esparreguera |
 | **Generalitat interurban lines and small-town "Urbà de …" lines** | none open | Mou-te answers `nextdeparturesNEW?…&useRealTime=true` for Generalitat lines (reverse-engineered token) | everywhere else |
 
 **Places with real-time data of some kind:**
@@ -79,7 +79,7 @@ Full reports: [03](03-barcelona-province-urban-buses.md) (Barcelona province out
 - **Tarragona province:** Tarragona and Reus, in their apps only.
 - **Lleida province:** Lleida.
 
-**Places with timetables only** (static GTFS, no live data found): Vilanova i la Geltrú (and no feed at all; its operator is unclear), Berga, Vilafranca, Igualada (app claims live data), Sitges (Moventis; unverified), Figueres (FISERSA), Olot (TPO), Banyoles, Palafrugell, Palamós, Roses, Empuriabrava, L'Estartit, Puigcerdà, Valls, El Vendrell, Calafell, Cunit, Torredembarra, Cambrils, Vila-seca/La Pineda, Tortosa, Amposta, Mont-roig, Vandellòs, Balaguer, Tàrrega, Solsona, Val d'Aran, and every Generalitat demand-responsive (TAD) network in the Pyrenees, Terres de l'Ebre and Segarra.
+**Places with timetables only** (static GTFS, no live data found): Vilanova i la Geltrú (since February 2025 the urban service is L68, run by Empresa Plana, and it is in the Generalitat GTFS as L0820/L1738), Berga, Vilafranca, Igualada (app claims live data), Sitges (Moventis; unverified), Figueres (FISERSA), Olot (TPO), Banyoles, Palafrugell, Palamós, Roses, Empuriabrava, L'Estartit, Puigcerdà, Valls, El Vendrell, Calafell, Cunit, Torredembarra, Cambrils, Vila-seca/La Pineda, Tortosa, Amposta, Mont-roig, Vandellòs, Balaguer, Tàrrega, Solsona, Val d'Aran, and every Generalitat demand-responsive (TAD) network in the Pyrenees, Terres de l'Ebre and Segarra.
 
 **No urban bus in any feed:** Salou (a circular line is planned for 2027), Altafulla, Deltebre, La Ràpita, Montblanc, Mollerussa, Tordera (PDF only), and others listed in reports 03–06.
 
@@ -88,7 +88,7 @@ Full reports: [03](03-barcelona-province-urban-buses.md) (Barcelona province out
 2. the ATM/T-mobilitat unified GTFS (free registration; operator prefixes such as `MAT_`, `TUS_`, `EMT_`…);
 3. per-operator files on Spain's NAP (free key).
 
-Gaps: Terrassa (NAP file expired May 2026), Vilanova i la Geltrú, Tordera, and TMG Girona (its feed expires 31 Dec 2026).
+Gaps: Terrassa (NAP file expired May 2026), Tordera, and TMG Girona (its feed expires 31 Dec 2026).
 
 ### 1.4 Other forms of public transport
 
@@ -144,13 +144,13 @@ Other prices: T-jove 45.50 €; T-16 free.
 Full report: [09-irregular-and-festive-lines.md](09-irregular-and-festive-lines.md).
 
 **Les Santes, Mataró:**
-- The **"Bus Focs"** night service ran in 2025, 22:00–02:00 every 15 minutes, on three lines that exist only that night: **L10** Cirera – Sant Simó, **L11** Galícia – Ronda Barceló, **L12** Plaça de França – Ronda Barceló. Whether they ran in 2026 is unconfirmed.
-- Every year L1–L8 and interurban lines are diverted on the Desvetllament, Ruixada, Nit Boja and Focs nights. The diversions are published only as an HTML page or PDF, never in GTFS.
+- The **"Bus Focs"** night service ran in 2025, 22:00–02:00 every 15 minutes, on three lines that exist only that night: **L10** Cirera – Sant Simó, **L11** Galícia – Ronda Barceló, **L12** Plaça de França – Ronda Barceló. Report 10 found no 2026 version.
+- Every year L1–L8 and interurban lines are diverted on the Desvetllament, Ruixada, Nit Boja and Focs nights. The diversions are published only as an HTML page or PDF, never in GTFS. **2026 diversions (report 10, search only):** Sat 18 July, L1, L2, L4, L6 and L8 via plaça d'Espanya from 19:00 to 08:00; Fri 24 July, L3 and L8 via Camí Ral; Sun 26 July, L1 and L4. The fireworks were Mon 27 July at 23:00, from three sites for the first time.
 - N80 and N82 run until 04:00.
-- Arribo already treats 27 July as a local holiday (Sunday timetable) in `src/data/holidays.json`. The SIRI feed would show a Bus Focs vehicle under an unknown line code, which the app should keep as a "special service" vehicle rather than drop.
+- Arribo already treats 27 July as a local holiday (Sunday timetable) in `src/data/holidays.json`. The SIRI feed would show a Bus Focs vehicle under an unknown line code, which the app should keep as a "special service" vehicle rather than drop. `holidays.json` already accepts per-date day-type overrides, but none are set; the diversions themselves are not modelled anywhere.
 
 **Generalitat GTFS footnotes.** The non-standard `nota.txt` holds **3,044 trip notes on 347 routes**. Examples:
-- "I nits de la Revetlla de Sant Joan, la de Cap d'Any i la de la Mercè" on 72 trips of 11 night routes, whose calendars do *not* include those weeknights;
+- "I nits de la Revetlla de Sant Joan, la de Cap d'Any i la de la Mercè" on 72 trips of 11 night routes, whose calendars do *not* include those weeknights. The column `prohibition` in the stop times is undocumented; report 10 infers boarding/alighting rules from the data (3 = both, 0 = board only, 4 = alight only, 5–9 = no travel within a group), to be confirmed with the Generalitat;
 - market-day stop skips (Cambrils on Wednesdays);
 - school-day-only and on-demand trips.
 
@@ -176,7 +176,7 @@ A GTFS-only planner gets these wrong.
 
 1. **Submit the Moventis developer form** (C-10 and all Moventis lines, official real time). Add **Sagalés, Avanza (Terrassa/Rubí), TUS, TMESA, EMT Tarragona, Reus Transport and TMG/TEISA** to the public-information requests in [../../catalonia-review/DATA_REQUESTS.md](../../catalonia-review/DATA_REQUESTS.md). Ask Renfe for unit/composition and platform data for R1–R8, citing that it already publishes them for regionals (`flotaLD.json`) and partly for commuter trains (`flota.json`).
 2. **Register the free keys/tokens:** T-mobilitat static GTFS (fares v2 and all operator prefixes), NAP, TMB developer portal (bus iTransit and metro predictions), TRAM OAuth, AMB API.
-3. **Re-test from production:** the Moventis app's GPS endpoint, the Mou-te C-10 stop board, and the hosts that were blocked here (each report's "re-verify" list).
+3. **Re-test from production:** the Moventis app's GPS endpoint and the hosts that were blocked here (each report's "re-verify" list). Mou-te is ruled out for C-10 real time (timetable only).
 4. **Decide the policy for grey and reverse-engineered sources.** In practice: moventis.es predictions, sagales.com and Renfe's web-map JSON are grey public endpoints; the Moventis app credential and the Mou-te token are reverse-engineered. The earlier Catalonia review recommended not to use reverse-engineered credentials.
 5. **Fares:** adopt the ATM v2 model with the override table in §1.5 and label prices "orientatiu".
 6. **Irregular services:** build the dated overlay layer, starting with Les Santes, and parse `nota.txt`.
