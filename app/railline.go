@@ -157,9 +157,14 @@ func railLineDetails(info operatorInfo, op *rtCatalogOp, code, direction string,
 	}
 	buses, stale := railLineTrains(info, code, ref, direction, headsign, feeds, now)
 	source := "gtfsrt"
-	if info.ID == movAgencyID {
+	switch info.ID {
+	case movAgencyID:
 		// Moventis: buses estimated from its stop predictions.
 		buses, stale, source = movLineBuses(code, direction, now), 0, "moventis_predictions"
+	case sagalesAgencyID:
+		// Sagalés: real GPS vehicles from sagales.com (unofficial).
+		buses, stale = sagalesLineBuses(code, direction, now)
+		source = "sagales_gps_unofficial"
 	}
 
 	name := route.Name
@@ -297,11 +302,25 @@ func (s *Server) railDepartures(q *xreq, res *xres, info operatorInfo, op *rtCat
 		direction = jsTrim(jsString(v))
 	}
 	now := time.UnixMilli(nowMs())
+	if info.ID == sagalesAgencyID {
+		res.json(O("success", true, "data", sagalesStopDepartures(stop, code, direction, now)))
+		return
+	}
 	if info.ID == tmbAgencyID {
 		// TMB live iTransit predictions (Metro L1-L5/L11 from 30 s cache;
 		// Bus on-demand with 20 s TTL cache). L9/L10/FM and misses fall back to GTFS.
 		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 		live := tmbLiveDepartures(ctx, stop, code, direction, now)
+		cancel()
+		if live != nil {
+			res.json(O("success", true, "data", live))
+			return
+		}
+	}
+	if info.ID == gironaAgencyID {
+		// TMG Girona unofficial live appbus predictions (20 s TTL cache); falls back to GTFS.
+		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+		live := gironaLiveDepartures(ctx, stop, code, direction, now)
 		cancel()
 		if live != nil {
 			res.json(O("success", true, "data", live))

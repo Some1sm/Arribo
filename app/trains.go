@@ -51,6 +51,8 @@ var trainAttribution = map[string]string{
 	tramTbxAgencyID:  tramAttribution,
 	tramTbsAgencyID:  tramAttribution,
 	tmbAgencyID:      tmbAttributionBase,
+	sagalesAgencyID:  sagalesAttribution,
+	gironaAgencyID:   gironaAttribution,
 }
 
 // trainFeed is one operator's snapshot as the response builder sees it.

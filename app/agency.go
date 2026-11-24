@@ -188,7 +188,7 @@ func railCatalog() (lines []any, ops []any) {
 		switch info.ID {
 		case movAgencyID:
 			o.Set("positions", "estimated") // estimated from stop predictions
-		case ambAgencyID, tramTbxAgencyID, tramTbsAgencyID, tmbAgencyID:
+		case ambAgencyID, tramTbxAgencyID, tramTbsAgencyID, tmbAgencyID, gironaAgencyID:
 			o.Set("positions", "none") // predicted departures only
 		}
 		ops = append(ops, o)

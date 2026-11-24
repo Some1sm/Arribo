@@ -57,12 +57,17 @@ structured output printed directly to the user:
 
 Arribo! serves Mataró Bus Urbà **L1–L8**, eight lines and 155 indexed stops, with
 live GPS. Beside it, through separate pollers that do not go through the tracker:
-Rodalies and FGC trains (GTFS-RT, `app/gtfsrtpoll.go`), the seven Moventis lines
-through Mataró (positions estimated from moventis.es predictions, `app/moventis.go`)
-and AMB Bus Metropolità (predicted departures only, no positions and no stored
-visits, `app/amb.go`). Each says what its data is; see README.md for the flags.
-TrackerRegistry registers only Mataró. The Catalonia-wide trackers and their
-GTFS/indexer helpers have been deleted, not left dormant; there is nothing to
+Rodalies and FGC trains (GTFS-RT, `app/gtfsrtpoll.go`, plus optional Renfe visor
+enrichment in `app/renfemap.go` and FGC Geotren occupancy in `app/fgcgeotren.go`),
+the seven Moventis lines through Mataró (positions estimated from moventis.es
+predictions, `app/moventis.go`), AMB Bus Metropolità (`app/amb.go`), TRAM
+Barcelona Trambaix + Trambesòs (`app/tram.go`, OAuth GTFS-RT, no history), TMB
+Metro and Bus (`app/tmb.go`, iTransit + static GTFS, no history), Sagalés
+(`app/sagales.go`, unofficial live GPS + predictions, no history), and TMG Girona
+(`app/girona.go`, NAP 1570 static GTFS + unofficial live appbus predictions, no
+history). Each says what its data is; see README.md and OPERATIONS.md for the
+flags. TrackerRegistry registers only Mataró. The Catalonia-wide trackers and
+their GTFS/indexer helpers have been deleted, not left dormant; there is nothing to
 re-enable. [docs/history/ARCHITECTURE.md](docs/history/ARCHITECTURE.md)
 is historical. Use [README.md](README.md) and [OPERATIONS.md](OPERATIONS.md) for current
 setup and contracts; verify disagreements against source, not fixed source-line lists.

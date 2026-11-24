@@ -168,6 +168,7 @@ type Worker struct {
 	daemon   *IngestionDaemon
 	stopRt   func()         // stops the GTFS-RT pollers (a no-op unless ARRIBO_GTFSRT=1)
 	stopMov  func()         // stops the Moventis poller (a no-op unless ARRIBO_MOVENTIS=1)
+	stopSag  func()         // stops the Sagalés poller (a no-op unless ARRIBO_SAGALES=1)
 	railTT   railTimetables // read-only rail timetables for station departures (worker lock)
 	inbox    *msgQueue[workerMsg]
 	out      func(serverMsg)
@@ -226,6 +227,7 @@ func (k *Worker) boot() {
 	k.daemon.start()
 	k.stopRt = startGtfsRtPollers()
 	k.stopMov = startMoventisPoller()
+	k.stopSag = startSagalesPoller()
 	k.sendToMaster("WORKER_READY", O("pid", float64(os.Getpid()), "version", "3.0.0-mataro"))
 	log.Printf("[Worker] ✅ Ingestion Worker Ready and Listening.")
 	k.w.mu.Unlock()
@@ -291,6 +293,13 @@ func (k *Worker) handleMasterMessage(m workerMsg) {
 			go func() {
 				defer stopWG.Done()
 				k.stopMov()
+			}()
+		}
+		if k.stopSag != nil {
+			stopWG.Add(1)
+			go func() {
+				defer stopWG.Done()
+				k.stopSag()
 			}()
 		}
 		if k.stopRt != nil {

@@ -538,4 +538,23 @@ The Rodalies poller (`app/gtfsrtpoll.go`, `app/gtfsrtld.go`, only with `ARRIBO_G
 - **Lag.** While the LD header is further behind the commuter feed's header than the stale window (180 s), no LD train is added and the `[GTFS-RT]` line says `long-distance feed <n> s behind the commuter feed: not shown`. On 2026-11-24 it was about 3 600 s behind, and the positions really were that old: trains in both feeds were 4-75 km from where the commuter feed put them. Watch that log line; LD trains appear by themselves once the feed catches up.
 - **Not done.** LD delays are not in the trip-level delay map used by station boards (boards still show the timetable for those trips); cancellations in the LD trip updates are ignored; LD-only trains get no station visits, platform sightings or history rows from trip updates.
 
-`src/data/renfe_fleet.json` is the static rolling-stock table (series, manufacturer, cars, length, seats, speed, accessibility, usual lines), from research report 02 section 4. All figures are marked unverified; series 470 is in service on R15/R17 (seen 2026-11-24). The server (`app/renfefleet.go`) reads it once and adds `usualSeries` (the series in service whose `usual_lines` include the train's line) to each Rodalies train in `/api/trains`; the train popup shows it as "Sèries habituals en aquesta línia: …. No se sap quina unitat fa aquest tren." It is never this train's unit: no public source gives that for R1-R8.
+`src/data/renfe_fleet.json` is the static rolling-stock table (series, manufacturer, cars, length, seats, speed, accessibility, usual lines), from research report 02 section 4. All figures are marked unverified; series 470 is in service on R15/R17 (seen 2026-11-24). The server (`app/renfefleet.go`) reads it once and adds `usualSeries` (the series in service whose `usual_lines` include the train's line) to each Rodalies train in `/api/trains`; the train popup shows it as "Sèries habituals en aquesta línia: …. No se sap quina unitat fa aquest tren." When `ARRIBO_RENFE_MAP=1` (`app/renfemap.go`), regional trains seen in `flotaLD.json` get their actual coupled units (`unit`, enriched with `renfeSeriesSpecFor`), commuter trains get unofficial `nextVia`/`via` platforms when official GTFS-RT labels omit them, and `accesible` populates `wheelchairAccessible` — all labelled "font no oficial".
+
+## Additional Catalonia networks (TRAM, TMB, Sagalés, TMG Girona)
+
+Each runs as its own poller or GTFS-RT source with `noHistory: true` (never written to the persistent Mataró/rail history SQLite):
+
+- **TRAM Barcelona (`app/tram.go`, `ARRIBO_TRAM=1`)**: requires `TRAM_CLIENT_ID` and `TRAM_CLIENT_SECRET` in `.env` (never committed). Polls Trambaix (`TBX.zip` + `networkId=1`, T1–T3) and Trambesòs (`TBS.zip` + `networkId=2`, T4–T6) via OAuth2 `client_credentials` token cache. Cites "Powered by TRAM Barcelona (https://opendata.tram.cat)" with the update date; no history stored due to deletion terms.
+- **TMB Metro & Bus (`app/tmb.go`, `ARRIBO_TMB=1`)**: requires `TMB_APP_ID` and `TMB_APP_KEY` in `.env`. Daily GTFS import (`api.tmb.cat/v1/static/datasets/gtfs.zip`, URLs never logged) provides Metro (L1–L5, L9N/S, L10N/S, L11, FM) and TMB Bus (105 lines). Single-call Metro iTransit (`itransit/metro/estacions`) polls every 30 s; TMB Bus stops query `itransit/bus/parades/{code}` on demand with a 20 s TTL cache (dropping `transit_namespace="amb"` duplicates when `ARRIBO_AMB=1`). Cites "Transports Metropolitans de Barcelona (TMB)" with the update date.
+- **Sagalés (`app/sagales.go`, `ARRIBO_SAGALES=1`)**: unofficial public JSON (`sagales.com/es/real-time-bus/{id}/{dir}`), default 13 Maresme/Vallès/Girona lines (`550,551,553,554,400,405,691,601,604,617,671,672,673`; overridable via `ARRIBO_SAGALES_LINES`). Gives real GPS (`postion` key), delays, stops, and encoded polylines; deduplicates repeated trips per physical vehicle; labelled "font no oficial".
+- **TMG Girona (`app/girona.go`, `ARRIBO_GIRONA=1`)**: static GTFS from NAP feed `1570` (`NAP_API_KEY` in `.env`) plus on-demand unofficial live stop predictions (`web2.girona.cat/appbus/cat/busos_json.php`, 20 s TTL cache, falls back to GTFS when "(sense informació)"). Labelled "font no oficial".
+
+### Refreshing ATM GTFS-Fares v2 (`src/data/fares.json`)
+
+```bash
+NAP_API_KEY=... node scripts/import_atm_fares.js
+# or from a local copy of NAP 2059:
+node scripts/import_atm_fares.js --zip nap2059.zip
+```
+
+Imports the full 46×46 ATM Àrea de Barcelona sector matrix, Rodalies/FGC stop-to-sector mappings, priority-1 `ROD_Z1`/`FGC_Z1` boundary overrides (multi-trip only), and `STI_Barcelona` route membership while preserving the non-GTFS override layer (Mataró Bus own tickets, Aerobús, Airport Metro L9 Sud, and non-integrated exclusions such as Cremallera de Núria). Run `npm test` after every yearly January fare refresh.

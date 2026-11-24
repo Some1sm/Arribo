@@ -50,8 +50,12 @@ func gtfsStale(path string, maxAge time.Duration) bool {
 }
 
 // downloadFile streams url into path (via path.tmp and a rename), at most
-// gtfsMaxZipBytes. Errors never include the URL.
+// gtfsMaxZipBytes. Errors never include the URL or headers.
 func downloadFile(ctx context.Context, url, path string) error {
+	return downloadFileHeaders(ctx, url, path, nil)
+}
+
+func downloadFileHeaders(ctx context.Context, url, path string, headers map[string]string) error {
 	ctx, cancel := context.WithTimeout(ctx, gtfsDownloadTime)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -59,6 +63,9 @@ func downloadFile(ctx context.Context, url, path string) error {
 		return errors.New("bad request")
 	}
 	req.Header.Set("User-Agent", "arribo-gtfs/1")
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return errors.New(nodeErrMessage(err))
@@ -102,7 +109,7 @@ func refreshTimetable(ctx context.Context, src rtSource) error {
 	db := gtfsTimetablePath(src.AgencyID)
 	zipPath := db + ".zip"
 	defer os.Remove(zipPath)
-	if err := downloadFile(ctx, src.staticURL, zipPath); err != nil {
+	if err := downloadFileHeaders(ctx, src.staticURL, zipPath, src.staticHeaders); err != nil {
 		return fmt.Errorf("download: %w", err)
 	}
 	return importGTFSContext(ctx, src.AgencyID, zipPath, db, bbox, src.staticBBox)

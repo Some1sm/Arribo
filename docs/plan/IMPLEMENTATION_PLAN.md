@@ -127,12 +127,12 @@ Do each only after 0.1 and as its own poller. Order by value for Mataró users f
 | ID | Status | Network | Source | Notes |
 |---|---|---|---|---|
 | 6.1 | `[ ]` | **Other Moventis lines via the same poller:** the Maresme Casas urban lines C-12…C-22, then the rest of the 164 | moventis.es `GetTiemposParada` | the crawl delay limits how many lines fit in a cycle; prioritise |
-| 6.2 | `[ ]` | **Sagalés** (Granollers, Manresa, Vic, Mollet, Pineda–Calella, Lloret…): GPS + delays | `www.sagales.com/es/real-time-bus/{id}/{dir}` | position key misspelt `postion`, timestamps in ms; one bus repeated per upcoming trip; Vic network changes on 1 Dec 2026 |
+| 6.2 | `[x]` | **Sagalés** (Granollers, Manresa, Vic, Mollet, Pineda–Calella, Lloret…): GPS + delays | `www.sagales.com/es/real-time-bus/{id}/{dir}` | Done 2026-11-24: `app/sagales.go` (`ARRIBO_SAGALES=1`, default 13 Mataró/Maresme/Vallès/Girona lines `550,551,553,554,400,405,691,601,604,617,671,672,673`, overridable via `ARRIBO_SAGALES_LINES`, `noHistory`). Handles misspelt `postion`, unix ms timestamps, Google encoded polylines, and deduplicates repeated trips per physical vehicle; labelled "font no oficial" (`app/sagales_test.go`). |
 | 6.3 | `[x]` | **AMB buses** (open, official) | `www.ambmobilitat.cat/transit/trips-updates/trips.bin` + AMB GTFS (`/OpenData/google_transit.zip`, 6-day window, refresh daily) | predictions only, no GPS; the vehicle positions file does not exist (done 2026-11-24: `app/amb.go`, `ARRIBO_AMB=1` in compose; 140 lines in the catalog and line view, live departures from the trip updates (a trip is live when its update names a bus due within 30 min), AMB alerts as plain text. No map positions; no stored visits (`noHistory`, ~750 000 a day): Dades for AMB needs sampled storage first) |
 | 6.4 | `[x]` | **FGC occupancy and series** | Opendatasoft `posicionament-dels-trens` (Geotren): `tipus_unitat`, `ut`, occupancy per car | mind the 5,000/day quota already shared with the current FGC polling (done 2026-11-24: `app/fgcgeotren.go` polls Geotren every 3 min inside the FGC poller (+480 requests a day, ~4 610 of 5 000 in all); joined by `ut` = vehicle id; `/api/trains` FGC trains carry `unit` {series, occupancyPercent, cars}; shown in the train popup) |
 | 6.5 | `[x]` | **TMB Metro predictions** (L1–L5, L11) and **TMB bus** | `api.tmb.cat/v1/itransit/...` | Done 2026-11-24: `app/tmb.go` (`ARRIBO_TMB=1`, `TMB_APP_ID`/`TMB_APP_KEY` from VPS `.env`, `noHistory: true`); daily TMB GTFS import puts Metro (L1–L5, L9N/S, L10N/S, L11, FM) and TMB Bus (105 lines) in the catalog and line views; single-call Metro iTransit polled every 30 s; on-demand per-stop Bus iTransit with 20 s TTL cache (drops `transit_namespace="amb"` duplicates when AMB is on, exposes bus ramp status); cites TMB + last-update date (`app/tmb_test.go`). |
 | 6.6 | `[x]` | **TRAM** | opendata.tram.cat OAuth | Done 2026-11-24: `app/tram.go` (`ARRIBO_TRAM=1`, `TRAM_CLIENT_ID`/`TRAM_CLIENT_SECRET` from VPS `.env`, `noHistory: true` for deletion terms); OAuth2 `client_credentials` token cache; Trambaix (`TBX.zip` + `networkId=1`, T1–T3) and Trambesòs (`TBS.zip` + `networkId=2`, T4–T6) GTFS-RT TripUpdates; cites "Powered by TRAM Barcelona" + date (`app/tram_test.go`). |
-| 6.7 | `[ ]` | **TMG Girona** | `web2.girona.cat/appbus/cat/busos_json.php` | ETA text in HTML; covers TEISA's L3 too |
+| 6.7 | `[x]` | **TMG Girona** | `web2.girona.cat/appbus/cat/busos_json.php` | Done 2026-11-24: `app/girona.go` (`ARRIBO_GIRONA=1`, `NAP_API_KEY` from VPS `.env`, `noHistory: true`); daily static GTFS from NAP 1570 (L1, L2, L5, L7, L8, L10, L11, L12) + on-demand 20 s cached HTML parsing of `busos_json.php` (falls back to GTFS on "(sense informació)"); labelled "font no oficial" (`app/girona_test.go`). |
 
 ---
 
@@ -140,7 +140,7 @@ Do each only after 0.1 and as its own poller. Order by value for Mataró users f
 
 | ID | Status | Step |
 |---|---|---|
-| 7.1 | `[ ]` | After each phase, update README.md, OPERATIONS.md and AGENTS.md §1 (scope), and run `node scripts/docs_check.js`. |
+| 7.1 | `[x]` | After each phase, update README.md, OPERATIONS.md and AGENTS.md §1 (scope), and run `node scripts/docs_check.js`. Done 2026-11-24: updated `AGENTS.md` §1 and `OPERATIONS.md` for Phases 3–6, verified with `docs_check.js`. |
 | 7.2 | `[ ]` | Keep [docs/catalonia-review/DATA_REQUESTS.md](../catalonia-review/DATA_REQUESTS.md) in step with Phase 0.5 answers. |
 
 ---
@@ -149,7 +149,8 @@ Do each only after 0.1 and as its own poller. Order by value for Mataró users f
 
 Newest first. One line per session: date, who, steps touched, commit.
 
-- 2026-11-24, local session: steps 6.5 (TMB Metro + Bus iTransit + GTFS, `app/tmb.go`, `ARRIBO_TMB=1`, `noHistory: true`) and 6.6 (TRAM Trambaix + Trambesòs OAuth GTFS-RT, `app/tram.go`, `ARRIBO_TRAM=1`, `noHistory: true`).
+- 2026-11-24, local session: steps 6.2 (Sagalés real GPS + delays, `app/sagales.go`, `ARRIBO_SAGALES=1`), 6.7 (TMG Girona NAP 1570 GTFS + unofficial appbus predictions, `app/girona.go`, `ARRIBO_GIRONA=1`), and 7.1 (updated `AGENTS.md` §1 and `OPERATIONS.md`).
+- 2026-11-24, local session: steps 6.5 (TMB Metro + Bus iTransit + GTFS, `app/tmb.go`, `ARRIBO_TMB=1`, `noHistory: true`) and 6.6 (TRAM Trambaix + Trambesòs OAuth GTFS-RT, `app/tram.go`, `ARRIBO_TRAM=1`, `noHistory: true`, `2f03d48`).
 - 2026-11-24, local session: Phase 0 complete (0.2 `app.moventis.es` NXDOMAIN closes 1.6; 0.3 GeoActio 503), Phase 4 complete (4.3 ATM GTFS-Fares v2 import from NAP 2059 with full 46×46 matrix, 379 stop sectors, 58 boundary pairs, and Aerobús/Airport/non-STI overrides), and Phase 5 complete (5.4 Generalitat `nota.txt` pattern parser, `bc79786`).
 - 2026-11-24, local session: Phase 0 (0.1, 0.4, 0.5 recorded) and Phase 3 (3.1–3.4: Renfe `flota.json`/`flotaLD.json` platforms, coupled units, fleet popup, and wheelchair accessibility behind `ARRIBO_RENFE_MAP=1`, `128be53`).
 - 2026-11-24, local session: step 6.4 (FGC series and occupancy from Geotren).
