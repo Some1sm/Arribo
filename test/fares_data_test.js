@@ -37,9 +37,18 @@ for (const [from, row] of Object.entries(fares.sectorZones)) {
   assert.equal(row[from], 1, `${from} to itself is 1 zone`);
   for (const n of Object.values(row)) assert.ok(Number.isInteger(n) && n >= 1 && n <= 7);
 }
+assert.ok(Object.keys(fares.sectorZones).length >= 40, 'full ATM sector matrix imported');
+assert.ok(Object.keys(fares.stopSectors).length >= 300, 'Rodalies and FGC stop sectors imported');
+assert.ok(Array.isArray(fares.boundaryPairs) && fares.boundaryPairs.length >= 50, 'ROD_Z1/FGC_Z1 boundary pairs imported');
+assert.equal(fares.overrides.aerobus.single, 7.75);
+assert.equal(fares.overrides.airportMetro.single, 5.9);
+assert.ok(fares.overrides.nonIntegratedRoutes.fgc.includes('L1'), 'Cremallera de Núria excluded from ATM');
 for (const [name, sector] of Object.entries(fares.stations)) {
   assert.equal(name, name.toLowerCase(), `${name} is folded`);
   assert.ok(!/[^a-z0-9 ]/.test(name), `${name} has no accents or punctuation`);
   assert.ok(sector in fares.sectorZones['3E'], `${name}: sector ${sector} has a known zone count from Mataró`);
+}
+for (const [stopKey, sector] of Object.entries(fares.stopSectors)) {
+  assert.ok(sector in fares.sectorZones, `${stopKey}: sector ${sector} exists in matrix`);
 }
 console.log('  ✓ fares.json invariants');

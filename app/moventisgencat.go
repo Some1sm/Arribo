@@ -39,10 +39,13 @@ type gcPattern struct {
 }
 
 type gcTrip struct {
-	Service json.Number `json:"service"`
-	Pattern int         `json:"pattern"`
-	Shape   int         `json:"shape"`
-	Times   []string    `json:"times"` // "HH:MM:SS", one per pattern stop; hours may pass 23
+	Service     json.Number `json:"service"`
+	Pattern     int         `json:"pattern"`
+	Shape       int         `json:"shape"`
+	Times       []string    `json:"times"` // "HH:MM:SS", one per pattern stop; hours may pass 23
+	Note        string      `json:"note,omitempty"`
+	NoteAdded   []string    `json:"noteAdded,omitempty"`
+	NoteRemoved []string    `json:"noteRemoved,omitempty"`
 }
 
 type gcDir struct {
@@ -71,8 +74,20 @@ type gcService struct {
 
 // gcStopTime is one published departure of a line at a stop.
 type gcStopTime struct {
-	service string
-	sec     int // seconds after the service day's midnight (may pass 24 h)
+	service     string
+	sec         int // seconds after the service day's midnight (may pass 24 h)
+	noteAdded   map[string]bool
+	noteRemoved map[string]bool
+}
+
+func (st gcStopTime) runsOn(g *gcData, date string) bool {
+	if st.noteRemoved[date] {
+		return false
+	}
+	if st.noteAdded[date] {
+		return true
+	}
+	return g.runs(st.service, date)
 }
 
 type gcData struct {
@@ -220,7 +235,20 @@ func (g *gcData) stopTimes(lineID, stopID int) ([]gcStopTime, bool) {
 				for i, si := range pat {
 					if si >= 0 && si < len(d.Stops) && d.Stops[si].ID == gtfs && i < len(t.Times) {
 						if sec := gcClock(t.Times[i]); sec >= 0 {
-							out = append(out, gcStopTime{service: t.Service.String(), sec: sec})
+							st := gcStopTime{service: t.Service.String(), sec: sec}
+							if len(t.NoteAdded) > 0 {
+								st.noteAdded = make(map[string]bool, len(t.NoteAdded))
+								for _, dd := range t.NoteAdded {
+									st.noteAdded[dd] = true
+								}
+							}
+							if len(t.NoteRemoved) > 0 {
+								st.noteRemoved = make(map[string]bool, len(t.NoteRemoved))
+								for _, dd := range t.NoteRemoved {
+									st.noteRemoved[dd] = true
+								}
+							}
+							out = append(out, st)
 						}
 					}
 				}
@@ -268,7 +296,7 @@ func (g *gcData) nextDeparture(lineID, stopID int, now time.Time) (time.Time, bo
 		date := d.Format("20060102")
 		y, m, dd := d.Date()
 		for _, st := range sts {
-			if !g.runs(st.service, date) {
+			if !st.runsOn(g, date) {
 				continue
 			}
 			t := time.UnixMilli(localTimeToUtcDate(y, int(m)-1, dd, 0, 0, 0)).Add(time.Duration(st.sec) * time.Second)

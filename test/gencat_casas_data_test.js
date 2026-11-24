@@ -13,7 +13,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { dataFileText } = require('../scripts/lib/dataJson');
-const { zipEntries, simplify, nameSimilarity } = require('../scripts/import_gencat_moventis');
+const { zipEntries, simplify, nameSimilarity, parseGencatNote } = require('../scripts/import_gencat_moventis');
 
 const FILE = path.join(__dirname, '..', 'src/data/gencat_casas.json');
 const text = fs.readFileSync(FILE, 'utf8').replace(/\r\n/g, '\n');
@@ -111,4 +111,35 @@ assert.equal(zipEntries(tinyZip('a.txt', 'hello')).read('a.txt').toString(), 'he
 const line = [[41, 2], [41.00001, 2.00001], [41.00002, 2.00002], [41.01, 2.01]];
 assert.ok(simplify(line, 5).length < line.length, 'Douglas-Peucker drops near-collinear points');
 assert.ok(nameSimilarity('Camí Ral (Sant Simó)', 'cami ral - sant simo') > 0.9);
+
+// nota.txt parser (plan step 5.4): always preserves raw text + extracts dates/flags
+{
+  const n1 = parseGencatNote("I nits de la Revetlla de Sant Joan, la de Cap d'Any i la de la Festivitat de la Mercè", [2026]);
+  assert.equal(n1.raw, "I nits de la Revetlla de Sant Joan, la de Cap d'Any i la de la Festivitat de la Mercè");
+  assert.deepEqual(n1.added, ['20260623', '20260923', '20261231']);
+  assert.ok(n1.tags.includes('festive_nights'));
+
+  const n2 = parseGencatNote('Excepte festes locals a Barcelona', [2026]);
+  assert.equal(n2.raw, 'Excepte festes locals a Barcelona');
+  // 2026 Easter is April 5 -> Segona Pasqua (+50 days) is May 25; La Mercè is Sep 24.
+  assert.deepEqual(n2.removed, ['20260525', '20260924']);
+  assert.ok(n2.tags.includes('except_local_holidays'));
+
+  const n3 = parseGencatNote('I festes locals a Barcelona', [2026]);
+  assert.deepEqual(n3.added, ['20260525', '20260924']);
+  assert.ok(n3.tags.includes('include_local_holidays'));
+
+  const n4 = parseGencatNote('Parades a la demanda: Les Ginesteres. Reserva prèvia al tlf. 900130014', [2026]);
+  assert.equal(n4.requestStop, true);
+  assert.ok(n4.tags.includes('on_demand'));
+
+  const n5 = parseGencatNote('Els dijous (dies de mercat) no para a c. Mercè (CAP)', [2026]);
+  assert.deepEqual(n5.marketWeekdays, [3]);
+  assert.ok(n5.tags.includes('market_day'));
+
+  const n6 = parseGencatNote('Dies lectius de la UAB', [2026]);
+  assert.equal(n6.raw, 'Dies lectius de la UAB');
+  assert.ok(n6.tags.includes('academic_calendar'));
+}
+
 console.log('  ✓ gencat_casas.json: format, 7 lines, calendar and crosswalk invariants');

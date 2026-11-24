@@ -307,7 +307,146 @@ function cutLines(zip) {
   return { routes, trips, stopTimes, stops, shapeRaw, notes, calendar, dates, feedStart, feedEnd, nonZeroSeconds, totalTimes };
 }
 
+// ---- nota.txt pattern parser (plan step 5.4) -------------------------------
+
+function foldNote(s) {
+  return String(s || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+// Anonymous Gregorian algorithm for Easter Sunday (month 1..12, day 1..31).
+function easterSunday(year) {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function fmtYmdUTC(d) {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}${m}${day}`;
+}
+
+function barcelonaLocalHolidays(year) {
+  const easter = easterSunday(year);
+  const pentecostMon = new Date(easter.getTime() + 50 * 86400000); // Segona Pasqua
+  return [fmtYmdUTC(pentecostMon), `${year}0924`]; // La Mercè
+}
+
+const MARKET_WEEKDAYS = [
+  ['dilluns', 0],
+  ['dimarts', 1],
+  ['dimecres', 2],
+  ['dijous', 3],
+  ['divendres', 4],
+  ['dissabte', 5],
+  ['diumenge', 6],
+];
+
+/**
+ * Parses known Generalitat nota.txt patterns (report 09 §2.1, plan step 5.4)
+ * into structured calendar/behaviour metadata while ALWAYS keeping the
+ * original text in `raw`.
+ */
+function parseGencatNote(text, years = []) {
+  const raw = String(text || '').trim();
+  const f = foldNote(raw);
+  const added = new Set();
+  const removed = new Set();
+  const tags = new Set();
+  const marketWeekdays = [];
+  let requestStop = false;
+
+  const yrs = [...new Set(years.map(Number).filter((y) => y >= 2000 && y <= 2100))].sort();
+
+  // 1. Festive nights ("I nits de la Revetlla de Sant Joan, la de Cap d'Any i la de la Festivitat de la Mercè")
+  if (/\bnits?\b/.test(f) || /\brevetlla\b/.test(f)) {
+    let matchedNight = false;
+    if (f.includes('sant joan')) {
+      matchedNight = true;
+      for (const y of yrs) added.add(`${y}0623`);
+    }
+    if (f.includes("cap d'any") || f.includes('cap d any')) {
+      matchedNight = true;
+      for (const y of yrs) added.add(`${y}1231`);
+    }
+    if (f.includes('merce')) {
+      matchedNight = true;
+      for (const y of yrs) added.add(`${y}0923`);
+    }
+    if (matchedNight) tags.add('festive_nights');
+  }
+
+  // 2. Local holidays ("Excepte festes locals a Barcelona", "I festes locals a Barcelona")
+  if (/festes?\s+locals?/.test(f)) {
+    const isExcept = /\bexcepte\b|\bno\s+circula\b|\bmenys\b/.test(f);
+    const isBcn = /\bbarcelona\b/.test(f);
+    tags.add(isExcept ? 'except_local_holidays' : 'include_local_holidays');
+    if (isBcn) {
+      for (const y of yrs) {
+        for (const d of barcelonaLocalHolidays(y)) {
+          if (isExcept) removed.add(d);
+          else added.add(d);
+        }
+      }
+    }
+  }
+
+  // 3. Request / demand-responsive stops
+  if (/\ba\s+la\s+demanda\b|\breserva\s+previa\b|\btad\s*cat\b|\bsagales\s+on\s+demand\b|\bclic\.cat\b|\bparada\s+a\s+demanda\b/.test(f)) {
+    requestStop = true;
+    tags.add('on_demand');
+  }
+
+  // 4. Market days ("dia de mercat", "dies de mercat", "dimecres de mercat")
+  if (/\bde\s+mercat\b|\bmercat\s+setmanal\b/.test(f)) {
+    tags.add('market_day');
+    for (const [name, idx] of MARKET_WEEKDAYS) {
+      if (new RegExp(`\\b${name}\\b`).test(f)) marketWeekdays.push(idx);
+    }
+  }
+
+  // 5. Academic / school calendar
+  if (/\bdies?\s+lectius?\b|\btransport\s+escolar\b|\buab\b/.test(f)) {
+    tags.add('academic_calendar');
+  }
+
+  const out = { raw };
+  if (added.size) out.added = [...added].sort();
+  if (removed.size) out.removed = [...removed].sort();
+  if (requestStop) out.requestStop = true;
+  if (marketWeekdays.length) out.marketWeekdays = marketWeekdays;
+  if (tags.size) out.tags = [...tags].sort();
+  return out;
+}
+
+function feedYears(feedStart, feedEnd) {
+  const y0 = Number(String(feedStart || '').slice(0, 4));
+  const y1 = Number(String(feedEnd || '').slice(0, 4));
+  if (!Number.isFinite(y0) || y0 < 2000) return [];
+  const end = Number.isFinite(y1) && y1 >= y0 ? y1 : y0;
+  const yrs = [];
+  for (let y = y0; y <= end; y++) yrs.push(y);
+  return yrs;
+}
+
 function buildLines(g, tolerance) {
+  const years = feedYears(g.feedStart, g.feedEnd);
   const lines = [];
   const usedServices = new Set();
   let shapePointsRaw = 0;
@@ -362,7 +501,15 @@ function buildLines(g, tolerance) {
         usedServices.add(t.service_id);
         const o = { id: Number(t.trip_id), service: Number(t.service_id), pattern: patIdx.get(key), shape: shapeFor(t.shape_id), times: st.map((s) => s.dep) };
         const note = g.notes.get(t.trip_id);
-        if (note) o.note = note;
+        if (note) {
+          o.note = note;
+          const parsed = parseGencatNote(note, years);
+          if (parsed.added) o.noteAdded = parsed.added;
+          if (parsed.removed) o.noteRemoved = parsed.removed;
+          if (parsed.requestStop) o.requestStop = true;
+          if (parsed.marketWeekdays) o.marketWeekdays = parsed.marketWeekdays;
+          if (parsed.tags) o.noteTags = parsed.tags;
+        }
         return o;
       }).sort((a, b) => (a.times[0] < b.times[0] ? -1 : a.times[0] > b.times[0] ? 1 : a.id - b.id));
       directions.push({
@@ -563,4 +710,4 @@ if (require.main === module) {
   main().catch((e) => { console.error(e.message); process.exit(1); });
 }
 
-module.exports = { zipEntries, eachRow, simplify, nameSimilarity };
+module.exports = { zipEntries, eachRow, simplify, nameSimilarity, parseGencatNote };
