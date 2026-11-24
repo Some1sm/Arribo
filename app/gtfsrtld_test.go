@@ -141,3 +141,65 @@ func TestLDTripForNumberRetriesAfterFailure(t *testing.T) {
 		t.Fatalf("lookup after a failure = %q, want 5127M15916R11", got)
 	}
 }
+
+// Renfe's LD trip ids carried the day before the one the trains ran on
+// (2026-11-24: "1572612026-11-23"), while the Cercanías timetable has one-day
+// services. The feed's own date is tried first; a number found on several
+// routes that day is not settled by another day.
+func TestLDTripUsesFeedDate(t *testing.T) {
+	feed := map[string]string{
+		"agency.txt":     "agency_id,agency_name,agency_url,agency_timezone\nA,A,http://e.com,Europe/Madrid\n",
+		"routes.txt":     "route_id,agency_id,route_short_name,route_long_name,route_type\n51_R11,A,R11,R11,2\n51_R15,A,R15,R15,2\n",
+		"trips.txt":      "route_id,service_id,trip_id,trip_headsign,direction_id,shape_id\n51_R11,D24,5127M15726R11,X,0,\n51_R11,D24,5127M15999R11,X,0,\n51_R15,D24,5127M15999R15,X,0,\n51_R11,D23,5120M15999R11,X,0,\n51_R11,D23,5120M15500R11,X,0,\n",
+		"stops.txt":      "stop_id,stop_name,stop_lat,stop_lon,location_type,parent_station\n79300,Girona,41.98,2.82,0,\n",
+		"stop_times.txt": "trip_id,arrival_time,departure_time,stop_id,stop_sequence\n5127M15726R11,08:00:00,08:00:00,79300,1\n5127M15999R11,08:00:00,08:00:00,79300,1\n5127M15999R15,08:00:00,08:00:00,79300,1\n5120M15999R11,08:00:00,08:00:00,79300,1\n5120M15500R11,08:00:00,08:00:00,79300,1\n",
+		"calendar.txt":   "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\nD24,0,1,0,0,0,0,0,20261124,20261124\nD23,1,0,0,0,0,0,0,20261123,20261123\n",
+	}
+	tt := openRailTestTimetableWith(t, feed)
+	ctx := context.Background()
+	const header = 1795536605 // 2026-11-24 17:10 Madrid
+	if got := tt.tripForNumber(ctx, "15726", ldServiceDate("1572612026-11-23")); got != "" {
+		t.Fatalf("trip id date alone matched %q; the fixture should need the feed date", got)
+	}
+	if got := tt.ldTrip(ctx, "15726", "1572612026-11-23", header); got != "5127M15726R11" {
+		t.Fatalf("15726 = %q, want 5127M15726R11 (feed date)", got)
+	}
+	if got := tt.ldTrip(ctx, "15500", "1550012026-11-23", header); got != "5120M15500R11" {
+		t.Fatalf("15500 = %q, want 5120M15500R11 (the day before)", got)
+	}
+	if got := tt.ldTrip(ctx, "15999", "1599912026-11-23", header); got != "" {
+		t.Fatalf("15999 = %q, want \"\" (two routes on the feed date)", got)
+	}
+}
+
+// An LD feed an hour behind the commuter feed (as seen on 2026-11-24) adds
+// no trains: its positions would only be old pins.
+func TestLDLaggingFeedLeftOut(t *testing.T) {
+	feed := map[string]string{
+		"agency.txt":     "agency_id,agency_name,agency_url,agency_timezone\nA,A,http://e.com,Europe/Madrid\n",
+		"routes.txt":     "route_id,agency_id,route_short_name,route_long_name,route_type\n51_R11,A,R11,R11,2\n",
+		"trips.txt":      "route_id,service_id,trip_id,trip_headsign,direction_id,shape_id\n51_R11,S,5127M15916R11,X,0,\n",
+		"stops.txt":      "stop_id,stop_name,stop_lat,stop_lon,location_type,parent_station\n79300,Girona,41.98,2.82,0,\n",
+		"stop_times.txt": "trip_id,arrival_time,departure_time,stop_id,stop_sequence\n5127M15916R11,08:00:00,08:00:00,79300,1\n",
+		"calendar.txt":   "service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date\nS,1,1,1,1,1,1,1,20260101,20271231\n",
+	}
+	tt := openRailTestTimetableWith(t, feed)
+	const ldHeader = 1795536605
+	vsrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(ldTestFeedBytes(ldHeader, ldVP("15916", "1", "2026-11-23", 41.98, 2.82, "15916")))
+	}))
+	defer vsrv.Close()
+	p := &rtPoller{src: rtSource{AgencyID: "renfe_rodalies", Mode: "rail", ldVehicleURL: vsrv.URL, bounds: &cataloniaBounds}, tt: tt}
+	ctx := context.Background()
+
+	lagging := &rtSnapshot{FeedTimestamp: ldHeader + 3600}
+	p.appendLDVehicles(ctx, lagging)
+	if len(lagging.Vehicles) != 0 || lagging.LDLagSec != 3600 {
+		t.Fatalf("lagging feed: vehicles %d, lag %d", len(lagging.Vehicles), lagging.LDLagSec)
+	}
+	fresh := &rtSnapshot{FeedTimestamp: ldHeader + 20}
+	p.appendLDVehicles(ctx, fresh)
+	if len(fresh.Vehicles) != 1 || fresh.LDLagSec != 0 || fresh.Vehicles[0].TripID != "5127M15916R11" {
+		t.Fatalf("fresh feed: lag %d, vehicles %+v", fresh.LDLagSec, fresh.Vehicles)
+	}
+}

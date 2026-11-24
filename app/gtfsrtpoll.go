@@ -59,6 +59,7 @@ type rtSnapshot struct {
 	// Renfe long-distance feed (gtfsrtld.go): trains added from it, trains
 	// dropped for lack of a matching Rodalies trip, and its errors.
 	LDVehicles, LDDropped int
+	LDLagSec              int64 // >0: the LD feed lagged the commuter feed by this much and was left out
 	LDErr, LDTripsErr     string
 }
 
@@ -503,7 +504,9 @@ func (p *rtPoller) logSnapshot() {
 		sort.Ints(ds)
 		msg += fmt.Sprintf("; trip delay s min/median/max %d/%d/%d", ds[0], ds[len(ds)/2], ds[len(ds)-1])
 	}
-	if s.LDVehicles > 0 || s.LDDropped > 0 || s.LDErr != "" {
+	if s.LDLagSec > 0 {
+		msg += fmt.Sprintf("; long-distance feed %d s behind the commuter feed: not shown", s.LDLagSec)
+	} else if s.LDVehicles > 0 || s.LDDropped > 0 || s.LDErr != "" {
 		msg += fmt.Sprintf("; long-distance feed: %d trains added, %d without a Rodalies trip", s.LDVehicles, s.LDDropped)
 		if s.LDErr != "" {
 			msg += ", error: " + s.LDErr

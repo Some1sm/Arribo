@@ -8,7 +8,7 @@ package main
 // What the LD feed is, as observed on 2026-11-24:
 //   - vehicle label and trip_id start with the five-digit train number
 //     (label "15916", trip_id "1591612026-11-23" = number + a segment digit +
-//     service date); route_id is empty and the entity carries no per-vehicle
+//     a date, seen a day behind the day the train runs); route_id is empty and the entity carries no per-vehicle
 //     timestamp (only the feed header's);
 //   - one train can have several entities (segment digits 1, 2, 3...);
 //   - its trip ids are NOT in the Cercanías static GTFS, whose ids look like
@@ -54,10 +54,47 @@ func ldTrainNumber(tripID, label string) string {
 	return ""
 }
 
-// ldServiceDate is the YYYYMMDD of an LD trip id ("" if it has none).
+// ldServiceDate is the YYYYMMDD in an LD trip id ("" if it has none). It is
+// not reliably the day the train runs: on 2026-11-24 every Catalan train in
+// the feed carried "2026-11-23" (see ldCandidateDates).
 func ldServiceDate(tripID string) string {
 	if len(tripID) == 16 && reLDTripID.MatchString(tripID) {
 		return strings.ReplaceAll(tripID[6:], "-", "")
+	}
+	return ""
+}
+
+// ldCandidateDates are the service dates to look an LD train up on, in order:
+// the feed's own Madrid date, the day before (a train still running after
+// midnight), then the date written in its trip id. Renfe's Cercanías
+// timetable has one-day services, so the right day matters; the trip id's
+// date was seen a day behind the trains it named.
+func ldCandidateDates(tripID string, feedTS uint64) []string {
+	now := time.Now()
+	if feedTS > 0 {
+		now = time.Unix(int64(feedTS), 0)
+	}
+	day := now.In(madrid)
+	out := []string{day.Format("20060102"), day.AddDate(0, 0, -1).Format("20060102")}
+	if d := ldServiceDate(tripID); d != "" && d != out[0] && d != out[1] {
+		out = append(out, d)
+	}
+	return out
+}
+
+// ldTrip is the imported trip of LD train `number` (trip id `tripID`, feed
+// header time feedTS), trying each of ldCandidateDates; "" when none or when
+// the first day that has the number has it on several routes.
+func (t *rtTimetable) ldTrip(ctx context.Context, number, tripID string, feedTS uint64) string {
+	for _, date := range ldCandidateDates(tripID, feedTS) {
+		switch trip := t.tripForNumberOn(ctx, number, date); trip {
+		case "":
+			continue
+		case ldAmbiguous:
+			return "" // an earlier day must not decide the line
+		default:
+			return trip
+		}
 	}
 	return ""
 }
@@ -120,6 +157,19 @@ func (t *rtTimetable) loadTripNumbers(ctx context.Context) (map[string][]string,
 // belong to different routes (then the line would be a guess). Cached,
 // bounded.
 func (t *rtTimetable) tripForNumber(ctx context.Context, number, date string) string {
+	if v := t.tripForNumberOn(ctx, number, date); v != ldAmbiguous {
+		return v
+	}
+	return ""
+}
+
+// ldAmbiguous is what tripForNumberOn answers when trips on different routes
+// run the number that day (never a real trip id).
+const ldAmbiguous = "?"
+
+// tripForNumberOn is tripForNumber, telling "ambiguous" (ldAmbiguous) apart
+// from "no trip that day" ("").
+func (t *rtTimetable) tripForNumberOn(ctx context.Context, number, date string) string {
 	key := "\x03" + number + "\x00" + date
 	t.mu.Lock()
 	if v, hit := t.names[key]; hit {
@@ -148,7 +198,7 @@ func (t *rtTimetable) tripForNumber(ctx context.Context, number, date string) st
 			if best == "" {
 				best, route = id, r
 			} else if r != route {
-				best = "" // active trips on different routes: do not guess
+				best = ldAmbiguous // active trips on different routes: do not guess
 				break
 			}
 		}
@@ -221,6 +271,16 @@ func (p *rtPoller) appendLDVehicles(ctx context.Context, snap *rtSnapshot) {
 		snap.LDErr = err.Error()
 		return
 	}
+	// Seen on 2026-11-24: the LD header an hour behind the commuter feed, and
+	// its positions an hour old too (trains in both feeds were 4-75 km from
+	// where the commuter feed had them). Such positions would only draw old
+	// pins, so the whole feed is left out while it lags more than a train is
+	// allowed to (trainStaleAfter); the lag is logged.
+	if snap.FeedTimestamp > 0 && fm.Header.Timestamp > 0 && snap.FeedTimestamp > fm.Header.Timestamp &&
+		float64(snap.FeedTimestamp-fm.Header.Timestamp) > trainStaleAfter(p.src.AgencyID) {
+		snap.LDLagSec = int64(snap.FeedTimestamp - fm.Header.Timestamp)
+		return
+	}
 	known := commuterTrainNumbers(snap.Vehicles)
 	taken := map[string]bool{}
 	for _, e := range fm.Entities {
@@ -240,7 +300,7 @@ func (p *rtPoller) appendLDVehicles(ctx context.Context, snap *rtSnapshot) {
 		if num == "" || known[num] || taken[num] {
 			continue // in the commuter feed (it wins), or a second segment of a train already kept
 		}
-		trip := p.tt.tripForNumber(ctx, num, ldServiceDate(vp.Trip.TripID))
+		trip := p.tt.ldTrip(ctx, num, vp.Trip.TripID, fm.Header.Timestamp)
 		if trip == "" {
 			snap.LDDropped++ // not a Rodalies trip that day (or ambiguous): no line to show it on
 			continue
