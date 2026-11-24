@@ -1,35 +1,25 @@
 # How to continue this work
 
-Written 2026-11-24 by a cloud session, for the next session, which runs on the owner's own PC.
+First written 2026-11-24 by a cloud session; updated the same day by the local session that deployed it.
 
 ## 1. Where the work is
 
-- **Branch:** `claude/kind-dirac-k9kco5`
-- **Repository it was pushed to:** GitHub, `https://github.com/Some1sm/Arribo`. The cloud session could only push there.
-- **Your normal repository** is the Forgejo one (`git@git.lan:some1sm/arribo.git`). A push to its `main` **deploys to production**.
-- The branch is GitHub `main` as of 2026-11-24 (commit `7411771`) plus the research documents and the implementation commits listed in the plan's progress log.
+- **Everything is on Forgejo `main` and deployed** (`git@git.lan:some1sm/arribo.git`; a push to `main` deploys to production). The local branch `catalonia-plan` is kept equal to `main`.
+- The cloud session's GitHub branch `claude/kind-dirac-k9kco5` (`https://github.com/Some1sm/Arribo`) is **behind**: it lacks every local commit after `dd1c28a`. Do not start from it.
 
-### State at the end of the cloud session (2026-11-24, last commit `feec20e` + this note)
+### State at the end of the local session (2026-11-24)
 
-All checks were green on the full branch: `gofmt`, `go vet`, `go test`, `go build`, `npm run test:syntax`, `lint`, `npm test` (14 suites), `docs_check`. **Not done for any server change:** the old-vs-new binary comparison of CLAUDE.md, *Checking a server change*. Run it on the VPS before deploying.
+Every deploy below passed `gofmt`, `go vet`, `go test`, `npm run test:syntax`, `lint`, `npm test` (14 suites), `docs_check`, and the old-vs-new comparison on the VPS (`/var/tmp/arribo-go/gocmp.sh`, 1 669 requests). After each one only expected differences remained: static pages from the asset version, and additive keys.
 
 | Done `[x]` | Partly done `[~]` (what's left is in each plan row) | Next unblocked `[ ]` | Waiting on the owner `[!]` |
 |---|---|---|---|
-| 1.1–1.5 Moventis sampling, skipping, metrics · 2.1–2.2 Generalitat data and stop crosswalk · 4.4 fares docs · 5.1 special-line buses · 5.3 service-override docs | 3.3 fleet file (popup not wired) · 3.5 Renfe LD feed (station boards, cancellations) · 4.1–4.2 fares (rail priced only Mataró ↔ Barcelona / Arenys until 4.3) | 2.3–2.4 use the Generalitat shapes and timetable · 3.4 · 5.2 · 5.4 · 6.1 · 6.3 · 6.4 · 7.x | 0.1–0.5, 1.6, 3.1–3.2, 4.3, 6.2, 6.5–6.7 |
+| 1.1–1.5 · 2.1–2.4 (Generalitat shapes and timetable live) · 4.4 · 5.1 · 5.2 (dated diversions) · 5.3 · 6.3 (AMB buses, no history) | 3.3 (usual series in the popup; per-unit data needs 3.2) · 3.5 (Renfe LD feed: matching fixed, but the feed lags ~1 h, so its trains are left out) · 4.1–4.2 fares · 6.4 (see the plan row) | 3.4 · 5.4 · 6.1 · 7.x · Moventis delays in Dades (approved by the owner, not a plan step yet) · AMB in Dades (needs sampled storage) | 0.1–0.5, 1.6, 3.1–3.2, 4.3, 6.2, 6.5–6.7 |
 
-Suggested next order: 2.3 → 2.4 → 3.3 popup → 5.2 → 6.3 (AMB, open data) → 6.4 (FGC occupancy).
-
-To get it into your local Forgejo checkout without touching `main`:
-
-```bash
-git fetch https://github.com/Some1sm/Arribo claude/kind-dirac-k9kco5
-```
-
-```bash
-git switch -c catalonia-plan FETCH_HEAD
-```
-
-Before building on it, compare it with Forgejo `main`. If Forgejo `main` has newer commits, merge them in (`git merge origin/main`). Push the branch to Forgejo under its own name; never push it to `main` until the owner decides to deploy.
+Things learnt live that the plan rows record:
+- The Generalitat GTFS gives the C-10 weekday service (184910) no 2026 dates. A day without any trip of a line is read as "unknown" (`lineRuns`).
+- Renfe's LD trip ids carry the day before the run, and the LD feed lags the commuter feed by about an hour (`LDLagSec` in the log).
+- AMB lists trips up to two hours ahead with a bus assigned. Only trips due within 30 min count as live (`rtNoFeedRunningWindow`).
+- Production mounts `./data` over the image's `data/`, so a new data file the server reads belongs in `src/data/`.
 
 ## 2. What to read first, in order
 
