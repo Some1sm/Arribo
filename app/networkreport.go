@@ -235,7 +235,7 @@ func (s *Server) hNetwork(q *xreq, res *xres) error {
 		res.json(spreadAny(O("success", true), data))
 		return nil
 	}
-	data, err := s.historyQuery("getNetworkReport", O("hours", hours), 20000)
+	data, err := s.singleflightQuery("net:"+key, "getNetworkReport", O("hours", hours), 20000)
 	if err != nil {
 		s.sendInternalError(q, res, err, O("success", false, "operators", []any{}))
 		return nil
@@ -260,7 +260,7 @@ func (s *Server) hNetwork(q *xreq, res *xres) error {
 			lo.Set("color", strOrNil(colors[code]))
 		}
 	}
-	s.operatorCache.Set(key, &cachedData{data: data, timestamp: now})
+	s.storeOperatorCache(key, data, now)
 	res.h.Set("X-Cache", "MISS")
 	res.json(spreadAny(O("success", true), data))
 	return nil

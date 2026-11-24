@@ -50,13 +50,45 @@ type Server struct {
 	monthlyRefresh  map[string]bool // months being recomputed in the background
 	gpsGapCache     *JSMap
 	operatorCache   *JSMap
+	queryFlights    map[string]*queryFlight // singleflight dedup for cold/expired historyQuery misses
 	sseRoute        *routeEntry
 	routes          []*routeEntry
+}
+
+type queryFlight struct {
+	done chan struct{}
+	val  any
+	err  error
 }
 
 type cachedData struct {
 	data      any
 	timestamp float64
+}
+
+func (s *Server) singleflightQuery(key, op string, args any, timeoutMs float64) (any, error) {
+	if s.queryFlights == nil {
+		s.queryFlights = map[string]*queryFlight{}
+	}
+	if f, ok := s.queryFlights[key]; ok {
+		s.w.await(func() { <-f.done })
+		return f.val, f.err
+	}
+	f := &queryFlight{done: make(chan struct{})}
+	s.queryFlights[key] = f
+	defer func() {
+		delete(s.queryFlights, key)
+		close(f.done)
+	}()
+	f.val, f.err = s.historyQuery(op, args, timeoutMs)
+	return f.val, f.err
+}
+
+func (s *Server) storeOperatorCache(key string, data any, at float64) {
+	s.operatorCache.Set(key, &cachedData{data: data, timestamp: at})
+	if s.operatorCache.Len() > 64 {
+		s.operatorCache.Delete(s.operatorCache.Keys()[0])
+	}
 }
 
 // ---------------------------------------------------------------- dispatch
@@ -68,13 +100,38 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	pathname, rawQuery, _ := splitTarget(target)
 	q := &xreq{r: r, method: r.Method, url: target, pathname: pathname, start: time.Now()}
-	q.query = parseQuery(rawQuery)
 	q.ip = requestIP(r, s.trust)
 	res := newXres(w, q)
 
-	s.w.mu.Lock()
-	s.dispatch(q, res)
-	s.w.mu.Unlock()
+	setSecurityHeaders(res.h)
+	if res.cors() {
+		_ = res.flush()
+		return
+	}
+	isAPI := useMatches("/api", q.pathname)
+	if isAPI {
+		if retry := s.limiter.allow(q.method, q.pathname, clientKey(q.ip)); retry > 0 {
+			res.h.Set("Retry-After", itoa(retry))
+			res.h.Set("Cache-Control", "no-store")
+			res.status = 429
+			res.json(O("success", false, "error", "Too many requests; retry shortly."))
+			_ = res.flush()
+			return
+		}
+	}
+	if q.method != "GET" && q.method != "HEAD" {
+		res.status = 405
+		res.json(O("success", false, "error", "Method Not Allowed: This transit service is strictly read-only."))
+		_ = res.flush()
+		return
+	}
+	q.query = parseQuery(rawQuery)
+
+	func() {
+		s.w.mu.Lock()
+		defer s.w.mu.Unlock()
+		s.dispatch(q, res, isAPI)
+	}()
 
 	if res.sse != nil {
 		s.fleet.serve(res)
@@ -102,28 +159,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// dispatch walks the middleware stack of server.js in order.
-func (s *Server) dispatch(q *xreq, res *xres) {
-	setSecurityHeaders(res.h)
-	if res.cors() {
-		return
-	}
-	isAPI := useMatches("/api", q.pathname)
-	if isAPI {
-		pathname := strings.SplitN(q.url, "?", 2)[0]
-		if retry := s.limiter.allow(q.method, pathname, clientKey(q.ip)); retry > 0 {
-			res.h.Set("Retry-After", itoa(retry))
-			res.h.Set("Cache-Control", "no-store")
-			res.status = 429
-			res.json(O("success", false, "error", "Too many requests; retry shortly."))
-			return
-		}
-	}
-	if q.method != "GET" && q.method != "HEAD" {
-		res.status = 405
-		res.json(O("success", false, "error", "Method Not Allowed: This transit service is strictly read-only."))
-		return
-	}
+// dispatch walks the in-world middleware and route stack.
+func (s *Server) dispatch(q *xreq, res *xres, isAPI bool) {
 	if handled, err := s.serveStatic(q, res); handled {
 		if err != nil {
 			s.errorHandler(q, res, err)
@@ -773,6 +810,7 @@ func (b *fleetBroadcaster) serve(res *xres) {
 	w := res.w
 	rc := http.NewResponseController(w)
 	res.h.Del("Connection") // hop-by-hop: net/http manages keep-alive itself
+	_ = rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout))
 	w.WriteHeader(200)
 	_ = rc.Flush()
 	ctx := res.req.r.Context()
@@ -953,8 +991,9 @@ func runServer() int {
 	httpSrv := &http.Server{
 		Addr:              ":" + port,
 		Handler:           s,
-		ReadHeaderTimeout: 60 * time.Second,
+		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       5 * time.Second,
+		MaxHeaderBytes:    16 << 10,
 		ErrorLog:          log.New(os.Stderr, "", 0),
 	}
 	listenErr := make(chan error, 1)
@@ -1094,8 +1133,6 @@ func (s *Server) buildRoutes() {
 	s.get(p("/api/diagnostics/upstream"), s.hDiagUpstream)
 	s.get(p("/api/diagnostics/test"), s.hDiagTest)
 	s.get(p("/sw.js"), func(q *xreq, res *xres) error { return s.sendPage(res, "sw.js") })
-	s.get(planPages, func(q *xreq, res *xres) error { return s.sendPage(res, "plan.html") })
-	s.get(dadesPages, func(q *xreq, res *xres) error { return s.sendPage(res, "dades.html") })
 
 	s.get(p("/api/*"), func(q *xreq, res *xres) error {
 		res.status = 404
@@ -1144,8 +1181,13 @@ func (s *Server) hHealth(q *xreq, res *xres) error {
 	if truthy(dataReady) {
 		dataReady = allFresh
 	}
+	statusStr := "ok"
+	if s.bridge.isWedged(now) {
+		res.status = 503
+		statusStr = "unhealthy"
+	}
 	res.json(O(
-		"status", "ok",
+		"status", statusStr,
 		"uptime", time.Since(processStart).Seconds(),
 		"timestamp", now,
 		"agency", "Mataró Bus Urbà",
@@ -1595,8 +1637,8 @@ func (s *Server) hMataroStopDepartures(q *xreq, res *xres) error {
 func (s *Server) hNearby(q *xreq, res *xres) error {
 	lat := qv(q, "lat")
 	lon := qv(q, "lon")
-	radius := parseIntOr(qv(q, "radius"), 800)
-	limit := math.Min(parseIntOr(qv(q, "limit"), 5), 12)
+	radius := math.Max(50, math.Min(5000, parseIntOr(qv(q, "radius"), 800)))
+	limit := math.Max(1, math.Min(parseIntOr(qv(q, "limit"), 5), 12))
 	includeDepartures := !strictEq(qv(q, "departures"), "false")
 	if !truthy(lat) || !truthy(lon) {
 		res.status = 400
@@ -1880,7 +1922,7 @@ func (s *Server) hJournalism(q *xreq, res *xres) error {
 	err := tryJS(func() {
 		report := s.latestReport(hours)
 		if !reportTruthy(report) || !truthy(field(report, "summary")) || objKeysLen(field(report, "summary")) == 0 {
-			if r, err := s.historyQuery("generateReport", O("hours", hours, "allLinesCatalog", allLines), 30000); err == nil {
+			if r, err := s.singleflightQuery("report:"+numToString(hours), "generateReport", O("hours", hours, "allLinesCatalog", allLines), 30000); err == nil {
 				report = r
 			}
 		}
@@ -1912,9 +1954,18 @@ const (
 	monthlyStaleMs = 30 * 60 * 1000
 )
 
+func isValidYearMonth(m string) bool {
+	if !reMonth.MatchString(m) {
+		return false
+	}
+	yr := (int(m[0]-'0')*1000 + int(m[1]-'0')*100 + int(m[2]-'0')*10 + int(m[3]-'0'))
+	mo := int(m[5]-'0')*10 + int(m[6]-'0')
+	return yr >= 2020 && yr <= 2100 && mo >= 1 && mo <= 12
+}
+
 func (s *Server) hMonthly(q *xreq, res *xres) error {
 	var month any = nil
-	if m, ok := qv(q, "month").(string); ok && reMonth.MatchString(m) {
+	if m, ok := qv(q, "month").(string); ok && isValidYearMonth(m) {
 		month = m
 	}
 	key := getMadridMonthRange(month).MonthStr
@@ -1944,7 +1995,7 @@ func (s *Server) hMonthly(q *xreq, res *xres) error {
 			return nil
 		}
 	}
-	report, err := s.historyQuery("getMonthlyReport", args(), 30000)
+	report, err := s.singleflightQuery("monthly:"+key, "getMonthlyReport", args(), 30000)
 	if err != nil {
 		s.sendInternalError(q, res, err, nil)
 		return nil
@@ -2009,7 +2060,7 @@ func (s *Server) hRanking(q *xreq, res *xres) error {
 	err := tryJS(func() {
 		report := s.latestReport(24)
 		if !reportTruthy(report) {
-			if r, err := s.historyQuery("generateReport", O("hours", 24.0, "allLinesCatalog", allLines), 30000); err == nil {
+			if r, err := s.singleflightQuery("report:24", "generateReport", O("hours", 24.0, "allLinesCatalog", allLines), 30000); err == nil {
 				report = r
 			}
 		}
@@ -2033,7 +2084,7 @@ func (s *Server) hTermometre(q *xreq, res *xres) error {
 	err := tryJS(func() {
 		report := s.latestReport(hours)
 		if !reportTruthy(report) {
-			if r, err := s.historyQuery("generateReport", O("hours", hours, "allLinesCatalog", allLines), 30000); err == nil {
+			if r, err := s.singleflightQuery("report:"+numToString(hours), "generateReport", O("hours", hours, "allLinesCatalog", allLines), 30000); err == nil {
 				report = r
 			}
 		}
@@ -2104,7 +2155,12 @@ func (s *Server) hIncidents(q *xreq, res *xres) error {
 	hours := clampHours(qv(q, "hours"), 168, 720)
 	limit := math.Max(1, math.Min(100, parseIntOr(qv(q, "limit"), 20)))
 	minDelay := math.Max(1, parseIntOr(qv(q, "minDelay"), 5))
-	upper := jsUpper(jsString(lineParam))
+	upper := jsUpper(jsTrim(jsString(lineParam)))
+	if upper != "ALL" && !reGapLine.MatchString(upper) {
+		res.status = 400
+		res.json(O("success", false, "error", "Unknown line"))
+		return nil
+	}
 	cacheKey := upper + "_" + numToString(hours) + "_" + numToString(limit) + "_" + numToString(minDelay)
 	now := float64(nowMs())
 	if data, ok := cacheGetFresh(s.incidentCache, cacheKey, now); ok {
@@ -2134,7 +2190,7 @@ func (s *Server) hIncidents(q *xreq, res *xres) error {
 			return nil
 		}
 	}
-	data, err := s.historyQuery("getDelayIncidents", args, 35000)
+	data, err := s.singleflightQuery("incidents:"+cacheKey, "getDelayIncidents", args, 35000)
 	if err != nil {
 		s.sendInternalError(q, res, err, O("success", false, "lineCode", upper, "hoursAnalyzed", hours,
 			"summary", O(), "topIncidents", []any{}, "incidentTrips", []any{}))
@@ -2162,7 +2218,7 @@ func (s *Server) hInspect(q *xreq, res *xres) error {
 		"minDelay", minDelay,
 	), 35000)
 	if err != nil {
-		s.sendInternalError(q, res, err, O("success", false, "found", false, "error", err.Error(), "episode", nil, "dataQuality", O()))
+		s.sendInternalError(q, res, err, O("success", false, "found", false, "episode", nil, "dataQuality", O()))
 		return nil
 	}
 	if truthy(data) && truthy(field(data, "found")) {
@@ -2237,7 +2293,7 @@ func (s *Server) hGpsGaps(q *xreq, res *xres) error {
 	if agency != "" {
 		args.Set("agency", agency)
 	}
-	data, err := s.historyQuery("getGpsGapHotspots", args, 15000)
+	data, err := s.singleflightQuery("gpsgaps:"+cacheKey, "getGpsGapHotspots", args, 15000)
 	if err != nil {
 		s.sendInternalError(q, res, err, O("success", false, "cells", []any{}, "gaps", []any{}, "totals", O()))
 		return nil
@@ -2407,12 +2463,12 @@ func (s *Server) hOperators(q *xreq, res *xres) error {
 		res.json(spreadAny(O("success", true), data))
 		return nil
 	}
-	data, err := s.historyQuery("getOperatorReport", O("hours", hours), 15000)
+	data, err := s.singleflightQuery("operators:"+key, "getOperatorReport", O("hours", hours), 15000)
 	if err != nil {
 		s.sendInternalError(q, res, err, O("success", false, "operators", []any{}))
 		return nil
 	}
-	s.operatorCache.Set(key, &cachedData{data: data, timestamp: now})
+	s.storeOperatorCache(key, data, now)
 	res.h.Set("X-Cache", "MISS")
 	res.json(spreadAny(O("success", true), data))
 	return nil

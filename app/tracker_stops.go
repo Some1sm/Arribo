@@ -414,12 +414,13 @@ func (t *MataroTracker) getStopDepartures(stopID, lineID, direction any, opts *O
 	}
 
 	stopInfo := t.stopObj(sID)
-	if stopInfo == nil {
+	knownStop := stopInfo != nil
+	if !knownStop {
 		stopInfo = O("id", sID, "name", "Parada "+sID)
 	}
 
 	liveArrivals := []any{}
-	if !truthy(opts.Get("skipSiri")) {
+	if knownStop && !truthy(opts.Get("skipSiri")) {
 		arr, err := t.w.siri.getStopArrivals(sID, cleanLineID)
 		if err != nil {
 			log.Printf("[getStopDepartures] SIRI query error for stop %s: %s", sID, err.Error())
@@ -1053,13 +1054,18 @@ func (t *MataroTracker) getStopDepartures(stopID, lineID, direction any, opts *O
 		"departures", final,
 		"totalDepartures", float64(len(final)),
 	)
-	t.stopDeparturesMemoryCache.Set(cacheKey, &stopDepCacheEntry{timestamp: float64(nowMs()), data: result})
-	if t.stopDeparturesMemoryCache.Len() > 200 {
-		now := float64(nowMs())
-		for _, k := range t.stopDeparturesMemoryCache.Keys() {
-			v, _ := t.stopDeparturesMemoryCache.Get(k)
-			if now-v.(*stopDepCacheEntry).timestamp > 60000 {
-				t.stopDeparturesMemoryCache.Delete(k)
+	if knownStop {
+		t.stopDeparturesMemoryCache.Set(cacheKey, &stopDepCacheEntry{timestamp: float64(nowMs()), data: result})
+		if t.stopDeparturesMemoryCache.Len() > 200 {
+			now := float64(nowMs())
+			for _, k := range t.stopDeparturesMemoryCache.Keys() {
+				v, _ := t.stopDeparturesMemoryCache.Get(k)
+				if now-v.(*stopDepCacheEntry).timestamp > 60000 {
+					t.stopDeparturesMemoryCache.Delete(k)
+				}
+			}
+			for t.stopDeparturesMemoryCache.Len() > 256 {
+				t.stopDeparturesMemoryCache.Delete(t.stopDeparturesMemoryCache.Keys()[0])
 			}
 		}
 	}

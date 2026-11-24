@@ -95,7 +95,7 @@ func (s *Server) hOperatorLine(q *xreq, res *xres) error {
 		res.json(spreadAny(O("success", true), data))
 		return nil
 	}
-	data, err := s.historyQuery("getOperatorLineReport", O("agencyId", agency, "line", line, "hours", hours), 15000)
+	data, err := s.singleflightQuery("opline:"+key, "getOperatorLineReport", O("agencyId", agency, "line", line, "hours", hours), 15000)
 	if err != nil {
 		s.sendInternalError(q, res, err, O("success", false))
 		return nil
@@ -113,7 +113,7 @@ func (s *Server) hOperatorLine(q *xreq, res *xres) error {
 		o.Set("stationOrder", order)
 	}
 	if known {
-		s.operatorCache.Set(key, &cachedData{data: data, timestamp: now})
+		s.storeOperatorCache(key, data, now)
 	}
 	res.h.Set("X-Cache", "MISS")
 	res.json(spreadAny(O("success", true), data))
@@ -163,7 +163,7 @@ func (s *Server) hOperatorHistory(q *xreq, res *xres) error {
 		res.json(spreadAny(O("success", true), data))
 		return nil
 	}
-	data, err := s.historyQuery("getRailHistory", O("agencyId", agency, "line", line, "days", days), 15000)
+	data, err := s.singleflightQuery("ophist:"+key, "getRailHistory", O("agencyId", agency, "line", line, "days", days), 15000)
 	if err != nil {
 		s.sendInternalError(q, res, err, O("success", false))
 		return nil
@@ -173,7 +173,7 @@ func (s *Server) hOperatorHistory(q *xreq, res *xres) error {
 		o.Set("shortName", info.ShortName)
 	}
 	if known {
-		s.operatorCache.Set(key, &cachedData{data: data, timestamp: now})
+		s.storeOperatorCache(key, data, now)
 	}
 	res.h.Set("X-Cache", "MISS")
 	res.json(spreadAny(O("success", true), data))

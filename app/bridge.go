@@ -35,20 +35,21 @@ type WorkerBridge struct {
 	pingInterval time.Duration
 	pingTimeout  float64
 
-	isHealthy           bool
-	isShuttingDown      bool
-	receivedReady       bool
-	pendingReplacement  bool
-	restarts            float64
-	consecutiveRestarts float64
-	lastHeartbeat       any
-	lastHeartbeatAck    any
-	workerPid           any
-	startedAt           float64
-	workerMetrics       any // *Obj or nil
-	restartTimer        *time.Timer
-	stabilityTimer      *time.Timer
-	heartbeatStop       chan struct{}
+	isHealthy               bool
+	isShuttingDown          bool
+	receivedReady           bool
+	pendingReplacement      bool
+	pendingReplacementSince float64
+	restarts                float64
+	consecutiveRestarts     float64
+	lastHeartbeat           any
+	lastHeartbeatAck        any
+	workerPid               any
+	startedAt               float64
+	workerMetrics           any // *Obj or nil
+	restartTimer            *time.Timer
+	stabilityTimer          *time.Timer
+	heartbeatStop           chan struct{}
 
 	fleetListeners []func(*Obj)
 	outbox         *msgQueue[serverMsg]
@@ -137,9 +138,11 @@ func (b *WorkerBridge) consume() {
 			b.resolve(m)
 			continue
 		}
-		b.s.mu.Lock()
-		b.handleWorkerMessage(m)
-		b.s.mu.Unlock()
+		func() {
+			b.s.mu.Lock()
+			defer b.s.mu.Unlock()
+			b.handleWorkerMessage(m)
+		}()
 	}
 }
 
@@ -256,6 +259,7 @@ func (b *WorkerBridge) handleWorkerExit(k *Worker) {
 	b.isHealthy = false
 	b.workerPid = nil
 	b.pendingReplacement = false
+	b.pendingReplacementSince = 0
 	for _, ch := range pending {
 		ch <- dbResult{err: errors.New("Worker exited before DB response")}
 	}
@@ -355,11 +359,17 @@ func (b *WorkerBridge) restartWorker() {
 	b.mu.Unlock()
 	if alive {
 		b.pendingReplacement = true
+		b.pendingReplacementSince = float64(nowMs())
 		b.send("SHUTDOWN")
 		return
 	}
 	b.isHealthy = false
 	b.scheduleRestart("Heartbeat timeout")
+}
+
+// isWedged reports true when a hung worker has ignored SHUTDOWN for over 3 minutes.
+func (b *WorkerBridge) isWedged(now float64) bool {
+	return b.pendingReplacement && b.pendingReplacementSince > 0 && now-b.pendingReplacementSince > 3*60*1000
 }
 
 func (b *WorkerBridge) send(typ string) bool {
@@ -426,6 +436,7 @@ func (b *WorkerBridge) shutdown(timeout time.Duration) {
 		b.stabilityTimer = nil
 	}
 	b.pendingReplacement = false
+	b.pendingReplacementSince = 0
 	b.mu.Lock()
 	k := b.worker
 	b.mu.Unlock()
@@ -446,6 +457,7 @@ func (b *WorkerBridge) shutdown(timeout time.Duration) {
 		b.worker = nil
 	}
 	b.mu.Unlock()
+	b.outbox.close()
 	b.workerPid = nil
 }
 

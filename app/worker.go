@@ -243,6 +243,11 @@ func (k *Worker) dispatch() {
 		k.w.mu.Lock()
 		go func(m workerMsg) {
 			defer k.w.mu.Unlock()
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("[Worker] Recovered panic handling %s: %v", m.typ, r)
+				}
+			}()
 			k.handleMasterMessage(m)
 		}(m)
 	}
@@ -280,12 +285,22 @@ func (k *Worker) handleMasterMessage(m workerMsg) {
 		k.out(serverMsg{typ: "DB_RESPONSE", requestID: m.requestID, ok: true, result: passJSON(res)})
 	case "SHUTDOWN":
 		log.Printf("[Worker] Graceful shutdown requested by master...")
-		if k.stopRt != nil {
-			if k.stopMov != nil {
+		var stopWG sync.WaitGroup
+		if k.stopMov != nil {
+			stopWG.Add(1)
+			go func() {
+				defer stopWG.Done()
 				k.stopMov()
-			}
-			k.stopRt()
+			}()
 		}
+		if k.stopRt != nil {
+			stopWG.Add(1)
+			go func() {
+				defer stopWG.Done()
+				k.stopRt()
+			}()
+		}
+		stopWG.Wait()
 		k.railTT.close()
 		k.daemon.stop()
 		k.db.close()

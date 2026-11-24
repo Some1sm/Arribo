@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"net"
 	"net/http"
@@ -124,19 +125,22 @@ func requestIP(r *http.Request, trust []netip.Prefix) string {
 	return addrs[len(addrs)-1]
 }
 
-// clientKey folds IPv4-mapped IPv6 to IPv4 and canonicalises IPv6.
+// clientKey folds IPv4-mapped IPv6 to IPv4 and groups IPv6 clients by /64
+// prefix so a single IPv6 allocation cannot exhaust the rate-limiter table.
 func clientKey(ip string) string {
 	key := ip
 	if key == "" {
-		key = "unknown"
+		return "unknown"
 	}
-	if strings.HasPrefix(key, "::ffff:") {
-		if a, err := netip.ParseAddr(key[7:]); err == nil && a.Is4() {
-			key = key[7:]
+	if a, err := netip.ParseAddr(key); err == nil {
+		a = a.WithZone("").Unmap()
+		if a.Is4() {
+			return a.String()
 		}
-	}
-	if a, err := netip.ParseAddr(key); err == nil && a.Is6() && !a.Is4In6() {
-		key = "[" + a.WithZone("").String() + "]"
+		if a.Is6() {
+			p := netip.PrefixFrom(a, 64).Masked()
+			return "[" + p.Addr().String() + "/64]"
+		}
 	}
 	return key
 }
@@ -197,14 +201,16 @@ func (l *apiLimiter) allow(method, pathname, key string) int {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := float64(nowMs())
-	if now-l.lastSweep >= l.windowMs || len(l.clients) >= l.maxClients {
+	if now-l.lastSweep >= l.windowMs || (len(l.clients) >= l.maxClients && now-l.lastSweep >= 1000) {
 		kept := l.order[:0]
 		for _, k := range l.order {
 			if st, ok := l.clients[k]; ok && st.until <= now {
 				delete(l.clients, k)
 				continue
 			}
-			kept = append(kept, k)
+			if _, ok := l.clients[k]; ok {
+				kept = append(kept, k)
+			}
 		}
 		l.order = kept
 		l.lastSweep = now
@@ -215,7 +221,12 @@ func (l *apiLimiter) allow(method, pathname, key string) int {
 	st := l.clients[key]
 	if st == nil || st.until <= now {
 		if st == nil && len(l.clients) >= l.maxClients {
-			return retry(now + l.windowMs)
+			// Evict the oldest tracked client rather than locking out all new users.
+			for len(l.order) > 0 && len(l.clients) >= l.maxClients {
+				oldest := l.order[0]
+				l.order = l.order[1:]
+				delete(l.clients, oldest)
+			}
 		}
 		if st == nil {
 			l.order = append(l.order, key)
@@ -341,6 +352,9 @@ func clientFor(host, dataDir string) *http.Client {
 	if !chainRepairHosts[strings.ToLower(host)] {
 		return defaultHTTPClient
 	}
+	if dataDir == "" {
+		dataDir = filepath.Join(appRoot, "src", "data")
+	}
 	repairOnce.Do(func() {
 		pool, err := x509.SystemCertPool()
 		if err != nil || pool == nil {
@@ -350,10 +364,12 @@ func clientFor(host, dataDir string) *http.Client {
 			b, err := os.ReadFile(filepath.Join(dataDir, "certs", f))
 			if err != nil {
 				repairErr = err
+				log.Printf("[TLS] Failed to read vendored CA %s: %v", f, err)
 				return
 			}
 			if !pool.AppendCertsFromPEM(b) {
 				repairErr = fmt.Errorf("bad PEM in %s", f)
+				log.Printf("[TLS] Failed to parse vendored CA %s", f)
 				return
 			}
 		}

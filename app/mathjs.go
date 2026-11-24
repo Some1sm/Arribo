@@ -12,10 +12,10 @@ import (
 	"time"
 )
 
-func jsSin(x float64) float64      { return fdSin(x) }
-func jsCos(x float64) float64      { return fdCos(x) }
-func jsAtan2(y, x float64) float64 { return fdAtan2(y, x) }
-func jsExp(x float64) float64      { return fdExp(x) }
+func jsSin(x float64) float64      { return math.Sin(x) }
+func jsCos(x float64) float64      { return math.Cos(x) }
+func jsAtan2(y, x float64) float64 { return math.Atan2(y, x) }
+func jsExp(x float64) float64      { return math.Exp(x) }
 
 // jsPow is Math.pow / **. y == 2 is exact multiplication in V8.
 func jsPow(x, y float64) float64 {

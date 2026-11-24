@@ -199,15 +199,13 @@ func (f *FlightRecorder) ingestVehicle(snap *Obj) {
 		if lineCode != "" {
 			v.Set("lineCode", lineCode)
 		}
-		if special || isSpecialServiceVehicle(v) {
-			// The same bus changing between a regular line and a special
-			// service must not keep the old line's index entry or flag.
-			if oldLineCode != lineCode && lineCode != "" {
-				if sv, ok := f.lineIndex.Get(oldLineCode); ok {
-					sv.(*JSMap).Delete(vID)
-				}
-				v.Set("lineId", or(snap.Get("lineId"), ""))
+		if oldLineCode != lineCode && lineCode != "" {
+			if sv, ok := f.lineIndex.Get(oldLineCode); ok {
+				sv.(*JSMap).Delete(vID)
 			}
+			v.Set("lineId", or(snap.Get("lineId"), ""))
+		}
+		if special || isSpecialServiceVehicle(v) {
 			v.Set("isSpecialService", special)
 		}
 		v.Set("isTerminalLayover", truthy(snap.Get("isTerminalLayover")))

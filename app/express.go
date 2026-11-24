@@ -515,11 +515,7 @@ func (res *xres) sendPipe(rawPath string, o sendOptions) sendResult {
 	}
 	for _, part := range parts {
 		if len(part) > 1 && part[0] == '.' {
-			last := parts[len(parts)-1]
-			if last != "" && last[0] == '.' {
-				return sendResult{err: newHTTPErr(404)}
-			}
-			break
+			return sendResult{err: newHTTPErr(404)}
 		}
 	}
 	hasTrailingSlash := strings.HasSuffix(rawPath, "/")
@@ -729,10 +725,11 @@ func parseRange(size int64, str string) ([][2]int64, int) {
 	return out, 0
 }
 
-// directoryRedirect is serve-static's redirect listener.
+// directoryRedirect redirects bare static directory paths using a relative URL
+// (never echoing an arbitrary absolute origin from the request target).
 func directoryRedirect(res *xres) {
 	pathname, query, hasQuery := splitTarget(res.req.url)
-	loc := absoluteOrigin(res.req.url) + collapseLeadingSlashes(pathname+"/")
+	loc := collapseLeadingSlashes(pathname + "/")
 	if hasQuery {
 		loc += "?" + query
 	}
@@ -745,24 +742,6 @@ func directoryRedirect(res *xres) {
 	res.h.Set("X-Content-Type-Options", "nosniff")
 	res.h.Set("Location", loc)
 	res.end([]byte(doc))
-}
-
-// absoluteOrigin is the "scheme://host" an absolute-form target keeps when
-// serve-static url.format()s it back (url.parse lowercases both); "" for the
-// usual origin-form target.
-func absoluteOrigin(target string) string {
-	if strings.HasPrefix(target, "/") {
-		return ""
-	}
-	i := strings.Index(target, "://")
-	if i < 0 {
-		return ""
-	}
-	host := target[i+3:]
-	if j := strings.IndexAny(host, "/?#"); j >= 0 {
-		host = host[:j]
-	}
-	return strings.ToLower(target[:i]) + "://" + strings.ToLower(host)
 }
 
 func collapseLeadingSlashes(s string) string {
@@ -993,11 +972,14 @@ type flushWriter interface {
 	Close() error
 }
 
+const responseWriteTimeout = 30 * time.Second
+
 // flush writes the response built by the handler, outside the world lock.
 func (res *xres) flush() error {
 	if !res.ended {
 		return nil
 	}
+	_ = http.NewResponseController(res.w).SetWriteDeadline(time.Now().Add(responseWriteTimeout))
 	method := ""
 	if res.compress {
 		method = res.compressionMethod()
@@ -1016,12 +998,18 @@ func (res *xres) flush() error {
 	case "br":
 		bw := brotliPool.Get().(*brotli.Writer)
 		bw.Reset(res.w)
-		defer brotliPool.Put(bw)
+		defer func() {
+			bw.Reset(io.Discard)
+			brotliPool.Put(bw)
+		}()
 		out, closer = bw, bw
 	case "gzip":
 		gw := gzipPool.Get().(*gzip.Writer)
 		gw.Reset(res.w)
-		defer gzipPool.Put(gw)
+		defer func() {
+			gw.Reset(io.Discard)
+			gzipPool.Put(gw)
+		}()
 		out, closer = gw, gw
 	case "deflate":
 		zw, _ := zlib.NewWriterLevel(res.w, zlib.DefaultCompression)
@@ -1064,7 +1052,7 @@ func (res *xres) cors() bool {
 	if strings.ToUpper(res.req.method) != "OPTIONS" {
 		return false
 	}
-	res.h.Set("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE")
+	res.h.Set("Access-Control-Allow-Methods", "GET,HEAD,OPTIONS")
 	res.vary("Access-Control-Request-Headers")
 	if allowed := res.req.header("Access-Control-Request-Headers"); allowed != "" {
 		res.h.Set("Access-Control-Allow-Headers", allowed)

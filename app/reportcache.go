@@ -224,6 +224,9 @@ func (c *ReportCache) getReportFilesForHours(h int) []reportFile {
 		full := filepath.Join(c.reportsDir, f)
 		st, err := os.Stat(full)
 		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
 			return nil
 		}
 		out = append(out, reportFile{f, full, float64(st.ModTime().UnixNano()) / 1e6})
@@ -235,23 +238,21 @@ func (c *ReportCache) getReportFilesForHours(h int) []reportFile {
 func (c *ReportCache) loadLatestFromDisk() {
 	for _, h := range c.supportedHours {
 		files := c.getReportFilesForHours(h)
-		if len(files) == 0 {
-			continue
-		}
-		latest := files[0]
-		e, err := loadReportFile(latest)
-		if err != nil {
-			log.Printf("[ReportCacheService] Error reading %s: %v", latest.filename, err)
-			continue
-		}
-		if s, ok := e.get("summary").(*Obj); ok && s.Len() > 0 {
-			c.cached[itoa(h)] = e
-			gen := "unknown"
-			if m, ok := e.get("meta").(*Obj); ok && truthy(m.Get("generatedAt")) {
-				gen = jsString(m.Get("generatedAt"))
+		for _, latest := range files {
+			e, err := loadReportFile(latest)
+			if err != nil {
+				log.Printf("[ReportCacheService] Error reading %s: %v", latest.filename, err)
+				continue
 			}
-			log.Printf("[ReportCacheService] ⚡ Loaded pre-generated %dh report from disk (%s, generated at %s)", h, latest.filename, gen)
-		} else {
+			if s, ok := e.get("summary").(*Obj); ok && s.Len() > 0 {
+				c.cached[itoa(h)] = e
+				gen := "unknown"
+				if m, ok := e.get("meta").(*Obj); ok && truthy(m.Get("generatedAt")) {
+					gen = jsString(m.Get("generatedAt"))
+				}
+				log.Printf("[ReportCacheService] ⚡ Loaded pre-generated %dh report from disk (%s, generated at %s)", h, latest.filename, gen)
+				break
+			}
 			log.Printf("[ReportCacheService] ⚠️ Skipping corrupted/empty report on disk: %s", latest.filename)
 		}
 	}
@@ -284,6 +285,9 @@ func loadReportFile(f reportFile) (*reportEntry, error) {
 		return nil, errors.New("unserializable report")
 	}
 	reportFileMu.Lock()
+	if len(reportFileCache) >= 8 {
+		clear(reportFileCache)
+	}
 	reportFileCache[key] = e
 	reportFileMu.Unlock()
 	return e, nil
@@ -385,13 +389,27 @@ func (c *ReportCache) generate(h int, catalog any, start int64) (e *reportEntry,
 	)
 	full := report.Clone().Set("meta", meta)
 	compact := toJSON(full)
-	var pretty bytes.Buffer
-	if err := json.Indent(&pretty, compact, "", "  "); err != nil {
-		return nil, err
-	}
 	name := "journalism_report_" + key + "h_" + numToString(float64(now)) + ".json"
-	if err := os.WriteFile(filepath.Join(c.reportsDir, name), pretty.Bytes(), 0o644); err != nil {
-		return nil, err
+	targetPath := filepath.Join(c.reportsDir, name)
+	var writeErr error
+	c.w.await(func() {
+		var pretty bytes.Buffer
+		if err := json.Indent(&pretty, compact, "", "  "); err != nil {
+			writeErr = err
+			return
+		}
+		tmp := targetPath + ".tmp"
+		if err := os.WriteFile(tmp, pretty.Bytes(), 0o644); err != nil {
+			writeErr = err
+			return
+		}
+		if err := os.Rename(tmp, targetPath); err != nil {
+			_ = os.Remove(tmp)
+			writeErr = err
+		}
+	})
+	if writeErr != nil {
+		return nil, writeErr
 	}
 	log.Printf("[ReportCacheService] 💾 Saved %dh report to %s (%dms).", h, name, nowMs()-start)
 	entry, err := reportEntryFromJSON(compact)
@@ -414,6 +432,9 @@ func (c *ReportCache) generateAllReports(catalog any) {
 	defer func() { c.isGenerating = false }()
 	log.Printf("[ReportCacheService] 🔄 Starting batch generation for all timeframes (24h, 48h, 7d/168h)...")
 	for _, h := range c.supportedHours {
+		if c.db == nil || c.db.closed {
+			return
+		}
 		if _, err := c.generateAndSaveReport(float64(h), catalog); err != nil {
 			log.Printf("[ReportCacheService] Batch generation error: %v", err)
 			return

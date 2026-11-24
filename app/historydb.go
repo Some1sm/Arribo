@@ -223,6 +223,7 @@ type HistoryDB struct {
 	delayRetentionDays     float64
 	db                     *sql.DB
 	conn                   *sql.Conn
+	closed                 bool
 	stopCoords             map[string][2]float64
 	stopCoordsLoaded       bool
 }
@@ -395,6 +396,9 @@ func registerSQLFunctions() {
 func (h *HistoryDB) init() bool { return h.ensureOpen() }
 
 func (h *HistoryDB) ensureOpen() bool {
+	if h.closed {
+		return false
+	}
 	if h.conn != nil {
 		return true
 	}
@@ -1326,6 +1330,7 @@ func (h *HistoryDB) getVehicleTrail(vehicleID any, minutesBack float64) []any {
 }
 
 func (h *HistoryDB) close() {
+	h.closed = true
 	if h.conn == nil {
 		return
 	}
