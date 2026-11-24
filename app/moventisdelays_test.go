@@ -61,4 +61,12 @@ func TestMovPrimaryStopPriorityFiltering(t *testing.T) {
 	if movStopIsPrimary([]int{161}, primary) {
 		t.Error("secondary-only stop must not be treated as primary")
 	}
+	// Static cache missing newly added line IDs triggers refresh.
+	st := &movStatic{Lines: map[int]movLine{53: {ID: 53, Code: "C-10"}}}
+	if movStaticMissingLines(st, []int{53}) {
+		t.Error("present line should not report missing")
+	}
+	if !movStaticMissingLines(st, []int{53, 161}) {
+		t.Error("new line 161 absent from cache must trigger static refresh")
+	}
 }

@@ -103,6 +103,18 @@ func movStopIsPrimary(stopLines []int, primary map[int]bool) bool {
 	return false
 }
 
+func movStaticMissingLines(s *movStatic, ids []int) bool {
+	if s == nil {
+		return true
+	}
+	for _, id := range ids {
+		if _, ok := s.Lines[id]; !ok {
+			return true
+		}
+	}
+	return false
+}
+
 // movSpeedKmh is a line's average commercial speed: the motorway expresses
 // (e11.1, e11.2, 865) run faster than the N-II and town lines.
 var movSpeedKmh = map[int]float64{47: 40, 48: 40, 51: 40}
@@ -636,9 +648,14 @@ func (p *movPoller) refreshStatic(ctx context.Context, prev *movStatic) (*movSta
 		return nil, err
 	}
 	s := &movStatic{FetchedAt: time.Now(), Lines: map[int]movLine{}, Routes: map[int][]movRoute{}}
+	reusePrev := prev != nil && time.Since(prev.FetchedAt) <= movStaticMaxAge
 	for _, id := range p.lineIDs {
 		if l, ok := lines[id]; ok {
 			s.Lines[id] = l
+		}
+		if reusePrev && len(prev.Routes[id]) > 0 {
+			s.Routes[id] = prev.Routes[id]
+			continue
 		}
 		if routes, err := p.fetchRoutes(ctx, id); err == nil {
 			s.Routes[id] = routes
@@ -1101,7 +1118,7 @@ func (p *movPoller) run(ctx context.Context) {
 	p.publish(time.Now())
 	cycle := 0
 	for ctx.Err() == nil {
-		if static == nil || time.Since(static.FetchedAt) > movStaticMaxAge {
+		if static == nil || time.Since(static.FetchedAt) > movStaticMaxAge || movStaticMissingLines(static, p.lineIDs) {
 			fresh, err := p.refreshStatic(ctx, static)
 			switch {
 			case err == nil:
