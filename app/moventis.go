@@ -747,7 +747,8 @@ var movOperator = operatorInfo{ID: movAgencyID, Name: "Moventis", ShortName: "Mo
 // lines are in the catalog.
 func lineOperators() []operatorInfo {
 	ops := reportOperators
-	for _, extra := range []operatorInfo{movOperator, ambOperator, tramTbxOperator, tramTbsOperator, tmbOperator, sagalesOperator, gironaOperator} {
+	extras := append([]operatorInfo{movOperator, ambOperator, tramTbxOperator, tramTbsOperator, tmbOperator, sagalesOperator, gironaOperator}, moventisNapOperators...)
+	for _, extra := range extras {
 		if _, ok := rtCatalog.Load(extra.ID); ok {
 			ops = append(append([]operatorInfo(nil), ops...), extra)
 		}

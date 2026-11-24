@@ -293,6 +293,7 @@ func defaultRtSources() []rtSource {
 	if gir, ok := gironaSource(); ok {
 		srcs = append(srcs, gir)
 	}
+	srcs = append(srcs, moventisNapSources()...)
 	return srcs
 }
 
