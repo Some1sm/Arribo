@@ -1128,7 +1128,8 @@ class ObservatoriApp {
     // The Moventis scope follows the scraper's state (every minute while shown).
     setInterval(async () => {
       if (document.hidden || document.body.dataset.dadesScope !== 'est') return;
-      const m = await fetch('/api/moventis').then(r => (r.ok ? r.json() : null)).catch(() => null);
+      const h = this.currentHours || 24;
+      const m = await fetch(`/api/moventis?hours=${encodeURIComponent(h)}`).then(r => (r.ok ? r.json() : null)).catch(() => null);
       if (!m || document.body.dataset.dadesScope !== 'est') return;
       this.moventisData = m;
       this.renderMovHealth(m);
@@ -1503,8 +1504,8 @@ class ObservatoriApp {
         fetch(`/api/analytics/network?hours=${hours}`).then(r => (r.ok ? r.json() : null))
       ]);
       this.networkReport = net.status === 'fulfilled' && net.value?.success ? net.value : null;
-      // Moventis (scraped predictions, estimated buses): its Dades scope.
-      this.moventisData = await fetch('/api/moventis').then(r => (r.ok ? r.json() : null)).catch(() => null);
+      // Moventis (scraped predictions, estimated buses + timetable-matched delays): its Dades scope.
+      this.moventisData = await fetch(`/api/moventis?hours=${encodeURIComponent(hours)}`).then(r => (r.ok ? r.json() : null)).catch(() => null);
 
       const journalismData = res.status === 'fulfilled' && res.value?.success ? (res.value.report || res.value) : null;
 
@@ -1723,27 +1724,62 @@ class ObservatoriApp {
     grid.innerHTML = `<p class="dh-summary dh-${tone}"><span class="dh-dot" aria-hidden="true"></span>${this.esc(summary)}</p><div class="dh-list${items.length % 3 === 0 ? ' dh-cols-3' : ''}">${items.map(i => i.html).join('')}</div>`;
   }
 
-  // The Moventis scope's content: why there is no punctuality yet, and the
-  // lines followed with their routes and the buses estimated now.
+  // The Moventis scope's content: estimated punctuality (live predictions
+  // matched against the Generalitat / moventis.es timetable) and the lines
+  // followed with their routes and buses estimated now.
   renderMoventisScope(container, m) {
     const lines = m?.lines || [];
     const counts = new Map();
     for (const v of m?.vehicles || []) counts.set(v.lineCode, (counts.get(v.lineCode) || 0) + 1);
+    const delays = m?.delays || null;
+    const sum = delays?.summary || null;
+    const byLine = new Map();
+    for (const r of delays?.byLine || []) byLine.set(r.lineCode, r);
+    const fmtSignedMin = v => {
+      if (v === null || v === undefined || !Number.isFinite(Number(v))) return '—';
+      const n = Number(v);
+      const sign = n > 0 ? '+' : '';
+      return `${sign}${this.dec(n.toFixed(1))} min`;
+    };
+    const fmtPct = v => (v === null || v === undefined || !Number.isFinite(Number(v)) ? '—' : `${this.dec(Number(v).toFixed(1))}%`);
+    const kpiHtml = sum && sum.observations > 0 ? `
+      <div class="monthly-kpi-grid">
+        <div class="monthly-kpi-card">
+          <div class="kpi-val">${this.esc(String(sum.observations))}</div>
+          <div class="kpi-lbl">${this.esc(this.t('dades.movKpiObs', { h: sum.hours || this.currentHours || 24 }))}</div>
+        </div>
+        <div class="monthly-kpi-card">
+          <div class="kpi-val">${this.esc(fmtPct(sum.onTimePct))}</div>
+          <div class="kpi-lbl">${this.esc(this.t('dades.movKpiOnTime'))}</div>
+        </div>
+        <div class="monthly-kpi-card">
+          <div class="kpi-val">${this.esc(fmtSignedMin(sum.avgDelayMins))}</div>
+          <div class="kpi-lbl">${this.esc(this.t('dades.movKpiAvgDelay'))}</div>
+        </div>
+        <div class="monthly-kpi-card">
+          <div class="kpi-val">${this.esc(fmtSignedMin(sum.maxDelayMins))}</div>
+          <div class="kpi-lbl">${this.esc(this.t('dades.movKpiMaxDelay'))}</div>
+        </div>
+      </div>` : `<p class="dades-mov-muted">${this.esc(this.t('dades.movDelayWarming'))}</p>`;
     const rows = lines.map(l => {
       const routes = l.routes || [];
       const n = counts.get(l.code) || 0;
+      const dl = byLine.get(l.code);
       return `<tr><td class="sticky-col"><span class="observatori-line-badge" data-line="${this.esc(`moventis:${l.code}`)}">${this.esc(l.code)}</span> <span class="dades-mov-name">${this.esc(l.name || '')}</span></td>
         <td>${routes.length ? this.esc([...new Set(routes.map(r => r.dest).filter(Boolean))].join(' · ')) : `<span class="dades-mov-muted">${this.esc(this.t('dades.movNoRoutes'))}</span>`}</td>
         <td>${routes.reduce((a, r) => a + (r.stops || 0), 0)}</td>
         <td>${n}</td>
+        <td>${dl ? this.esc(fmtSignedMin(dl.avgDelayMins)) : '—'}</td>
+        <td>${dl ? this.esc(`${fmtPct(dl.onTimePct)} (${dl.observations})`) : '—'}</td>
         <td>${l.lineRef && routes.length ? `<a class="btn-secondary dades-mov-open" href="/#l${this.esc(l.lineRef)}">${this.esc(this.t('dades.movOpen'))}</a>` : ''}</td></tr>`;
     }).join('');
     container.innerHTML = `
       <p class="dades-rail-scope-note">${this.esc(this.t('dades.movScopeNote'))}</p>
+      ${kpiHtml}
       <div class="observatori-table-container">
         <div class="observatori-table-header-row"><h4 class="observatori-table-title"><span>${this.esc(this.t('dades.movLinesTitle'))}</span></h4></div>
         ${lines.length ? `<div class="observatori-table-wrapper"><table class="observatori-table"><thead><tr>
-          <th class="sticky-col">${this.esc(this.t('dades.colLine'))}</th><th>${this.esc(this.t('dades.movColRoutes'))}</th><th>${this.esc(this.t('dades.movColStops'))}</th><th>${this.esc(this.t('dades.movColBuses'))}</th><th></th>
+          <th class="sticky-col">${this.esc(this.t('dades.colLine'))}</th><th>${this.esc(this.t('dades.movColRoutes'))}</th><th>${this.esc(this.t('dades.movColStops'))}</th><th>${this.esc(this.t('dades.movColBuses'))}</th><th>${this.esc(this.t('dades.movColAvgDelay'))}</th><th>${this.esc(this.t('dades.movColOnTime'))}</th><th></th>
         </tr></thead><tbody>${rows}</tbody></table></div>` : `<p class="dades-mov-muted">${this.esc(this.t('dades.movNoLines'))}</p>`}
       </div>`;
   }

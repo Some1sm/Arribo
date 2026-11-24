@@ -34,8 +34,9 @@ services:
       # daily into ./data/gtfs/ (~60 MB) and record train station visits for
       # the Dades "Trens" section. Measured ~36 MiB with it on. 0 to turn off.
       - ARRIBO_GTFSRT=${ARRIBO_GTFSRT:-1}
-      # Moventis buses (moventis.es arrival predictions, see app/moventis.go)
+      # Moventis buses (Mataró 7 lines + Maresme Casas C-12..C-22; app/moventis.go)
       - ARRIBO_MOVENTIS=${ARRIBO_MOVENTIS:-1}
+      - ARRIBO_MOVENTIS_MARESME=${ARRIBO_MOVENTIS_MARESME:-1}
       # AMB Bus Metropolità (open trip updates, no positions; app/amb.go). Needs ARRIBO_GTFSRT.
       - ARRIBO_AMB=${ARRIBO_AMB:-1}
       # TRAM Barcelona Trambaix + Trambesòs (OAuth GTFS-RT trip updates, no history; app/tram.go). Needs ARRIBO_GTFSRT + TRAM_CLIENT_*.

@@ -61,9 +61,16 @@ const (
 	movAgencyID      = "moventis"
 )
 
-// movDefaultLines: the lines through Mataró (zone Maresme, subzone Mataró):
-// e11.1, e11.2, 865, C-10, C-20, C-30, N-80 (Empresa Casas).
+// movDefaultLines: the primary seven lines through Mataró (zone Maresme,
+// subzone Mataró): e11.1, e11.2, 865, C-10, C-20, C-30, N-80 (Empresa Casas).
 var movDefaultLines = []int{47, 48, 51, 53, 57, 59, 68}
+
+// movMaresmeExtraLines: Maresme Casas urban/feeder lines (plan step 6.1):
+// C-12 (55), C-15 (56), C-22 (58), C-16 (60), C-14 (64), C-21 (67),
+// C-13 (161), C-19 (340), C-18 (385), 862 (627), C-17 (715).
+// Enabled with ARRIBO_MOVENTIS_MARESME=1; stops serving only secondary lines
+// are polled on every second cycle so the primary Mataró lines stay fast.
+var movMaresmeExtraLines = []int{55, 56, 58, 60, 64, 67, 161, 340, 385, 627, 715}
 
 var movHTTP = &http.Client{Timeout: 20 * time.Second}
 
@@ -77,8 +84,24 @@ var movHTTP = &http.Client{Timeout: 20 * time.Second}
 // movHeadwayMin is each line's day-average headway in minutes, from the
 // Generalitat interurban GTFS (17 service hours / trips per direction,
 // November 2026): C-10 78 trips a day, C-20 42, C-30 57, e11.1 268, e11.2
-// 170, 865 29, N-80 6. A line not listed uses movDefaultHeadwayMin.
-var movHeadwayMin = map[int]float64{53: 26, 57: 49, 59: 36, 47: 8, 48: 12, 51: 70, 68: 340}
+// 170, 865 29, N-80 6, plus Maresme town/feeder lines C-12..C-22 & 862.
+// A line not listed uses movDefaultHeadwayMin.
+var movHeadwayMin = map[int]float64{
+	53: 26, 57: 49, 59: 36, 47: 8, 48: 12, 51: 70, 68: 340,
+	55: 45, 56: 40, 58: 35, 60: 45, 64: 30, 67: 60, 161: 30, 340: 30, 385: 30, 627: 45, 715: 40,
+}
+
+func movStopIsPrimary(stopLines []int, primary map[int]bool) bool {
+	if len(primary) == 0 {
+		return true
+	}
+	for _, id := range stopLines {
+		if primary[id] {
+			return true
+		}
+	}
+	return false
+}
 
 // movSpeedKmh is a line's average commercial speed: the motorway expresses
 // (e11.1, e11.2, 865) run faster than the N-II and town lines.
@@ -170,8 +193,10 @@ type movPrediction struct {
 // movPoller follows the configured lines.
 type movPoller struct {
 	lineIDs   []int
-	dir       string    // cache directory
-	lastRetry time.Time // last retryMissing (poller goroutine only)
+	primary   map[int]bool // primary lines polled every cycle (secondary-only stops every 2nd cycle)
+	dir       string       // cache directory
+	lastRetry time.Time    // last retryMissing (poller goroutine only)
+	delays    *movDelayTracker
 
 	mu      sync.Mutex
 	static  *movStatic
@@ -203,16 +228,30 @@ func startMoventisPoller() (stop func()) {
 	if os.Getenv("ARRIBO_MOVENTIS") != "1" {
 		return func() {}
 	}
-	ids := movDefaultLines
+	ids := append([]int(nil), movDefaultLines...)
+	primary := map[int]bool{}
+	for _, id := range movDefaultLines {
+		primary[id] = true
+	}
 	if s := strings.TrimSpace(os.Getenv("ARRIBO_MOVENTIS_LINES")); s != "" {
 		ids = nil
+		primary = nil
 		for _, part := range strings.Split(s, ",") {
 			if n, err := strconv.Atoi(strings.TrimSpace(part)); err == nil && n > 0 {
 				ids = append(ids, n)
 			}
 		}
+	} else if os.Getenv("ARRIBO_MOVENTIS_MARESME") == "1" {
+		ids = append(ids, movMaresmeExtraLines...)
 	}
-	p := &movPoller{lineIDs: ids, dir: movCacheDir(), preds: map[[3]int]movPrediction{}}
+	dir := movCacheDir()
+	p := &movPoller{
+		lineIDs: ids,
+		primary: primary,
+		dir:     dir,
+		delays:  newMovDelayTracker(dir),
+		preds:   map[[3]int]movPrediction{},
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
@@ -226,6 +265,9 @@ func startMoventisPoller() (stop func()) {
 		rtCatalog.Delete(movAgencyID)
 		cancel()
 		<-done
+		if p.delays != nil {
+			p.delays.save(true)
+		}
 	}
 }
 
@@ -1057,6 +1099,7 @@ func (p *movPoller) run(ctx context.Context) {
 		static.publishCatalog(p.lineIDs)
 	}
 	p.publish(time.Now())
+	cycle := 0
 	for ctx.Err() == nil {
 		if static == nil || time.Since(static.FetchedAt) > movStaticMaxAge {
 			fresh, err := p.refreshStatic(ctx, static)
@@ -1101,6 +1144,12 @@ func (p *movPoller) run(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
+			// Secondary-only Maresme stops are polled on even cycles so the
+			// primary Mataró lines keep their ~6 min refresh cadence.
+			if cycle%2 == 1 && !movStopIsPrimary(stopLines[sm.StopID], p.primary) {
+				skipped++
+				continue
+			}
 			p.mu.Lock()
 			obs, seenBefore := p.obs[sm.StopID]
 			p.mu.Unlock()
@@ -1133,6 +1182,7 @@ func (p *movPoller) run(ctx context.Context) {
 		p.stats.LastCycleSec = math.Round(time.Since(start).Seconds())
 		p.stats.AskedStops, p.stats.SkippedStops = asked, skipped
 		p.mu.Unlock()
+		cycle++
 		if asked == 0 && !movSleep(ctx, movBackoffMin) {
 			return // nothing due: do not spin
 		}
@@ -1184,6 +1234,13 @@ func (p *movPoller) record(s *movStatic, stopID int, etas []movStopETA, at time.
 		}
 		k := [3]int{e.LineID, rt.Trayecto, stopID}
 		p.preds[k] = movPrediction{LineID: e.LineID, Trayecto: rt.Trayecto, StopID: stopID, EtaSec: e.EtaSec, At: at}
+		if p.delays != nil {
+			code := ""
+			if s != nil {
+				code = s.Lines[e.LineID].Code
+			}
+			p.delays.observe(e.LineID, code, stopID, e.EtaSec, e.Sched, at, gencatData())
+		}
 	}
 	if p.obs == nil {
 		p.obs = map[int]movStopObs{}

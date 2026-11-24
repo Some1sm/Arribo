@@ -311,6 +311,48 @@ func (g *gcData) nextDeparture(lineID, stopID int, now time.Time) (time.Time, bo
 	return best, true
 }
 
+// nearestDeparture finds the published departure of lineID at stopID closest to
+// expected within [expected - maxLate, expected + maxEarly] (i.e. delay in
+// [-maxEarly, +maxLate]). Returns ok=false when the timetable has no entry for
+// this line today or nothing lies in that window.
+func (g *gcData) nearestDeparture(lineID, stopID int, expected time.Time, maxEarly, maxLate time.Duration) (time.Time, bool) {
+	sts, ok := g.stopTimes(lineID, stopID)
+	if !ok {
+		return time.Time{}, false
+	}
+	day := expected.In(madrid)
+	if !g.lineRuns(lineID, day.Format("20060102")) {
+		return time.Time{}, false
+	}
+	var best time.Time
+	var bestAbs time.Duration
+	for off := -1; off <= 1; off++ {
+		d := day.AddDate(0, 0, off)
+		date := d.Format("20060102")
+		y, m, dd := d.Date()
+		baseMs := localTimeToUtcDate(y, int(m)-1, dd, 0, 0, 0)
+		for _, st := range sts {
+			if !st.runsOn(g, date) {
+				continue
+			}
+			sched := time.UnixMilli(baseMs).Add(time.Duration(st.sec) * time.Second)
+			delay := expected.Sub(sched)
+			if delay < -maxEarly || delay > maxLate {
+				continue
+			}
+			abs := delay
+			if abs < 0 {
+				abs = -abs
+			}
+			if best.IsZero() || abs < bestAbs {
+				best = sched
+				bestAbs = abs
+			}
+		}
+	}
+	return best, !best.IsZero()
+}
+
 // movDueFunc is the poller's view of the timetable for one stop: when each
 // followed line is next due there. nil when the file is not loaded.
 func movDueFunc(stopID int, now time.Time) func(lineID int) (time.Time, bool) {

@@ -13,7 +13,7 @@ Every deploy below passed `gofmt`, `go vet`, `go test`, `npm run test:syntax`, `
 
 | Done `[x]` | Partly done `[~]` (what's left is in each plan row) | Next unblocked `[ ]` | Waiting on the owner `[!]` |
 |---|---|---|---|
-| 0.1–0.5 (Phase 0 complete) · 1.1–1.6 (Phase 1 complete; 1.6 closed, host gone) · 2.1–2.4 · 3.1–3.4 · 4.1–4.4 (Phase 4 complete: ATM GTFS-Fares v2 via NAP 2059) · 5.1–5.4 (Phase 5 complete) · 6.2 (Sagalés GPS, no history) · 6.3 · 6.4 · 6.5 (TMB Metro+Bus, no history) · 6.6 (TRAM Trambaix+Trambesòs, no history) · 6.7 (TMG Girona, no history) · 7.1 | 3.5 (Renfe LD feed: matching fixed, but lags ~1 h so left out) | 6.1 (more Moventis lines) · 7.2 (data requests replies) · Moventis delays in Dades | — (nothing blocked) |
+| 0.1–0.5 (Phase 0 complete) · 1.1–1.6 (Phase 1 complete; 1.6 closed, host gone) · 2.1–2.4 · 3.1–3.4 · 4.1–4.4 (Phase 4 complete) · 5.1–5.4 (Phase 5 complete) · 6.1–6.7 (Phase 6 complete: Moventis Maresme C-12…C-22, Sagalés GPS, AMB, FGC Geotren, TMB Metro+Bus, TRAM, TMG Girona) · 7.1 · Moventis delays in Dades | 3.5 (Renfe LD feed: matching fixed, but lags ~1 h so left out) | 7.2 (data requests replies as agencies answer) | — (nothing blocked) |
 
 Things learnt live that the plan rows record:
 - The Generalitat GTFS gives the C-10 weekday service (184910) no 2026 dates. A day without any trip of a line is read as "unknown" (`lineRuns`).

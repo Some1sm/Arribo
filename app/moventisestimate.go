@@ -265,9 +265,14 @@ func (s *Server) hMoventis(q *xreq, res *xres) error {
 			"lastCycleSec", st.LastCycleSec,
 			"requestGapSec", movMinGap.Seconds(), "staticAt", movStaticAt(snap.Static))
 	}
+	hours := clampHours(qv(q, "hours"), 24, 168)
+	var delaysObj any
+	if p.delays != nil {
+		delaysObj = p.delays.report(hours, now)
+	}
 	res.json(O("success", true, "enabled", true, "agencyId", movAgencyID, "mode", "bus",
 		"attribution", movAttributionText(),
-		"positionsEstimated", true, "lines", lines, "vehicles", vehicles, "status", status))
+		"positionsEstimated", true, "lines", lines, "vehicles", vehicles, "status", status, "delays", delaysObj))
 	return nil
 }
 
