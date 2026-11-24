@@ -11,6 +11,7 @@ package main
 // lock is needed for the data, no SQLite and no upstream request.
 
 import (
+	"context"
 	"strings"
 	"time"
 )
@@ -295,6 +296,18 @@ func (s *Server) railDepartures(q *xreq, res *xres, info operatorInfo, op *rtCat
 	if v := qv(q, "direction"); !isUndef(v) {
 		direction = jsTrim(jsString(v))
 	}
+	now := time.UnixMilli(nowMs())
+	if info.ID == tmbAgencyID {
+		// TMB live iTransit predictions (Metro L1-L5/L11 from 30 s cache;
+		// Bus on-demand with 20 s TTL cache). L9/L10/FM and misses fall back to GTFS.
+		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+		live := tmbLiveDepartures(ctx, stop, code, direction, now)
+		cancel()
+		if live != nil {
+			res.json(O("success", true, "data", live))
+			return
+		}
+	}
 	data, err := s.historyQuery("getRailDepartures", O("agencyId", info.ID, "code", code, "stopId", stopID, "direction", direction), 8000)
 	if err != nil {
 		s.sendInternalError(q, res, err, O("success", false))
@@ -309,7 +322,12 @@ func (s *Server) railDepartures(q *xreq, res *xres, info operatorInfo, op *rtCat
 	sched, _ := field(data, "departures").([]any)
 	platforms, _ := field(data, "platforms").(*Obj)
 	usual, _ := field(data, "usualPlatforms").(*Obj)
-	res.json(O("success", true, "data", railDeparturesResponse(info, stop, sched, snap, platforms, usual, time.UnixMilli(nowMs()))))
+	out := railDeparturesResponse(info, stop, sched, snap, platforms, usual, now)
+	if info.ID == tmbAgencyID {
+		out.Set("attribution", tmbAttributionWithDate(now))
+		out.Set("dataUpdatedAt", now.In(madrid).Format("2006-01-02"))
+	}
+	res.json(O("success", true, "data", out))
 }
 
 // hRailLine answers the /api/line/:lineId family for a rail line. It
@@ -365,8 +383,17 @@ func (s *Server) hRailLine(q *xreq, res *xres, kind string) bool {
 
 // railAttribution is the attribution an operator's licence asks for.
 func railAttribution(agencyID string) any {
-	if agencyID == movAgencyID {
+	switch agencyID {
+	case movAgencyID:
 		return movAttributionText()
+	case tmbAgencyID:
+		at := time.Now()
+		if s := tmbMetroLive.Load(); s != nil && !s.At.IsZero() {
+			at = s.At
+		}
+		return tmbAttributionWithDate(at)
+	case tramTbxAgencyID, tramTbsAgencyID:
+		return tramAttribution + " · Actualitzat " + time.Now().In(madrid).Format("2006-01-02")
 	}
 	return trainAttribution[agencyID]
 }

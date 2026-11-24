@@ -38,6 +38,10 @@ services:
       - ARRIBO_MOVENTIS=${ARRIBO_MOVENTIS:-1}
       # AMB Bus Metropolità (open trip updates, no positions; app/amb.go). Needs ARRIBO_GTFSRT.
       - ARRIBO_AMB=${ARRIBO_AMB:-1}
+      # TRAM Barcelona Trambaix + Trambesòs (OAuth GTFS-RT trip updates, no history; app/tram.go). Needs ARRIBO_GTFSRT + TRAM_CLIENT_*.
+      - ARRIBO_TRAM=${ARRIBO_TRAM:-1}
+      # TMB Metro + Bus (iTransit live predictions + static GTFS, no history; app/tmb.go). Needs ARRIBO_GTFSRT + TMB_APP_*.
+      - ARRIBO_TMB=${ARRIBO_TMB:-1}
       # Renfe unofficial web-map visors (flota.json / flotaLD.json: platforms, LD units, wheelchair; app/renfemap.go).
       - ARRIBO_RENFE_MAP=${ARRIBO_RENFE_MAP:-1}
       # Optional API keys from host .env (never committed; used by upcoming TMB/TRAM/NAP integrations)

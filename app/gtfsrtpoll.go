@@ -98,6 +98,10 @@ type rtSource struct {
 	geotrenURL string
 	// renfeMapURL / renfeMapLDURL: Renfe's unofficial public visor feeds (ARRIBO_RENFE_MAP=1).
 	renfeMapURL, renfeMapLDURL string
+	// authHeader supplies an optional Authorization header (e.g. TRAM OAuth2 Bearer).
+	authHeader func(context.Context) (string, error)
+	// tmbMetroURL: TMB iTransit Metro JSON endpoint, polled every tmbMetroEvery.
+	tmbMetroURL string
 }
 
 // rtPoller polls one rtSource.
@@ -139,11 +143,20 @@ const rtMaxBody = 32 << 20
 
 // rtFetch GETs url and returns the body. Errors never include the URL.
 func rtFetch(ctx context.Context, url string) ([]byte, error) {
+	return rtFetchAuth(ctx, url, "")
+}
+
+// rtFetchAuth GETs url with an optional Authorization header. Errors never
+// include the URL or credentials.
+func rtFetchAuth(ctx context.Context, url, auth string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, errors.New("bad request")
 	}
 	req.Header.Set("User-Agent", "arribo-gtfsrt/1")
+	if auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 	res, err := rtHTTP.Do(req)
 	if err != nil {
 		return nil, errors.New(nodeErrMessage(err))
@@ -200,8 +213,12 @@ func fgcFileURL(dataset string) (resolve func(context.Context) (string, error), 
 }
 
 // fetchResolved resolves a source URL and fetches it, invalidating the cached
-// URL when either step fails so rotated URLs (e.g. FGC datasets) are re-looked up.
+// URL (or OAuth token) when either step fails.
 func fetchResolved(ctx context.Context, resolve func(context.Context) (string, error), reset func()) ([]byte, error) {
+	return fetchResolvedAuth(ctx, resolve, reset, nil)
+}
+
+func fetchResolvedAuth(ctx context.Context, resolve func(context.Context) (string, error), reset func(), authFn func(context.Context) (string, error)) ([]byte, error) {
 	u, err := resolve(ctx)
 	if err != nil {
 		if reset != nil {
@@ -209,7 +226,17 @@ func fetchResolved(ctx context.Context, resolve func(context.Context) (string, e
 		}
 		return nil, err
 	}
-	b, err := rtFetch(ctx, u)
+	auth := ""
+	if authFn != nil {
+		auth, err = authFn(ctx)
+		if err != nil {
+			if reset != nil {
+				reset()
+			}
+			return nil, err
+		}
+	}
+	b, err := rtFetchAuth(ctx, u, auth)
 	if err != nil {
 		if reset != nil {
 			reset()
@@ -258,6 +285,10 @@ func defaultRtSources() []rtSource {
 	if amb, ok := ambSource(); ok {
 		srcs = append(srcs, amb)
 	}
+	srcs = append(srcs, tramSources()...)
+	if tmb, ok := tmbSource(); ok {
+		srcs = append(srcs, tmb)
+	}
 	return srcs
 }
 
@@ -302,6 +333,9 @@ func (p *rtPoller) syncTimetable(ctx context.Context) {
 
 func (p *rtPoller) pollTrips(ctx context.Context) {
 	p.syncTimetable(ctx)
+	if p.src.tripURL == nil {
+		return
+	}
 	p.pollLDTrips(ctx)
 	total, computed := 0, 0
 	computedTrips := map[string]bool{}
@@ -313,7 +347,7 @@ func (p *rtPoller) pollTrips(ctx context.Context) {
 	tripStops := map[string][]string{} // stops (platforms, for FGC) each trip update names
 	var cancels []railCancel           // announced cancellations for the history database
 	delays, err := func() (map[string]int32, error) {
-		b, err := fetchResolved(ctx, p.src.tripURL, p.src.tripReset)
+		b, err := fetchResolvedAuth(ctx, p.src.tripURL, p.src.tripReset, p.src.authHeader)
 		if err != nil {
 			return nil, err
 		}
@@ -531,6 +565,9 @@ func (p *rtPoller) run(ctx context.Context, wg *sync.WaitGroup) {
 	if p.src.geotrenURL != "" {
 		p.pollGeotren(ctx)
 	}
+	if p.src.tmbMetroURL != "" {
+		p.pollTmbMetro(ctx)
+	}
 	p.pollAlerts(ctx)
 	p.logSnapshot()
 	vt := time.NewTicker(p.src.vehicleEvery)
@@ -548,6 +585,12 @@ func (p *rtPoller) run(ctx context.Context, wg *sync.WaitGroup) {
 		defer rt.Stop()
 		rmC = rt.C
 	}
+	var tmbC <-chan time.Time
+	if p.src.tmbMetroURL != "" {
+		mt := time.NewTicker(tmbMetroEvery)
+		defer mt.Stop()
+		tmbC = mt.C
+	}
 	defer vt.Stop()
 	defer tt.Stop()
 	defer at.Stop()
@@ -564,6 +607,8 @@ func (p *rtPoller) run(ctx context.Context, wg *sync.WaitGroup) {
 			p.pollGeotren(ctx)
 		case <-rmC:
 			p.pollRenfeMap(ctx)
+		case <-tmbC:
+			p.pollTmbMetro(ctx)
 		case <-vt.C:
 			p.pollVehicles(ctx)
 			polls++
@@ -636,7 +681,8 @@ func startGtfsRtPollers() (stop func()) {
 	// A restarted worker starts a fresh set; the stopped pollers of the
 	// previous one must not be counted or drained again.
 	gtfsRtPollers = nil
-	for _, src := range defaultRtSources() {
+	srcs := defaultRtSources()
+	for _, src := range srcs {
 		p := &rtPoller{src: src}
 		gtfsRtPollers = append(gtfsRtPollers, p)
 		wg.Add(1)
@@ -646,7 +692,7 @@ func startGtfsRtPollers() (stop func()) {
 	go func(srcs []rtSource) {
 		defer wg.Done()
 		runTimetableRefresher(ctx, srcs)
-	}(defaultRtSources())
+	}(srcs)
 	live := append([]*rtPoller(nil), gtfsRtPollers...)
 	rtLivePollers.Store(&live)
 	log.Printf("[GTFS-RT] polling %d operators (ARRIBO_GTFSRT=1)", len(gtfsRtPollers))

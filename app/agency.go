@@ -184,11 +184,11 @@ func railCatalog() (lines []any, ops []any) {
 			"bounds", O("minLat", b.MinLat, "maxLat", b.MaxLat, "minLon", b.MinLon, "maxLon", b.MaxLon),
 			"center", nil, "zoom", nil, "trackable", false,
 		)
-		// Additive, for bus operators without GPS: what their map shows.
+		// Additive, for operators without GPS: what their map shows.
 		switch info.ID {
 		case movAgencyID:
 			o.Set("positions", "estimated") // estimated from stop predictions
-		case ambAgencyID:
+		case ambAgencyID, tramTbxAgencyID, tramTbsAgencyID, tmbAgencyID:
 			o.Set("positions", "none") // predicted departures only
 		}
 		ops = append(ops, o)
@@ -198,8 +198,14 @@ func railCatalog() (lines []any, ops []any) {
 
 // catalogModeLabel is the catalog's mode word for an operator's lines.
 func catalogModeLabel(info operatorInfo) string {
-	if info.Mode == "bus" {
+	switch info.Mode {
+	case "bus":
 		return "Bus"
+	case "tram":
+		return "Tramvia"
+	case "metro":
+		return "Metro"
+	default:
+		return "Tren"
 	}
-	return "Tren"
 }

@@ -48,6 +48,9 @@ var trainAttribution = map[string]string{
 	"renfe_rodalies": "Origen de los datos: Renfe Operadora",
 	"fgc":            "Ferrocarrils de la Generalitat de Catalunya",
 	ambAgencyID:      ambAttribution,
+	tramTbxAgencyID:  tramAttribution,
+	tramTbsAgencyID:  tramAttribution,
+	tmbAgencyID:      tmbAttributionBase,
 }
 
 // trainFeed is one operator's snapshot as the response builder sees it.
