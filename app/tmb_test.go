@@ -127,3 +127,29 @@ func TestTmbSourceGateAndNoHistory(t *testing.T) {
 		t.Errorf("unexpected tmbSource: %+v", src)
 	}
 }
+
+func TestRouteModeForDistinguishesRailMetroTramBus(t *testing.T) {
+	cases := []struct {
+		op   operatorInfo
+		code string
+		want string
+	}{
+		{reportOperators[0], "R1", "rail"},
+		{reportOperators[1], "S2", "rail"},
+		{tmbOperator, "L1", "metro"},
+		{tmbOperator, "L9S", "metro"},
+		{tmbOperator, "FM", "metro"},
+		{tmbOperator, "109", "bus"},
+		{tmbOperator, "H4", "bus"},
+		{tramTbxOperator, "T1", "tram"},
+		{movOperator, "C-10", "bus"},
+		{ambOperator, "L95", "bus"},
+		{sagalesOperator, "550", "bus"},
+		{gironaOperator, "L1", "bus"},
+	}
+	for _, tc := range cases {
+		if got := routeModeFor(tc.op, tc.code); got != tc.want {
+			t.Errorf("routeModeFor(%s, %s) = %q, want %q", tc.op.ID, tc.code, got, tc.want)
+		}
+	}
+}

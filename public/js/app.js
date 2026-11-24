@@ -1263,7 +1263,7 @@ class TransitApp {
             ${shown.map(l => {
               // Train lines open by their lineRef ("renfe_rodalies:R1"), as in the line picker.
               const openId = l.lineRef || l.id;
-              const dirCount = l.lineRef ? t('common.train') : (l.directions ? t('common.directions', { n: l.directions.length }) : t('common.inService'));
+              const dirCount = l.lineRef ? (l.mode || t('common.train')) : (l.directions ? t('common.directions', { n: l.directions.length }) : t('common.inService'));
               return `
                 <div class="landing-line-card" data-line-id="${this.esc(openId)}" title="${this.esc(t('landing.followLine', { code: l.code }))}">
                   <span class="landing-line-badge"${this.lineAttr(l)}>${this.esc(l.code)}</span>

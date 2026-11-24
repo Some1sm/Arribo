@@ -173,7 +173,7 @@ func railCatalog() (lines []any, ops []any) {
 			_, hasProfile := op.Profiles[r.Code]
 			lines = append(lines, O(
 				"id", r.Code, "code", r.Code, "name", r.Name, "color", color, "textColor", ink,
-				"agency", info.Name, "agencyId", info.ID, "group", info.ID, "mode", catalogModeLabel(info),
+				"agency", info.Name, "agencyId", info.ID, "group", info.ID, "mode", catalogLineModeLabel(info, r.Code),
 				"directions", []any{}, "trackable", false,
 				"lineRef", info.ID+":"+r.Code, "openable", hasProfile,
 			))
@@ -198,7 +198,15 @@ func railCatalog() (lines []any, ops []any) {
 
 // catalogModeLabel is the catalog's mode word for an operator's lines.
 func catalogModeLabel(info operatorInfo) string {
-	switch info.Mode {
+	return modeWord(info.Mode)
+}
+
+func catalogLineModeLabel(info operatorInfo, code string) string {
+	return modeWord(routeModeFor(info, code))
+}
+
+func modeWord(mode string) string {
+	switch mode {
 	case "bus":
 		return "Bus"
 	case "tram":

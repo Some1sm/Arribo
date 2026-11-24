@@ -107,6 +107,29 @@ func tmbAttributionWithDate(at time.Time) string {
 	return tmbAttributionBase + " · Actualitzat " + at.In(madrid).Format("2006-01-02")
 }
 
+// tmbIsMetroCode reports whether a TMB route_short_name is a Metro or
+// Funicular de Montjuïc line (as opposed to a TMB Bus line).
+func tmbIsMetroCode(code string) bool {
+	switch strings.ToUpper(strings.TrimSpace(code)) {
+	case "L1", "L2", "L3", "L4", "L5", "L9N", "L9S", "L10N", "L10S", "L11", "FM":
+		return true
+	default:
+		return false
+	}
+}
+
+// routeModeFor returns the canonical mode ("rail", "metro", "tram", "bus")
+// for one line of an operator, distinguishing TMB Metro from TMB Bus.
+func routeModeFor(info operatorInfo, code string) string {
+	if info.ID == tmbAgencyID {
+		if tmbIsMetroCode(code) {
+			return "metro"
+		}
+		return "bus"
+	}
+	return info.Mode
+}
+
 // tmbMetroStationCode extracts the iTransit codi_estacio from a TMB GTFS stop_id
 // (e.g. "1.111" -> "111", "P.6660111" -> "").
 func tmbMetroStationCode(stopID string) string {

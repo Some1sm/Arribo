@@ -193,18 +193,22 @@ class NetworkMap extends TransitMap {
       const color = typeof l.color === 'string' && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(l.color) ? l.color : neutral;
       // A path joined from the stations (no shape in the timetable) is dashed.
       const polyline = L.polyline(path, { color, weight: 3, opacity: 0.7, dashArray: l.fromStops ? '6 6' : null, interactive: false });
-      this.railRoutes.push({ agencyId: l.agencyId, code: l.code, polyline });
+      const mode = typeof l.mode === 'string' && l.mode ? l.mode : (l.agencyId === 'renfe_rodalies' || l.agencyId === 'fgc' ? 'rail' : 'bus');
+      this.railRoutes.push({ agencyId: l.agencyId, code: l.code, mode, polyline });
     }
     this.renderRailRoutes();
   }
 
-  /** Puts each train line's path on the map when trains are shown and the filter allows it. */
+  /** Puts each non-Mataró line's path on the map when the filter allows it;
+   *  the "Hide trains" toggle hides only rail lines (Rodalies/FGC), leaving
+   *  Moventis, AMB, Sagalés, Girona, TMB and TRAM routes visible. */
   renderRailRoutes() {
     if (!this.railRouteLayer) return;
     // Paths are static: they show without a live train feed too.
-    const show = this.trainsShown && this.railFilterOpen();
+    const filterOpen = this.railFilterOpen();
     for (const r of this.railRoutes || []) {
-      const want = show && this.isRailLineVisible(r.agencyId, r.code);
+      const isTrain = r.mode === 'rail';
+      const want = filterOpen && (!isTrain || this.trainsShown) && this.isRailLineVisible(r.agencyId, r.code);
       const has = this.railRouteLayer.hasLayer(r.polyline);
       if (want && !has) this.railRouteLayer.addLayer(r.polyline);
       if (!want && has) this.railRouteLayer.removeLayer(r.polyline);

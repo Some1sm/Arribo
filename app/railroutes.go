@@ -44,6 +44,7 @@ func (s *Server) hRailRoutes(q *xreq, res *xres) error {
 				"lineRef", info.ID+":"+r.Code,
 				"agencyId", info.ID,
 				"code", r.Code,
+				"mode", routeModeFor(info, r.Code),
 				"color", color,
 				// The path joins the stations when the timetable has no shape.
 				"fromStops", d.GeometryFromStops,
