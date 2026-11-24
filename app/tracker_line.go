@@ -392,6 +392,10 @@ func (t *MataroTracker) computeLineDetails(lineID any, direction any, opts *Obj)
 	}
 	disruptions := t.getDisruptions(lID)
 	cancelled := t.getCancelledStopsForLine(lID, disruptions, float64(targetMs), nil)
+	// Dated diversions from src/data/mataro_events.json (mataroevents.go):
+	// added after Avanza's notices are read, so their text is never parsed.
+	disruptions = append(disruptions, calendarNotices(lID, targetMs)...)
+	diverted := calendarClosedStops(lID, targetMs)
 
 	withStatus := func(list []*Obj) []any {
 		out := []any{}
@@ -403,6 +407,12 @@ func (t *MataroTracker) computeLineDetails(lineID any, direction any, opts *Obj)
 			var reason any
 			if isC {
 				reason, _ = cancelled.Get(sID)
+			}
+			if title, ok := diverted[sID]; ok && !isC {
+				// Closed by a dated diversion: additive "divertedBy" says why.
+				c.Set("isCancelled", true)
+				reason = title
+				c.Set("divertedBy", title)
 			}
 			c.Set("cancelledReason", reason)
 			out = append(out, c)

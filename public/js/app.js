@@ -3816,7 +3816,7 @@ class TransitApp {
               <div class="schematic-stop-name-row">
                 <span class="schematic-stop-name ${isCancelled ? 'is-cancelled' : ''}">${this.esc(s.name)}</span>
                 ${isTarget ? `<span class="schematic-target-badge">⭐ ${this.esc(t('stop.selected'))}</span>` : ''}
-                ${isCancelled ? `<span class="schematic-cancelled-badge">${this.esc(t('timeline.cancelledBadge'))}</span>` : ''}
+                ${isCancelled ? `<span class="schematic-cancelled-badge">${this.esc(t(s.divertedBy ? 'timeline.divertedBadge' : 'timeline.cancelledBadge'))}</span>` : ''}
               </div>
 
               ${hub ? `
@@ -4178,7 +4178,7 @@ class TransitApp {
                         <div class="stop-row-name">
                           <span style="${isCancelled ? 'text-decoration:line-through; color:#f87171;' : ''}">${this.esc(s.name)}</span>
                           ${isTarget ? '⭐' : ''}
-                          ${isCancelled ? '<span class="stop-status-badge cancelled" style="margin-left:6px; background:rgba(239,68,68,0.25); color:#fca5a5; font-size:0.65rem; font-weight:800; padding:1px 6px; border-radius:4px; display:inline-block;">' + this.esc(t('stops.outOfService')) + '</span>' : ''}
+                          ${isCancelled ? '<span class="stop-status-badge cancelled" style="margin-left:6px; background:rgba(239,68,68,0.25); color:#fca5a5; font-size:0.65rem; font-weight:800; padding:1px 6px; border-radius:4px; display:inline-block;">' + this.esc(t(s.divertedBy ? 'stops.diverted' : 'stops.outOfService')) + '</span>' : ''}
                         </div>
                         <div class="stop-row-zone">${this.esc(s.zone || t('stop.fallbackName'))} ${s.code ? `• ${this.esc(t('stops.code', { code: s.code }))}` : ''}</div>
                       </div>
@@ -4212,7 +4212,7 @@ class TransitApp {
                 <div class="stop-row-name">
                   <span style="${isCancelled ? 'text-decoration:line-through; color:#f87171;' : ''}">${this.esc(s.name)}</span>
                   ${isTarget ? '⭐' : ''}
-                  ${isCancelled ? '<span class="stop-status-badge cancelled" style="margin-left:6px; background:rgba(239,68,68,0.25); color:#fca5a5; font-size:0.65rem; font-weight:800; padding:1px 6px; border-radius:4px; display:inline-block;">' + this.esc(t('stops.outOfService')) + '</span>' : ''}
+                  ${isCancelled ? '<span class="stop-status-badge cancelled" style="margin-left:6px; background:rgba(239,68,68,0.25); color:#fca5a5; font-size:0.65rem; font-weight:800; padding:1px 6px; border-radius:4px; display:inline-block;">' + this.esc(t(s.divertedBy ? 'stops.diverted' : 'stops.outOfService')) + '</span>' : ''}
                 </div>
                 <div class="stop-row-zone">${this.esc(s.zone || t('stop.fallbackName'))} ${s.code ? `• ${this.esc(t('stops.code', { code: s.code }))}` : ''}</div>
               </div>

@@ -24,6 +24,7 @@ const FILES = [
   'src/data/gencat_casas.json',
   'src/data/fares.json',
   'src/data/renfe_fleet.json',
+  'src/data/mataro_events.json',
 ];
 
 for (const rel of FILES) {

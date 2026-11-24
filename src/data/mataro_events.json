@@ -1,0 +1,66 @@
+{
+  "_comment": "Dated Mataro Bus diversions and stop closures (plan step 5.2), shown as notices with source 'calendar' while their window is open. Times are Europe/Madrid local 'YYYY-MM-DD HH:MM'; end is exclusive. lines: Mataro Bus line ids ('1'..'8'); an empty list makes a general notice. stops: Mataro Bus stop ids (data/cities/mataro/mataro_paradas.json) closed during the window, shown as 'Desviada'; leave it empty when the notice does not name them. confidence: 'reported' (from a search summary of the official notice) or 'verified' (read on the official page). Add each year's events from mataro.cat/ca/actualitat/avisos; see OPERATIONS.md, 'Dated diversions'.",
+  "events": [
+    {
+      "id": "santes-2026-dissantes",
+      "title": "Les Santes: Dissantes",
+      "start": "2026-07-18 19:00",
+      "end": "2026-07-19 08:00",
+      "lines": ["1","2","4","6","8"],
+      "stops": [],
+      "description": "Dissabte de Dissantes, de les 19:00 fins a les 08:00 de l'endemà: les línies L1, L2, L4, L6 i L8 es desvien per la plaça d'Espanya.",
+      "source": "https://www.mataro.cat/ca/actualitat/avisos/afectacions-de-mataro-bus-durant-les-santes",
+      "confidence": "reported"
+    },
+    {
+      "id": "santes-2026-gegantada",
+      "title": "Les Santes: Gegantada",
+      "start": "2026-07-24 19:30",
+      "end": "2026-07-24 21:30",
+      "lines": ["3","8"],
+      "stops": [],
+      "description": "Divendres de la Gegantada, de 19:30 a 21:30: les línies L3 i L8 es desvien pel Camí Ral.",
+      "source": "https://www.mataro.cat/ca/actualitat/avisos/afectacions-de-mataro-bus-durant-les-santes",
+      "confidence": "reported"
+    },
+    {
+      "id": "santes-2026-barram",
+      "title": "Les Santes: Barram i Repicada",
+      "start": "2026-07-26 12:00",
+      "end": "2026-07-26 14:30",
+      "lines": ["1","4"],
+      "stops": [],
+      "description": "Diumenge del Barram i la Repicada, de 12:00 a 14:30: les línies L1 i L4 es desvien.",
+      "source": "https://www.mataro.cat/ca/actualitat/avisos/afectacions-de-mataro-bus-durant-les-santes",
+      "confidence": "reported"
+    },
+    {
+      "id": "santes-2026-parranda",
+      "title": "Les Santes: cercavila De parranda",
+      "start": "2026-07-26 17:00",
+      "end": "2026-07-27 00:00",
+      "lines": ["1","4"],
+      "stops": [],
+      "description": "Diumenge, des de les 17:00 i fins que acabi la cercavila De parranda (l'hora de fi no es va publicar): les línies L1 i L4 es desvien.",
+      "source": "https://www.mataro.cat/ca/actualitat/avisos/afectacions-de-mataro-bus-durant-les-santes",
+      "confidence": "reported"
+    },
+    {
+      "id": "santes-2026-focs",
+      "title": "Les Santes: castell de focs",
+      "start": "2026-07-27 22:00",
+      "end": "2026-07-28 01:00",
+      "lines": [],
+      "stops": [],
+      "description": "Nit del castell de focs, de 22:00 a 01:00: l'avinguda del Maresme està tallada i hi pot haver desviaments a les línies que hi passen.",
+      "source": "https://www.mataro.cat/ca/actualitat/avisos/afectacions-de-mataro-bus-durant-les-santes",
+      "confidence": "reported"
+    }
+  ],
+  "yearlyChecklist": [
+    "Fira a Mataró (local holiday, late May): check mataro.cat avisos for diversions.",
+    "Les Santes (about 18-29 July; notice published mid-July): Dissantes, Gegantada, Barram, Nit Boja, castell de focs; also Bus Focs lines 10-12 (shown live by app/specialservice.go).",
+    "Tots Sants (1 November): Cementiri de Les Valls stop and any reinforcement.",
+    "Christmas, Cap d'Any and Reis (24 December to 6 January): early finishes and the Cavalcada de Reis diversions (5 January)."
+  ]
+}

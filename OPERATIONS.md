@@ -420,6 +420,40 @@ Yearly checklist, once the Ajuntament and the operator have published the dates 
 4. Christmas: read the notice for 24, 25, 26 and 31 December and 1 and 6 January; add overrides only for dates that run unlike their usual day type.
 5. Run `npm test`, then deploy.
 
+### Dated diversions
+
+`src/data/mataro_events.json` lists dated Mataró Bus diversions and stop closures (Les
+Santes, Fira, Reis…). While an event's window is open, the server (`app/mataroevents.go`)
+serves it as a notice of the same shape as Avanza's, with three more keys:
+`"source": "calendar"`, `startsAt` and `confidence`. It goes into the line view (banner,
+notice list) and `/api/disruptions`. Each stop id it lists is marked closed in that line's
+view, with the additive key `divertedBy` and the label "Desviada". The events are added
+where the server reads notices, never to the worker's Avanza list, so their text is never
+parsed for dates and nothing reaches the history database.
+
+Each event: `id`, `title`, `start` and `end` (Europe/Madrid local `YYYY-MM-DD HH:MM`, end
+exclusive), `lines` (`"1"`…`"8"`; empty means a general notice), `stops` (Mataró Bus stop
+ids from `data/cities/mataro/mataro_paradas.json`; empty when the notice names no stop),
+`description` (as published, in Catalan), `source` (the notice's URL) and `confidence`
+(`reported` from a search summary, `verified` once read on the official page). An event
+with a bad window is skipped with a log line. The file is in the data-file format
+(`node scripts/lib/dataJson.js src/data/mataro_events.json`) and is baked into the image,
+so a change needs a deploy.
+
+It is seeded with the 2026 Les Santes diversions from research report 10. They are line
+level only: the notice's stop table could not be retrieved. Every year, read the
+Ajuntament's avisos (mataro.cat/ca/actualitat/avisos) and add the year's events:
+
+- Fira a Mataró (local holiday, late May);
+- Les Santes (about 18–29 July; the notice comes out in mid-July): Dissantes, Gegantada,
+  Barram, Nit Boja, castell de focs (the Bus Focs lines 10–12 show by themselves, see
+  `ARRIBO_SPECIAL_LINES`);
+- Tots Sants (1 November, Cementiri de Les Valls);
+- Christmas to Reis (24 December – 6 January, including the 5 January Cavalcada).
+
+Not done: the journey planner still only avoids the stops Avanza's notices cancel, not the
+stops these events close.
+
 ## Vercel domain (proxy only)
 
 The Vercel project for the `bad-amb-bus-tracker` domain does not run Arribo: the Go server, its polling, SQLite and SSE need the always-on VPS, and Vercel functions are short-lived with no persistent disk. `vercel.json` makes each deployment a proxy instead: no install or build (the build only writes an empty `.vercel-proxy/` output folder, so no stale copy of `public/` is ever served from Vercel), and every path is rewritten to the live app on the VPS (`http://87.106.33.66:3000`). Change that address there if the VPS moves.

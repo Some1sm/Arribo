@@ -1761,6 +1761,12 @@ func (s *Server) hDisruptions(q *xreq, res *xres) error {
 		if d == nil {
 			d = []any{}
 		}
+		// Dated diversions (mataroevents.go), for the same line filter.
+		line := ""
+		if lv := qv(q, "line"); truthy(lv) {
+			line = s.w.tracker.normalizeLineId(lv)
+		}
+		d = append(d, calendarNotices(line, nowMs())...)
 		res.json(O("success", true, "count", float64(len(d)), "disruptions", d))
 	})
 	if err != nil {
