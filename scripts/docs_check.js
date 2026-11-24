@@ -5,7 +5,7 @@ const root = path.join(__dirname, '..');
 const scripts = require('../package.json').scripts;
 let failures = 0;
 function fail(file, message) { console.error(`${file}: ${message}`); failures++; }
-for (const file of ['README.md', 'AGENTS.md', 'OPERATIONS.md']) {
+for (const file of ['README.md', 'AGENTS.md', 'OPERATIONS.md', 'CLAUDE.md']) {
   const text = fs.readFileSync(path.join(root, file), 'utf8');
   for (const match of text.matchAll(/\[[^\]]*\]\(([^\s)]+)\)/g)) {
     const target = match[1].split('#')[0];

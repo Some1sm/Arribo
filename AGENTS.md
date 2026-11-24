@@ -538,18 +538,17 @@ Historical exposure needs operator review; do not rotate accounts incidentally.
 ## 5. Validation and delivery
 
 ```bash
-# Go, in a golang:1.26-alpine container: gofmt -l . (no output), go vet ./..., go build
+# Go, in a golang:1.26-alpine container: gofmt -l . (no output), go vet ./..., go test -count=1 ./..., go build
 npm run test:syntax
+npm run lint
 npm test
 node scripts/docs_check.js
 ```
 
-The runner discovers test/*.js (browser code, scripts, the TLS chain) with isolated
-DATA_DIR/DB_PATH/REPORTS_DIR. The Go server has no unit tests of its own yet: the
-differential harness that checked it against the Node code was removed with that
-code, so check a server change by running the binary on a copy of the database and
-comparing the affected endpoints before and after. Freeze schedule-sensitive fixtures and
-compare unexpected failures with HEAD before modifying assertions or production code.
-Use local ORS stubs, not personal coordinates. No CI workflow or browser framework
-is part of this upgrade. Review git diff/status and report files, rationale, tests
-and unverified dependencies (§0.5). Commit, push, deploy or live restore only when asked.
+The Node runner discovers test/*.js (browser code, scripts, the TLS chain) with isolated
+DATA_DIR/DB_PATH/REPORTS_DIR, and Go unit tests live in `app/*_test.go` (both run in
+`.forgejo/workflows/deploy.yaml` on push to `main`). For major Mataró server changes,
+also compare the binary on a copy of the database before and after. Freeze schedule-sensitive
+fixtures and compare unexpected failures with HEAD before modifying assertions or production
+code. Use local ORS stubs, not personal coordinates. Review git diff/status and report files,
+rationale, tests and unverified dependencies (§0.5). Commit, push, deploy or live restore only when asked.

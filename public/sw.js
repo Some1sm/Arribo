@@ -36,7 +36,7 @@ self.addEventListener('fetch', event => {
           await Promise.all(keys.slice(0, Math.max(0, keys.length - 32)).map(key => cache.delete(key)));
         }
         return response;
-      } catch (_) {
+      } catch {
         const cached = await cache.match(request);
         return cached && Date.now() - Number(cached.headers.get('X-Arribo-Cached-At')) < 86400000 ? cached : offline();
       }

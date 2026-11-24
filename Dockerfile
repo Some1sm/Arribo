@@ -3,7 +3,7 @@
 FROM node:22.23.4-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914 AS assets
 WORKDIR /build
 COPY package*.json ./
-RUN npm ci
+RUN npm ci --no-audit --no-fund
 COPY scripts/minify_public.js ./scripts/minify_public.js
 COPY public ./dist/public
 RUN node scripts/minify_public.js dist/public

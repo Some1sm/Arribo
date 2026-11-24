@@ -6,6 +6,8 @@ npm-debug.log
 .gemini
 data/transit_history.db*
 data/atm_gtfs
+data/gtfs
+data/moventis
 data/cache
 data/reports
 data/snapshots

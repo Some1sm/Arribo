@@ -23,7 +23,7 @@ jobs:
       - name: Fetch Repository
         uses: http://forgejo:3000/vps-common/forgejo-actions/checkout@v1.1
 
-      - name: gofmt and go vet
+      - name: gofmt, go vet, and go test
         shell: sh
         run: |
           set -e
@@ -33,6 +33,7 @@ jobs:
             echo "gofmt would change:"; echo "$unformatted"; exit 1
           fi
           go vet ./...
+          go test -count=1 ./...
 
   node:
     runs-on: docker

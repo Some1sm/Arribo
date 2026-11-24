@@ -85,7 +85,7 @@ Consequences that are easy to get wrong:
 - `geo.go` (geometry, GPS gap detection) + `walkgeo.go` (ORS foot-walking or labeled approximate fallback — **never substitute driving routes**; street geocoder).
 - `tracker*.go` (the Mataró tracker), `registry.go` — **only Mataró is registered**; there is nothing to re-enable.
 - `httpguard.go` — security headers, API rate limiter, trusted proxies, bounded bodies, the per-host TLS chain repair; `anomalies.go`, `incidentrun.go` — phantom-stretch and incident logic.
-- `jsobj.go`, `jsonparse.go`, `jsmap.go`, `jscase.go`, `mathjs.go`, `fdlibm.go` — JavaScript value semantics (ordered objects, `JSON.stringify` formatting, case mapping, V8's Math). Build responses with these, not Go maps or `encoding/json`, or key order and number formatting change.
+- `jsobj.go`, `jsonparse.go`, `jsmap.go`, `jscase.go`, `mathjs.go` — JavaScript value semantics (ordered objects, `JSON.stringify` formatting, case mapping). Build responses with these, not Go maps or `encoding/json`, or key order and number formatting change.
 
 `server.go` is the route table, with compatibility aliases (`/api/mataro/*`, `/api/plan` vs `/api/mataro/plan`, and page aliases `/com-anar-hi`, `/rutes`, `/itinerari`, `/observatori`). Inspect it rather than assuming a contract has been retired.
 
@@ -144,15 +144,13 @@ The binary does **not** load `.env` — set real environment variables (or Compo
 Validate before reporting done — a run is not finished while a check is red:
 
 ```bash
-# Go (in a golang:1.26-alpine container): gofmt -l . must print nothing; go vet ./...; go build
+# Go (in a golang:1.26-alpine container): gofmt -l . must print nothing; go vet ./...; go test -count=1 ./...; go build
 npm run test:syntax && npm run lint && npm test && node scripts/docs_check.js
 ```
 
-The Go server has no unit tests of its own yet: the parity harness that checked it against the Node code went with the Node code. For any server change, compare the old and new binary side by side (*Checking a server change* below).
+Go unit tests live alongside the server code in `app/*_test.go` and run in CI (`deploy.yaml`). For major Mataró server changes, also compare the old and new binary side by side (*Checking a server change* below).
 
-`npm run lint` is advisory: it exits 0 with `no-unused-vars` warnings, so a
-non-zero exit means a genuine correctness error. `npm run test:syntax` remains
-the hard gate.
+`npm run lint` runs in CI under `set -e`: it exits 0 with `no-unused-vars` warnings, so a non-zero exit means a genuine correctness error and blocks deploys. `npm run test:syntax` remains a hard gate too.
 
 When a test fails, **compare against HEAD before changing anything** and prefer fixing the fixture over relaxing the assertion. Use a local ORS stub, never personal coordinates.
 
@@ -170,7 +168,7 @@ The repository is `some1sm/arribo` on the self-hosted Forgejo (`git@git.lan:some
 
 **Every push to `main` deploys to production** through [.forgejo/workflows/deploy.yaml](.forgejo/workflows/deploy.yaml) on the server's runner:
 
-1. `go` (gofmt must print nothing, `go vet`) and `node` (`npm ci`, `test:syntax`, `lint`, `npm test`, `docs_check`) run in parallel. A red check stops the deploy.
+1. `go` (gofmt must print nothing, `go vet`, `go test -count=1 ./...`) and `node` (`npm ci`, `test:syntax`, `lint`, `npm test`, `docs_check`) run in parallel. A red check stops the deploy.
 2. `deploy` tags the running image `arribo-arribo:previous`, then `vps-common/forgejo-actions/deploy-compose@v1.1` builds `arribo-arribo:latest` from the repository, copies `compose.yaml` and `data/cities/mataro/` into the stack folder and runs `docker compose up -d`. It never pulls base images, never overwrites `.env`, and refuses to run if a project called `arribo` is running from another folder.
 3. It waits up to 2 minutes for the container's healthcheck; a container that does not get healthy fails the job (and is left running: roll back by hand).
 

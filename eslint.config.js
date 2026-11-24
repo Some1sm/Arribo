@@ -30,7 +30,18 @@ const correctness = {
 };
 
 module.exports = [
-  { ignores: ['node_modules/**', 'data/**', 'public/sw.js', '.agents/**', 'prompts/**'] },
+  { ignores: ['node_modules/**', 'data/**', '.agents/**', 'prompts/**'] },
+
+  // Service worker: classic script with ServiceWorker globals.
+  {
+    files: ['public/sw.js'],
+    languageOptions: {
+      ecmaVersion: 2023,
+      sourceType: 'script',
+      globals: { ...globals.serviceworker }
+    },
+    rules: correctness
+  },
 
   // Maintenance scripts and tests: CommonJS on Node.
   {

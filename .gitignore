@@ -17,7 +17,9 @@ yarn-error.log*
 .cache
 data/atm_gtfs/
 data/atm_gtfs_mataro.json
+data/gtfs/
 data/gtfs_export/
+data/moventis/
 data/*.db*
 data/transit_history.db*
 data/cache/
