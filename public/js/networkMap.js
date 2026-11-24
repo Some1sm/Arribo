@@ -922,7 +922,7 @@ function buildTrainPopupHtml(t, op, lineRef) {
         <div class="map-popup-route-ribbon single">
           <div class="map-popup-route-stop from">
             <span class="map-popup-stop-dot dest"></span>
-            <span class="map-popup-stop-name">${esc(t.currentStatus === 'STOPPED_AT' ? netT('trainPopup.atStop', null, 'A') : netT('trainPopup.towards', null, 'Cap a'))} ${esc(t.stopName)}${t.platform ? ` · ${esc(netT('dep.platform', { n: t.platform }, `Via ${t.platform}`))}` : ''}</span>
+            <span class="map-popup-stop-name">${esc(t.currentStatus === 'STOPPED_AT' ? netT('trainPopup.atStop', null, 'A') : netT('trainPopup.towards', null, 'Cap a'))} ${esc(t.stopName)}${t.platform ? ` · ${esc(netT('dep.platform', { n: t.platform }, `Via ${t.platform}`))}${t.platformSource === 'renfe_visor_unofficial' ? ` (${esc(netT('trainPopup.unofficialTag', null, 'font no oficial'))})` : ''}` : ''}</span>
           </div>
         </div>` : ''}
 
@@ -936,10 +936,20 @@ function buildTrainPopupHtml(t, op, lineRef) {
         ${delayNote ? `<div class="train-popup-note">${esc(delayNote)}</div>` : ''}
 
         ${t.unit && (t.unit.series || Number.isFinite(t.unit.occupancyPercent)) ? `<div class="train-popup-note">${esc([
-          t.unit.series ? netT('trainPopup.unitSeries', { series: t.unit.series }, `Unitat de la sèrie ${t.unit.series}`) : '',
+          t.unit.series
+            ? (Number(t.unit.coupledCount) > 1
+              ? netT('trainPopup.unitCoupled', { n: t.unit.coupledCount, series: t.unit.series }, `${t.unit.coupledCount} × sèrie ${t.unit.series}`)
+              : netT('trainPopup.unitSeries', { series: t.unit.series }, `Unitat de la sèrie ${t.unit.series}`))
+            : '',
+          t.unit.manufacturer ? t.unit.manufacturer : '',
           Number.isFinite(t.unit.occupancyPercent) ? netT('trainPopup.unitOccupancy', { pct: t.unit.occupancyPercent }, `Ocupació segons FGC: ${t.unit.occupancyPercent}%`) : '',
+          t.unit.unofficial ? netT('trainPopup.unofficialTag', null, 'font no oficial') : '',
         ].filter(Boolean).join(' · '))}</div>` : ''}
-        ${Array.isArray(t.usualSeries) && t.usualSeries.length ? `<div class="train-popup-note">${esc(netT('trainPopup.usualSeries', { list: t.usualSeries.join(', ') }, `Sèries habituals en aquesta línia: ${t.usualSeries.join(', ')}. No se sap quina unitat fa aquest tren.`))}</div>` : ''}
+        ${typeof t.wheelchairAccessible === 'boolean' ? `<div class="train-popup-note">${esc([
+          netT(t.wheelchairAccessible ? 'trainPopup.wheelchairYes' : 'trainPopup.wheelchairNo', null, t.wheelchairAccessible ? 'Tren accessible per a cadira de rodes' : 'Tren no accessible per a cadira de rodes'),
+          t.wheelchairSource === 'renfe_visor_unofficial' ? netT('trainPopup.unofficialTag', null, 'font no oficial') : '',
+        ].filter(Boolean).join(' · '))}</div>` : ''}
+        ${(!t.unit?.series && Array.isArray(t.usualSeries) && t.usualSeries.length) ? `<div class="train-popup-note">${esc(netT('trainPopup.usualSeries', { list: t.usualSeries.join(', ') }, `Sèries habituals en aquesta línia: ${t.usualSeries.join(', ')}. No se sap quina unitat fa aquest tren.`))}</div>` : ''}
 
         ${op?.attribution ? `
         <div class="map-popup-coords-footer">

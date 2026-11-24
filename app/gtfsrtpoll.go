@@ -59,7 +59,9 @@ type rtSnapshot struct {
 	// with a bus on the road. nil for the others.
 	TripVehicles map[string]string
 	// Units: FGC series and occupancy by vehicle id (fgcgeotren.go); nil for others.
-	Units       map[string]fgcUnit
+	Units map[string]fgcUnit
+	// RenfeMap: unofficial Renfe visor data (platforms, LD units, wheelchair; renfemap.go).
+	RenfeMap    *renfeMapSnapshot
 	VehiclesErr string
 	TripsErr    string
 	// Renfe long-distance feed (gtfsrtld.go): trains added from it, trains
@@ -94,6 +96,8 @@ type rtSource struct {
 	noHistory bool
 	// geotrenURL: FGC's train series and occupancy dataset, every fgcGeotrenEvery.
 	geotrenURL string
+	// renfeMapURL / renfeMapLDURL: Renfe's unofficial public visor feeds (ARRIBO_RENFE_MAP=1).
+	renfeMapURL, renfeMapLDURL string
 }
 
 // rtPoller polls one rtSource.
@@ -102,6 +106,7 @@ type rtPoller struct {
 	snap                                     atomic.Pointer[rtSnapshot]
 	alerts                                   atomic.Pointer[[]railAlert]        // latest service alerts (railalerts.go)
 	geotren                                  atomic.Pointer[map[string]fgcUnit] // FGC units by vehicle id (fgcgeotren.go)
+	renfeMap                                 atomic.Pointer[renfeMapSnapshot]   // Renfe visor platforms/units/accessibility (renfemap.go)
 	mu                                       sync.Mutex                         // guards trips between the two loops
 	trip                                     map[string]int32
 	trips                                    int
@@ -218,6 +223,10 @@ func defaultRtSources() []rtSource {
 	fgcVP, fgcVPReset := fgcFileURL("vehicle-positions-gtfs_realtime")
 	fgcTU, fgcTUReset := fgcFileURL("trip-updates-gtfs_realtime")
 	fgcAL, fgcALReset := fgcFileURL("alerts-gtfs_realtime")
+	renfeFlota, renfeFlotaLD := "", ""
+	if renfeMapEnabled() {
+		renfeFlota, renfeFlotaLD = renfeFlotaURL, renfeFlotaLDURL
+	}
 	srcs := []rtSource{
 		{
 			AgencyID: "renfe_rodalies", Mode: "rail",
@@ -225,6 +234,7 @@ func defaultRtSources() []rtSource {
 			tripURL:      fixedURL("https://gtfsrt.renfe.com/trip_updates.pb"),
 			alertURL:     fixedURL("https://gtfsrt.renfe.com/alerts.pb"),
 			ldVehicleURL: renfeLDVehicleURL, ldTripURL: renfeLDTripURL,
+			renfeMapURL: renfeFlota, renfeMapLDURL: renfeFlotaLD,
 			vehicleEvery: 30 * time.Second, tripEvery: 30 * time.Second,
 			bounds:     &cataloniaBounds,
 			staticURL:  "https://ssl.renfe.com/ftransit/Fichero_CER_FOMENTO/fomento_transit.zip",
@@ -396,6 +406,9 @@ func (p *rtPoller) pollVehicles(ctx context.Context) {
 	if u := p.geotren.Load(); u != nil {
 		snap.Units = *u
 	}
+	if rm := p.renfeMap.Load(); rm != nil {
+		snap.RenfeMap = rm
+	}
 	snap.Canceled = p.canceled
 	snap.TripStops = p.tripStops
 	p.mu.Unlock()
@@ -511,6 +524,9 @@ func (p *rtPoller) run(ctx context.Context, wg *sync.WaitGroup) {
 		}
 	}()
 	p.pollTrips(ctx)
+	if p.src.renfeMapURL != "" || p.src.renfeMapLDURL != "" {
+		p.pollRenfeMap(ctx)
+	}
 	p.pollVehicles(ctx)
 	if p.src.geotrenURL != "" {
 		p.pollGeotren(ctx)
@@ -526,6 +542,12 @@ func (p *rtPoller) run(ctx context.Context, wg *sync.WaitGroup) {
 		defer gt.Stop()
 		geoC = gt.C
 	}
+	var rmC <-chan time.Time
+	if p.src.renfeMapURL != "" || p.src.renfeMapLDURL != "" {
+		rt := time.NewTicker(renfeMapEvery)
+		defer rt.Stop()
+		rmC = rt.C
+	}
 	defer vt.Stop()
 	defer tt.Stop()
 	defer at.Stop()
@@ -540,6 +562,8 @@ func (p *rtPoller) run(ctx context.Context, wg *sync.WaitGroup) {
 			p.pollAlerts(ctx)
 		case <-geoC:
 			p.pollGeotren(ctx)
+		case <-rmC:
+			p.pollRenfeMap(ctx)
 		case <-vt.C:
 			p.pollVehicles(ctx)
 			polls++

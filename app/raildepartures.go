@@ -300,6 +300,12 @@ func railDeparturesResponse(info operatorInfo, stop rtLineStop, sched []any, sna
 				}
 			}
 		}
+		// Renfe: unofficial visor nextVia/via platform when official GTFS-RT gave none.
+		if platform == "" && snap != nil && snap.RenfeMap != nil && !cancelled {
+			if p := renfeMapPlatformFor(snap.RenfeMap, trip, "", stop.ID, "", now); p != "" {
+				platform, platformSource = p, "unofficial"
+			}
+		}
 		// Renfe, before the train announces one: the platform this line
 		// usually uses here in this direction, labelled as usual.
 		if platform == "" && usual != nil && !cancelled {

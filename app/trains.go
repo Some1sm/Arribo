@@ -193,6 +193,13 @@ func trainJSON(info operatorInfo, s *rtSnapshot, v *rtVehicle, now time.Time) *O
 	}
 
 	label, platform := labelPlatform(v.Label)
+	platformSource := ""
+	if platform == "" && s != nil && s.RenfeMap != nil {
+		if p := renfeMapPlatformFor(s.RenfeMap, v.TripID, v.Label, v.StopID, v.CurrentStatus, now); p != "" {
+			platform = p
+			platformSource = renfeMapSourceTag
+		}
+	}
 	id := v.VehicleID
 	if id == "" {
 		id = v.TripID
@@ -233,6 +240,9 @@ func trainJSON(info operatorInfo, s *rtSnapshot, v *rtVehicle, now time.Time) *O
 		"delaySource", delaySource,
 		"delayDiscarded", discarded,
 	)
+	if platformSource != "" {
+		o.Set("platformSource", platformSource)
+	}
 	if v.Feed == "ld" {
 		// Additive, only on trains read from Renfe's long-distance feed: the
 		// line comes from matching the train number to the Rodalies timetable.
@@ -244,9 +254,21 @@ func trainJSON(info operatorInfo, s *rtSnapshot, v *rtVehicle, now time.Time) *O
 			o.Set("unit", u)
 		}
 	}
+	if info.ID == "renfe_rodalies" && s != nil && s.RenfeMap != nil {
+		// Additive: concrete regional unit(s) from Renfe's unofficial flotaLD.json
+		// (plan step 3.2) and wheelchair accessibility from flota.json/flotaLD.json
+		// (plan step 3.4).
+		if u := renfeMapUnitJSON(s.RenfeMap, v.TripID, v.Label, now); u != nil {
+			o.Set("unit", u)
+		}
+		if acc := renfeMapAccessible(s.RenfeMap, v.TripID, v.Label, now); acc != nil {
+			o.Set("wheelchairAccessible", *acc)
+			o.Set("wheelchairSource", renfeMapSourceTag)
+		}
+	}
 	if info.ID == "renfe_rodalies" && v.LineCode != "" {
 		// Additive: the series usually seen on the line (renfefleet.go), never
-		// this train's own unit, which no public source gives.
+		// this train's own unit, which no public source gives for R1-R8.
 		if series := renfeUsualSeries(v.LineCode); len(series) > 0 {
 			list := make([]any, len(series))
 			for i, s := range series {

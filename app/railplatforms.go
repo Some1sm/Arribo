@@ -35,9 +35,13 @@ func (p *rtPoller) notePlatforms(vehicles []rtVehicle, now time.Time) {
 	if p.platSeen == nil {
 		p.platSeen = map[string]int64{}
 	}
+	rm := p.renfeMap.Load()
 	for i := range vehicles {
 		v := &vehicles[i]
 		_, code := labelPlatform(v.Label)
+		if code == "" && rm != nil {
+			code = renfeMapPlatformFor(rm, v.TripID, v.Label, v.StopID, v.CurrentStatus, now)
+		}
 		if code == "" || v.TripID == "" || v.StopID == "" || v.LineCode == "" {
 			continue
 		}

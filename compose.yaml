@@ -38,6 +38,14 @@ services:
       - ARRIBO_MOVENTIS=${ARRIBO_MOVENTIS:-1}
       # AMB Bus Metropolità (open trip updates, no positions; app/amb.go). Needs ARRIBO_GTFSRT.
       - ARRIBO_AMB=${ARRIBO_AMB:-1}
+      # Renfe unofficial web-map visors (flota.json / flotaLD.json: platforms, LD units, wheelchair; app/renfemap.go).
+      - ARRIBO_RENFE_MAP=${ARRIBO_RENFE_MAP:-1}
+      # Optional API keys from host .env (never committed; used by upcoming TMB/TRAM/NAP integrations)
+      - TMB_APP_ID=${TMB_APP_ID:-}
+      - TMB_APP_KEY=${TMB_APP_KEY:-}
+      - TRAM_CLIENT_ID=${TRAM_CLIENT_ID:-}
+      - TRAM_CLIENT_SECRET=${TRAM_CLIENT_SECRET:-}
+      - NAP_API_KEY=${NAP_API_KEY:-}
     ulimits:
       core:
         soft: 0
