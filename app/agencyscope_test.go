@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // FGC's L6 shares Mataró's line code: its station visits must never reach
@@ -20,7 +21,19 @@ func TestMataroLineReadsIgnoreOtherAgencies(t *testing.T) {
 		t.Fatal("init")
 	}
 	defer h.close()
-	now := float64(nowMs())
+	// The visits sit in the hour before an anchor inside L6's service hours:
+	// now between 08:00 and 21:00 Madrid, else the latest 20:00 (late at
+	// night "the last hour" is outside service, and the anomaly filter
+	// rightly drops visits there). Either way inside the 24 h window.
+	nowT := time.UnixMilli(nowMs()).In(madrid)
+	anchor := nowT
+	if h := nowT.Hour(); h < 8 || h >= 21 {
+		anchor = time.Date(nowT.Year(), nowT.Month(), nowT.Day(), 20, 0, 0, 0, madrid)
+		if anchor.After(nowT) {
+			anchor = anchor.AddDate(0, 0, -1)
+		}
+	}
+	now := float64(anchor.UnixMilli())
 	for i := 0; i < 6; i++ {
 		ts := now - float64(i+1)*600000
 		h.recordStopVisit(O("vehicleId", "2601", "lineCode", "L6", "stopName", "Pl. Santa Anna", "firstTs", ts, "lastTs", ts,
