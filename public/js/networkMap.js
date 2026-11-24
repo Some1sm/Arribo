@@ -32,6 +32,45 @@ function networkBusMarkerKey(bus) {
   return `${canonicalLineCode(bus.lineCode || bus.lineId)}|${id}`;
 }
 
+// Most lines the legend lists one by one; beyond, one entry per operator.
+const NETWORK_LEGEND_MAX = 16;
+
+/**
+ * Whether a polyline's path crosses the bounds: its box first (cheap), then
+ * each segment, so a line whose box covers the view but whose path does not
+ * enter it is not counted. Segments are tested against the rectangle in plain
+ * lat/lon, which is exact enough at map scale.
+ */
+function pathCrossesBounds(layer, bounds) {
+  if (!layer || typeof layer.getBounds !== 'function' || typeof layer.getLatLngs !== 'function') return false;
+  const box = layer.getBounds();
+  if (!box.isValid() || !bounds.intersects(box)) return false;
+  const s = bounds.getSouth(); const n = bounds.getNorth();
+  const w = bounds.getWest(); const e = bounds.getEast();
+  const inside = (p) => p.lat >= s && p.lat <= n && p.lng >= w && p.lng <= e;
+  // Liang-Barsky clip of segment a-b against the rectangle.
+  const crosses = (a, b) => {
+    let t0 = 0; let t1 = 1;
+    const dx = b.lng - a.lng; const dy = b.lat - a.lat;
+    const edges = [[-dx, a.lng - w], [dx, e - a.lng], [-dy, a.lat - s], [dy, n - a.lat]];
+    for (const [p, q] of edges) {
+      if (p === 0) { if (q < 0) return false; continue; }
+      const r = q / p;
+      if (p < 0) { if (r > t1) return false; if (r > t0) t0 = r; } else { if (r < t0) return false; if (r < t1) t1 = r; }
+    }
+    return true;
+  };
+  const parts = layer.getLatLngs();
+  const lists = parts.length && Array.isArray(parts[0]) ? parts : [parts];
+  for (const pts of lists) {
+    for (let i = 0; i < pts.length; i++) {
+      if (inside(pts[i])) return true;
+      if (i > 0 && crosses(pts[i - 1], pts[i])) return true;
+    }
+  }
+  return false;
+}
+
 class NetworkMap extends TransitMap {
   initMap() {
     if (typeof L === 'undefined') {
@@ -61,6 +100,9 @@ class NetworkMap extends TransitMap {
     // previous line until the next 30s REST sweep or 20s SSE frame.
     // Rodalies / FGC line paths (/api/network/rail-routes), added first so
     // Mataró's bus routes, stops and every vehicle draw on top of them.
+    this.operatorNames = this.operatorNames || new Map();
+    // The legend lists the lines in view: redo it after every pan or zoom.
+    this.map.on('moveend', () => this.renderLegend());
     this.railRouteLayer = L.featureGroup().addTo(this.map);
     this.railRoutes = [];              // [{ agencyId, code, polyline }]
     this.routeLayer = L.featureGroup().addTo(this.map);
@@ -213,6 +255,7 @@ class NetworkMap extends TransitMap {
       if (want && !has) this.railRouteLayer.addLayer(r.polyline);
       if (!want && has) this.railRouteLayer.removeLayer(r.polyline);
     }
+    this.renderLegend();
   }
 
   /** Whether a train line passes the map filter (all, its operator, or the line itself). */
@@ -374,22 +417,78 @@ class NetworkMap extends TransitMap {
     return { total, stale, available: true, inView: Array.isArray(this.trainFeed?.bbox) };
   }
 
+  /**
+   * The legend lists what the map shows: the lines drawn inside the visible
+   * area (Mataró's and every other operator's paths), redone after each pan
+   * or zoom. Up to NETWORK_LEGEND_MAX lines are listed one by one; past that
+   * (zoomed out over Catalonia) one entry per operator with its line count.
+   * Hidden when no line is in view. Batched to one run per frame.
+   */
   renderLegend() {
+    if (this._legendFrame) return;
+    const run = () => { this._legendFrame = 0; this.renderLegendNow(); };
+    if (typeof requestAnimationFrame === 'function') this._legendFrame = requestAnimationFrame(run);
+    else run();
+  }
+
+  renderLegendNow() {
     const host = document.getElementById('network-map-legend');
     if (!host) return;
-    host.textContent = '';
+    const view = this.map && typeof this.map.getBounds === 'function' ? this.map.getBounds() : null;
+    // A line is in view when its path crosses the visible area, not merely
+    // its bounding box (a long line's box covers views it never enters).
+    const inView = (layer) => !view || pathCrossesBounds(layer, view);
+    const entries = []; // { group, code, color }
+    const seen = new Set();
+    const push = (group, code, color) => {
+      const key = `${group}:${code}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      entries.push({ group, code, color });
+    };
     for (const line of this.lineCatalog) {
+      const layers = this.lineLayers.get(line.code);
+      if (!layers || !this.isLineVisible(line.code) || !this.routeLayer?.hasLayer(layers.routes)) continue;
+      let shown = false;
+      layers.routes.eachLayer((pl) => { if (!shown && inView(pl)) shown = true; });
+      if (shown) push('mataro', line.code, line.color);
+    }
+    for (const r of this.railRoutes || []) {
+      if (!this.railRouteLayer?.hasLayer(r.polyline) || !inView(r.polyline)) continue;
+      push(r.agencyId, r.code, r.polyline.options.color);
+    }
+    host.textContent = '';
+    host.hidden = entries.length === 0;
+    const add = (color, text) => {
       const pill = document.createElement('span');
-      // Dimmed entries are the ones currently filtered out, so the legend
-      // reports what is hidden as well as what is drawn.
-      pill.className = `network-map-legend-item${this.isLineVisible(line.code) ? '' : ' is-dimmed'}`;
+      pill.className = 'network-map-legend-item';
       const dot = document.createElement('span');
       dot.className = 'network-map-legend-dot';
-      dot.style.background = line.color;
+      dot.style.background = color;
       pill.appendChild(dot);
-      pill.appendChild(document.createTextNode(line.code));
+      pill.appendChild(document.createTextNode(text));
       host.appendChild(pill);
+    };
+    if (entries.length <= NETWORK_LEGEND_MAX) {
+      for (const e of entries) add(e.color, e.code);
+      return;
     }
+    const groups = new Map(); // operator -> { color, n }, in first-seen order
+    for (const e of entries) {
+      const g = groups.get(e.group) || { color: e.color, n: 0 };
+      g.n++;
+      groups.set(e.group, g);
+    }
+    for (const [id, g] of groups) add(g.color, `${this.operatorNames.get(id) || id} · ${g.n}`);
+  }
+
+  /** Operator id -> short name, for the legend's per-operator entries. */
+  setOperatorNames(ops) {
+    this.operatorNames = new Map();
+    for (const o of Array.isArray(ops) ? ops : []) {
+      if (o && o.id) this.operatorNames.set(String(o.id), o.shortName || o.name || String(o.id));
+    }
+    this.renderLegend();
   }
 
   // -------------------------------------------------------------- geometry
@@ -483,6 +582,7 @@ class NetworkMap extends TransitMap {
     addStops(secondaryStops, secondary);
 
     this.lineLayers.set(code, { routes, stops: stopsGroup, arrows });
+    this.renderLegend();
   }
 
   // ----------------------------------------------------------------- filter

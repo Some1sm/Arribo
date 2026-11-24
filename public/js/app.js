@@ -5789,6 +5789,7 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
     // Colours come from the same catalog the single-line map and the landing
     // line cards use, so a line can never be one colour here and another there.
     this.networkMap.setLineCatalog(this.availableLines || []);
+    this.networkMap.setOperatorNames(this.catalogOperators());
     this.networkMap.setTrainCatalog(this.catalogAllLines || []);
     this.networkMap.setTrainsShown(this.readTrainsShown());
     this.loadNetworkRailRoutes();
