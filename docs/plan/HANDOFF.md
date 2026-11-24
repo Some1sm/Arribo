@@ -7,7 +7,17 @@ Written 2026-11-24 by a cloud session, for the next session, which runs on the o
 - **Branch:** `claude/kind-dirac-k9kco5`
 - **Repository it was pushed to:** GitHub, `https://github.com/Some1sm/Arribo`. The cloud session could only push there.
 - **Your normal repository** is the Forgejo one (`git@git.lan:some1sm/arribo.git`). A push to its `main` **deploys to production**.
-- The branch is GitHub `main` as of 2026-11-24 (commit `7411771`) plus documentation commits only. **No application code has changed on it yet**, unless the progress log in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) says otherwise.
+- The branch is GitHub `main` as of 2026-11-24 (commit `7411771`) plus the research documents and the implementation commits listed in the plan's progress log.
+
+### State at the end of the cloud session (2026-11-24, last commit `feec20e` + this note)
+
+All checks were green on the full branch: `gofmt`, `go vet`, `go test`, `go build`, `npm run test:syntax`, `lint`, `npm test` (14 suites), `docs_check`. **Not done for any server change:** the old-vs-new binary comparison of CLAUDE.md, *Checking a server change*. Run it on the VPS before deploying.
+
+| Done `[x]` | Partly done `[~]` (what's left is in each plan row) | Next unblocked `[ ]` | Waiting on the owner `[!]` |
+|---|---|---|---|
+| 1.1–1.5 Moventis sampling, skipping, metrics · 2.1–2.2 Generalitat data and stop crosswalk · 4.4 fares docs · 5.1 special-line buses · 5.3 service-override docs | 3.3 fleet file (popup not wired) · 3.5 Renfe LD feed (station boards, cancellations) · 4.1–4.2 fares (rail priced only Mataró ↔ Barcelona / Arenys until 4.3) | 2.3–2.4 use the Generalitat shapes and timetable · 3.4 · 5.2 · 5.4 · 6.1 · 6.3 · 6.4 · 7.x | 0.1–0.5, 1.6, 3.1–3.2, 4.3, 6.2, 6.5–6.7 |
+
+Suggested next order: 2.3 → 2.4 → 3.3 popup → 5.2 → 6.3 (AMB, open data) → 6.4 (FGC occupancy).
 
 To get it into your local Forgejo checkout without touching `main`:
 
