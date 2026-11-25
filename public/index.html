@@ -27,7 +27,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
   
   <!-- App Styles -->
-  <link rel="stylesheet" href="/css/style.css?v=9.4.112">
+  <link rel="stylesheet" href="/css/style.css?v=9.4.113">
 </head>
 <body>
 
@@ -395,246 +395,256 @@
         </div>
       </section>
 
-      <!-- Dynamic Hero ETA Section -->
-      <section class="hero-eta-grid" data-i18n-aria-label="line.etaAria" aria-label="Temps d'arribada">
-        
-        <!-- Primary Target Card -->
-        <div class="target-card">
-          <div class="target-header">
-            <div class="target-header-top">
-              <div class="target-badge" id="target-header-badge" data-i18n="stop.mainBadge">⭐ Parada Principal</div>
-              <div class="target-select-wrapper">
-                <label for="target-stop-select" data-i18n="stop.change" style="font-size:0.75rem; color:var(--text-muted); margin-right:0.3rem;">Canviar:</label>
-                <select id="target-stop-select" class="target-stop-select" data-i18n-aria-label="stop.selectAria" aria-label="Selecciona la teva parada principal">
-                  <option value="">Carregant parades...</option>
-                </select>
-              </div>
-            </div>
-            <h2 class="target-name" id="target-stop-title">Selecciona una parada</h2>
-            <div class="target-subname">
-              <span><span data-i18n="stop.codeLabel">Codi:</span> <strong id="target-stop-code">--</strong></span> • 
-              <span id="target-direction-sub">Sentit</span>
-            </div>
-          </div>
+      <!-- Google Maps-Style Split-Screen Line Workspace -->
+      <section class="explorer-grid line-workspace-grid" id="view-explorer-grid" data-i18n-aria-label="index.explorerAria" aria-label="Mapa interactiu i explorador de parades">
 
-          <div class="target-body">
-            <div class="eta-hero-display">
-              <div class="eta-big-time" id="eta-big-display">-- min</div>
-              <div class="eta-details">
-                <div class="eta-exact-time" id="eta-clock-display">Hora estimada: --:--</div>
-                <div class="eta-status-pill scheduled" id="eta-status-pill">
-                  <span class="live-dot" style="width:6px; height:6px;"></span>
-                  <span id="eta-status-text">Calculant temps...</span>
+        <!-- Left Column: Main Stop ETA, Upcoming Departures & Stops Browser -->
+        <div class="line-workspace-panel">
+
+          <!-- Dynamic Hero ETA Section -->
+          <section class="hero-eta-grid" data-i18n-aria-label="line.etaAria" aria-label="Temps d'arribada">
+            
+            <!-- Primary Target Card -->
+            <div class="target-card">
+              <div class="target-header">
+                <div class="target-header-top">
+                  <div class="target-badge" id="target-header-badge" data-i18n="stop.mainBadge">⭐ Parada Principal</div>
+                  <div class="target-select-wrapper">
+                    <label for="target-stop-select" data-i18n="stop.change" style="font-size:0.75rem; color:var(--text-muted); margin-right:0.3rem;">Canviar:</label>
+                    <select id="target-stop-select" class="target-stop-select" data-i18n-aria-label="stop.selectAria" aria-label="Selecciona la teva parada principal">
+                      <option value="">Carregant parades...</option>
+                    </select>
+                  </div>
+                </div>
+                <h2 class="target-name" id="target-stop-title">Selecciona una parada</h2>
+                <div class="target-subname">
+                  <span><span data-i18n="stop.codeLabel">Codi:</span> <strong id="target-stop-code">--</strong></span> • 
+                  <span id="target-direction-sub">Sentit</span>
                 </div>
               </div>
-            </div>
 
-            <div class="target-meta">
-              <div><span><span data-i18n="stop.lineLabel">Línia:</span> <strong id="target-line-tag" style="color:var(--c10-primary);">--</strong></span></div>
-              <div><span><span data-i18n="stop.destLabel">Destí:</span> <strong id="next-bus-dest">Destí</strong></span></div>
-              <div><span><span data-i18n="stop.operatorLabel">Operador:</span> <strong id="target-operator-name">Operador</strong></span></div>
-            </div>
-          </div>
+              <div class="target-body">
+                <div class="eta-hero-display">
+                  <div class="eta-big-time" id="eta-big-display">-- min</div>
+                  <div class="eta-details">
+                    <div class="eta-exact-time" id="eta-clock-display">Hora estimada: --:--</div>
+                    <div class="eta-status-pill scheduled" id="eta-status-pill">
+                      <span class="live-dot" style="width:6px; height:6px;"></span>
+                      <span id="eta-status-text">Calculant temps...</span>
+                    </div>
+                  </div>
+                </div>
 
-          <div class="target-actions-bar" id="target-actions-bar">
-            <button type="button" class="btn-target-action" id="btn-target-focus-map" data-i18n-title="stop.focusMapTitle" title="Centrar el mapa en aquesta parada">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
-              <span data-i18n="stop.toMap">Al mapa</span>
-            </button>
-            <a href="/plan" class="btn-target-action" id="btn-target-plan-from" data-i18n-title="stop.planTitle" title="Planificar ruta des d'aquesta parada">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
-              <span data-i18n="stop.plan">Planificar</span>
-            </a>
-            <a id="target-maps-link" href="#" target="_blank" rel="noopener noreferrer" class="btn-target-action" data-i18n-title="stop.mapsTitle" title="Obrir la ubicació a Google Maps">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-              <span>Google Maps</span>
-            </a>
-            <button type="button" class="btn-target-action" id="btn-target-toggle-fav" data-i18n-title="modal.favAddTitle" title="Afegir o treure de preferides">
-              <span id="target-fav-star">⭐</span>
-              <span id="target-fav-text" data-i18n="fav.label">Preferida</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Upcoming Departures Card -->
-        <div class="departures-card">
-          <div class="card-title-group">
-            <h3 class="card-title">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-              <span id="departures-card-title">Properes sortides</span>
-            </h3>
-            <span class="dep-type-badge" id="dep-count-badge">Carregant...</span>
-          </div>
-          <div class="departures-list" id="departures-list-container"></div>
-        </div>
-
-      </section>
-
-      <!-- Route Progression & Telemetry Cockpit -->
-      <section class="corridor-section" data-i18n-aria-label="line.trackAria" aria-label="Seguiment de la línia">
-        <div class="section-header">
-          <div>
-            <h3 class="card-title">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 0 1-2.827 0l-4.244-4.243a8 8 0 1 1 11.314 0z"/><path d="M15 11a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/></svg>
-              <span id="corridor-title-text">Recorregut de la línia</span>
-            </h3>
-            <p style="font-size:0.78rem; color:var(--text-secondary); margin-top:2px;" id="corridor-subtitle-text">
-              Telemetria oficial en temps real amb estimació automàtica en zones d'ombra
-            </p>
-          </div>
-        </div>
-
-        <!-- Dynamic Radar Telemetry Card -->
-        <div class="telemetry-card is-collapsed" id="telemetry-card">
-          <button type="button" class="telemetry-header telemetry-toggle" id="telemetry-toggle" aria-expanded="false" aria-controls="telemetry-body">
-            <span class="telemetry-title-group">
-              <span class="telemetry-live-radar" id="telemetry-radar-dot"></span>
-              <strong data-i18n="veh.panelTitle">🛰️ Telemetria GPS i Estimació en Zones de Cobertura</strong>
-            </span>
-            <span class="telemetry-header-end">
-              <span class="telemetry-status-badge" id="telemetry-status-badge">🟢 Senyal GPS Actiu</span>
-              <span class="telemetry-toggle-hint">
-                <span id="telemetry-toggle-label">Mostra detalls</span>
-                <svg class="telemetry-toggle-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
-              </span>
-            </span>
-          </button>
-
-          <div class="telemetry-body" id="telemetry-body" hidden>
-
-            <!-- Active Vehicles Selection Bar -->
-            <div class="telemetry-vehicles-bar" id="telemetry-vehicles-bar" style="display:none;">
-              <span class="telemetry-vehicles-label" data-i18n="veh.detected">Vehicles detectats:</span>
-              <div class="telemetry-vehicles-chips" id="telemetry-vehicles-chips"></div>
-            </div>
-
-            <!-- Ghost Bus Advisory Notice -->
-            <div class="telemetry-ghost-notice" id="telemetry-ghost-notice" style="display:none;">
-              <span style="font-size:1.1rem; line-height:1;">⚡</span>
-              <span><strong data-i18n="veh.ghostTitle">Vehicle estimat segons horari oficial:</strong> <span data-i18n="veh.ghostText">Aquest autobús està programat en servei actiu però no transmet dades GPS a la xarxa SAE. La seva posició al mapa es calcula teòricament segons la sortida oficial.</span></span>
-            </div>
-
-            <div class="telemetry-grid">
-              <div class="telemetry-item">
-                <span class="telemetry-label" data-i18n="veh.lblCoords">📍 Coordenades GPS</span>
-                <strong class="telemetry-val" id="telemetry-coords">--</strong>
-              </div>
-              <div class="telemetry-item">
-                <span class="telemetry-label" data-i18n="veh.lblBearing">🧭 Rumb & Orientació</span>
-                <strong class="telemetry-val" id="telemetry-bearing">--</strong>
-              </div>
-              <div class="telemetry-item">
-                <span class="telemetry-label" data-i18n="veh.lblSpeed">⚡ Velocitat</span>
-                <strong class="telemetry-val" id="telemetry-speed">--</strong>
-              </div>
-              <div class="telemetry-item">
-                <span class="telemetry-label" data-i18n="veh.lblSegment">🛣️ Tram Actual</span>
-                <strong class="telemetry-val" id="telemetry-segment">--</strong>
-              </div>
-              <div class="telemetry-item">
-                <span class="telemetry-label" data-i18n="veh.lblNextStop">⏱️ Propera Parada</span>
-                <strong class="telemetry-val" id="telemetry-eta-next">--</strong>
-              </div>
-              <div class="telemetry-item">
-                <span class="telemetry-label" data-i18n="veh.lblTripStart">🕐 Inici Trajecte</span>
-                <strong class="telemetry-val" id="telemetry-trip-start">--</strong>
-              </div>
-              <div class="telemetry-item">
-                <span class="telemetry-label" data-i18n="veh.lblProgress">📊 Progrés Trajecte</span>
-                <div style="display:flex; align-items:center; gap:0.5rem; width:100%; margin-top:2px;">
-                  <div class="telemetry-progress-track"><div class="telemetry-progress-fill" id="telemetry-progress-bar" style="width: 0%;"></div></div>
-                  <span id="telemetry-progress-text" class="telemetry-progress-text">0%</span>
+                <div class="target-meta">
+                  <div><span><span data-i18n="stop.lineLabel">Línia:</span> <strong id="target-line-tag" style="color:var(--c10-primary);">--</strong></span></div>
+                  <div><span><span data-i18n="stop.destLabel">Destí:</span> <strong id="next-bus-dest">Destí</strong></span></div>
+                  <div><span><span data-i18n="stop.operatorLabel">Operador:</span> <strong id="target-operator-name">Operador</strong></span></div>
                 </div>
               </div>
-            </div>
-          </div>
-        </div>
 
-        <!-- Progression Timeline -->
-        <div class="corridor-timeline" id="corridor-timeline-container"></div>
-      </section>
-
-      <!-- Shared Map and Stops Explorer Grid -->
-      <section class="explorer-grid" id="view-explorer-grid" data-i18n-aria-label="index.explorerAria" aria-label="Mapa interactiu i explorador de parades">
-        
-        <!-- Interactive Leaflet Map -->
-        <div class="map-card" id="map-card">
-          <div class="map-header">
-            <div>
-              <h3 class="card-title" style="font-size:0.95rem;">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
-                <span id="map-line-title">Mapa en temps real</span>
-              </h3>
-              <span data-i18n="line.mapHint" style="font-size:0.75rem; color:var(--text-secondary);">Fes clic sobre qualsevol parada per veure el temps</span>
-            </div>
-
-            <!-- Map Resize & View Controls -->
-            <div class="map-controls-group">
-              <span class="map-bus-counter-tag" id="map-bus-counter-tag"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px; margin-right:3px;"><path d="M4.7 17.5H3.4A1.4 1.4 0 0 1 2 16.1V6.4A1.4 1.4 0 0 1 3.4 5H17.5A4.5 4.5 0 0 1 22 9.5v6.6a1.4 1.4 0 0 1-1.4 1.4h-1.3"/><path d="M9.3 17.5h5.4"/><path d="M2 11.6h20"/><path d="M7.5 5v6.6M12.5 5v6.6M17.6 5.2v6.4"/><circle cx="7" cy="17.5" r="2.3"/><circle cx="17" cy="17.5" r="2.3"/></svg>0 actius</span>
-              <button type="button" class="btn-map-control btn-traffic-toggle" id="btn-map-toggle-traffic" data-i18n-title="line.trafficTitle" title="Activar / desactivar mapa de trànsit i retards">
-                <span class="traffic-dot" style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#10b981; margin-right:3px;"></span>
-                <span data-i18n="line.traffic">Trànsit</span>
-              </button>
-              <button type="button" class="btn-map-control" id="btn-map-expand-width" title="Ampliar mapa a tota l'amplada">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
-                <span id="map-expand-label">Ample</span>
-              </button>
-            </div>
-          </div>
-
-          <div id="map-container"></div>
-
-          <!-- Floating Itinerary Guidance Bar -->
-          <div class="itinerary-floating-bar" id="itinerary-floating-bar" role="region" data-i18n-aria-label="line.itinAria" aria-label="Guia del trajecte seleccionat">
-            <div class="itinerary-bar-header">
-              <div class="itinerary-bar-title" id="itinerary-bar-title">
-                <span>🧭</span>
-                <span id="itinerary-summary-text" data-i18n="line.itinSelected">Itinerari seleccionat</span>
-              </div>
-              <div class="itinerary-bar-actions">
-                <button type="button" class="btn-itinerary-back" id="btn-itinerary-back-to-planner">
-                  <span>🔙</span>
-                  <span data-i18n="line.itinBack">Cercador</span>
+              <div class="target-actions-bar" id="target-actions-bar">
+                <button type="button" class="btn-target-action" id="btn-target-focus-map" data-i18n-title="stop.focusMapTitle" title="Centrar el mapa en aquesta parada">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
+                  <span data-i18n="stop.toMap">Al mapa</span>
                 </button>
-                <button type="button" class="btn-itinerary-close" id="btn-itinerary-close" data-i18n-title="line.itinClose" title="Tancar itinerari i tornar al mapa habitual">✕</button>
+                <a href="/plan" class="btn-target-action" id="btn-target-plan-from" data-i18n-title="stop.planTitle" title="Planificar ruta des d'aquesta parada">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
+                  <span data-i18n="stop.plan">Planificar</span>
+                </a>
+                <a id="target-maps-link" href="#" target="_blank" rel="noopener noreferrer" class="btn-target-action" data-i18n-title="stop.mapsTitle" title="Obrir la ubicació a Google Maps">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                  <span>Google Maps</span>
+                </a>
+                <button type="button" class="btn-target-action" id="btn-target-toggle-fav" data-i18n-title="modal.favAddTitle" title="Afegir o treure de preferides">
+                  <span id="target-fav-star">⭐</span>
+                  <span id="target-fav-text" data-i18n="fav.label">Preferida</span>
+                </button>
               </div>
             </div>
-            <div class="itinerary-bar-steps" id="itinerary-bar-steps"></div>
+
+            <!-- Upcoming Departures Card -->
+            <div class="departures-card">
+              <div class="card-title-group">
+                <h3 class="card-title">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  <span id="departures-card-title">Properes sortides</span>
+                </h3>
+                <span class="dep-type-badge" id="dep-count-badge">Carregant...</span>
+              </div>
+              <div class="departures-list" id="departures-list-container"></div>
+            </div>
+
+          </section>
+
+          <!-- Stops Browser List -->
+          <div class="stops-browser-card">
+            <div class="stops-card-header-row">
+              <h3 class="card-title stops-browser-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                <span><span data-i18n="line.stops">Parades</span> (<span id="stops-total-count">--</span>)</span>
+              </h3>
+              <div class="stops-view-mode-pills" id="stops-view-mode-pills" role="tablist" data-i18n-aria-label="line.viewModeAria" aria-label="Mode de visualització de parades">
+                <button type="button" class="btn-map-control btn-stops-view-mode active" id="btn-stops-mode-schematic" data-mode="schematic" role="tab" aria-selected="true" data-i18n-title="line.modeSchematicTitle" title="Veure termòmetre esquemàtic estil metro amb posició de busos en viu">
+                  <span data-i18n="line.modeSchematic">🚇 Termòmetre</span>
+                </button>
+                <button type="button" class="btn-map-control btn-stops-view-mode" id="btn-stops-mode-list" data-mode="list" role="tab" aria-selected="false" data-i18n-title="line.modeListTitle" title="Veure llista detallada de parades">
+                  <span data-i18n="line.modeList">📋 Llista</span>
+                </button>
+              </div>
+              <div class="stops-card-dir-pills" id="stops-card-dir-pills"></div>
+            </div>
+
+            <!-- Prominent Direction Buttons / Tabs directly inside Stops Card -->
+            <!-- Search & Filter bar (integrated for both Thermometer and List modes) -->
+            <div class="stops-search-wrapper">
+              <input type="text" id="stop-search-input" class="stops-search-input" data-i18n-placeholder="stops.searchSchematic" placeholder="🔍 Cercar parada al termòmetre (ex: Tereses, 1016, Hospital)..." data-i18n-aria-label="line.stopSearchAria" aria-label="Cercar parada">
+              <button type="button" id="btn-clear-stop-search" class="btn-clear-search" style="display:none;" data-i18n-title="line.clearSearch" title="Netejar cerca">✕</button>
+            </div>
+
+            <div class="stops-schematic-scroll" id="stops-schematic-scroll"></div>
+            <div class="stops-list-scroll" id="stops-list-scroll" style="display:none;"></div>
           </div>
 
-          <!-- Draggable Resize Bar -->
-          <div class="map-resize-bar" id="map-resize-bar" data-i18n-title="line.resizeTitle" title="Arrossega amunt o avall per canviar l'alçada del mapa">
-            <span class="resize-handle-dots"></span>
-          </div>
         </div>
 
-        <!-- Stops Browser List -->
-        <div class="stops-browser-card">
-          <div class="stops-card-header-row">
-            <h3 class="card-title" style="font-size:0.95rem; margin-bottom:0;">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-              <span data-i18n="line.stops">Parades</span> (<span id="stops-total-count">--</span>)
-            </h3>
-            <div class="stops-view-mode-pills" id="stops-view-mode-pills" role="tablist" data-i18n-aria-label="line.viewModeAria" aria-label="Mode de visualització de parades">
-              <button type="button" class="btn-map-control btn-stops-view-mode active" id="btn-stops-mode-schematic" data-mode="schematic" role="tab" aria-selected="true" data-i18n-title="line.modeSchematicTitle" title="Veure termòmetre esquemàtic estil metro amb posició de busos en viu">
-                <span data-i18n="line.modeSchematic">🚇 Termòmetre</span>
-              </button>
-              <button type="button" class="btn-map-control btn-stops-view-mode" id="btn-stops-mode-list" data-mode="list" role="tab" aria-selected="false" data-i18n-title="line.modeListTitle" title="Veure llista detallada de parades">
-                <span data-i18n="line.modeList">📋 Llista</span>
-              </button>
+        <!-- Right Column: Sticky Live Map + Collapsible Telemetry -->
+        <div class="line-workspace-map">
+
+          <!-- Interactive Leaflet Map -->
+          <div class="map-card" id="map-card">
+            <div class="map-header">
+              <div>
+                <h3 class="card-title map-card-title">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
+                  <span id="map-line-title">Mapa en temps real</span>
+                </h3>
+                <span class="map-header-hint" data-i18n="line.mapHint">Fes clic sobre qualsevol parada per veure el temps</span>
+              </div>
+
+              <!-- Map Resize & View Controls -->
+              <div class="map-controls-group">
+                <span class="map-bus-counter-tag" id="map-bus-counter-tag"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px; margin-right:3px;"><path d="M4.7 17.5H3.4A1.4 1.4 0 0 1 2 16.1V6.4A1.4 1.4 0 0 1 3.4 5H17.5A4.5 4.5 0 0 1 22 9.5v6.6a1.4 1.4 0 0 1-1.4 1.4h-1.3"/><path d="M9.3 17.5h5.4"/><path d="M2 11.6h20"/><path d="M7.5 5v6.6M12.5 5v6.6M17.6 5.2v6.4"/><circle cx="7" cy="17.5" r="2.3"/><circle cx="17" cy="17.5" r="2.3"/></svg>0 actius</span>
+                <button type="button" class="btn-map-control btn-traffic-toggle" id="btn-map-toggle-traffic" data-i18n-title="line.trafficTitle" title="Activar / desactivar mapa de trànsit i retards">
+                  <span class="traffic-dot" style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#10b981; margin-right:3px;"></span>
+                  <span data-i18n="line.traffic">Trànsit</span>
+                </button>
+                <button type="button" class="btn-map-control" id="btn-map-expand-width" title="Ampliar mapa a tota l'amplada">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                  <span id="map-expand-label">Ample</span>
+                </button>
+              </div>
             </div>
-            <div class="stops-card-dir-pills" id="stops-card-dir-pills"></div>
+
+            <div id="map-container"></div>
+
+            <!-- Floating Itinerary Guidance Bar -->
+            <div class="itinerary-floating-bar" id="itinerary-floating-bar" role="region" data-i18n-aria-label="line.itinAria" aria-label="Guia del trajecte seleccionat">
+              <div class="itinerary-bar-header">
+                <div class="itinerary-bar-title" id="itinerary-bar-title">
+                  <span>🧭</span>
+                  <span id="itinerary-summary-text" data-i18n="line.itinSelected">Itinerari seleccionat</span>
+                </div>
+                <div class="itinerary-bar-actions">
+                  <button type="button" class="btn-itinerary-back" id="btn-itinerary-back-to-planner">
+                    <span>🔙</span>
+                    <span data-i18n="line.itinBack">Cercador</span>
+                  </button>
+                  <button type="button" class="btn-itinerary-close" id="btn-itinerary-close" data-i18n-title="line.itinClose" title="Tancar itinerari i tornar al mapa habitual">✕</button>
+                </div>
+              </div>
+              <div class="itinerary-bar-steps" id="itinerary-bar-steps"></div>
+            </div>
+
+            <!-- Draggable Resize Bar -->
+            <div class="map-resize-bar" id="map-resize-bar" data-i18n-title="line.resizeTitle" title="Arrossega amunt o avall per canviar l'alçada del mapa">
+              <span class="resize-handle-dots"></span>
+            </div>
           </div>
 
-          <!-- Prominent Direction Buttons / Tabs directly inside Stops Card -->
-          <!-- Search & Filter bar (integrated for both Thermometer and List modes) -->
-          <div class="stops-search-wrapper">
-            <input type="text" id="stop-search-input" class="stops-search-input" data-i18n-placeholder="stops.searchSchematic" placeholder="🔍 Cercar parada al termòmetre (ex: Tereses, 1016, Hospital)..." data-i18n-aria-label="line.stopSearchAria" aria-label="Cercar parada">
-            <button type="button" id="btn-clear-stop-search" class="btn-clear-search" style="display:none;" data-i18n-title="line.clearSearch" title="Netejar cerca">✕</button>
-          </div>
+          <!-- Route Progression & Telemetry Cockpit -->
+          <section class="corridor-section" data-i18n-aria-label="line.trackAria" aria-label="Seguiment de la línia">
+            <div class="section-header corridor-stepper-header">
+              <div>
+                <h3 class="card-title">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 0 1-2.827 0l-4.244-4.243a8 8 0 1 1 11.314 0z"/><path d="M15 11a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/></svg>
+                  <span id="corridor-title-text">Recorregut de la línia</span>
+                </h3>
+                <p style="font-size:0.78rem; color:var(--text-secondary); margin-top:2px;" id="corridor-subtitle-text">
+                  Telemetria oficial en temps real amb estimació automàtica en zones d'ombra
+                </p>
+              </div>
+            </div>
 
-          <div class="stops-schematic-scroll" id="stops-schematic-scroll"></div>
-          <div class="stops-list-scroll" id="stops-list-scroll" style="display:none;"></div>
+            <!-- Dynamic Radar Telemetry Card -->
+            <div class="telemetry-card is-collapsed" id="telemetry-card">
+              <button type="button" class="telemetry-header telemetry-toggle" id="telemetry-toggle" aria-expanded="false" aria-controls="telemetry-body">
+                <span class="telemetry-title-group">
+                  <span class="telemetry-live-radar" id="telemetry-radar-dot"></span>
+                  <strong data-i18n="veh.panelTitle">🛰️ Telemetria GPS i Estimació en Zones de Cobertura</strong>
+                </span>
+                <span class="telemetry-header-end">
+                  <span class="telemetry-status-badge" id="telemetry-status-badge">🟢 Senyal GPS Actiu</span>
+                  <span class="telemetry-toggle-hint">
+                    <span id="telemetry-toggle-label">Mostra detalls</span>
+                    <svg class="telemetry-toggle-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+                  </span>
+                </span>
+              </button>
+
+              <div class="telemetry-body" id="telemetry-body" hidden>
+
+                <!-- Active Vehicles Selection Bar -->
+                <div class="telemetry-vehicles-bar" id="telemetry-vehicles-bar" style="display:none;">
+                  <span class="telemetry-vehicles-label" data-i18n="veh.detected">Vehicles detectats:</span>
+                  <div class="telemetry-vehicles-chips" id="telemetry-vehicles-chips"></div>
+                </div>
+
+                <!-- Ghost Bus Advisory Notice -->
+                <div class="telemetry-ghost-notice" id="telemetry-ghost-notice" style="display:none;">
+                  <span style="font-size:1.1rem; line-height:1;">⚡</span>
+                  <span><strong data-i18n="veh.ghostTitle">Vehicle estimat segons horari oficial:</strong> <span data-i18n="veh.ghostText">Aquest autobús està programat en servei actiu però no transmet dades GPS a la xarxa SAE. La seva posició al mapa es calcula teòricament segons la sortida oficial.</span></span>
+                </div>
+
+                <div class="telemetry-grid">
+                  <div class="telemetry-item">
+                    <span class="telemetry-label" data-i18n="veh.lblCoords">📍 Coordenades GPS</span>
+                    <strong class="telemetry-val" id="telemetry-coords">--</strong>
+                  </div>
+                  <div class="telemetry-item">
+                    <span class="telemetry-label" data-i18n="veh.lblBearing">🧭 Rumb & Orientació</span>
+                    <strong class="telemetry-val" id="telemetry-bearing">--</strong>
+                  </div>
+                  <div class="telemetry-item">
+                    <span class="telemetry-label" data-i18n="veh.lblSpeed">⚡ Velocitat</span>
+                    <strong class="telemetry-val" id="telemetry-speed">--</strong>
+                  </div>
+                  <div class="telemetry-item">
+                    <span class="telemetry-label" data-i18n="veh.lblSegment">🛣️ Tram Actual</span>
+                    <strong class="telemetry-val" id="telemetry-segment">--</strong>
+                  </div>
+                  <div class="telemetry-item">
+                    <span class="telemetry-label" data-i18n="veh.lblNextStop">⏱️ Propera Parada</span>
+                    <strong class="telemetry-val" id="telemetry-eta-next">--</strong>
+                  </div>
+                  <div class="telemetry-item">
+                    <span class="telemetry-label" data-i18n="veh.lblTripStart">🕐 Inici Trajecte</span>
+                    <strong class="telemetry-val" id="telemetry-trip-start">--</strong>
+                  </div>
+                  <div class="telemetry-item">
+                    <span class="telemetry-label" data-i18n="veh.lblProgress">📊 Progrés Trajecte</span>
+                    <div style="display:flex; align-items:center; gap:0.5rem; width:100%; margin-top:2px;">
+                      <div class="telemetry-progress-track"><div class="telemetry-progress-fill" id="telemetry-progress-bar" style="width: 0%;"></div></div>
+                      <span id="telemetry-progress-text" class="telemetry-progress-text">0%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Progression Timeline -->
+            <div class="corridor-timeline" id="corridor-timeline-container"></div>
+          </section>
+
         </div>
 
       </section>
@@ -863,16 +873,16 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   
   <!-- App Scripts -->
-  <script src="/js/utils.js?v=9.4.112"></script>
-  <script src="/js/i18n.js?v=9.4.112"></script>
-  <script src="/js/storage.js?v=9.4.112"></script>
-  <script src="/js/requests.js?v=9.4.112"></script>
-  <script src="/js/stopFeatures.js?v=9.4.112"></script>
-  <script src="/js/journeys.js?v=9.4.112"></script>
-  <script src="/js/journeyControls.js?v=9.4.112"></script>
-  <script src="/js/pwa.js?v=9.4.112"></script>
-  <script src="/js/map.js?v=9.4.112"></script>
-  <script src="/js/networkMap.js?v=9.4.112"></script>
-  <script src="/js/app.js?v=9.4.112"></script>
+  <script src="/js/utils.js?v=9.4.113"></script>
+  <script src="/js/i18n.js?v=9.4.113"></script>
+  <script src="/js/storage.js?v=9.4.113"></script>
+  <script src="/js/requests.js?v=9.4.113"></script>
+  <script src="/js/stopFeatures.js?v=9.4.113"></script>
+  <script src="/js/journeys.js?v=9.4.113"></script>
+  <script src="/js/journeyControls.js?v=9.4.113"></script>
+  <script src="/js/pwa.js?v=9.4.113"></script>
+  <script src="/js/map.js?v=9.4.113"></script>
+  <script src="/js/networkMap.js?v=9.4.113"></script>
+  <script src="/js/app.js?v=9.4.113"></script>
 </body>
 </html>

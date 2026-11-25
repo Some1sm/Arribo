@@ -2533,34 +2533,119 @@ body {
 }
 
 /* ===================================================================
-   8. MAP & STOPS EXPLORER GRID
+   8. GOOGLE MAPS-STYLE SPLIT-SCREEN LINE WORKSPACE
    =================================================================== */
 
 .explorer-grid {
   display: grid;
-  grid-template-columns: 1.5fr 1fr;
-  gap: 1.5rem;
-  align-items: stretch;
-  transition: grid-template-columns 0.45s cubic-bezier(0.22, 1, 0.36, 1), gap 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  grid-template-columns: minmax(380px, 440px) minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+  transition: grid-template-columns 0.35s cubic-bezier(0.2, 0, 0, 1), gap 0.35s cubic-bezier(0.2, 0, 0, 1);
   width: 100%;
   max-width: 100%;
   min-width: 0;
   box-sizing: border-box;
 }
 
+.line-workspace-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.line-workspace-panel .hero-eta-grid {
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+.line-workspace-map {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+  position: sticky;
+  top: 74px;
+}
+
+.line-workspace-map #map-container {
+  min-height: 520px;
+  height: calc(100vh - 210px);
+  max-height: 760px;
+}
+
+.line-workspace-map .corridor-section {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
+  gap: 0;
+}
+
+.line-workspace-map .telemetry-card {
+  background: var(--bg-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.line-workspace-map .corridor-stepper-header,
+.line-workspace-map .corridor-timeline {
+  display: none;
+}
+
+.stops-browser-title,
+.map-card-title {
+  font-size: 0.95rem;
+  margin-bottom: 0;
+}
+
+.map-header-hint {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
 .explorer-grid.expanded-width {
   grid-template-columns: 1fr;
 }
 
-.explorer-grid.expanded-width #map-container {
-  min-height: 560px;
+.explorer-grid.expanded-width .line-workspace-map {
+  order: -1;
+  position: static;
 }
 
-@media (max-width: 900px) {
+.explorer-grid.expanded-width .line-workspace-panel .hero-eta-grid {
+  grid-template-columns: 1.1fr 0.9fr;
+}
+
+.explorer-grid.expanded-width #map-container {
+  min-height: 560px;
+  height: 560px;
+}
+
+@media (max-width: 1080px) {
   .explorer-grid {
     grid-template-columns: minmax(0, 1fr);
     gap: 1rem;
     width: 100%;
+  }
+  .explorer-grid.expanded-width .line-workspace-panel .hero-eta-grid {
+    grid-template-columns: 1fr;
+  }
+  .line-workspace-map {
+    position: static;
+  }
+  .line-workspace-map #map-container {
+    height: 400px;
+    min-height: 360px;
+  }
+}
+
+/* Slimmer top header on narrower desktop widths */
+@media (max-width: 1200px) {
+  .app-header .telemetry-beacon {
+    display: none;
   }
 }
 

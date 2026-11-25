@@ -1103,7 +1103,8 @@ class TransitApp {
     set('landing-hero-eyebrow', t('hero.eyebrow.multi', { ops: eyebrowOps }));
     const hasRail = ops.some(o => o.mode && o.mode !== 'bus');
     set('landing-hero-title', t(hasRail ? 'hero.title.trains' : 'hero.title.lines'));
-    set('landing-hero-subtitle', t('hero.subtitle.multi', { n: this.catalogLineTotal(ops), ops: ops.length }));
+    const openableCount = this.pickerLines().length;
+    set('landing-hero-subtitle', t('hero.subtitle.multi', { n: openableCount || this.catalogLineTotal(ops), ops: ops.length }));
     set('header-city-pill', t('header.pill.multi'));
     if (!this.activeLineId) {
       document.title = t(hasRail ? 'title.trains' : 'title.lines');
@@ -2064,7 +2065,8 @@ class TransitApp {
     const safeUrl = (u) => /^https?:\/\//i.test(String(u || ''));
     const first = alerts[0];
     titleEl.textContent = t('banner.alert', { title: titleOf(first) }) + langTag(first);
-    descEl.textContent = [first.header ? first.description : '', stopsOf(first)].filter(Boolean).join(' · ');
+    const extraDesc = first.header && first.description && !first.header.toLowerCase().includes(first.description.toLowerCase()) ? first.description : '';
+    descEl.textContent = [extraDesc, stopsOf(first)].filter(Boolean).join(' · ');
     const btn = document.getElementById('btn-view-disruption-details');
     if (btn) {
       btn.hidden = false;
