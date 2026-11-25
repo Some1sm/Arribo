@@ -125,7 +125,7 @@ func runTimetableRefresher(ctx context.Context, srcs []rtSource) {
 				continue
 			}
 			p := gtfsTimetablePath(src.AgencyID)
-			if !gtfsStale(p, gtfsStaleAfter) && gtfsImportCurrent(p) {
+			if !gtfsStale(p, gtfsStaleAfter) && gtfsImportCurrent(p, src.staticBBox) {
 				continue
 			}
 			start := time.Now()

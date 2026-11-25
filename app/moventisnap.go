@@ -26,6 +26,12 @@ const (
 	movSarbusAgencyID = "moventis_sarbus"
 )
 
+var movLleidaOperator = operatorInfo{
+	ID: movLleidaAgencyID, Name: "Moventis Lleida", ShortName: "Lleida",
+	Mode: "bus", Tier: "predicted", Method: "operator_prediction",
+	Source: "Previsions en temps real d'Autobusos de Lleida (moventis.es, font no oficial) i horaris oficials GTFS via NAP 1579. Sense GPS.",
+}
+
 var moventisNapOperators = []operatorInfo{
 	{
 		ID: movSarfaAgencyID, Name: "Moventis Sarfa", ShortName: "Sarfa",
@@ -37,11 +43,7 @@ var moventisNapOperators = []operatorInfo{
 		Mode: "bus", Tier: "timetable", Method: "timetable",
 		Source: "Horaris i recorreguts oficials GTFS de Moventis Costa (Blanes, Lloret, Malgrat) via NAP 1577.",
 	},
-	{
-		ID: movLleidaAgencyID, Name: "Moventis Lleida", ShortName: "Lleida",
-		Mode: "bus", Tier: "timetable", Method: "timetable",
-		Source: "Horaris i recorreguts oficials GTFS d'Autobusos de Lleida (Moventis) via NAP 1579.",
-	},
+	movLleidaOperator,
 	{
 		ID: movTccAgencyID, Name: "Moventis TCC", ShortName: "M. TCC",
 		Mode: "bus", Tier: "timetable", Method: "timetable",

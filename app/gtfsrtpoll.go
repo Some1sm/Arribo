@@ -299,6 +299,9 @@ func defaultRtSources() []rtSource {
 	if gb, ok := gencatBusSource(); ok {
 		srcs = append(srcs, gb)
 	}
+	if tgn, ok := emtTarragonaSource(); ok {
+		srcs = append(srcs, tgn)
+	}
 	return srcs
 }
 

@@ -8,21 +8,52 @@ package main
 // simplified to about 25 m, which is invisible at the zooms where the
 // whole network is on screen.
 
-import "math"
+import (
+	"encoding/json"
+	"fmt"
+	"math"
+	"strings"
+	"sync"
+	"time"
+)
 
 // railRouteTolerance is the simplification tolerance in degrees of latitude
 // (about 25 m).
-const railRouteTolerance = 0.00025
+const (
+	railRouteTolerance = 0.00025
+	railRouteCacheTTL  = 5 * time.Minute
+)
 
-func (s *Server) hRailRoutes(q *xreq, res *xres) error {
-	lines := []any{}
-	drawnBusCodes := map[string]bool{}
-	for _, info := range lineOperators() {
+var railRoutesCache = struct {
+	mu  sync.RWMutex
+	key string
+	at  time.Time
+	raw []byte
+}{}
+
+func railRoutesCatalogKey(ops []operatorInfo) (string, []*rtCatalogOp) {
+	var b strings.Builder
+	loaded := make([]*rtCatalogOp, len(ops))
+	for i, info := range ops {
 		v, ok := rtCatalog.Load(info.ID)
 		if !ok {
 			continue
 		}
 		op := v.(*rtCatalogOp)
+		loaded[i] = op
+		fmt.Fprintf(&b, "%s:%p:%d|", info.ID, op, len(op.Lines))
+	}
+	return b.String(), loaded
+}
+
+func buildRailRoutesJSON(ops []operatorInfo, loaded []*rtCatalogOp) []byte {
+	lines := []any{}
+	drawnBusCodes := map[string]bool{}
+	for i, info := range ops {
+		op := loaded[i]
+		if op == nil {
+			continue
+		}
 		for _, r := range op.Lines {
 			mode := routeModeFor(info, r.Code)
 			if info.ID == gencatBusAgencyID && drawnBusCodes[ambNormLine(r.Code)] {
@@ -41,8 +72,8 @@ func (s *Server) hRailRoutes(q *xreq, res *xres) error {
 			}
 			pts := simplifyPath(d.Geometry, railRouteTolerance)
 			path := make([]any, len(pts))
-			for i, p := range pts {
-				path[i] = []any{round5(p[0]), round5(p[1])}
+			for j, p := range pts {
+				path[j] = []any{round5(p[0]), round5(p[1])}
 			}
 			var color any
 			if r.Color != "" {
@@ -60,7 +91,39 @@ func (s *Server) hRailRoutes(q *xreq, res *xres) error {
 			))
 		}
 	}
-	res.json(O("success", true, "lines", lines))
+	raw, err := json.Marshal(O("success", true, "lines", lines))
+	if err != nil {
+		return []byte(`{"success":true,"lines":[]}`)
+	}
+	return raw
+}
+
+func (s *Server) hRailRoutes(q *xreq, res *xres) error {
+	ops := lineOperators()
+	key, loaded := railRoutesCatalogKey(ops)
+	now := time.Now()
+
+	railRoutesCache.mu.RLock()
+	if railRoutesCache.raw != nil && railRoutesCache.key == key && now.Sub(railRoutesCache.at) <= railRouteCacheTTL {
+		raw := railRoutesCache.raw
+		railRoutesCache.mu.RUnlock()
+		res.h.Set("Cache-Control", "public, max-age=120")
+		res.setContentType("application/json; charset=utf-8")
+		res.send(raw)
+		return nil
+	}
+	railRoutesCache.mu.RUnlock()
+
+	raw := buildRailRoutesJSON(ops, loaded)
+	railRoutesCache.mu.Lock()
+	railRoutesCache.key = key
+	railRoutesCache.at = now
+	railRoutesCache.raw = raw
+	railRoutesCache.mu.Unlock()
+
+	res.h.Set("Cache-Control", "public, max-age=120")
+	res.setContentType("application/json; charset=utf-8")
+	res.send(raw)
 	return nil
 }
 

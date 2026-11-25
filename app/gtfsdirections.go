@@ -263,8 +263,8 @@ func queryStrings(db *sql.DB, q string, args ...any) ([]string, error) {
 }
 
 // gtfsImportCurrent reports whether the timetable at path was written by
-// the current import format.
-func gtfsImportCurrent(path string) bool {
+// the current import format and matches expectedBBox (when non-empty).
+func gtfsImportCurrent(path, expectedBBox string) bool {
 	db, err := sql.Open("sqlite", "file:"+path+"?mode=ro")
 	if err != nil {
 		return false
@@ -274,5 +274,14 @@ func gtfsImportCurrent(path string) bool {
 	if db.QueryRow(`SELECT value FROM gtfs_meta WHERE key = 'import_format'`).Scan(&v) != nil {
 		return false
 	}
-	return v.String == gtfsImportFormat
+	if v.String != gtfsImportFormat {
+		return false
+	}
+	if expectedBBox != "" {
+		var bb sql.NullString
+		if db.QueryRow(`SELECT value FROM gtfs_meta WHERE key = 'bbox'`).Scan(&bb) != nil || bb.String != expectedBBox {
+			return false
+		}
+	}
+	return true
 }

@@ -161,21 +161,23 @@ type serverMsg struct {
 }
 
 type Worker struct {
-	w        *World
-	db       *HistoryDB
-	reports  *ReportCache
-	registry *TrackerRegistry
-	daemon   *IngestionDaemon
-	stopRt   func()         // stops the GTFS-RT pollers (a no-op unless ARRIBO_GTFSRT=1)
-	stopMov  func()         // stops the Moventis poller (a no-op unless ARRIBO_MOVENTIS=1)
-	stopSag  func()         // stops the Sagalés poller (a no-op unless ARRIBO_SAGALES=1)
-	stopAmbV func()         // stops the AMB vehicle-GPS poller (a no-op unless ARRIBO_AMB_VEHICLES=1)
-	stopBusG func()         // flushes and stops the multi-operator bus gap store
-	railTT   railTimetables // read-only rail timetables for station departures (worker lock)
-	inbox    *msgQueue[workerMsg]
-	out      func(serverMsg)
-	exited   chan struct{}
-	exitOnce sync.Once
+	w          *World
+	db         *HistoryDB
+	reports    *ReportCache
+	registry   *TrackerRegistry
+	daemon     *IngestionDaemon
+	stopRt     func()         // stops the GTFS-RT pollers (a no-op unless ARRIBO_GTFSRT=1)
+	stopMov    func()         // stops the Moventis poller (a no-op unless ARRIBO_MOVENTIS=1)
+	stopSag    func()         // stops the Sagalés poller (a no-op unless ARRIBO_SAGALES=1)
+	stopAmbV   func()         // stops the AMB vehicle-GPS poller (a no-op unless ARRIBO_AMB_VEHICLES=1)
+	stopGir    func()         // stops the TMG Girona bus estimator (a no-op unless ARRIBO_GIRONA=1)
+	stopLleida func()         // stops the Moventis Lleida hub poller (a no-op unless ARRIBO_MOVENTIS_ALL=1)
+	stopBusG   func()         // flushes and stops the multi-operator bus gap store
+	railTT     railTimetables // read-only rail timetables for station departures (worker lock)
+	inbox      *msgQueue[workerMsg]
+	out        func(serverMsg)
+	exited     chan struct{}
+	exitOnce   sync.Once
 }
 
 func newWorker(out func(serverMsg)) *Worker {
@@ -232,6 +234,8 @@ func (k *Worker) boot() {
 	k.stopMov = startMoventisPoller()
 	k.stopSag = startSagalesPoller()
 	k.stopAmbV = startAmbVehiclesPoller()
+	k.stopGir = startGironaPoller()
+	k.stopLleida = startLleidaPoller()
 	k.sendToMaster("WORKER_READY", O("pid", float64(os.Getpid()), "version", "3.0.0-mataro"))
 	log.Printf("[Worker] ✅ Ingestion Worker Ready and Listening.")
 	k.w.mu.Unlock()
@@ -313,6 +317,21 @@ func (k *Worker) handleMasterMessage(m workerMsg) {
 				k.stopAmbV()
 			}()
 		}
+		if k.stopGir != nil {
+			stopWG.Add(1)
+			go func() {
+				defer stopWG.Done()
+				k.stopGir()
+			}()
+		}
+		if k.stopLleida != nil {
+			stopWG.Add(1)
+			go func() {
+				defer stopWG.Done()
+				k.stopLleida()
+			}()
+		}
+		liveTimetables.close()
 		if k.stopRt != nil {
 			stopWG.Add(1)
 			go func() {

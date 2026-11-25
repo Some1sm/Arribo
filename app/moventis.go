@@ -872,12 +872,13 @@ var movOperator = operatorInfo{ID: movAgencyID, Name: "Moventis", ShortName: "Mo
 // line view opens: the train operators, and Moventis and AMB while their
 // lines are in the catalog.
 func lineOperators() []operatorInfo {
-	ops := reportOperators
-	extras := append([]operatorInfo{movOperator, ambOperator, tramTbxOperator, tramTbsOperator, tmbOperator, sagalesOperator, gironaOperator}, moventisNapOperators...)
+	extras := append([]operatorInfo{movOperator, ambOperator, tramTbxOperator, tramTbsOperator, tmbOperator, sagalesOperator, gironaOperator, emtTarragonaOperator}, moventisNapOperators...)
 	extras = append(extras, gencatBusOperator)
+	ops := make([]operatorInfo, len(reportOperators), len(reportOperators)+len(extras))
+	copy(ops, reportOperators)
 	for _, extra := range extras {
 		if _, ok := rtCatalog.Load(extra.ID); ok {
-			ops = append(append([]operatorInfo(nil), ops...), extra)
+			ops = append(ops, extra)
 		}
 	}
 	return ops

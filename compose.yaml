@@ -41,8 +41,10 @@ services:
       - ARRIBO_MOVENTIS_ALL=${ARRIBO_MOVENTIS_ALL:-1}
       # AMB Bus Metropolità (open trip updates, no positions; app/amb.go). Needs ARRIBO_GTFSRT.
       - ARRIBO_AMB=${ARRIBO_AMB:-1}
-      # Generalitat de Catalunya interurban bus GTFS (Barcelona/Vallès/Maresme/Garraf bbox; app/gencatbus.go). Needs ARRIBO_GTFSRT.
+      # Generalitat de Catalunya interurban bus GTFS (all Catalonia: Pyrenees, Val d'Aran/Vielha, Lleida, Girona, Tarragona, BCN; app/gencatbus.go). Needs ARRIBO_GTFSRT.
       - ARRIBO_GENCAT_BUS=${ARRIBO_GENCAT_BUS:-1}
+      # EMT Tarragona static GTFS (NAP 1694; app/tarragona.go). Needs ARRIBO_GTFSRT + NAP_API_KEY.
+      - ARRIBO_TARRAGONA=${ARRIBO_TARRAGONA:-1}
       # TRAM Barcelona Trambaix + Trambesòs (OAuth GTFS-RT trip updates, no history; app/tram.go). Needs ARRIBO_GTFSRT + TRAM_CLIENT_*.
       - ARRIBO_TRAM=${ARRIBO_TRAM:-1}
       # TMB Metro + Bus (iTransit live predictions + static GTFS, no history; app/tmb.go). Needs ARRIBO_GTFSRT + TMB_APP_*.

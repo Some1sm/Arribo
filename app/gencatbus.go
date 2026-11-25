@@ -19,14 +19,14 @@ import (
 const (
 	gencatBusAgencyID    = "gencat_bus"
 	gencatBusURL         = "https://territori.gencat.cat/web/.content/home/serveis/visors-cartografia/bases-cartografiques/infraestructures-mobilitat/autobusos-interurbans/busos-interurbans-GTFS.zip"
-	gencatBusBBox        = "41.15,41.80,1.55,2.75"
+	gencatBusBBox        = "40.50,42.90,0.15,3.35"
 	gencatBusAttribution = "Generalitat de Catalunya (dades obertes)"
 )
 
 var gencatBusOperator = operatorInfo{
 	ID: gencatBusAgencyID, Name: "Bus Interurbà (Generalitat)", ShortName: "Interurbà",
 	Mode: "bus", Tier: "timetable", Method: "timetable",
-	Source: "Recorreguts i horaris oficials GTFS dels autobusos interurbans de la Generalitat de Catalunya (àmbit de Barcelona); posició GPS en directe per a les línies amb seguiment AMB.",
+	Source: "Recorreguts i horaris oficials GTFS dels autobusos interurbans de tot Catalunya (Generalitat de Catalunya, incloent Pirineus, Val d'Aran, Lleida, Girona i Tarragona); posició GPS en directe per a les línies amb seguiment AMB.",
 }
 
 func gencatBusSource() (rtSource, bool) {

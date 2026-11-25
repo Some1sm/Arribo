@@ -18,14 +18,17 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"log"
 	"math"
 	"net/http"
 	"net/url"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -369,13 +372,9 @@ func gironaEstimateLineBusesFromSamples(route rtRoute, prof *rtLineProfile, dire
 			}
 		}
 		// Keep closest/smallest-ETA observations first, deduplicating within gironaDedupKm.
-		for i := 0; i < len(cands); i++ {
-			for j := i + 1; j < len(cands); j++ {
-				if cands[j].etaMin < cands[i].etaMin {
-					cands[i], cands[j] = cands[j], cands[i]
-				}
-			}
-		}
+		sort.Slice(cands, func(i, j int) bool {
+			return cands[i].etaMin < cands[j].etaMin
+		})
 		var kept []cand
 		for _, c := range cands {
 			dup := false
@@ -533,6 +532,24 @@ func gironaBusLineBuses(ctx context.Context, op *rtCatalogOp, code, direction st
 
 	buses := gironaEstimateLineBusesFromSamples(route, prof, direction, samples, now)
 
+	// Record live prediction vs GTFS timetable delays into /dades (in-memory only).
+	for di := range prof.Directions {
+		d := &prof.Directions[di]
+		dirStr := strconv.Itoa(d.DirectionID)
+		for _, st := range d.Stops {
+			arrs, ok := samples[dirStr+"\x00"+st.ID]
+			if !ok || len(arrs) == 0 {
+				continue
+			}
+			for _, a := range arrs {
+				if a.RealTime && a.MinutesAway >= 0 && a.MinutesAway <= 25 {
+					recordScheduleLiveDelay(ctx, gironaAgencyID, route.Code, st.ID, st.Name, d.DirectionID, now.Add(time.Duration(a.MinutesAway)*time.Minute), now)
+					break // score soonest live bus per sampled stop
+				}
+			}
+		}
+	}
+
 	gironaLineCache.mu.Lock()
 	if len(gironaLineCache.entries) >= gironaLineCacheMax {
 		for k, v := range gironaLineCache.entries {
@@ -548,4 +565,104 @@ func gironaBusLineBuses(ctx context.Context, op *rtCatalogOp, code, direction st
 	gironaLineCache.mu.Unlock()
 
 	return buses
+}
+
+// Background poller for TMG Girona city buses so estimated live pins appear
+// on the homepage network map (1 line every 12 s across ~8 lines = ~96 s cycle).
+const (
+	gironaPollStep   = 12 * time.Second
+	gironaLineMaxAge = 4 * time.Minute
+)
+
+type gironaFleetSnap struct {
+	at       time.Time
+	vehicles []*Obj
+}
+
+var gironaFleetLive atomic.Pointer[gironaFleetSnap]
+
+func startGironaPoller() (stop func()) {
+	if os.Getenv("ARRIBO_GIRONA") != "1" {
+		return func() {}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		byLine := map[string]struct {
+			at    time.Time
+			buses []*Obj
+		}{}
+		idx := 0
+		publish := func(now time.Time) {
+			var out []*Obj
+			for k, v := range byLine {
+				if now.Sub(v.at) > gironaLineMaxAge {
+					delete(byLine, k)
+					continue
+				}
+				out = append(out, v.buses...)
+			}
+			gironaFleetLive.Store(&gironaFleetSnap{at: now, vehicles: out})
+		}
+		// Short initial delay so GTFS catalog finishes loading first.
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(8 * time.Second):
+		}
+		for {
+			v, ok := rtCatalog.Load(gironaAgencyID)
+			if ok {
+				op := v.(*rtCatalogOp)
+				if len(op.Lines) > 0 {
+					line := op.Lines[idx%len(op.Lines)]
+					idx++
+					pctx, pcancel := context.WithTimeout(ctx, 8*time.Second)
+					raw := gironaBusLineBuses(pctx, op, line.Code, "both", time.Now())
+					pcancel()
+					now := time.Now()
+					objs := make([]*Obj, 0, len(raw))
+					for _, item := range raw {
+						if o, _ := item.(*Obj); o != nil {
+							objs = append(objs, o)
+						}
+					}
+					byLine[line.Code] = struct {
+						at    time.Time
+						buses []*Obj
+					}{at: now, buses: objs}
+					publish(now)
+				}
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(gironaPollStep):
+			}
+		}
+	}()
+	log.Printf("[Girona] background bus estimator started (ARRIBO_GIRONA=1)")
+	return func() {
+		cancel()
+		<-done
+		gironaFleetLive.Store(nil)
+	}
+}
+
+// gironaAllVehicles returns the latest estimated TMG Girona city buses for
+// /api/moventis?bbox=... on the homepage network map.
+func gironaAllVehicles(now time.Time, box *trainBox) []any {
+	snap := gironaFleetLive.Load()
+	if snap == nil || len(snap.vehicles) == 0 || now.Sub(snap.at) > gironaLineMaxAge {
+		return nil
+	}
+	out := make([]any, 0, len(snap.vehicles))
+	for _, o := range snap.vehicles {
+		if box != nil && !box.has(o.Num("lat"), o.Num("lon")) {
+			continue
+		}
+		out = append(out, o)
+	}
+	return out
 }
