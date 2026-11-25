@@ -166,14 +166,14 @@ type Worker struct {
 	reports    *ReportCache
 	registry   *TrackerRegistry
 	daemon     *IngestionDaemon
-	stopRt     func()         // stops the GTFS-RT pollers (a no-op unless ARRIBO_GTFSRT=1)
-	stopMov    func()         // stops the Moventis poller (a no-op unless ARRIBO_MOVENTIS=1)
-	stopSag    func()         // stops the Sagalés poller (a no-op unless ARRIBO_SAGALES=1)
-	stopAmbV   func()         // stops the AMB vehicle-GPS poller (a no-op unless ARRIBO_AMB_VEHICLES=1)
-	stopGir    func()         // stops the TMG Girona bus estimator (a no-op unless ARRIBO_GIRONA=1)
-	stopLleida func()         // stops the Moventis Lleida hub poller (a no-op unless ARRIBO_MOVENTIS_ALL=1)
-	stopBusG   func()         // flushes and stops the multi-operator bus gap store
-	railTT     railTimetables // read-only rail timetables for station departures (worker lock)
+	stopRt     func()          // stops the GTFS-RT pollers (a no-op unless ARRIBO_GTFSRT=1)
+	stopMov    func()          // stops the Moventis poller (a no-op unless ARRIBO_MOVENTIS=1)
+	stopSag    func()          // stops the Sagalés poller (a no-op unless ARRIBO_SAGALES=1)
+	stopAmbV   func()          // stops the AMB vehicle-GPS poller (a no-op unless ARRIBO_AMB_VEHICLES=1)
+	stopGir    func()          // stops the TMG Girona bus estimator (a no-op unless ARRIBO_GIRONA=1)
+	stopLleida func()          // stops the Moventis Lleida hub poller (a no-op unless ARRIBO_MOVENTIS_ALL=1)
+	stopBusG   func()          // flushes and stops the multi-operator bus gap store
+	railTT     *railTimetables // shared read-only rail timetables pool (app/raildepartures.go)
 	inbox      *msgQueue[workerMsg]
 	out        func(serverMsg)
 	exited     chan struct{}
@@ -185,6 +185,7 @@ func newWorker(out func(serverMsg)) *Worker {
 	k := &Worker{
 		w:      w,
 		db:     newHistoryDB(),
+		railTT: &sharedRailTT,
 		inbox:  newMsgQueue[workerMsg](),
 		out:    out,
 		exited: make(chan struct{}),
@@ -331,7 +332,6 @@ func (k *Worker) handleMasterMessage(m workerMsg) {
 				k.stopLleida()
 			}()
 		}
-		liveTimetables.close()
 		if k.stopRt != nil {
 			stopWG.Add(1)
 			go func() {

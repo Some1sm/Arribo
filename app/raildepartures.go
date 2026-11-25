@@ -27,6 +27,11 @@ const railDepLookbackSec = railMaxDelaySec
 // railDepShown is how many departures a board lists.
 const railDepShown = 30
 
+// sharedRailTT is the single process-wide read-only GTFS timetable handle pool
+// shared by the worker (station departures, journey planner) and live delay
+// estimators (Lleida, Girona), avoiding duplicate SQLite handles in memory.
+var sharedRailTT railTimetables
+
 // railTimetables is the worker's own read-only handles, one per operator,
 // reopened when a refresh replaces the file. Safe for concurrent readers.
 type railTimetables struct {

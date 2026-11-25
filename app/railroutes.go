@@ -9,6 +9,8 @@ package main
 // whole network is on screen.
 
 import (
+	"bytes"
+	"compress/gzip"
 	"fmt"
 	"math"
 	"strings"
@@ -17,18 +19,57 @@ import (
 )
 
 // railRouteTolerance is the simplification tolerance in degrees of latitude
-// (about 25 m).
+// (about 25 m). gencatBusRouteTolerance (~55 m) slims Catalonia-wide
+// interurban highway shapes without visible loss on the overview map.
 const (
-	railRouteTolerance = 0.00025
-	railRouteCacheTTL  = 5 * time.Minute
+	railRouteTolerance      = 0.00025
+	gencatBusRouteTolerance = 0.00050
+	railRouteCacheTTL       = 5 * time.Minute
+	linesCacheTTL           = 2 * time.Minute
 )
 
-var railRoutesCache = struct {
+type precompressedCache struct {
 	mu  sync.RWMutex
 	key string
 	at  time.Time
 	raw []byte
-}{}
+	gz  []byte
+}
+
+func gzipBytes(raw []byte) []byte {
+	if len(raw) < 1024 {
+		return nil
+	}
+	var buf bytes.Buffer
+	gw, err := gzip.NewWriterLevel(&buf, gzip.DefaultCompression)
+	if err != nil {
+		return nil
+	}
+	if _, err := gw.Write(raw); err != nil {
+		return nil
+	}
+	if err := gw.Close(); err != nil {
+		return nil
+	}
+	return buf.Bytes()
+}
+
+func sendPrecompressedJSON(q *xreq, res *xres, raw, gz []byte, maxAgeSec int) {
+	res.h.Set("Cache-Control", fmt.Sprintf("public, max-age=%d", maxAgeSec))
+	res.setContentType("application/json; charset=utf-8")
+	res.vary("Accept-Encoding")
+	if len(gz) > 0 && strings.Contains(strings.ToLower(q.header("Accept-Encoding")), "gzip") {
+		res.h.Set("Content-Encoding", "gzip")
+		res.send(gz)
+		return
+	}
+	res.send(raw)
+}
+
+var (
+	railRoutesCache precompressedCache
+	linesCache      precompressedCache
+)
 
 func railRoutesCatalogKey(ops []operatorInfo) (string, []*rtCatalogOp) {
 	var b strings.Builder
@@ -53,6 +94,10 @@ func buildRailRoutesJSON(ops []operatorInfo, loaded []*rtCatalogOp) []byte {
 		if op == nil {
 			continue
 		}
+		tol := railRouteTolerance
+		if info.ID == gencatBusAgencyID {
+			tol = gencatBusRouteTolerance
+		}
 		for _, r := range op.Lines {
 			mode := routeModeFor(info, r.Code)
 			if info.ID == gencatBusAgencyID && drawnBusCodes[ambNormLine(r.Code)] {
@@ -69,7 +114,7 @@ func buildRailRoutesJSON(ops []operatorInfo, loaded []*rtCatalogOp) []byte {
 			if mode == "bus" && info.ID != gencatBusAgencyID {
 				drawnBusCodes[ambNormLine(r.Code)] = true
 			}
-			pts := simplifyPath(d.Geometry, railRouteTolerance)
+			pts := simplifyPath(d.Geometry, tol)
 			path := make([]any, len(pts))
 			for j, p := range pts {
 				path[j] = []any{round5(p[0]), round5(p[1])}
@@ -100,25 +145,23 @@ func (s *Server) hRailRoutes(q *xreq, res *xres) error {
 
 	railRoutesCache.mu.RLock()
 	if railRoutesCache.raw != nil && railRoutesCache.key == key && now.Sub(railRoutesCache.at) <= railRouteCacheTTL {
-		raw := railRoutesCache.raw
+		raw, gz := railRoutesCache.raw, railRoutesCache.gz
 		railRoutesCache.mu.RUnlock()
-		res.h.Set("Cache-Control", "public, max-age=120")
-		res.setContentType("application/json; charset=utf-8")
-		res.send(raw)
+		sendPrecompressedJSON(q, res, raw, gz, 120)
 		return nil
 	}
 	railRoutesCache.mu.RUnlock()
 
 	raw := buildRailRoutesJSON(ops, loaded)
+	gz := gzipBytes(raw)
 	railRoutesCache.mu.Lock()
 	railRoutesCache.key = key
 	railRoutesCache.at = now
 	railRoutesCache.raw = raw
+	railRoutesCache.gz = gz
 	railRoutesCache.mu.Unlock()
 
-	res.h.Set("Cache-Control", "public, max-age=120")
-	res.setContentType("application/json; charset=utf-8")
-	res.send(raw)
+	sendPrecompressedJSON(q, res, raw, gz, 120)
 	return nil
 }
 

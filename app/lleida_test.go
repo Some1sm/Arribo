@@ -153,6 +153,15 @@ func TestBuildRailRoutesJSON(t *testing.T) {
 	if !containsAll(raw, `"success":true`, `"lines":[`, `"lineRef":"moventis_lleida:1"`, `"path":[[41.61,0.62],[41.62,0.63]]`) {
 		t.Fatalf("unexpected rail-routes JSON: %s", raw)
 	}
+	// Verify gzipBytes produces valid compressed output for large payloads.
+	big := make([]byte, 4096)
+	for i := range big {
+		big[i] = byte('a' + (i % 26))
+	}
+	gz := gzipBytes(big)
+	if len(gz) == 0 || len(gz) >= len(big) {
+		t.Fatalf("expected compressed gzipBytes < %d, got %d", len(big), len(gz))
+	}
 }
 
 func containsAll(s string, subs ...string) bool {

@@ -630,6 +630,8 @@ func (p *sagalesPoller) run(ctx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for {
 		staticChanged := false
+		pendingStatic := 0
+		lastPublish := time.Time{}
 		for _, id := range p.lineIDs {
 			for d := 0; d < 2; d++ {
 				if ctx.Err() != nil {
@@ -642,7 +644,14 @@ func (p *sagalesPoller) run(ctx context.Context, wg *sync.WaitGroup) {
 				p.pollOne(ctx, id, d, wantStatic)
 				if wantStatic {
 					staticChanged = true
-					p.publishCatalog()
+					pendingStatic++
+					// Debounce catalog publication during cold start so railRoutesCache
+					// and linesCache are not invalidated on every single line.
+					if lastPublish.IsZero() || pendingStatic >= 10 || time.Since(lastPublish) >= 30*time.Second {
+						p.publishCatalog()
+						pendingStatic = 0
+						lastPublish = time.Now()
+					}
 				}
 				select {
 				case <-ctx.Done():
@@ -651,7 +660,7 @@ func (p *sagalesPoller) run(ctx context.Context, wg *sync.WaitGroup) {
 				}
 			}
 		}
-		if staticChanged {
+		if staticChanged && pendingStatic > 0 {
 			p.publishCatalog()
 		}
 		p.mu.Lock()

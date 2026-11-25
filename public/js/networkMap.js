@@ -160,7 +160,18 @@ class NetworkMap extends TransitMap {
         for (const obj of this.busMarkersMap.values()) obj.marker.setRadius(r);
       }
     };
-    this.map.on('zoomend', applyZoomClass);
+    this.map.on('zoomend', () => {
+      applyZoomClass();
+      this.renderRailRoutes();
+    });
+    this._routeMoveTimer = null;
+    this.map.on('moveend', () => {
+      if (this._routeMoveTimer) clearTimeout(this._routeMoveTimer);
+      this._routeMoveTimer = setTimeout(() => {
+        this._routeMoveTimer = null;
+        this.renderRailRoutes();
+      }, 120);
+    });
     applyZoomClass();
 
     // NOTE: requestUserLocation() is deliberately NOT called. TransitMap calls
@@ -261,14 +272,29 @@ class NetworkMap extends TransitMap {
 
   /** Puts each non-Mataró line's path on the map when the filter allows it;
    *  the "Hide trains" toggle hides only rail lines (Rodalies/FGC), leaving
-   *  Moventis, AMB, Sagalés, Girona, TMB and TRAM routes visible. */
+   *  Moventis, AMB, Sagalés, Girona, TMB and TRAM routes visible.
+   *  When viewing the full Catalonia map without a specific operator/line filter,
+   *  bus route polylines are zoom-gated (>= 11) and viewport-clipped so pan/zoom
+   *  stays 60 fps while all live vehicle pins remain visible at every zoom. */
   renderRailRoutes() {
     if (!this.railRouteLayer) return;
     // Paths are static: they show without a live train feed too.
     const filterOpen = this.railFilterOpen();
+    const f = this.mapFilter || { kind: 'all' };
+    const specificFilter = f.kind === 'op' || f.kind === 'rail';
+    const zoom = this.map ? this.map.getZoom() : 12;
+    const viewBounds = this.map ? this.map.getBounds().pad(0.35) : null;
     for (const r of this.railRoutes || []) {
       const isTrain = r.mode === 'rail';
-      const want = filterOpen && (!isTrain || this.trainsShown) && this.isRailLineVisible(r.agencyId, r.code, r.mode);
+      const isBus = r.mode === 'bus';
+      let want = filterOpen && (!isTrain || this.trainsShown) && this.isRailLineVisible(r.agencyId, r.code, r.mode);
+      if (want && isBus && !specificFilter) {
+        if (zoom < 11) {
+          want = false;
+        } else if (viewBounds && r.bounds && !viewBounds.intersects(r.bounds)) {
+          want = false;
+        }
+      }
       const has = this.railRouteLayer.hasLayer(r.polyline);
       if (want && !has) this.railRouteLayer.addLayer(r.polyline);
       if (!want && has) this.railRouteLayer.removeLayer(r.polyline);

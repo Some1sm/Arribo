@@ -275,15 +275,11 @@ func fetchLleidaStopTimes(ctx context.Context, stopID string, movLineID int, int
 	return arr, now, true
 }
 
-// Shared read-only GTFS timetable handle cache for computing honest schedule-vs-live
-// delays for live prediction feeds (Lleida, Girona) into in-memory /dades.
-var liveTimetables railTimetables
-
 func recordScheduleLiveDelay(ctx context.Context, agencyID, lineCode, stopID, stopName string, dir int, expected, now time.Time) {
 	if agencyID == "" || lineCode == "" || stopID == "" {
 		return
 	}
-	tt, err := liveTimetables.get(agencyID)
+	tt, err := sharedRailTT.get(agencyID)
 	if err != nil || tt == nil {
 		return
 	}

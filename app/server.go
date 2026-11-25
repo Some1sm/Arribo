@@ -1350,6 +1350,19 @@ func (s *Server) hLines(q *xreq, res *xres) error {
 		s.sendInternalError(q, res, err, O("count", 0.0, "lines", []any{}))
 		return nil
 	}
+	catKey, _ := railRoutesCatalogKey(lineOperators())
+	key := fmt.Sprintf("m:%d|%s", len(lines), catKey)
+	now := time.Now()
+
+	linesCache.mu.RLock()
+	if linesCache.raw != nil && linesCache.key == key && now.Sub(linesCache.at) <= linesCacheTTL {
+		raw, gz := linesCache.raw, linesCache.gz
+		linesCache.mu.RUnlock()
+		sendPrecompressedJSON(q, res, raw, gz, 60)
+		return nil
+	}
+	linesCache.mu.RUnlock()
+
 	out := make([]any, 0, len(lines))
 	for _, x := range lines {
 		if l, ok := x.(*Obj); ok {
@@ -1361,7 +1374,16 @@ func (s *Server) hLines(q *xreq, res *xres) error {
 		out = append(out, railLines...)
 		ops = append(ops, railOps...)
 	}
-	res.json(O("success", true, "count", float64(len(out)), "lines", out, "operators", ops))
+	raw := toJSON(O("success", true, "count", float64(len(out)), "lines", out, "operators", ops))
+	gz := gzipBytes(raw)
+	linesCache.mu.Lock()
+	linesCache.key = key
+	linesCache.at = now
+	linesCache.raw = raw
+	linesCache.gz = gz
+	linesCache.mu.Unlock()
+
+	sendPrecompressedJSON(q, res, raw, gz, 60)
 	return nil
 }
 
