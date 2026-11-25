@@ -1527,17 +1527,18 @@ body {
 
 .target-actions-bar {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.45rem;
   padding-top: 0.75rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  border-top: 1px solid var(--border-subtle);
   margin-top: auto;
   min-width: 0;
   width: 100%;
+  box-sizing: border-box;
 }
 
-[data-theme="light"] .target-actions-bar {
-  border-top-color: rgba(0, 0, 0, 0.08);
+.explorer-grid.expanded-width .target-actions-bar {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .btn-target-action {
@@ -1545,8 +1546,10 @@ body {
   align-items: center;
   justify-content: center;
   gap: 0.35rem;
-  padding: 0.4rem 0.7rem;
-  min-height: 32px;
+  padding: 0.42rem 0.6rem;
+  min-width: 0;
+  width: 100%;
+  min-height: 34px;
   background: var(--bg-surface-elevated);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-xs);
@@ -1557,8 +1560,14 @@ body {
   text-decoration: none;
   transition: all var(--transition-fast);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-family: inherit;
   box-sizing: border-box;
+}
+
+#btn-header-favorites[hidden] {
+  display: none !important;
 }
 
 .btn-target-action:hover {

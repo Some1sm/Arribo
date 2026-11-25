@@ -47,9 +47,13 @@
   },
 
   updateHeaderFavoritesBadge() {
+    const btn = document.getElementById('btn-header-favorites');
     const badge = document.getElementById('header-favs-count-text');
+    const count = this.favoriteStops.length;
+    if (btn) {
+      btn.hidden = count === 0;
+    }
     if (badge) {
-      const count = this.favoriteStops.length;
       const t = (k, v, fb) => (global.ArriboI18n ? global.ArriboI18n.t(k, v) : fb);
       badge.textContent = count > 0 ? t('stopFeat.favCount', { n: count }, `Preferides (${count})`) : t('stopFeat.favLabel', null, 'Preferides');
     }
