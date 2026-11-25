@@ -269,6 +269,8 @@ func startMoventisPoller() (stop func()) {
 		preds:   map[[3]int]movPrediction{},
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	var alertsWG sync.WaitGroup
+	startMovAlertsPoller(ctx, &alertsWG)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -278,9 +280,11 @@ func startMoventisPoller() (stop func()) {
 	log.Printf("[Moventis] following %d lines (ARRIBO_MOVENTIS=1)", len(ids))
 	return func() {
 		movLive.CompareAndSwap(p, nil)
+		movAlertsLive.Store(nil)
 		rtCatalog.Delete(movAgencyID)
 		cancel()
 		<-done
+		alertsWG.Wait()
 		if p.delays != nil {
 			p.delays.save(true)
 		}

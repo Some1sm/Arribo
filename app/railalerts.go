@@ -188,68 +188,69 @@ func (p *rtPoller) pollAlerts(ctx context.Context) {
 // the caller decides by passing the line's station ids).
 func railAlertsJSON(agencyID, line string, lineStops map[string]bool, now time.Time) []any {
 	out := []any{}
-	pp := rtLivePollers.Load()
-	if pp == nil {
-		return out
-	}
-	for _, p := range *pp {
-		if agencyID != "" && p.src.AgencyID != agencyID {
-			continue
-		}
-		lp := p.alerts.Load()
-		if lp == nil {
-			continue
-		}
-		for i := range *lp {
-			a := &(*lp)[i]
-			if !railAlertActive(a, now.Unix()) {
+	if pp := rtLivePollers.Load(); pp != nil {
+		for _, p := range *pp {
+			if agencyID != "" && p.src.AgencyID != agencyID {
 				continue
 			}
-			if line != "" {
-				match := false
-				for _, l := range a.Lines {
-					if l == line {
-						match = true
-					}
+			lp := p.alerts.Load()
+			if lp == nil {
+				continue
+			}
+			for i := range *lp {
+				a := &(*lp)[i]
+				if !railAlertActive(a, now.Unix()) {
+					continue
 				}
-				if !match && len(a.Lines) == 0 {
-					for _, s := range a.Stops {
-						if lineStops[s.ID] {
+				if line != "" {
+					match := false
+					for _, l := range a.Lines {
+						if l == line {
 							match = true
 						}
 					}
+					if !match && len(a.Lines) == 0 {
+						for _, s := range a.Stops {
+							if lineStops[s.ID] {
+								match = true
+							}
+						}
+					}
+					if !match {
+						continue
+					}
 				}
-				if !match {
-					continue
+				lines := make([]any, len(a.Lines))
+				for i, l := range a.Lines {
+					lines[i] = l
 				}
-			}
-			lines := make([]any, len(a.Lines))
-			for i, l := range a.Lines {
-				lines[i] = l
-			}
-			stops := make([]any, len(a.Stops))
-			for i, s := range a.Stops {
-				stops[i] = O("id", s.ID, "name", s.Name)
-			}
-			periods := make([]any, 0, len(a.Periods))
-			for _, pr := range a.Periods {
-				var start, end any
-				if pr.Start > 0 {
-					start = float64(pr.Start) * 1000
+				stops := make([]any, len(a.Stops))
+				for i, s := range a.Stops {
+					stops[i] = O("id", s.ID, "name", s.Name)
 				}
-				if pr.End > 0 {
-					end = float64(pr.End) * 1000
+				periods := make([]any, 0, len(a.Periods))
+				for _, pr := range a.Periods {
+					var start, end any
+					if pr.Start > 0 {
+						start = float64(pr.Start) * 1000
+					}
+					if pr.End > 0 {
+						end = float64(pr.End) * 1000
+					}
+					periods = append(periods, O("start", start, "end", end))
 				}
-				periods = append(periods, O("start", start, "end", end))
+				out = append(out, O(
+					"id", a.ID, "agencyId", a.AgencyID,
+					"header", strOrNil(a.Header), "description", strOrNil(a.Description),
+					"lang", strOrNil(a.Lang), "url", strOrNil(a.URL),
+					"cause", a.Cause, "effect", a.Effect,
+					"lines", lines, "stops", stops, "activePeriods", periods,
+				))
 			}
-			out = append(out, O(
-				"id", a.ID, "agencyId", a.AgencyID,
-				"header", strOrNil(a.Header), "description", strOrNil(a.Description),
-				"lang", strOrNil(a.Lang), "url", strOrNil(a.URL),
-				"cause", a.Cause, "effect", a.Effect,
-				"lines", lines, "stops", stops, "activePeriods", periods,
-			))
 		}
+	}
+	if mov := moventisAlertsFor(agencyID, line, now); len(mov) > 0 {
+		out = append(out, mov...)
 	}
 	return out
 }
