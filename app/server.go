@@ -1114,6 +1114,7 @@ func (s *Server) buildRoutes() {
 	s.get(p("/api/trains"), s.hTrains)
 	s.get(p("/api/vehicle/:vehicleId/trail"), s.hTrail)
 	s.get(p("/api/line/:lineId/stats"), s.hLineStats)
+	s.get(p("/api/line/:lineId/schedule"), s.hLineSchedule)
 	s.get(p("/api/analytics/journalism", "/api/retards/journalism"), s.hJournalism)
 	s.get(p("/api/analytics/report/monthly", "/api/retards/report/monthly"), s.hMonthly)
 	s.get(p("/api/analytics/export/csv", "/api/retards/export/csv"), func(q *xreq, res *xres) error {

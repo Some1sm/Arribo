@@ -558,6 +558,10 @@ class TransitApp {
     const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     this.activeLineId = String(lineId);
     this.selectedVehicleId = null;
+    this._scheduleData = null;
+    this._scheduleStopId = '';
+    this._scheduleDayType = null;
+    this._scheduleDir = null;
     this.mapController?.clearVehicleTrail();
 
     const lineObj = this.railCatalogLine(lineId) || this.availableLines.find(l => 
@@ -3697,15 +3701,35 @@ class TransitApp {
     this.stopsViewMode = mode;
     const listBtn = document.getElementById('btn-stops-mode-list');
     const schematicBtn = document.getElementById('btn-stops-mode-schematic');
+    const schedBtn = document.getElementById('btn-stops-mode-schedule');
     const listScroll = document.getElementById('stops-list-scroll');
     const schematicScroll = document.getElementById('stops-schematic-scroll');
+    const schedScroll = document.getElementById('stops-schedule-scroll');
+    const searchWrapper = document.querySelector('.stops-search-wrapper');
     const searchInput = document.getElementById('stop-search-input');
 
+    const setActive = (btn, on) => {
+      if (!btn) return;
+      btn.classList.toggle('active', on);
+      btn.setAttribute('aria-selected', on ? 'true' : 'false');
+    };
+    setActive(schematicBtn, mode === 'schematic');
+    setActive(listBtn, mode === 'list');
+    setActive(schedBtn, mode === 'schedule');
+
+    if (mode === 'schedule') {
+      if (listScroll) listScroll.style.display = 'none';
+      if (schematicScroll) schematicScroll.style.display = 'none';
+      if (schedScroll) schedScroll.hidden = false;
+      if (searchWrapper) searchWrapper.hidden = true;
+      this.loadLineSchedule();
+      return;
+    }
+
+    if (schedScroll) schedScroll.hidden = true;
+    if (searchWrapper) searchWrapper.hidden = false;
+
     if (mode === 'schematic') {
-      listBtn?.classList.remove('active');
-      listBtn?.setAttribute('aria-selected', 'false');
-      schematicBtn?.classList.add('active');
-      schematicBtn?.setAttribute('aria-selected', 'true');
       if (listScroll) listScroll.style.display = 'none';
       if (schematicScroll) schematicScroll.style.display = 'block';
       if (searchInput) {
@@ -3715,10 +3739,6 @@ class TransitApp {
       }
       this.renderSchematicThermometer(this.activeLineData, this.activeLineId);
     } else {
-      schematicBtn?.classList.remove('active');
-      schematicBtn?.setAttribute('aria-selected', 'false');
-      listBtn?.classList.add('active');
-      listBtn?.setAttribute('aria-selected', 'true');
       if (schematicScroll) schematicScroll.style.display = 'none';
       if (listScroll) listScroll.style.display = 'block';
       if (searchInput) {
@@ -3726,6 +3746,164 @@ class TransitApp {
         searchInput.placeholder = t('stops.searchList');
         if (searchInput.value) this.filterListStops(searchInput.value.toLowerCase().trim());
       }
+    }
+  }
+
+  async loadLineSchedule(stopId = null) {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
+    const box = document.getElementById('stops-schedule-scroll');
+    if (!box || !this.activeLineId) return;
+    const reqStop = stopId !== null ? String(stopId) : (this._scheduleStopId || '');
+    const reqLine = this.activeLineId;
+    if (this._scheduleData && this._scheduleData._reqLine === reqLine && this._scheduleStopId === reqStop) {
+      this.renderLineSchedule();
+      return;
+    }
+    this._scheduleStopId = reqStop;
+    box.innerHTML = `<div class="sched-empty">${this.esc(t('schedule.loading'))}</div>`;
+    try {
+      const qs = reqStop ? `?stopId=${encodeURIComponent(reqStop)}` : '';
+      const resp = await fetch(`/api/line/${encodeURIComponent(reqLine)}/schedule${qs}`);
+      const json = await resp.json();
+      if (this.activeLineId !== reqLine) return;
+      if (!json?.success || !json.data || !Array.isArray(json.data.directions) || json.data.directions.length === 0) {
+        box.innerHTML = `<div class="sched-empty">${this.esc(t('schedule.unavailable'))}</div>`;
+        return;
+      }
+      json.data._reqLine = reqLine;
+      this._scheduleData = json.data;
+      if (!this._scheduleDayType) {
+        this._scheduleDayType = json.data.todayDayType || 'weekday';
+      }
+      if (!this._scheduleDir || !json.data.directions.some(d => String(d.direction) === String(this._scheduleDir))) {
+        const matchActive = json.data.directions.find(d => String(d.direction) === String(this.activeDirection));
+        this._scheduleDir = String((matchActive || json.data.directions[0]).direction);
+      }
+      this.renderLineSchedule();
+    } catch {
+      if (this.activeLineId === reqLine) {
+        box.innerHTML = `<div class="sched-empty">${this.esc(t('schedule.unavailable'))}</div>`;
+      }
+    }
+  }
+
+  renderLineSchedule() {
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
+    const box = document.getElementById('stops-schedule-scroll');
+    const data = this._scheduleData;
+    if (!box || !data || !Array.isArray(data.directions) || data.directions.length === 0) return;
+
+    const dirObj = data.directions.find(d => String(d.direction) === String(this._scheduleDir)) || data.directions[0];
+    const dayKey = this._scheduleDayType || data.todayDayType || 'weekday';
+    const dayInfo = (dirObj.days && dirObj.days[dayKey]) || { times: [], count: 0 };
+
+    const dayOrder = [
+      { key: 'weekday', label: t('schedule.weekday') },
+      { key: 'saturday', label: t('schedule.saturday') },
+      { key: 'sunday', label: t('schedule.sunday') }
+    ];
+
+    const dayTabsHtml = dayOrder.map(d => {
+      const cnt = dirObj.days?.[d.key]?.count || 0;
+      const active = d.key === dayKey ? ' active' : '';
+      return `<button type="button" class="sched-tab-btn${active}" data-sched-day="${d.key}">${this.esc(d.label)} <span class="sched-tab-count">(${cnt})</span></button>`;
+    }).join('');
+
+    const dirTabsHtml = data.directions.length > 1
+      ? `<div class="sched-dir-tabs">${data.directions.map(d => {
+          const active = String(d.direction) === String(dirObj.direction) ? ' active' : '';
+          return `<button type="button" class="sched-tab-btn${active}" data-sched-dir="${this.esc(String(d.direction))}">→ ${this.esc(d.name || d.direction)}</button>`;
+        }).join('')}</div>`
+      : '';
+
+    const selStopId = dirObj.selectedStop?.id ? String(dirObj.selectedStop.id) : '';
+    const stopOptionsHtml = (dirObj.stops || []).map((st, idx) => {
+      const sel = String(st.id) === selStopId ? ' selected' : '';
+      return `<option value="${this.esc(String(st.id))}"${sel}>#${idx + 1} ${this.esc(st.name)}</option>`;
+    }).join('');
+
+    const headwayText = dayInfo.avgHeadwayMin
+      ? t('schedule.everyMin', { m: Math.round(dayInfo.avgHeadwayMin) })
+      : '—';
+
+    const kpisHtml = `
+      <div class="sched-kpis">
+        <div class="sched-kpi"><span class="sched-kpi-label">${this.esc(t('schedule.first'))}</span><span class="sched-kpi-val">${this.esc(dayInfo.first || '—')}</span></div>
+        <div class="sched-kpi"><span class="sched-kpi-label">${this.esc(t('schedule.last'))}</span><span class="sched-kpi-val">${this.esc(dayInfo.last || '—')}</span></div>
+        <div class="sched-kpi"><span class="sched-kpi-label">${this.esc(t('schedule.trips'))}</span><span class="sched-kpi-val">${dayInfo.count || 0}</span></div>
+        <div class="sched-kpi"><span class="sched-kpi-label">${this.esc(t('schedule.headway'))}</span><span class="sched-kpi-val">${this.esc(headwayText)}</span></div>
+      </div>`;
+
+    const expiredHtml = data.calendarExpired
+      ? `<div class="sched-note">${this.esc(t('schedule.expiredNote'))}</div>`
+      : '';
+
+    let gridHtml = '';
+    const times = Array.isArray(dayInfo.times) ? dayInfo.times : [];
+    if (times.length === 0) {
+      gridHtml = `<div class="sched-empty">${this.esc(t('schedule.noService'))}</div>`;
+    } else {
+      const now = new Date();
+      const nowMins = now.getHours() * 60 + now.getMinutes();
+      const highlightToday = dayKey === data.todayDayType;
+      let nextIdx = -1;
+      if (highlightToday) {
+        nextIdx = times.findIndex(hhmm => {
+          const [h, m] = hhmm.split(':').map(Number);
+          return Number.isFinite(h) && Number.isFinite(m) && (h * 60 + m) >= nowMins;
+        });
+      }
+      const byHour = [];
+      const hourMap = new Map();
+      times.forEach((hhmm, idx) => {
+        const hh = hhmm.slice(0, 2);
+        if (!hourMap.has(hh)) {
+          const row = { hh, items: [] };
+          hourMap.set(hh, row);
+          byHour.push(row);
+        }
+        hourMap.get(hh).items.push({ hhmm, isNext: idx === nextIdx });
+      });
+      gridHtml = `<div class="sched-grid">${byHour.map(row => `
+        <div class="sched-hour-row">
+          <span class="sched-hour-label">${this.esc(row.hh)}h</span>
+          <div class="sched-mins">${row.items.map(it =>
+            `<span class="sched-time-chip${it.isNext ? ' is-next' : ''}"${it.isNext ? ` title="${this.esc(t('schedule.nextBadge'))}"` : ''}>${this.esc(it.hhmm)}</span>`
+          ).join('')}</div>
+        </div>`).join('')}</div>`;
+    }
+
+    box.innerHTML = `
+      <div class="sched-toolbar">
+        <div class="sched-day-tabs">${dayTabsHtml}</div>
+        ${dirTabsHtml}
+        <div class="sched-stop-row">
+          <label for="sched-stop-select">${this.esc(t('schedule.stopLabel'))}</label>
+          <select id="sched-stop-select" class="sched-stop-select">${stopOptionsHtml}</select>
+        </div>
+      </div>
+      ${kpisHtml}
+      ${expiredHtml}
+      ${gridHtml}`;
+
+    box.querySelectorAll('[data-sched-day]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this._scheduleDayType = btn.dataset.schedDay;
+        this.renderLineSchedule();
+      });
+    });
+    box.querySelectorAll('[data-sched-dir]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this._scheduleDir = btn.dataset.schedDir;
+        this._scheduleStopId = '';
+        this.renderLineSchedule();
+      });
+    });
+    const sel = box.querySelector('#sched-stop-select');
+    if (sel) {
+      sel.addEventListener('change', () => {
+        this.loadLineSchedule(sel.value);
+      });
     }
   }
 
@@ -5761,6 +5939,12 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
       });
     }
 
+    document.getElementById('btn-line-schedule')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.setStopsViewMode('schedule');
+      const card = document.querySelector('.stops-browser-card');
+      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
     document.getElementById('btn-back-to-landing')?.addEventListener('click', (e) => {
       e.preventDefault();
       this.navigateToLanding();
