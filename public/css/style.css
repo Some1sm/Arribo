@@ -12277,13 +12277,15 @@ body:not([data-dades-scope="all"]) .dades-all-only { display: none; }
 .dades-scope[hidden] { display: none; }
 .dades-scope-label { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); }
 body[data-dades-scope="rail"] .dades-bus-only { display: none !important; }
-/* Moventis ("est": buses estimated from stop predictions, no delays yet): its
-   own panel and line list; the period tools and the train card do not apply. */
+/* Moventis ("est": buses estimated from stop predictions): shares the
+   period toolbar and search filter with Rodalies/FGC while hiding Mataró-only
+   GPS/monthly/termòmetre blocks and the rail operator card. */
 body[data-dades-scope="est"] .dades-bus-only,
-body[data-dades-scope="est"] .observatori-toolbar,
-body[data-dades-scope="est"] #journalism-search-bar-wrap,
+body[data-dades-scope="est"] .dades-bus-tool,
 body[data-dades-scope="est"] #operators-section,
 body[data-dades-scope="est"] .dades-bus-scope-only { display: none !important; }
+.dades-mov-section { margin-bottom: 1.5rem; }
+.dades-mov-dist-body { display: flex; flex-direction: column; gap: var(--space-4); padding-top: var(--space-2); }
 .dades-mov-name { margin-left: var(--space-2); color: var(--text-secondary); font-weight: 500; }
 .dades-mov-muted { color: var(--text-muted); }
 .dades-mov-open { white-space: nowrap; }

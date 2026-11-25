@@ -70,3 +70,56 @@ func TestMovPrimaryStopPriorityFiltering(t *testing.T) {
 		t.Error("new line 161 absent from cache must trigger static refresh")
 	}
 }
+
+func TestMovDelayReportWithStaticStopsBucketsAndRecordMergesSched(t *testing.T) {
+	dir := t.TempDir()
+	base := time.Date(2026, 11, 25, 18, 0, 0, 0, madrid)
+	static := &movStatic{
+		Lines: map[int]movLine{
+			53: {ID: 53, Code: "C-10", Name: "MATARÓ - BARCELONA (PER N-II)"},
+		},
+		Routes: map[int][]movRoute{
+			53: {{
+				LineID: 53, Trayecto: 2, Dest: "MATARÓ",
+				Stops: []movStop{{ID: 7192, Name: "Francesc Macià/Maria Cristina", Km: 10.5}},
+			}},
+		},
+	}
+	p := &movPoller{
+		lineIDs: []int{53},
+		dir:     dir,
+		delays:  newMovDelayTracker(dir),
+		sched:   newMovSchedStore(dir),
+		preds:   map[[3]int]movPrediction{},
+	}
+	// Real Moventis split: real:"S" under "Mataró" has empty Sched, while
+	// real:"N" under full route label carries the scheduled HH:MM list.
+	p.record(static, 7192, []movStopETA{
+		{LineID: 53, Dest: "Mataró", EtaSec: []float64{600}}, // 18:10 vs 18:04 -> +6 min (late15 & severe)
+		{LineID: 53, Dest: "(C10) BCN - MATARÓ (PER LA NII)", Sched: []string{"18:04", "18:49"}},
+	}, base)
+
+	rep := p.delays.reportWithStatic(24, base.Add(5*time.Minute), static)
+	sum := rep.ObjAt("summary")
+	if sum.Num("observations") != 1 || sum.Num("avgDelayMins") != 6 || sum.Num("latePct") != 100 {
+		t.Fatalf("expected C-10 observation (+6 min) from merged sibling Sched, got %s", toJSON(sum))
+	}
+	buckets := sum.ObjAt("buckets")
+	if buckets.Num("late15") != 1 {
+		t.Fatalf("expected late15=1, got %s", toJSON(buckets))
+	}
+	byStop := rep.Arr("byStop")
+	if len(byStop) != 1 {
+		t.Fatalf("expected 1 stop in byStop, got %d", len(byStop))
+	}
+	st := byStop[0].(*Obj)
+	if jsString(st.Get("stopName")) != "Francesc Macià/Maria Cristina" || !truthy(st.Get("isBottleneck")) {
+		t.Fatalf("unexpected stop row: %s", toJSON(st))
+	}
+	if len(st.Arr("hourly")) != 24 {
+		t.Fatalf("expected 24 hourly heatmap cells, got %d", len(st.Arr("hourly")))
+	}
+	if len(rep.Arr("daily")) != 1 {
+		t.Fatalf("expected 1 day in daily trend, got %d", len(rep.Arr("daily")))
+	}
+}

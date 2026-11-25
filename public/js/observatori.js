@@ -1133,8 +1133,14 @@ class ObservatoriApp {
       if (!m || document.body.dataset.dadesScope !== 'est') return;
       this.moventisData = m;
       this.renderMovHealth(m);
-      const container = document.getElementById('journalism-content-container');
-      if (container && this.currentTab === 'journalism') this.renderMoventisScope(container, m);
+      if (this.currentTab === 'journalism') {
+        if (this.currentReport) {
+          this.renderJournalismReport(this.currentReport);
+        } else {
+          const container = document.getElementById('journalism-content-container');
+          if (container) this.renderMoventisScope(container, m);
+        }
+      }
     }, 60000);
     document.addEventListener('arribo:scope', () => this.onScopeChange());
 
@@ -1724,43 +1730,206 @@ class ObservatoriApp {
     grid.innerHTML = `<p class="dh-summary dh-${tone}"><span class="dh-dot" aria-hidden="true"></span>${this.esc(summary)}</p><div class="dh-list${items.length % 3 === 0 ? ' dh-cols-3' : ''}">${items.map(i => i.html).join('')}</div>`;
   }
 
-  // The Moventis scope's content: estimated punctuality (live predictions
-  // matched against the Generalitat / moventis.es timetable) and the lines
-  // followed with their routes and buses estimated now.
-  renderMoventisScope(container, m) {
+  // Moventis figures (/api/moventis?hours=H) shaped like Mataró's & Rodalies's
+  // report so /dades?xarxa=moventis renders the same full dashboard: KPIs,
+  // hourly bar chart, top peak congestion hours, sortable line ranking,
+  // bottleneck/all-stops table and 24-hour stop heatmap.
+  moventisReportFor(m) {
+    const delays = m?.delays || {};
+    const sum = delays.summary || {};
+    const onMax = Number(sum.onTimeMaxMins) || 3;
+    const lineMeta = new Map((m?.lines || []).map(l => [l.code, l]));
+    const byHourRaw = new Map((delays.byHour || []).map(h => [Number(h.hour), h]));
+    const hourlyDelays = Array.from({ length: 24 }, (_, hr) => {
+      const hh = String(hr).padStart(2, '0');
+      const next = String((hr + 1) % 24).padStart(2, '0');
+      const r = byHourRaw.get(hr);
+      return {
+        hour: hh,
+        timeWindow: r?.timeWindow || `${hh}:00 - ${next}:00`,
+        visitCount: r ? (Number(r.observations) || 0) : 0,
+        sampleCount: r ? (Number(r.observations) || 0) : 0,
+        avgDelay: r ? Number(r.avgDelayMins) : null,
+        maxDelay: r && r.maxDelayMins !== undefined ? Number(r.maxDelayMins) : null,
+        onTimePercentage: r && r.onTimePct !== undefined ? Number(r.onTimePct) : null,
+        earlyPercentage: r && r.earlyPct !== undefined ? Number(r.earlyPct) : null,
+        latePercentage: r && r.latePct !== undefined ? Number(r.latePct) : null,
+        severeLatePercentage: r && r.severeLatePct !== undefined ? Number(r.severeLatePct) : null
+      };
+    });
+
+    const stops = (delays.byStop || []).map(s => ({
+      stopId: String(s.stopId || ''),
+      stopName: s.stopName || `Parada ${s.stopId}`,
+      lineCode: s.lineCode,
+      agency: 'Moventis',
+      agencyId: 'moventis',
+      arrivalCount: Number(s.observations) || 0,
+      visitCount: Number(s.observations) || 0,
+      sampleCount: Number(s.observations) || 0,
+      avgDelay: Number(s.avgDelayMins) || 0,
+      maxDelay: Number(s.maxDelayMins) || 0,
+      onTimePct: s.onTimePct !== undefined ? Number(s.onTimePct) : null,
+      severeLatePct: Number(s.severeLatePct) || 0,
+      isBottleneck: Boolean(s.isBottleneck),
+      criticalHour: s.criticalHour || '--',
+      criticalHourAvgDelay: Number(s.criticalHourAvgDelay) || 0,
+      hourly: Array.isArray(s.hourly) ? s.hourly : null
+    }));
+
+    const totalHourly = hourlyDelays.reduce((n, h) => n + (h.visitCount || 0), 0);
+    const minVisits = Math.max(5, totalHourly * 0.02);
+    const peakHours = hourlyDelays
+      .filter(h => h.visitCount >= minVisits && h.avgDelay !== null && h.avgDelay !== undefined)
+      .sort((a, b) => b.avgDelay - a.avgDelay)
+      .slice(0, 3)
+      .map(h => ({
+        ...h,
+        sampleCount: h.visitCount,
+        latePercentage: h.latePercentage ?? 0,
+        severeFrom: onMax,
+        worstStopsDuringHour: stops
+          .map(x => ({ x, c: (x.hourly || [])[Number(h.hour)] }))
+          .filter(e => e.c && e.c.sampleCount >= 1 && e.c.avgDelay !== null && e.c.avgDelay > 0)
+          .sort((a, b) => b.c.avgDelay - a.c.avgDelay)
+          .slice(0, 3)
+          .map(e => ({ stopName: e.x.stopName, lineCode: e.x.lineCode, agencyId: 'moventis', avgDelay: e.c.avgDelay, arrivalCount: e.c.sampleCount }))
+      }));
+
+    const rankingMostDelayed = (delays.byLine || []).map(l => ({
+      lineCode: l.lineCode,
+      name: l.lineName || lineMeta.get(l.lineCode)?.name || 'Moventis',
+      agency: 'Moventis',
+      agencyId: 'moventis',
+      visitCount: Number(l.observations) || 0,
+      sampleCount: Number(l.observations) || 0,
+      avgDelay: Number(l.avgDelayMins) || 0,
+      maxDelay: Number(l.maxDelayMins) || 0,
+      onTimePercentage: Number(l.onTimePct) || 0,
+      earlyPercentage: Number(l.earlyPct) || 0,
+      latePercentage: Number(l.latePct) || 0
+    }));
+
+    const movOp = {
+      agencyId: 'moventis',
+      agency: 'Moventis',
+      shortName: 'Moventis',
+      mode: 'bus',
+      tier: 'predicted',
+      method: 'stop_predictions',
+      onTimeMaxMins: onMax,
+      hourlyDelays
+    };
+
+    const obsCount = Number(sum.observations) || 0;
+    const linesCount = Number(sum.linesCount) || rankingMostDelayed.length;
+    return {
+      isRail: true,
+      isMoventis: true,
+      railOp: movOp,
+      summary: {
+        totalRecordedArrivals: obsCount,
+        totalStopVisits: obsCount,
+        monitoredLinesCount: linesCount,
+        hoursAnalyzed: sum.hours || this.currentHours || 24,
+        networkPunctualityPct: sum.onTimePct,
+        earlyPct: sum.earlyPct ?? 0,
+        latePct: sum.latePct ?? 0,
+        networkAvgDelay: sum.avgDelayMins,
+        networkMaxDelay: sum.maxDelayMins
+      },
+      hourlyDelays: [],
+      peakHours,
+      rankingMostDelayed,
+      allStopDelays: stops,
+      rankingWorstStops: stops.filter(x => x.isBottleneck),
+      agencyStats: [{
+        agency: 'Moventis',
+        agencyId: 'moventis',
+        mode: 'bus',
+        totalVisits: obsCount,
+        totalSamples: obsCount,
+        linesCount,
+        avgDelay: sum.avgDelayMins,
+        maxDelay: sum.maxDelayMins,
+        onTimePct: sum.onTimePct,
+        earlyPct: sum.earlyPct ?? 0,
+        latePct: sum.latePct ?? 0,
+        onTimeMaxMins: onMax,
+        tier: 'predicted'
+      }]
+    };
+  }
+
+  // Delay distribution bucket bar + 7-day daily punctuality trend + live
+  // followed lines table, appended below the core report for Moventis.
+  renderMoventisExtras(m) {
+    const delays = m?.delays || {};
+    const sum = delays.summary || {};
+    const onMax = Number(sum.onTimeMaxMins) || 3;
+    const b = sum.buckets || {};
+    const parts = [
+      ['early', Number(b.early) || 0, this.t('ops.bucketEarly')],
+      ['ontime', Number(b.onTime) || 0, this.t('ops.bucketOnTime', { max: onMax })],
+      ['late', Number(b.late15) || 0, this.t('ops.bucketLate15', { from: onMax + 1 })],
+      ['late30', Number(b.late30) || 0, this.t('ops.bucketLate30')],
+      ['late60', Number(b.late60) || 0, this.t('ops.bucketLate60')],
+      ['severe', Number(b.lateOver60) || 0, this.t('ops.bucketSevere')]
+    ];
+    const bucketTotal = parts.reduce((n, p) => n + p[1], 0);
+    let bucketHtml = '';
+    if (bucketTotal > 0) {
+      let x = 0;
+      const rects = parts.filter(p => p[1] > 0).map(([cls, n, label]) => {
+        const w = (n / bucketTotal) * 100;
+        const r = `<rect class="op-seg op-seg-${cls}" x="${x.toFixed(3)}%" y="0" width="${w.toFixed(3)}%" height="100%"><title>${this.esc(label)}: ${n}</title></rect>`;
+        x += w;
+        return r;
+      }).join('');
+      const pctSuffix = this.lang() === 'en' ? '%' : ' %';
+      const legend = parts.map(([cls, n, label]) => `<li><span class="op-dot op-seg-${cls}" aria-hidden="true"></span>${this.esc(label)} <strong>${Math.round((n / bucketTotal) * 100)}${pctSuffix}</strong></li>`).join('');
+      bucketHtml = `<svg class="op-bar" role="img" aria-label="${this.esc(this.t('ops.distAria'))}" preserveAspectRatio="none" viewBox="0 0 100 10">${rects}</svg><ul class="op-legend">${legend}</ul>`;
+    }
+
+    const daily = Array.isArray(delays.daily) ? delays.daily : [];
+    let dailyHtml = '';
+    if (daily.length > 0) {
+      const todayIso = new Date().toISOString().slice(0, 10);
+      const fmtDay = iso => new Date(`${iso}T12:00:00Z`).toLocaleDateString(this.locale(), { day: 'numeric', month: 'short', timeZone: 'UTC' });
+      const cols = daily.map(r => {
+        const pct = Number(r.onTimePct) || 0;
+        const tone = pct >= 85 ? 'good' : pct >= 65 ? 'mid' : 'bad';
+        const dt = new Date(`${r.date}T12:00:00Z`);
+        const lbl = r.date === todayIso ? this.t('ops.trendToday') : `${dt.getUTCDate()}/${dt.getUTCMonth() + 1}`;
+        const avgStr = `${Number(r.avgDelayMins) > 0 ? '+' : ''}${this.dec(Number(r.avgDelayMins || 0).toFixed(1))} min`;
+        const tip = this.t('ops.trendTooltip', { day: fmtDay(r.date), pct: `${this.dec(pct.toFixed(1))}%`, avg: avgStr, visits: r.observations });
+        return `<div class="hourly-bar-col" title="${this.esc(tip)}"><div class="hourly-bar-track"><span class="hourly-bar-val">${Math.round(pct)}%</span><div class="hourly-bar-fill op-fill-${tone}" data-bar-h="${Math.round(Math.max(6, pct))}"></div></div><span class="hourly-bar-label">${this.esc(lbl)}</span></div>`;
+      }).join('');
+      const trendTitle = this.t('dades.movDailyTitle', { max: onMax });
+      dailyHtml = `<div class="op-trend-block"><div class="hourly-chart-header"><h5 class="hourly-chart-title">${this.esc(trendTitle)}</h5></div><div class="hourly-chart-container op-chart is-trend" role="img" aria-label="${this.esc(trendTitle)}">${cols}</div></div>`;
+    }
+
+    const distCard = (bucketHtml || dailyHtml) ? `
+      <div class="observatori-table-container dades-mov-section">
+        <div class="observatori-table-header-row"><h4 class="observatori-table-title"><span>${this.esc(this.t('dades.movDistTitle'))}</span></h4></div>
+        <div class="dades-mov-dist-body">${bucketHtml}${dailyHtml}</div>
+      </div>` : '';
+
+    return distCard + this.renderMoventisLinesTableHtml(m);
+  }
+
+  renderMoventisLinesTableHtml(m) {
     const lines = m?.lines || [];
     const counts = new Map();
     for (const v of m?.vehicles || []) counts.set(v.lineCode, (counts.get(v.lineCode) || 0) + 1);
-    const delays = m?.delays || null;
-    const sum = delays?.summary || null;
     const byLine = new Map();
-    for (const r of delays?.byLine || []) byLine.set(r.lineCode, r);
+    for (const r of m?.delays?.byLine || []) byLine.set(r.lineCode, r);
     const fmtSignedMin = v => {
       if (v === null || v === undefined || !Number.isFinite(Number(v))) return '—';
       const n = Number(v);
-      const sign = n > 0 ? '+' : '';
-      return `${sign}${this.dec(n.toFixed(1))} min`;
+      return `${n > 0 ? '+' : ''}${this.dec(n.toFixed(1))} min`;
     };
     const fmtPct = v => (v === null || v === undefined || !Number.isFinite(Number(v)) ? '—' : `${this.dec(Number(v).toFixed(1))}%`);
-    const kpiHtml = sum && sum.observations > 0 ? `
-      <div class="monthly-kpi-grid">
-        <div class="monthly-kpi-card">
-          <div class="kpi-val">${this.esc(String(sum.observations))}</div>
-          <div class="kpi-lbl">${this.esc(this.t('dades.movKpiObs', { h: sum.hours || this.currentHours || 24 }))}</div>
-        </div>
-        <div class="monthly-kpi-card">
-          <div class="kpi-val">${this.esc(fmtPct(sum.onTimePct))}</div>
-          <div class="kpi-lbl">${this.esc(this.t('dades.movKpiOnTime'))}</div>
-        </div>
-        <div class="monthly-kpi-card">
-          <div class="kpi-val">${this.esc(fmtSignedMin(sum.avgDelayMins))}</div>
-          <div class="kpi-lbl">${this.esc(this.t('dades.movKpiAvgDelay'))}</div>
-        </div>
-        <div class="monthly-kpi-card">
-          <div class="kpi-val">${this.esc(fmtSignedMin(sum.maxDelayMins))}</div>
-          <div class="kpi-lbl">${this.esc(this.t('dades.movKpiMaxDelay'))}</div>
-        </div>
-      </div>` : `<p class="dades-mov-muted">${this.esc(this.t('dades.movDelayWarming'))}</p>`;
     const rows = lines.map(l => {
       const routes = l.routes || [];
       const n = counts.get(l.code) || 0;
@@ -1773,15 +1942,21 @@ class ObservatoriApp {
         <td>${dl ? this.esc(`${fmtPct(dl.onTimePct)} (${dl.observations})`) : '—'}</td>
         <td>${l.lineRef && routes.length ? `<a class="btn-secondary dades-mov-open" href="/#l${this.esc(l.lineRef)}">${this.esc(this.t('dades.movOpen'))}</a>` : ''}</td></tr>`;
     }).join('');
-    container.innerHTML = `
-      <p class="dades-rail-scope-note">${this.esc(this.t('dades.movScopeNote'))}</p>
-      ${kpiHtml}
-      <div class="observatori-table-container">
+    return `
+      <div class="observatori-table-container dades-mov-section">
         <div class="observatori-table-header-row"><h4 class="observatori-table-title"><span>${this.esc(this.t('dades.movLinesTitle'))}</span></h4></div>
         ${lines.length ? `<div class="observatori-table-wrapper"><table class="observatori-table"><thead><tr>
           <th class="sticky-col">${this.esc(this.t('dades.colLine'))}</th><th>${this.esc(this.t('dades.movColRoutes'))}</th><th>${this.esc(this.t('dades.movColStops'))}</th><th>${this.esc(this.t('dades.movColBuses'))}</th><th>${this.esc(this.t('dades.movColAvgDelay'))}</th><th>${this.esc(this.t('dades.movColOnTime'))}</th><th></th>
         </tr></thead><tbody>${rows}</tbody></table></div>` : `<p class="dades-mov-muted">${this.esc(this.t('dades.movNoLines'))}</p>`}
       </div>`;
+  }
+
+  // Fallback warming view while Moventis has 0 delay observations in the period.
+  renderMoventisScope(container, m) {
+    container.innerHTML = `
+      <p class="dades-rail-scope-note">${this.esc(this.t('dades.movScopeNote'))}</p>
+      <p class="dades-mov-muted">${this.esc(this.t('dades.movDelayWarming'))}</p>
+      ${this.renderMoventisLinesTableHtml(m)}`;
   }
 
   // The data-status panel for a train operator, from its live feed: the
@@ -1841,14 +2016,16 @@ class ObservatoriApp {
     if (!container) return;
 
     if (!report.isRail && document.body.dataset.dadesScope === 'est') {
-      // Moventis: no delays (its predictions come without a timetable), so
-      // its own view: the scraper's state, the lines followed, and why.
       this.currentReport = report;
       this.updateScopeHeader({ agency: 'Moventis', tier: 'predicted', method: 'stop_predictions' });
       this.renderMovHealth(this.moventisData);
-      this.renderMoventisScope(container, this.moventisData);
       this._railHealthShown = true;
-      return;
+      if (this.moventisData?.delays?.summary?.observations > 0) {
+        report = this.moventisReportFor(this.moventisData);
+      } else {
+        this.renderMoventisScope(container, this.moventisData);
+        return;
+      }
     }
     if (!report.isRail) {
       this.currentReport = report;
@@ -1972,7 +2149,7 @@ class ObservatoriApp {
       : '';
 
     let html = `
-      ${report.isRail ? `<p class="dades-rail-scope-note">${this.esc(this.t('dades.railScopeNote', { op: report.railOp.shortName || report.railOp.agency }))}</p>` : ''}
+      ${report.isMoventis ? `<p class="dades-rail-scope-note">${this.esc(this.t('dades.movScopeNote'))}</p>` : (report.isRail ? `<p class="dades-rail-scope-note">${this.esc(this.t('dades.railScopeNote', { op: report.railOp.shortName || report.railOp.agency }))}</p>` : '')}
       <!-- Pre-generated Cache Banner -->
       ${report.meta?.generatedAt ? `
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; background:rgba(0,148,133,0.08); border:1px solid rgba(0,148,133,0.22); border-radius:10px; padding:0.6rem 0.95rem; margin-bottom:1.25rem; font-size:0.78rem;">
@@ -2549,6 +2726,9 @@ class ObservatoriApp {
       operators.innerHTML = html.slice(operatorsAt);
       html = html.slice(0, operatorsAt);
     }
+    if (report.isMoventis) {
+      html += this.renderMoventisExtras(this.moventisData);
+    }
     container.innerHTML = html;
     container.querySelectorAll('[data-bar-h]').forEach(el => { el.style.height = `${el.dataset.barH}%`; });
     this.initObservatoriTableScrolls();
@@ -2562,7 +2742,12 @@ class ObservatoriApp {
   getLineColor(code, agencyId = 'mataro') {
     const match = (this.availableLines || []).find(l => (l.agencyId || 'mataro') === (agencyId || 'mataro')
       && String(l.code || l.id).toUpperCase() === String(code).toUpperCase());
-    return match?.color || 'var(--brand-primary)';
+    if (match?.color) return match.color;
+    if (agencyId === 'moventis') {
+      const mov = (this.moventisData?.lines || []).find(l => String(l.code || '').toUpperCase() === String(code).toUpperCase());
+      if (mov?.color) return mov.color;
+    }
+    return 'var(--brand-primary)';
   }
 
   // Text ink for a line-colour chip. Luminance-aware, so pale lines (L5/L6/L7)

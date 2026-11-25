@@ -242,8 +242,22 @@ func (t *movDelayTracker) observe(lineID int, lineCode string, stopID int, etas 
 
 func round1(x float64) float64 { return math.Round(x*10) / 10 }
 
+const (
+	movDelayEarlySec      = -60 // < -1 min counts as early (same as Mataró/rail)
+	movDelaySevereSec     = 300 // > 5 min counts as severely late (bus standard)
+	movBottleneckAvgMins  = 3.0 // a stop is a bottleneck from this avg delay...
+	movBottleneckSevere   = 20  // ...or this share (%) of severely late visits
+	movMaxReportStops     = 100
+)
+
 // report builds the additive `delays` JSON object for /api/moventis?hours=H.
 func (t *movDelayTracker) report(hours float64, now time.Time) *Obj {
+	return t.reportWithStatic(hours, now, nil)
+}
+
+// reportWithStatic builds the full `delays` analytics payload for Dades,
+// resolving stop names and line names from static when available.
+func (t *movDelayTracker) reportWithStatic(hours float64, now time.Time, static *movStatic) *Obj {
 	if hours <= 0 {
 		hours = 24
 	}
@@ -251,11 +265,16 @@ func (t *movDelayTracker) report(hours float64, now time.Time) *Obj {
 		hours = 168
 	}
 	cutoff := now.Add(-time.Duration(hours * float64(time.Hour))).Unix()
+	dailyCutoff := now.Add(-movDelayRetention).Unix()
 
 	var obs []movDelayObs
+	var allWindowObs []movDelayObs
 	if t != nil {
 		t.mu.Lock()
 		for _, o := range t.byKey {
+			if o.ObservedAt >= dailyCutoff {
+				allWindowObs = append(allWindowObs, o)
+			}
 			if o.ObservedAt >= cutoff {
 				obs = append(obs, o)
 			}
@@ -263,44 +282,57 @@ func (t *movDelayTracker) report(hours float64, now time.Time) *Obj {
 		t.mu.Unlock()
 	}
 
-	type lineAgg struct {
-		code   string
+	stopNames := map[int]string{}
+	lineNames := map[string]string{}
+	if static != nil {
+		for _, l := range static.Lines {
+			if l.Code != "" && l.Name != "" {
+				lineNames[l.Code] = l.Name
+			}
+		}
+		for _, rs := range static.Routes {
+			for _, rt := range rs {
+				for _, st := range rt.Stops {
+					if st.ID > 0 && st.Name != "" {
+						stopNames[st.ID] = st.Name
+					}
+				}
+			}
+		}
+	}
+
+	type statCounts struct {
 		delays []int
+		early  int
 		onTime int
+		late   int
+		severe int
+		maxSec int
+		hasMax bool
 	}
-	byLine := map[string]*lineAgg{}
-	var allDelays []int
-	allOnTime := 0
-	hourSum := [24]int{}
-	hourCnt := [24]int{}
-
-	for _, o := range obs {
-		allDelays = append(allDelays, o.DelaySec)
-		if o.DelaySec <= movDelayOnTimeSec {
-			allOnTime++
+	addCount := func(sc *statCounts, d int) {
+		sc.delays = append(sc.delays, d)
+		if !sc.hasMax || d > sc.maxSec {
+			sc.maxSec = d
+			sc.hasMax = true
 		}
-		la := byLine[o.LineCode]
-		if la == nil {
-			la = &lineAgg{code: o.LineCode}
-			byLine[o.LineCode] = la
+		if d < movDelayEarlySec {
+			sc.early++
+		} else if d <= movDelayOnTimeSec {
+			sc.onTime++
+		} else {
+			sc.late++
 		}
-		la.delays = append(la.delays, o.DelaySec)
-		if o.DelaySec <= movDelayOnTimeSec {
-			la.onTime++
-		}
-		h := time.Unix(o.SchedUnix, 0).In(madrid).Hour()
-		if h >= 0 && h < 24 {
-			hourSum[h] += o.DelaySec
-			hourCnt[h]++
+		if d > movDelaySevereSec {
+			sc.severe++
 		}
 	}
-
-	calcStats := func(ds []int, onTime int) (avgMin, medMin, maxMin, onTimePct float64) {
-		n := len(ds)
+	calcCounts := func(sc *statCounts) (avgMin, medMin, maxMin, earlyPct, onTimePct, latePct, severePct float64) {
+		n := len(sc.delays)
 		if n == 0 {
-			return 0, 0, 0, 0
+			return 0, 0, 0, 0, 0, 0, 0
 		}
-		sorted := append([]int(nil), ds...)
+		sorted := append([]int(nil), sc.delays...)
 		sort.Ints(sorted)
 		sum := 0
 		for _, d := range sorted {
@@ -313,59 +345,272 @@ func (t *movDelayTracker) report(hours float64, now time.Time) *Obj {
 		}
 		medMin = round1(med / 60.0)
 		maxMin = round1(float64(sorted[n-1]) / 60.0)
-		onTimePct = round1(float64(onTime) * 100.0 / float64(n))
+		earlyPct = round1(float64(sc.early) * 100.0 / float64(n))
+		onTimePct = round1(float64(sc.onTime) * 100.0 / float64(n))
+		latePct = round1(float64(sc.late) * 100.0 / float64(n))
+		severePct = round1(float64(sc.severe) * 100.0 / float64(n))
 		return
 	}
 
-	avg, med, maxM, onPct := calcStats(allDelays, allOnTime)
+	type stopKey struct {
+		lineCode string
+		stopID   int
+	}
+	type stopAgg struct {
+		key    stopKey
+		counts statCounts
+		hourly [24]statCounts
+	}
+
+	var allCounts statCounts
+	var bEarly, bOnTime, bLate15, bLate30, bLate60, bLateOver60 int
+	byLine := map[string]*statCounts{}
+	var byHourCounts [24]statCounts
+	byStop := map[stopKey]*stopAgg{}
+
+	for _, o := range obs {
+		addCount(&allCounts, o.DelaySec)
+		switch {
+		case o.DelaySec < movDelayEarlySec:
+			bEarly++
+		case o.DelaySec <= movDelayOnTimeSec:
+			bOnTime++
+		case o.DelaySec <= 15*60:
+			bLate15++
+		case o.DelaySec <= 30*60:
+			bLate30++
+		case o.DelaySec <= 60*60:
+			bLate60++
+		default:
+			bLateOver60++
+		}
+
+		la := byLine[o.LineCode]
+		if la == nil {
+			la = &statCounts{}
+			byLine[o.LineCode] = la
+		}
+		addCount(la, o.DelaySec)
+
+		h := time.Unix(o.SchedUnix, 0).In(madrid).Hour()
+		if h >= 0 && h < 24 {
+			addCount(&byHourCounts[h], o.DelaySec)
+		}
+
+		sk := stopKey{lineCode: o.LineCode, stopID: o.StopID}
+		sa := byStop[sk]
+		if sa == nil {
+			sa = &stopAgg{key: sk}
+			byStop[sk] = sa
+		}
+		addCount(&sa.counts, o.DelaySec)
+		if h >= 0 && h < 24 {
+			addCount(&sa.hourly[h], o.DelaySec)
+		}
+	}
+
+	avg, med, maxM, earlyPct, onPct, latePct, severePct := calcCounts(&allCounts)
 	summary := O(
 		"hours", hours,
-		"observations", float64(len(allDelays)),
+		"observations", float64(len(allCounts.delays)),
+		"linesCount", float64(len(byLine)),
+		"earlyPct", earlyPct,
 		"onTimePct", onPct,
-		"latePct", round1(100.0-onPct),
+		"latePct", latePct,
+		"severeLatePct", severePct,
 		"avgDelayMins", avg,
 		"medianDelayMins", med,
 		"maxDelayMins", maxM,
 		"onTimeThresholdSec", float64(movDelayOnTimeSec),
+		"onTimeMaxMins", float64(movDelayOnTimeSec/60),
 		"tier", "predicted",
 		"source", "prediction_vs_timetable",
+		"buckets", O(
+			"early", float64(bEarly),
+			"onTime", float64(bOnTime),
+			"late15", float64(bLate15),
+			"late30", float64(bLate30),
+			"late60", float64(bLate60),
+			"lateOver60", float64(bLateOver60),
+		),
 	)
-	if len(allDelays) == 0 {
+	if len(allCounts.delays) == 0 {
+		summary.Set("earlyPct", nil)
 		summary.Set("onTimePct", nil)
 		summary.Set("latePct", nil)
+		summary.Set("severeLatePct", nil)
 		summary.Set("avgDelayMins", nil)
 		summary.Set("medianDelayMins", nil)
 		summary.Set("maxDelayMins", nil)
 	}
 
-	codes := make([]string, 0, len(byLine))
-	for c := range byLine {
-		codes = append(codes, c)
+	type lineRowTmp struct {
+		code string
+		avg  float64
+		obj  *Obj
 	}
-	sort.Strings(codes)
-	lineRows := make([]any, 0, len(codes))
-	for _, c := range codes {
-		la := byLine[c]
-		laAvg, laMed, laMax, laPct := calcStats(la.delays, la.onTime)
-		lineRows = append(lineRows, O(
-			"lineCode", la.code,
+	lineTmp := make([]lineRowTmp, 0, len(byLine))
+	for code, la := range byLine {
+		laAvg, laMed, laMax, laEarly, laOn, laLate, laSev := calcCounts(la)
+		o := O(
+			"lineCode", code,
+			"lineName", strOrNil(lineNames[code]),
 			"observations", float64(len(la.delays)),
-			"onTimePct", laPct,
+			"earlyPct", laEarly,
+			"onTimePct", laOn,
+			"latePct", laLate,
+			"severeLatePct", laSev,
 			"avgDelayMins", laAvg,
 			"medianDelayMins", laMed,
 			"maxDelayMins", laMax,
-		))
+		)
+		lineTmp = append(lineTmp, lineRowTmp{code: code, avg: laAvg, obj: o})
+	}
+	sort.Slice(lineTmp, func(i, j int) bool {
+		if lineTmp[i].avg != lineTmp[j].avg {
+			return lineTmp[i].avg > lineTmp[j].avg
+		}
+		return lineTmp[i].code < lineTmp[j].code
+	})
+	lineRows := make([]any, 0, len(lineTmp))
+	for _, lr := range lineTmp {
+		lineRows = append(lineRows, lr.obj)
 	}
 
 	byHour := make([]any, 0, 24)
 	for h := 0; h < 24; h++ {
-		if hourCnt[h] == 0 {
+		n := len(byHourCounts[h].delays)
+		if n == 0 {
 			continue
 		}
+		hAvg, _, hMax, hEarly, hOn, hLate, hSev := calcCounts(&byHourCounts[h])
+		hh := padStart(numToString(float64(h)), 2, "0")
+		next := padStart(numToString(float64((h+1)%24)), 2, "0")
 		byHour = append(byHour, O(
 			"hour", float64(h),
-			"observations", float64(hourCnt[h]),
-			"avgDelayMins", round1(float64(hourSum[h])/float64(hourCnt[h])/60.0),
+			"timeWindow", hh+":00 - "+next+":00",
+			"observations", float64(n),
+			"avgDelayMins", hAvg,
+			"maxDelayMins", hMax,
+			"earlyPct", hEarly,
+			"onTimePct", hOn,
+			"latePct", hLate,
+			"severeLatePct", hSev,
+		))
+	}
+
+	// Build per-stop delay breakdown & 24h heatmap cells.
+	minStopObs := 2
+	multiObsStops := 0
+	for _, sa := range byStop {
+		if len(sa.counts.delays) >= 2 {
+			multiObsStops++
+		}
+	}
+	if multiObsStops < 3 {
+		minStopObs = 1
+	}
+	type stopRowTmp struct {
+		avg  float64
+		max  float64
+		code string
+		id   int
+		obj  *Obj
+	}
+	stopTmp := make([]stopRowTmp, 0, len(byStop))
+	for _, sa := range byStop {
+		n := len(sa.counts.delays)
+		if n < minStopObs {
+			continue
+		}
+		sAvg, _, sMax, _, sOn, _, sSev := calcCounts(&sa.counts)
+		name := stopNames[sa.key.stopID]
+		if name == "" {
+			name = "Parada " + strconv.Itoa(sa.key.stopID)
+		}
+		hourly := make([]any, 0, 24)
+		critHour := "--"
+		critAvg := 0.0
+		for hr := 0; hr < 24; hr++ {
+			hh := padStart(numToString(float64(hr)), 2, "0")
+			cell := O("hour", hh, "sampleCount", 0.0, "avgDelay", nil, "maxDelay", nil, "severeLatePct", nil)
+			hn := len(sa.hourly[hr].delays)
+			if hn > 0 {
+				cAvg, _, cMax, _, _, _, cSev := calcCounts(&sa.hourly[hr])
+				cell.Set("sampleCount", float64(hn))
+				cell.Set("avgDelay", cAvg)
+				cell.Set("maxDelay", cMax)
+				cell.Set("severeLatePct", cSev)
+				if cAvg > critAvg {
+					critAvg = cAvg
+					next := padStart(numToString(float64((hr+1)%24)), 2, "0")
+					critHour = hh + ":00 - " + next + ":00"
+				}
+			}
+			hourly = append(hourly, cell)
+		}
+		o := O(
+			"stopId", strconv.Itoa(sa.key.stopID),
+			"stopName", name,
+			"lineCode", sa.key.lineCode,
+			"observations", float64(n),
+			"avgDelayMins", sAvg,
+			"maxDelayMins", sMax,
+			"onTimePct", sOn,
+			"severeLatePct", sSev,
+			"isBottleneck", sAvg >= movBottleneckAvgMins || sSev >= movBottleneckSevere,
+			"criticalHour", critHour,
+			"criticalHourAvgDelay", critAvg,
+			"hourly", hourly,
+		)
+		stopTmp = append(stopTmp, stopRowTmp{avg: sAvg, max: sMax, code: sa.key.lineCode, id: sa.key.stopID, obj: o})
+	}
+	sort.Slice(stopTmp, func(i, j int) bool {
+		if stopTmp[i].avg != stopTmp[j].avg {
+			return stopTmp[i].avg > stopTmp[j].avg
+		}
+		if stopTmp[i].max != stopTmp[j].max {
+			return stopTmp[i].max > stopTmp[j].max
+		}
+		if stopTmp[i].code != stopTmp[j].code {
+			return stopTmp[i].code < stopTmp[j].code
+		}
+		return stopTmp[i].id < stopTmp[j].id
+	})
+	if len(stopTmp) > movMaxReportStops {
+		stopTmp = stopTmp[:movMaxReportStops]
+	}
+	stopRows := make([]any, 0, len(stopTmp))
+	for _, sr := range stopTmp {
+		stopRows = append(stopRows, sr.obj)
+	}
+
+	// Build 7-day rolling daily punctuality trend from all retained observations.
+	byDay := map[string]*statCounts{}
+	for _, o := range allWindowObs {
+		dayKey := time.Unix(o.SchedUnix, 0).In(madrid).Format("2006-01-02")
+		dc := byDay[dayKey]
+		if dc == nil {
+			dc = &statCounts{}
+			byDay[dayKey] = dc
+		}
+		addCount(dc, o.DelaySec)
+	}
+	dayKeys := make([]string, 0, len(byDay))
+	for d := range byDay {
+		dayKeys = append(dayKeys, d)
+	}
+	sort.Strings(dayKeys)
+	dailyRows := make([]any, 0, len(dayKeys))
+	for _, d := range dayKeys {
+		dc := byDay[d]
+		dAvg, _, dMax, _, dOn, _, _ := calcCounts(dc)
+		dailyRows = append(dailyRows, O(
+			"date", d,
+			"observations", float64(len(dc.delays)),
+			"onTimePct", dOn,
+			"avgDelayMins", dAvg,
+			"maxDelayMins", dMax,
 		))
 	}
 
@@ -373,5 +618,7 @@ func (t *movDelayTracker) report(hours float64, now time.Time) *Obj {
 		"summary", summary,
 		"byLine", lineRows,
 		"byHour", byHour,
+		"byStop", stopRows,
+		"daily", dailyRows,
 	)
 }

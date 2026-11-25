@@ -268,7 +268,11 @@ func (s *Server) hMoventis(q *xreq, res *xres) error {
 	hours := clampHours(qv(q, "hours"), 24, 168)
 	var delaysObj any
 	if p.delays != nil {
-		delaysObj = p.delays.report(hours, now)
+		var st *movStatic
+		if snap != nil {
+			st = snap.Static
+		}
+		delaysObj = p.delays.reportWithStatic(hours, now, st)
 	}
 	res.json(O("success", true, "enabled", true, "agencyId", movAgencyID, "mode", "bus",
 		"attribution", movAttributionText(),

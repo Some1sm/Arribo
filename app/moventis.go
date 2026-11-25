@@ -1390,6 +1390,15 @@ func (p *movPoller) record(s *movStatic, stopID int, etas []movStopETA, at time.
 			delete(p.preds, k)
 		}
 	}
+	// Collect scheduled HH:MM departures per line from both this stop's
+	// response (where real:"N" entries live under a full-route Dest label
+	// separate from the real:"S" entry's short Dest) and the 24h schedule cache.
+	schedByLine := map[int][]string{}
+	for _, e := range etas {
+		if followed[e.LineID] && len(e.Sched) > 0 {
+			schedByLine[e.LineID] = append(schedByLine[e.LineID], e.Sched...)
+		}
+	}
 	ob := movStopObs{At: at, Lines: map[int]movLineObs{}}
 	for _, e := range etas {
 		if !followed[e.LineID] {
@@ -1415,7 +1424,18 @@ func (p *movPoller) record(s *movStatic, stopID int, etas []movStopETA, at time.
 			if s != nil {
 				code = s.Lines[e.LineID].Code
 			}
-			p.delays.observe(e.LineID, code, stopID, e.EtaSec, e.Sched, at, gencatData())
+			lineSched := schedByLine[e.LineID]
+			if p.sched != nil {
+				if cached := p.sched.lookup(e.LineID, stopID, at); len(cached) > 0 {
+					merged := make([]string, 0, len(lineSched)+8)
+					merged = append(merged, lineSched...)
+					for _, list := range cached {
+						merged = append(merged, list...)
+					}
+					lineSched = merged
+				}
+			}
+			p.delays.observe(e.LineID, code, stopID, e.EtaSec, lineSched, at, gencatData())
 		}
 	}
 	if p.obs == nil {
