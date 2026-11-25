@@ -161,6 +161,41 @@ func movSchedTime(hhmm string, now time.Time) (time.Time, bool) {
 	return cand, true
 }
 
+// movEstimateDelay compares a live Moventis predicted arrival (expected)
+// against the official Generalitat GTFS schedule (gencatData) or the rolling
+// 24h schedule cache (p.sched) to compute scheduledTime, delayMins, status,
+// and badge text instead of showing "Sense dada de retard".
+func movEstimateDelay(p *movPoller, lineID, stopID int, expected, now time.Time) (schedTime, aimedIso, delayMins any, delayStatus, badgeText, delaySource string) {
+	delayStatus = "unknown"
+	badgeText = "Previsió de Moventis"
+	delaySource = "operator_prediction"
+
+	var matched time.Time
+	var ok bool
+	if gc := gencatData(); gc != nil {
+		matched, ok = gc.nearestDeparture(lineID, stopID, expected, movDelayMaxEarly, movDelayMaxLate)
+	}
+	if !ok && p != nil && p.sched != nil {
+		if byDest := p.sched.lookup(lineID, stopID, now); len(byDest) > 0 {
+			var all []string
+			for _, list := range byDest {
+				all = append(all, list...)
+			}
+			matched, ok = matchMovSched(all, expected, movDelayMaxEarly, movDelayMaxLate)
+		}
+	}
+	if !ok {
+		return
+	}
+	dMin := math.Round(expected.Sub(matched).Minutes())
+	schedTime = matched.In(madrid).Format("15:04")
+	aimedIso = isoString(matched.UnixMilli())
+	delayMins = dMin
+	delayStatus, badgeText = railDelayLabel(dMin, false)
+	delaySource = "timetable"
+	return
+}
+
 // movStopDepartures is the line view's departures at a stop of a Moventis
 // line: live on-demand predictions + scheduled departures (30 s TTL cache),
 // falling back to the background poller's last snapshot.
@@ -215,20 +250,22 @@ func movStopDepartures(ctx context.Context, stop rtLineStop, code string, now ti
 						at := now.Add(time.Duration(left) * time.Second)
 						rtTimes = append(rtTimes, at)
 						note = ""
+						sTime, aIso, dMins, dStatus, dBadge, dSource := movEstimateDelay(p, id, stopNum, at, now)
 						deps = append(deps, O(
 							"tripId", nil,
 							"vehicleId", nil,
 							"destination", destTitle,
 							"direction", dirStr,
 							"departureTime", at.In(madrid).Format("15:04"),
-							"scheduledTime", nil,
+							"scheduledTime", sTime,
+							"aimedIso", aIso,
 							"expectedIso", isoString(at.UnixMilli()),
 							"minutesAway", math.Floor(left/60),
-							"delayMins", nil,
-							"delayMinutes", nil,
-							"delayStatus", "unknown",
-							"delayBadgeText", "Previsió de Moventis",
-							"delaySource", "operator_prediction",
+							"delayMins", dMins,
+							"delayMinutes", dMins,
+							"delayStatus", dStatus,
+							"delayBadgeText", dBadge,
+							"delaySource", dSource,
 							"isRealTime", true,
 							"isEstimated", false,
 							"isTheoretical", false,
@@ -301,20 +338,22 @@ func movStopDepartures(ctx context.Context, stop rtLineStop, code string, now ti
 							}
 							left = math.Max(left, 0)
 							at := now.Add(time.Duration(left) * time.Second)
+							sTime, aIso, dMins, dStatus, dBadge, dSource := movEstimateDelay(p, id, st.ID, at, now)
 							deps = append(deps, O(
 								"tripId", nil,
 								"vehicleId", nil,
 								"destination", strOrNil(movTitle(rt.Dest)),
 								"direction", numToString(float64(movDirectionOf(routes, rt.Trayecto))),
 								"departureTime", at.In(madrid).Format("15:04"),
-								"scheduledTime", nil,
+								"scheduledTime", sTime,
+								"aimedIso", aIso,
 								"expectedIso", isoString(at.UnixMilli()),
 								"minutesAway", math.Floor(left/60),
-								"delayMins", nil,
-								"delayMinutes", nil,
-								"delayStatus", "unknown",
-								"delayBadgeText", "Previsió de Moventis",
-								"delaySource", "operator_prediction",
+								"delayMins", dMins,
+								"delayMinutes", dMins,
+								"delayStatus", dStatus,
+								"delayBadgeText", dBadge,
+								"delaySource", dSource,
 								"isRealTime", true,
 								"isEstimated", false,
 								"isTheoretical", false,
