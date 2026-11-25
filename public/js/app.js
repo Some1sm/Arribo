@@ -5483,11 +5483,12 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
 
     dropdown.innerHTML = itemsToRender.map(r => {
       const color = (typeof r.lineColor === 'string' && r.lineColor.trim()) ? r.lineColor : 'var(--c10-primary)';
+      const ink = window.TransitUtils?.contrastInk?.(color) || '#ffffff';
       if (r.isLine) {
         return `
           <div class="search-result-item line-item" data-type="line" data-line-id="${this.esc(r.lineId)}" style="border-left:3px solid ${this.esc(color)};">
             <div class="search-result-left">
-              <span class="search-result-badge" style="background:${this.esc(color)};">${this.esc(r.lineCode)}</span>
+              <span class="search-result-badge" style="background:${this.esc(color)};color:${this.esc(ink)};">${this.esc(r.lineCode)}</span>
               <div class="search-result-info">
                 <div class="search-result-name">${this.esc(r.lineName)}</div>
                 <div class="search-result-zone">${this.esc(r.zone || r.agency || t('app.searchLineFallback'))}</div>
@@ -5500,7 +5501,7 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
       return `
         <div class="search-result-item stop-item" data-type="stop" data-line-id="${this.esc(r.lineId)}" data-stop-id="${this.esc(r.stopId)}" data-name="${this.esc(r.stopName || '')}" data-lat="${this.esc(r.lat || '')}" data-lon="${this.esc(r.lon || '')}">
           <div class="search-result-left">
-            <span class="search-result-badge" style="background:${this.esc(color)};">${this.esc(r.lineCode)}</span>
+            <span class="search-result-badge" style="background:${this.esc(color)};color:${this.esc(ink)};">${this.esc(r.lineCode)}</span>
             <div class="search-result-info">
               <div class="search-result-name">${this.esc(r.stopName)}</div>
               <div class="search-result-zone">${this.esc(r.zone)}${r.code && !r.isTrain ? ` • ${this.esc(t('app.searchCode', { code: r.code }))}` : ''}</div>
