@@ -6011,11 +6011,13 @@ body {
   gap: 0.3rem;
   font-size: 0.72rem;
   font-weight: 700;
-  color: #38bdf8;
-  background: rgba(14, 165, 233, 0.15);
-  border: 1px solid rgba(14, 165, 233, 0.3);
-  padding: 0.2rem 0.55rem;
-  border-radius: 999px;
+  color: var(--chip-tonal-fg);
+  background: var(--chip-tonal-bg);
+  border: 1px solid var(--border-strong);
+  padding: 0.2rem 0.58rem;
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .btn-nearby-change-zone {
