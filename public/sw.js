@@ -1,7 +1,7 @@
 // Arribo shell versions stay isolated until the user accepts an update.
-const CACHE_NAME = 'arribo-mataro-cache-v125';
+const CACHE_NAME = 'arribo-mataro-cache-v126';
 const DATA_CACHE = `${CACHE_NAME}-data`;
-const VERSION = '9.4.127';
+const VERSION = '9.4.128';
 const STATIC_SHELL_ASSETS = ['/', '/index.html', '/plan', '/plan.html', '/dades', '/dades.html', '/observatori', '/fonts', '/fonts.html', '/manifest.webmanifest',
   `/css/style.css?v=${VERSION}`, ...['utils', 'i18n', 'storage', 'requests', 'stopFeatures', 'journeys', 'journeyControls', 'pwa', 'app', 'plan', 'map', 'networkMap', 'observatori', 'operators', 'sources'].map(name => `/js/${name}.js?v=${VERSION}`)];
 

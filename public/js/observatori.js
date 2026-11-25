@@ -1553,11 +1553,21 @@ class ObservatoriApp {
     }
   }
 
-  // The train operators to list beside Mataró: only with the network scope
-  // "Tot" (operators.js sets body[data-dades-scope]) and with visits.
+  // The other operators to list beside Mataró: only with the network scope
+  // "Tot" (operators.js sets body[data-dades-scope]) and with observations.
   networkOpsInScope() {
     if (document.body.dataset.dadesScope !== 'all') return [];
-    return (this.networkReport?.operators || []).filter(o => (o.agencyStats?.totalVisits || 0) > 0);
+    const ops = (this.networkReport?.operators || []).filter(o => (o.agencyStats?.totalVisits || 0) > 0);
+    if (this.moventisData?.delays?.summary?.observations > 0) {
+      const movRep = this.moventisReportFor(this.moventisData);
+      ops.push({
+        ...movRep.railOp,
+        agencyStats: movRep.agencyStats[0],
+        rankingMostDelayed: movRep.rankingMostDelayed,
+        allStopDelays: movRep.allStopDelays
+      });
+    }
+    return ops;
   }
 
   // A train operator's delay by hour of the day, in the hourly chart's
@@ -1672,6 +1682,8 @@ class ObservatoriApp {
     name.textContent = op ? op.agency : 'Mataró Bus';
     if (chip) {
       chip.dataset.tier = tier;
+      chip.classList.remove('chip-live', 'chip-estimated', 'chip-scheduled');
+      chip.classList.add(tier === 'predicted' ? 'chip-estimated' : (tier === 'timetable' ? 'chip-scheduled' : 'chip-live'));
       chip.setAttribute('data-i18n', `tier.${tier}`);
       chip.textContent = this.t(`tier.${tier}`);
     }
@@ -2699,9 +2711,11 @@ class ObservatoriApp {
               ${agencies.map(a => {
                 const aAvg = Number(a.avgDelay) > 0 ? `+${a.avgDelay} min` : (Number(a.avgDelay) < 0 ? `${a.avgDelay} min` : '0.0 min');
                 const onTime = a.onTimePct !== undefined && a.onTimePct !== null ? Number(a.onTimePct) : null;
+                const tier = a.tier || 'measured';
+                const tierChipCls = tier === 'predicted' ? 'chip-estimated' : (tier === 'timetable' ? 'chip-scheduled' : 'chip-live');
                 return `
                 <tr>
-                  <td class="sticky-col" style="font-weight:700; color:var(--text-primary);">${this.esc(a.agency)} <span class="chip chip-plain chip-live op-inline-chip" data-tier="${this.esc(a.tier || 'measured')}">${this.esc(this.t(`tier.${a.tier || 'measured'}`))}</span>${netOps.length ? `<span class="dades-op-rule">${this.esc(this.t('dades.opRule', { n: a.onTimeMaxMins }))}</span>` : ''}</td>
+                  <td class="sticky-col" style="font-weight:700; color:var(--text-primary);">${this.esc(a.agency)} <span class="chip chip-plain ${tierChipCls} op-inline-chip" data-tier="${this.esc(tier)}">${this.esc(this.t(`tier.${tier}`))}</span>${netOps.length ? `<span class="dades-op-rule">${this.esc(this.t('dades.opRule', { n: a.onTimeMaxMins }))}</span>` : ''}</td>
                   <td class="observatori-col-desktop" style="color:var(--text-muted); text-align:center;">${a.linesCount || 0}</td>
                   <td class="observatori-col-desktop" style="color:var(--text-muted);">${(a.totalVisits || a.totalSamples || 0).toLocaleString(loc)}</td>
                   <td style="font-weight:700; color:${Number(a.avgDelay) > 0 ? 'var(--accent-danger)' : 'var(--accent-live)'}; white-space:nowrap;">${aAvg}</td>
