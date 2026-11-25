@@ -16,7 +16,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-  <link rel="stylesheet" href="/css/style.css?v=9.4.130">
+  <link rel="stylesheet" href="/css/style.css?v=9.4.131">
 </head>
 <body class="observatori-page-body observatori-page">
 
@@ -342,7 +342,7 @@
             <div class="gps-gaps-empty" id="gps-gaps-empty" hidden></div>
           </div>
           <div class="gps-gaps-legend">
-            <span><i class="gps-gaps-dot recurrent"></i><span data-i18n="dades.gpsLegendRecurrent">Punt recurrent (3+ pèrdues, 2+ busos)</span></span>
+            <span><i class="gps-gaps-dot recurrent"></i><span id="gps-gaps-legend-recurrent" data-i18n="dades.gpsLegendRecurrent">Punt recurrent (3+ pèrdues, 2+ busos)</span></span>
             <span><i class="gps-gaps-dot"></i><span data-i18n="dades.gpsLegendSingle">Pèrdua puntual</span></span>
             <span><i class="gps-gaps-line"></i><span data-i18n="dades.gpsLegendSegment">Tram sense senyal</span></span>
           </div>
@@ -353,8 +353,8 @@
         </div>
       </div>
       <div class="gps-bus-block" id="gps-gaps-buses-block" hidden>
-        <h4 class="gps-bus-title" data-i18n="dades.gpsBusesTitle">Quins busos el perden més</h4>
-        <p class="gps-bus-intro" data-i18n="dades.gpsBusesIntro">Cada bus comparat amb els altres que fan les mateixes línies, per cada 100 parades. Si un bus el perd molt més que els companys pels mateixos carrers, apunta a l'equip del bus; si el perd on els altres també el perden, és la cobertura.</p>
+        <h4 class="gps-bus-title" id="gps-gaps-buses-title" data-i18n="dades.gpsBusesTitle">Quins busos el perden més</h4>
+        <p class="gps-bus-intro" id="gps-gaps-buses-intro" data-i18n="dades.gpsBusesIntro">Cada bus comparat amb els altres que fan les mateixes línies, per cada 100 parades. Si un bus el perd molt més que els companys pels mateixos carrers, apunta a l'equip del bus; si el perd on els altres també el perden, és la cobertura.</p>
         <ol class="gps-bus-list" id="gps-gaps-buses" aria-label="Busos amb més pèrdues de senyal" data-i18n-aria-label="dades.gpsBusesAria"></ol>
         <p class="gps-bus-foot" id="gps-gaps-buses-foot"></p>
       </div>
@@ -381,12 +381,12 @@
   </footer>
 
   <!-- Scripts -->
-  <script src="/js/utils.js?v=9.4.130"></script>
-  <script src="/js/i18n.js?v=9.4.130"></script>
-  <script src="/js/storage.js?v=9.4.130"></script>
-  <script src="/js/pwa.js?v=9.4.130"></script>
+  <script src="/js/utils.js?v=9.4.131"></script>
+  <script src="/js/i18n.js?v=9.4.131"></script>
+  <script src="/js/storage.js?v=9.4.131"></script>
+  <script src="/js/pwa.js?v=9.4.131"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="/js/observatori.js?v=9.4.130"></script>
-  <script src="/js/operators.js?v=9.4.130"></script>
+  <script src="/js/observatori.js?v=9.4.131"></script>
+  <script src="/js/operators.js?v=9.4.131"></script>
 </body>
 </html>

@@ -497,9 +497,14 @@ class ObservatoriApp {
       : `<span class="line-chip">${this.esc(code)}</span>`;
   }
 
+  isGpsGapRailAgency(agency = this.gpsGapAgency) {
+    return agency === 'renfe_rodalies' || agency === 'fgc';
+  }
+
   syncGpsGapControls(data) {
     const agency = (data && data.agency) || this.gpsGapAgency || 'mataro';
     const mode = (data && data.signalMode) || this.gpsGapMode || 'gps';
+    const isRail = this.isGpsGapRailAgency(agency);
     const agencies = Array.isArray(data?.availableAgencies) ? data.availableAgencies : [];
     const locked = this.gpsGapScopeAgency();
 
@@ -523,10 +528,18 @@ class ObservatoriApp {
       });
     }
 
+    const title = document.getElementById('gps-gaps-title');
+    if (title) title.textContent = this.t(isRail ? 'dades.gpsTitleRail' : 'dades.gpsTitle');
     const subtitle = document.getElementById('gps-gaps-subtitle');
     if (subtitle) {
-      subtitle.textContent = this.t(supportsStop && mode === 'stop' ? 'dades.gpsStopSubtitle' : 'dades.gpsSubtitle');
+      subtitle.textContent = this.t(supportsStop && mode === 'stop' ? 'dades.gpsStopSubtitle' : (isRail ? 'dades.gpsSubtitleRail' : 'dades.gpsSubtitle'));
     }
+    const legRec = document.getElementById('gps-gaps-legend-recurrent');
+    if (legRec) legRec.textContent = this.t(isRail ? 'dades.gpsLegendRecurrentRail' : 'dades.gpsLegendRecurrent');
+    const busTitle = document.getElementById('gps-gaps-buses-title');
+    if (busTitle) busTitle.textContent = this.t(isRail ? 'dades.gpsTrainsTitle' : 'dades.gpsBusesTitle');
+    const busIntro = document.getElementById('gps-gaps-buses-intro');
+    if (busIntro) busIntro.textContent = this.t(isRail ? 'dades.gpsTrainsIntro' : 'dades.gpsBusesIntro');
 
     const hideWrap = document.getElementById('gps-gaps-hide');
     if (hideWrap) {
@@ -598,12 +611,13 @@ class ObservatoriApp {
 
   gpsGapDetailHtml(c) {
     const isMataro = (this.gpsGapAgency || 'mataro') === 'mataro';
+    const isRail = this.isGpsGapRailAgency();
     const isStopMode = this._gpsGapData?.signalMode === 'stop';
     const back = Math.round(L.latLng(c.lat, c.lon).distanceTo(L.latLng(c.regainedLat, c.regainedLon)));
     const last = new Date(c.lastTs).toLocaleString(this.locale(), { timeZone: 'Europe/Madrid', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
     const unitWord = isStopMode
       ? this.t(c.vehicles === 1 ? 'dades.gpsStopTripOne' : 'dades.gpsStopTripMany')
-      : this.t(c.vehicles === 1 ? 'dades.gpsBusOne' : 'dades.gpsBusMany');
+      : this.t(isRail ? (c.vehicles === 1 ? 'dades.gpsTrainOne' : 'dades.gpsTrainMany') : (c.vehicles === 1 ? 'dades.gpsBusOne' : 'dades.gpsBusMany'));
     return `<div class="gps-gaps-popup">
       <div class="gps-gaps-popup-head">
         <strong>${c.stopName ? this.esc(this.t('dades.gpsNearStop', { stop: c.stopName })) : this.esc(this.t('dades.gpsNoNearStop'))}</strong>
@@ -802,8 +816,9 @@ class ObservatoriApp {
     const buses = (data && data.buses) || [];
     block.hidden = !buses.length;
     if (!buses.length) return;
+    const isRail = this.isGpsGapRailAgency((data && data.agency) || this.gpsGapAgency);
     const tags = {
-      suspect: ['recurrent', this.t('dades.gpsBusTagSuspect')],
+      suspect: ['recurrent', this.t(isRail ? 'dades.gpsTrainTagSuspect' : 'dades.gpsBusTagSuspect')],
       watch: ['', this.t('dades.gpsBusTagWatch')],
       normal: ['calm', this.t('dades.gpsBusTagNormal')],
       few: ['calm', this.t('dades.gpsBusTagFew')]
@@ -814,7 +829,7 @@ class ObservatoriApp {
       const facts = [
         `<strong>${b.gaps}</strong> ${this.esc(lossWord)}${b.visits ? this.esc(this.t('dades.gpsBusInStops', { visits: b.visits, per100: this.dec(b.per100) })) : ''}`,
         b.ratio !== null ? this.t('dades.gpsBusRatio', { ratio: this.esc(this.dec(b.ratio)) }) : '',
-        this.esc(this.t('dades.gpsBusShared', { pct: b.sharedPct }))
+        this.esc(this.t(isRail ? 'dades.gpsTrainShared' : 'dades.gpsBusShared', { pct: b.sharedPct }))
       ].filter(Boolean).join(' · ');
       const on = this.gpsGapVehicle === b.vehicleId;
       const off = (data.hidden || []).includes(b.vehicleId);
@@ -826,7 +841,7 @@ class ObservatoriApp {
     }).join('');
     const fleet = (data && data.fleet) || {};
     if (foot) {
-      foot.textContent = this.t('dades.gpsBusFoot', { inService: fleet.inService || 0, withoutLoss: fleet.withoutLoss || 0 });
+      foot.textContent = this.t(isRail ? 'dades.gpsTrainFoot' : 'dades.gpsBusFoot', { inService: fleet.inService || 0, withoutLoss: fleet.withoutLoss || 0 });
     }
   }
 
@@ -883,6 +898,7 @@ class ObservatoriApp {
 
     this._gpsGapShown = true;
     const isStopMode = data.signalMode === 'stop';
+    const isRail = this.isGpsGapRailAgency((data && data.agency) || this.gpsGapAgency);
     const t = data.totals || {};
     const allCells = Array.isArray(data.cells) ? data.cells : [];
     const min = this.gpsGapMin || 1;
@@ -919,7 +935,7 @@ class ObservatoriApp {
     }));
     summary.innerHTML = busChip + (data.vehicleId
       ? this.t('dades.gpsSummaryBus', { mapped: t.mapped, onLine, period: this.esc(period), median: this.esc(this.fmtGapDuration(t.medianGapSec)) })
-      : this.t(isStopMode ? 'dades.gpsStopSummaryAll' : 'dades.gpsSummaryAll', { mapped: t.mapped, onLine, period: this.esc(period), vehicles: t.vehicles, median: this.esc(this.fmtGapDuration(t.medianGapSec)) }))
+      : this.t(isStopMode ? 'dades.gpsStopSummaryAll' : (isRail ? 'dades.gpsSummaryAllRail' : 'dades.gpsSummaryAll'), { mapped: t.mapped, onLine, period: this.esc(period), vehicles: t.vehicles, median: this.esc(this.fmtGapDuration(t.medianGapSec)) }))
       + (data.vehicleId ? busWhere : recurrent
         ? this.t('dades.gpsRecurrentShare', { share: t.recurrentShare, n: recurrent, word: this.esc(this.t(recurrent === 1 ? 'dades.gpsRecurrentOne' : 'dades.gpsRecurrentMany')) })
         : this.esc(this.t('dades.gpsNoRecurrent')))
@@ -932,7 +948,7 @@ class ObservatoriApp {
       + ((data.hidden || []).length
         ? this.esc(this.t('dades.gpsHiddenNote', {
           n: data.hidden.length,
-          word: this.t(data.hidden.length === 1 ? 'dades.gpsBusOne' : 'dades.gpsBusMany'),
+          word: this.t(isRail ? (data.hidden.length === 1 ? 'dades.gpsTrainOne' : 'dades.gpsTrainMany') : (data.hidden.length === 1 ? 'dades.gpsBusOne' : 'dades.gpsBusMany')),
           ids: data.hidden.join(', ')
         }))
         : '');
@@ -945,7 +961,7 @@ class ObservatoriApp {
           <span class="gps-gaps-rank${c.recurrent ? ' recurrent' : ''}">${i + 1}</span>
           <span class="gps-gaps-item-main">
             <strong>${c.stopName ? this.esc(this.t('dades.gpsNearStop', { stop: c.stopName })) : this.esc(this.t('dades.gpsListNoNearStop'))}</strong>
-            <span>${c.lines.map(code => this.lineChip(code)).join(' ')} ${c.vehicles} ${this.esc(this.t(isStopMode ? (c.vehicles === 1 ? 'dades.gpsStopTripOne' : 'dades.gpsStopTripMany') : (c.vehicles === 1 ? 'dades.gpsBusOne' : 'dades.gpsBusMany')))} · ${this.esc(this.t('dades.gpsListMedian', { val: this.fmtGapDuration(c.medianGapSec) }))}</span>
+            <span>${c.lines.map(code => this.lineChip(code)).join(' ')} ${c.vehicles} ${this.esc(this.t(isStopMode ? (c.vehicles === 1 ? 'dades.gpsStopTripOne' : 'dades.gpsStopTripMany') : (isRail ? (c.vehicles === 1 ? 'dades.gpsTrainOne' : 'dades.gpsTrainMany') : (c.vehicles === 1 ? 'dades.gpsBusOne' : 'dades.gpsBusMany'))))} · ${this.esc(this.t('dades.gpsListMedian', { val: this.fmtGapDuration(c.medianGapSec) }))}</span>
           </span>
           <span class="gps-gaps-item-count">${c.count}<small>${this.esc(this.t(c.count === 1 ? 'dades.gpsLossOne' : 'dades.gpsLossMany'))}</small></span>
         </button>
