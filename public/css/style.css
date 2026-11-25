@@ -13009,3 +13009,66 @@ body.network-map-fullscreen-open { overflow: hidden; }
   pointer-events: none;
   box-shadow: var(--shadow-md);
 }
+
+.netmap-route-popup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 12.5rem;
+}
+.netmap-route-popup-head {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.netmap-route-popup-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.netmap-route-popup-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.2rem;
+  padding: 0.16rem 0.42rem;
+  border-radius: var(--radius-sm);
+  color: var(--bg-card);
+  font-size: 0.74rem;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+.netmap-route-popup-info {
+  flex: 1;
+  min-width: 0;
+}
+.netmap-route-popup-name {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.netmap-route-popup-agency {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+.netmap-route-popup-open {
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  color: var(--c10-primary);
+  border-radius: var(--radius-sm);
+  padding: 0.24rem 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.netmap-route-popup-open:hover {
+  border-color: var(--c10-primary);
+}

@@ -110,7 +110,9 @@ class NetworkMap extends TransitMap {
     // The legend lists the lines in view: redo it after every pan or zoom.
     this.map.on('moveend', () => this.renderLegend());
     this.railRouteLayer = L.featureGroup().addTo(this.map);
-    this.railRoutes = [];              // [{ agencyId, code, mode, polyline, bounds }]
+    this.railRoutes = [];              // [{ agencyId, code, mode, color, path, polyline, bounds }]
+    this.catalogMeta = new Map();      // "agencyId:code" -> { name, agency, mode, color, textColor, lineRef, openable }
+    this._lastPopupAt = 0;
     this.allBusRoutesShown = false;    // when true, show all bus polylines even at zoom < 11
     this.routeLayer = L.featureGroup().addTo(this.map);
     this.stopLayer = L.layerGroup().addTo(this.map);
@@ -183,6 +185,7 @@ class NetworkMap extends TransitMap {
     // owns that affordance.
 
     this.map.on('popupopen', (e) => {
+      this._lastPopupAt = Date.now();
       const root = e.popup.getElement();
       if (!root || root._arriboPopupBound) return;
       root._arriboPopupBound = true;
@@ -205,6 +208,10 @@ class NetworkMap extends TransitMap {
           }
         }
       });
+    });
+
+    this.map.on('click', (e) => {
+      this.handleRouteClick(e);
     });
   }
 
@@ -233,11 +240,23 @@ class NetworkMap extends TransitMap {
   setTrainCatalog(lines) {
     this.trainColors.clear();
     this.trainLineRefs.clear();
+    this.catalogMeta.clear();
     for (const l of Array.isArray(lines) ? lines : []) {
-      if (l && l.agencyId && l.openable && l.lineRef) this.trainLineRefs.set(`${l.agencyId}:${l.code || l.id}`, l.lineRef);
-      if (!l || !l.agencyId || typeof l.color !== 'string') continue;
+      if (!l || !l.agencyId) continue;
+      const key = `${l.agencyId}:${l.code || l.id}`;
+      if (l.openable && l.lineRef) this.trainLineRefs.set(key, l.lineRef);
+      this.catalogMeta.set(key, {
+        name: l.name || '',
+        agency: l.agency || l.agencyId,
+        mode: l.mode || '',
+        color: typeof l.color === 'string' ? l.color.trim() : '',
+        textColor: typeof l.textColor === 'string' ? l.textColor.trim() : '',
+        lineRef: l.lineRef || key,
+        openable: Boolean(l.openable)
+      });
+      if (typeof l.color !== 'string') continue;
       if (!/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(l.color.trim())) continue;
-      this.trainColors.set(`${l.agencyId}:${l.code || l.id}`, l.color.trim());
+      this.trainColors.set(key, l.color.trim());
     }
     this.renderTrains();
   }
@@ -268,9 +287,128 @@ class NetworkMap extends TransitMap {
         interactive: false
       });
       const mode = typeof l.mode === 'string' && l.mode ? l.mode : (l.agencyId === 'renfe_rodalies' || l.agencyId === 'fgc' ? 'rail' : 'bus');
-      this.railRoutes.push({ agencyId: l.agencyId, code: l.code, mode, polyline, bounds: polyline.getBounds() });
+      this.railRoutes.push({ agencyId: l.agencyId, code: l.code, mode, color, path, polyline, bounds: polyline.getBounds() });
     }
     this.renderRailRoutes();
+  }
+
+  /** Hit-tests visible route polylines on map click without enabling per-polyline
+   *  mousemove hit-testing (keeps pan/zoom at 60 fps across 1,250+ routes). */
+  handleRouteClick(e) {
+    if (!this.map || !e?.latlng) return;
+    // Skip if a vehicle pin click just opened a popup in the same event tick.
+    if (Date.now() - this._lastPopupAt < 140) return;
+
+    const clickPt = this.map.latLngToLayerPoint(e.latlng);
+    const maxPx = 11;
+    // Convert maxPx tolerance into rough lat/lon padding for fast bounds rejection.
+    const pt2 = L.point(clickPt.x + maxPx, clickPt.y + maxPx);
+    const ll2 = this.map.layerPointToLatLng(pt2);
+    const dLat = Math.abs(ll2.lat - e.latlng.lat);
+    const dLon = Math.abs(ll2.lng - e.latlng.lng);
+    const clickBox = L.latLngBounds(
+      [e.latlng.lat - dLat, e.latlng.lng - dLon],
+      [e.latlng.lat + dLat, e.latlng.lng + dLon]
+    );
+
+    const minDistToPath = (pts) => {
+      if (!Array.isArray(pts) || pts.length < 2) return Infinity;
+      let best = Infinity;
+      let prev = this.map.latLngToLayerPoint(pts[0]);
+      for (let i = 1; i < pts.length; i++) {
+        const cur = this.map.latLngToLayerPoint(pts[i]);
+        const d = L.LineUtil.pointToSegmentDistance(clickPt, prev, cur);
+        if (d < best) best = d;
+        prev = cur;
+      }
+      return best;
+    };
+
+    const hits = [];
+    const seen = new Set();
+
+    // 1. Check visible Mataró Bus lines
+    for (const [code, layers] of this.lineLayers.entries()) {
+      if (!this.routeLayer.hasLayer(layers.routes)) continue;
+      if (layers.bounds && !layers.bounds.intersects(clickBox)) continue;
+      let dist = Infinity;
+      for (const pts of layers.paths || []) {
+        const d = minDistToPath(pts);
+        if (d < dist) dist = d;
+      }
+      if (dist <= maxPx) {
+        const key = `mataro:${code}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          const meta = this.lineCatalog.find(l => l.code === code) || {};
+          hits.push({
+            dist,
+            isMataro: true,
+            code,
+            name: meta.name || code,
+            agency: 'Mataró Bus',
+            color: meta.color || layers.color || '#007a5a',
+            openKey: code
+          });
+        }
+      }
+    }
+
+    // 2. Check visible Catalonia rail/metro/tram/bus lines
+    for (const r of this.railRoutes || []) {
+      if (!this.railRouteLayer.hasLayer(r.polyline)) continue;
+      if (r.bounds && !r.bounds.intersects(clickBox)) continue;
+      const dist = minDistToPath(r.path);
+      if (dist <= maxPx) {
+        const key = `${r.agencyId}:${r.code}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          const meta = this.catalogMeta.get(key) || {};
+          hits.push({
+            dist,
+            isMataro: false,
+            code: r.code,
+            name: meta.name || r.code,
+            agency: meta.agency || r.agencyId,
+            color: meta.color || r.color || '#007a5a',
+            openKey: meta.lineRef || key,
+            openable: meta.openable !== false
+          });
+        }
+      }
+    }
+
+    if (hits.length === 0) return;
+    hits.sort((a, b) => a.dist - b.dist);
+    const top = hits.slice(0, 6);
+    const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+    const headerHtml = top.length > 1
+      ? `<div class="netmap-route-popup-head">${esc(t('netMap.routePopupMulti', { n: top.length }))}</div>`
+      : '';
+    const rowsHtml = top.map(h => {
+      const attr = h.isMataro
+        ? `data-open-line="${esc(h.openKey)}"`
+        : (h.openable ? `data-open-rail-line="${esc(h.openKey)}"` : '');
+      const actionHtml = attr
+        ? `<button type="button" class="netmap-route-popup-open" ${attr}>${esc(t('netMap.routePopupOpen'))}</button>`
+        : '';
+      return `
+        <div class="netmap-route-popup-row">
+          <span class="netmap-route-popup-badge" style="background:${esc(h.color)};">${esc(h.code)}</span>
+          <div class="netmap-route-popup-info">
+            <div class="netmap-route-popup-name">${esc(h.name)}</div>
+            <div class="netmap-route-popup-agency">${esc(h.agency)}</div>
+          </div>
+          ${actionHtml}
+        </div>`;
+    }).join('');
+
+    L.popup({ maxWidth: 300, className: 'netmap-route-leaflet-popup' })
+      .setLatLng(e.latlng)
+      .setContent(`<div class="netmap-route-popup">${headerHtml}${rowsHtml}</div>`)
+      .openOn(this.map);
   }
 
   setAllBusRoutesShown(show) {
@@ -685,7 +823,10 @@ class NetworkMap extends TransitMap {
       }).addTo(routes);
     }
 
-    this.lineLayers.set(code, { routes, stops: stopsGroup, arrows });
+    const paths = [];
+    if (primary && primary.length > 1) paths.push(primary);
+    if (secondary && secondary.length > 1) paths.push(secondary);
+    this.lineLayers.set(code, { routes, stops: stopsGroup, arrows, paths, color, bounds: routes.getBounds() });
     this.applyLineVisibility();
     this.renderLegend();
   }
