@@ -12045,6 +12045,95 @@ body.network-map-fullscreen-open { overflow: hidden; }
    hidden when there are none; display:flex above would otherwise win. */
 .network-map-legend[hidden] { display: none; }
 
-/* Footer data sources (utils.js renderFooterSources): one credit per operator,
-   so the line can be long; it wraps instead of widening the page. */
+/* Footer data sources link & dedicated /fonts page */
 .footer-sources { overflow-wrap: anywhere; }
+.footer-sources-link {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.footer-sources-link:hover { color: var(--text-primary); }
+
+.sources-section { margin-bottom: 2rem; }
+.sources-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+.sources-section-header h2 {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+.sources-count-pill {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  padding: 0.25rem 0.75rem;
+}
+.sources-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 0.9rem;
+}
+.source-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1rem 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.source-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+.source-card-title {
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+  line-height: 1.3;
+}
+.source-card-tier {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  padding: 0.18rem 0.55rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.source-card-attribution {
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.source-card-attribution a {
+  color: var(--c10-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.source-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  margin-top: auto;
+}

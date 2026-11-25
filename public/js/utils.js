@@ -73,22 +73,17 @@
     return { season: schedule.season, known };
   }
 
-  // Footer data sources (the #footer-sources element): every operator's
-  // credit, from the catalog's operators (/api/lines "operators", attribution).
-  // The home page passes the operators it already has; a page whose element
-  // carries data-autoload fetches the catalog itself.
+  // Footer data sources (the #footer-sources link): shows a concise operator
+  // count linking to /fonts where every operator's full legal attribution lives.
   let footerOps = null;
   function renderFooterSources(ops) {
     if (Array.isArray(ops) && ops.length) footerOps = ops;
     const host = global.document?.getElementById('footer-sources');
     if (!host || !footerOps) return;
-    const seen = new Set();
-    const items = [];
-    for (const o of footerOps) {
-      const a = (typeof o?.attribution === 'string' && o.attribution.trim()) || o?.name || '';
-      if (a && !seen.has(a)) { seen.add(a); items.push(a); }
+    const n = footerOps.length;
+    if (n > 0) {
+      host.textContent = t('footer.sourcesCount', { n }, `${t('footer.sources', null, 'Fonts de dades')} (${n})`);
     }
-    if (items.length) host.textContent = `${t('footer.sources', null, 'Fonts de dades')}: ${items.join(' · ')}`;
   }
   if (global.document && typeof global.document.addEventListener === 'function') {
     global.document.addEventListener('DOMContentLoaded', () => {

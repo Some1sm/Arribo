@@ -1079,8 +1079,10 @@ func (s *Server) buildRoutes() {
 
 	planPages := p("/plan", "/com-anar-hi", "/rutes", "/itinerari")
 	dadesPages := p("/dades", "/observatori", "/analytics")
+	fontsPages := p("/fonts", "/sources", "/fuentes")
 	s.get(planPages, func(q *xreq, res *xres) error { return s.sendPage(res, "plan.html") })
 	s.get(dadesPages, func(q *xreq, res *xres) error { return s.sendPage(res, "dades.html") })
+	s.get(fontsPages, func(q *xreq, res *xres) error { return s.sendPage(res, "fonts.html") })
 
 	s.get(p("/api/ready"), s.hReady)
 	s.get(p("/api/health"), s.hHealth)
