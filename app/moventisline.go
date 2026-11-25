@@ -275,59 +275,117 @@ func movStopDepartures(ctx context.Context, stop rtLineStop, code string, now ti
 						))
 					}
 				}
-				continue
-			}
-
-			// 2. Fallback: background poller snapshot.
-			for _, rt := range routes {
-				for _, st := range rt.Stops {
-					if numToString(float64(st.ID)) != stop.ID {
-						continue
-					}
-					if movSampled(snap.Static, snap.Lines, st.ID) {
-						note = "no_tracked_bus"
-					}
-					pr, ok := snap.Preds[[3]int{id, rt.Trayecto, st.ID}]
-					if !ok {
-						continue
-					}
-					age := now.Sub(pr.At).Seconds()
-					if age > movObsMaxAge.Seconds() {
-						continue
-					}
-					note = ""
-					for _, e := range pr.EtaSec {
-						left := e - age
-						if left < -movPassedTolSec {
+			} else {
+				// 2. Fallback: background poller snapshot.
+				for _, rt := range routes {
+					for _, st := range rt.Stops {
+						if numToString(float64(st.ID)) != stop.ID {
 							continue
 						}
-						left = math.Max(left, 0)
-						at := now.Add(time.Duration(left) * time.Second)
-						deps = append(deps, O(
-							"tripId", nil,
-							"vehicleId", nil,
-							"destination", strOrNil(movTitle(rt.Dest)),
-							"direction", numToString(float64(movDirectionOf(routes, rt.Trayecto))),
-							"departureTime", at.In(madrid).Format("15:04"),
-							"scheduledTime", nil,
-							"expectedIso", isoString(at.UnixMilli()),
-							"minutesAway", math.Floor(left/60),
-							"delayMins", nil,
-							"delayMinutes", nil,
-							"delayStatus", "unknown",
-							"delayBadgeText", "Previsió de Moventis",
-							"delaySource", "operator_prediction",
-							"isRealTime", true,
-							"isEstimated", false,
-							"isTheoretical", false,
-							"isCancelled", false,
-							"predictionAgeSec", math.Round(age),
-						))
+						if movSampled(snap.Static, snap.Lines, st.ID) {
+							note = "no_tracked_bus"
+						}
+						pr, ok := snap.Preds[[3]int{id, rt.Trayecto, st.ID}]
+						if !ok {
+							continue
+						}
+						age := now.Sub(pr.At).Seconds()
+						if age > movObsMaxAge.Seconds() {
+							continue
+						}
+						note = ""
+						for _, e := range pr.EtaSec {
+							left := e - age
+							if left < -movPassedTolSec {
+								continue
+							}
+							left = math.Max(left, 0)
+							at := now.Add(time.Duration(left) * time.Second)
+							deps = append(deps, O(
+								"tripId", nil,
+								"vehicleId", nil,
+								"destination", strOrNil(movTitle(rt.Dest)),
+								"direction", numToString(float64(movDirectionOf(routes, rt.Trayecto))),
+								"departureTime", at.In(madrid).Format("15:04"),
+								"scheduledTime", nil,
+								"expectedIso", isoString(at.UnixMilli()),
+								"minutesAway", math.Floor(left/60),
+								"delayMins", nil,
+								"delayMinutes", nil,
+								"delayStatus", "unknown",
+								"delayBadgeText", "Previsió de Moventis",
+								"delaySource", "operator_prediction",
+								"isRealTime", true,
+								"isEstimated", false,
+								"isTheoretical", false,
+								"isCancelled", false,
+								"predictionAgeSec", math.Round(age),
+							))
+						}
 					}
 				}
 			}
 
-			// 3. Last-resort fallback: bundled Generalitat timetable so stops
+			// 3. Rolling 24h schedule cache (DATA_DIR/moventis/schedules.json):
+			// supplements both live and fallback responses with cached day-type
+			// departures (deduplicated within 2 min of already-listed times).
+			if p.sched != nil {
+				if byDest := p.sched.lookup(id, stopNum, now); len(byDest) > 0 {
+					var existingTimes []time.Time
+					for _, raw := range deps {
+						if o, ok := raw.(*Obj); ok {
+							if parsed, err := time.Parse(time.RFC3339Nano, jsString(o.Get("expectedIso"))); err == nil {
+								existingTimes = append(existingTimes, parsed)
+							}
+						}
+					}
+					for dest, hhList := range byDest {
+						dirStr := movMatchDir(routes, dest)
+						destTitle := strOrNil(movTitle(dest))
+						for _, hhmm := range hhList {
+							at, ok := movSchedTime(hhmm, now)
+							if !ok {
+								continue
+							}
+							dup := false
+							for _, et := range existingTimes {
+								if math.Abs(at.Sub(et).Seconds()) < 120 {
+									dup = true
+									break
+								}
+							}
+							if dup {
+								continue
+							}
+							existingTimes = append(existingTimes, at)
+							left := math.Max(0, at.Sub(now).Seconds())
+							note = ""
+							deps = append(deps, O(
+								"tripId", nil,
+								"vehicleId", nil,
+								"destination", destTitle,
+								"direction", dirStr,
+								"departureTime", at.In(madrid).Format("15:04"),
+								"scheduledTime", at.In(madrid).Format("15:04"),
+								"expectedIso", isoString(at.UnixMilli()),
+								"minutesAway", math.Floor(left/60),
+								"delayMins", nil,
+								"delayMinutes", nil,
+								"delayStatus", "unknown",
+								"delayBadgeText", "Horari teòric",
+								"delaySource", "timetable",
+								"isRealTime", false,
+								"isEstimated", false,
+								"isTheoretical", true,
+								"isCancelled", false,
+								"predictionAgeSec", nil,
+							))
+						}
+					}
+				}
+			}
+
+			// 4. Last-resort fallback: bundled Generalitat timetable so stops
 			// never show empty "0 sortides" if moventis.es is throttled/down.
 			if len(deps) == 0 {
 				if gc := gencatData(); gc != nil {

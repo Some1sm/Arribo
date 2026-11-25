@@ -209,6 +209,7 @@ type movPoller struct {
 	dir       string       // cache directory
 	lastRetry time.Time    // last retryMissing (poller goroutine only)
 	delays    *movDelayTracker
+	sched     *movSchedStore
 
 	mu               sync.Mutex
 	static           *movStatic
@@ -264,6 +265,7 @@ func startMoventisPoller() (stop func()) {
 		primary: primary,
 		dir:     dir,
 		delays:  newMovDelayTracker(dir),
+		sched:   newMovSchedStore(dir),
 		preds:   map[[3]int]movPrediction{},
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -281,6 +283,9 @@ func startMoventisPoller() (stop func()) {
 		<-done
 		if p.delays != nil {
 			p.delays.save(true)
+		}
+		if p.sched != nil {
+			p.sched.save(true)
 		}
 	}
 }
@@ -1277,6 +1282,9 @@ func movSleep(ctx context.Context, d time.Duration) bool {
 // record stores a stop's predictions for the followed lines. A followed line
 // at the stop with no tracked bus clears the stop (no bus is coming soon).
 func (p *movPoller) record(s *movStatic, stopID int, etas []movStopETA, at time.Time) {
+	if p.sched != nil {
+		p.sched.record(stopID, etas, at)
+	}
 	followed := map[int]bool{}
 	for _, id := range p.lineIDs {
 		followed[id] = true
