@@ -43,7 +43,7 @@ steps it touches, in the same commit as the change.** How to pick up the work
 | 0.5 | `[x]` | **Send the data requests:** Generalitat (DGTM) for Casas real-time data and the concession clauses, with a GAIP appeal if ignored; ATM about `CAS RT: NO`; Renfe for R1–R8 unit/platform data; Sagalés, Avanza (Terrassa/Rubí), TUS, TMESA, EMT Tarragona, Reus Transport. Templates: [docs/catalonia-review/DATA_REQUESTS.md](../catalonia-review/DATA_REQUESTS.md) and research report 11 §5. | long term |
 
 Notes:
-- 0.1: Approved 2026-11-24 — unofficial public sources may be used behind config flags and labelled "font no oficial".
+- 0.1: Approved 2026-11-24 — unofficial public sources may be used behind config flags and labelled "font no oficial". **Amended 2026-11-25:** owner also approved the AMB app's reverse-engineered key for real Casas GPS (`ARRIBO_AMB_VEHICLES`, `app/ambvehicles.go`), enabled in compose, as a stopgap until an official AMB key (0.5). Key in `AMB_API_KEY` (VPS `.env`), never committed.
 - 0.2: Done 2026-11-24 from VPS — `curl: (6) Could not resolve host: app.moventis.es` (HTTP 000, DNS gone). Closes 1.6 (no Moventis app GPS server exists).
 - 0.3: Done 2026-11-24 from VPS — `otp-client.pre.geoactio.com/otp/routers/default` returns HTTP 503 Service Temporarily Unavailable (no `"realtime":true`, abandoned).
 - 0.4: Done 2026-11-24 — owner registered TMB (`app_id`/`app_key`; license requires attributing TMB with last-update date and not distorting data), TRAM OAuth (`client_id`/`client_secret`), and NAP (`ApiKey`, which also serves ATM CGIM GTFS-Fares v2 feeds 2059/2060). Env var pass-throughs wired in `compose.yaml`; values live only in VPS `.env`.
@@ -148,6 +148,8 @@ Do each only after 0.1 and as its own poller. Order by value for Mataró users f
 ## Progress log
 
 Newest first. One line per session: date, who, steps touched, commit.
+
+- 2026-11-25, cloud session: AMB app-API real GPS for the Maresme/Casas lines (C-10, e11, 865, C-20/30, C-12..C-22), the whole route into Mataró — the source behind AMB Mobilitat. New `app/ambvehicles.go` poller behind `ARRIBO_AMB_VEHICLES`+`AMB_API_KEY`; measured GPS replaces the moventis.es estimate per line while AMB has it live, both on the map and the line view. Research in report 13. Reverses policy 0.1 (owner-approved), enabled in compose. Verified locally: /api/moventis and the line view show measured GPS (`operator_gps`, `positionsEstimated:false`, label "Posició GPS") for C-10/e11/865/C-20/C-30. Known limits: a Casas line whose moventis routes failed to load shows its AMB buses with raw direction and no headsign/bearing; the routeId→direction map is unverified (flip if directions look swapped). Old-vs-new binary comparison not run here — run on the VPS before deploy (CLAUDE.md).
 
 - 2026-11-24, local session: step 6.1 (Moventis Maresme Casas lines C-12…C-22 + 862 behind `ARRIBO_MOVENTIS_MARESME=1` with priority cycling) and Moventis estimated delays in Dades (`app/moventisdelays.go`, `/api/moventis?hours=H`, Dades Moventis KPIs & table, `?v=9.4.99`).
 - 2026-11-24, local session: steps 6.2 (Sagalés real GPS + delays, `app/sagales.go`, `ARRIBO_SAGALES=1`), 6.7 (TMG Girona NAP 1570 GTFS + unofficial appbus predictions, `app/girona.go`, `ARRIBO_GIRONA=1`), and 7.1 (updated `AGENTS.md` §1 and `OPERATIONS.md`, `b755f68`).

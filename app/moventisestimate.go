@@ -232,7 +232,7 @@ func (s *Server) hMoventis(q *xreq, res *xres) error {
 	vehicles := []any{}
 	status := O("requests", 0.0)
 	if snap != nil && snap.Static != nil {
-		vehicles = movEstimate(snap.Static, snap.Lines, snap.Preds, now)
+		vehicles = movVehiclesWithAMB(snap.Static, snap.Lines, snap.Preds, now)
 	}
 	if snap != nil {
 		for _, id := range snap.Lines {

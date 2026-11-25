@@ -47,6 +47,12 @@ services:
       - ARRIBO_TMB=${ARRIBO_TMB:-1}
       # Sagalés real GPS + delays (sagales.com unofficial; app/sagales.go).
       - ARRIBO_SAGALES=${ARRIBO_SAGALES:-1}
+      # AMB app API real GPS for the Maresme/Casas lines (C-10, e11, 865,
+      # C-20/30, C-12..C-22), the whole route into Mataró. Uses the AMB app's
+      # reverse-engineered key AMB_API_KEY (set in .env, never committed);
+      # off unless both are set. font no oficial. app/ambvehicles.go.
+      - ARRIBO_AMB_VEHICLES=${ARRIBO_AMB_VEHICLES:-1}
+      - AMB_API_KEY=${AMB_API_KEY:-}
       # TMG Girona static GTFS (NAP 1570) + unofficial live appbus predictions (app/girona.go). Needs ARRIBO_GTFSRT + NAP_API_KEY.
       - ARRIBO_GIRONA=${ARRIBO_GIRONA:-1}
       # Renfe unofficial web-map visors (flota.json / flotaLD.json: platforms, LD units, wheelchair; app/renfemap.go).

@@ -159,8 +159,12 @@ func railLineDetails(info operatorInfo, op *rtCatalogOp, code, direction string,
 	source := "gtfsrt"
 	switch info.ID {
 	case movAgencyID:
-		// Moventis: buses estimated from its stop predictions.
+		// Moventis: estimated from its stop predictions, or AMB real GPS for a
+		// Casas line while AMB has it live (movLineBuses overlays it).
 		buses, stale, source = movLineBuses(code, direction, now), 0, "moventis_predictions"
+		if anyMeasured(buses) {
+			source = "moventis_predictions+amb_gps"
+		}
 	case sagalesAgencyID:
 		// Sagalés: real GPS vehicles from sagales.com (unofficial).
 		buses, stale = sagalesLineBuses(code, direction, now)
@@ -202,7 +206,7 @@ func railLineDetails(info operatorInfo, op *rtCatalogOp, code, direction string,
 		"railData", O(
 			"source", source,
 			"attribution", railAttribution(info.ID),
-			"positionsEstimated", info.ID == movAgencyID,
+			"positionsEstimated", info.ID == movAgencyID && !anyMeasured(buses),
 			"stopsFrom", "longest_trip",
 			"staleAfterSec", trainStaleAfter(info.ID),
 			"staleTrains", float64(stale),

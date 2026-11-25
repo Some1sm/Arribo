@@ -26,7 +26,7 @@ func movLineBuses(code, direction string, now time.Time) []any {
 	if snap == nil || snap.Static == nil {
 		return out
 	}
-	for _, v := range movEstimate(snap.Static, snap.Lines, snap.Preds, now) {
+	for _, v := range movVehiclesWithAMB(snap.Static, snap.Lines, snap.Preds, now) {
 		b := v.(*Obj)
 		if jsString(b.Get("lineCode")) != code {
 			continue
@@ -42,11 +42,19 @@ func movLineBuses(code, direction string, now time.Time) []any {
 		b.Set("ageSec", b.Get("predictionAgeSec"))
 		b.Set("delayMinutes", nil)
 		b.Set("delayStatus", "unknown")
-		b.Set("delayBadgeText", "Posició estimada")
-		b.Set("delayFormatted", "Posició estimada")
 		b.Set("isGhostVehicle", false)
-		b.Set("agency", movOperator.Name)
-		b.Set("attribution", movAttributionText())
+		if truthy(b.Get("isRealTime")) {
+			// AMB measured GPS, not a moventis.es prediction.
+			b.Set("delayBadgeText", "Posició GPS")
+			b.Set("delayFormatted", "Posició en temps real")
+			b.Set("agency", ambOperator.Name)
+			b.Set("attribution", ambAttribution)
+		} else {
+			b.Set("delayBadgeText", "Posició estimada")
+			b.Set("delayFormatted", "Posició estimada")
+			b.Set("agency", movOperator.Name)
+			b.Set("attribution", movAttributionText())
+		}
 		out = append(out, b)
 	}
 	return out
