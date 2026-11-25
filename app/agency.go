@@ -157,46 +157,73 @@ func catalogLine(l *Obj) *Obj {
 // colours from their imported timetables) to the line catalog, in the order
 // of reportOperators. They are not trackable yet (no live line view), so the
 // client lists them for colours and Dades but not as lines to follow.
-func profileMidpoint(prof *rtLineProfile) (float64, float64, bool) {
+// profileSamplePoints returns up to 3 representative [lat, lon] points (start,
+// middle, end) for a line profile so spatial deduplication matches express/long
+// interurban routes even when Directions[0] is reversed or stops cluster at one end.
+func profileSamplePoints(prof *rtLineProfile) [][2]float64 {
 	if prof == nil || len(prof.Directions) == 0 {
-		return 0, 0, false
+		return nil
 	}
 	d := prof.Directions[0]
-	if len(d.Stops) > 0 {
-		st := d.Stops[len(d.Stops)/2]
-		if st.Lat != 0 || st.Lon != 0 {
-			return st.Lat, st.Lon, true
+	var pts [][2]float64
+	add := func(lat, lon float64) {
+		if lat == 0 && lon == 0 {
+			return
+		}
+		pts = append(pts, [2]float64{lat, lon})
+	}
+	if n := len(d.Stops); n > 0 {
+		add(d.Stops[0].Lat, d.Stops[0].Lon)
+		if n > 2 {
+			add(d.Stops[n/2].Lat, d.Stops[n/2].Lon)
+		}
+		if n > 1 {
+			add(d.Stops[n-1].Lat, d.Stops[n-1].Lon)
+		}
+		return pts
+	}
+	if n := len(d.Geometry); n > 0 {
+		add(d.Geometry[0][0], d.Geometry[0][1])
+		if n > 2 {
+			add(d.Geometry[n/2][0], d.Geometry[n/2][1])
+		}
+		if n > 1 {
+			add(d.Geometry[n-1][0], d.Geometry[n-1][1])
 		}
 	}
-	if len(d.Geometry) > 0 {
-		p := d.Geometry[len(d.Geometry)/2]
-		if p[0] != 0 || p[1] != 0 {
-			return p[0], p[1], true
-		}
+	return pts
+}
+
+func profileMidpoint(prof *rtLineProfile) (float64, float64, bool) {
+	pts := profileSamplePoints(prof)
+	if len(pts) == 0 {
+		return 0, 0, false
 	}
-	return 0, 0, false
+	p := pts[len(pts)/2]
+	return p[0], p[1], true
 }
 
 // recordDedicatedBus registers a non-gencat_bus bus line's normalized code and
-// representative midpoint so overlapping Generalitat interurban copies (e.g.
-// gencat_bus:C10 duplicating moventis:C-10) are hidden from the rider catalog
-// without shadowing unrelated towns that reuse generic codes like L1.
+// representative endpoints/midpoint so overlapping Generalitat interurban copies
+// (e.g. gencat_bus:C10 duplicating moventis:C-10, or gencat_bus:e11.2 duplicating
+// moventis:e11.2) are hidden from the rider catalog without shadowing unrelated
+// towns that reuse generic codes like L1.
 func recordDedicatedBus(idx map[string][][2]float64, agencyID, code string, prof *rtLineProfile) {
-	lat, lon, hasPt := profileMidpoint(prof)
+	pts := profileSamplePoints(prof)
 	add := func(c string) {
 		norm := ambNormLine(c)
 		if norm == "" {
 			return
 		}
-		if hasPt {
-			idx[norm] = append(idx[norm], [2]float64{lat, lon})
+		if len(pts) > 0 {
+			idx[norm] = append(idx[norm], pts...)
 		} else if _, exists := idx[norm]; !exists {
 			idx[norm] = nil
 		}
 	}
 	add(code)
 	// For city-prefixed atm_urban codes (e.g. "FIG-L1"), also index the local
-	// suffix ("L1") at the exact city midpoint.
+	// suffix ("L1") at the exact city coordinates.
 	if agencyID == atmUrbanAgencyID {
 		if dash := strings.IndexByte(code, '-'); dash > 0 && dash+1 < len(code) {
 			add(code[dash+1:])
@@ -213,13 +240,15 @@ func isGencatBusDuplicate(code string, prof *rtLineProfile, dedicated map[string
 	if len(pts) == 0 {
 		return true
 	}
-	lat, lon, hasPt := profileMidpoint(prof)
-	if !hasPt {
+	candPts := profileSamplePoints(prof)
+	if len(candPts) == 0 {
 		return true
 	}
-	for _, p := range pts {
-		if haversineKm(lat, lon, p[0], p[1]) <= 18.0 {
-			return true
+	for _, cp := range candPts {
+		for _, dp := range pts {
+			if haversineKm(cp[0], cp[1], dp[0], dp[1]) <= 15.0 {
+				return true
+			}
 		}
 	}
 	return false
