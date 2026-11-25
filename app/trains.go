@@ -58,6 +58,7 @@ var trainAttribution = map[string]string{
 	movLleidaAgencyID: "Moventis Autobusos de Lleida · Dades GTFS (NAP 1579)",
 	movTccAgencyID:    "Moventis TCC · Dades GTFS (NAP 1580)",
 	movSarbusAgencyID: "Moventis Sarbus · Dades GTFS (NAP 1581)",
+	gencatBusAgencyID: gencatBusAttribution,
 }
 
 // trainFeed is one operator's snapshot as the response builder sees it.

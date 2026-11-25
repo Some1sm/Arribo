@@ -484,7 +484,11 @@ func importGTFSContext(ctx context.Context, agencyID, zipPath, outPath string, b
 			keptGtfsAgencyIDs[gid] = struct{}{}
 		}
 		kept["routes"]++
-		_, err := stmtRoute.Exec(agencyID, id, gid, r.get("route_short_name"), r.get("route_long_name"), rt, r.get("route_color"), r.get("route_text_color"))
+		shortName, longName := r.get("route_short_name"), r.get("route_long_name")
+		if agencyID == gencatBusAgencyID {
+			shortName, longName = parseGencatBusRouteCode(shortName, longName)
+		}
+		_, err := stmtRoute.Exec(agencyID, id, gid, shortName, longName, rt, r.get("route_color"), r.get("route_text_color"))
 		return err
 	}); err != nil {
 		return fmt.Errorf("routes: %w", err)

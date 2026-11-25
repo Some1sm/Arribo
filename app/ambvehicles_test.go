@@ -308,12 +308,88 @@ func TestAmbCatalogVehiclesAndBBox(t *testing.T) {
 	}
 
 	// Single-line view direction filtering for amb:B25.
-	dir0, stale0 := ambLineBuses("B25", "0", now)
+	dir0, stale0 := ambLineBuses(ambAgencyID, "B25", "0", now)
 	if len(dir0) != 1 || stale0 != 1 || jsString(dir0[0].(*Obj).Get("vehicleId")) != "4501" {
-		t.Fatalf("ambLineBuses(B25, 0) = %d (stale %d), want 1 live (4501) + 1 stale", len(dir0), stale0)
+		t.Fatalf("ambLineBuses(amb, B25, 0) = %d (stale %d), want 1 live (4501) + 1 stale", len(dir0), stale0)
 	}
-	both, staleBoth := ambLineBuses("B25", "both", now)
+	both, staleBoth := ambLineBuses(ambAgencyID, "B25", "both", now)
 	if len(both) != 2 || staleBoth != 1 {
-		t.Fatalf("ambLineBuses(B25, both) = %d (stale %d), want 2 live + 1 stale", len(both), staleBoth)
+		t.Fatalf("ambLineBuses(amb, B25, both) = %d (stale %d), want 2 live + 1 stale", len(both), staleBoth)
+	}
+}
+
+func TestAmbMultiCatalogMatchingAndGencatCodeParse(t *testing.T) {
+	if c, n := parseGencatBusRouteCode("0221", "(221) Sabadell - Caldes - Bigues"); c != "221" || n != "Sabadell - Caldes - Bigues" {
+		t.Fatalf("parseGencatBusRouteCode got (%q, %q)", c, n)
+	}
+	if c, n := parseGencatBusRouteCode("L1", "Urbà de Caldes"); c != "L1" || n != "Urbà de Caldes" {
+		t.Fatalf("parseGencatBusRouteCode passthrough got (%q, %q)", c, n)
+	}
+
+	now := time.Now()
+	rtCatalog.Store(ambAgencyID, &rtCatalogOp{
+		Lines: []rtRoute{{Code: "A1", Name: "Aerobús T1", Color: "#0099CC"}},
+		Profiles: map[string]*rtLineProfile{
+			"A1": {Directions: []rtLineDirection{{DirectionID: 0, Stops: []rtLineStop{{Lat: 41.297, Lon: 2.078}}}}},
+		},
+	})
+	rtCatalog.Store(movSarbusAgencyID, &rtCatalogOp{
+		Lines: []rtRoute{{Code: "A1", Name: "Sabadell - Barcelona", Color: "#E30613"}},
+		Profiles: map[string]*rtLineProfile{
+			"A1": {Directions: []rtLineDirection{{DirectionID: 0, Stops: []rtLineStop{{Lat: 41.546, Lon: 2.108}}}}},
+		},
+	})
+	rtCatalog.Store(gencatBusAgencyID, &rtCatalogOp{
+		Lines: []rtRoute{{Code: "221", Name: "Sabadell - Caldes - Bigues", Color: "#0D9488"}},
+		Profiles: map[string]*rtLineProfile{
+			"221": {Directions: []rtLineDirection{{DirectionID: 0, Stops: []rtLineStop{{Lat: 41.634, Lon: 2.164}}}}},
+		},
+	})
+	t.Cleanup(func() {
+		rtCatalog.Delete(ambAgencyID)
+		rtCatalog.Delete(movSarbusAgencyID)
+		rtCatalog.Delete(gencatBusAgencyID)
+	})
+
+	p := &ambVehPoller{}
+	p.snap.Store(&ambVehSnapshot{At: now, ByLine: map[string][]ambVeh{
+		"a1": {
+			{Line: "A1", Dir: 1, Lat: 41.298, Lon: 2.079, VehID: "aero1", ObservedAt: now},
+			{Line: "A1", Dir: 1, Lat: 41.547, Lon: 2.109, VehID: "sarbus1", ObservedAt: now},
+		},
+		"221": {
+			{Line: "221", Dir: 1, Lat: 41.635, Lon: 2.165, VehID: "caldes1", ObservedAt: now},
+		},
+	}})
+	ambVehLive.Store(p)
+	t.Cleanup(func() { ambVehLive.Store(nil) })
+
+	all := ambCatalogVehicles(now, nil)
+	if len(all) != 3 {
+		t.Fatalf("want 3 matched buses, got %d (%s)", len(all), toJSON(all))
+	}
+	byVeh := map[string]*Obj{}
+	for _, raw := range all {
+		o := raw.(*Obj)
+		byVeh[o.Str("vehicleId")] = o
+	}
+	if byVeh["aero1"].Str("agencyId") != ambAgencyID || byVeh["aero1"].Str("lineRef") != "amb:A1" {
+		t.Errorf("aero1 wrong match: %s", toJSON(byVeh["aero1"]))
+	}
+	if byVeh["sarbus1"].Str("agencyId") != movSarbusAgencyID || byVeh["sarbus1"].Str("lineRef") != "moventis_sarbus:A1" || byVeh["sarbus1"].Str("color") != "#E30613" {
+		t.Errorf("sarbus1 wrong match: %s", toJSON(byVeh["sarbus1"]))
+	}
+	if byVeh["caldes1"].Str("agencyId") != gencatBusAgencyID || byVeh["caldes1"].Str("lineRef") != "gencat_bus:221" {
+		t.Errorf("caldes1 wrong match: %s", toJSON(byVeh["caldes1"]))
+	}
+
+	// Single-line spatial filter: amb:A1 only returns aero1, not Sabadell's sarbus1.
+	ambA1, _ := ambLineBuses(ambAgencyID, "A1", "both", now)
+	if len(ambA1) != 1 || ambA1[0].(*Obj).Str("vehicleId") != "aero1" {
+		t.Fatalf("amb:A1 should only return aero1, got %s", toJSON(ambA1))
+	}
+	sarbusA1, _ := ambLineBuses(movSarbusAgencyID, "A1", "both", now)
+	if len(sarbusA1) != 1 || sarbusA1[0].(*Obj).Str("vehicleId") != "sarbus1" {
+		t.Fatalf("moventis_sarbus:A1 should only return sarbus1, got %s", toJSON(sarbusA1))
 	}
 }

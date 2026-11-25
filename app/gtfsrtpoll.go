@@ -294,6 +294,9 @@ func defaultRtSources() []rtSource {
 		srcs = append(srcs, gir)
 	}
 	srcs = append(srcs, moventisNapSources()...)
+	if gb, ok := gencatBusSource(); ok {
+		srcs = append(srcs, gb)
+	}
 	return srcs
 }
 

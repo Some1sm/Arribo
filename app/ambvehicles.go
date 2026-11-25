@@ -709,11 +709,92 @@ func ambBearingNearProfile(d *rtLineDirection, lat, lon float64) float64 {
 	return 0
 }
 
-// ambCatalogVehicleJSON formats one live AMB metropolitan bus (Badalona,
-// Barcelona, L'Hospitalet, Baix Llobregat, Aerobús, NitBus, etc.) for both
-// /api/moventis (homepage network map) and /api/line/amb:<code> (single-line
-// view). Only fresh live GPS pings (age <= ambVehMaxAge) are emitted.
-func ambCatalogVehicleJSON(v ambVeh, snapAt, now time.Time, op *rtCatalogOp, routeIdx map[string]rtRoute) *Obj {
+type ambCatalogEntry struct {
+	info     operatorInfo
+	op       *rtCatalogOp
+	routeIdx map[string]rtRoute
+}
+
+// ambBusCatalogEntries returns all loaded bus catalogs that AMB's live GPS
+// feed can match against, in priority order.
+func ambBusCatalogEntries() []ambCatalogEntry {
+	candidates := []operatorInfo{ambOperator}
+	candidates = append(candidates, moventisNapOperators...)
+	candidates = append(candidates, gencatBusOperator)
+	out := make([]ambCatalogEntry, 0, len(candidates))
+	for _, info := range candidates {
+		v, ok := rtCatalog.Load(info.ID)
+		if !ok {
+			continue
+		}
+		op := v.(*rtCatalogOp)
+		if op == nil || len(op.Lines) == 0 {
+			continue
+		}
+		out = append(out, ambCatalogEntry{
+			info:     info,
+			op:       op,
+			routeIdx: ambCatalogRouteIndex(op),
+		})
+	}
+	return out
+}
+
+// ambProfileMinDistKm returns the minimum distance in km from (lat, lon) to
+// any stop (or geometry vertex) of prof, or +Inf if prof has no coordinates.
+func ambProfileMinDistKm(prof *rtLineProfile, lat, lon float64) float64 {
+	if prof == nil {
+		return math.Inf(1)
+	}
+	best := math.Inf(1)
+	for i := range prof.Directions {
+		d := &prof.Directions[i]
+		for _, st := range d.Stops {
+			if dist := haversineKm(lat, lon, st.Lat, st.Lon); dist < best {
+				best = dist
+			}
+		}
+		if math.IsInf(best, 1) {
+			for _, pt := range d.Geometry {
+				if dist := haversineKm(lat, lon, pt[0], pt[1]); dist < best {
+					best = dist
+				}
+			}
+		}
+	}
+	return best
+}
+
+// ambResolveCatalogMatch finds the best catalog entry for an AMB GPS vehicle.
+// When multiple operators share a line code (e.g. amb:A1 Aerobús vs
+// moventis_sarbus:A1 Sabadell), the one whose route is closest to (lat, lon)
+// wins.
+func ambResolveCatalogMatch(v ambVeh, catalogs []ambCatalogEntry) (entry *ambCatalogEntry, route rtRoute, matched bool) {
+	norm := ambNormLine(v.Line)
+	bestDist := math.Inf(1)
+	for i := range catalogs {
+		c := &catalogs[i]
+		r, ok := c.routeIdx[norm]
+		if !ok {
+			continue
+		}
+		var prof *rtLineProfile
+		if c.op != nil && c.op.Profiles != nil {
+			prof = c.op.Profiles[r.Code]
+		}
+		dist := ambProfileMinDistKm(prof, v.Lat, v.Lon)
+		if !matched || dist < bestDist-0.25 {
+			entry, route, matched, bestDist = c, r, true, dist
+		}
+	}
+	return entry, route, matched
+}
+
+// ambCatalogVehicleJSON formats one live AMB-relayed GPS bus for both
+// /api/moventis (homepage network map) and /api/line/<agency>:<code>
+// (single-line view). Only fresh live GPS pings (age <= ambVehMaxAge) are
+// emitted.
+func ambCatalogVehicleJSON(v ambVeh, snapAt, now time.Time, info operatorInfo, op *rtCatalogOp, route rtRoute, inCatalog bool) *Obj {
 	obsAt := v.ObservedAt
 	if obsAt.IsZero() {
 		obsAt = snapAt
@@ -726,23 +807,26 @@ func ambCatalogVehicleJSON(v ambVeh, snapAt, now time.Time, op *rtCatalogOp, rou
 		return nil
 	}
 
-	norm := ambNormLine(v.Line)
+	agencyID := info.ID
+	agencyName := info.Name
+	if agencyID == "" {
+		agencyID = ambAgencyID
+		agencyName = ambOperator.Name
+	}
 	code := strings.TrimSpace(v.Line)
 	lineName := ""
 	color := "#007a5a"
 	textColor := "#ffffff"
-	inCatalog := false
-	if r, ok := routeIdx[norm]; ok {
-		inCatalog = true
-		if r.Code != "" {
-			code = r.Code
+	if inCatalog {
+		if route.Code != "" {
+			code = route.Code
 		}
-		lineName = r.Name
-		if r.Color != "" {
-			color = r.Color
+		lineName = route.Name
+		if route.Color != "" {
+			color = route.Color
 		}
-		if r.TextColor != "" {
-			textColor = r.TextColor
+		if route.TextColor != "" {
+			textColor = route.TextColor
 		}
 	}
 
@@ -775,18 +859,22 @@ func ambCatalogVehicleJSON(v ambVeh, snapAt, now time.Time, op *rtCatalogOp, rou
 	}
 	var lineRef any
 	if inCatalog {
-		lineRef = ambAgencyID + ":" + code
+		lineRef = agencyID + ":" + code
+	}
+	attr := trainAttribution[agencyID]
+	if attr == "" {
+		attr = ambAttribution
 	}
 	ageSec := jsRound(age.Seconds())
 	return O(
-		"id", "AMB_BUS_"+code+"_"+vehID,
-		"agencyId", ambAgencyID,
-		"agency", ambOperator.Name,
+		"id", "AMB_BUS_"+agencyID+"_"+code+"_"+vehID,
+		"agencyId", agencyID,
+		"agency", agencyName,
 		"mode", "bus",
 		"vehicleId", vehID,
 		"vehicleRef", vehID,
 		"label", code+"-"+vehID,
-		"lineId", ambAgencyID+":"+code,
+		"lineId", agencyID+":"+code,
 		"lineCode", code,
 		"lineRef", lineRef,
 		"lineName", strOrNil(lineName),
@@ -809,13 +897,15 @@ func ambCatalogVehicleJSON(v ambVeh, snapAt, now time.Time, op *rtCatalogOp, rou
 		"ageSec", ageSec,
 		"delayMins", nil,
 		"stale", false,
-		"attribution", ambAttribution,
+		"attribution", attr,
 	)
 }
 
-// ambCatalogVehicles returns all live GPS AMB metropolitan buses (excluding
-// Moventis-followed lines already emitted by movVehiclesWithAMB), optionally
-// filtered to box.
+// ambCatalogVehicles returns all live GPS buses from AMB's feed (excluding
+// Moventis-followed lines already emitted by movVehiclesWithAMB and Sagalés
+// lines already emitted by sagalesAllVehicles), matched against every loaded
+// bus catalog (AMB, Moventis Sarbus/Costa/Sarfa/TCC/Lleida, Generalitat
+// interurban) and optionally filtered to box.
 func ambCatalogVehicles(now time.Time, box *trainBox) []any {
 	p := ambVehLive.Load()
 	if p == nil {
@@ -825,25 +915,29 @@ func ambCatalogVehicles(now time.Time, box *trainBox) []any {
 	if snap == nil || now.Sub(snap.At) > ambVehMaxAge {
 		return nil
 	}
-	movNorms := map[string]bool{}
+	skipNorms := map[string]bool{}
 	if mp := movLive.Load(); mp != nil {
 		if ms := mp.snap.Load(); ms != nil && ms.Static != nil {
 			for _, id := range ms.Lines {
 				if l, ok := ms.Static.Lines[id]; ok && l.Code != "" {
-					movNorms[ambNormLine(l.Code)] = true
+					skipNorms[ambNormLine(l.Code)] = true
 				}
 			}
 		}
 	}
-	var op *rtCatalogOp
-	if v, ok := rtCatalog.Load(ambAgencyID); ok {
-		op = v.(*rtCatalogOp)
+	if sp := sagalesLive.Load(); sp != nil {
+		sp.mu.RLock()
+		for code := range sp.byCode {
+			skipNorms[ambNormLine(code)] = true
+		}
+		sp.mu.RUnlock()
 	}
-	routeIdx := ambCatalogRouteIndex(op)
+
+	catalogs := ambBusCatalogEntries()
 
 	keys := make([]string, 0, len(snap.ByLine))
 	for k := range snap.ByLine {
-		if !movNorms[k] {
+		if !skipNorms[k] {
 			keys = append(keys, k)
 		}
 	}
@@ -855,7 +949,14 @@ func ambCatalogVehicles(now time.Time, box *trainBox) []any {
 			if !box.has(v.Lat, v.Lon) {
 				continue
 			}
-			if obj := ambCatalogVehicleJSON(v, snap.At, now, op, routeIdx); obj != nil {
+			entry, route, matched := ambResolveCatalogMatch(v, catalogs)
+			info := ambOperator
+			var op *rtCatalogOp
+			if matched && entry != nil {
+				info = entry.info
+				op = entry.op
+			}
+			if obj := ambCatalogVehicleJSON(v, snap.At, now, info, op, route, matched); obj != nil {
 				out = append(out, obj)
 			}
 		}
@@ -863,9 +964,11 @@ func ambCatalogVehicles(now time.Time, box *trainBox) []any {
 	return out
 }
 
-// ambLineBuses returns the live GPS buses for one AMB line (e.g. B25, M30, A1)
-// in the single-line view (/api/line/amb:<code>).
-func ambLineBuses(code, direction string, now time.Time) (buses []any, stale int) {
+// ambLineBuses returns the live GPS buses for one AMB / Moventis NAP /
+// Generalitat interurban line in the single-line view (/api/line/<agency>:<code>).
+// When multiple operators share a line code (e.g. amb:A1 vs moventis_sarbus:A1),
+// vehicles > 3 km from the opened line's route are excluded.
+func ambLineBuses(agencyID, code, direction string, now time.Time) (buses []any, stale int) {
 	buses = []any{}
 	p := ambVehLive.Load()
 	if p == nil {
@@ -879,12 +982,37 @@ func ambLineBuses(code, direction string, now time.Time) (buses []any, stale int
 	if len(vs) == 0 {
 		return buses, 0
 	}
-	var op *rtCatalogOp
-	if v, ok := rtCatalog.Load(ambAgencyID); ok {
-		op = v.(*rtCatalogOp)
+	info := ambOperator
+	for _, o := range lineOperators() {
+		if o.ID == agencyID {
+			info = o
+			break
+		}
 	}
-	routeIdx := ambCatalogRouteIndex(op)
+	var op *rtCatalogOp
+	var route rtRoute
+	inCatalog := false
+	if v, ok := rtCatalog.Load(agencyID); ok {
+		op = v.(*rtCatalogOp)
+		if r, found := ambCatalogRouteIndex(op)[ambNormLine(code)]; found {
+			route = r
+			inCatalog = true
+		}
+	}
+	var prof *rtLineProfile
+	if op != nil && op.Profiles != nil {
+		if inCatalog && route.Code != "" {
+			prof = op.Profiles[route.Code]
+		} else {
+			prof = op.Profiles[code]
+		}
+	}
 	for _, v := range vs {
+		if prof != nil {
+			if dist := ambProfileMinDistKm(prof, v.Lat, v.Lon); !math.IsInf(dist, 1) && dist > 3.0 {
+				continue
+			}
+		}
 		dirStr := ambDirToGTFS(v.Dir)
 		if direction != "both" && direction != "" && dirStr != "" && dirStr != direction {
 			continue
@@ -897,7 +1025,7 @@ func ambLineBuses(code, direction string, now time.Time) (buses []any, stale int
 			stale++
 			continue
 		}
-		if obj := ambCatalogVehicleJSON(v, snap.At, now, op, routeIdx); obj != nil {
+		if obj := ambCatalogVehicleJSON(v, snap.At, now, info, op, route, inCatalog); obj != nil {
 			buses = append(buses, obj)
 		}
 	}

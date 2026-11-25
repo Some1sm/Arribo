@@ -16,6 +16,7 @@ const railRouteTolerance = 0.00025
 
 func (s *Server) hRailRoutes(q *xreq, res *xres) error {
 	lines := []any{}
+	drawnBusCodes := map[string]bool{}
 	for _, info := range lineOperators() {
 		v, ok := rtCatalog.Load(info.ID)
 		if !ok {
@@ -23,6 +24,10 @@ func (s *Server) hRailRoutes(q *xreq, res *xres) error {
 		}
 		op := v.(*rtCatalogOp)
 		for _, r := range op.Lines {
+			mode := routeModeFor(info, r.Code)
+			if info.ID == gencatBusAgencyID && drawnBusCodes[ambNormLine(r.Code)] {
+				continue
+			}
 			prof := op.Profiles[r.Code]
 			if prof == nil || len(prof.Directions) == 0 {
 				continue
@@ -30,6 +35,9 @@ func (s *Server) hRailRoutes(q *xreq, res *xres) error {
 			d := prof.Directions[0]
 			if len(d.Geometry) < 2 {
 				continue
+			}
+			if mode == "bus" && info.ID != gencatBusAgencyID {
+				drawnBusCodes[ambNormLine(r.Code)] = true
 			}
 			pts := simplifyPath(d.Geometry, railRouteTolerance)
 			path := make([]any, len(pts))
@@ -44,7 +52,7 @@ func (s *Server) hRailRoutes(q *xreq, res *xres) error {
 				"lineRef", info.ID+":"+r.Code,
 				"agencyId", info.ID,
 				"code", r.Code,
-				"mode", routeModeFor(info, r.Code),
+				"mode", mode,
 				"color", color,
 				// The path joins the stations when the timetable has no shape.
 				"fromStops", d.GeometryFromStops,

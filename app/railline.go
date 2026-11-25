@@ -169,10 +169,10 @@ func railLineDetails(info operatorInfo, op *rtCatalogOp, code, direction string,
 		// Sagalés: real GPS vehicles from sagales.com (unofficial).
 		buses, stale = sagalesLineBuses(code, direction, now)
 		source = "sagales_gps_unofficial"
-	case ambAgencyID:
-		// AMB Bus Metropolità (Badalona, Barcelona, Baix Llobregat, etc.):
-		// real GPS vehicles from AMB's live vehicles feed when enabled.
-		if ambBuses, ambStale := ambLineBuses(code, direction, now); len(ambBuses) > 0 || ambVehLive.Load() != nil {
+	case ambAgencyID, gencatBusAgencyID, movSarbusAgencyID, movCostaAgencyID, movSarfaAgencyID, movTccAgencyID:
+		// AMB Bus Metropolità, Moventis NAP (Sarbus Vallès, etc.), and
+		// Generalitat interurban lines: live GPS from AMB's vehicles feed.
+		if ambBuses, ambStale := ambLineBuses(info.ID, code, direction, now); len(ambBuses) > 0 || ambVehLive.Load() != nil {
 			buses, stale = ambBuses, ambStale
 			source = "amb_gps_unofficial"
 		}
