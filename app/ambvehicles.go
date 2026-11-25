@@ -107,16 +107,25 @@ func (p *ambVehPoller) run(ctx context.Context, wg *sync.WaitGroup) {
 func (p *ambVehPoller) poll(ctx context.Context) {
 	body, err := p.fetch(ctx)
 	if err != nil {
+		msg := movErrText(err)
 		p.mu.Lock()
-		p.lastErr = movErrText(err)
+		changed := p.lastErr != msg
+		p.lastErr = msg
 		p.mu.Unlock()
+		if changed && ctx.Err() == nil {
+			log.Printf("[AMB-GPS] poll failed: %s", msg)
+		}
 		return
 	}
 	v, err := parseJSON(body)
 	if err != nil {
 		p.mu.Lock()
+		changed := p.lastErr != "bad JSON"
 		p.lastErr = "bad JSON"
 		p.mu.Unlock()
+		if changed {
+			log.Printf("[AMB-GPS] poll failed: bad JSON")
+		}
 		return
 	}
 	arr, _ := v.([]any)
@@ -149,10 +158,14 @@ func (p *ambVehPoller) poll(ctx context.Context) {
 	now := time.Now()
 	p.snap.Store(&ambVehSnapshot{At: now, ByLine: byLine})
 	p.mu.Lock()
+	recovered := p.lastErr != ""
 	p.lastOK = now
 	p.lastErr = ""
 	p.count = n
 	p.mu.Unlock()
+	if recovered {
+		log.Printf("[AMB-GPS] recovered (%d vehicles)", n)
+	}
 }
 
 func (p *ambVehPoller) fetch(ctx context.Context) ([]byte, error) {

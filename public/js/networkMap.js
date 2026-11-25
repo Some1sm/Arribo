@@ -376,25 +376,31 @@ class NetworkMap extends TransitMap {
       if (!b || !b.id || !Number.isFinite(lat) || !Number.isFinite(lon)) continue;
       if (!this.isRailLineVisible(b.agencyId, b.lineCode)) continue;
       seen.add(b.id);
+      const isLiveGps = Boolean(b.isRealTime && !b.isEstimated);
       const popupHtml = buildMoventisPopupHtml(b, this.movFeed);
       const existing = this.movMarkers.get(b.id);
       if (existing) {
         existing.marker.setLatLng([lat, lon]);
+        if (existing.isLiveGps !== isLiveGps) {
+          const html = vehiclePinHtml({ cls: 'moventis-marker', bg: hex(b.color) || neutral, icon: CANONICAL_BUS_ICON_INNER_SVG, dot: isLiveGps ? 'live' : 'estimated' });
+          existing.marker.setIcon(L.divIcon({ html, className: 'c10-live-bus-icon', iconSize: [44, 44], iconAnchor: [22, 22] }));
+          existing.isLiveGps = isLiveGps;
+        }
         if (existing.popupHtml !== popupHtml) {
           existing.marker.setPopupContent(popupHtml);
           existing.popupHtml = popupHtml;
         }
         continue;
       }
-      const html = vehiclePinHtml({ cls: 'moventis-marker', bg: hex(b.color) || neutral, icon: CANONICAL_BUS_ICON_INNER_SVG, dot: 'estimated' });
+      const html = vehiclePinHtml({ cls: 'moventis-marker', bg: hex(b.color) || neutral, icon: CANONICAL_BUS_ICON_INNER_SVG, dot: isLiveGps ? 'live' : 'estimated' });
       const marker = L.marker([lat, lon], {
         icon: L.divIcon({ html, className: 'c10-live-bus-icon', iconSize: [44, 44], iconAnchor: [22, 22] }),
-        zIndexOffset: 950,
+        zIndexOffset: isLiveGps ? 980 : 950,
         keyboard: false
       });
       marker.bindPopup(popupHtml, { className: 'arribo-bus-popup', minWidth: 290, maxWidth: 350, autoPan: true, autoPanPadding: [20, 20], closeButton: true });
       marker.addTo(this.movLayer);
-      this.movMarkers.set(b.id, { marker, popupHtml });
+      this.movMarkers.set(b.id, { marker, popupHtml, isLiveGps });
     }
     for (const [id, obj] of Array.from(this.movMarkers.entries())) {
       if (seen.has(id)) continue;
@@ -1084,6 +1090,7 @@ function vehiclePinHtml({ cls, bg, icon, dot }) {
  *  stop and when it gets there, and that the position is estimated. */
 function buildMoventisPopupHtml(b, feed) {
   const esc = (v) => window.TransitUtils.esc(v);
+  const isLiveGps = Boolean(b.isRealTime && !b.isEstimated);
   const eta = Number(b.nextStopEtaSec);
   const age = Number(b.predictionAgeSec);
   const mins = s => (s < 60 ? netT('movPopup.lessThanMin', null, 'menys d’1 min') : netT('movPopup.minutes', { n: Math.round(s / 60) }, `${Math.round(s / 60)} min`));
@@ -1092,6 +1099,12 @@ function buildMoventisPopupHtml(b, feed) {
             <div class="map-popup-metric-header"><span>${esc(label)}</span></div>
             <div class="map-popup-metric-val"><span>${esc(value)}</span></div>
           </div>`;
+  const badgeCls = isLiveGps ? 'live' : 'ghost';
+  const badgeLabel = isLiveGps ? netT('movPopup.liveGps', null, 'GPS en temps real') : netT('movPopup.estimated', null, 'Posició estimada');
+  const ageLabel = isLiveGps ? netT('movPopup.tileGpsAge', null, 'Posició de fa') : netT('movPopup.tileAge', null, 'Previsió de fa');
+  const noteText = isLiveGps
+    ? netT('movPopup.noteGps', null, "Posició GPS en temps real de l'operador.")
+    : netT('movPopup.note', null, "Posició estimada a partir de les previsions d'arribada que Moventis publica per a cada parada: no és una posició GPS.");
   return `
       <div class="map-popup-card moventis-popup-card">
         <div class="map-popup-header">
@@ -1106,7 +1119,7 @@ function buildMoventisPopupHtml(b, feed) {
             </div>
           </div>
           <div class="map-popup-header-status">
-            <span class="map-popup-status-badge ghost"><span class="status-pulse-dot"></span><span>${esc(netT('movPopup.estimated', null, 'Posició estimada'))}</span></span>
+            <span class="map-popup-status-badge ${badgeCls}"><span class="status-pulse-dot"></span><span>${esc(badgeLabel)}</span></span>
           </div>
         </div>
         ${b.stopName ? `
@@ -1120,9 +1133,9 @@ function buildMoventisPopupHtml(b, feed) {
           ${tile(netT('movPopup.tileNext', null, 'Propera parada'), Number.isFinite(eta) ? mins(eta) : '--')}
           ${tile(netT('movPopup.tileDest', null, 'Destinació'), b.destination || '--')}
           ${tile(netT('trainPopup.tileOperator', null, 'Operador'), 'Moventis')}
-          ${tile(netT('movPopup.tileAge', null, 'Previsió de fa'), Number.isFinite(age) ? mins(age) : '--')}
+          ${tile(ageLabel, Number.isFinite(age) ? mins(age) : '--')}
         </div>
-        <div class="train-popup-note">${esc(netT('movPopup.note', null, "Posició estimada a partir de les previsions d'arribada que Moventis publica per a cada parada: no és una posició GPS."))}</div>
+        <div class="train-popup-note">${esc(noteText)}</div>
         ${feed?.attribution ? `
         <div class="map-popup-coords-footer">
           <span class="source-tag">${esc(feed.attribution)}</span>
