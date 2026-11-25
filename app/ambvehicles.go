@@ -21,6 +21,7 @@ import (
 	"context"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"strconv"
@@ -31,17 +32,28 @@ import (
 )
 
 const (
-	ambVehURL    = "https://api.ambmobilitat.cat/v2/bus/vehicles"
-	ambVehGap    = 20 * time.Second
-	ambVehMaxAge = 90 * time.Second // a snapshot older than this is not shown
+	ambVehURL      = "https://api.ambmobilitat.cat/v2/bus/vehicles"
+	ambVehGap      = 20 * time.Second
+	ambVehMaxAge   = 90 * time.Second // live GPS cutoff: older than this switches to dead-reckoning estimate
+	ambVehCarryMax = 10 * time.Minute // keep extrapolating from last live GPS up to this long between pings
 )
 
 // ambVeh is one bus of a followed line, from /bus/vehicles.
 type ambVeh struct {
-	Line     string
-	Dir      int // routeId's last digit (1/2); the moventis trayecto — unverified, flip the map if directions look swapped
-	Lat, Lon float64
-	VehID    string
+	Line       string
+	Dir        int // routeId's last digit (1/2); the moventis trayecto — unverified, flip the map if directions look swapped
+	Lat, Lon   float64
+	VehID      string
+	ObservedAt time.Time // when AMB last returned this vehicle (zero falls back to snap.At)
+	SpeedKmh   float64   // smoothed observed speed (km/h); 0 falls back to movDefaultSpeedKmh
+}
+
+type ambTrackedVeh struct {
+	Veh      ambVeh
+	MoveAt   time.Time
+	MoveLat  float64
+	MoveLon  float64
+	SpeedKmh float64
 }
 
 type ambVehSnapshot struct {
@@ -56,6 +68,7 @@ type ambVehPoller struct {
 	lastErr string
 	lastOK  time.Time
 	count   int
+	tracked map[string]*ambTrackedVeh // keyed by ambNormLine(line)+"\x00"+vehID
 
 	snap atomic.Pointer[ambVehSnapshot]
 }
@@ -129,8 +142,8 @@ func (p *ambVehPoller) poll(ctx context.Context) {
 		return
 	}
 	arr, _ := v.([]any)
-	byLine := map[string][]ambVeh{}
-	n := 0
+	now := time.Now()
+	var fresh []ambVeh
 	for _, raw := range arr {
 		o, _ := raw.(*Obj)
 		if o == nil {
@@ -145,27 +158,104 @@ func (p *ambVehPoller) poll(ctx context.Context) {
 		if err1 != nil || err2 != nil || (lat == 0 && lon == 0) {
 			continue
 		}
-		k := ambNormLine(line)
-		byLine[k] = append(byLine[k], ambVeh{
-			Line:  line,
-			Dir:   ambDirFromRoute(jsString(o.Get("routeId"))),
-			Lat:   lat,
-			Lon:   lon,
-			VehID: jsString(o.Get("id")),
+		fresh = append(fresh, ambVeh{
+			Line:       line,
+			Dir:        ambDirFromRoute(jsString(o.Get("routeId"))),
+			Lat:        lat,
+			Lon:        lon,
+			VehID:      jsString(o.Get("id")),
+			ObservedAt: now,
 		})
-		n++
 	}
-	now := time.Now()
+	byLine := p.mergeAndSnapshot(fresh, now)
 	p.snap.Store(&ambVehSnapshot{At: now, ByLine: byLine})
 	p.mu.Lock()
 	recovered := p.lastErr != ""
 	p.lastOK = now
 	p.lastErr = ""
-	p.count = n
+	p.count = len(fresh)
 	p.mu.Unlock()
 	if recovered {
-		log.Printf("[AMB-GPS] recovered (%d vehicles)", n)
+		log.Printf("[AMB-GPS] recovered (%d vehicles)", len(fresh))
 	}
+}
+
+// mergeAndSnapshot updates tracked vehicles with a fresh poll and keeps
+// previously seen buses alive for up to ambVehCarryMax so intermittent drops
+// in AMB's /bus/vehicles cache (e.g. Casas buses pinging every 1–5 min) can
+// continue smoothly via route-snapped dead-reckoning instead of vanishing.
+func (p *ambVehPoller) mergeAndSnapshot(fresh []ambVeh, now time.Time) map[string][]ambVeh {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.tracked == nil {
+		p.tracked = map[string]*ambTrackedVeh{}
+	}
+	for _, v := range fresh {
+		k := ambNormLine(v.Line)
+		id := v.VehID
+		if id == "" {
+			id = fmtCoordKey(v.Lat, v.Lon)
+		}
+		tk := k + "\x00" + id
+		obsAt := v.ObservedAt
+		if obsAt.IsZero() {
+			obsAt = now
+		}
+		v.ObservedAt = obsAt
+		if prev, ok := p.tracked[tk]; ok {
+			dKm := haversineKm(prev.MoveLat, prev.MoveLon, v.Lat, v.Lon)
+			dt := obsAt.Sub(prev.MoveAt).Seconds()
+			if dKm > 0.025 && dt >= 5 && dt <= 600 {
+				inst := dKm / (dt / 3600)
+				if inst >= 8 && inst <= 80 {
+					if prev.SpeedKmh > 0 {
+						prev.SpeedKmh = 0.5*prev.SpeedKmh + 0.5*inst
+					} else {
+						prev.SpeedKmh = inst
+					}
+				}
+				prev.MoveAt = obsAt
+				prev.MoveLat = v.Lat
+				prev.MoveLon = v.Lon
+			} else if dKm > 0.005 {
+				prev.MoveAt = obsAt
+				prev.MoveLat = v.Lat
+				prev.MoveLon = v.Lon
+			}
+			v.SpeedKmh = prev.SpeedKmh
+			prev.Veh = v
+		} else {
+			p.tracked[tk] = &ambTrackedVeh{
+				Veh:     v,
+				MoveAt:  obsAt,
+				MoveLat: v.Lat,
+				MoveLon: v.Lon,
+			}
+		}
+	}
+	byLine := map[string][]ambVeh{}
+	for tk, tv := range p.tracked {
+		if now.Sub(tv.Veh.ObservedAt) > ambVehCarryMax {
+			delete(p.tracked, tk)
+			continue
+		}
+		k := ambNormLine(tv.Veh.Line)
+		byLine[k] = append(byLine[k], tv.Veh)
+	}
+	return byLine
+}
+
+func fmtCoordKey(lat, lon float64) string {
+	return strconv.FormatFloat(lat, 'f', 4, 64) + "," + strconv.FormatFloat(lon, 'f', 4, 64)
+}
+
+func haversineKm(lat1, lon1, lat2, lon2 float64) float64 {
+	const earthKm = 6371.0
+	dLat := (lat2 - lat1) * math.Pi / 180
+	dLon := (lon2 - lon1) * math.Pi / 180
+	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
+		math.Cos(lat1*math.Pi/180)*math.Cos(lat2*math.Pi/180)*math.Sin(dLon/2)*math.Sin(dLon/2)
+	return 2 * earthKm * math.Asin(math.Min(1, math.Sqrt(a)))
 }
 
 func (p *ambVehPoller) fetch(ctx context.Context) ([]byte, error) {
@@ -203,9 +293,10 @@ func ambDirFromRoute(routeID string) int {
 	return 0
 }
 
-// movVehiclesWithAMB returns the followed lines' buses: AMB's real GPS for a
-// line while it has it (measured), the estimated buses for the rest. Used by
-// both the map (/api/moventis) and the line view.
+// movVehiclesWithAMB returns the followed lines' buses: AMB's real GPS (or
+// route-snapped dead-reckoning continuation from its last GPS) per
+// (line, direction), falling back to moventis.es estimated buses for any
+// line or direction AMB does not cover.
 func movVehiclesWithAMB(s *movStatic, lineIDs []int, preds map[[3]int]movPrediction, now time.Time) []any {
 	est := movEstimate(s, lineIDs, preds, now)
 	if s == nil {
@@ -219,8 +310,8 @@ func movVehiclesWithAMB(s *movStatic, lineIDs []int, preds map[[3]int]movPredict
 	if snap == nil || now.Sub(snap.At) > ambVehMaxAge {
 		return est
 	}
-	covered := map[string]bool{}
-	var measured []any
+	covered := map[[2]string]bool{}
+	var ambOut []any
 	for _, id := range lineIDs {
 		line := s.Lines[id]
 		if line.Code == "" {
@@ -230,26 +321,44 @@ func movVehiclesWithAMB(s *movStatic, lineIDs []int, preds map[[3]int]movPredict
 		if len(vs) == 0 {
 			continue
 		}
-		covered[line.Code] = true
 		for _, v := range vs {
-			measured = append(measured, ambVehicleJSON(s, id, line, v, snap.At, now))
+			obj := ambVehicleJSON(s, id, line, v, snap.At, now)
+			if obj == nil {
+				continue
+			}
+			covered[[2]string{line.Code, jsString(obj.Get("directionId"))}] = true
+			ambOut = append(ambOut, obj)
 		}
 	}
-	if len(measured) == 0 {
+	if len(ambOut) == 0 {
 		return est
 	}
-	out := make([]any, 0, len(est)+len(measured))
+	out := make([]any, 0, len(est)+len(ambOut))
 	for _, e := range est {
-		if o, _ := e.(*Obj); o == nil || !covered[jsString(o.Get("lineCode"))] {
+		o, _ := e.(*Obj)
+		if o == nil || !covered[[2]string{jsString(o.Get("lineCode")), jsString(o.Get("directionId"))}] {
 			out = append(out, e)
 		}
 	}
-	return append(out, measured...)
+	return append(out, ambOut...)
 }
 
-// ambVehicleJSON is one AMB bus in the shape movVehicleJSON uses, but with
-// measured GPS instead of an estimated position.
-func ambVehicleJSON(s *movStatic, id int, line movLine, v ambVeh, at, now time.Time) *Obj {
+// ambVehicleJSON builds one AMB bus in the shape movVehicleJSON uses. When
+// AMB reported the bus within ambVehMaxAge it is emitted as measured GPS
+// (isRealTime: true, positionSource: "operator_gps"). If AMB temporarily
+// dropped it between pings (up to ambVehCarryMax), it is projected forward
+// along the matched route from its last GPS position and marked honestly as
+// estimated (isEstimated: true, positionSource: "gps_extrapolated"). Returns
+// nil if the bus expired or its projection passed the terminus.
+func ambVehicleJSON(s *movStatic, id int, line movLine, v ambVeh, snapAt, now time.Time) *Obj {
+	obsAt := v.ObservedAt
+	if obsAt.IsZero() {
+		obsAt = snapAt
+	}
+	age := now.Sub(obsAt)
+	if age > ambVehCarryMax {
+		return nil
+	}
 	code := line.Code
 	if code == "" {
 		code = numToString(float64(id))
@@ -262,14 +371,46 @@ func ambVehicleJSON(s *movStatic, id int, line movLine, v ambVeh, at, now time.T
 		}
 	}
 	dest := ""
-	bearing := 0.0
+	lat, lon := v.Lat, v.Lon
+	bearingVal := 0.0
 	dirID := v.Dir
 	if rt != nil {
 		dest = rt.Dest
-		bearing = movBearingNear(*rt, v.Lat, v.Lon)
+		bearingVal = movBearingNear(*rt, lat, lon)
 		dirID = movDirectionOf(s.Routes[id], rt.Trayecto)
 	}
-	ageSec := now.Sub(at).Seconds()
+
+	isLive := age <= ambVehMaxAge
+	posSource := "operator_gps"
+	if !isLive {
+		// Extrapolate smoothly forward along the route from the last known GPS.
+		if rt == nil || len(rt.Stops) < 2 {
+			return nil
+		}
+		startKm, ok := movKmNear(*rt, v.Lat, v.Lon)
+		if !ok {
+			return nil
+		}
+		speedKmh := v.SpeedKmh
+		if speedKmh <= 0 {
+			speedKmh = movDefaultSpeedKmh
+		}
+		speedKmh = math.Max(12, math.Min(55, speedKmh))
+		// Subtract a small 20 s buffer so we don't jump ahead the instant a ping lags.
+		advanceSec := math.Max(0, age.Seconds()-20)
+		projKm := startKm + speedKmh*(advanceSec/3600)
+		endKm := rt.Stops[len(rt.Stops)-1].Km
+		if projKm > endKm+0.25 {
+			return nil // projected past terminus: trip finished
+		}
+		if projKm > endKm {
+			projKm = endKm
+		}
+		lat, lon, bearingVal = movAt(*rt, projKm)
+		posSource = "gps_extrapolated"
+	}
+
+	ageSec := math.Max(0, age.Seconds())
 	return O(
 		"id", "AMB_MOV_"+code+"_"+v.VehID,
 		"agencyId", movAgencyID,
@@ -283,21 +424,53 @@ func ambVehicleJSON(s *movStatic, id int, line movLine, v ambVeh, at, now time.T
 		"direction", numToString(float64(dirID)),
 		"directionId", numToString(float64(dirID)),
 		"destination", strOrNil(dest),
-		"lat", jsRound(v.Lat*1e6)/1e6, "lon", jsRound(v.Lon*1e6)/1e6,
-		"latitude", jsRound(v.Lat*1e6)/1e6, "longitude", jsRound(v.Lon*1e6)/1e6,
-		"bearing", jsRound(bearing),
+		"lat", jsRound(lat*1e6)/1e6, "lon", jsRound(lon*1e6)/1e6,
+		"latitude", jsRound(lat*1e6)/1e6, "longitude", jsRound(lon*1e6)/1e6,
+		"bearing", jsRound(bearingVal),
 		"vehicleRef", strOrNil(v.VehID),
 		"stopName", nil,
 		"currentStatus", "IN_TRANSIT_TO",
-		// Measured GPS from the AMB feed, not a prediction.
-		"isEstimated", false,
-		"isRealTime", true,
+		"isEstimated", !isLive,
+		"isRealTime", isLive,
 		"isTheoretical", false,
-		"positionSource", "operator_gps",
+		"positionSource", posSource,
 		"predictionAgeSec", jsRound(ageSec),
 		"delayMins", nil,
-		"stale", ageSec > ambVehMaxAge.Seconds(),
+		"stale", false,
 	)
+}
+
+// movKmNear projects (lat, lon) onto the route's stop polyline and returns
+// the cumulative km along the route. Returns ok=false if the bus is > 2 km
+// off the route.
+func movKmNear(rt movRoute, lat, lon float64) (float64, bool) {
+	if len(rt.Stops) < 2 {
+		return 0, false
+	}
+	cosLat := math.Cos(lat * math.Pi / 180)
+	bestDist2 := 1e18
+	bestKm := rt.Stops[0].Km
+	for i := 1; i < len(rt.Stops); i++ {
+		a, b := rt.Stops[i-1], rt.Stops[i]
+		ax, ay := (a.Lon-lon)*cosLat*111.32, (a.Lat-lat)*110.57
+		bx, by := (b.Lon-lon)*cosLat*111.32, (b.Lat-lat)*110.57
+		dx, dy := bx-ax, by-ay
+		l2 := dx*dx + dy*dy
+		t := 0.0
+		if l2 > 0 {
+			t = math.Max(0, math.Min(1, -(ax*dx+ay*dy)/l2))
+		}
+		px, py := ax+t*dx, ay+t*dy
+		d2 := px*px + py*py
+		if d2 < bestDist2 {
+			bestDist2 = d2
+			bestKm = a.Km + t*(b.Km-a.Km)
+		}
+	}
+	if bestDist2 > 4.0 { // > 2 km away from route
+		return 0, false
+	}
+	return bestKm, true
 }
 
 // movBearingNear is the route heading at the stop nearest (lat, lon).

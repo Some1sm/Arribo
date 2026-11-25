@@ -54,6 +54,12 @@ func movLineBuses(code, direction string, now time.Time) []any {
 			b.Set("delayFormatted", "Posició en temps real")
 			b.Set("agency", ambOperator.Name)
 			b.Set("attribution", ambAttribution)
+		} else if jsString(b.Get("positionSource")) == "gps_extrapolated" {
+			// Dead-reckoning continuation from AMB's last real GPS ping.
+			b.Set("delayBadgeText", "Posició estimada (GPS)")
+			b.Set("delayFormatted", "Posició estimada (últim GPS)")
+			b.Set("agency", movOperator.Name)
+			b.Set("attribution", movAttributionText())
 		} else {
 			b.Set("delayBadgeText", "Posició estimada")
 			b.Set("delayFormatted", "Posició estimada")
@@ -94,12 +100,15 @@ func movFetchStopLive(ctx context.Context, p *movPoller, s *movStatic, lineID, s
 	}
 	movOnDemandMu.Unlock()
 
-	body, err := p.get(ctx, fmt.Sprintf("/api/json/GetTiemposParada/ca/%d/%d/0", stopID, lineID))
+	body, err := p.getInteractive(ctx, fmt.Sprintf("/api/json/GetTiemposParada/ca/%d/%d/0", stopID, lineID))
 	if err != nil {
 		return nil, time.Time{}, false
 	}
 	etas, err := parseMovStopTimes(body)
 	if err != nil {
+		if err == errMovThrottled {
+			p.throttled()
+		}
 		return nil, time.Time{}, false
 	}
 	fetchedAt := time.Now()
@@ -313,6 +322,52 @@ func movStopDepartures(ctx context.Context, stop rtLineStop, code string, now ti
 							"isTheoretical", false,
 							"isCancelled", false,
 							"predictionAgeSec", math.Round(age),
+						))
+					}
+				}
+			}
+
+			// 3. Last-resort fallback: bundled Generalitat timetable so stops
+			// never show empty "0 sortides" if moventis.es is throttled/down.
+			if len(deps) == 0 {
+				if gc := gencatData(); gc != nil {
+					times := gc.upcomingDepartures(id, stopNum, now, 120*time.Minute)
+					destFallback := ""
+					dirFallback := "0"
+					for _, rt := range routes {
+						for _, st := range rt.Stops {
+							if st.ID == stopNum {
+								destFallback = movTitle(rt.Dest)
+								dirFallback = numToString(float64(movDirectionOf(routes, rt.Trayecto)))
+								break
+							}
+						}
+						if destFallback != "" {
+							break
+						}
+					}
+					for _, at := range times {
+						left := math.Max(0, at.Sub(now).Seconds())
+						note = ""
+						deps = append(deps, O(
+							"tripId", nil,
+							"vehicleId", nil,
+							"destination", strOrNil(destFallback),
+							"direction", dirFallback,
+							"departureTime", at.In(madrid).Format("15:04"),
+							"scheduledTime", at.In(madrid).Format("15:04"),
+							"expectedIso", isoString(at.UnixMilli()),
+							"minutesAway", math.Floor(left/60),
+							"delayMins", nil,
+							"delayMinutes", nil,
+							"delayStatus", "unknown",
+							"delayBadgeText", "Horari teòric",
+							"delaySource", "timetable",
+							"isRealTime", false,
+							"isEstimated", false,
+							"isTheoretical", true,
+							"isCancelled", false,
+							"predictionAgeSec", nil,
 						))
 					}
 				}

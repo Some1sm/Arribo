@@ -1091,6 +1091,7 @@ function vehiclePinHtml({ cls, bg, icon, dot }) {
 function buildMoventisPopupHtml(b, feed) {
   const esc = (v) => window.TransitUtils.esc(v);
   const isLiveGps = Boolean(b.isRealTime && !b.isEstimated);
+  const isGpsExtrap = b.positionSource === 'gps_extrapolated';
   const eta = Number(b.nextStopEtaSec);
   const age = Number(b.predictionAgeSec);
   const mins = s => (s < 60 ? netT('movPopup.lessThanMin', null, 'menys d’1 min') : netT('movPopup.minutes', { n: Math.round(s / 60) }, `${Math.round(s / 60)} min`));
@@ -1101,10 +1102,12 @@ function buildMoventisPopupHtml(b, feed) {
           </div>`;
   const badgeCls = isLiveGps ? 'live' : 'ghost';
   const badgeLabel = isLiveGps ? netT('movPopup.liveGps', null, 'GPS en temps real') : netT('movPopup.estimated', null, 'Posició estimada');
-  const ageLabel = isLiveGps ? netT('movPopup.tileGpsAge', null, 'Posició de fa') : netT('movPopup.tileAge', null, 'Previsió de fa');
+  const ageLabel = (isLiveGps || isGpsExtrap) ? netT('movPopup.tileGpsAge', null, 'Últim GPS fa') : netT('movPopup.tileAge', null, 'Previsió de fa');
   const noteText = isLiveGps
     ? netT('movPopup.noteGps', null, "Posició GPS en temps real de l'operador.")
-    : netT('movPopup.note', null, "Posició estimada a partir de les previsions d'arribada que Moventis publica per a cada parada: no és una posició GPS.");
+    : (isGpsExtrap
+      ? netT('movPopup.noteGpsExtrap', null, "Posició estimada al llarg del recorregut a partir de l'últim GPS real rebut.")
+      : netT('movPopup.note', null, "Posició estimada a partir de les previsions d'arribada que Moventis publica per a cada parada: no és una posició GPS."));
   return `
       <div class="map-popup-card moventis-popup-card">
         <div class="map-popup-header">

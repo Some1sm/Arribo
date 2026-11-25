@@ -100,6 +100,61 @@ func TestMovVehiclesWithAMBOverlay(t *testing.T) {
 	}
 }
 
+func TestAmbDeadReckoningAndPerDirectionCoverage(t *testing.T) {
+	rt1 := movRoute{LineID: 53, Trayecto: 1, Dest: "BCN", Stops: []movStop{
+		{ID: 1, Name: "A", Lat: 41.50, Lon: 2.40, Km: 0},
+		{ID: 2, Name: "B", Lat: 41.45, Lon: 2.35, Km: 7.0},
+	}}
+	rt2 := movRoute{LineID: 53, Trayecto: 2, Dest: "MATARO", Stops: []movStop{
+		{ID: 3, Name: "B", Lat: 41.45, Lon: 2.35, Km: 0},
+		{ID: 4, Name: "A", Lat: 41.50, Lon: 2.40, Km: 7.0},
+	}}
+	s := &movStatic{
+		Lines:  map[int]movLine{53: {ID: 53, Code: "C-10"}},
+		Routes: map[int][]movRoute{53: {rt1, rt2}},
+	}
+	t0 := time.Now()
+	p := &ambVehPoller{}
+	// T+0: AMB sees bus 1104 on dir 1 near start of route.
+	p.mergeAndSnapshot([]ambVeh{{Line: "C-10", Dir: 1, Lat: 41.495, Lon: 2.395, VehID: "1104", ObservedAt: t0}}, t0)
+	// T+3m: AMB drops C-10 (empty poll), but poller keeps 1104 carried.
+	t3 := t0.Add(3 * time.Minute)
+	byLine := p.mergeAndSnapshot(nil, t3)
+	p.snap.Store(&ambVehSnapshot{At: t3, ByLine: byLine})
+	ambVehLive.Store(p)
+	t.Cleanup(func() { ambVehLive.Store(nil) })
+
+	// Opposite direction (Trayecto 2) has a moventis prediction at stop 4.
+	preds := map[[3]int]movPrediction{
+		{53, 2, 4}: {LineID: 53, Trayecto: 2, StopID: 4, EtaSec: []float64{120}, At: t3},
+	}
+	out := movVehiclesWithAMB(s, []int{53}, preds, t3)
+	var gotExtrap, gotDir1Est bool
+	for _, raw := range out {
+		o := raw.(*Obj)
+		src := jsString(o.Get("positionSource"))
+		if src == "gps_extrapolated" {
+			gotExtrap = true
+			if truthy(o.Get("isRealTime")) || !truthy(o.Get("isEstimated")) {
+				t.Errorf("extrapolated bus must have isRealTime=false, isEstimated=true")
+			}
+			// Must have advanced south-west from 41.495 toward 41.45.
+			if o.Num("lat") >= 41.495 {
+				t.Errorf("extrapolated bus did not advance along route: lat=%v", o.Num("lat"))
+			}
+		}
+		if src == "stop_predictions" && jsString(o.Get("directionId")) == "1" {
+			gotDir1Est = true
+		}
+	}
+	if !gotExtrap {
+		t.Fatalf("expected gps_extrapolated bus after 3m AMB dropout; got %s", toJSON(out))
+	}
+	if !gotDir1Est {
+		t.Errorf("expected opposite-direction stop_predictions bus to survive; got %s", toJSON(out))
+	}
+}
+
 func countReal(vs []any, real bool) int {
 	n := 0
 	for _, v := range vs {

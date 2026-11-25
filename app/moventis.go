@@ -210,13 +210,15 @@ type movPoller struct {
 	lastRetry time.Time    // last retryMissing (poller goroutine only)
 	delays    *movDelayTracker
 
-	mu      sync.Mutex
-	static  *movStatic
-	preds   map[[3]int]movPrediction // line, trayecto, stop
-	obs     map[int]movStopObs       // stop -> what its last answer showed
-	stats   movStats
-	backoff time.Duration
-	until   time.Time // no request before this (backoff)
+	mu               sync.Mutex
+	static           *movStatic
+	preds            map[[3]int]movPrediction // line, trayecto, stop
+	obs              map[int]movStopObs       // stop -> what its last answer showed
+	stats            movStats
+	backoff          time.Duration
+	until            time.Time // background crawler pacing + backoff
+	throttledUntil   time.Time // hard site-throttle backoff (shared with interactive clicks)
+	interactiveUntil time.Time // lightweight 800 ms spacing for user stop clicks
 
 	snap atomic.Pointer[movSnapshot]
 }
@@ -327,6 +329,59 @@ func (p *movPoller) get(ctx context.Context, path string) ([]byte, error) {
 	return body, nil
 }
 
+// getInteractive fetches a stop's live predictions for an interactive user
+// click without blocking on the background crawler's 11 s movMinGap. It still
+// respects site-level throttling (throttledUntil) and spaces interactive
+// requests 800 ms apart.
+func (p *movPoller) getInteractive(ctx context.Context, path string) ([]byte, error) {
+	const interactiveGap = 800 * time.Millisecond
+	p.mu.Lock()
+	if time.Now().Before(p.throttledUntil) {
+		p.mu.Unlock()
+		return nil, errMovThrottled
+	}
+	wait := time.Until(p.interactiveUntil)
+	nextAt := time.Now()
+	if wait > 0 {
+		nextAt = nextAt.Add(wait)
+	}
+	p.interactiveUntil = nextAt.Add(interactiveGap)
+	p.mu.Unlock()
+	if wait > 0 {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(wait):
+		}
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, movBase+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", movUserAgent)
+	req.Header.Set("Accept", "application/json")
+	resp, err := movHTTP.Do(req)
+	p.mu.Lock()
+	p.stats.Requests++
+	p.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	const movMaxBody = 8 << 20
+	body, err := io.ReadAll(io.LimitReader(resp.Body, movMaxBody+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > movMaxBody {
+		return nil, fmt.Errorf("response body exceeded %d bytes", movMaxBody)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return body, nil
+}
+
 // throttled records a placeholder answer and lengthens the backoff.
 func (p *movPoller) throttled() {
 	p.mu.Lock()
@@ -343,7 +398,9 @@ func (p *movPoller) throttled() {
 			p.backoff = movBackoffMax
 		}
 	}
-	p.until = time.Now().Add(p.backoff)
+	until := time.Now().Add(p.backoff)
+	p.until = until
+	p.throttledUntil = until
 }
 
 func (p *movPoller) ok() {

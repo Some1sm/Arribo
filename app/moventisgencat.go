@@ -311,6 +311,44 @@ func (g *gcData) nextDeparture(lineID, stopID int, now time.Time) (time.Time, bo
 	return best, true
 }
 
+// upcomingDepartures returns all published departures of lineID at stopID
+// within [now-2m, now+horizon], sorted chronologically.
+func (g *gcData) upcomingDepartures(lineID, stopID int, now time.Time, horizon time.Duration) []time.Time {
+	sts, ok := g.stopTimes(lineID, stopID)
+	if !ok {
+		return nil
+	}
+	day := now.In(madrid)
+	if !g.lineRuns(lineID, day.Format("20060102")) {
+		return nil
+	}
+	lo := now.Add(-2 * time.Minute)
+	hi := now.Add(horizon)
+	var out []time.Time
+	for off := -1; off <= 1; off++ {
+		d := day.AddDate(0, 0, off)
+		date := d.Format("20060102")
+		y, m, dd := d.Date()
+		base := localTimeToUtcDate(y, int(m)-1, dd, 0, 0, 0)
+		for _, st := range sts {
+			if !st.runsOn(g, date) {
+				continue
+			}
+			t := time.UnixMilli(base).Add(time.Duration(st.sec) * time.Second)
+			if t.Before(lo) || t.After(hi) {
+				continue
+			}
+			out = append(out, t)
+		}
+	}
+	for i := 1; i < len(out); i++ {
+		for j := i; j > 0 && out[j].Before(out[j-1]); j-- {
+			out[j], out[j-1] = out[j-1], out[j]
+		}
+	}
+	return out
+}
+
 // nearestDeparture finds the published departure of lineID at stopID closest to
 // expected within [expected - maxLate, expected + maxEarly] (i.e. delay in
 // [-maxEarly, +maxLate]). Returns ok=false when the timetable has no entry for
