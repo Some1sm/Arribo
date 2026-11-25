@@ -54,6 +54,38 @@ func TestMovParseRoutes(t *testing.T) {
 	}
 }
 
+func TestMovParseArrayTrayecto(t *testing.T) {
+	// C-20 encodes ID_TRAYECTO as an array ([1, 2] for concatenated loop, [3] for single).
+	raw := `[
+		{"ID_TRAYECTO":[1,2],"DESC_TRAYECTO":"(C20) MATARÓ - LLAVANERES - SANT VICENÇ D MONTALT","TrayectosDet":[
+			{"ID_TRAYECTO":1,"SECUENCIA":10,"NKM_ORIGEN":0,"Parada":{"ID_PARADA":7340,"DESC_PARADA":"Hospital","MUNICIPIO":"MATARÓ","LATITUD":41.555,"LONGITUD":2.428}},
+			{"ID_TRAYECTO":1,"SECUENCIA":20,"NKM_ORIGEN":14.6,"Parada":{"ID_PARADA":7400,"DESC_PARADA":"Can Cinto","MUNICIPIO":"SANT VICENÇ DE MONTALT","LATITUD":41.580,"LONGITUD":2.505}},
+			{"ID_TRAYECTO":2,"SECUENCIA":30,"NKM_ORIGEN":0,"Parada":{"ID_PARADA":7400,"DESC_PARADA":"Can Cinto","MUNICIPIO":"SANT VICENÇ DE MONTALT","LATITUD":41.580,"LONGITUD":2.505}},
+			{"ID_TRAYECTO":2,"SECUENCIA":40,"NKM_ORIGEN":10.7,"Parada":{"ID_PARADA":7340,"DESC_PARADA":"Hospital","MUNICIPIO":"MATARÓ","LATITUD":41.555,"LONGITUD":2.428}}
+		]},
+		{"ID_TRAYECTO":[3],"DESC_TRAYECTO":"(C20) MATARÓ - LLAVANERES","TrayectosDet":[
+			{"ID_TRAYECTO":3,"SECUENCIA":10,"NKM_ORIGEN":0,"Parada":{"ID_PARADA":7340,"DESC_PARADA":"Hospital","MUNICIPIO":"MATARÓ","LATITUD":41.555,"LONGITUD":2.428}},
+			{"ID_TRAYECTO":3,"SECUENCIA":20,"NKM_ORIGEN":11.5,"Parada":{"ID_PARADA":7380,"DESC_PARADA":"Clòsens","MUNICIPIO":"SANT ANDREU DE LLAVANERES","LATITUD":41.573,"LONGITUD":2.482}}
+		]}
+	]`
+	routes, err := parseMovRoutes(57, []byte(raw))
+	if err != nil {
+		t.Fatalf("parseMovRoutes C-20 array: %v", err)
+	}
+	if len(routes) != 3 {
+		t.Fatalf("want 3 routes (trayectos 1, 2, 3), got %d: %+v", len(routes), routes)
+	}
+	if routes[0].Trayecto != 1 || routes[0].Dest != "SANT VICENÇ D MONTALT" || len(routes[0].Stops) != 2 {
+		t.Errorf("route 0: %+v", routes[0])
+	}
+	if routes[1].Trayecto != 2 || routes[1].Dest != "MATARÓ" || len(routes[1].Stops) != 2 || routes[1].Stops[0].Km != 0 {
+		t.Errorf("route 1: %+v", routes[1])
+	}
+	if routes[2].Trayecto != 3 || routes[2].Dest != "LLAVANERES" || len(routes[2].Stops) != 2 {
+		t.Errorf("route 2: %+v", routes[2])
+	}
+}
+
 func TestMovParseStopTimes(t *testing.T) {
 	if _, err := parseMovStopTimes([]byte(movTestPlaceholder)); !errors.Is(err, errMovThrottled) {
 		t.Errorf("placeholder: %v", err)

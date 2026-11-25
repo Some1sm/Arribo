@@ -477,36 +477,38 @@ var errMovNoRoutes = errors.New("no routes in the answer")
 
 // parseMovRoutes reads a line's routes. The site answers [{"numLinea":..}]
 // with no route for a day without (remaining) service, and also while it
-// holds requests back.
+// holds requests back. Some lines (e.g. C-20 circular/concatenated routes)
+// encode ID_TRAYECTO as a JSON array ([1, 2] or [3]) instead of a scalar,
+// with each stop in TrayectosDet carrying its sub-route's ID_TRAYECTO.
 func parseMovRoutes(lineID int, body []byte) ([]movRoute, error) {
+	type detRow struct {
+		Trayecto float64 `json:"ID_TRAYECTO"`
+		Seq      float64 `json:"SECUENCIA"`
+		Km       float64 `json:"NKM_ORIGEN"`
+		Parada   struct {
+			ID   float64 `json:"ID_PARADA"`
+			Name string  `json:"DESC_PARADA"`
+			Town string  `json:"MUNICIPIO"`
+			Lat  any     `json:"LATITUD"`
+			Lon  any     `json:"LONGITUD"`
+		} `json:"Parada"`
+	}
 	var rows []struct {
-		Trayecto any    `json:"ID_TRAYECTO"`
-		Desc     string `json:"DESC_TRAYECTO"`
-		Det      []struct {
-			Seq    float64 `json:"SECUENCIA"`
-			Km     float64 `json:"NKM_ORIGEN"`
-			Parada struct {
-				ID   float64 `json:"ID_PARADA"`
-				Name string  `json:"DESC_PARADA"`
-				Town string  `json:"MUNICIPIO"`
-				Lat  any     `json:"LATITUD"`
-				Lon  any     `json:"LONGITUD"`
-			} `json:"Parada"`
-		} `json:"TrayectosDet"`
+		Trayecto any      `json:"ID_TRAYECTO"`
+		Desc     string   `json:"DESC_TRAYECTO"`
+		Det      []detRow `json:"TrayectosDet"`
 	}
 	if err := json.Unmarshal(body, &rows); err != nil {
 		return nil, err
 	}
-	var out []movRoute
-	for _, r := range rows {
-		tid, ok := r.Trayecto.(float64)
-		if !ok || len(r.Det) < 2 {
-			continue
+	buildRoute := func(tid int, desc string, det []detRow, preferLastTown bool) (movRoute, bool) {
+		if len(det) < 2 {
+			return movRoute{}, false
 		}
-		det := r.Det
-		sort.SliceStable(det, func(i, j int) bool { return det[i].Seq < det[j].Seq })
-		rt := movRoute{LineID: lineID, Trayecto: int(tid), Desc: strings.TrimSpace(r.Desc)}
-		for _, d := range det {
+		cp := append([]detRow(nil), det...)
+		sort.SliceStable(cp, func(i, j int) bool { return cp[i].Seq < cp[j].Seq })
+		rt := movRoute{LineID: lineID, Trayecto: tid, Desc: strings.TrimSpace(desc)}
+		for _, d := range cp {
 			lat, lon := movNum(d.Parada.Lat), movNum(d.Parada.Lon)
 			if d.Parada.ID <= 0 || lat == 0 || lon == 0 || math.IsNaN(lat) || math.IsNaN(lon) {
 				continue
@@ -514,15 +516,70 @@ func parseMovRoutes(lineID int, body []byte) ([]movRoute, error) {
 			rt.Stops = append(rt.Stops, movStop{ID: int(d.Parada.ID), Name: cleanMovStopName(d.Parada.Name), Town: strings.TrimSpace(d.Parada.Town), Lat: lat, Lon: lon, Km: d.Km})
 		}
 		if len(rt.Stops) < 2 {
+			return movRoute{}, false
+		}
+		if preferLastTown && rt.Stops[len(rt.Stops)-1].Town != "" {
+			rt.Dest = rt.Stops[len(rt.Stops)-1].Town
+		} else {
+			rt.Dest = movRouteDest(rt)
+		}
+		return rt, true
+	}
+	var out []movRoute
+	for _, r := range rows {
+		tids := movTrayectoIDs(r.Trayecto)
+		if len(tids) == 0 || len(r.Det) < 2 {
 			continue
 		}
-		rt.Dest = movRouteDest(rt)
-		out = append(out, rt)
+		if len(tids) == 1 {
+			if rt, ok := buildRoute(tids[0], r.Desc, r.Det, false); ok {
+				out = append(out, rt)
+			}
+			continue
+		}
+		byTID := map[int][]detRow{}
+		for _, d := range r.Det {
+			if d.Trayecto > 0 {
+				byTID[int(d.Trayecto)] = append(byTID[int(d.Trayecto)], d)
+			}
+		}
+		added := 0
+		for idx, tid := range tids {
+			if rt, ok := buildRoute(tid, r.Desc, byTID[tid], idx > 0); ok {
+				out = append(out, rt)
+				added++
+			}
+		}
+		if added == 0 {
+			if rt, ok := buildRoute(tids[0], r.Desc, r.Det, false); ok {
+				out = append(out, rt)
+			}
+		}
 	}
 	if len(out) == 0 {
 		return nil, errMovNoRoutes
 	}
 	return out, nil
+}
+
+// movTrayectoIDs parses ID_TRAYECTO from either a scalar number (1) or an
+// array of numbers ([1, 2] on concatenated/circular Moventis routes like C-20).
+func movTrayectoIDs(v any) []int {
+	switch x := v.(type) {
+	case float64:
+		if x > 0 {
+			return []int{int(x)}
+		}
+	case []any:
+		var out []int
+		for _, elem := range x {
+			if f, ok := elem.(float64); ok && f > 0 {
+				out = append(out, int(f))
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 func movNum(v any) float64 {
@@ -1233,6 +1290,10 @@ func (p *movPoller) run(ctx context.Context) {
 			}
 		}
 		enrich()
+		if static != nil {
+			static = p.retryMissing(ctx, static)
+			enrich()
+		}
 		p.mu.Lock()
 		p.static = static
 		p.mu.Unlock()
