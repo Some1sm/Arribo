@@ -2299,11 +2299,16 @@ class TransitApp {
           : (failed ? t('rail.departuresError') : t('rail.noDeparturesHint'));
       }
       if (etaPillEl && etaStatusText) {
-        // Live only with the operator's forecast for that train; else timetable, or a discarded delay.
+        // Live only with the operator's forecast; estimated if propagated from an upstream live bus; else timetable, or a discarded delay.
         const live = Boolean(next?.isRealTime);
-        etaPillEl.className = `eta-status-pill ${live ? 'live' : 'scheduled'}`;
+        const est = Boolean(!live && next?.isEstimated);
+        const rawDelay = next?.delayMins !== undefined && next?.delayMins !== null ? Number(next.delayMins) : 0;
+        const pillCls = live ? 'live' : (est ? (rawDelay >= 2 ? 'delayed' : (rawDelay <= -1 ? 'early' : 'estimated')) : 'scheduled');
+        etaPillEl.className = `eta-status-pill ${pillCls}`;
         etaStatusText.textContent = !next ? t('rail.noneReported')
-          : (next.delayDiscarded ? t('trainPopup.delayDiscarded') : (live ? t('rail.forecast') : t('rail.scheduled')));
+          : (next.delayDiscarded ? t('trainPopup.delayDiscarded')
+            : (live ? t('rail.forecast')
+              : (est ? (next.delayBadgeText ? `${t('dep.estUpstreamTag')} (${next.delayBadgeText})` : t('dep.estUpstreamTag')) : t('rail.scheduled'))));
       }
       if (destEl) {
         const d = (lData?.directions || []).find(x => String(x.dirId) === String(this.activeDirection));
@@ -6521,8 +6526,10 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
         if (mapEl) mapEl.innerHTML = this.esc(t(live === 1 ? 'map.liveOne' : 'map.liveMany', { n: live }));
         return;
       } else if (live === 0 && est > 0) {
+        const fromPreds = lData?.agencyId === 'moventis' ||
+          (Array.isArray(lData?.activeBuses) && lData.activeBuses.some(b => b?.positionSource === 'stop_predictions' || b?.positionSource === 'gps_extrapolated'));
         if (headerEl) headerEl.innerHTML = t(est === 1 ? 'map.hdrEstOne' : 'map.hdrEstMany', { n: strong(est) });
-        if (mapEl) mapEl.innerHTML = this.esc(t(est === 1 ? 'map.estOne' : 'map.estMany', { n: est }));
+        if (mapEl) mapEl.innerHTML = this.esc(t(fromPreds ? (est === 1 ? 'map.estPredOne' : 'map.estPredMany') : (est === 1 ? 'map.estOne' : 'map.estMany'), { n: est }));
         return;
       }
     }
