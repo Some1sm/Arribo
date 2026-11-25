@@ -332,3 +332,20 @@ func TestMovShouldAsk(t *testing.T) {
 		t.Error("29 minutes: still skipped")
 	}
 }
+
+func TestCleanMovStopName(t *testing.T) {
+	cases := map[string]string{
+		"Pg. de Prat de la Riba (Estació D¿Ocata)":           "Pg. de Prat de la Riba (Estació d'Ocata)",
+		"Pg. de la Riera / Pl. U D¿Octubre":                  "Pg. de la Riera / Pl. U d'Octubre",
+		"Camí Ral / Pl. de L´Ajuntament":                     "Camí Ral / Pl. de l'Ajuntament",
+		"Baldomer Solà/Torrent D´En Valls":                   "Baldomer Solà/Torrent d'en Valls",
+		"Rda. D´O`Donnell (Biblioteca Pompeu Fabra)":         "Rda. d'O'Donnell (Biblioteca Pompeu Fabra)",
+		"Rbla. de  Guipúscoa (Metro la Pau)":                 "Rbla. de Guipúscoa (Metro la Pau)",
+		"(Torrent de L´Ase) Prat de la Riba/Mare Déu  Núria": "(Torrent de l'Ase) Prat de la Riba/Mare Déu Núria",
+	}
+	for in, want := range cases {
+		if got := cleanMovStopName(in); got != want {
+			t.Errorf("cleanMovStopName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

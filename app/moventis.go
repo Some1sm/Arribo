@@ -511,7 +511,7 @@ func parseMovRoutes(lineID int, body []byte) ([]movRoute, error) {
 			if d.Parada.ID <= 0 || lat == 0 || lon == 0 || math.IsNaN(lat) || math.IsNaN(lon) {
 				continue
 			}
-			rt.Stops = append(rt.Stops, movStop{ID: int(d.Parada.ID), Name: strings.TrimSpace(d.Parada.Name), Town: strings.TrimSpace(d.Parada.Town), Lat: lat, Lon: lon, Km: d.Km})
+			rt.Stops = append(rt.Stops, movStop{ID: int(d.Parada.ID), Name: cleanMovStopName(d.Parada.Name), Town: strings.TrimSpace(d.Parada.Town), Lat: lat, Lon: lon, Km: d.Km})
 		}
 		if len(rt.Stops) < 2 {
 			continue
@@ -673,6 +673,9 @@ func (p *movPoller) loadCache() *movStatic {
 	paths := true
 	for id, rs := range s.Routes {
 		for i := range rs {
+			for j := range rs[i].Stops {
+				rs[i].Stops[j].Name = cleanMovStopName(rs[i].Stops[j].Name)
+			}
 			rs[i].Dest = movRouteDest(rs[i])
 			if len(rs[i].Geometry) < 2 {
 				paths = false
@@ -838,7 +841,7 @@ func (s *movStatic) publishCatalog(lineIDs []int) {
 		for i, rt := range movOrderedRoutes(routes) {
 			d := rtLineDirection{DirectionID: i, Headsign: movTitle(rt.Dest)}
 			for _, st := range rt.Stops {
-				d.Stops = append(d.Stops, rtLineStop{ID: numToString(float64(st.ID)), Name: st.Name, Lat: st.Lat, Lon: st.Lon})
+				d.Stops = append(d.Stops, rtLineStop{ID: numToString(float64(st.ID)), Name: cleanMovStopName(st.Name), Lat: st.Lat, Lon: st.Lon})
 				if len(rt.Geometry) < 2 && len(rt.Shape) < 2 {
 					d.Geometry = append(d.Geometry, [2]float64{st.Lat, st.Lon})
 				}
@@ -875,6 +878,31 @@ func movDirectionOf(routes []movRoute, trayecto int) int {
 		}
 	}
 	return -1
+}
+
+var (
+	reMovBrokenQMark = regexp.MustCompile(`(\p{L})¿(\p{L})`)
+	reMovElidedD     = regexp.MustCompile(`(^|[\s/(.])D'(\p{L})`)
+	reMovElidedL     = regexp.MustCompile(`([\s/.])L'(\p{L})`)
+	reMovElidedDEn   = regexp.MustCompile(`(?i)(^|[\s/(.])d'en(\s)`)
+)
+
+// cleanMovStopName repairs legacy Moventis encoding artifacts in stop names:
+// broken apostrophes ("D¿Ocata", "L´Ajuntament", "O`Donnell"), title-cased
+// Catalan elisions ("D'Ocata" -> "d'Ocata", "de L'Ajuntament" -> "de l'Ajuntament",
+// "d'En Valls" -> "d'en Valls"), and runs of multiple spaces.
+func cleanMovStopName(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	s = reMovBrokenQMark.ReplaceAllString(s, "$1'$2")
+	s = strings.ReplaceAll(s, "´", "'")
+	s = strings.ReplaceAll(s, "`", "'")
+	s = reMovElidedD.ReplaceAllString(s, "${1}d'${2}")
+	s = reMovElidedL.ReplaceAllString(s, "${1}l'${2}")
+	s = reMovElidedDEn.ReplaceAllString(s, "${1}d'en${2}")
+	return strings.Join(strings.Fields(s), " ")
 }
 
 // movTitle turns "VILASSAR DE DALT" into "Vilassar De Dalt"-like title case
