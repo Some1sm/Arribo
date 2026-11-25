@@ -116,7 +116,7 @@ func (t *rtTimetable) dayScheduleSecs(ctx context.Context, code, stopID string, 
 	date := sampleDay.Format("20060102")
 	col := gtfsWeekdayColumn[sampleDay.Weekday()]
 
-	runQuery := func(ignoreDateRange bool) ([]int, error) {
+	runQuery := func(queryDate string, ignoreDateRange bool) ([]int, error) {
 		var activeCTE string
 		var args []any
 		if ignoreDateRange {
@@ -130,7 +130,7 @@ func (t *rtTimetable) dayScheduleSecs(ctx context.Context, code, stopID string, 
 			    UNION SELECT service_id FROM calendar_dates WHERE date = ?1 AND exception_type = 1
 			    EXCEPT SELECT service_id FROM calendar_dates WHERE date = ?1 AND exception_type = 2
 			  )`
-			args = []any{date, stopID, code}
+			args = []any{queryDate, stopID, code}
 		}
 		pStop, pCode, pDir := "?2", "?3", "?4"
 		if ignoreDateRange {
@@ -173,19 +173,72 @@ func (t *rtTimetable) dayScheduleSecs(ctx context.Context, code, stopID string, 
 		return out, rows.Err()
 	}
 
-	secs, err := runQuery(false)
+	secs, err := runQuery(date, false)
 	if err != nil {
 		return nil, false, err
 	}
 	if len(secs) > 0 {
 		return secs, false, nil
 	}
-	// Fallback for expired static calendars (e.g. TMESA Terrassa NAP 1175).
-	fb, err := runQuery(true)
+	// Pass 2: Fallback for expired static calendars (e.g. TMESA Terrassa NAP 1175).
+	fb, err := runQuery(date, true)
 	if err != nil {
 		return nil, false, err
 	}
-	return fb, len(fb) > 0, nil
+	if len(fb) > 0 {
+		return fb, true, nil
+	}
+	// Pass 3: Fallback for calendar_dates-only feeds (e.g. Generalitat interurban
+	// services whose calendar.days are all 0 and active dates live in calendar_dates
+	// with gaps): find the nearest active date matching sampleDay.Weekday().
+	repDate := t.findNearestMatchingCalendarDate(ctx, code, sampleDay)
+	if repDate != "" && repDate != date {
+		fb2, err2 := runQuery(repDate, false)
+		if err2 == nil && len(fb2) > 0 {
+			return fb2, false, nil
+		}
+	}
+	return nil, false, nil
+}
+
+func (t *rtTimetable) findNearestMatchingCalendarDate(ctx context.Context, code string, sampleDay time.Time) string {
+	wantWD := sampleDay.Weekday()
+	wantStr := sampleDay.Format("20060102")
+	rows, err := t.db.QueryContext(ctx, `
+		SELECT DISTINCT cd.date
+		FROM calendar_dates cd
+		JOIN trips t ON t.service_id = cd.service_id
+		JOIN routes r ON r.route_id = t.route_id
+		WHERE cd.exception_type = 1
+		  AND LOWER(COALESCE(NULLIF(r.short_name, ''), r.route_id)) = LOWER(?1)
+		ORDER BY cd.date`, code)
+	if err != nil {
+		return ""
+	}
+	defer rows.Close()
+	bestFuture := ""
+	bestPast := ""
+	for rows.Next() {
+		var d string
+		if rows.Scan(&d) != nil || len(d) != 8 {
+			continue
+		}
+		parsed, err := time.ParseInLocation("20060102", d, madrid)
+		if err != nil || parsed.Weekday() != wantWD {
+			continue
+		}
+		if d >= wantStr {
+			if bestFuture == "" {
+				bestFuture = d
+			}
+		} else {
+			bestPast = d
+		}
+	}
+	if bestFuture != "" {
+		return bestFuture
+	}
+	return bestPast
 }
 
 func (s *Server) buildMataroLineSchedule(lineID, reqStopID string, now time.Time) *Obj {
@@ -377,7 +430,7 @@ func buildMoventisGencatSchedule(info operatorInfo, code, reqStopID string, now 
 		if len(secs) > 0 {
 			return secs
 		}
-		// Fallback to weekday bitmask if bundled calendar range has rolled over.
+		// Pass 2: Fallback to weekday bitmask if bundled calendar range rolled over.
 		for _, tr := range d.Trips {
 			if tr.Pattern < 0 || tr.Pattern >= len(d.Patterns) {
 				continue
@@ -399,6 +452,57 @@ func buildMoventisGencatSchedule(info operatorInfo, code, reqStopID string, now 
 			}
 			if s := gcClock(tr.Times[pos]); s >= 0 {
 				secs = append(secs, s)
+			}
+		}
+		if len(secs) > 0 {
+			return secs
+		}
+		// Pass 3: Fallback for calendar_dates-only services (days=[0,0,0,0,0,0,0]
+		// with active dates listed in svc.Added, e.g. C-10 weekday svc 184910).
+		wantWD := time.Weekday((monIdx + 1) % 7)
+		repDate := ""
+		for _, tr := range d.Trips {
+			svc, ok := g.Services[tr.Service.String()]
+			if !ok {
+				continue
+			}
+			for _, ad := range svc.Added {
+				if len(ad) != 8 {
+					continue
+				}
+				parsed, err := time.ParseInLocation("20060102", ad, madrid)
+				if err != nil || parsed.Weekday() != wantWD {
+					continue
+				}
+				if ad >= date && (repDate == "" || ad < repDate) {
+					repDate = ad
+				} else if repDate == "" {
+					repDate = ad
+				}
+			}
+		}
+		if repDate != "" && repDate != date {
+			for _, tr := range d.Trips {
+				if tr.Pattern < 0 || tr.Pattern >= len(d.Patterns) {
+					continue
+				}
+				pat := d.Patterns[tr.Pattern]
+				pos := -1
+				for pi, si := range pat.Stops {
+					if si == stopIdx {
+						pos = pi
+						break
+					}
+				}
+				if pos < 0 || pos >= len(tr.Times) || pos == len(pat.Stops)-1 {
+					continue
+				}
+				if !g.runs(tr.Service.String(), repDate) {
+					continue
+				}
+				if s := gcClock(tr.Times[pos]); s >= 0 {
+					secs = append(secs, s)
+				}
 			}
 		}
 		return secs
