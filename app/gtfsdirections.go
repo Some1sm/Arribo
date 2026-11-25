@@ -263,8 +263,8 @@ func queryStrings(db *sql.DB, q string, args ...any) ([]string, error) {
 }
 
 // gtfsImportCurrent reports whether the timetable at path was written by
-// the current import format and matches expectedBBox (when non-empty).
-func gtfsImportCurrent(path, expectedBBox string) bool {
+// the current import format and matches expectedBBox & expectedRouteFilter.
+func gtfsImportCurrent(path, expectedBBox, expectedRouteFilter string) bool {
 	db, err := sql.Open("sqlite", "file:"+path+"?mode=ro")
 	if err != nil {
 		return false
@@ -280,6 +280,12 @@ func gtfsImportCurrent(path, expectedBBox string) bool {
 	if expectedBBox != "" {
 		var bb sql.NullString
 		if db.QueryRow(`SELECT value FROM gtfs_meta WHERE key = 'bbox'`).Scan(&bb) != nil || bb.String != expectedBBox {
+			return false
+		}
+	}
+	if expectedRouteFilter != "" {
+		var rf sql.NullString
+		if db.QueryRow(`SELECT value FROM gtfs_meta WHERE key = 'route_filter'`).Scan(&rf) != nil || rf.String != expectedRouteFilter {
 			return false
 		}
 	}

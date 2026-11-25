@@ -45,6 +45,10 @@ services:
       - ARRIBO_GENCAT_BUS=${ARRIBO_GENCAT_BUS:-1}
       # EMT Tarragona static GTFS (NAP 1694; app/tarragona.go). Needs ARRIBO_GTFSRT + NAP_API_KEY.
       - ARRIBO_TARRAGONA=${ARRIBO_TARRAGONA:-1}
+      # Reus Transport static GTFS (NAP 1788) + unofficial live rtp.amersam.net predictions (app/reus.go). Needs ARRIBO_GTFSRT + NAP_API_KEY.
+      - ARRIBO_REUS=${ARRIBO_REUS:-1}
+      # Catalonia municipal urban bus networks (TUS Sabadell, TMESA Terrassa, Rubíbus, + 18 ATM/T-mobilitat urban networks via NAP 2059/1175; app/cataloniaurban.go).
+      - ARRIBO_CATALONIA_URBAN=${ARRIBO_CATALONIA_URBAN:-1}
       # TRAM Barcelona Trambaix + Trambesòs (OAuth GTFS-RT trip updates, no history; app/tram.go). Needs ARRIBO_GTFSRT + TRAM_CLIENT_*.
       - ARRIBO_TRAM=${ARRIBO_TRAM:-1}
       # TMB Metro + Bus (iTransit live predictions + static GTFS, no history; app/tmb.go). Needs ARRIBO_GTFSRT + TMB_APP_*.

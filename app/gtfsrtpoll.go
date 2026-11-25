@@ -90,6 +90,7 @@ type rtSource struct {
 	// staticURL is the operator's static GTFS zip, imported daily into the
 	// timetable the poller uses; staticBBox cuts it down like --bbox.
 	staticURL, staticBBox string
+	staticRouteFilter     string
 	staticHeaders         map[string]string
 	// noHistory: keep no station visits or cancellations for the history
 	// database (AMB buses: about 750 000 stop visits a day, too many to store
@@ -302,6 +303,10 @@ func defaultRtSources() []rtSource {
 	if tgn, ok := emtTarragonaSource(); ok {
 		srcs = append(srcs, tgn)
 	}
+	if reu, ok := reusSource(); ok {
+		srcs = append(srcs, reu)
+	}
+	srcs = append(srcs, cataloniaUrbanSources()...)
 	return srcs
 }
 

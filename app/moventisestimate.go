@@ -229,7 +229,8 @@ func (s *Server) hMoventis(q *xreq, res *xres) error {
 	extraBuses = append(extraBuses, sagalesAllVehicles(now, box)...)
 	extraBuses = append(extraBuses, gironaAllVehicles(now, box)...)
 	extraBuses = append(extraBuses, lleidaAllVehicles(now, box)...)
-	if p == nil && len(extraBuses) == 0 && ambVehLive.Load() == nil && sagalesLive.Load() == nil && gironaFleetLive.Load() == nil && lleidaFleetLive.Load() == nil {
+	extraBuses = append(extraBuses, reusAllVehicles(now, box)...)
+	if p == nil && len(extraBuses) == 0 && ambVehLive.Load() == nil && sagalesLive.Load() == nil && gironaFleetLive.Load() == nil && lleidaFleetLive.Load() == nil && reusFleetLive.Load() == nil {
 		res.json(O("success", true, "enabled", false, "lines", []any{}, "vehicles", []any{}))
 		return nil
 	}

@@ -172,6 +172,7 @@ type Worker struct {
 	stopAmbV   func()          // stops the AMB vehicle-GPS poller (a no-op unless ARRIBO_AMB_VEHICLES=1)
 	stopGir    func()          // stops the TMG Girona bus estimator (a no-op unless ARRIBO_GIRONA=1)
 	stopLleida func()          // stops the Moventis Lleida hub poller (a no-op unless ARRIBO_MOVENTIS_ALL=1)
+	stopReus   func()          // stops the Reus Transport bus estimator (a no-op unless ARRIBO_REUS=1)
 	stopBusG   func()          // flushes and stops the multi-operator bus gap store
 	railTT     *railTimetables // shared read-only rail timetables pool (app/raildepartures.go)
 	inbox      *msgQueue[workerMsg]
@@ -237,6 +238,7 @@ func (k *Worker) boot() {
 	k.stopAmbV = startAmbVehiclesPoller()
 	k.stopGir = startGironaPoller()
 	k.stopLleida = startLleidaPoller()
+	k.stopReus = startReusPoller()
 	k.sendToMaster("WORKER_READY", O("pid", float64(os.Getpid()), "version", "3.0.0-mataro"))
 	log.Printf("[Worker] ✅ Ingestion Worker Ready and Listening.")
 	k.w.mu.Unlock()
@@ -330,6 +332,13 @@ func (k *Worker) handleMasterMessage(m workerMsg) {
 			go func() {
 				defer stopWG.Done()
 				k.stopLleida()
+			}()
+		}
+		if k.stopReus != nil {
+			stopWG.Add(1)
+			go func() {
+				defer stopWG.Done()
+				k.stopReus()
 			}()
 		}
 		if k.stopRt != nil {

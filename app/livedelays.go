@@ -62,7 +62,9 @@ func liveDelayOperators() []operatorInfo {
 	gir.OnTimeMaxMins = liveDelayOnTimeMax
 	lle := movLleidaOperator
 	lle.OnTimeMaxMins = liveDelayOnTimeMax
-	return []operatorInfo{amb, tbx, tbs, sag, gir, lle}
+	reu := reusOperator
+	reu.OnTimeMaxMins = liveDelayOnTimeMax
+	return []operatorInfo{amb, tbx, tbs, sag, gir, lle, reu}
 }
 
 func isLiveDelayOperator(agencyID string) (operatorInfo, bool) {
@@ -143,6 +145,9 @@ func (s *liveDelaysStore) operatorActive(agencyID string, feeds map[string]*Obj)
 		return true
 	}
 	if agencyID == movLleidaAgencyID && lleidaFleetLive.Load() != nil {
+		return true
+	}
+	if agencyID == reusAgencyID && reusFleetLive.Load() != nil {
 		return true
 	}
 	s.mu.Lock()

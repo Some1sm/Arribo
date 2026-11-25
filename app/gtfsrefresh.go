@@ -112,7 +112,7 @@ func refreshTimetable(ctx context.Context, src rtSource) error {
 	if err := downloadFileHeaders(ctx, src.staticURL, zipPath, src.staticHeaders); err != nil {
 		return fmt.Errorf("download: %w", err)
 	}
-	return importGTFSContext(ctx, src.AgencyID, zipPath, db, bbox, src.staticBBox)
+	return importGTFSContext(ctx, src.AgencyID, zipPath, db, bbox, src.staticBBox, src.staticRouteFilter)
 }
 
 // runTimetableRefresher imports stale timetables now and keeps checking
@@ -125,7 +125,7 @@ func runTimetableRefresher(ctx context.Context, srcs []rtSource) {
 				continue
 			}
 			p := gtfsTimetablePath(src.AgencyID)
-			if !gtfsStale(p, gtfsStaleAfter) && gtfsImportCurrent(p, src.staticBBox) {
+			if !gtfsStale(p, gtfsStaleAfter) && gtfsImportCurrent(p, src.staticBBox, src.staticRouteFilter) {
 				continue
 			}
 			start := time.Now()

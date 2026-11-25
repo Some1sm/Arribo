@@ -202,6 +202,14 @@ func railLineDetails(info operatorInfo, op *rtCatalogOp, code, direction string,
 		cancel()
 		stale = 0
 		source = "moventis_lleida_predictions"
+	case reusAgencyID:
+		// Reus Transport: estimate positions from sampled rtp.amersam.net live
+		// stop ETAs (unofficial, 25 s cache).
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		buses = reusBusLineBuses(ctx, op, code, direction, now)
+		cancel()
+		stale = 0
+		source = "reus_bus_predictions"
 	}
 
 	name := route.Name
@@ -239,7 +247,7 @@ func railLineDetails(info operatorInfo, op *rtCatalogOp, code, direction string,
 		"railData", O(
 			"source", source,
 			"attribution", railAttribution(info.ID),
-			"positionsEstimated", (info.ID == movAgencyID && !anyMeasured(buses)) || (info.ID == tmbAgencyID && !tmbIsMetroCode(code)) || info.ID == gironaAgencyID || info.ID == movLleidaAgencyID || isTramAgency(info.ID),
+			"positionsEstimated", (info.ID == movAgencyID && !anyMeasured(buses)) || (info.ID == tmbAgencyID && !tmbIsMetroCode(code)) || info.ID == gironaAgencyID || info.ID == movLleidaAgencyID || info.ID == reusAgencyID || isTramAgency(info.ID),
 			"stopsFrom", "longest_trip",
 			"staleAfterSec", trainStaleAfter(info.ID),
 			"staleTrains", float64(stale),
@@ -372,6 +380,16 @@ func (s *Server) railDepartures(q *xreq, res *xres, info operatorInfo, op *rtCat
 		// Autobusos de Lleida unofficial live Moventis predictions (60 s TTL cache); falls back to GTFS.
 		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 		live := lleidaLiveDepartures(ctx, stop, code, direction, now)
+		cancel()
+		if live != nil {
+			res.json(O("success", true, "data", live))
+			return
+		}
+	}
+	if info.ID == reusAgencyID {
+		// Reus Transport unofficial live rtp.amersam.net predictions (25 s TTL cache); falls back to GTFS.
+		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+		live := reusLiveDepartures(ctx, stop, code, direction, now)
 		cancel()
 		if live != nil {
 			res.json(O("success", true, "data", live))

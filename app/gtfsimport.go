@@ -228,10 +228,10 @@ CREATE INDEX idx_routes_route ON routes(route_id);
 )
 
 func importGTFS(agencyID, zipPath, outPath string, bbox *bboxFilter, bboxStr string) error {
-	return importGTFSContext(context.Background(), agencyID, zipPath, outPath, bbox, bboxStr)
+	return importGTFSContext(context.Background(), agencyID, zipPath, outPath, bbox, bboxStr, "")
 }
 
-func importGTFSContext(ctx context.Context, agencyID, zipPath, outPath string, bbox *bboxFilter, bboxStr string) error {
+func importGTFSContext(ctx context.Context, agencyID, zipPath, outPath string, bbox *bboxFilter, bboxStr, routeFilter string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -324,6 +324,42 @@ func importGTFSContext(ctx context.Context, agencyID, zipPath, outPath string, b
 	kept, skipped := make(map[string]int), make(map[string]int)
 	var keptTripIDs, keptRouteIDs, keptServiceIDs, keptShapeIDs, keptStopIDs, keptGtfsAgencyIDs idSet
 	parentOf := make(map[string]string)
+	filtered := bbox != nil || routeFilter != ""
+
+	if routeFilter != "" {
+		keptRouteIDs, keptGtfsAgencyIDs = make(idSet), make(idSet)
+		if err := eachCSV(routesFile, func(r *csvRow) error {
+			rid, gid := r.get("route_id"), r.get("agency_id")
+			if rid != "" && matchGtfsRouteFilter(routeFilter, gid, rid) {
+				keptRouteIDs[rid] = struct{}{}
+				if gid != "" {
+					keptGtfsAgencyIDs[gid] = struct{}{}
+				}
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+		keptTripIDs, keptServiceIDs, keptShapeIDs = make(idSet), make(idSet), make(idSet)
+		if err := eachCSV(tripsFile, func(r *csvRow) error {
+			tid, rid := r.get("trip_id"), r.get("route_id")
+			if tid != "" && keptRouteIDs.has(rid) {
+				keptTripIDs[tid] = struct{}{}
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+		if err := eachCSV(stopsFile, func(r *csvRow) error {
+			id := r.get("stop_id")
+			if p := r.get("parent_station"); id != "" && p != "" {
+				parentOf[id] = p
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
 
 	if bbox != nil {
 		insideStops := make(map[string]bool)
@@ -345,16 +381,17 @@ func importGTFSContext(ctx context.Context, agencyID, zipPath, outPath string, b
 			return err
 		}
 
-		keptTripIDs = make(idSet)
+		bboxTrips := make(idSet)
 		if err := eachCSV(stopTimesFile, func(r *csvRow) error {
 			tid, sid := r.get("trip_id"), r.get("stop_id")
-			if tid != "" && sid != "" && insideStops[sid] {
-				keptTripIDs[tid] = struct{}{}
+			if tid != "" && sid != "" && insideStops[sid] && (keptTripIDs == nil || keptTripIDs.has(tid)) {
+				bboxTrips[tid] = struct{}{}
 			}
 			return nil
 		}); err != nil {
 			return err
 		}
+		keptTripIDs = bboxTrips
 		keptRouteIDs, keptServiceIDs, keptShapeIDs, keptGtfsAgencyIDs = make(idSet), make(idSet), make(idSet), make(idSet)
 	}
 
@@ -377,7 +414,7 @@ func importGTFSContext(ctx context.Context, agencyID, zipPath, outPath string, b
 			return nil
 		}
 		sh := r.get("shape_id")
-		if bbox != nil {
+		if filtered {
 			keptRouteIDs[rid], keptServiceIDs[sid] = struct{}{}, struct{}{}
 			if sh != "" {
 				keptShapeIDs[sh] = struct{}{}
@@ -420,7 +457,7 @@ func importGTFSContext(ctx context.Context, agencyID, zipPath, outPath string, b
 		if !keptTripIDs.has(tid) {
 			return nil
 		}
-		if bbox != nil {
+		if filtered {
 			usedStopIDs[sid] = struct{}{}
 		}
 		kept["stop_times"]++
@@ -430,7 +467,7 @@ func importGTFSContext(ctx context.Context, agencyID, zipPath, outPath string, b
 		return fmt.Errorf("stop_times: %w", err)
 	}
 
-	if bbox != nil {
+	if filtered {
 		keptStopIDs = make(idSet)
 		for sid := range usedStopIDs {
 			for curr := sid; curr != ""; curr = parentOf[curr] {
@@ -480,13 +517,15 @@ func importGTFSContext(ctx context.Context, agencyID, zipPath, outPath string, b
 			return nil
 		}
 		gid := r.get("agency_id")
-		if bbox != nil && gid != "" {
+		if filtered && gid != "" {
 			keptGtfsAgencyIDs[gid] = struct{}{}
 		}
 		kept["routes"]++
 		shortName, longName := r.get("route_short_name"), r.get("route_long_name")
 		if agencyID == gencatBusAgencyID {
 			shortName, longName = parseGencatBusRouteCode(shortName, longName)
+		} else if agencyID == atmUrbanAgencyID {
+			shortName, longName = formatAtmUrbanRoute(gid, id, shortName, longName)
 		}
 		_, err := stmtRoute.Exec(agencyID, id, gid, shortName, longName, rt, r.get("route_color"), r.get("route_text_color"))
 		return err
@@ -501,10 +540,10 @@ func importGTFSContext(ctx context.Context, agencyID, zipPath, outPath string, b
 			return nil
 		}
 		gid := r.get("agency_id")
-		if bbox != nil && len(keptRouteIDs) > 0 && len(keptGtfsAgencyIDs) > 0 && !keptGtfsAgencyIDs.has(gid) {
+		if filtered && len(keptRouteIDs) > 0 && len(keptGtfsAgencyIDs) > 0 && !keptGtfsAgencyIDs.has(gid) {
 			return nil
 		}
-		if bbox != nil && len(keptRouteIDs) == 0 {
+		if filtered && len(keptRouteIDs) == 0 {
 			return nil
 		}
 		kept["agencies"]++
@@ -619,6 +658,9 @@ func importGTFSContext(ctx context.Context, agencyID, zipPath, outPath string, b
 	}
 	if bboxStr != "" {
 		meta = append(meta, [2]string{"bbox", bboxStr})
+	}
+	if routeFilter != "" {
+		meta = append(meta, [2]string{"route_filter", routeFilter})
 	}
 	if feedVersion != "" {
 		meta = append(meta, [2]string{"feed_version", feedVersion})
