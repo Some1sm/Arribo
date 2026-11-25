@@ -128,15 +128,50 @@ func movFetchStopLive(ctx context.Context, p *movPoller, s *movStatic, lineID, s
 	return etas, fetchedAt, true
 }
 
-// movMatchDir finds the best direction index for a Moventis trayecto label.
-func movMatchDir(routes []movRoute, dest string) string {
-	norm := foldStationName(dest)
-	for _, rt := range routes {
-		if norm != "" && (foldStationName(rt.Dest) == norm || strings.Contains(norm, foldStationName(rt.Dest)) || strings.Contains(foldStationName(rt.Dest), norm)) {
-			return numToString(float64(movDirectionOf(routes, rt.Trayecto)))
-		}
+// movCleanDest returns a readable destination label for a matched route.
+func movCleanDest(rawDest string, matched *movRoute) string {
+	if matched != nil && strings.Contains(rawDest, "(") && matched.Dest != "" {
+		return movTitle(matched.Dest)
 	}
-	return "0"
+	return movTitle(rawDest)
+}
+
+// movMatchRoute finds the best direction index and clean destination label
+// for a Moventis trayecto string (handling both short destinations like
+// "Barcelona" and full route labels like "(C10) BCN - MATARÓ (PER LA NII)").
+func movMatchRoute(routes []movRoute, dest string) (string, string) {
+	// If the label has "ORIGIN - DEST", match the destination side first so
+	// "(C10) BCN - MATARÓ" matches Mataró rather than BCN.
+	destSide := dest
+	if idx := strings.Index(dest, " - "); idx >= 0 {
+		destSide = dest[idx+3:]
+	}
+	matchIn := func(candidate string) *movRoute {
+		norm := foldStationName(candidate)
+		if norm == "" {
+			return nil
+		}
+		for i := range routes {
+			rd := foldStationName(routes[i].Dest)
+			if rd == "" {
+				continue
+			}
+			if rd == norm || strings.Contains(norm, rd) || strings.Contains(rd, norm) ||
+				(rd == "bcn" && strings.Contains(norm, "barcelona")) ||
+				(rd == "barcelona" && strings.Contains(norm, "bcn")) {
+				return &routes[i]
+			}
+		}
+		return nil
+	}
+	rt := matchIn(destSide)
+	if rt == nil && destSide != dest {
+		rt = matchIn(dest)
+	}
+	if rt != nil {
+		return numToString(float64(movDirectionOf(routes, rt.Trayecto))), movCleanDest(dest, rt)
+	}
+	return "0", movCleanDest(dest, nil)
 }
 
 // movSchedTime resolves a Madrid-local "HH:MM" schedule string to a time.Time
@@ -161,30 +196,50 @@ func movSchedTime(hhmm string, now time.Time) (time.Time, bool) {
 	return cand, true
 }
 
+type movClaimed struct {
+	dir string
+	at  time.Time
+}
+
+// movTimeClaimed reports whether t falls within 3 minutes of any already-listed
+// live arrival, claimed scheduled slot, or scheduled departure in the same
+// direction.
+func movTimeClaimed(dir string, t time.Time, claimed []movClaimed) bool {
+	for _, c := range claimed {
+		if c.dir == dir && math.Abs(t.Sub(c.at).Seconds()) < 180 {
+			return true
+		}
+	}
+	return false
+}
+
 // movEstimateDelay compares a live Moventis predicted arrival (expected)
-// against the official Generalitat GTFS schedule (gencatData) or the rolling
-// 24h schedule cache (p.sched) to compute scheduledTime, delayMins, status,
-// and badge text instead of showing "Sense dada de retard".
-func movEstimateDelay(p *movPoller, lineID, stopID int, expected, now time.Time) (schedTime, aimedIso, delayMins any, delayStatus, badgeText, delaySource string) {
+// against the official Generalitat GTFS schedule (gencatData), the current
+// live response's scheduled times (extraSched), or the rolling 24h schedule
+// cache (p.sched) to compute scheduledTime, delayMins, status, and badge text.
+// Returns the matched scheduled time so the caller can suppress duplicate
+// theoretical rows when a live bus is running late or early.
+func movEstimateDelay(p *movPoller, lineID, stopID int, expected, now time.Time, extraSched []string) (matched time.Time, hasMatch bool, schedTime, aimedIso, delayMins any, delayStatus, badgeText, delaySource string) {
 	delayStatus = "unknown"
 	badgeText = "Previsió de Moventis"
 	delaySource = "operator_prediction"
 
-	var matched time.Time
-	var ok bool
 	if gc := gencatData(); gc != nil {
-		matched, ok = gc.nearestDeparture(lineID, stopID, expected, movDelayMaxEarly, movDelayMaxLate)
+		matched, hasMatch = gc.nearestDeparture(lineID, stopID, expected, movDelayMaxEarly, movDelayMaxLate)
 	}
-	if !ok && p != nil && p.sched != nil {
+	if !hasMatch && len(extraSched) > 0 {
+		matched, hasMatch = matchMovSched(extraSched, expected, movDelayMaxEarly, movDelayMaxLate)
+	}
+	if !hasMatch && p != nil && p.sched != nil {
 		if byDest := p.sched.lookup(lineID, stopID, now); len(byDest) > 0 {
 			var all []string
 			for _, list := range byDest {
 				all = append(all, list...)
 			}
-			matched, ok = matchMovSched(all, expected, movDelayMaxEarly, movDelayMaxLate)
+			matched, hasMatch = matchMovSched(all, expected, movDelayMaxEarly, movDelayMaxLate)
 		}
 	}
-	if !ok {
+	if !hasMatch {
 		return
 	}
 	dMin := math.Round(expected.Sub(matched).Minutes())
@@ -194,6 +249,110 @@ func movEstimateDelay(p *movPoller, lineID, stopID int, expected, now time.Time)
 	delayStatus, badgeText = railDelayLabel(dMin, false)
 	delaySource = "timetable"
 	return
+}
+
+func movTheoDep(destTitle any, dirStr string, at, now time.Time) *Obj {
+	left := math.Max(0, at.Sub(now).Seconds())
+	return O(
+		"tripId", nil,
+		"vehicleId", nil,
+		"destination", destTitle,
+		"direction", dirStr,
+		"departureTime", at.In(madrid).Format("15:04"),
+		"scheduledTime", at.In(madrid).Format("15:04"),
+		"expectedIso", isoString(at.UnixMilli()),
+		"minutesAway", math.Floor(left/60),
+		"delayMins", nil,
+		"delayMinutes", nil,
+		"delayStatus", "unknown",
+		"delayBadgeText", "Horari teòric",
+		"delaySource", "timetable",
+		"isRealTime", false,
+		"isEstimated", false,
+		"isTheoretical", true,
+		"isCancelled", false,
+		"predictionAgeSec", nil,
+	)
+}
+
+// movBuildLiveAndSchedDeps merges live real-time predictions and scheduled
+// departures for one line at a stop. Live departures run first so any
+// scheduled slot claimed by a late/early live bus (e.g. 16:55 bus running at
+// 17:04, +9 min) is suppressed instead of duplicating as a phantom theoretical
+// arrival.
+func movBuildLiveAndSchedDeps(p *movPoller, lineID, stopNum int, routes []movRoute, etas []movStopETA, age float64, now time.Time) (deps []any, claimed []movClaimed) {
+	schedByDir := map[string][]string{}
+	var allLiveSched []string
+	for _, e := range etas {
+		if e.LineID == lineID && len(e.Sched) > 0 {
+			dirStr, _ := movMatchRoute(routes, e.Dest)
+			schedByDir[dirStr] = append(schedByDir[dirStr], e.Sched...)
+			allLiveSched = append(allLiveSched, e.Sched...)
+		}
+	}
+	// Pass 1: live real-time predictions.
+	for _, e := range etas {
+		if e.LineID != lineID || len(e.EtaSec) == 0 {
+			continue
+		}
+		dirStr, cleanDest := movMatchRoute(routes, e.Dest)
+		destTitle := strOrNil(cleanDest)
+		dirSched := schedByDir[dirStr]
+		if len(dirSched) == 0 {
+			dirSched = allLiveSched
+		}
+		for _, sec := range e.EtaSec {
+			left := sec - age
+			if left < -movPassedTolSec {
+				continue
+			}
+			left = math.Max(left, 0)
+			at := now.Add(time.Duration(left) * time.Second)
+			claimed = append(claimed, movClaimed{dir: dirStr, at: at})
+			matched, hasMatch, sTime, aIso, dMins, dStatus, dBadge, dSource := movEstimateDelay(p, lineID, stopNum, at, now, dirSched)
+			if hasMatch {
+				claimed = append(claimed, movClaimed{dir: dirStr, at: matched})
+			}
+			deps = append(deps, O(
+				"tripId", nil,
+				"vehicleId", nil,
+				"destination", destTitle,
+				"direction", dirStr,
+				"departureTime", at.In(madrid).Format("15:04"),
+				"scheduledTime", sTime,
+				"aimedIso", aIso,
+				"expectedIso", isoString(at.UnixMilli()),
+				"minutesAway", math.Floor(left/60),
+				"delayMins", dMins,
+				"delayMinutes", dMins,
+				"delayStatus", dStatus,
+				"delayBadgeText", dBadge,
+				"delaySource", dSource,
+				"isRealTime", true,
+				"isEstimated", false,
+				"isTheoretical", false,
+				"isCancelled", false,
+				"predictionAgeSec", math.Round(age),
+			))
+		}
+	}
+	// Pass 2: scheduled times in the same direction not already claimed by a live bus.
+	for _, e := range etas {
+		if e.LineID != lineID || len(e.Sched) == 0 {
+			continue
+		}
+		dirStr, cleanDest := movMatchRoute(routes, e.Dest)
+		destTitle := strOrNil(cleanDest)
+		for _, hhmm := range e.Sched {
+			at, ok := movSchedTime(hhmm, now)
+			if !ok || movTimeClaimed(dirStr, at, claimed) {
+				continue
+			}
+			claimed = append(claimed, movClaimed{dir: dirStr, at: at})
+			deps = append(deps, movTheoDep(destTitle, dirStr, at, now))
+		}
+	}
+	return deps, claimed
 }
 
 // movStopDepartures is the line view's departures at a stop of a Moventis
@@ -230,88 +389,17 @@ func movStopDepartures(ctx context.Context, stop rtLineStop, code string, now ti
 				continue
 			}
 
+			var claimed []movClaimed
 			// 1. Try live on-demand fetch (30 s cache) for real-time + scheduled departures.
 			if etas, fetchedAt, ok := movFetchStopLive(ctx, p, snap.Static, id, stopNum, now); ok {
 				age := math.Max(0, now.Sub(fetchedAt).Seconds())
 				note = "no_tracked_bus"
-				var rtTimes []time.Time
-				for _, e := range etas {
-					if e.LineID != id {
-						continue
-					}
-					dirStr := movMatchDir(routes, e.Dest)
-					destTitle := strOrNil(movTitle(e.Dest))
-					for _, sec := range e.EtaSec {
-						left := sec - age
-						if left < -movPassedTolSec {
-							continue
-						}
-						left = math.Max(left, 0)
-						at := now.Add(time.Duration(left) * time.Second)
-						rtTimes = append(rtTimes, at)
-						note = ""
-						sTime, aIso, dMins, dStatus, dBadge, dSource := movEstimateDelay(p, id, stopNum, at, now)
-						deps = append(deps, O(
-							"tripId", nil,
-							"vehicleId", nil,
-							"destination", destTitle,
-							"direction", dirStr,
-							"departureTime", at.In(madrid).Format("15:04"),
-							"scheduledTime", sTime,
-							"aimedIso", aIso,
-							"expectedIso", isoString(at.UnixMilli()),
-							"minutesAway", math.Floor(left/60),
-							"delayMins", dMins,
-							"delayMinutes", dMins,
-							"delayStatus", dStatus,
-							"delayBadgeText", dBadge,
-							"delaySource", dSource,
-							"isRealTime", true,
-							"isEstimated", false,
-							"isTheoretical", false,
-							"isCancelled", false,
-							"predictionAgeSec", math.Round(age),
-						))
-					}
-					for _, hhmm := range e.Sched {
-						at, ok := movSchedTime(hhmm, now)
-						if !ok {
-							continue
-						}
-						dup := false
-						for _, rtt := range rtTimes {
-							if math.Abs(at.Sub(rtt).Seconds()) < 120 {
-								dup = true
-								break
-							}
-						}
-						if dup {
-							continue
-						}
-						left := math.Max(0, at.Sub(now).Seconds())
-						note = ""
-						deps = append(deps, O(
-							"tripId", nil,
-							"vehicleId", nil,
-							"destination", destTitle,
-							"direction", dirStr,
-							"departureTime", at.In(madrid).Format("15:04"),
-							"scheduledTime", at.In(madrid).Format("15:04"),
-							"expectedIso", isoString(at.UnixMilli()),
-							"minutesAway", math.Floor(left/60),
-							"delayMins", nil,
-							"delayMinutes", nil,
-							"delayStatus", "unknown",
-							"delayBadgeText", "Horari teòric",
-							"delaySource", "timetable",
-							"isRealTime", false,
-							"isEstimated", false,
-							"isTheoretical", true,
-							"isCancelled", false,
-							"predictionAgeSec", nil,
-						))
-					}
+				liveDeps, liveClaimed := movBuildLiveAndSchedDeps(p, id, stopNum, routes, etas, age, now)
+				if len(liveDeps) > 0 {
+					note = ""
+					deps = append(deps, liveDeps...)
 				}
+				claimed = append(claimed, liveClaimed...)
 			} else {
 				// 2. Fallback: background poller snapshot.
 				for _, rt := range routes {
@@ -331,6 +419,7 @@ func movStopDepartures(ctx context.Context, stop rtLineStop, code string, now ti
 							continue
 						}
 						note = ""
+						dirStr := numToString(float64(movDirectionOf(routes, rt.Trayecto)))
 						for _, e := range pr.EtaSec {
 							left := e - age
 							if left < -movPassedTolSec {
@@ -338,12 +427,16 @@ func movStopDepartures(ctx context.Context, stop rtLineStop, code string, now ti
 							}
 							left = math.Max(left, 0)
 							at := now.Add(time.Duration(left) * time.Second)
-							sTime, aIso, dMins, dStatus, dBadge, dSource := movEstimateDelay(p, id, st.ID, at, now)
+							claimed = append(claimed, movClaimed{dir: dirStr, at: at})
+							matched, hasMatch, sTime, aIso, dMins, dStatus, dBadge, dSource := movEstimateDelay(p, id, st.ID, at, now, nil)
+							if hasMatch {
+								claimed = append(claimed, movClaimed{dir: dirStr, at: matched})
+							}
 							deps = append(deps, O(
 								"tripId", nil,
 								"vehicleId", nil,
-								"destination", strOrNil(movTitle(rt.Dest)),
-								"direction", numToString(float64(movDirectionOf(routes, rt.Trayecto))),
+								"destination", strOrNil(movCleanDest(rt.Dest, &rt)),
+								"direction", dirStr,
 								"departureTime", at.In(madrid).Format("15:04"),
 								"scheduledTime", sTime,
 								"aimedIso", aIso,
@@ -367,58 +460,20 @@ func movStopDepartures(ctx context.Context, stop rtLineStop, code string, now ti
 
 			// 3. Rolling 24h schedule cache (DATA_DIR/moventis/schedules.json):
 			// supplements both live and fallback responses with cached day-type
-			// departures (deduplicated within 2 min of already-listed times).
+			// departures not already claimed by a live bus (even if late/early).
 			if p.sched != nil {
 				if byDest := p.sched.lookup(id, stopNum, now); len(byDest) > 0 {
-					var existingTimes []time.Time
-					for _, raw := range deps {
-						if o, ok := raw.(*Obj); ok {
-							if parsed, err := time.Parse(time.RFC3339Nano, jsString(o.Get("expectedIso"))); err == nil {
-								existingTimes = append(existingTimes, parsed)
-							}
-						}
-					}
 					for dest, hhList := range byDest {
-						dirStr := movMatchDir(routes, dest)
-						destTitle := strOrNil(movTitle(dest))
+						dirStr, cleanDest := movMatchRoute(routes, dest)
+						destTitle := strOrNil(cleanDest)
 						for _, hhmm := range hhList {
 							at, ok := movSchedTime(hhmm, now)
-							if !ok {
+							if !ok || movTimeClaimed(dirStr, at, claimed) {
 								continue
 							}
-							dup := false
-							for _, et := range existingTimes {
-								if math.Abs(at.Sub(et).Seconds()) < 120 {
-									dup = true
-									break
-								}
-							}
-							if dup {
-								continue
-							}
-							existingTimes = append(existingTimes, at)
-							left := math.Max(0, at.Sub(now).Seconds())
+							claimed = append(claimed, movClaimed{dir: dirStr, at: at})
 							note = ""
-							deps = append(deps, O(
-								"tripId", nil,
-								"vehicleId", nil,
-								"destination", destTitle,
-								"direction", dirStr,
-								"departureTime", at.In(madrid).Format("15:04"),
-								"scheduledTime", at.In(madrid).Format("15:04"),
-								"expectedIso", isoString(at.UnixMilli()),
-								"minutesAway", math.Floor(left/60),
-								"delayMins", nil,
-								"delayMinutes", nil,
-								"delayStatus", "unknown",
-								"delayBadgeText", "Horari teòric",
-								"delaySource", "timetable",
-								"isRealTime", false,
-								"isEstimated", false,
-								"isTheoretical", true,
-								"isCancelled", false,
-								"predictionAgeSec", nil,
-							))
+							deps = append(deps, movTheoDep(destTitle, dirStr, at, now))
 						}
 					}
 				}
@@ -444,28 +499,8 @@ func movStopDepartures(ctx context.Context, stop rtLineStop, code string, now ti
 						}
 					}
 					for _, at := range times {
-						left := math.Max(0, at.Sub(now).Seconds())
 						note = ""
-						deps = append(deps, O(
-							"tripId", nil,
-							"vehicleId", nil,
-							"destination", strOrNil(destFallback),
-							"direction", dirFallback,
-							"departureTime", at.In(madrid).Format("15:04"),
-							"scheduledTime", at.In(madrid).Format("15:04"),
-							"expectedIso", isoString(at.UnixMilli()),
-							"minutesAway", math.Floor(left/60),
-							"delayMins", nil,
-							"delayMinutes", nil,
-							"delayStatus", "unknown",
-							"delayBadgeText", "Horari teòric",
-							"delaySource", "timetable",
-							"isRealTime", false,
-							"isEstimated", false,
-							"isTheoretical", true,
-							"isCancelled", false,
-							"predictionAgeSec", nil,
-						))
+						deps = append(deps, movTheoDep(strOrNil(destFallback), dirFallback, at, now))
 					}
 				}
 			}
