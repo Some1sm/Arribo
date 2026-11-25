@@ -204,3 +204,83 @@ func TestTmbMetroTrainFeed(t *testing.T) {
 		t.Errorf("expected interpolated lat near 41.3475, got %v", v.Lat)
 	}
 }
+
+func TestTmbBusEstimateLinePositions(t *testing.T) {
+	now := time.UnixMilli(1795554000000)
+	route := rtRoute{Code: "H10", Name: "Pl. Sants - Olímpic de Badalona", Color: "#0072CE", TextColor: "#FFFFFF"}
+	prof := &rtLineProfile{
+		Code: "H10",
+		Directions: []rtLineDirection{
+			{
+				DirectionID: 0,
+				Headsign:    "Olímpic de Badalona",
+				Stops: []rtLineStop{
+					{ID: "2.100", Name: "Pl. Sants", Lat: 41.375, Lon: 2.135},
+					{ID: "2.101", Name: "Mallorca - Viladomat", Lat: 41.385, Lon: 2.150},
+					{ID: "2.102", Name: "València - Balmes", Lat: 41.392, Lon: 2.162},
+					{ID: "2.103", Name: "Clot", Lat: 41.408, Lon: 2.187},
+				},
+			},
+			{
+				DirectionID: 1,
+				Headsign:    "Pl. Sants",
+				Stops: []rtLineStop{
+					{ID: "2.200", Name: "Clot", Lat: 41.408, Lon: 2.187},
+					{ID: "2.201", Name: "Pl. Sants", Lat: 41.375, Lon: 2.135},
+				},
+			},
+		},
+	}
+
+	rampOK := true
+	samples := map[string][]tmbArrival{
+		// Bus 1825 is 3 min from stop 2.102 and 12 min from 2.103 -> deduplicated to earliest (2.102).
+		"102": {
+			{Line: "H10", Direction: "0", Dest: "Olímpic de Badalona", ArriveMs: now.Add(3 * time.Minute).UnixMilli(), VehicleID: "1825", Wheelchair: &rampOK},
+			{Line: "V15", Direction: "0", Dest: "Barceloneta", ArriveMs: now.Add(2 * time.Minute).UnixMilli(), VehicleID: "9999"}, // other line ignored
+		},
+		"103": {
+			{Line: "H10", Direction: "0", Dest: "Olímpic de Badalona", ArriveMs: now.Add(12 * time.Minute).UnixMilli(), VehicleID: "1825"},
+			{Line: "H10", Direction: "0", Dest: "Olímpic de Badalona", ArriveMs: now.Add(10 * time.Second).UnixMilli(), VehicleID: "1840"},
+		},
+		"201": {
+			{Line: "H10", Direction: "1", Dest: "Pl. Sants", ArriveMs: now.Add(4 * time.Minute).UnixMilli(), VehicleID: "1901"},
+		},
+	}
+
+	// Direction 0: 2 unique buses (1825 back-projected before 2.102, 1840 STOPPED_AT 2.103).
+	dir0 := tmbEstimateLineBusesFromSamples(route, prof, "0", samples, now)
+	if len(dir0) != 2 {
+		t.Fatalf("expected 2 estimated buses in dir 0, got %d (%s)", len(dir0), toJSON(dir0))
+	}
+	b1825 := dir0[0].(*Obj)
+	b1840 := dir0[1].(*Obj)
+	if b1825.Str("vehicleId") != "1825" || b1825.Get("isEstimated") != true || b1825.Get("isRealTime") != false {
+		t.Errorf("unexpected 1825: %s", toJSON(b1825))
+	}
+	if b1825.Str("positionSource") != "tmb_stop_predictions" || b1825.Str("mode") != "bus" || b1825.Get("wheelchairAccessible") != true {
+		t.Errorf("unexpected 1825 metadata: %s", toJSON(b1825))
+	}
+	if !strings.Contains(b1825.Str("attribution"), "Transports Metropolitans de Barcelona") {
+		t.Errorf("missing TMB attribution: %q", b1825.Str("attribution"))
+	}
+	// Back-projected 3 min (~0.65 km) before 2.102 (41.392, 2.162) toward 2.101 (41.385, 2.150).
+	if b1825.Num("lat") >= 41.392 || b1825.Num("lat") <= 41.385 {
+		t.Errorf("expected 1825 lat between 2.101 and 2.102, got %v", b1825.Num("lat"))
+	}
+	if b1840.Str("vehicleId") != "1840" || b1840.Str("currentStatus") != "STOPPED_AT" || b1840.Str("stopName") != "Clot" {
+		t.Errorf("expected 1840 STOPPED_AT Clot, got %s", toJSON(b1840))
+	}
+
+	// Both directions: 3 unique buses total.
+	both := tmbEstimateLineBusesFromSamples(route, prof, "both", samples, now)
+	if len(both) != 3 {
+		t.Fatalf("expected 3 estimated buses in both dirs, got %d", len(both))
+	}
+
+	// Sample indices helper: 30 stops -> 6 evenly spaced indices in [1, 29].
+	idxs := tmbSampleStopIndices(30, 6)
+	if len(idxs) != 6 || idxs[0] < 1 || idxs[len(idxs)-1] != 29 {
+		t.Fatalf("unexpected sample indices for 30 stops: %v", idxs)
+	}
+}

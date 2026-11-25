@@ -32,13 +32,17 @@ import (
 )
 
 const (
-	tmbAgencyID        = "tmb"
-	tmbBaseURL         = "https://api.tmb.cat/v1"
-	tmbMetroEvery      = 30 * time.Second
-	tmbMetroMaxAge     = 3 * time.Minute
-	tmbBusCacheTTL     = 20 * time.Second
-	tmbBusCacheMaxSize = 512
-	tmbAttributionBase = "Transports Metropolitans de Barcelona (TMB)"
+	tmbAgencyID         = "tmb"
+	tmbBaseURL          = "https://api.tmb.cat/v1"
+	tmbMetroEvery       = 30 * time.Second
+	tmbMetroMaxAge      = 3 * time.Minute
+	tmbBusCacheTTL      = 20 * time.Second
+	tmbBusCacheMaxSize  = 512
+	tmbBusLineCacheMax  = 128
+	tmbBusSamplePerDir  = 6
+	tmbBusCommercialKmh = 13.0   // Barcelona urban bus average commercial speed
+	tmbBusMaxEtaSec     = 1200.0 // 20 min horizon for stop-prediction back-projection
+	tmbAttributionBase  = "Transports Metropolitans de Barcelona (TMB)"
 )
 
 var tmbOperator = operatorInfo{
@@ -631,4 +635,344 @@ func abs64(n int64) int64 {
 		return -n
 	}
 	return n
+}
+
+// Per-line TTL cache for estimated TMB city bus positions on single-line view.
+type tmbBusLineCacheEntry struct {
+	at    time.Time
+	buses []any
+}
+
+var tmbBusLineCache = struct {
+	mu      sync.Mutex
+	entries map[string]tmbBusLineCacheEntry
+}{entries: map[string]tmbBusLineCacheEntry{}}
+
+// tmbSampleStopIndices picks up to maxSamples evenly spaced stop indices along
+// a direction (skipping origin terminus index 0 when there are multiple stops).
+func tmbSampleStopIndices(n, maxSamples int) []int {
+	if n <= 0 || maxSamples <= 0 {
+		return nil
+	}
+	if n == 1 {
+		return []int{0}
+	}
+	if n-1 <= maxSamples {
+		out := make([]int, 0, n-1)
+		for i := 1; i < n; i++ {
+			out = append(out, i)
+		}
+		return out
+	}
+	out := make([]int, 0, maxSamples)
+	seen := map[int]bool{}
+	for s := 1; s <= maxSamples; s++ {
+		idx := int(math.Round(float64(s) * float64(n-1) / float64(maxSamples)))
+		if idx < 1 {
+			idx = 1
+		}
+		if idx >= n {
+			idx = n - 1
+		}
+		if !seen[idx] {
+			seen[idx] = true
+			out = append(out, idx)
+		}
+	}
+	return out
+}
+
+func tmbCumKm(stops []rtLineStop) []float64 {
+	cum := make([]float64, len(stops))
+	for i := 1; i < len(stops); i++ {
+		cum[i] = cum[i-1] + haversineKm(stops[i-1].Lat, stops[i-1].Lon, stops[i].Lat, stops[i].Lon)
+	}
+	return cum
+}
+
+func tmbInterpolateStops(stops []rtLineStop, cum []float64, targetKm float64) (lat, lon, brg float64, nextIdx int) {
+	if len(stops) == 0 {
+		return 0, 0, 0, 0
+	}
+	if len(stops) == 1 || targetKm <= 0 {
+		brg = 0
+		if len(stops) > 1 {
+			brg = bearing(stops[0].Lat, stops[0].Lon, stops[1].Lat, stops[1].Lon)
+		}
+		return stops[0].Lat, stops[0].Lon, brg, 0
+	}
+	last := len(stops) - 1
+	if targetKm >= cum[last] {
+		return stops[last].Lat, stops[last].Lon, bearing(stops[last-1].Lat, stops[last-1].Lon, stops[last].Lat, stops[last].Lon), last
+	}
+	for i := 1; i < len(stops); i++ {
+		if cum[i] >= targetKm {
+			seg := cum[i] - cum[i-1]
+			frac := 0.0
+			if seg > 1e-6 {
+				frac = (targetKm - cum[i-1]) / seg
+			}
+			lat = stops[i-1].Lat + (stops[i].Lat-stops[i-1].Lat)*frac
+			lon = stops[i-1].Lon + (stops[i].Lon-stops[i-1].Lon)*frac
+			brg = bearing(stops[i-1].Lat, stops[i-1].Lon, stops[i].Lat, stops[i].Lon)
+			return lat, lon, brg, i
+		}
+	}
+	return stops[last].Lat, stops[last].Lon, 0, last
+}
+
+// tmbEstimateLineBusesFromSamples synthesizes estimated TMB city bus positions
+// from sampled per-stop iTransit arrivals (each carrying a unique id_bus).
+// Every bus is marked honestly as estimated (isEstimated: true, isRealTime: false,
+// positionSource: "tmb_stop_predictions").
+func tmbEstimateLineBusesFromSamples(route rtRoute, prof *rtLineProfile, direction string, samples map[string][]tmbArrival, now time.Time) []any {
+	buses := []any{}
+	if prof == nil || len(prof.Directions) == 0 || len(samples) == 0 {
+		return buses
+	}
+	wantCode := strings.ToUpper(strings.TrimSpace(route.Code))
+	nowMs := now.UnixMilli()
+	ref := tmbAgencyID + ":" + route.Code
+	color := route.Color
+	if color == "" {
+		color = "#E2001A"
+	}
+	textColor := route.TextColor
+	if textColor == "" {
+		textColor = "#FFFFFF"
+	}
+	attr := tmbAttributionWithDate(now)
+
+	type bestObs struct {
+		dir      *rtLineDirection
+		stopIdx  int
+		etaSec   float64
+		arriveMs int64
+		arr      tmbArrival
+	}
+	bestByBus := map[string]bestObs{}
+
+	for di := range prof.Directions {
+		d := &prof.Directions[di]
+		dirStr := strconv.Itoa(d.DirectionID)
+		if direction != "both" && direction != "" && dirStr != direction {
+			continue
+		}
+		for si, st := range d.Stops {
+			sc := tmbBusStopCode(st.ID)
+			if sc == "" {
+				continue
+			}
+			arrs, ok := samples[sc]
+			if !ok || len(arrs) == 0 {
+				continue
+			}
+			for _, a := range arrs {
+				if strings.ToUpper(strings.TrimSpace(a.Line)) != wantCode {
+					continue
+				}
+				if a.Direction != "" && a.Direction != dirStr {
+					continue
+				}
+				etaSec := float64(a.ArriveMs-nowMs) / 1000.0
+				if etaSec < -30 || etaSec > tmbBusMaxEtaSec {
+					continue
+				}
+				vid := a.VehicleID
+				if vid == "" {
+					vid = fmtCoordKey(st.Lat, st.Lon) + "_" + strconv.FormatInt(a.ArriveMs/60000, 10)
+				}
+				key := dirStr + "\x00" + vid
+				if prev, exists := bestByBus[key]; !exists || etaSec < prev.etaSec {
+					bestByBus[key] = bestObs{
+						dir:      d,
+						stopIdx:  si,
+						etaSec:   etaSec,
+						arriveMs: a.ArriveMs,
+						arr:      a,
+					}
+				}
+			}
+		}
+	}
+
+	if len(bestByBus) == 0 {
+		return buses
+	}
+
+	cumByDir := map[int][]float64{}
+	keys := make([]string, 0, len(bestByBus))
+	for k := range bestByBus {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		obs := bestByBus[k]
+		d := obs.dir
+		cum, ok := cumByDir[d.DirectionID]
+		if !ok {
+			cum = tmbCumKm(d.Stops)
+			cumByDir[d.DirectionID] = cum
+		}
+		clampedEta := math.Max(0, obs.etaSec)
+		backKm := (clampedEta / 3600.0) * tmbBusCommercialKmh
+		targetKm := cum[obs.stopIdx] - backKm
+		if targetKm < 0 {
+			targetKm = 0
+		}
+		lat, lon, brg, nextIdx := tmbInterpolateStops(d.Stops, cum, targetKm)
+		status := "IN_TRANSIT_TO"
+		if obs.etaSec <= 15 {
+			status = "STOPPED_AT"
+			nextIdx = obs.stopIdx
+			lat = d.Stops[obs.stopIdx].Lat
+			lon = d.Stops[obs.stopIdx].Lon
+		}
+		nextStop := d.Stops[nextIdx]
+		dest := obs.arr.Dest
+		if dest == "" {
+			dest = d.Headsign
+		}
+		dirStr := strconv.Itoa(d.DirectionID)
+		vid := obs.arr.VehicleID
+		if vid == "" {
+			vid = "EST_" + strconv.Itoa(obs.stopIdx)
+		}
+		obj := O(
+			"id", "TMB_BUS_"+route.Code+"_"+vid,
+			"agencyId", tmbAgencyID,
+			"agency", tmbOperator.Name,
+			"mode", "bus",
+			"vehicleId", vid,
+			"vehicleRef", vid,
+			"label", route.Code+"-"+vid,
+			"lineId", ref,
+			"lineCode", route.Code,
+			"lineRef", ref,
+			"lineName", strOrNil(route.Name),
+			"color", color,
+			"textColor", textColor,
+			"direction", dirStr,
+			"directionId", dirStr,
+			"destination", strOrNil(dest),
+			"lat", jsRound(lat*1e6)/1e6, "lon", jsRound(lon*1e6)/1e6,
+			"latitude", jsRound(lat*1e6)/1e6, "longitude", jsRound(lon*1e6)/1e6,
+			"bearing", jsRound(brg),
+			"stopId", strOrNil(nextStop.ID),
+			"stopName", strOrNil(nextStop.Name),
+			"toStop", strOrNil(nextStop.Name),
+			"nextStopEtaSec", jsRound(clampedEta),
+			"currentStatus", status,
+			"isEstimated", true,
+			"isRealTime", false,
+			"isTheoretical", false,
+			"isGhostVehicle", false,
+			"positionSource", "tmb_stop_predictions",
+			"predictionAgeSec", 0.0,
+			"delayMins", nil,
+			"stale", false,
+			"attribution", attr,
+		)
+		if obs.arr.Wheelchair != nil {
+			obj.Set("wheelchairAccessible", *obs.arr.Wheelchair)
+		}
+		buses = append(buses, obj)
+	}
+	return buses
+}
+
+// tmbBusLineBuses samples up to tmbBusSamplePerDir stops per visible direction
+// via TMB iTransit (using the shared 20 s per-stop cache and a 20 s per-line
+// cache) to produce estimated bus positions for the single-line view.
+func tmbBusLineBuses(ctx context.Context, op *rtCatalogOp, code, direction string, now time.Time) []any {
+	if _, _, ok := tmbCredentials(); !ok || op == nil || op.Profiles == nil {
+		return []any{}
+	}
+	prof := op.Profiles[code]
+	if prof == nil || len(prof.Directions) == 0 {
+		return []any{}
+	}
+	cacheKey := strings.ToUpper(strings.TrimSpace(code)) + "\x00" + direction
+	tmbBusLineCache.mu.Lock()
+	if e, hit := tmbBusLineCache.entries[cacheKey]; hit && now.Sub(e.at) <= tmbBusCacheTTL {
+		out := append([]any(nil), e.buses...)
+		tmbBusLineCache.mu.Unlock()
+		return out
+	}
+	tmbBusLineCache.mu.Unlock()
+
+	var route rtRoute
+	for _, r := range op.Lines {
+		if strings.EqualFold(r.Code, code) {
+			route = r
+			break
+		}
+	}
+	if route.Code == "" {
+		route.Code = code
+	}
+
+	stopCodes := []string{}
+	seenCode := map[string]bool{}
+	for i := range prof.Directions {
+		d := &prof.Directions[i]
+		dirStr := strconv.Itoa(d.DirectionID)
+		if direction != "both" && direction != "" && dirStr != direction {
+			continue
+		}
+		for _, idx := range tmbSampleStopIndices(len(d.Stops), tmbBusSamplePerDir) {
+			sc := tmbBusStopCode(d.Stops[idx].ID)
+			if sc != "" && !seenCode[sc] {
+				seenCode[sc] = true
+				stopCodes = append(stopCodes, sc)
+			}
+		}
+	}
+	if len(stopCodes) == 0 {
+		return []any{}
+	}
+
+	samples := make(map[string][]tmbArrival, len(stopCodes))
+	var smu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 4)
+	for _, sc := range stopCodes {
+		wg.Add(1)
+		go func(stopCode string) {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				return
+			}
+			arr, _, ok := fetchTmbBusStop(ctx, stopCode, now)
+			if !ok || len(arr) == 0 {
+				return
+			}
+			smu.Lock()
+			samples[stopCode] = arr
+			smu.Unlock()
+		}(sc)
+	}
+	wg.Wait()
+
+	buses := tmbEstimateLineBusesFromSamples(route, prof, direction, samples, now)
+
+	tmbBusLineCache.mu.Lock()
+	if len(tmbBusLineCache.entries) >= tmbBusLineCacheMax {
+		for k, v := range tmbBusLineCache.entries {
+			if now.Sub(v.at) > tmbBusCacheTTL {
+				delete(tmbBusLineCache.entries, k)
+			}
+		}
+		if len(tmbBusLineCache.entries) >= tmbBusLineCacheMax {
+			tmbBusLineCache.entries = map[string]tmbBusLineCacheEntry{}
+		}
+	}
+	tmbBusLineCache.entries[cacheKey] = tmbBusLineCacheEntry{at: now, buses: append([]any(nil), buses...)}
+	tmbBusLineCache.mu.Unlock()
+
+	return buses
 }

@@ -176,6 +176,16 @@ func railLineDetails(info operatorInfo, op *rtCatalogOp, code, direction string,
 			buses, stale = ambBuses, ambStale
 			source = "amb_gps_unofficial"
 		}
+	case tmbAgencyID:
+		// TMB city buses have no citywide GPS feed: estimate positions along
+		// the opened line from sampled iTransit stop predictions (20 s cache).
+		if !tmbIsMetroCode(code) {
+			ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+			buses = tmbBusLineBuses(ctx, op, code, direction, now)
+			cancel()
+			stale = 0
+			source = "tmb_bus_predictions"
+		}
 	}
 
 	name := route.Name
@@ -192,7 +202,7 @@ func railLineDetails(info operatorInfo, op *rtCatalogOp, code, direction string,
 		"agency", info.Name,
 		"agencyId", info.ID,
 		"group", info.ID,
-		"mode", catalogModeLabel(info),
+		"mode", catalogLineModeLabel(info, code),
 		"direction", direction,
 		"directionName", directionName,
 		"directions", directions,
@@ -213,7 +223,7 @@ func railLineDetails(info operatorInfo, op *rtCatalogOp, code, direction string,
 		"railData", O(
 			"source", source,
 			"attribution", railAttribution(info.ID),
-			"positionsEstimated", info.ID == movAgencyID && !anyMeasured(buses),
+			"positionsEstimated", (info.ID == movAgencyID && !anyMeasured(buses)) || (info.ID == tmbAgencyID && !tmbIsMetroCode(code)),
 			"stopsFrom", "longest_trip",
 			"staleAfterSec", trainStaleAfter(info.ID),
 			"staleTrains", float64(stale),
