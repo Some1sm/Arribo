@@ -340,9 +340,13 @@ func TestAmbMultiCatalogMatchingAndGencatCodeParse(t *testing.T) {
 		},
 	})
 	rtCatalog.Store(gencatBusAgencyID, &rtCatalogOp{
-		Lines: []rtRoute{{Code: "221", Name: "Sabadell - Caldes - Bigues", Color: "#0D9488"}},
+		Lines: []rtRoute{
+			{Code: "221", Name: "Sabadell - Caldes - Bigues", Color: "#0D9488"},
+			{Code: "e9", Name: "Barcelona - Caldes de Montbui", Color: "#0D9488", RouteIDs: []string{"0211"}},
+		},
 		Profiles: map[string]*rtLineProfile{
 			"221": {Directions: []rtLineDirection{{DirectionID: 0, Stops: []rtLineStop{{Lat: 41.634, Lon: 2.164}}}}},
+			"e9":  {Directions: []rtLineDirection{{DirectionID: 0, Stops: []rtLineStop{{Lat: 41.634, Lon: 2.164}}}}},
 		},
 	})
 	t.Cleanup(func() {
@@ -360,18 +364,24 @@ func TestAmbMultiCatalogMatchingAndGencatCodeParse(t *testing.T) {
 		"221": {
 			{Line: "221", Dir: 1, Lat: 41.635, Lon: 2.165, VehID: "caldes1", ObservedAt: now},
 		},
+		"211": {
+			{Line: "211", Dir: 1, Lat: 41.635, Lon: 2.165, VehID: "e9bus", ObservedAt: now},
+		},
 	}})
 	ambVehLive.Store(p)
 	t.Cleanup(func() { ambVehLive.Store(nil) })
 
 	all := ambCatalogVehicles(now, nil)
-	if len(all) != 3 {
-		t.Fatalf("want 3 matched buses, got %d (%s)", len(all), toJSON(all))
+	if len(all) != 4 {
+		t.Fatalf("want 4 matched buses, got %d (%s)", len(all), toJSON(all))
 	}
 	byVeh := map[string]*Obj{}
 	for _, raw := range all {
 		o := raw.(*Obj)
 		byVeh[o.Str("vehicleId")] = o
+	}
+	if byVeh["e9bus"].Str("agencyId") != gencatBusAgencyID || byVeh["e9bus"].Str("lineRef") != "gencat_bus:e9" {
+		t.Errorf("e9bus (numeric route_id 0211 -> 211) wrong match: %s", toJSON(byVeh["e9bus"]))
 	}
 	if byVeh["aero1"].Str("agencyId") != ambAgencyID || byVeh["aero1"].Str("lineRef") != "amb:A1" {
 		t.Errorf("aero1 wrong match: %s", toJSON(byVeh["aero1"]))

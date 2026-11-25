@@ -638,19 +638,42 @@ func anyMeasured(vs []any) bool {
 	return false
 }
 
-// ambCatalogRouteIndex maps normalized AMB line codes to their GTFS catalog
-// metadata (canonical code, name, color, textColor) for O(1) lookups when
-// emitting hundreds of live AMB metropolitan buses.
+// ambCatalogRouteIndex maps normalized AMB line codes (plus underlying GTFS
+// numeric route_ids with leading zeros stripped, e.g. "0221" -> "221", and
+// "L0256" -> "256") to their GTFS catalog metadata for O(1) lookups when
+// emitting hundreds of live AMB/Generalitat buses.
 func ambCatalogRouteIndex(op *rtCatalogOp) map[string]rtRoute {
 	if op == nil || len(op.Lines) == 0 {
 		return nil
 	}
-	idx := make(map[string]rtRoute, len(op.Lines))
+	idx := make(map[string]rtRoute, len(op.Lines)*2)
+	addAlias := func(alias string, r rtRoute) {
+		k := ambNormLine(alias)
+		if k != "" {
+			if _, exists := idx[k]; !exists {
+				idx[k] = r
+			}
+		}
+	}
 	for _, r := range op.Lines {
 		if r.Code == "" {
 			continue
 		}
+		// Exact rider-facing code always takes precedence.
 		idx[ambNormLine(r.Code)] = r
+		// Also alias "L0256" / "L221" -> "256" / "221" as fallback.
+		if len(r.Code) > 1 && (r.Code[0] == 'L' || r.Code[0] == 'l') {
+			trimmed := strings.TrimLeft(r.Code[1:], "0")
+			if trimmed != "" {
+				addAlias(trimmed, r)
+			}
+		}
+		for _, rid := range r.RouteIDs {
+			addAlias(rid, r)
+			if trimmed := strings.TrimLeft(strings.TrimSpace(rid), "0"); trimmed != "" {
+				addAlias(trimmed, r)
+			}
+		}
 	}
 	return idx
 }
@@ -927,8 +950,11 @@ func ambCatalogVehicles(now time.Time, box *trainBox) []any {
 	}
 	if sp := sagalesLive.Load(); sp != nil {
 		sp.mu.RLock()
-		for code := range sp.byCode {
+		for code, rid := range sp.byCode {
 			skipNorms[ambNormLine(code)] = true
+			if rid > 0 {
+				skipNorms[strconv.Itoa(rid)] = true
+			}
 		}
 		sp.mu.RUnlock()
 	}

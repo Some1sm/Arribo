@@ -186,6 +186,14 @@ func railLineDetails(info operatorInfo, op *rtCatalogOp, code, direction string,
 			stale = 0
 			source = "tmb_bus_predictions"
 		}
+	case gironaAgencyID:
+		// TMG Girona city buses: estimate positions along the opened line from
+		// sampled appbus live predictions (unofficial, 20 s cache).
+		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+		buses = gironaBusLineBuses(ctx, op, code, direction, now)
+		cancel()
+		stale = 0
+		source = "girona_bus_predictions"
 	}
 
 	name := route.Name
@@ -223,7 +231,7 @@ func railLineDetails(info operatorInfo, op *rtCatalogOp, code, direction string,
 		"railData", O(
 			"source", source,
 			"attribution", railAttribution(info.ID),
-			"positionsEstimated", (info.ID == movAgencyID && !anyMeasured(buses)) || (info.ID == tmbAgencyID && !tmbIsMetroCode(code)),
+			"positionsEstimated", (info.ID == movAgencyID && !anyMeasured(buses)) || (info.ID == tmbAgencyID && !tmbIsMetroCode(code)) || info.ID == gironaAgencyID || isTramAgency(info.ID),
 			"stopsFrom", "longest_trip",
 			"staleAfterSec", trainStaleAfter(info.ID),
 			"staleTrains", float64(stale),

@@ -170,3 +170,198 @@ func tramSources() []rtSource {
 		},
 	}
 }
+
+func isTramAgency(id string) bool {
+	return id == tramTbxAgencyID || id == tramTbsAgencyID
+}
+
+// tramVehiclesFromFeed synthesizes live estimated TRAM Barcelona positions
+// (Trambaix T1-T3, Trambesòs T4-T6) from TRAM's official GTFS-RT trip_updates
+// and the imported static GTFS line profiles in rtCatalog. Every tram is
+// placed at or interpolated just before its earliest upcoming stop (<= 4 min).
+func tramVehiclesFromFeed(ctx context.Context, agencyID string, tt *rtTimetable, fm *FeedMessage, delays map[string]int32, computedTrips map[string]bool, now time.Time) []rtVehicle {
+	if fm == nil || !isTramAgency(agencyID) {
+		return nil
+	}
+	v, ok := rtCatalog.Load(agencyID)
+	if !ok {
+		return nil
+	}
+	op := v.(*rtCatalogOp)
+	if op == nil || op.Profiles == nil {
+		return nil
+	}
+	nowUnix := now.Unix()
+	feedTS := fm.Header.Timestamp
+	if feedTS == 0 {
+		feedTS = uint64(nowUnix)
+	}
+	obsUnix := int64(feedTS)
+	if abs64(nowUnix-obsUnix) > 300 {
+		obsUnix = nowUnix
+	}
+
+	var out []rtVehicle
+	seenTrip := map[string]bool{}
+	for _, e := range fm.Entities {
+		if e.IsDeleted || e.TripUpdate == nil || e.TripUpdate.Trip.TripID == "" {
+			continue
+		}
+		tu := e.TripUpdate
+		if tu.Trip.ScheduleRelationship == gtfsTripCanceled || seenTrip[tu.Trip.TripID] {
+			continue
+		}
+		seenTrip[tu.Trip.TripID] = true
+
+		// Find the earliest upcoming stop within [-30s, +240s].
+		bestStopID := ""
+		bestEta := 1e9
+		for _, stu := range tu.StopTimeUpdates {
+			if stu.StopID == "" {
+				continue
+			}
+			var tUnix int64
+			if stu.Arrival != nil && stu.Arrival.Time != nil {
+				tUnix = *stu.Arrival.Time
+			} else if stu.Departure != nil && stu.Departure.Time != nil {
+				tUnix = *stu.Departure.Time
+			}
+			if tUnix <= 0 {
+				continue
+			}
+			eta := float64(tUnix - nowUnix)
+			if eta >= -30 && eta <= 240 && eta < bestEta {
+				bestEta = eta
+				bestStopID = stu.StopID
+			}
+		}
+		if bestStopID == "" {
+			continue
+		}
+
+		// Resolve line code from timetable or route_id.
+		lineCode := ""
+		wantDir := -1
+		if tt != nil {
+			lineCode = tt.tripLine(ctx, tu.Trip.TripID)
+			if lineCode == "" && tu.Trip.RouteID != "" {
+				lineCode = tt.routeLine(ctx, tu.Trip.RouteID)
+			}
+			wantDir = tt.tripDirection(ctx, tu.Trip.TripID)
+		}
+		if lineCode == "" && tu.Trip.RouteID != "" {
+			for _, r := range op.Lines {
+				if strings.EqualFold(r.Code, tu.Trip.RouteID) {
+					lineCode = r.Code
+					break
+				}
+				for _, rid := range r.RouteIDs {
+					if rid == tu.Trip.RouteID {
+						lineCode = r.Code
+						break
+					}
+				}
+				if lineCode != "" {
+					break
+				}
+			}
+		}
+		if lineCode == "" {
+			continue
+		}
+		prof := op.Profiles[lineCode]
+		if prof == nil {
+			continue
+		}
+
+		var dirObj *rtLineDirection
+		stopIdx := -1
+		for i := range prof.Directions {
+			d := &prof.Directions[i]
+			if wantDir >= 0 && d.DirectionID != wantDir {
+				continue
+			}
+			for j, st := range d.Stops {
+				if st.ID == bestStopID {
+					dirObj = d
+					stopIdx = j
+					break
+				}
+			}
+			if stopIdx >= 0 {
+				break
+			}
+		}
+		if stopIdx < 0 {
+			for i := range prof.Directions {
+				d := &prof.Directions[i]
+				for j, st := range d.Stops {
+					if st.ID == bestStopID {
+						dirObj = d
+						stopIdx = j
+						break
+					}
+				}
+				if stopIdx >= 0 {
+					break
+				}
+			}
+		}
+		if dirObj == nil || stopIdx < 0 {
+			continue
+		}
+
+		nextSt := dirObj.Stops[stopIdx]
+		lat, lon := nextSt.Lat, nextSt.Lon
+		status := "STOPPED_AT"
+		if bestEta > 15 && stopIdx > 0 {
+			prevSt := dirObj.Stops[stopIdx-1]
+			// Typical Barcelona TRAM inter-station run time is ~75 s.
+			frac := 1.0 - bestEta/75.0
+			if frac < 0.05 {
+				frac = 0.05
+			}
+			if frac > 0.95 {
+				frac = 0.95
+			}
+			lat = prevSt.Lat + (nextSt.Lat-prevSt.Lat)*frac
+			lon = prevSt.Lon + (nextSt.Lon-prevSt.Lon)*frac
+			status = "IN_TRANSIT_TO"
+		}
+
+		vehID := tu.Trip.TripID
+		label := lineCode
+		if tu.Vehicle != nil {
+			if tu.Vehicle.ID != "" {
+				vehID = tu.Vehicle.ID
+			}
+			if tu.Vehicle.Label != "" {
+				label = lineCode + " · " + tu.Vehicle.Label
+			}
+		}
+		rv := rtVehicle{
+			AgencyID:      agencyID,
+			Mode:          "tram",
+			VehicleID:     vehID,
+			Label:         label,
+			TripID:        tu.Trip.TripID,
+			RouteID:       tu.Trip.RouteID,
+			LineCode:      lineCode,
+			DirectionID:   dirObj.DirectionID,
+			StopID:        nextSt.ID,
+			StopName:      nextSt.Name,
+			CurrentStatus: status,
+			Lat:           lat,
+			Lon:           lon,
+			ObservedAt:    obsUnix,
+		}
+		if d, hasD := delays[tu.Trip.TripID]; hasD {
+			dCopy := d
+			rv.DelaySec = &dCopy
+			rv.HasDelayFromTripUpdate = true
+			rv.DelayComputed = computedTrips[tu.Trip.TripID]
+		}
+		out = append(out, rv)
+	}
+	return out
+}

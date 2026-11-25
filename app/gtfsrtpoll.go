@@ -116,6 +116,8 @@ type rtPoller struct {
 	trip                                     map[string]int32
 	trips                                    int
 	terr                                     string
+	synthVehicles                            []rtVehicle // predicted positions synthesized from trip_updates (TRAM)
+	tripFeedTS                               uint64
 	tt                                       *rtTimetable           // imported timetable, for feeds without delays (nil if absent)
 	ttMod                                    time.Time              // modification time of the open timetable file
 	logNext                                  bool                   // log the next snapshot (after a timetable opens)
@@ -354,6 +356,8 @@ func (p *rtPoller) pollTrips(ctx context.Context) {
 	canceled := map[string]bool{}
 	tripStops := map[string][]string{} // stops (platforms, for FGC) each trip update names
 	var cancels []railCancel           // announced cancellations for the history database
+	var synthVeh []rtVehicle
+	var tripFeedTS uint64
 	delays, err := func() (map[string]int32, error) {
 		b, err := fetchResolvedAuth(ctx, p.src.tripURL, p.src.tripReset, p.src.authHeader)
 		if err != nil {
@@ -363,6 +367,7 @@ func (p *rtPoller) pollTrips(ctx context.Context) {
 		if err != nil {
 			return nil, err
 		}
+		tripFeedTS = fm.Header.Timestamp
 		if !p.src.noHistory {
 			p.trackVisits(ctx, fm)
 		}
@@ -397,13 +402,35 @@ func (p *rtPoller) pollTrips(ctx context.Context) {
 			}
 			// Some feeds (FGC) send predicted times only, no delay: those
 			// delays need the static timetable (slice 3).
+			var tripDelay *int32
 			if d := tripUpdateDelay(e.TripUpdate); d != nil {
 				out[e.TripUpdate.Trip.TripID] = *d
+				tripDelay = d
 			} else if d := tripUpdateComputedDelay(ctx, p.tt, e.TripUpdate); d != nil {
 				out[e.TripUpdate.Trip.TripID] = *d
 				computedTrips[e.TripUpdate.Trip.TripID] = true
 				computed++
+				tripDelay = d
 			}
+			if tripDelay != nil && p.src.noHistory && (p.src.AgencyID == ambAgencyID || isTramAgency(p.src.AgencyID)) {
+				lineCode := ""
+				stopName := ""
+				if p.tt != nil {
+					lineCode = p.tt.tripLine(ctx, e.TripUpdate.Trip.TripID)
+					if lineCode == "" && e.TripUpdate.Trip.RouteID != "" {
+						lineCode = p.tt.routeLine(ctx, e.TripUpdate.Trip.RouteID)
+					}
+					if len(e.TripUpdate.StopTimeUpdates) > 0 && e.TripUpdate.StopTimeUpdates[0].StopID != "" {
+						stopName = p.tt.stopName(ctx, e.TripUpdate.StopTimeUpdates[0].StopID)
+					}
+				}
+				if lineCode != "" {
+					liveDelaysLive.record(p.src.AgencyID, lineCode, stopName, e.TripUpdate.Trip.TripID, *tripDelay, time.Now())
+				}
+			}
+		}
+		if isTramAgency(p.src.AgencyID) {
+			synthVeh = tramVehiclesFromFeed(ctx, p.src.AgencyID, p.tt, fm, out, computedTrips, time.Now())
 		}
 		return out, nil
 	}()
@@ -421,6 +448,10 @@ func (p *rtPoller) pollTrips(ctx context.Context) {
 	p.trip, p.trips, p.computed, p.computedTrips, p.canceled, p.terr = delays, total, computed, computedTrips, canceled, ""
 	p.tripVehicles = tripVehicles
 	p.tripStops = tripStops
+	if isTramAgency(p.src.AgencyID) {
+		p.synthVehicles = synthVeh
+		p.tripFeedTS = tripFeedTS
+	}
 }
 
 // tripUpdateDelay is the trip-level delay, else the first stop event's.
@@ -453,10 +484,16 @@ func (p *rtPoller) pollVehicles(ctx context.Context) {
 	}
 	snap.Canceled = p.canceled
 	snap.TripStops = p.tripStops
+	synth := p.synthVehicles
+	tripTS := p.tripFeedTS
 	p.mu.Unlock()
 	if p.src.vehicleURL == nil {
-		// No vehicle-positions feed (AMB publishes none): the snapshot carries
-		// the trip updates only.
+		// No vehicle-positions feed (AMB, TRAM): carry trip updates, plus any
+		// predicted positions synthesized from trip_updates (TRAM T1-T6).
+		if len(synth) > 0 {
+			snap.Vehicles = synth
+			snap.FeedTimestamp = tripTS
+		}
 		p.snap.Store(snap)
 		return
 	}

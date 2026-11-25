@@ -37,6 +37,10 @@ const (
 	gironaAttribution     = "TMG Girona · Previsions en temps real (font no oficial)"
 	gironaCacheTTL        = 20 * time.Second
 	gironaCacheMaxEntries = 512
+	gironaLineCacheMax    = 64
+	gironaSamplePerDir    = 6
+	gironaCommercialKmh   = 14.0
+	gironaDedupKm         = 0.45
 )
 
 var gironaOperator = operatorInfo{
@@ -299,3 +303,249 @@ func gironaLiveDepartures(ctx context.Context, stop rtLineStop, lineCode, direct
 }
 
 var errGironaBadInput = errors.New("invalid girona request")
+
+// Per-line TTL cache for estimated TMG Girona city bus positions.
+type gironaLineCacheEntry struct {
+	at    time.Time
+	buses []any
+}
+
+var gironaLineCache = struct {
+	mu      sync.Mutex
+	entries map[string]gironaLineCacheEntry
+}{entries: map[string]gironaLineCacheEntry{}}
+
+// gironaEstimateLineBusesFromSamples back-projects live appbus stop
+// predictions ("N min" / "Imminent") onto the GTFS stop polyline for each
+// direction and deduplicates nearby predictions within gironaDedupKm (keeping
+// the closer/smaller-ETA observation).
+func gironaEstimateLineBusesFromSamples(route rtRoute, prof *rtLineProfile, direction string, samples map[string][]gironaArrival, now time.Time) []any {
+	buses := []any{}
+	if prof == nil || len(prof.Directions) == 0 || len(samples) == 0 {
+		return buses
+	}
+	ref := gironaAgencyID + ":" + route.Code
+	color := route.Color
+	if color == "" {
+		color = "#007a5a"
+	}
+	textColor := route.TextColor
+	if textColor == "" {
+		textColor = "#FFFFFF"
+	}
+
+	type cand struct {
+		dir     *rtLineDirection
+		stopIdx int
+		etaMin  int
+		busKm   float64
+	}
+	for di := range prof.Directions {
+		d := &prof.Directions[di]
+		dirStr := strconv.Itoa(d.DirectionID)
+		if direction != "both" && direction != "" && dirStr != direction {
+			continue
+		}
+		if len(d.Stops) == 0 {
+			continue
+		}
+		cum := tmbCumKm(d.Stops)
+		var cands []cand
+		for si, st := range d.Stops {
+			arrs, ok := samples[dirStr+"\x00"+st.ID]
+			if !ok || len(arrs) == 0 {
+				continue
+			}
+			for _, a := range arrs {
+				if !a.RealTime || a.MinutesAway < 0 || a.MinutesAway > 25 {
+					continue
+				}
+				backKm := (float64(a.MinutesAway) / 60.0) * gironaCommercialKmh
+				busKm := cum[si] - backKm
+				if busKm < 0 {
+					busKm = 0
+				}
+				cands = append(cands, cand{dir: d, stopIdx: si, etaMin: a.MinutesAway, busKm: busKm})
+			}
+		}
+		// Keep closest/smallest-ETA observations first, deduplicating within gironaDedupKm.
+		for i := 0; i < len(cands); i++ {
+			for j := i + 1; j < len(cands); j++ {
+				if cands[j].etaMin < cands[i].etaMin {
+					cands[i], cands[j] = cands[j], cands[i]
+				}
+			}
+		}
+		var kept []cand
+		for _, c := range cands {
+			dup := false
+			for _, k := range kept {
+				if math.Abs(c.busKm-k.busKm) <= gironaDedupKm {
+					dup = true
+					break
+				}
+			}
+			if !dup {
+				kept = append(kept, c)
+			}
+		}
+		for idx, c := range kept {
+			lat, lon, brg, nextIdx := tmbInterpolateStops(d.Stops, cum, c.busKm)
+			status := "IN_TRANSIT_TO"
+			if c.etaMin == 0 {
+				status = "STOPPED_AT"
+				nextIdx = c.stopIdx
+				lat = d.Stops[c.stopIdx].Lat
+				lon = d.Stops[c.stopIdx].Lon
+			}
+			nextStop := d.Stops[nextIdx]
+			vid := fmt.Sprintf("EST_%s_%d", dirStr, idx+1)
+			buses = append(buses, O(
+				"id", "GIRONA_BUS_"+route.Code+"_"+vid,
+				"agencyId", gironaAgencyID,
+				"agency", gironaOperator.Name,
+				"mode", "bus",
+				"vehicleId", vid,
+				"vehicleRef", vid,
+				"label", route.Code+"-"+vid,
+				"lineId", ref,
+				"lineCode", route.Code,
+				"lineRef", ref,
+				"lineName", strOrNil(route.Name),
+				"color", color,
+				"textColor", textColor,
+				"direction", dirStr,
+				"directionId", dirStr,
+				"destination", strOrNil(d.Headsign),
+				"lat", jsRound(lat*1e6)/1e6, "lon", jsRound(lon*1e6)/1e6,
+				"latitude", jsRound(lat*1e6)/1e6, "longitude", jsRound(lon*1e6)/1e6,
+				"bearing", jsRound(brg),
+				"stopId", strOrNil(nextStop.ID),
+				"stopName", strOrNil(nextStop.Name),
+				"toStop", strOrNil(nextStop.Name),
+				"nextStopEtaSec", float64(c.etaMin*60),
+				"currentStatus", status,
+				"isEstimated", true,
+				"isRealTime", false,
+				"isTheoretical", false,
+				"isGhostVehicle", false,
+				"unofficial", true,
+				"positionSource", "girona_stop_predictions",
+				"predictionAgeSec", 0.0,
+				"delayMins", nil,
+				"stale", false,
+				"attribution", gironaAttribution,
+			))
+		}
+	}
+	return buses
+}
+
+// gironaBusLineBuses samples up to gironaSamplePerDir stops per visible
+// direction via TMG Girona's appbus endpoint (sharing the 20 s per-stop cache
+// plus a 20 s per-line cache) to estimate bus positions on the single-line view.
+func gironaBusLineBuses(ctx context.Context, op *rtCatalogOp, code, direction string, now time.Time) []any {
+	if os.Getenv("ARRIBO_GIRONA") != "1" || op == nil || op.Profiles == nil {
+		return []any{}
+	}
+	lineNum := gironaLineNumber(code)
+	if lineNum == "" {
+		return []any{}
+	}
+	prof := op.Profiles[code]
+	if prof == nil || len(prof.Directions) == 0 {
+		return []any{}
+	}
+	cacheKey := strings.ToUpper(strings.TrimSpace(code)) + "\x00" + direction
+	gironaLineCache.mu.Lock()
+	if e, hit := gironaLineCache.entries[cacheKey]; hit && now.Sub(e.at) <= gironaCacheTTL {
+		out := append([]any(nil), e.buses...)
+		gironaLineCache.mu.Unlock()
+		return out
+	}
+	gironaLineCache.mu.Unlock()
+
+	var route rtRoute
+	for _, r := range op.Lines {
+		if strings.EqualFold(r.Code, code) {
+			route = r
+			break
+		}
+	}
+	if route.Code == "" {
+		route.Code = code
+	}
+
+	type reqItem struct {
+		dirStr  string
+		dirWord string
+		stopID  string
+	}
+	var reqs []reqItem
+	seen := map[string]bool{}
+	for i := range prof.Directions {
+		d := &prof.Directions[i]
+		dirStr := strconv.Itoa(d.DirectionID)
+		if direction != "both" && direction != "" && dirStr != direction {
+			continue
+		}
+		dirWord := "anada"
+		if d.DirectionID == 1 {
+			dirWord = "torna"
+		}
+		for _, idx := range tmbSampleStopIndices(len(d.Stops), gironaSamplePerDir) {
+			sid := d.Stops[idx].ID
+			k := dirStr + "\x00" + sid
+			if sid != "" && !seen[k] {
+				seen[k] = true
+				reqs = append(reqs, reqItem{dirStr: dirStr, dirWord: dirWord, stopID: sid})
+			}
+		}
+	}
+	if len(reqs) == 0 {
+		return []any{}
+	}
+
+	samples := make(map[string][]gironaArrival, len(reqs))
+	var smu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 4)
+	for _, r := range reqs {
+		wg.Add(1)
+		go func(item reqItem) {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				return
+			}
+			arr, _, ok := fetchGironaAppBus(ctx, lineNum, item.dirWord, item.stopID, now)
+			if !ok || len(arr) == 0 {
+				return
+			}
+			smu.Lock()
+			samples[item.dirStr+"\x00"+item.stopID] = arr
+			smu.Unlock()
+		}(r)
+	}
+	wg.Wait()
+
+	buses := gironaEstimateLineBusesFromSamples(route, prof, direction, samples, now)
+
+	gironaLineCache.mu.Lock()
+	if len(gironaLineCache.entries) >= gironaLineCacheMax {
+		for k, v := range gironaLineCache.entries {
+			if now.Sub(v.at) > gironaCacheTTL {
+				delete(gironaLineCache.entries, k)
+			}
+		}
+		if len(gironaLineCache.entries) >= gironaLineCacheMax {
+			gironaLineCache.entries = map[string]gironaLineCacheEntry{}
+		}
+	}
+	gironaLineCache.entries[cacheKey] = gironaLineCacheEntry{at: now, buses: append([]any(nil), buses...)}
+	gironaLineCache.mu.Unlock()
+
+	return buses
+}

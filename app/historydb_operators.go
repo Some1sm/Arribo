@@ -152,6 +152,7 @@ func (h *HistoryDB) getOperatorReport(hours float64, feeds map[string]*Obj) (*Ob
 			"feed", feed,
 		))
 	}
+	ops = append(ops, liveDelaysLive.operatorReports(hours, feeds, time.UnixMilli(nowMs()))...)
 	return O("hours", hours, "generatedAt", float64(nowMs()), "operators", ops), nil
 }
 

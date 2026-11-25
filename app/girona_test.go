@@ -63,3 +63,36 @@ func TestGironaSourceGateAndNoHistory(t *testing.T) {
 		t.Errorf("unexpected gironaSource: %+v", src)
 	}
 }
+
+func TestGironaBusEstimateLinePositions(t *testing.T) {
+	now := time.Date(2026, 11, 25, 12, 0, 0, 0, madrid)
+	route := rtRoute{Code: "L1", Name: "Montjuïc - Avellaneda", Color: "#E2001A", TextColor: "#FFFFFF"}
+	prof := &rtLineProfile{
+		Code: "L1",
+		Directions: []rtLineDirection{{
+			DirectionID: 0,
+			Headsign:    "Avellaneda",
+			Stops: []rtLineStop{
+				{ID: "10", Name: "Montjuïc", Lat: 41.990, Lon: 2.835},
+				{ID: "11", Name: "Plaça Independència", Lat: 41.984, Lon: 2.824},
+				{ID: "12", Name: "Estació", Lat: 41.979, Lon: 2.817},
+				{ID: "13", Name: "Avellaneda", Lat: 41.972, Lon: 2.808},
+			},
+		}},
+	}
+	samples := map[string][]gironaArrival{
+		// Same bus seen 2 min from stop 11 and ~6 min from stop 12 -> deduplicates to 1 bus;
+		// plus an imminent bus at stop 13 -> 2 buses total.
+		"0\x0011": {{MinutesAway: 2, RealTime: true, Direction: "0"}},
+		"0\x0012": {{MinutesAway: 6, RealTime: true, Direction: "0"}},
+		"0\x0013": {{MinutesAway: 0, RealTime: true, Direction: "0"}, {MinutesAway: 12, RealTime: false, Direction: "0"}},
+	}
+	buses := gironaEstimateLineBusesFromSamples(route, prof, "0", samples, now)
+	if len(buses) != 2 {
+		t.Fatalf("expected 2 estimated Girona buses, got %d (%s)", len(buses), toJSON(buses))
+	}
+	b0 := buses[0].(*Obj)
+	if b0.Str("agencyId") != gironaAgencyID || b0.Get("isEstimated") != true || b0.Get("isRealTime") != false || b0.Str("positionSource") != "girona_stop_predictions" {
+		t.Errorf("unexpected Girona bus: %s", toJSON(b0))
+	}
+}

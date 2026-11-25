@@ -75,7 +75,7 @@ func liveTrainFeeds() []trainFeed {
 		return nil
 	}
 	var feeds []trainFeed
-	for _, info := range reportOperators {
+	for _, info := range append(append([]operatorInfo(nil), reportOperators...), tramTbxOperator, tramTbsOperator) {
 		for _, p := range *pp {
 			if p.src.AgencyID == info.ID {
 				feeds = append(feeds, trainFeed{info: info, snap: p.snap.Load()})
@@ -245,12 +245,15 @@ func trainJSON(info operatorInfo, s *rtSnapshot, v *rtVehicle, now time.Time) *O
 		"positionTimeSource", timeSource,
 		"ageSec", ageSec,
 		"stale", stale,
-		"isRealTime", !stale && info.ID != tmbAgencyID,
-		"isEstimated", info.ID == tmbAgencyID,
+		"isRealTime", !stale && info.ID != tmbAgencyID && !isTramAgency(info.ID),
+		"isEstimated", info.ID == tmbAgencyID || isTramAgency(info.ID),
 		"isTheoretical", false,
 		"positionSource", func() string {
 			if info.ID == tmbAgencyID {
 				return "metro_predictions"
+			}
+			if isTramAgency(info.ID) {
+				return "tram_predictions"
 			}
 			return "gtfsrt"
 		}(),

@@ -10,9 +10,10 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 )
 
-var reRailLineCode = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 _-]{0,15}$`)
+var reRailLineCode = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 _.-]{0,15}$`)
 
 // orderStationsAlongLine sorts the report's stations by their position on
 // the line's first direction (then the second); stations the profile does
@@ -56,9 +57,16 @@ func (s *Server) hOperatorLine(q *xreq, res *xres) error {
 	agency := jsTrim(jsString(or(qv(q, "agency"), "")))
 	line := jsTrim(jsString(or(qv(q, "line"), "")))
 	var info *operatorInfo
+	liveOnly := false
 	for i := range reportOperators {
 		if reportOperators[i].ID == agency {
 			info = &reportOperators[i]
+		}
+	}
+	if info == nil {
+		if op, ok := isLiveDelayOperator(agency); ok {
+			info = &op
+			liveOnly = true
 		}
 	}
 	if info == nil || !reRailLineCode.MatchString(line) {
@@ -95,7 +103,13 @@ func (s *Server) hOperatorLine(q *xreq, res *xres) error {
 		res.json(spreadAny(O("success", true), data))
 		return nil
 	}
-	data, err := s.singleflightQuery("opline:"+key, "getOperatorLineReport", O("agencyId", agency, "line", line, "hours", hours), 15000)
+	var data any
+	var err error
+	if liveOnly {
+		data = liveDelaysLive.lineReport(agency, line, hours, time.UnixMilli(nowMs()))
+	} else {
+		data, err = s.singleflightQuery("opline:"+key, "getOperatorLineReport", O("agencyId", agency, "line", line, "hours", hours), 15000)
+	}
 	if err != nil {
 		s.sendInternalError(q, res, err, O("success", false))
 		return nil
@@ -128,14 +142,29 @@ func (s *Server) hOperatorHistory(q *xreq, res *xres) error {
 	agency := jsTrim(jsString(or(qv(q, "agency"), "")))
 	line := jsTrim(jsString(or(qv(q, "line"), "")))
 	var info *operatorInfo
+	liveOnly := false
 	for i := range reportOperators {
 		if reportOperators[i].ID == agency {
 			info = &reportOperators[i]
 		}
 	}
+	if info == nil {
+		if op, ok := isLiveDelayOperator(agency); ok {
+			info = &op
+			liveOnly = true
+		}
+	}
 	if info == nil || (line != "" && !reRailLineCode.MatchString(line)) {
 		res.status = 400
 		res.json(O("success", false, "error", "Unknown operator or line"))
+		return nil
+	}
+	if liveOnly {
+		res.json(O(
+			"success", true, "agencyId", agency, "line", strOrNil(line),
+			"name", info.Name, "shortName", info.ShortName,
+			"onTimeMaxMins", info.OnTimeMaxMins, "days", []any{},
+		))
 		return nil
 	}
 	known := line == ""

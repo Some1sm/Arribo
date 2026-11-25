@@ -225,6 +225,7 @@ func (t *rtTimetable) stopName(ctx context.Context, stopID string) string {
 type rtRoute struct {
 	Code, Name, Color, TextColor string
 	RouteType                    int
+	RouteIDs                     []string // underlying GTFS route_id(s) for cross-feed matching
 }
 
 // catalogRoutes is the timetable's lines grouped by short name (Renfe's
@@ -232,14 +233,14 @@ type rtRoute struct {
 // route's long name and colours win. Colours are returned as "#rrggbb";
 // a missing text colour stays empty (the client applies the GTFS default).
 func (t *rtTimetable) catalogRoutes(ctx context.Context) ([]rtRoute, error) {
-	rows, err := t.db.QueryContext(ctx, `SELECT COALESCE(NULLIF(short_name, ''), route_id), COALESCE(long_name, ''),
+	rows, err := t.db.QueryContext(ctx, `SELECT route_id, COALESCE(NULLIF(short_name, ''), route_id), COALESCE(long_name, ''),
 	    COALESCE(color, ''), COALESCE(text_color, ''), COALESCE(route_type, 3)
 	  FROM routes ORDER BY rowid`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	seen := map[string]bool{}
+	byCode := map[string]int{}
 	var out []rtRoute
 	hex := func(s string) string {
 		if len(s) == 6 {
@@ -253,16 +254,26 @@ func (t *rtTimetable) catalogRoutes(ctx context.Context) ([]rtRoute, error) {
 		return ""
 	}
 	for rows.Next() {
+		var rid string
 		var r rtRoute
-		if err := rows.Scan(&r.Code, &r.Name, &r.Color, &r.TextColor, &r.RouteType); err != nil {
+		if err := rows.Scan(&rid, &r.Code, &r.Name, &r.Color, &r.TextColor, &r.RouteType); err != nil {
 			return nil, err
 		}
-		if r.Code == "" || seen[r.Code] {
+		if r.Code == "" {
 			continue
 		}
-		seen[r.Code] = true
+		if idx, exists := byCode[r.Code]; exists {
+			if rid != "" {
+				out[idx].RouteIDs = append(out[idx].RouteIDs, rid)
+			}
+			continue
+		}
+		byCode[r.Code] = len(out)
 		r.Name = strings.Join(strings.Fields(r.Name), " ") // Renfe pads its names with runs of spaces
 		r.Color, r.TextColor = hex(r.Color), hex(r.TextColor)
+		if rid != "" {
+			r.RouteIDs = []string{rid}
+		}
 		out = append(out, r)
 	}
 	return out, rows.Err()

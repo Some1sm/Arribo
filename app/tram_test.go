@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestTramTokenCacheCachesAndResets(t *testing.T) {
@@ -85,5 +86,58 @@ func TestTramSourcesGateAndNoHistory(t *testing.T) {
 		if !strings.HasPrefix(trainAttribution[s.AgencyID], "Powered by TRAM Barcelona") {
 			t.Errorf("%s: missing required TRAM attribution", s.AgencyID)
 		}
+	}
+}
+
+func TestTramVehiclesFromFeed(t *testing.T) {
+	now := time.Unix(1795554000, 0)
+	rtCatalog.Store(tramTbxAgencyID, &rtCatalogOp{
+		AgencyID: tramTbxAgencyID,
+		Mode:     "tram",
+		Lines:    []rtRoute{{Code: "T1", Name: "Francesc Macià - Bon Viatge", Color: "#009640", RouteIDs: []string{"1"}}},
+		Profiles: map[string]*rtLineProfile{
+			"T1": {
+				Code: "T1",
+				Directions: []rtLineDirection{{
+					DirectionID: 0,
+					Stops: []rtLineStop{
+						{ID: "S1", Name: "Francesc Macià", Lat: 41.392, Lon: 2.144},
+						{ID: "S2", Name: "L'Illa", Lat: 41.389, Lon: 2.135},
+						{ID: "S3", Name: "Numància", Lat: 41.387, Lon: 2.131},
+					},
+				}},
+			},
+		},
+	})
+	t.Cleanup(func() { rtCatalog.Delete(tramTbxAgencyID) })
+
+	tArr := now.Unix() + 38 // ~halfway between S1 and S2 (75s inter-station)
+	delay := int32(60)
+	fm := &FeedMessage{
+		Header: FeedHeader{Timestamp: uint64(now.Unix())},
+		Entities: []Entity{{
+			ID: "e1",
+			TripUpdate: &TripUpdate{
+				Trip:    TripDescriptor{TripID: "TR1", RouteID: "1"},
+				Vehicle: &VehicleDescriptor{ID: "101", Label: "101"},
+				StopTimeUpdates: []StopTimeUpdate{
+					{StopID: "S2", Arrival: &StopTimeEvent{Time: &tArr}},
+				},
+			},
+		}},
+	}
+	vs := tramVehiclesFromFeed(context.Background(), tramTbxAgencyID, nil, fm, map[string]int32{"TR1": delay}, map[string]bool{}, now)
+	if len(vs) != 1 {
+		t.Fatalf("expected 1 synthesized tram, got %d", len(vs))
+	}
+	v := vs[0]
+	if v.Mode != "tram" || v.LineCode != "T1" || v.StopName != "L'Illa" || v.CurrentStatus != "IN_TRANSIT_TO" {
+		t.Errorf("unexpected tram vehicle: %+v", v)
+	}
+	if v.Lat >= 41.392 || v.Lat <= 41.389 {
+		t.Errorf("expected interpolated lat between 41.389 and 41.392, got %v", v.Lat)
+	}
+	if !v.HasDelayFromTripUpdate || v.DelaySec == nil || *v.DelaySec != 60 {
+		t.Errorf("expected delay 60s on tram, got %+v", v.DelaySec)
 	}
 }

@@ -37,18 +37,30 @@ const (
 	sagalesBaseURL      = "https://www.sagales.com/es/real-time-bus"
 	sagalesUserAgent    = "Mozilla/5.0 (compatible; Arribo transit observatory)"
 	sagalesAttribution  = "Sagalés (font no oficial)"
-	sagalesMinGap       = 3 * time.Second
+	sagalesMinGap       = 1500 * time.Millisecond
 	sagalesStaticMaxAge = 20 * time.Hour
-	sagalesStaleSec     = 300 // 5 min GPS freshness
+	sagalesStaleSec     = 360 // 6 min GPS freshness across full Catalonia cycle
 )
 
-// sagalesDefaultLines: high-value Mataró/Maresme, Vallès, and Girona Sagalés lines:
-//
-//	550 Mataró-Granollers, 551 Mataró-Canyamars, 553/554 Mataró-Argentona,
-//	400 Barcelona-Granollers, 405 BCN-La Roca-Cardedeu, 691 Pineda-Calella,
-//	601 Blanes-Girona, 604 BCN-Aeroport Girona, 617 e4 Lloret-Girona,
-//	671/672/673 LloretBus L011-L013.
-var sagalesDefaultLines = []int{550, 551, 553, 554, 400, 405, 691, 601, 604, 617, 671, 672, 673}
+// sagalesDefaultLines: comprehensive Catalonia Sagalés networks with live GPS
+// and stop delays:
+//   - Mataró / Maresme: 550, 551, 553, 554, 555, 559, 691 (Pineda-Calella)
+//   - Vallès Oriental / Occidental & BCN corridors: 201, 211, 212, 213, 221,
+//     295, 296, 302, 320, 329 (Mollet L2), 330, 340, 348, 390, 396 (Mollet L1),
+//     400, 405, 406, 408, 416, 427, 455, 582, 590, 591 (Cardedeu), 596, 598
+//   - Transgran Granollers: 901, 903, 907, 914, 921, 922
+//   - BusManresa: 770, 791, 792, 793, 794, 795, 798, 804, 805
+//   - Urbà de Vic: 971, 972, 973, 974, 976, 977, 978
+//   - Girona / Costa Brava / LloretBus: 601, 603, 604, 617 (e4), 671..675, 677
+var sagalesDefaultLines = []int{
+	550, 551, 553, 554, 400, 405, 691, 601, 604, 617, 671, 672, 673,
+	555, 559, 603, 674, 675, 677,
+	201, 211, 212, 213, 221, 295, 296, 302, 320, 329, 330, 340, 348, 390, 396,
+	406, 408, 416, 427, 455, 582, 590, 591, 596, 598,
+	901, 903, 907, 914, 921, 922,
+	770, 791, 792, 793, 794, 795, 798, 804, 805,
+	971, 972, 973, 974, 976, 977, 978,
+}
 
 var sagalesOperator = operatorInfo{
 	ID: sagalesAgencyID, Name: "Sagalés", ShortName: "Sagalés",
@@ -511,6 +523,15 @@ func (p *sagalesPoller) pollOne(ctx context.Context, routeID, dirID int, wantSta
 	}
 
 	p.buses[fmt.Sprintf("%d:%d", routeID, dirID)] = buses
+	for _, b := range buses {
+		if b.DelaySec != nil && b.LineCode != "" {
+			tk := b.TripID
+			if tk == "" {
+				tk = b.VehicleID
+			}
+			liveDelaysLive.record(sagalesAgencyID, b.LineCode, b.StopName, tk, *b.DelaySec, now)
+		}
+	}
 	if bg := busGapsLive.Load(); bg != nil {
 		dirStr := strconv.Itoa(dirID)
 		for _, b := range buses {
