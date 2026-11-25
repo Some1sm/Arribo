@@ -12821,7 +12821,8 @@ body.network-map-fullscreen-open { overflow: hidden; }
   max-height: 620px;
   overflow-y: auto;
 }
-.stops-schedule-scroll[hidden] {
+.stops-schedule-scroll[hidden],
+.btn-stops-view-mode[hidden] {
   display: none;
 }
 .line-schedule-card {

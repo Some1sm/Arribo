@@ -307,7 +307,169 @@ func findGencatBusScheduleMatch(code string, srcProf *rtLineProfile) (string, *r
 	return bestCode, bestProf, bestProf != nil
 }
 
+// buildMoventisGencatSchedule builds a full weekday/Saturday/Sunday schedule
+// from Arribo's bundled src/data/gencat_casas.json for Mataró's 7 Moventis
+// Casas lines (C-10, C-20, C-30, e11.1, e11.2, 865, N-80), which have
+// complete weekday/weekend calendars in gencat_casas.json.
+func buildMoventisGencatSchedule(info operatorInfo, code, reqStopID string, now time.Time) *Obj {
+	g := gencatData()
+	if g == nil {
+		return nil
+	}
+	want := ambNormLine(code)
+	var line *gcLine
+	for i := range g.Lines {
+		if ambNormLine(g.Lines[i].Code) == want || ambNormLine(g.Lines[i].GtfsCode) == want {
+			line = &g.Lines[i]
+			break
+		}
+	}
+	if line == nil || len(line.Directions) == 0 {
+		return nil
+	}
+	wed := nextWeekdayDate(now, time.Wednesday)
+	sat := nextWeekdayDate(now, time.Saturday)
+	sun := nextWeekdayDate(now, time.Sunday)
+	wedStr, satStr, sunStr := wed.Format("20060102"), sat.Format("20060102"), sun.Format("20060102")
+
+	// Collect departure seconds at stopIdx in direction d for a given date & weekday (0=Mon..6=Sun).
+	collectSecs := func(d *gcDir, stopIdx int, date string, monIdx int) []int {
+		var secs []int
+		for _, tr := range d.Trips {
+			if tr.Pattern < 0 || tr.Pattern >= len(d.Patterns) {
+				continue
+			}
+			pat := d.Patterns[tr.Pattern]
+			pos := -1
+			for pi, si := range pat.Stops {
+				if si == stopIdx {
+					pos = pi
+					break
+				}
+			}
+			if pos < 0 || pos >= len(tr.Times) || pos == len(pat.Stops)-1 {
+				continue
+			}
+			svcID := tr.Service.String()
+			runs := g.runs(svcID, date)
+			if !runs {
+				// Respect note overrides if present
+				for _, a := range tr.NoteAdded {
+					if a == date {
+						runs = true
+						break
+					}
+				}
+			}
+			for _, rem := range tr.NoteRemoved {
+				if rem == date {
+					runs = false
+					break
+				}
+			}
+			if !runs {
+				continue
+			}
+			if s := gcClock(tr.Times[pos]); s >= 0 {
+				secs = append(secs, s)
+			}
+		}
+		if len(secs) > 0 {
+			return secs
+		}
+		// Fallback to weekday bitmask if bundled calendar range has rolled over.
+		for _, tr := range d.Trips {
+			if tr.Pattern < 0 || tr.Pattern >= len(d.Patterns) {
+				continue
+			}
+			pat := d.Patterns[tr.Pattern]
+			pos := -1
+			for pi, si := range pat.Stops {
+				if si == stopIdx {
+					pos = pi
+					break
+				}
+			}
+			if pos < 0 || pos >= len(tr.Times) || pos == len(pat.Stops)-1 {
+				continue
+			}
+			svc, ok := g.Services[tr.Service.String()]
+			if !ok || svc.Days[monIdx] == 0 {
+				continue
+			}
+			if s := gcClock(tr.Times[pos]); s >= 0 {
+				secs = append(secs, s)
+			}
+		}
+		return secs
+	}
+
+	dirs := make([]any, 0, len(line.Directions))
+	for di := range line.Directions {
+		d := &line.Directions[di]
+		if len(d.Stops) == 0 {
+			continue
+		}
+		targetIdx := 0
+		explicit := false
+		if reqStopID != "" {
+			for si, st := range d.Stops {
+				if st.ID == reqStopID || st.Code == reqStopID {
+					targetIdx = si
+					explicit = true
+					break
+				}
+			}
+		}
+		wkSecs := collectSecs(d, targetIdx, wedStr, 2)
+		if !explicit && len(d.Stops) >= 4 {
+			midIdx := len(d.Stops) / 2
+			if midSecs := collectSecs(d, midIdx, wedStr, 2); len(midSecs) > len(wkSecs) {
+				targetIdx = midIdx
+				wkSecs = midSecs
+			}
+		}
+		satSecs := collectSecs(d, targetIdx, satStr, 5)
+		sunSecs := collectSecs(d, targetIdx, sunStr, 6)
+
+		stopsList := make([]any, 0, len(d.Stops))
+		for _, st := range d.Stops {
+			stopsList = append(stopsList, O("id", st.ID, "name", st.Name))
+		}
+		dirName := d.Headsign
+		if dirName == "" {
+			dirName = d.Stops[len(d.Stops)-1].Name
+		}
+		dirs = append(dirs, O(
+			"direction", strconv.Itoa(d.DirectionID),
+			"name", dirName,
+			"selectedStop", O("id", d.Stops[targetIdx].ID, "name", d.Stops[targetIdx].Name),
+			"stops", stopsList,
+			"days", O(
+				"weekday", formatScheduleDayObj(wkSecs),
+				"saturday", formatScheduleDayObj(satSecs),
+				"sunday", formatScheduleDayObj(sunSecs),
+			),
+		))
+	}
+	return O(
+		"lineId", info.ID+":"+code,
+		"code", code,
+		"name", line.Name,
+		"agency", info.Name,
+		"source", "gencat_casas",
+		"todayDayType", todayScheduleDayType(now),
+		"calendarExpired", false,
+		"directions", dirs,
+	)
+}
+
 func buildRailLineSchedule(ctx context.Context, info operatorInfo, op *rtCatalogOp, code, reqStopID string, now time.Time) *Obj {
+	if info.ID == movAgencyID {
+		if bundled := buildMoventisGencatSchedule(info, code, reqStopID, now); bundled != nil {
+			return bundled
+		}
+	}
 	prof := op.Profiles[code]
 	if prof == nil || len(prof.Directions) == 0 {
 		return nil
