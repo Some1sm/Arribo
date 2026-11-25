@@ -16,6 +16,7 @@ package main
 import (
 	"errors"
 	"sort"
+	"time"
 )
 
 const (
@@ -216,6 +217,7 @@ func (h *HistoryDB) getNetworkReport(hours float64, feeds map[string]*Obj, sched
 			"scheduledHours", hoursOrNil(sched, op.ID),
 		))
 	}
+	ops = append(ops, liveDelaysLive.networkReports(hours, feeds, time.UnixMilli(nowMs()))...)
 	// Operators with no visits in the period come last, in registry order.
 	sort.SliceStable(ops, func(i, j int) bool {
 		vi := jsNumber(field(field(ops[i], "agencyStats"), "totalVisits"))

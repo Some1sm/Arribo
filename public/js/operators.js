@@ -234,8 +234,11 @@
 
   function loadTrends() {
     const shown = scope === 'all' || scope === 'mataro' ? lastOps : lastOps.filter(o => o.id === scope);
-    shown.filter(o => o.tier !== 'timetable').forEach(o => loadTrend(o.id, ''));
-    if (openLine) loadTrend(openLine.agency, openLine.line);
+    shown.filter(o => o.tier !== 'timetable' && o.hasHistory !== false).forEach(o => loadTrend(o.id, ''));
+    if (openLine) {
+      const op = lastOps.find(o => o.id === openLine.agency);
+      if (!op || op.hasHistory !== false) loadTrend(openLine.agency, openLine.line);
+    }
   }
 
   // Line drill-down: one open line at a time, kept across refreshes.

@@ -346,6 +346,7 @@ func (s *liveDelaysStore) operatorReports(hours float64, feeds map[string]*Obj, 
 			"onTimeMaxMins", on,
 			"source", op.Source,
 			"tier", op.Tier, "method", op.Method,
+			"hasHistory", false,
 			"visits", visits, "trips", float64(len(tripsSet)),
 			"cancelled", 0.0,
 			"avgDelay", avgDelayVal, "maxDelay", maxDelayVal,
@@ -453,4 +454,228 @@ func (s *liveDelaysStore) lineReport(agencyID, line string, hours float64, now t
 		"stations", stationRows,
 		"byHour", hourRows,
 	)
+}
+
+// networkReports builds /api/analytics/network operator blocks for AMB, TRAM
+// (Trambaix + Trambesòs), and Sagalés so they appear in the /dades Comparison
+// by Operator table, combined tables, and individual operator views.
+func (s *liveDelaysStore) networkReports(hours float64, feeds map[string]*Obj, now time.Time) []any {
+	if s == nil {
+		return nil
+	}
+	cutoff := now.UnixMilli() - int64(hours*3600000)
+	round1 := func(v float64) float64 { return math.Round(v*10) / 10 }
+	pct := func(part, total float64) any {
+		if total <= 0 {
+			return nil
+		}
+		return math.Round(part*1000/total) / 10
+	}
+
+	var out []any
+	for _, op := range liveDelayOperators() {
+		if !s.operatorActive(op.ID, feeds) {
+			continue
+		}
+		s.mu.Lock()
+		var list []liveDelaySample
+		if b := s.byAgency[op.ID]; b != nil {
+			for _, sm := range b.samples {
+				if sm.TsMs >= cutoff {
+					list = append(list, sm)
+				}
+			}
+		}
+		s.mu.Unlock()
+
+		on := op.OnTimeMaxMins
+		visits := float64(len(list))
+		var sumDelay, maxDelay, early, onTime, late, severe float64
+
+		type agg struct {
+			n, early, onTime, late, severe int
+			sum, max                       float64
+		}
+		byLine := map[string]*agg{}
+		type stopKey struct{ line, stop string }
+		byStop := map[stopKey]*agg{}
+		byHour := map[int]*agg{}
+
+		for i, sm := range list {
+			sumDelay += sm.DelayMins
+			if i == 0 || sm.DelayMins > maxDelay {
+				maxDelay = sm.DelayMins
+			}
+			isEarly := sm.DelayMins < -1
+			isOnTime := sm.DelayMins >= -1 && sm.DelayMins <= on
+			isLate := sm.DelayMins > on
+			isSevere := sm.DelayMins > railSevereLateMins
+			if isEarly {
+				early++
+			}
+			if isOnTime {
+				onTime++
+			}
+			if isLate {
+				late++
+			}
+			if isSevere {
+				severe++
+			}
+			addAgg := func(a *agg) {
+				a.n++
+				a.sum += sm.DelayMins
+				if a.n == 1 || sm.DelayMins > a.max {
+					a.max = sm.DelayMins
+				}
+				if isEarly {
+					a.early++
+				}
+				if isOnTime {
+					a.onTime++
+				}
+				if isLate {
+					a.late++
+				}
+				if isSevere {
+					a.severe++
+				}
+			}
+			la := byLine[sm.Line]
+			if la == nil {
+				la = &agg{}
+				byLine[sm.Line] = la
+			}
+			addAgg(la)
+
+			if sm.Stop != "" {
+				sk := stopKey{sm.Line, sm.Stop}
+				sa := byStop[sk]
+				if sa == nil {
+					sa = &agg{}
+					byStop[sk] = sa
+				}
+				addAgg(sa)
+			}
+
+			hr := time.UnixMilli(sm.TsMs).In(madrid).Hour()
+			ha := byHour[hr]
+			if ha == nil {
+				ha = &agg{}
+				byHour[hr] = ha
+			}
+			addAgg(ha)
+		}
+
+		var avgVal, maxVal any
+		if visits > 0 {
+			avgVal = round1(sumDelay / visits)
+			maxVal = round1(maxDelay)
+		}
+		stats := O(
+			"agency", op.Name, "agencyId", op.ID, "mode", op.Mode,
+			"tier", op.Tier, "onTimeMaxMins", on,
+			"totalVisits", visits, "totalSamples", visits,
+			"linesCount", float64(len(byLine)),
+			"avgDelay", avgVal, "maxDelay", maxVal,
+			"onTimePct", pct(onTime, visits),
+			"earlyPct", pct(early, visits),
+			"latePct", pct(late, visits),
+			"severeLatePct", pct(severe, visits),
+			"cancelled", 0.0,
+		)
+
+		type lineItem struct {
+			code string
+			a    *agg
+		}
+		var lItems []lineItem
+		for c, a := range byLine {
+			lItems = append(lItems, lineItem{c, a})
+		}
+		sort.Slice(lItems, func(i, j int) bool {
+			return lItems[i].a.sum/float64(lItems[i].a.n) > lItems[j].a.sum/float64(lItems[j].a.n)
+		})
+		lines := make([]any, 0, len(lItems))
+		for _, it := range lItems {
+			n := float64(it.a.n)
+			lines = append(lines, O(
+				"cancelled", 0.0,
+				"lineCode", it.code, "agency", op.ShortName, "agencyId", op.ID,
+				"visitCount", n, "sampleCount", n,
+				"avgDelay", round1(it.a.sum/n), "maxDelay", round1(it.a.max),
+				"onTimePercentage", pct(float64(it.a.onTime), n),
+				"earlyPercentage", pct(float64(it.a.early), n),
+				"latePercentage", pct(float64(it.a.late), n),
+			))
+		}
+
+		type stopItem struct {
+			k stopKey
+			a *agg
+		}
+		var sItems []stopItem
+		for k, a := range byStop {
+			if a.n >= 2 {
+				sItems = append(sItems, stopItem{k, a})
+			}
+		}
+		sort.Slice(sItems, func(i, j int) bool {
+			return sItems[i].a.sum/float64(sItems[i].a.n) > sItems[j].a.sum/float64(sItems[j].a.n)
+		})
+		if len(sItems) > railNetworkStops {
+			sItems = sItems[:railNetworkStops]
+		}
+		stops := make([]any, 0, len(sItems))
+		for _, it := range sItems {
+			n := float64(it.a.n)
+			avg := round1(it.a.sum / n)
+			sev := pct(float64(it.a.severe), n)
+			stops = append(stops, O(
+				"stopId", it.k.stop, "stopName", it.k.stop, "lineCode", it.k.line,
+				"agency", op.ShortName, "agencyId", op.ID,
+				"arrivalCount", n, "visitCount", n, "sampleCount", n,
+				"avgDelay", avg, "maxDelay", round1(it.a.max), "severeLatePct", sev,
+				"isBottleneck", avg >= railBottleneckAvgMins || jsNumber(sev) >= railBottleneckSevere,
+			))
+		}
+
+		hours24 := make([]any, 0, 24)
+		for hr := 0; hr < 24; hr++ {
+			hh := padStart(numToString(float64(hr)), 2, "0")
+			next := padStart(numToString(float64((hr+1)%24)), 2, "0")
+			o := O("hour", hh, "timeWindow", hh+":00 - "+next+":00", "visitCount", 0.0, "sampleCount", 0.0,
+				"avgDelay", nil, "maxDelay", nil, "onTimePercentage", nil, "earlyPercentage", nil,
+				"latePercentage", nil, "severeLatePercentage", nil)
+			if a := byHour[hr]; a != nil && a.n > 0 {
+				n := float64(a.n)
+				o.Set("visitCount", n)
+				o.Set("sampleCount", n)
+				o.Set("avgDelay", round1(a.sum/n))
+				o.Set("maxDelay", round1(a.max))
+				o.Set("onTimePercentage", pct(float64(a.onTime), n))
+				o.Set("earlyPercentage", pct(float64(a.early), n))
+				o.Set("latePercentage", pct(float64(a.late), n))
+				o.Set("severeLatePercentage", pct(float64(a.severe), n))
+			}
+			hours24 = append(hours24, o)
+		}
+
+		out = append(out, O(
+			"agencyId", op.ID, "agency", op.Name, "shortName", op.ShortName, "mode", op.Mode,
+			"tier", op.Tier, "method", op.Method,
+			"onTimeMaxMins", on, "severeLateMins", float64(railSevereLateMins),
+			"bottleneckRule", O("avgDelayMins", float64(railBottleneckAvgMins), "severeLatePct", float64(railBottleneckSevere)),
+			"agencyStats", stats,
+			"rankingMostDelayed", lines,
+			"allStopDelays", stops,
+			"hourlyDelays", hours24,
+			"delayMeasurementComparison", nil,
+			"gpsGaps", nil,
+			"feed", feedOrNil(feeds, op.ID),
+			"staleAfterSec", trainStaleAfter(op.ID),
+			"scheduledHours", nil,
+		))
+	}
+	return out
 }
