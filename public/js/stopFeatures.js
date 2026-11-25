@@ -213,9 +213,10 @@
       const mapEl = document.getElementById('zone-picker-map');
       if (!mapEl || typeof L === 'undefined') return;
       const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+      const cartoKey = 'cb1_2e4m_1_e5f70f18572ed17fe4483c7e';
       const tileUrl = isDark
-        ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-        : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+        ? `https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png?key=${cartoKey}`
+        : `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=${cartoKey}`;
 
       if (!this._zoneMap) {
         this._zoneMap = L.map(mapEl, { zoomControl: true, attributionControl: false }).setView([defaultLat, defaultLon], 13);
@@ -250,12 +251,15 @@
         this._zoneCircle.setLatLng([defaultLat, defaultLon]).setRadius(defaultRadius);
         this._zoneMap.setView([defaultLat, defaultLon], defaultRadius >= 3000 ? 12 : 13, { animate: false });
       }
-      setTimeout(() => {
-        this._zoneMap?.invalidateSize();
+      const recenter = () => {
+        if (!this._zoneMap) return;
+        this._zoneMap.invalidateSize({ animate: false });
         if (this._zoneCircle) {
-          this._zoneMap?.fitBounds(this._zoneCircle.getBounds(), { padding: [24, 24], maxZoom: 15 });
+          this._zoneMap.fitBounds(this._zoneCircle.getBounds(), { padding: [28, 28], maxZoom: 15, animate: false });
         }
-      }, 60);
+      };
+      setTimeout(recenter, 60);
+      setTimeout(recenter, 260);
       global.TransitStopFeatures.scheduleZonePreview.call(this);
     });
   },
