@@ -382,11 +382,13 @@ class NetworkMap extends TransitMap {
       seen.add(b.id);
       const isLiveGps = Boolean(b.isRealTime && !b.isEstimated);
       const popupHtml = buildMoventisPopupHtml(b, this.movFeed);
+      const pinBg = hex(b.color) || neutral;
+      const pinInk = window.TransitUtils?.contrastInk ? window.TransitUtils.contrastInk(pinBg) : '#ffffff';
       const existing = this.movMarkers.get(b.id);
       if (existing) {
         existing.marker.setLatLng([lat, lon]);
         if (existing.isLiveGps !== isLiveGps) {
-          const html = vehiclePinHtml({ cls: 'moventis-marker', bg: hex(b.color) || neutral, icon: CANONICAL_BUS_ICON_INNER_SVG, dot: isLiveGps ? 'live' : 'estimated' });
+          const html = vehiclePinHtml({ cls: 'moventis-marker', bg: pinBg, ink: pinInk, icon: CANONICAL_BUS_ICON_INNER_SVG, dot: isLiveGps ? 'live' : 'estimated' });
           existing.marker.setIcon(L.divIcon({ html, className: 'c10-live-bus-icon', iconSize: [44, 44], iconAnchor: [22, 22] }));
           existing.isLiveGps = isLiveGps;
         }
@@ -396,7 +398,7 @@ class NetworkMap extends TransitMap {
         }
         continue;
       }
-      const html = vehiclePinHtml({ cls: 'moventis-marker', bg: hex(b.color) || neutral, icon: CANONICAL_BUS_ICON_INNER_SVG, dot: isLiveGps ? 'live' : 'estimated' });
+      const html = vehiclePinHtml({ cls: 'moventis-marker', bg: pinBg, ink: pinInk, icon: CANONICAL_BUS_ICON_INNER_SVG, dot: isLiveGps ? 'live' : 'estimated' });
       const marker = L.marker([lat, lon], {
         icon: L.divIcon({ html, className: 'c10-live-bus-icon', iconSize: [44, 44], iconAnchor: [22, 22] }),
         zIndexOffset: isLiveGps ? 980 : 950,
@@ -1092,7 +1094,9 @@ window.buildTrainPopupHtml = buildTrainPopupHtml;
 
 /** A vehicle pin (train or bus): the markup Mataró's bus pins use. */
 function vehiclePinHtml({ cls, bg, ink, icon, dot }) {
-  const colorStyle = ink ? ` color: ${ink};` : '';
+  const isStale = String(cls || '').includes('stale-train');
+  const resolvedInk = ink || (isStale ? '' : (window.TransitUtils?.contrastInk ? window.TransitUtils.contrastInk(bg) : '#ffffff'));
+  const colorStyle = resolvedInk ? ` color: ${resolvedInk};` : '';
   return `
         <div class="live-bus-marker-wrap ${cls}">
           <div class="live-bus-pin" style="background: ${bg};${colorStyle}">
