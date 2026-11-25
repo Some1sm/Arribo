@@ -9,7 +9,6 @@ package main
 // whole network is on screen.
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 	"strings"
@@ -91,11 +90,7 @@ func buildRailRoutesJSON(ops []operatorInfo, loaded []*rtCatalogOp) []byte {
 			))
 		}
 	}
-	raw, err := json.Marshal(O("success", true, "lines", lines))
-	if err != nil {
-		return []byte(`{"success":true,"lines":[]}`)
-	}
-	return raw
+	return toJSON(O("success", true, "lines", lines))
 }
 
 func (s *Server) hRailRoutes(q *xreq, res *xres) error {

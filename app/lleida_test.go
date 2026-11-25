@@ -130,3 +130,43 @@ func TestEmtTarragonaSourceGate(t *testing.T) {
 		t.Fatalf("unexpected emtTarragonaSource: ok=%v src=%+v", ok, src)
 	}
 }
+
+func TestBuildRailRoutesJSON(t *testing.T) {
+	op := &rtCatalogOp{
+		AgencyID: movLleidaAgencyID,
+		Mode:     "bus",
+		Lines:    []rtRoute{{Code: "1", Name: "Interior", Color: "#007a5a"}},
+		Profiles: map[string]*rtLineProfile{
+			"1": {
+				Code: "1",
+				Directions: []rtLineDirection{{
+					DirectionID: 0,
+					Geometry:    [][2]float64{{41.61, 0.62}, {41.62, 0.63}},
+				}},
+			},
+		},
+	}
+	raw := string(buildRailRoutesJSON([]operatorInfo{movLleidaOperator}, []*rtCatalogOp{op}))
+	if len(raw) < 40 || raw == "{}" {
+		t.Fatalf("buildRailRoutesJSON returned empty/invalid payload: %s", raw)
+	}
+	if !containsAll(raw, `"success":true`, `"lines":[`, `"lineRef":"moventis_lleida:1"`, `"path":[[41.61,0.62],[41.62,0.63]]`) {
+		t.Fatalf("unexpected rail-routes JSON: %s", raw)
+	}
+}
+
+func containsAll(s string, subs ...string) bool {
+	for _, sub := range subs {
+		found := false
+		for i := 0; i+len(sub) <= len(s); i++ {
+			if s[i:i+len(sub)] == sub {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
