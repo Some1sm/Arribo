@@ -5594,40 +5594,43 @@ body {
   left: 12px;
   z-index: 500;
   max-width: 75%;
-  background: rgba(15, 23, 42, 0.88);
-  color: #e2e8f0;
-  font-size: 0.72rem;
-  font-weight: 600;
-  padding: 0.4rem 0.5rem 0.4rem 0.75rem;
-  border-radius: 999px;
-  border: 1px solid rgba(59, 130, 246, 0.45);
+  background: var(--map-ctrl-bg);
+  color: var(--map-ctrl-fg);
+  font-size: 0.74rem;
+  font-weight: 500;
+  padding: 0.38rem 0.45rem 0.38rem 0.78rem;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--map-ctrl-border);
   cursor: pointer;
   display: none;
   align-items: center;
-  gap: 0.55rem;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  gap: 0.5rem;
+  box-shadow: var(--shadow-md);
+  transition: background var(--transition-fast), border-color var(--transition-fast);
 }
 .user-location-badge:hover {
-  border-color: rgba(59, 130, 246, 0.8);
+  background: var(--map-ctrl-hover);
+  border-color: var(--border-strong);
 }
 .user-location-badge-close {
-  background: rgba(148, 163, 184, 0.18);
-  color: #cbd5e1;
-  border: none;
+  background: var(--bg-surface-elevated);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   line-height: 1;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 .user-location-badge-close:hover {
-  background: rgba(239, 68, 68, 0.35);
-  color: #fff;
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
 }
 .user-location-marker {
   background: transparent;
