@@ -4236,6 +4236,7 @@ body {
 }
 
 .live-bus-pin {
+  position: relative;
   width: 28px;
   height: 28px;
   border-radius: 50%;
