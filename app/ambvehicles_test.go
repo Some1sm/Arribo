@@ -229,3 +229,91 @@ func countReal(vs []any, real bool) int {
 	}
 	return n
 }
+
+func TestAmbCatalogVehiclesAndBBox(t *testing.T) {
+	now := time.Now()
+	prevAmb, hadAmb := rtCatalog.Load(ambAgencyID)
+	rtCatalog.Store(ambAgencyID, &rtCatalogOp{
+		Lines: []rtRoute{
+			{Code: "B25", Name: "Badalona (Pomar) - Barcelona (Rda. St. Pere)", Color: "#FFE600", TextColor: "#000000"},
+			{Code: "A1", Name: "Aerobús Terminal 1", Color: "#0099CC", TextColor: "#FFFFFF"},
+		},
+		Profiles: map[string]*rtLineProfile{
+			"B25": {
+				Directions: []rtLineDirection{
+					{DirectionID: 0, Headsign: "Barcelona", Stops: []rtLineStop{{Lat: 41.45, Lon: 2.25}, {Lat: 41.39, Lon: 2.17}}},
+					{DirectionID: 1, Headsign: "Badalona", Stops: []rtLineStop{{Lat: 41.39, Lon: 2.17}, {Lat: 41.45, Lon: 2.25}}},
+				},
+			},
+		},
+	})
+	t.Cleanup(func() {
+		if hadAmb {
+			rtCatalog.Store(ambAgencyID, prevAmb)
+		} else {
+			rtCatalog.Delete(ambAgencyID)
+		}
+	})
+
+	// Moventis follows C-10 so C-10 must be excluded from ambCatalogVehicles.
+	mp := &movPoller{}
+	mp.snap.Store(&movSnapshot{
+		Lines:  []int{53},
+		Static: &movStatic{Lines: map[int]movLine{53: {ID: 53, Code: "C-10"}}},
+	})
+	movLive.Store(mp)
+	t.Cleanup(func() { movLive.Store(nil) })
+
+	p := &ambVehPoller{}
+	p.snap.Store(&ambVehSnapshot{At: now, ByLine: map[string][]ambVeh{
+		"c10": {{Line: "C-10", Dir: 1, Lat: 41.45, Lon: 2.25, VehID: "1102", ObservedAt: now}},
+		"b25": {
+			{Line: "B25", Dir: 1, Lat: 41.448, Lon: 2.246, VehID: "4501", ObservedAt: now},
+			{Line: "B25", Dir: 2, Lat: 41.391, Lon: 2.174, VehID: "4502", ObservedAt: now},
+			{Line: "B25", Dir: 1, Lat: 41.440, Lon: 2.240, VehID: "stale", ObservedAt: now.Add(-5 * time.Minute)},
+		},
+		"a1": {{Line: "A1", Dir: 1, Lat: 41.297, Lon: 2.078, VehID: "7701", ObservedAt: now}}, // Airport (outside Badalona/BCN center box)
+	}})
+	ambVehLive.Store(p)
+	t.Cleanup(func() { ambVehLive.Store(nil) })
+
+	// Unfiltered: B25 (2 fresh) + A1 (1 fresh), C-10 excluded, stale B25 excluded.
+	all := ambCatalogVehicles(now, nil)
+	if len(all) != 3 {
+		t.Fatalf("ambCatalogVehicles(nil) = %d, want 3 (%s)", len(all), toJSON(all))
+	}
+	for _, raw := range all {
+		o := raw.(*Obj)
+		if jsString(o.Get("agencyId")) != ambAgencyID {
+			t.Errorf("expected agencyId=amb, got %v", o.Get("agencyId"))
+		}
+		if jsString(o.Get("lineCode")) == "C-10" {
+			t.Errorf("C-10 should not be emitted by ambCatalogVehicles")
+		}
+		if !truthy(o.Get("isRealTime")) || truthy(o.Get("isEstimated")) {
+			t.Errorf("AMB bus must be live GPS: %s", toJSON(o))
+		}
+		if jsString(o.Get("lineCode")) == "B25" {
+			if jsString(o.Get("color")) != "#FFE600" || jsString(o.Get("lineRef")) != "amb:B25" {
+				t.Errorf("B25 catalog metadata missing: %s", toJSON(o))
+			}
+		}
+	}
+
+	// BBox around Badalona & central Barcelona: includes both B25 buses, excludes A1 at Airport.
+	bcnBox := &trainBox{minLat: 41.37, minLon: 2.14, maxLat: 41.47, maxLon: 2.28}
+	inBox := ambCatalogVehicles(now, bcnBox)
+	if len(inBox) != 2 {
+		t.Fatalf("ambCatalogVehicles(bcnBox) = %d, want 2 (%s)", len(inBox), toJSON(inBox))
+	}
+
+	// Single-line view direction filtering for amb:B25.
+	dir0, stale0 := ambLineBuses("B25", "0", now)
+	if len(dir0) != 1 || stale0 != 1 || jsString(dir0[0].(*Obj).Get("vehicleId")) != "4501" {
+		t.Fatalf("ambLineBuses(B25, 0) = %d (stale %d), want 1 live (4501) + 1 stale", len(dir0), stale0)
+	}
+	both, staleBoth := ambLineBuses("B25", "both", now)
+	if len(both) != 2 || staleBoth != 1 {
+		t.Fatalf("ambLineBuses(B25, both) = %d (stale %d), want 2 live + 1 stale", len(both), staleBoth)
+	}
+}

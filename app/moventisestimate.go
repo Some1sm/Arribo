@@ -217,23 +217,38 @@ func movErrText(err error) string {
 	return err.Error()
 }
 
-// hMoventis serves /api/moventis: the followed lines, the estimated buses
-// at this moment and the scraper's state. No lock, no database: it reads
-// the poller's published snapshot.
+// hMoventis serves /api/moventis: the followed Moventis lines, live regional
+// and metropolitan buses (Moventis + AMB GPS + Sagalés GPS, optionally filtered
+// to ?bbox=minLat,minLon,maxLat,maxLon) and the Moventis poller's state. No
+// lock, no database: it reads the pollers' published snapshots.
 func (s *Server) hMoventis(q *xreq, res *xres) error {
 	p := movLive.Load()
-	if p == nil {
+	box := parseTrainBox(jsString(qv(q, "bbox")))
+	now := time.Now()
+	extraBuses := ambCatalogVehicles(now, box)
+	extraBuses = append(extraBuses, sagalesAllVehicles(now, box)...)
+	if p == nil && len(extraBuses) == 0 && ambVehLive.Load() == nil && sagalesLive.Load() == nil {
 		res.json(O("success", true, "enabled", false, "lines", []any{}, "vehicles", []any{}))
 		return nil
 	}
-	snap := p.snap.Load()
-	now := time.Now()
+	var snap *movSnapshot
+	if p != nil {
+		snap = p.snap.Load()
+	}
 	lines := []any{}
 	vehicles := []any{}
 	status := O("requests", 0.0)
 	if snap != nil && snap.Static != nil {
-		vehicles = movVehiclesWithAMB(snap.Static, snap.Lines, snap.Preds, now)
+		for _, v := range movVehiclesWithAMB(snap.Static, snap.Lines, snap.Preds, now) {
+			if box != nil {
+				if o, _ := v.(*Obj); o != nil && !box.has(o.Num("lat"), o.Num("lon")) {
+					continue
+				}
+			}
+			vehicles = append(vehicles, v)
+		}
 	}
+	vehicles = append(vehicles, extraBuses...)
 	if snap != nil {
 		for _, id := range snap.Lines {
 			if snap.Static == nil {
@@ -267,7 +282,7 @@ func (s *Server) hMoventis(q *xreq, res *xres) error {
 	}
 	hours := clampHours(qv(q, "hours"), 24, 168)
 	var delaysObj any
-	if p.delays != nil {
+	if p != nil && p.delays != nil {
 		var st *movStatic
 		if snap != nil {
 			st = snap.Static
@@ -276,6 +291,7 @@ func (s *Server) hMoventis(q *xreq, res *xres) error {
 	}
 	res.json(O("success", true, "enabled", true, "agencyId", movAgencyID, "mode", "bus",
 		"attribution", movAttributionText(),
+		"bbox", boxJSON(box),
 		"positionsEstimated", true, "lines", lines, "vehicles", vehicles, "status", status, "delays", delaysObj))
 	return nil
 }

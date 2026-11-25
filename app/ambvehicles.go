@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -635,4 +636,270 @@ func anyMeasured(vs []any) bool {
 		}
 	}
 	return false
+}
+
+// ambCatalogRouteIndex maps normalized AMB line codes to their GTFS catalog
+// metadata (canonical code, name, color, textColor) for O(1) lookups when
+// emitting hundreds of live AMB metropolitan buses.
+func ambCatalogRouteIndex(op *rtCatalogOp) map[string]rtRoute {
+	if op == nil || len(op.Lines) == 0 {
+		return nil
+	}
+	idx := make(map[string]rtRoute, len(op.Lines))
+	for _, r := range op.Lines {
+		if r.Code == "" {
+			continue
+		}
+		idx[ambNormLine(r.Code)] = r
+	}
+	return idx
+}
+
+// ambDirToGTFS maps AMB's routeId last digit (1/2) to GTFS direction_id (0/1).
+// Returns "" when unknown.
+func ambDirToGTFS(dir int) string {
+	switch dir {
+	case 1:
+		return "0"
+	case 2:
+		return "1"
+	default:
+		return ""
+	}
+}
+
+// ambBearingNearProfile estimates the road heading near (lat, lon) using the
+// AMB GTFS line profile's geometry (or stop sequence).
+func ambBearingNearProfile(d *rtLineDirection, lat, lon float64) float64 {
+	if d == nil {
+		return 0
+	}
+	if len(d.Geometry) >= 2 {
+		best, bd := 0, 1e18
+		for i, pt := range d.Geometry {
+			dist := (pt[0]-lat)*(pt[0]-lat) + (pt[1]-lon)*(pt[1]-lon)
+			if dist < bd {
+				bd, best = dist, i
+			}
+		}
+		a, b := d.Geometry[best], d.Geometry[best]
+		if best+1 < len(d.Geometry) {
+			b = d.Geometry[best+1]
+		} else if best > 0 {
+			a = d.Geometry[best-1]
+		}
+		return bearing(a[0], a[1], b[0], b[1])
+	}
+	if len(d.Stops) >= 2 {
+		best, bd := 0, 1e18
+		for i, st := range d.Stops {
+			dist := (st.Lat-lat)*(st.Lat-lat) + (st.Lon-lon)*(st.Lon-lon)
+			if dist < bd {
+				bd, best = dist, i
+			}
+		}
+		a, b := d.Stops[best], d.Stops[best]
+		if best+1 < len(d.Stops) {
+			b = d.Stops[best+1]
+		} else if best > 0 {
+			a = d.Stops[best-1]
+		}
+		return bearing(a.Lat, a.Lon, b.Lat, b.Lon)
+	}
+	return 0
+}
+
+// ambCatalogVehicleJSON formats one live AMB metropolitan bus (Badalona,
+// Barcelona, L'Hospitalet, Baix Llobregat, Aerobús, NitBus, etc.) for both
+// /api/moventis (homepage network map) and /api/line/amb:<code> (single-line
+// view). Only fresh live GPS pings (age <= ambVehMaxAge) are emitted.
+func ambCatalogVehicleJSON(v ambVeh, snapAt, now time.Time, op *rtCatalogOp, routeIdx map[string]rtRoute) *Obj {
+	obsAt := v.ObservedAt
+	if obsAt.IsZero() {
+		obsAt = snapAt
+	}
+	age := now.Sub(obsAt)
+	if age < 0 {
+		age = 0
+	}
+	if age > ambVehMaxAge {
+		return nil
+	}
+
+	norm := ambNormLine(v.Line)
+	code := strings.TrimSpace(v.Line)
+	lineName := ""
+	color := "#007a5a"
+	textColor := "#ffffff"
+	inCatalog := false
+	if r, ok := routeIdx[norm]; ok {
+		inCatalog = true
+		if r.Code != "" {
+			code = r.Code
+		}
+		lineName = r.Name
+		if r.Color != "" {
+			color = r.Color
+		}
+		if r.TextColor != "" {
+			textColor = r.TextColor
+		}
+	}
+
+	dirStr := ambDirToGTFS(v.Dir)
+	dest := ""
+	bearingVal := 0.0
+	if op != nil && op.Profiles != nil {
+		if prof := op.Profiles[code]; prof != nil {
+			var sel *rtLineDirection
+			for i := range prof.Directions {
+				d := &prof.Directions[i]
+				if dirStr != "" && strconv.Itoa(d.DirectionID) == dirStr {
+					sel = d
+					break
+				}
+			}
+			if sel == nil && len(prof.Directions) > 0 {
+				sel = &prof.Directions[0]
+			}
+			if sel != nil {
+				dest = sel.Headsign
+				bearingVal = ambBearingNearProfile(sel, v.Lat, v.Lon)
+			}
+		}
+	}
+
+	vehID := v.VehID
+	if vehID == "" {
+		vehID = fmtCoordKey(v.Lat, v.Lon)
+	}
+	var lineRef any
+	if inCatalog {
+		lineRef = ambAgencyID + ":" + code
+	}
+	ageSec := jsRound(age.Seconds())
+	return O(
+		"id", "AMB_BUS_"+code+"_"+vehID,
+		"agencyId", ambAgencyID,
+		"agency", ambOperator.Name,
+		"mode", "bus",
+		"vehicleId", vehID,
+		"vehicleRef", vehID,
+		"label", code+"-"+vehID,
+		"lineId", ambAgencyID+":"+code,
+		"lineCode", code,
+		"lineRef", lineRef,
+		"lineName", strOrNil(lineName),
+		"color", color,
+		"textColor", textColor,
+		"direction", strOrNil(dirStr),
+		"directionId", strOrNil(dirStr),
+		"destination", strOrNil(dest),
+		"lat", jsRound(v.Lat*1e6)/1e6, "lon", jsRound(v.Lon*1e6)/1e6,
+		"latitude", jsRound(v.Lat*1e6)/1e6, "longitude", jsRound(v.Lon*1e6)/1e6,
+		"bearing", jsRound(bearingVal),
+		"stopName", nil,
+		"currentStatus", "IN_TRANSIT_TO",
+		"isEstimated", false,
+		"isRealTime", true,
+		"isTheoretical", false,
+		"isGhostVehicle", false,
+		"positionSource", "operator_gps",
+		"predictionAgeSec", ageSec,
+		"ageSec", ageSec,
+		"delayMins", nil,
+		"stale", false,
+		"attribution", ambAttribution,
+	)
+}
+
+// ambCatalogVehicles returns all live GPS AMB metropolitan buses (excluding
+// Moventis-followed lines already emitted by movVehiclesWithAMB), optionally
+// filtered to box.
+func ambCatalogVehicles(now time.Time, box *trainBox) []any {
+	p := ambVehLive.Load()
+	if p == nil {
+		return nil
+	}
+	snap := p.snap.Load()
+	if snap == nil || now.Sub(snap.At) > ambVehMaxAge {
+		return nil
+	}
+	movNorms := map[string]bool{}
+	if mp := movLive.Load(); mp != nil {
+		if ms := mp.snap.Load(); ms != nil && ms.Static != nil {
+			for _, id := range ms.Lines {
+				if l, ok := ms.Static.Lines[id]; ok && l.Code != "" {
+					movNorms[ambNormLine(l.Code)] = true
+				}
+			}
+		}
+	}
+	var op *rtCatalogOp
+	if v, ok := rtCatalog.Load(ambAgencyID); ok {
+		op = v.(*rtCatalogOp)
+	}
+	routeIdx := ambCatalogRouteIndex(op)
+
+	keys := make([]string, 0, len(snap.ByLine))
+	for k := range snap.ByLine {
+		if !movNorms[k] {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+
+	var out []any
+	for _, k := range keys {
+		for _, v := range snap.ByLine[k] {
+			if !box.has(v.Lat, v.Lon) {
+				continue
+			}
+			if obj := ambCatalogVehicleJSON(v, snap.At, now, op, routeIdx); obj != nil {
+				out = append(out, obj)
+			}
+		}
+	}
+	return out
+}
+
+// ambLineBuses returns the live GPS buses for one AMB line (e.g. B25, M30, A1)
+// in the single-line view (/api/line/amb:<code>).
+func ambLineBuses(code, direction string, now time.Time) (buses []any, stale int) {
+	buses = []any{}
+	p := ambVehLive.Load()
+	if p == nil {
+		return buses, 0
+	}
+	snap := p.snap.Load()
+	if snap == nil || now.Sub(snap.At) > ambVehMaxAge {
+		return buses, 0
+	}
+	vs := snap.ByLine[ambNormLine(code)]
+	if len(vs) == 0 {
+		return buses, 0
+	}
+	var op *rtCatalogOp
+	if v, ok := rtCatalog.Load(ambAgencyID); ok {
+		op = v.(*rtCatalogOp)
+	}
+	routeIdx := ambCatalogRouteIndex(op)
+	for _, v := range vs {
+		dirStr := ambDirToGTFS(v.Dir)
+		if direction != "both" && direction != "" && dirStr != "" && dirStr != direction {
+			continue
+		}
+		obsAt := v.ObservedAt
+		if obsAt.IsZero() {
+			obsAt = snap.At
+		}
+		if now.Sub(obsAt) > ambVehMaxAge {
+			stale++
+			continue
+		}
+		if obj := ambCatalogVehicleJSON(v, snap.At, now, op, routeIdx); obj != nil {
+			buses = append(buses, obj)
+		}
+	}
+	return buses, stale
 }

@@ -755,6 +755,81 @@ func sagalesLineBuses(code, direction string, now time.Time) (buses []any, stale
 	return buses, stale
 }
 
+// sagalesAllVehicles returns all live GPS Sagalés buses across all followed
+// lines for the homepage network map, optionally filtered to box.
+func sagalesAllVehicles(now time.Time, box *trainBox) []any {
+	p := sagalesLive.Load()
+	if p == nil {
+		return nil
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	nowMs := now.UnixMilli()
+	var out []any
+	for _, routeID := range p.lineIDs {
+		lm := p.lines[routeID]
+		color := "#007a5a"
+		textColor := "#ffffff"
+		lineName := ""
+		if lm != nil {
+			if lm.Color != "" {
+				color = lm.Color
+			}
+			if lm.TextColor != "" {
+				textColor = lm.TextColor
+			}
+			lineName = lm.Name
+		}
+		for d := 0; d < 2; d++ {
+			dirStr := strconv.Itoa(d)
+			for _, b := range p.buses[fmt.Sprintf("%d:%d", routeID, d)] {
+				if !box.has(b.Lat, b.Lon) {
+					continue
+				}
+				ageSec := math.Max(0, float64(nowMs-b.ObservedMs)/1000)
+				if ageSec > sagalesStaleSec {
+					continue
+				}
+				ref := sagalesAgencyID + ":" + b.LineCode
+				out = append(out, O(
+					"id", sagalesAgencyID+":"+b.VehicleID,
+					"agencyId", sagalesAgencyID,
+					"agency", sagalesOperator.Name,
+					"mode", "bus",
+					"vehicleId", b.VehicleID,
+					"vehicleRef", b.VehicleID,
+					"label", b.LineCode+"-"+b.VehicleID,
+					"lineId", ref,
+					"lineCode", b.LineCode,
+					"lineRef", ref,
+					"lineName", strOrNil(lineName),
+					"color", color,
+					"textColor", textColor,
+					"direction", dirStr,
+					"directionId", dirStr,
+					"destination", strOrNil(b.Headsign),
+					"lat", jsRound(b.Lat*1e6)/1e6, "lon", jsRound(b.Lon*1e6)/1e6,
+					"latitude", jsRound(b.Lat*1e6)/1e6, "longitude", jsRound(b.Lon*1e6)/1e6,
+					"bearing", jsRound(b.Bearing),
+					"stopName", strOrNil(b.StopName),
+					"currentStatus", strOrNil(b.Status),
+					"isEstimated", false,
+					"isRealTime", true,
+					"isTheoretical", false,
+					"isGhostVehicle", false,
+					"positionSource", "sagales_gps_unofficial",
+					"predictionAgeSec", math.Round(ageSec),
+					"ageSec", math.Round(ageSec),
+					"delayMins", nil,
+					"stale", false,
+					"attribution", sagalesAttribution,
+				))
+			}
+		}
+	}
+	return out
+}
+
 // sagalesStopDepartures builds the stop departure board for a Sagalés stop.
 func sagalesStopDepartures(stop rtLineStop, code, direction string, now time.Time) *Obj {
 	deps := []any{}

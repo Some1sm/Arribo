@@ -6119,14 +6119,35 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
     }
   }
 
-  /** Refetches only the trains (after the map moved); same stale-response guard idea. */
+  /**
+   * /api/moventis (Moventis + AMB Badalona/Barcelona + Sagalés live buses)
+   * scoped to the visible map area (padded by 30 %) so panning into Barcelona
+   * or Badalona loads live metropolitan buses without overloading Catalonia view.
+   */
+  networkBusesUrl() {
+    const map = this.networkMap?.map;
+    if (!map) return '/api/moventis';
+    try {
+      const b = map.getBounds().pad(0.3);
+      const f = v => Number(v).toFixed(4);
+      return `/api/moventis?bbox=${f(b.getSouth())},${f(b.getWest())},${f(b.getNorth())},${f(b.getEast())}`;
+    } catch {
+      return '/api/moventis';
+    }
+  }
+
+  /** Refetches viewport-scoped trains and regional/metropolitan buses after the map moved. */
   async refreshNetworkTrains() {
     const map = this.networkMap;
     if (!map || !this.isTabVisible) return;
     const seq = ++this.networkTrainsSeq;
-    const trains = await fetch(this.networkTrainsUrl()).then(r => (r.ok ? r.json() : null)).catch(() => undefined);
-    if (seq !== this.networkTrainsSeq || map !== this.networkMap || trains === undefined) return;
-    map.applyTrains(trains);
+    const [trains, mov] = await Promise.all([
+      fetch(this.networkTrainsUrl()).then(r => (r.ok ? r.json() : null)).catch(() => undefined),
+      fetch(this.networkBusesUrl()).then(r => (r.ok ? r.json() : null)).catch(() => undefined),
+    ]);
+    if (seq !== this.networkTrainsSeq || map !== this.networkMap) return;
+    if (trains !== undefined) map.applyTrains(trains);
+    if (mov !== undefined) map.applyMoventis(mov);
     this.renderNetworkTrainToggle();
     this.updateNetworkMapBadge();
   }
@@ -6149,8 +6170,8 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
     const trainsReq = fetch(this.networkTrainsUrl())
       .then(r => (r.ok ? r.json() : null))
       .catch(() => undefined);
-    // Moventis buses (estimated from the operator's arrival predictions).
-    const movReq = fetch('/api/moventis')
+    // Regional & metropolitan buses (Moventis + AMB Barcelona/Badalona + Sagalés).
+    const movReq = fetch(this.networkBusesUrl())
       .then(r => (r.ok ? r.json() : null))
       .catch(() => undefined);
 

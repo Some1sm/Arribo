@@ -373,7 +373,7 @@ class NetworkMap extends TransitMap {
    *  operator's arrival predictions, not from a GPS. */
   renderMoventis() {
     if (!this.map || !this.movLayer) return;
-    const buses = this.movFeed ? this.movFeed.vehicles : [];
+    const buses = this.movFeed ? this.movFeed.vehicles.slice(0, MAX_MOV_MARKERS) : [];
     const neutral = getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim();
     const hex = v => (typeof v === 'string' && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(v) ? v : null);
     const seen = new Set();
@@ -968,6 +968,8 @@ class NetworkMap extends TransitMap {
 
 /** Bound on train markers, far above the ~200 trains both feeds report. */
 const MAX_TRAIN_MARKERS = 1500;
+/** Bound on regional/metropolitan bus markers to keep Catalonia-wide views fast. */
+const MAX_MOV_MARKERS = 600;
 
 function netT(key, vars, fallback) {
   return window.ArriboI18n ? window.ArriboI18n.t(key, vars) : fallback;
@@ -1145,6 +1147,7 @@ function buildMoventisPopupHtml(b, feed) {
   const pillBg = (typeof b.color === 'string' && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(b.color)) ? b.color : '#007a5a';
   const pillInk = window.TransitUtils?.contrastInk ? window.TransitUtils.contrastInk(pillBg, b.textColor) : '#ffffff';
   const lineRef = b.lineRef || (b.agencyId && b.lineCode ? `${b.agencyId}:${b.lineCode}` : '');
+  const attribution = b.attribution || feed?.attribution || '';
   return `
       <div class="map-popup-card moventis-popup-card">
         <div class="map-popup-header">
@@ -1155,7 +1158,7 @@ function buildMoventisPopupHtml(b, feed) {
                 <span class="map-popup-line-pill" style="background: ${esc(pillBg)}; color: ${esc(pillInk)};">${esc(b.lineCode)}</span>
                 <span class="map-popup-bus-id">${esc(netT('movPopup.bus', null, 'Bus'))}</span>
               </div>
-              <div class="map-popup-subtitle">${esc(b.lineName || 'Moventis')}</div>
+              <div class="map-popup-subtitle">${esc(b.lineName || b.agency || 'Moventis')}</div>
             </div>
           </div>
           <div class="map-popup-header-status">
@@ -1176,9 +1179,9 @@ function buildMoventisPopupHtml(b, feed) {
           ${tile(ageLabel, Number.isFinite(age) ? mins(age) : '--')}
         </div>
         <div class="train-popup-note">${esc(noteText)}</div>
-        ${feed?.attribution ? `
+        ${attribution ? `
         <div class="map-popup-coords-footer">
-          <span class="source-tag">${esc(feed.attribution)}</span>
+          <span class="source-tag">${esc(attribution)}</span>
         </div>` : ''}
         ${lineRef ? `
         <button type="button" class="map-popup-btn-share" data-open-rail-line="${esc(lineRef)}">
