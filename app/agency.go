@@ -1,5 +1,7 @@
 package main
 
+import "strings"
+
 // Operators Arribo tracks. Phase 1 of the Catalonia plan
 // (docs/catalonia-review/REPORT.md): line resolution goes through this list
 // instead of hard-coding Mataró, so a second operator (Rodalies, FGC) is a
@@ -155,14 +157,92 @@ func catalogLine(l *Obj) *Obj {
 // colours from their imported timetables) to the line catalog, in the order
 // of reportOperators. They are not trackable yet (no live line view), so the
 // client lists them for colours and Dades but not as lines to follow.
+func profileMidpoint(prof *rtLineProfile) (float64, float64, bool) {
+	if prof == nil || len(prof.Directions) == 0 {
+		return 0, 0, false
+	}
+	d := prof.Directions[0]
+	if len(d.Stops) > 0 {
+		st := d.Stops[len(d.Stops)/2]
+		if st.Lat != 0 || st.Lon != 0 {
+			return st.Lat, st.Lon, true
+		}
+	}
+	if len(d.Geometry) > 0 {
+		p := d.Geometry[len(d.Geometry)/2]
+		if p[0] != 0 || p[1] != 0 {
+			return p[0], p[1], true
+		}
+	}
+	return 0, 0, false
+}
+
+// recordDedicatedBus registers a non-gencat_bus bus line's normalized code and
+// representative midpoint so overlapping Generalitat interurban copies (e.g.
+// gencat_bus:C10 duplicating moventis:C-10) are hidden from the rider catalog
+// without shadowing unrelated towns that reuse generic codes like L1.
+func recordDedicatedBus(idx map[string][][2]float64, agencyID, code string, prof *rtLineProfile) {
+	lat, lon, hasPt := profileMidpoint(prof)
+	add := func(c string) {
+		norm := ambNormLine(c)
+		if norm == "" {
+			return
+		}
+		if hasPt {
+			idx[norm] = append(idx[norm], [2]float64{lat, lon})
+		} else if _, exists := idx[norm]; !exists {
+			idx[norm] = nil
+		}
+	}
+	add(code)
+	// For city-prefixed atm_urban codes (e.g. "FIG-L1"), also index the local
+	// suffix ("L1") at the exact city midpoint.
+	if agencyID == atmUrbanAgencyID {
+		if dash := strings.IndexByte(code, '-'); dash > 0 && dash+1 < len(code) {
+			add(code[dash+1:])
+		}
+	}
+}
+
+func isGencatBusDuplicate(code string, prof *rtLineProfile, dedicated map[string][][2]float64) bool {
+	norm := ambNormLine(code)
+	pts, ok := dedicated[norm]
+	if !ok {
+		return false
+	}
+	if len(pts) == 0 {
+		return true
+	}
+	lat, lon, hasPt := profileMidpoint(prof)
+	if !hasPt {
+		return true
+	}
+	for _, p := range pts {
+		if haversineKm(lat, lon, p[0], p[1]) <= 18.0 {
+			return true
+		}
+	}
+	return false
+}
+
 func railCatalog() (lines []any, ops []any) {
+	dedicatedBus := map[string][][2]float64{}
 	for _, info := range lineOperators() {
 		v, ok := rtCatalog.Load(info.ID)
 		if !ok {
 			continue
 		}
 		op := v.(*rtCatalogOp)
+		emitted := 0
 		for _, r := range op.Lines {
+			prof, hasProfile := op.Profiles[r.Code]
+			mode := routeModeFor(info, r.Code)
+			if info.ID == gencatBusAgencyID && isGencatBusDuplicate(r.Code, prof, dedicatedBus) {
+				continue
+			}
+			if mode == "bus" && info.ID != gencatBusAgencyID {
+				recordDedicatedBus(dedicatedBus, info.ID, r.Code, prof)
+			}
 			var color, ink any = nil, nil
 			if r.Color != "" {
 				color = r.Color
@@ -172,17 +252,17 @@ func railCatalog() (lines []any, ops []any) {
 			}
 			// lineRef opens the line view (/api/line/<agency>:<code>);
 			// openable says a line profile exists to draw it.
-			_, hasProfile := op.Profiles[r.Code]
 			lines = append(lines, O(
 				"id", r.Code, "code", r.Code, "name", r.Name, "color", color, "textColor", ink,
 				"agency", info.Name, "agencyId", info.ID, "group", info.ID, "mode", catalogLineModeLabel(info, r.Code),
 				"directions", []any{}, "trackable", false,
 				"lineRef", info.ID+":"+r.Code, "openable", hasProfile,
 			))
+			emitted++
 		}
 		b := cataloniaBounds
 		o := O(
-			"id", info.ID, "name", info.Name, "shortName", info.ShortName, "mode", op.Mode, "lineCount", float64(len(op.Lines)),
+			"id", info.ID, "name", info.Name, "shortName", info.ShortName, "mode", op.Mode, "lineCount", float64(emitted),
 			"bounds", O("minLat", b.MinLat, "maxLat", b.MaxLat, "minLon", b.MinLon, "maxLon", b.MaxLon),
 			"center", nil, "zoom", nil, "trackable", false,
 		)

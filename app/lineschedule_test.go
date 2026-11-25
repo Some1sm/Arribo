@@ -34,3 +34,37 @@ func TestTodayScheduleDayTypeAndNextWeekday(t *testing.T) {
 		t.Fatalf("next Sunday = %v", sun)
 	}
 }
+
+func TestGencatBusSpatialDedup(t *testing.T) {
+	idx := map[string][][2]float64{}
+	// Moventis C-10 in Mataró-Barcelona
+	movC10 := &rtLineProfile{
+		Code:       "C-10",
+		Directions: []rtLineDirection{{Stops: []rtLineStop{{Lat: 41.53, Lon: 2.44}}}},
+	}
+	recordDedicatedBus(idx, movAgencyID, "C-10", movC10)
+	// Girona L1 in Girona
+	girL1 := &rtLineProfile{
+		Code:       "L1",
+		Directions: []rtLineDirection{{Stops: []rtLineStop{{Lat: 41.98, Lon: 2.82}}}},
+	}
+	recordDedicatedBus(idx, gironaAgencyID, "L1", girL1)
+
+	// gencat_bus C10 near Mataró -> duplicate!
+	gcC10 := &rtLineProfile{
+		Code:       "C10",
+		Directions: []rtLineDirection{{Stops: []rtLineStop{{Lat: 41.52, Lon: 2.42}}}},
+	}
+	if !isGencatBusDuplicate("C10", gcC10, idx) {
+		t.Fatal("expected gencat_bus:C10 near Mataró to be deduplicated against moventis:C-10")
+	}
+
+	// gencat_bus L1 in El Vendrell (135 km from Girona) -> NOT a duplicate!
+	gcVendrellL1 := &rtLineProfile{
+		Code:       "L1",
+		Directions: []rtLineDirection{{Stops: []rtLineStop{{Lat: 41.22, Lon: 1.53}}}},
+	}
+	if isGencatBusDuplicate("L1", gcVendrellL1, idx) {
+		t.Fatal("expected gencat_bus:L1 in El Vendrell NOT to be shadowed by girona:L1")
+	}
+}

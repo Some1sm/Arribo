@@ -88,7 +88,7 @@ func railRoutesCatalogKey(ops []operatorInfo) (string, []*rtCatalogOp) {
 
 func buildRailRoutesJSON(ops []operatorInfo, loaded []*rtCatalogOp) []byte {
 	lines := []any{}
-	drawnBusCodes := map[string]bool{}
+	dedicatedBus := map[string][][2]float64{}
 	for i, info := range ops {
 		op := loaded[i]
 		if op == nil {
@@ -100,10 +100,10 @@ func buildRailRoutesJSON(ops []operatorInfo, loaded []*rtCatalogOp) []byte {
 		}
 		for _, r := range op.Lines {
 			mode := routeModeFor(info, r.Code)
-			if info.ID == gencatBusAgencyID && drawnBusCodes[ambNormLine(r.Code)] {
+			prof := op.Profiles[r.Code]
+			if info.ID == gencatBusAgencyID && isGencatBusDuplicate(r.Code, prof, dedicatedBus) {
 				continue
 			}
-			prof := op.Profiles[r.Code]
 			if prof == nil || len(prof.Directions) == 0 {
 				continue
 			}
@@ -112,7 +112,7 @@ func buildRailRoutesJSON(ops []operatorInfo, loaded []*rtCatalogOp) []byte {
 				continue
 			}
 			if mode == "bus" && info.ID != gencatBusAgencyID {
-				drawnBusCodes[ambNormLine(r.Code)] = true
+				recordDedicatedBus(dedicatedBus, info.ID, r.Code, prof)
 			}
 			pts := simplifyPath(d.Geometry, tol)
 			path := make([]any, len(pts))
