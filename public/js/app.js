@@ -808,6 +808,7 @@ class TransitApp {
       const q = rawVal.trim();
       if (clearBtn) clearBtn.style.display = rawVal ? 'block' : 'none';
       clearTimeout(this.landingSearchDebounceTimer);
+      const seq = ++this._landingSearchSeq;
 
       if (q.length < 1) {
         if (dropdown) {
@@ -820,10 +821,13 @@ class TransitApp {
         return;
       }
 
+      this.landingSearch = q;
+      this.renderLandingLines();
+
       this.landingSearchDebounceTimer = setTimeout(async () => {
-        this.landingSearch = q;
         try {
           const res = await fetch(`/api/search/stops?q=${encodeURIComponent(q)}`).then(r => r.json());
+          if (seq !== this._landingSearchSeq || heroInput.value.trim() !== q) return;
           if (res.success && Array.isArray(res.results)) {
             this.landingSearchResults = res.results;
             if (dropdown) {
@@ -833,8 +837,8 @@ class TransitApp {
         } catch (err) {
           console.error('[LandingSearch] Search error:', err);
         }
-        this.renderLandingLines();
-      }, 200);
+        if (seq === this._landingSearchSeq) this.renderLandingLines();
+      }, 180);
     });
 
     heroInput?.addEventListener('focus', () => {
@@ -844,9 +848,7 @@ class TransitApp {
     });
 
     heroInput?.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && dropdown) {
-        dropdown.classList.remove('active');
-      }
+      this.handleSearchKeydown(e, dropdown);
     });
 
     document.addEventListener('click', (e) => {
@@ -1239,7 +1241,9 @@ class TransitApp {
     const container = document.getElementById('landing-lines-container');
     if (!container) return;
 
-    const q = (this.landingSearch || '').trim().toLowerCase();
+    const fold = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const q = fold((this.landingSearch || '').trim());
+    const qCompact = q.replace(/[^a-z0-9]/g, '');
 
     // NOTE: the L1…L8 filter tabs deliberately do NOT narrow this list. They
     // drive the network map (applyLandingFilterToNetworkMap); the card grid is
@@ -1247,10 +1251,11 @@ class TransitApp {
     // can open (pickerLines), grouped by operator.
     const filterFn = (l) => {
       if (!q) return true;
-      const code = (l.code || String(l.id)).toLowerCase();
-      const name = (l.name || '').toLowerCase();
-      const agency = (l.agency || '').toLowerCase();
-      return code.includes(q) || name.includes(q) || agency.includes(q) || ('línia ' + code).includes(q) || ('linia ' + code).includes(q);
+      const code = fold(l.code || String(l.id));
+      const codeCompact = code.replace(/[^a-z0-9]/g, '');
+      const name = fold(l.name);
+      const agency = fold(l.agency);
+      return code.includes(q) || (qCompact && codeCompact.includes(qCompact)) || name.includes(q) || agency.includes(q) || ('linia ' + code).includes(q);
     };
 
     const linesToRender = this.pickerLines().filter(filterFn);
@@ -1262,7 +1267,7 @@ class TransitApp {
     if (q && Array.isArray(this.landingSearchResults)) {
       stopsToRender = this.landingSearchResults.filter(r => !r.isLine && (r.type === 'stop' || r.stopId));
       if (!this.showTrainsInUI) {
-        stopsToRender = stopsToRender.filter(r => !r.isTrain && !r.lineCode?.startsWith('R') && !r.agency?.toLowerCase().includes('rodalies') && !r.agency?.toLowerCase().includes('renfe'));
+        stopsToRender = stopsToRender.filter(r => !(r.isTrain || r.mode === 'rail'));
       }
     }
 
@@ -4854,7 +4859,9 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
     const container = document.getElementById('line-picker-container');
     if (!container) return;
 
-    const q = (this.linePickerSearch || '').trim().toLowerCase();
+    const fold = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const q = fold((this.linePickerSearch || '').trim());
+    const qCompact = q.replace(/[^a-z0-9]/g, '');
     const cityFilter = this.linePickerFilter || 'all';
 
     const filterFn = (l) => {
@@ -4866,10 +4873,11 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
         if (!matchId) return false;
       }
       if (!q) return true;
-      const code = (l.code || String(l.id)).toLowerCase();
-      const name = (l.name || '').toLowerCase();
-      const agency = (l.agency || '').toLowerCase();
-      return code.includes(q) || name.includes(q) || agency.includes(q) || ('línia ' + code).includes(q) || ('linia ' + code).includes(q);
+      const code = fold(l.code || String(l.id));
+      const codeCompact = code.replace(/[^a-z0-9]/g, '');
+      const name = fold(l.name);
+      const agency = fold(l.agency);
+      return code.includes(q) || (qCompact && codeCompact.includes(qCompact)) || name.includes(q) || agency.includes(q) || ('linia ' + code).includes(q);
     };
 
     const linesToRender = this.pickerLines().filter(filterFn);
@@ -5000,12 +5008,16 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
     const input = document.getElementById('global-search-input');
     const dropdown = document.getElementById('search-results-dropdown');
     if (!input || !dropdown) return;
+    this._globalSearchSeq = 0;
+    this._landingSearchSeq = this._landingSearchSeq || 0;
 
     input.addEventListener('input', () => {
       clearTimeout(this.searchDebounceTimer);
       const q = input.value.trim();
+      const seq = ++this._globalSearchSeq;
 
       if (q.length < 1) {
+        this.globalSearchResults = null;
         dropdown.classList.remove('active');
         dropdown.innerHTML = '';
         return;
@@ -5014,13 +5026,25 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
       this.searchDebounceTimer = setTimeout(async () => {
         try {
           const res = await fetch(`/api/search/stops?q=${encodeURIComponent(q)}`).then(r => r.json());
-          if (res.success && res.results) {
+          if (seq !== this._globalSearchSeq || input.value.trim() !== q) return;
+          if (res.success && Array.isArray(res.results)) {
+            this.globalSearchResults = res.results;
             this.renderSearchResults(res.results, dropdown, input);
           }
         } catch (e) {
           console.error('Search error:', e);
         }
-      }, 250);
+      }, 180);
+    });
+
+    input.addEventListener('focus', () => {
+      if (input.value.trim().length >= 1 && this.globalSearchResults) {
+        this.renderSearchResults(this.globalSearchResults, dropdown, input);
+      }
+    });
+
+    input.addEventListener('keydown', (e) => {
+      this.handleSearchKeydown(e, dropdown);
     });
 
     document.addEventListener('click', (e) => {
@@ -5030,11 +5054,34 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
     });
   }
 
+  handleSearchKeydown(e, dropdown) {
+    if (!dropdown) return;
+    if (e.key === 'Escape') {
+      dropdown.classList.remove('active');
+      return;
+    }
+    if (!dropdown.classList.contains('active')) return;
+    const items = Array.from(dropdown.querySelectorAll('.search-result-item'));
+    if (items.length === 0) return;
+    const cur = items.findIndex(el => el.classList.contains('is-highlighted'));
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const next = e.key === 'ArrowDown'
+        ? (cur < items.length - 1 ? cur + 1 : 0)
+        : (cur > 0 ? cur - 1 : items.length - 1);
+      items.forEach((el, i) => el.classList.toggle('is-highlighted', i === next));
+      items[next].scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      (items[cur >= 0 ? cur : 0]).click();
+    }
+  }
+
   renderSearchResults(results, dropdown, input) {
     const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
     let itemsToRender = results;
     if (!this.showTrainsInUI) {
-      itemsToRender = results.filter(r => !r.isTrain && !r.lineCode?.startsWith('R') && !r.agency?.toLowerCase().includes('rodalies') && !r.agency?.toLowerCase().includes('renfe'));
+      itemsToRender = results.filter(r => !(r.isTrain || r.mode === 'rail'));
     }
 
     if (itemsToRender.length === 0) {
@@ -5044,11 +5091,12 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
     }
 
     dropdown.innerHTML = itemsToRender.map(r => {
+      const color = (typeof r.lineColor === 'string' && r.lineColor.trim()) ? r.lineColor : 'var(--c10-primary)';
       if (r.isLine) {
         return `
-          <div class="search-result-item line-item" data-type="line" data-line-id="${this.esc(r.lineId)}" style="border-left:3px solid ${this.esc(r.lineColor)};">
+          <div class="search-result-item line-item" data-type="line" data-line-id="${this.esc(r.lineId)}" style="border-left:3px solid ${this.esc(color)};">
             <div class="search-result-left">
-              <span class="search-result-badge" style="background:${this.esc(r.lineColor)};">${this.esc(r.lineCode)}</span>
+              <span class="search-result-badge" style="background:${this.esc(color)};">${this.esc(r.lineCode)}</span>
               <div class="search-result-info">
                 <div class="search-result-name">${this.esc(r.lineName)}</div>
                 <div class="search-result-zone">${this.esc(r.zone || r.agency || t('app.searchLineFallback'))}</div>
@@ -5061,7 +5109,7 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
       return `
         <div class="search-result-item stop-item" data-type="stop" data-line-id="${this.esc(r.lineId)}" data-stop-id="${this.esc(r.stopId)}" data-name="${this.esc(r.stopName || '')}" data-lat="${this.esc(r.lat || '')}" data-lon="${this.esc(r.lon || '')}">
           <div class="search-result-left">
-            <span class="search-result-badge" style="background:${this.esc(r.lineColor)};">${this.esc(r.lineCode)}</span>
+            <span class="search-result-badge" style="background:${this.esc(color)};">${this.esc(r.lineCode)}</span>
             <div class="search-result-info">
               <div class="search-result-name">${this.esc(r.stopName)}</div>
               <div class="search-result-zone">${this.esc(r.zone)}${r.code && !r.isTrain ? ` • ${this.esc(t('app.searchCode', { code: r.code }))}` : ''}</div>

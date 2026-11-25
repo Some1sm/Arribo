@@ -1370,9 +1370,24 @@ func (s *Server) hSearchStops(q *xreq, res *xres) error {
 	if !streetGeocoder.hasCatalog() && s.w.tracker.allStopsMap != nil {
 		streetGeocoder.setStopsCatalog(s.allStops())
 	}
-	results := s.registry.searchStopsAndLines(qs, 35)
-	// Train stations (Rodalies, FGC) after Mataró's stops and lines.
-	results = append(results, searchRailStations(qs, 10)...)
+	mataroResults := s.registry.searchStopsAndLines(qs, 25)
+	var mataroLines, mataroStops []any
+	for _, x := range mataroResults {
+		if r, ok := x.(*Obj); ok && r != nil && strictEq(r.Get("type"), "line") {
+			mataroLines = append(mataroLines, x)
+		} else {
+			mataroStops = append(mataroStops, x)
+		}
+	}
+	// Openable lines and stops across all Catalonia operators (Rodalies, FGC,
+	// Moventis, AMB, TMB, TRAM, Sagalés, Girona). Lines first, then stops.
+	catLines := searchCatalogLines(qs, 15)
+	catStops := searchCatalogStops(qs, 20)
+	results := make([]any, 0, len(mataroLines)+len(catLines)+len(mataroStops)+len(catStops))
+	results = append(results, mataroLines...)
+	results = append(results, catLines...)
+	results = append(results, mataroStops...)
+	results = append(results, catStops...)
 	stops := []any{}
 	for _, x := range results {
 		r, _ := x.(*Obj)

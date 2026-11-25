@@ -47,6 +47,59 @@ func TestSearchRailStations(t *testing.T) {
 	}
 }
 
+func TestSearchCatalogLinesAndStops(t *testing.T) {
+	st := func(id, name string) rtLineStop { return rtLineStop{ID: id, Name: name, Lat: 41.5, Lon: 2.4} }
+	rtCatalog.Store("moventis", &rtCatalogOp{
+		AgencyID: "moventis", Mode: "bus",
+		Lines: []rtRoute{{Code: "C-10", Name: "Mataró - Barcelona", Color: "#00A651"}},
+		Profiles: map[string]*rtLineProfile{
+			"C-10": {Code: "C-10", Directions: []rtLineDirection{
+				{DirectionID: 0, Stops: []rtLineStop{st("M100", "Plaça Tereses"), st("B200", "Ronda Universitat")}},
+			}},
+		},
+	})
+	rtCatalog.Store("renfe_rodalies", &rtCatalogOp{
+		AgencyID: "renfe_rodalies", Mode: "rail",
+		Lines: []rtRoute{{Code: "R1", Name: "Molins de Rei - Maçanet", Color: "#7DBCEC"}},
+		Profiles: map[string]*rtLineProfile{
+			"R1": {Code: "R1", Directions: []rtLineDirection{
+				{DirectionID: 0, Stops: []rtLineStop{st("71801", "Barcelona-Sants")}},
+			}},
+		},
+	})
+	t.Cleanup(func() {
+		rtCatalog.Delete("moventis")
+		rtCatalog.Delete("renfe_rodalies")
+	})
+
+	// Compact code match: "c10" finds "C-10" with isLine:true and isTrain:false.
+	if got := searchCatalogLines("c10", 10); len(got) != 1 {
+		t.Fatalf("c10 lines: %s", toJSON(got))
+	} else {
+		g := string(toJSON(got[0]))
+		for _, want := range []string{`"type":"line"`, `"isLine":true`, `"lineId":"moventis:C-10"`, `"isTrain":false`, `"mode":"bus"`} {
+			if !strings.Contains(g, want) {
+				t.Errorf("c10 line missing %s in %s", want, g)
+			}
+		}
+	}
+	// Exact code match: "R1" finds Rodalies R1 with isTrain:true.
+	if got := searchCatalogLines("R1", 10); len(got) != 1 || !strings.Contains(string(toJSON(got[0])), `"lineId":"renfe_rodalies:R1"`) {
+		t.Errorf("R1 lines: %s", toJSON(got))
+	}
+	// Multi-operator stop search finds Moventis bus stop with isTrain:false.
+	if got := searchCatalogStops("tereses", 10); len(got) != 1 {
+		t.Fatalf("tereses stops: %s", toJSON(got))
+	} else {
+		g := string(toJSON(got[0]))
+		for _, want := range []string{`"type":"stop"`, `"lineId":"moventis:C-10"`, `"stopId":"M100"`, `"isTrain":false`, `"mode":"bus"`} {
+			if !strings.Contains(g, want) {
+				t.Errorf("tereses stop missing %s in %s", want, g)
+			}
+		}
+	}
+}
+
 func TestSimplifyPath(t *testing.T) {
 	// A straight line with a 1 m wobble collapses to its ends; a 200 m
 	// corner is kept.

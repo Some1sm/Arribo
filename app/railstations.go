@@ -23,17 +23,137 @@ type railStationHit struct {
 	lines      []rtRoute
 }
 
-// searchRailStations returns up to limit stations whose name contains q
-// (case and accents ignored), stations whose name starts with it first,
-// then those served by more lines, then by name. Each is a stop result in
-// the shape the search lists read, opening the station on its first line.
+// searchRailStations returns up to limit rail stations (Rodalies, FGC) whose
+// name contains q (case and accents ignored). Used by the rail journey planner.
 func searchRailStations(q string, limit int) []any {
+	return searchOperatorStops(reportOperators, q, limit)
+}
+
+// searchCatalogStops returns up to limit stops across every openable operator
+// in rtCatalog (Rodalies, FGC, TMB, TRAM, AMB, Moventis, Sagalés, Girona).
+func searchCatalogStops(q string, limit int) []any {
+	return searchOperatorStops(lineOperators(), q, limit)
+}
+
+func modeSearchRank(mode string) int {
+	switch mode {
+	case "rail":
+		return 0
+	case "metro":
+		return 1
+	case "tram":
+		return 2
+	default:
+		return 3
+	}
+}
+
+// searchCatalogLines returns up to limit openable lines across all non-Mataró
+// operators in rtCatalog matching q by code, route name, or operator name.
+func searchCatalogLines(q string, limit int) []any {
+	fq := foldStationName(q)
+	if fq == "" || limit <= 0 {
+		return nil
+	}
+	fqCompact := strings.ReplaceAll(fq, " ", "")
+	type lineHit struct {
+		info operatorInfo
+		r    rtRoute
+		mode string
+		rank int
+		idx  int
+	}
+	var hits []lineHit
+	idx := 0
+	for _, info := range lineOperators() {
+		v, ok := rtCatalog.Load(info.ID)
+		if !ok {
+			continue
+		}
+		op := v.(*rtCatalogOp)
+		fAgency := foldStationName(info.Name)
+		fShort := foldStationName(info.ShortName)
+		for _, r := range op.Lines {
+			idx++
+			if op.Profiles[r.Code] == nil {
+				continue
+			}
+			fCode := foldStationName(r.Code)
+			fCodeCompact := strings.ReplaceAll(fCode, " ", "")
+			fName := foldStationName(r.Name)
+			rank := -1
+			switch {
+			case fCode == fq || (fqCompact != "" && fCodeCompact == fqCompact):
+				rank = 0
+			case strings.HasPrefix(fCode, fq) || (fqCompact != "" && strings.HasPrefix(fCodeCompact, fqCompact)):
+				rank = 1
+			case strings.HasPrefix(fName, fq) || strings.HasPrefix(fAgency, fq) || (fShort != "" && strings.HasPrefix(fShort, fq)):
+				rank = 2
+			case strings.Contains(fCode, fq) || strings.Contains(fName, fq) || strings.Contains(fAgency, fq) || (fShort != "" && strings.Contains(fShort, fq)):
+				rank = 3
+			}
+			if rank < 0 {
+				continue
+			}
+			hits = append(hits, lineHit{
+				info: info,
+				r:    r,
+				mode: routeModeFor(info, r.Code),
+				rank: rank,
+				idx:  idx,
+			})
+		}
+	}
+	sort.SliceStable(hits, func(i, j int) bool {
+		if hits[i].rank != hits[j].rank {
+			return hits[i].rank < hits[j].rank
+		}
+		mi, mj := modeSearchRank(hits[i].mode), modeSearchRank(hits[j].mode)
+		if mi != mj {
+			return mi < mj
+		}
+		if len(hits[i].r.Code) != len(hits[j].r.Code) {
+			return len(hits[i].r.Code) < len(hits[j].r.Code)
+		}
+		return hits[i].idx < hits[j].idx
+	})
+	if len(hits) > limit {
+		hits = hits[:limit]
+	}
+	out := make([]any, 0, len(hits))
+	for _, h := range hits {
+		var color any
+		if h.r.Color != "" {
+			color = h.r.Color
+		}
+		short := h.info.ShortName
+		if short == "" {
+			short = h.info.Name
+		}
+		out = append(out, O(
+			"type", "line",
+			"isLine", true,
+			"lineId", h.info.ID+":"+h.r.Code,
+			"lineCode", h.r.Code,
+			"lineName", h.r.Name,
+			"lineColor", color,
+			"agency", h.info.Name,
+			"agencyId", h.info.ID,
+			"mode", h.mode,
+			"isTrain", h.mode == "rail",
+			"zone", short,
+		))
+	}
+	return out
+}
+
+func searchOperatorStops(ops []operatorInfo, q string, limit int) []any {
 	fq := foldStationName(q)
 	if utf16Count(fq) < 2 || limit <= 0 {
 		return nil
 	}
 	var hits []*railStationHit
-	for _, info := range reportOperators {
+	for _, info := range ops {
 		v, ok := rtCatalog.Load(info.ID)
 		if !ok {
 			continue
@@ -48,7 +168,8 @@ func searchRailStations(q string, limit int) []any {
 			for _, d := range prof.Directions {
 				for _, st := range d.Stops {
 					f := foldStationName(st.Name)
-					if f == "" || !strings.Contains(f, fq) {
+					fID := foldStationName(st.ID)
+					if f == "" || (!strings.Contains(f, fq) && (fID == "" || !strings.HasPrefix(fID, fq))) {
 						continue
 					}
 					h := byName[f]
@@ -65,9 +186,18 @@ func searchRailStations(q string, limit int) []any {
 		}
 	}
 	sort.SliceStable(hits, func(i, j int) bool {
+		ei, ej := hits[i].fold == fq, hits[j].fold == fq
+		if ei != ej {
+			return ei
+		}
 		pi, pj := strings.HasPrefix(hits[i].fold, fq), strings.HasPrefix(hits[j].fold, fq)
 		if pi != pj {
 			return pi
+		}
+		mi := modeSearchRank(routeModeFor(hits[i].agency, hits[i].lines[0].Code))
+		mj := modeSearchRank(routeModeFor(hits[j].agency, hits[j].lines[0].Code))
+		if mi != mj {
+			return mi < mj
 		}
 		if len(hits[i].lines) != len(hits[j].lines) {
 			return len(hits[i].lines) > len(hits[j].lines)
@@ -80,6 +210,7 @@ func searchRailStations(q string, limit int) []any {
 	out := make([]any, 0, len(hits))
 	for _, h := range hits {
 		first := h.lines[0]
+		mode := routeModeFor(h.agency, first.Code)
 		codes := make([]any, len(h.lines))
 		names := make([]string, len(h.lines))
 		for i, l := range h.lines {
@@ -105,10 +236,10 @@ func searchRailStations(q string, limit int) []any {
 			"zone", short+" · "+strings.Join(names, ", "),
 			"directionText", "",
 			"destinations", []any{},
-			"isTrain", true,
+			"isTrain", mode == "rail",
 			"agency", h.agency.Name,
 			"agencyId", h.agency.ID,
-			"mode", h.agency.Mode,
+			"mode", mode,
 			"lines", codes,
 			"lat", h.lat,
 			"lon", h.lon,

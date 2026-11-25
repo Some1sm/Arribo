@@ -761,7 +761,8 @@ body {
   box-sizing: border-box;
 }
 
-.search-result-item:hover {
+.search-result-item:hover,
+.search-result-item.is-highlighted {
   background: var(--bg-surface-elevated);
 }
 

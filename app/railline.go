@@ -297,8 +297,12 @@ func (s *Server) railDepartures(q *xreq, res *xres, info operatorInfo, op *rtCat
 		return
 	}
 	if info.ID == movAgencyID {
-		// No timetable: the predictions the poller last collected there.
-		res.json(O("success", true, "data", movStopDepartures(stop, code, time.UnixMilli(nowMs()))))
+		// On-demand Moventis stop predictions + scheduled times (30 s TTL cache),
+		// falling back to the background poller's last snapshot.
+		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+		out := movStopDepartures(ctx, stop, code, time.UnixMilli(nowMs()))
+		cancel()
+		res.json(O("success", true, "data", out))
 		return
 	}
 	direction := ""
