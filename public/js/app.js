@@ -883,14 +883,35 @@ class TransitApp {
     // delegated listener. The pills filter the network map, not the line
     // cards: the grid is the full catalogue and every line stays one click away.
     filterDock?.addEventListener('click', (e) => {
+      const toggleBtn = e.target.closest('[data-op-lines-toggle]');
+      if (toggleBtn) {
+        e.preventDefault();
+        this.landingOpLinesExpanded = !this.landingOpLinesExpanded;
+        this.renderLandingFilterTabs();
+        return;
+      }
       const tab = e.target.closest('[data-filter]');
       if (!tab) return;
       e.preventDefault();
-      this.landingFilter = tab.getAttribute('data-filter') || 'all';
+      const next = tab.getAttribute('data-filter') || 'all';
+      const prevOp = this.landingFilterOpKey?.(this.landingFilter);
+      const nextOp = this.landingFilterOpKey?.(next);
+      if (prevOp !== nextOp) {
+        this.landingOpLineQuery = '';
+        this.landingOpLinesExpanded = false;
+      }
+      this.landingFilter = next;
       // Rebuilt rather than toggled: picking an operator adds its line pills.
       this.renderLandingFilterTabs();
       this.applyLandingFilterToNetworkMap();
       this.renderLandingLines();
+    });
+
+    filterDock?.addEventListener('input', (e) => {
+      const inp = e.target.closest('[data-op-line-filter]');
+      if (!inp) return;
+      this.landingOpLineQuery = inp.value || '';
+      this.updateLandingOpLinePills();
     });
 
     // Action buttons: Nearby Stops GPS & Mataró Zones
@@ -1206,6 +1227,50 @@ class TransitApp {
     }
   }
 
+  landingFilterOpKey(filter) {
+    const f = String(filter || 'all');
+    if (f === 'all' || f.startsWith('mode:') || f.startsWith('op:')) return f;
+    const i = f.indexOf(':');
+    return i > 0 ? `op:${f.slice(0, i)}` : 'op:mataro';
+  }
+
+  renderLandingOpLinePillsHtml(lineItems) {
+    const t = (k, v, fb) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : fb);
+    const pill = i => {
+      const on = i.value === this.landingFilter;
+      return `<button type="button" class="pill${on ? ' is-active' : ''}" aria-pressed="${on}" data-filter="${this.esc(i.value)}" title="${this.esc(i.line?.name || i.label)}">${this.esc(i.label)}</button>`;
+    };
+    const q = (this.landingOpLineQuery || '').trim().toLowerCase();
+    const filtered = q
+      ? lineItems.filter(i => i.label.toLowerCase().includes(q) || String(i.line?.name || '').toLowerCase().includes(q))
+      : lineItems;
+    if (filtered.length === 0) {
+      return `<span class="landing-op-empty">${this.esc(t('filter.noMatchingLines', null, 'Cap línia trobada'))}</span>`;
+    }
+    const COLLAPSE_MAX = 24;
+    const expanded = Boolean(this.landingOpLinesExpanded) || Boolean(q) || filtered.length <= COLLAPSE_MAX;
+    let shown = expanded ? filtered : filtered.slice(0, COLLAPSE_MAX);
+    if (!expanded && this.landingFilter && !shown.some(i => i.value === this.landingFilter)) {
+      const activeItem = filtered.find(i => i.value === this.landingFilter);
+      if (activeItem) shown = [activeItem, ...shown.slice(0, COLLAPSE_MAX - 1)];
+    }
+    let html = shown.map(pill).join('');
+    if (!q && filtered.length > COLLAPSE_MAX) {
+      const remaining = filtered.length - shown.length;
+      const label = expanded
+        ? t('filter.showFewerLines', null, 'Mostra menys')
+        : t('filter.showAllLines', { n: remaining }, `+${remaining} més`);
+      html += `<button type="button" class="pill landing-op-more-btn" data-op-lines-toggle="1">${this.esc(label)}</button>`;
+    }
+    return html;
+  }
+
+  updateLandingOpLinePills() {
+    const host = document.querySelector('#landing-filter-tabs .landing-op-subdock-pills');
+    if (!host || !Array.isArray(this._landingOpLineItems)) return;
+    host.innerHTML = this.renderLandingOpLinePillsHtml(this._landingOpLineItems);
+  }
+
   /**
    * The landing filter (a SegmentedControl) built from the catalog: "all",
    * then one pill per operator when there are several, or one per line while
@@ -1249,15 +1314,24 @@ class TransitApp {
     } else {
       lineItems = lines.map(l => ({ value: value(l), label: l.code || String(l.id), line: l }));
     }
+    lineItems.sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: 'base' }));
+    this._landingOpLineItems = lineItems;
     const all = [...items, ...lineItems];
     if (!all.some(i => i.value === this.landingFilter)) this.landingFilter = 'all';
     const pill = i => {
       const on = i.value === this.landingFilter;
       return `<button type="button" class="pill${on ? ' is-active' : ''}" aria-pressed="${on}" data-filter="${this.esc(i.value)}">${this.esc(i.label)}</button>`;
     };
-    dock.innerHTML = items.map(pill).join('') +
-      (ops.length > 1 && lineItems.length ? '<span class="pill-group-divider" aria-hidden="true"></span>' : '') +
-      lineItems.map(pill).join('');
+    const showSearch = lineItems.length > 24;
+    const subDock = lineItems.length
+      ? `<div class="landing-op-subdock${this.landingOpLinesExpanded ? ' is-expanded' : ''}">` +
+          (showSearch
+            ? `<div class="landing-op-subdock-bar"><input type="search" class="landing-op-filter-input" data-op-line-filter="1" value="${this.esc(this.landingOpLineQuery || '')}" placeholder="${this.esc(t('filter.searchLines', { n: lineItems.length }, `Filtrar línies (${lineItems.length})…`))}" aria-label="${this.esc(t('filter.searchLines', { n: lineItems.length }, `Filtrar línies (${lineItems.length})…`))}"></div>`
+            : '') +
+          `<div class="landing-op-subdock-pills">${this.renderLandingOpLinePillsHtml(lineItems)}</div>` +
+        '</div>'
+      : '';
+    dock.innerHTML = `<div class="landing-op-row">${items.map(pill).join('')}</div>${subDock}`;
   }
 
   /** The line picker's filter dock, built like the landing one. */

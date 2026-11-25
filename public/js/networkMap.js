@@ -1018,6 +1018,10 @@ class NetworkMap extends TransitMap {
         else live++;
       }
     }
+    for (const obj of this.movMarkers.values()) {
+      if (obj.isLiveGps) live++;
+      else estimated++;
+    }
     return { live, estimated, total: live + estimated };
   }
 
