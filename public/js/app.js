@@ -1214,19 +1214,38 @@ class TransitApp {
   renderLandingFilterTabs() {
     const dock = document.getElementById('landing-filter-tabs');
     if (!dock) return;
-    // Every line the app follows: Mataró's and the openable train lines.
+    const t = (k, v, fb) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : fb);
     const lines = this.pickerLines();
     const ops = this.catalogOperators().filter(o => lines.some(l => (l.agencyId || 'mataro') === o.id));
     const value = l => String(l.lineRef || l.id);
-    const items = [{ value: 'all', label: window.ArriboI18n ? window.ArriboI18n.t('filter.allLines', { n: lines.length }) : `Totes les línies (${lines.length})` }];
+    const modeOf = l => l.mode || (l.agencyId === 'renfe_rodalies' || l.agencyId === 'fgc' ? 'rail' : 'bus');
+    const items = [{ value: 'all', label: t('filter.allLines', { n: lines.length }, `Totes les línies (${lines.length})`) }];
+    const modeDefs = [
+      { id: 'rail', label: t('filter.modeRail', null, '🚆 Tren') },
+      { id: 'metro', label: t('filter.modeMetro', null, '🚇 Metro') },
+      { id: 'tram', label: t('filter.modeTram', null, '🚊 Tramvia') },
+      { id: 'bus', label: t('filter.modeBus', null, '🚌 Bus') }
+    ];
+    for (const m of modeDefs) {
+      if (lines.some(l => modeOf(l) === m.id)) {
+        items.push({ value: `mode:${m.id}`, label: m.label });
+      }
+    }
     let lineItems = [];
     if (ops.length > 1) {
       ops.forEach(o => items.push({ value: `op:${o.id}`, label: o.shortName || o.name }));
-      // The operator picked (directly or through one of its lines) shows its lines too.
+      // The operator or mode picked (directly or through one of its lines) shows its lines too.
       const f = this.landingFilter || 'all';
-      const picked = f.startsWith('op:') ? f.slice(3)
-        : (lines.find(l => value(l) === f)?.agencyId || (lines.some(l => value(l) === f) ? 'mataro' : null));
-      if (picked) lineItems = lines.filter(l => (l.agencyId || 'mataro') === picked).map(l => ({ value: value(l), label: l.code || String(l.id), line: l }));
+      if (f.startsWith('mode:')) {
+        const pickedMode = f.slice(5);
+        if (pickedMode !== 'bus') {
+          lineItems = lines.filter(l => modeOf(l) === pickedMode).map(l => ({ value: value(l), label: l.code || String(l.id), line: l }));
+        }
+      } else {
+        const picked = f.startsWith('op:') ? f.slice(3)
+          : (lines.find(l => value(l) === f)?.agencyId || (lines.some(l => value(l) === f) ? 'mataro' : null));
+        if (picked) lineItems = lines.filter(l => (l.agencyId || 'mataro') === picked).map(l => ({ value: value(l), label: l.code || String(l.id), line: l }));
+      }
     } else {
       lineItems = lines.map(l => ({ value: value(l), label: l.code || String(l.id), line: l }));
     }

@@ -250,7 +250,7 @@ class NetworkMap extends TransitMap {
     const filterOpen = this.railFilterOpen();
     for (const r of this.railRoutes || []) {
       const isTrain = r.mode === 'rail';
-      const want = filterOpen && (!isTrain || this.trainsShown) && this.isRailLineVisible(r.agencyId, r.code);
+      const want = filterOpen && (!isTrain || this.trainsShown) && this.isRailLineVisible(r.agencyId, r.code, r.mode);
       const has = this.railRouteLayer.hasLayer(r.polyline);
       if (want && !has) this.railRouteLayer.addLayer(r.polyline);
       if (!want && has) this.railRouteLayer.removeLayer(r.polyline);
@@ -258,10 +258,11 @@ class NetworkMap extends TransitMap {
     this.renderLegend();
   }
 
-  /** Whether a train line passes the map filter (all, its operator, or the line itself). */
-  isRailLineVisible(agencyId, code) {
+  /** Whether a train/metro/tram/bus line passes the map filter (all, mode, operator, or line). */
+  isRailLineVisible(agencyId, code, mode = null) {
     const f = this.mapFilter || { kind: 'all' };
     if (f.kind === 'all') return true;
+    if (f.kind === 'mode') return mode ? mode === f.mode : true;
     if (f.kind === 'op') return f.agencyId === agencyId;
     if (f.kind === 'rail') return f.agencyId === agencyId && f.code === code;
     return false; // a Mataró bus line is selected
@@ -305,15 +306,17 @@ class NetworkMap extends TransitMap {
       const lon = Number(t?.lon ?? t?.longitude);
       if (t?.lat === null || t?.lon === null || !Number.isFinite(lat) || !Number.isFinite(lon) || !t.id) continue;
       // An operator or line filter keeps only its own trains (the rest are removed below).
-      if (!this.isRailLineVisible(t.agencyId, t.lineCode)) continue;
+      const tMode = t.mode || (t.agencyId === 'tmb' ? 'metro' : 'rail');
+      if (!this.isRailLineVisible(t.agencyId, t.lineCode, tMode)) continue;
       seen.add(t.id);
       const lineColor = this.trainColors.get(`${t.agencyId}:${t.lineCode}`) || neutral;
-      // The same pin as a bus, with a train icon. A position the operator
+      // The same pin as a bus, with a train/metro/tram icon. A position the operator
       // has stopped updating is drawn hollow and dashed, in the neutral
       // colour: it is old, not live.
       const stale = Boolean(t.stale);
       const pinBg = stale ? ring : lineColor;
       const pinInk = stale ? '' : (window.TransitUtils?.contrastInk ? window.TransitUtils.contrastInk(lineColor) : '#ffffff');
+      const modeIcon = window.vehicleIconForMode ? window.vehicleIconForMode(tMode) : TRAIN_ICON_INNER_SVG;
       const popupHtml = buildTrainPopupHtml(t, operators.get(t.agencyId), this.trainLineRefs.get(`${t.agencyId}:${t.lineCode}`));
       const existing = this.trainMarkers.get(t.id);
       if (existing) {
@@ -339,7 +342,7 @@ class NetworkMap extends TransitMap {
         }
         continue;
       }
-      const html = vehiclePinHtml({ cls: `train-marker${stale ? ' stale-train' : ''}`, bg: pinBg, ink: pinInk, icon: TRAIN_ICON_INNER_SVG, dot: stale ? 'stale' : 'live' });
+      const html = vehiclePinHtml({ cls: `train-marker${stale ? ' stale-train' : ''}`, bg: pinBg, ink: pinInk, icon: modeIcon, dot: stale ? 'stale' : (t.isEstimated ? 'estimated' : 'live') });
       const marker = L.marker([lat, lon], {
         icon: L.divIcon({ html, className: 'c10-live-bus-icon', iconSize: [44, 44], iconAnchor: [22, 22] }),
         zIndexOffset: stale ? 900 : 1000,
@@ -378,7 +381,7 @@ class NetworkMap extends TransitMap {
       const lat = Number(b?.lat);
       const lon = Number(b?.lon);
       if (!b || !b.id || !Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-      if (!this.isRailLineVisible(b.agencyId, b.lineCode)) continue;
+      if (!this.isRailLineVisible(b.agencyId, b.lineCode, b.mode || 'bus')) continue;
       seen.add(b.id);
       const isLiveGps = Boolean(b.isRealTime && !b.isEstimated);
       const popupHtml = buildMoventisPopupHtml(b, this.movFeed);
@@ -607,10 +610,13 @@ class NetworkMap extends TransitMap {
    */
   setLineFilter(filter) {
     const raw = String(filter ?? 'all').trim();
-    // "all"; an operator ("op:mataro", "op:fgc"); a train line by its
+    // "all"; a transport mode ("mode:rail", "mode:metro", "mode:tram", "mode:bus");
+    // an operator ("op:mataro", "op:fgc"); a rail/catalog line by its
     // lineRef ("renfe_rodalies:R1"); or a Mataró line id ("3", "L3").
     let f = { kind: 'all' };
-    if (raw.startsWith('op:') && raw.length > 3) {
+    if (raw.startsWith('mode:') && raw.length > 5) {
+      f = { kind: 'mode', mode: raw.slice(5) };
+    } else if (raw.startsWith('op:') && raw.length > 3) {
       f = { kind: 'op', agencyId: raw.slice(3) };
     } else if (window.TransitUtils?.isRailLineId?.(raw)) {
       const i = raw.indexOf(':');
@@ -625,6 +631,7 @@ class NetworkMap extends TransitMap {
     this.applyLineVisibility();
     this.renderLegend();
     this.renderTrains();
+    this.renderMoventisBuses();
     this.renderRailRoutes();
   }
 
@@ -632,6 +639,7 @@ class NetworkMap extends TransitMap {
   isLineVisible(code) {
     const f = this.mapFilter || { kind: 'all' };
     if (f.kind === 'all') return true;
+    if (f.kind === 'mode') return f.mode === 'bus';
     if (f.kind === 'op') return f.agencyId === 'mataro';
     if (f.kind === 'bus') return canonicalLineCode(code) === f.code;
     return false; // a train line is selected
@@ -1025,17 +1033,22 @@ function buildTrainPopupHtml(t, op, lineRef) {
   const icPin = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>';
   const icOp = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="16" rx="2"/><path d="M4 11h16M12 3v8M8 19l-2 3M16 19l2 3"/></svg>';
   const icSrc = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v12H5.17L4 17.17V4z"/></svg>';
+  const tMode = t.mode || (t.agencyId === 'tmb' ? 'metro' : 'rail');
+  const modeLabel = tMode === 'metro'
+    ? netT('trainPopup.metro', null, 'Metro')
+    : (tMode === 'tram' ? netT('trainPopup.tram', null, 'Tramvia') : netT('trainPopup.train', null, 'Tren'));
+  const headerIcon = window.vehicleIconForMode ? window.vehicleIconForMode(tMode) : TRAIN_ICON_INNER_SVG;
   return `
       <div class="map-popup-card train-popup-card"${lineKey ? ` data-line="${esc(lineKey)}"` : ''}>
         <div class="map-popup-header">
           <div class="map-popup-title-group">
             <div class="map-popup-bus-icon is-train"${lineKey ? ` data-line="${esc(lineKey)}"` : ''}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="16" rx="2"/><path d="M4 11h16M12 3v8"/><circle cx="8.5" cy="15" r="1"/><circle cx="15.5" cy="15" r="1"/><path d="M8 19l-2 3M16 19l2 3"/></svg>
+              ${headerIcon}
             </div>
             <div class="map-popup-title-text">
               <div class="map-popup-title">
                 ${t.lineCode ? `<span class="map-popup-line-pill" data-line="${esc(lineKey)}">${esc(t.lineCode)}</span>` : ''}
-                <span class="map-popup-bus-id">${esc(netT('trainPopup.train', null, 'Tren'))}${t.label ? ` ${esc(t.label)}` : ''}</span>
+                <span class="map-popup-bus-id">${esc(modeLabel)}${t.label ? ` ${esc(t.label)}` : ''}</span>
               </div>
               <div class="map-popup-subtitle">${esc(name)}</div>
             </div>
@@ -1128,6 +1141,9 @@ function buildMoventisPopupHtml(b, feed) {
     : (isGpsExtrap
       ? netT('movPopup.noteGpsExtrap', null, "Posició estimada al llarg del recorregut a partir de l'últim GPS real rebut.")
       : netT('movPopup.note', null, "Posició estimada a partir de les previsions d'arribada que Moventis publica per a cada parada: no és una posició GPS."));
+  const pillBg = (typeof b.color === 'string' && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(b.color)) ? b.color : '#007a5a';
+  const pillInk = window.TransitUtils?.contrastInk ? window.TransitUtils.contrastInk(pillBg, b.textColor) : '#ffffff';
+  const lineRef = b.lineRef || (b.agencyId && b.lineCode ? `${b.agencyId}:${b.lineCode}` : '');
   return `
       <div class="map-popup-card moventis-popup-card">
         <div class="map-popup-header">
@@ -1135,7 +1151,7 @@ function buildMoventisPopupHtml(b, feed) {
             <div class="map-popup-bus-icon">${CANONICAL_BUS_ICON_INNER_SVG}</div>
             <div class="map-popup-title-text">
               <div class="map-popup-title">
-                <span class="map-popup-line-pill">${esc(b.lineCode)}</span>
+                <span class="map-popup-line-pill" style="background: ${esc(pillBg)}; color: ${esc(pillInk)};">${esc(b.lineCode)}</span>
                 <span class="map-popup-bus-id">${esc(netT('movPopup.bus', null, 'Bus'))}</span>
               </div>
               <div class="map-popup-subtitle">${esc(b.lineName || 'Moventis')}</div>
@@ -1155,7 +1171,7 @@ function buildMoventisPopupHtml(b, feed) {
         <div class="map-popup-metrics-grid">
           ${tile(netT('movPopup.tileNext', null, 'Propera parada'), Number.isFinite(eta) ? mins(eta) : '--')}
           ${tile(netT('movPopup.tileDest', null, 'Destinació'), b.destination || '--')}
-          ${tile(netT('trainPopup.tileOperator', null, 'Operador'), 'Moventis')}
+          ${tile(netT('trainPopup.tileOperator', null, 'Operador'), b.agency || 'Moventis')}
           ${tile(ageLabel, Number.isFinite(age) ? mins(age) : '--')}
         </div>
         <div class="train-popup-note">${esc(noteText)}</div>
@@ -1163,6 +1179,11 @@ function buildMoventisPopupHtml(b, feed) {
         <div class="map-popup-coords-footer">
           <span class="source-tag">${esc(feed.attribution)}</span>
         </div>` : ''}
+        ${lineRef ? `
+        <button type="button" class="map-popup-btn-share" data-open-rail-line="${esc(lineRef)}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"></polygon></svg>
+          <span>${esc(netT('trainPopup.openLine', { code: b.lineCode }, `Obre la línia ${b.lineCode}`))}</span>
+        </button>` : ''}
       </div>`;
 }
 

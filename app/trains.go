@@ -81,6 +81,9 @@ func liveTrainFeeds() []trainFeed {
 			}
 		}
 	}
+	if mf, ok := tmbMetroTrainFeed(time.Now()); ok {
+		feeds = append(feeds, mf)
+	}
 	return feeds
 }
 
@@ -241,10 +244,15 @@ func trainJSON(info operatorInfo, s *rtSnapshot, v *rtVehicle, now time.Time) *O
 		"positionTimeSource", timeSource,
 		"ageSec", ageSec,
 		"stale", stale,
-		"isRealTime", !stale,
-		"isEstimated", false,
+		"isRealTime", !stale && info.ID != tmbAgencyID,
+		"isEstimated", info.ID == tmbAgencyID,
 		"isTheoretical", false,
-		"positionSource", "gtfsrt",
+		"positionSource", func() string {
+			if info.ID == tmbAgencyID {
+				return "metro_predictions"
+			}
+			return "gtfsrt"
+		}(),
 		"delaySec", delaySec,
 		"delayMins", delayMins,
 		"delaySource", delaySource,

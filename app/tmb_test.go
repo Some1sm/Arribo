@@ -153,3 +153,54 @@ func TestRouteModeForDistinguishesRailMetroTramBus(t *testing.T) {
 		}
 	}
 }
+
+func TestTmbMetroTrainFeed(t *testing.T) {
+	now := time.UnixMilli(1795554000000)
+	snap := &tmbMetroSnapshot{
+		At:       now,
+		ServerMs: now.UnixMilli(),
+		ByLineStation: map[string][]tmbArrival{
+			"L1\x00112": {
+				{Line: "L1", Direction: "0", Dest: "Fondo", ArriveMs: now.Add(45 * time.Second).UnixMilli(), VehicleID: "103"},
+			},
+			"L1\x00113": {
+				{Line: "L1", Direction: "0", Dest: "Fondo", ArriveMs: now.Add(135 * time.Second).UnixMilli(), VehicleID: "103"},
+			},
+		},
+	}
+	oldSnap := tmbMetroLive.Swap(snap)
+	t.Cleanup(func() { tmbMetroLive.Store(oldSnap) })
+
+	rtCatalog.Store(tmbAgencyID, &rtCatalogOp{
+		AgencyID: tmbAgencyID,
+		Mode:     "metro",
+		Lines:    []rtRoute{{Code: "L1", Name: "Hospital de Bellvitge - Fondo", Color: "#E2001A"}},
+		Profiles: map[string]*rtLineProfile{
+			"L1": {
+				Code: "L1",
+				Directions: []rtLineDirection{{
+					DirectionID: 0,
+					Stops: []rtLineStop{
+						{ID: "1.111", Name: "Hospital de Bellvitge", Lat: 41.344, Lon: 2.107},
+						{ID: "1.112", Name: "Bellvitge", Lat: 41.351, Lon: 2.111},
+						{ID: "1.113", Name: "Av. Carrilet", Lat: 41.358, Lon: 2.103},
+					},
+				}},
+			},
+		},
+	})
+	t.Cleanup(func() { rtCatalog.Delete(tmbAgencyID) })
+
+	feed, ok := tmbMetroTrainFeed(now)
+	if !ok || feed.snap == nil || len(feed.snap.Vehicles) != 1 {
+		t.Fatalf("expected 1 live metro train, got ok=%v snap=%+v", ok, feed.snap)
+	}
+	v := feed.snap.Vehicles[0]
+	if v.Mode != "metro" || v.LineCode != "L1" || v.StopName != "Bellvitge" || v.CurrentStatus != "IN_TRANSIT_TO" {
+		t.Errorf("unexpected metro vehicle: %+v", v)
+	}
+	// 45s out of 90s -> halfway between 41.344 and 41.351 (~41.3475).
+	if v.Lat < 41.346 || v.Lat > 41.349 {
+		t.Errorf("expected interpolated lat near 41.3475, got %v", v.Lat)
+	}
+}

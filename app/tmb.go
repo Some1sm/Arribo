@@ -475,3 +475,160 @@ func tmbLiveDepartures(ctx context.Context, stop rtLineStop, lineCode, direction
 	}
 	return nil
 }
+
+// tmbMetroTrainFeed synthesises live Barcelona Metro train positions from the
+// latest iTransit station arrival snapshot (tmbMetroLive) and the GTFS line
+// profiles in rtCatalog. Each unique codi_servei is placed at or interpolated
+// just before its immediate next upcoming station.
+func tmbMetroTrainFeed(now time.Time) (trainFeed, bool) {
+	snap := tmbMetroLive.Load()
+	if !snap.fresh(now) {
+		return trainFeed{}, false
+	}
+	v, ok := rtCatalog.Load(tmbAgencyID)
+	if !ok {
+		return trainFeed{}, false
+	}
+	op := v.(*rtCatalogOp)
+
+	nowMs := now.UnixMilli()
+	if snap.ServerMs > 0 && abs64(nowMs-snap.ServerMs) < 300_000 {
+		nowMs = snap.ServerMs + now.Sub(snap.At).Milliseconds()
+	}
+
+	type nextCand struct {
+		line     string
+		dir      string
+		stCode   string
+		vehID    string
+		etaSec   float64
+		arriveMs int64
+	}
+	bestByTrain := map[string]nextCand{}
+	for key, arrs := range snap.ByLineStation {
+		sep := strings.IndexByte(key, '\x00')
+		if sep <= 0 {
+			continue
+		}
+		lineUpper := key[:sep]
+		stCode := key[sep+1:]
+		for _, a := range arrs {
+			if a.VehicleID == "" {
+				continue
+			}
+			etaSec := float64(a.ArriveMs-nowMs) / 1000.0
+			if etaSec < -15 || etaSec > 240 {
+				continue
+			}
+			tk := lineUpper + "\x00" + a.Direction + "\x00" + a.VehicleID
+			prev, exists := bestByTrain[tk]
+			if !exists || etaSec < prev.etaSec {
+				bestByTrain[tk] = nextCand{
+					line:     lineUpper,
+					dir:      a.Direction,
+					stCode:   stCode,
+					vehID:    a.VehicleID,
+					etaSec:   etaSec,
+					arriveMs: a.ArriveMs,
+				}
+			}
+		}
+	}
+
+	var vehicles []rtVehicle
+	for _, c := range bestByTrain {
+		prof := op.Profiles[c.line]
+		if prof == nil {
+			continue
+		}
+		wantDir := 0
+		if c.dir == "1" {
+			wantDir = 1
+		}
+		var dirObj *rtLineDirection
+		stopIdx := -1
+		for i := range prof.Directions {
+			d := &prof.Directions[i]
+			if d.DirectionID != wantDir {
+				continue
+			}
+			for j, st := range d.Stops {
+				if tmbMetroStationCode(st.ID) == c.stCode {
+					dirObj = d
+					stopIdx = j
+					break
+				}
+			}
+			if stopIdx >= 0 {
+				break
+			}
+		}
+		if stopIdx < 0 {
+			for i := range prof.Directions {
+				d := &prof.Directions[i]
+				for j, st := range d.Stops {
+					if tmbMetroStationCode(st.ID) == c.stCode {
+						dirObj = d
+						stopIdx = j
+						break
+					}
+				}
+				if stopIdx >= 0 {
+					break
+				}
+			}
+		}
+		if dirObj == nil || stopIdx < 0 {
+			continue
+		}
+		nextSt := dirObj.Stops[stopIdx]
+		lat, lon := nextSt.Lat, nextSt.Lon
+		status := "STOPPED_AT"
+		if c.etaSec > 15 && stopIdx > 0 {
+			prevSt := dirObj.Stops[stopIdx-1]
+			// Typical Barcelona Metro inter-station run time is ~90s.
+			frac := 1.0 - c.etaSec/90.0
+			if frac < 0.05 {
+				frac = 0.05
+			}
+			if frac > 0.95 {
+				frac = 0.95
+			}
+			lat = prevSt.Lat + (nextSt.Lat-prevSt.Lat)*frac
+			lon = prevSt.Lon + (nextSt.Lon-prevSt.Lon)*frac
+			status = "IN_TRANSIT_TO"
+		}
+		vehicles = append(vehicles, rtVehicle{
+			AgencyID:      tmbAgencyID,
+			Mode:          "metro",
+			VehicleID:     "TMB_M_" + c.line + "_" + c.vehID,
+			Label:         c.line + " · " + c.vehID,
+			LineCode:      c.line,
+			DirectionID:   dirObj.DirectionID,
+			StopID:        nextSt.ID,
+			StopName:      nextSt.Name,
+			CurrentStatus: status,
+			Lat:           lat,
+			Lon:           lon,
+			ObservedAt:    snap.At.Unix(),
+		})
+	}
+	if len(vehicles) == 0 {
+		return trainFeed{}, false
+	}
+	return trainFeed{
+		info: tmbOperator,
+		snap: &rtSnapshot{
+			AgencyID:  tmbAgencyID,
+			FetchedAt: snap.At,
+			Vehicles:  vehicles,
+		},
+	}, true
+}
+
+func abs64(n int64) int64 {
+	if n < 0 {
+		return -n
+	}
+	return n
+}

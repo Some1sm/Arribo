@@ -39,6 +39,10 @@ const CANONICAL_BUS_ICON_INNER_SVG = '<svg width="14" height="14" viewBox="0 0 2
 // Trains (GTFS-RT, Rodalies / FGC) get their own front-view drawing, so a
 // train on a rail line never looks like a bus.
 const TRAIN_ICON_INNER_SVG = '<svg class="train-icon-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="14" rx="3"/><path d="M5 10h14"/><path d="M12 3v7"/><circle cx="9" cy="13.5" r="0.7"/><circle cx="15" cy="13.5" r="0.7"/><path d="M8 21l2-4"/><path d="M16 21l-2-4"/></svg>';
+const METRO_ICON_INNER_SVG = '<svg class="metro-icon-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 22 12 12 22 2 12"/><path d="M8.5 15.5V8.5l3.5 4.2 3.5-4.2v7"/></svg>';
+const TRAM_ICON_INNER_SVG = '<svg class="tram-icon-svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M12 3v3"/><rect x="5" y="6" width="14" height="12" rx="2.5"/><path d="M5 12h14"/><circle cx="9" cy="15" r="0.7"/><circle cx="15" cy="15" r="0.7"/><path d="M8 21l1.5-3M16 21l-1.5-3"/></svg>';
+const vehicleIconForMode = (mode) => (mode === 'metro' ? METRO_ICON_INNER_SVG : (mode === 'tram' ? TRAM_ICON_INNER_SVG : (mode === 'rail' ? TRAIN_ICON_INNER_SVG : CANONICAL_BUS_ICON_INNER_SVG)));
+if (typeof window !== 'undefined') window.vehicleIconForMode = vehicleIconForMode;
 
 
 /**
@@ -1837,7 +1841,8 @@ class TransitMap {
           }
           const iconInner = el.querySelector('.bus-icon-inner');
           if (iconInner) {
-            iconInner.innerHTML = isGhost ? '⚡' : (bus.isTerminalLayover ? '🅿️' : (bus.positionSource === 'gtfsrt' ? TRAIN_ICON_INNER_SVG : CANONICAL_BUS_ICON_INNER_SVG));
+            const vMode = bus.mode || (bus.positionSource === 'gtfsrt' ? 'rail' : (bus.positionSource === 'metro_predictions' ? 'metro' : 'bus'));
+            iconInner.innerHTML = isGhost ? '⚡' : (bus.isTerminalLayover ? '🅿️' : vehicleIconForMode(vMode));
           }
           obj.marker.setZIndexOffset(isSelected ? 5000 : (isGhost ? 1500 : 2000));
         }
@@ -1852,13 +1857,13 @@ class TransitMap {
             </div>
           </div>
         ` : `
-          <div class="live-bus-marker-wrap ${isSelected ? 'selected' : ''} ${isGhost ? 'ghost-bus' : ''} ${bus.positionSource === 'gtfsrt' ? 'is-train' : ''}">
+          <div class="live-bus-marker-wrap ${isSelected ? 'selected' : ''} ${isGhost ? 'ghost-bus' : ''} ${(bus.positionSource === 'gtfsrt' || bus.positionSource === 'metro_predictions') ? 'is-train' : ''}">
             <div class="bus-selection-ring" style="${isSelected ? '' : 'display:none;'}"></div>
             <div class="bus-heading-cone" style="transform: rotate(${bearingAngle}deg);">
               <div class="bus-heading-arrow"></div>
             </div>
             <div class="live-bus-pin" style="background: ${pinBg}; color: ${pinInk};">
-              <span class="bus-icon-inner" style="transform: scaleX(${isHeadingWest ? -1 : 1});">${isGhost ? '⚡' : (bus.positionSource === 'gtfsrt' ? TRAIN_ICON_INNER_SVG : CANONICAL_BUS_ICON_INNER_SVG)}</span>
+              <span class="bus-icon-inner" style="transform: scaleX(${isHeadingWest ? -1 : 1});">${isGhost ? '⚡' : vehicleIconForMode(bus.mode || (bus.positionSource === 'gtfsrt' ? 'rail' : (bus.positionSource === 'metro_predictions' ? 'metro' : 'bus')))}</span>
               <span class="bus-status-dot ${isGhost ? 'ghost' : (isEst ? 'estimated' : 'live')}"></span>
             </div>
           </div>
