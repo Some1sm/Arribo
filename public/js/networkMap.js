@@ -249,11 +249,12 @@ class NetworkMap extends TransitMap {
     if (!this.map || !this.railRouteLayer) return;
     this.railRouteLayer.clearLayers();
     this.railRoutes = [];
-    const neutral = getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim();
     for (const l of Array.isArray(lines) ? lines : []) {
       const path = Array.isArray(l?.path) ? l.path.filter(p => Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1])) : [];
       if (path.length < 2 || !l.agencyId || !l.code) continue;
-      const color = typeof l.color === 'string' && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(l.color) ? l.color : neutral;
+      // Same fallback as the vehicle pin, so a colourless line matches its buses
+      // and stands out from the basemap streets.
+      const color = typeof l.color === 'string' && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(l.color) ? l.color : '#007a5a';
       // A path joined from the stations (no shape in the timetable) is dashed.
       const polyline = L.polyline(path, {
         renderer: this.routeCanvas,

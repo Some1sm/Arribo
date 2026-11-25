@@ -12427,7 +12427,7 @@ body[data-dades-scope="bus"] #operators-section { display: none !important; }
 }
 /* Between the operator pills and the picked operator's line pills. */
 .pill-group-divider { align-self: stretch; width: 1px; margin: var(--space-1) var(--space-2); background: var(--border-subtle); }
-.landing-op-row { display: flex; flex-wrap: wrap; gap: 2px; width: 100%; }
+.landing-op-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 2px; width: 100%; }
 .landing-op-subdock {
   display: flex;
   flex-direction: column;
@@ -12437,7 +12437,7 @@ body[data-dades-scope="bus"] #operators-section { display: none !important; }
   padding-top: var(--space-2);
   border-top: 1px solid var(--border-subtle);
 }
-.landing-op-subdock-bar { display: flex; align-items: center; gap: var(--space-2); }
+.landing-op-subdock-bar { display: flex; align-items: center; justify-content: center; gap: var(--space-2); }
 .landing-op-filter-input {
   width: 100%;
   max-width: 16rem;
@@ -12455,6 +12455,7 @@ body[data-dades-scope="bus"] #operators-section { display: none !important; }
 .landing-op-subdock-pills {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 2px;
   max-height: 9.5rem;
   overflow-y: auto;
