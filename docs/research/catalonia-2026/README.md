@@ -209,5 +209,6 @@ A GTFS-only planner gets these wrong.
 | 10 | [Follow-up on open items](10-follow-up-open-items.md) | second pass on gaps left by the first nine reports |
 | 11 | [Seeing every Moventis bus at once](11-moventis-all-buses.md) | why the per-stop source shows one bus per stop, a faster stop choice (16 → 6–9 min cycle), the GPS server test, official routes after Moventis's silence |
 | 12 | [Every bus line, town by town](12-bus-lines-by-town/README.md) | all 1,505 bus lines in 918 of 947 municipalities, by province, comarca and town; 1,049 not yet in Arribo, with operator and real-time source |
+| 13 | [AMB app API has real C-10 GPS](13-amb-app-api-c10-gps.md) | the private `api.ambmobilitat.cat/v2` feed (reverse-engineered key) carries real GPS for all 15 Maresme Casas lines across the whole route, not just to Montgat; governance caveats |
 
 Related earlier documents: [../MOVENTIS_SOURCES.md](../MOVENTIS_SOURCES.md) (Moventis static data, 23 Nov) and [../../catalonia-review/](../../catalonia-review/) (architecture review and data requests).
