@@ -19,11 +19,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log"
 	"math"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -36,24 +38,32 @@ const (
 	ambVehGap      = 20 * time.Second
 	ambVehMaxAge   = 90 * time.Second // live GPS cutoff: older than this switches to dead-reckoning estimate
 	ambVehCarryMax = 10 * time.Minute // keep extrapolating from last live GPS up to this long between pings
+	ambVehSaveGap  = 40 * time.Second // throttle disk snapshots of tracked buses
+	ambDedupKm     = 2.5              // suppress Moventis stop-prediction estimate within this radius of an AMB bus
 )
 
 // ambVeh is one bus of a followed line, from /bus/vehicles.
 type ambVeh struct {
-	Line       string
-	Dir        int // routeId's last digit (1/2); the moventis trayecto — unverified, flip the map if directions look swapped
-	Lat, Lon   float64
-	VehID      string
-	ObservedAt time.Time // when AMB last returned this vehicle (zero falls back to snap.At)
-	SpeedKmh   float64   // smoothed observed speed (km/h); 0 falls back to movDefaultSpeedKmh
+	Line       string    `json:"line"`
+	Dir        int       `json:"dir"` // routeId's last digit (1/2); the moventis trayecto
+	Lat        float64   `json:"lat"`
+	Lon        float64   `json:"lon"`
+	VehID      string    `json:"vehId"`
+	ObservedAt time.Time `json:"observedAt"` // when AMB last returned this vehicle (zero falls back to snap.At)
+	SpeedKmh   float64   `json:"speedKmh,omitempty"`
 }
 
 type ambTrackedVeh struct {
-	Veh      ambVeh
-	MoveAt   time.Time
-	MoveLat  float64
-	MoveLon  float64
-	SpeedKmh float64
+	Veh      ambVeh    `json:"veh"`
+	MoveAt   time.Time `json:"moveAt"`
+	MoveLat  float64   `json:"moveLat"`
+	MoveLon  float64   `json:"moveLon"`
+	SpeedKmh float64   `json:"speedKmh,omitempty"`
+}
+
+type ambTrackedFile struct {
+	SavedAt time.Time                 `json:"savedAt"`
+	Tracked map[string]*ambTrackedVeh `json:"tracked"`
 }
 
 type ambVehSnapshot struct {
@@ -62,13 +72,15 @@ type ambVehSnapshot struct {
 }
 
 type ambVehPoller struct {
-	key string
+	key       string
+	cachePath string
 
-	mu      sync.Mutex
-	lastErr string
-	lastOK  time.Time
-	count   int
-	tracked map[string]*ambTrackedVeh // keyed by ambNormLine(line)+"\x00"+vehID
+	mu       sync.Mutex
+	lastErr  string
+	lastOK   time.Time
+	lastSave time.Time
+	count    int
+	tracked  map[string]*ambTrackedVeh // keyed by ambNormLine(line)+"\x00"+vehID
 
 	snap atomic.Pointer[ambVehSnapshot]
 }
@@ -93,7 +105,14 @@ func startAmbVehiclesPoller() (stop func()) {
 		log.Printf("[AMB-GPS] ARRIBO_AMB_VEHICLES=1 but AMB_API_KEY is empty — off")
 		return func() {}
 	}
-	p := &ambVehPoller{key: key}
+	cachePath := ""
+	if dir := movCacheDir(); dir != "" {
+		cachePath = filepath.Join(dir, "amb_tracked.json")
+	}
+	p := &ambVehPoller{key: key, cachePath: cachePath}
+	if loaded := p.loadTracked(time.Now()); loaded > 0 {
+		log.Printf("[AMB-GPS] restored %d tracked vehicles from %s", loaded, cachePath)
+	}
 	ambVehLive.Store(p)
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
@@ -104,6 +123,7 @@ func startAmbVehiclesPoller() (stop func()) {
 		ambVehLive.CompareAndSwap(p, nil)
 		cancel()
 		wg.Wait()
+		p.saveTracked(time.Now(), true)
 	}
 }
 
@@ -169,6 +189,7 @@ func (p *ambVehPoller) poll(ctx context.Context) {
 	}
 	byLine := p.mergeAndSnapshot(fresh, now)
 	p.snap.Store(&ambVehSnapshot{At: now, ByLine: byLine})
+	p.saveTracked(now, false)
 	p.mu.Lock()
 	recovered := p.lastErr != ""
 	p.lastOK = now
@@ -245,6 +266,81 @@ func (p *ambVehPoller) mergeAndSnapshot(fresh []ambVeh, now time.Time) map[strin
 	return byLine
 }
 
+// loadTracked restores unexpired AMB-tracked vehicles from disk so container
+// restarts/deploys do not lose in-flight buses during GPS dropouts.
+func (p *ambVehPoller) loadTracked(now time.Time) int {
+	if p == nil || p.cachePath == "" {
+		return 0
+	}
+	b, err := os.ReadFile(p.cachePath)
+	if err != nil {
+		return 0
+	}
+	var f ambTrackedFile
+	if err := json.Unmarshal(b, &f); err != nil || len(f.Tracked) == 0 {
+		return 0
+	}
+	p.mu.Lock()
+	if p.tracked == nil {
+		p.tracked = map[string]*ambTrackedVeh{}
+	}
+	byLine := map[string][]ambVeh{}
+	restored := 0
+	for tk, tv := range f.Tracked {
+		if tv == nil || tv.Veh.Line == "" || tv.Veh.ObservedAt.IsZero() {
+			continue
+		}
+		age := now.Sub(tv.Veh.ObservedAt)
+		if age < 0 || age > ambVehCarryMax {
+			continue
+		}
+		p.tracked[tk] = tv
+		k := ambNormLine(tv.Veh.Line)
+		byLine[k] = append(byLine[k], tv.Veh)
+		restored++
+	}
+	p.mu.Unlock()
+	if restored > 0 {
+		p.snap.Store(&ambVehSnapshot{At: now, ByLine: byLine})
+	}
+	return restored
+}
+
+// saveTracked atomically persists unexpired AMB-tracked vehicles to disk.
+func (p *ambVehPoller) saveTracked(now time.Time, force bool) {
+	if p == nil || p.cachePath == "" {
+		return
+	}
+	p.mu.Lock()
+	if !force && now.Sub(p.lastSave) < ambVehSaveGap {
+		p.mu.Unlock()
+		return
+	}
+	cp := make(map[string]*ambTrackedVeh, len(p.tracked))
+	for tk, tv := range p.tracked {
+		if tv == nil || now.Sub(tv.Veh.ObservedAt) > ambVehCarryMax {
+			continue
+		}
+		dup := *tv
+		cp[tk] = &dup
+	}
+	p.lastSave = now
+	p.mu.Unlock()
+
+	if err := os.MkdirAll(filepath.Dir(p.cachePath), 0o755); err != nil {
+		return
+	}
+	raw, err := json.Marshal(ambTrackedFile{SavedAt: now, Tracked: cp})
+	if err != nil {
+		return
+	}
+	tmp := p.cachePath + ".tmp"
+	if err := os.WriteFile(tmp, raw, 0o644); err != nil {
+		return
+	}
+	_ = os.Rename(tmp, p.cachePath)
+}
+
 func fmtCoordKey(lat, lon float64) string {
 	return strconv.FormatFloat(lat, 'f', 4, 64) + "," + strconv.FormatFloat(lon, 'f', 4, 64)
 }
@@ -310,7 +406,8 @@ func movVehiclesWithAMB(s *movStatic, lineIDs []int, preds map[[3]int]movPredict
 	if snap == nil || now.Sub(snap.At) > ambVehMaxAge {
 		return est
 	}
-	covered := map[[2]string]bool{}
+	type ambPt struct{ lat, lon float64 }
+	ambCoords := map[[2]string][]ambPt{}
 	var ambOut []any
 	for _, id := range lineIDs {
 		line := s.Lines[id]
@@ -326,7 +423,8 @@ func movVehiclesWithAMB(s *movStatic, lineIDs []int, preds map[[3]int]movPredict
 			if obj == nil {
 				continue
 			}
-			covered[[2]string{line.Code, jsString(obj.Get("directionId"))}] = true
+			key := [2]string{line.Code, jsString(obj.Get("directionId"))}
+			ambCoords[key] = append(ambCoords[key], ambPt{lat: obj.Num("lat"), lon: obj.Num("lon")})
 			ambOut = append(ambOut, obj)
 		}
 	}
@@ -336,7 +434,25 @@ func movVehiclesWithAMB(s *movStatic, lineIDs []int, preds map[[3]int]movPredict
 	out := make([]any, 0, len(est)+len(ambOut))
 	for _, e := range est {
 		o, _ := e.(*Obj)
-		if o == nil || !covered[[2]string{jsString(o.Get("lineCode")), jsString(o.Get("directionId"))}] {
+		if o == nil {
+			out = append(out, e)
+			continue
+		}
+		key := [2]string{jsString(o.Get("lineCode")), jsString(o.Get("directionId"))}
+		pts := ambCoords[key]
+		if len(pts) == 0 {
+			out = append(out, e)
+			continue
+		}
+		elat, elon := o.Num("lat"), o.Num("lon")
+		dup := false
+		for _, pt := range pts {
+			if haversineKm(elat, elon, pt.lat, pt.lon) <= ambDedupKm {
+				dup = true
+				break
+			}
+		}
+		if !dup {
 			out = append(out, e)
 		}
 	}

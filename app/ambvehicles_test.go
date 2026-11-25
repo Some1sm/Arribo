@@ -1,6 +1,7 @@
 package main
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -152,6 +153,70 @@ func TestAmbDeadReckoningAndPerDirectionCoverage(t *testing.T) {
 	}
 	if !gotDir1Est {
 		t.Errorf("expected opposite-direction stop_predictions bus to survive; got %s", toJSON(out))
+	}
+}
+
+func TestAmbTrackedPersistenceAcrossRestart(t *testing.T) {
+	dir := t.TempDir()
+	cachePath := filepath.Join(dir, "amb_tracked.json")
+	t0 := time.Now().Add(-3 * time.Minute)
+
+	p1 := &ambVehPoller{cachePath: cachePath}
+	p1.mergeAndSnapshot([]ambVeh{
+		{Line: "C-10", Dir: 1, Lat: 41.50, Lon: 2.40, VehID: "1105", ObservedAt: t0},
+		{Line: "C-10", Dir: 1, Lat: 41.45, Lon: 2.35, VehID: "expired", ObservedAt: t0.Add(-20 * time.Minute)},
+	}, t0)
+	p1.saveTracked(t0, true)
+
+	// Simulate container restart: brand-new poller loads saved file.
+	now := time.Now()
+	p2 := &ambVehPoller{cachePath: cachePath}
+	n := p2.loadTracked(now)
+	if n != 1 {
+		t.Fatalf("expected 1 unexpired vehicle restored after restart, got %d", n)
+	}
+	snap := p2.snap.Load()
+	if snap == nil || len(snap.ByLine["c10"]) != 1 || snap.ByLine["c10"][0].VehID != "1105" {
+		t.Fatalf("unexpected restored snapshot: %+v", snap)
+	}
+}
+
+func TestAmbSpatialDedupKeepsDistantSecondBus(t *testing.T) {
+	// Long corridor (~18 km) in direction 1: Mataró -> Badalona -> Barcelona.
+	rt1 := movRoute{LineID: 53, Trayecto: 1, Dest: "BCN", Stops: []movStop{
+		{ID: 1, Name: "Mataro", Lat: 41.54, Lon: 2.44, Km: 0},
+		{ID: 2, Name: "Premia", Lat: 41.49, Lon: 2.36, Km: 8.5},
+		{ID: 3, Name: "Badalona", Lat: 41.44, Lon: 2.25, Km: 18.0},
+	}}
+	s := &movStatic{
+		Lines:  map[int]movLine{53: {ID: 53, Code: "C-10"}},
+		Routes: map[int][]movRoute{53: {rt1}},
+	}
+	now := time.Now()
+	// AMB only reports bus #1 near Mataró (km 0).
+	p := &ambVehPoller{}
+	p.snap.Store(&ambVehSnapshot{At: now, ByLine: map[string][]ambVeh{
+		"c10": {{Line: "C-10", Dir: 1, Lat: 41.54, Lon: 2.44, VehID: "1102", ObservedAt: now}},
+	}})
+	ambVehLive.Store(p)
+	t.Cleanup(func() { ambVehLive.Store(nil) })
+
+	// Moventis predicts a 2nd bus arriving at Badalona (18 km away, same direction!).
+	preds := map[[3]int]movPrediction{
+		{53, 1, 3}: {LineID: 53, Trayecto: 1, StopID: 3, EtaSec: []float64{60}, At: now},
+	}
+	out := movVehiclesWithAMB(s, []int{53}, preds, now)
+	var realN, estN int
+	for _, raw := range out {
+		o := raw.(*Obj)
+		if truthy(o.Get("isRealTime")) {
+			realN++
+		} else {
+			estN++
+		}
+	}
+	if realN != 1 || estN != 1 {
+		t.Fatalf("expected 1 real AMB bus + 1 distant Moventis estimate in same direction; got real=%d est=%d (%s)", realN, estN, toJSON(out))
 	}
 }
 
