@@ -16,7 +16,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-  <link rel="stylesheet" href="/css/style.css?v=9.4.128">
+  <link rel="stylesheet" href="/css/style.css?v=9.4.129">
 </head>
 <body class="observatori-page-body observatori-page">
 
@@ -293,19 +293,24 @@
       <div id="operators-body" class="op-grid"></div>
     </section>
 
-    <!-- After the delays: the GPS loss map uses the report's period (24 h / 48 h / 7 dies) -->
-    <!-- Where buses lose GPS (gps_gaps, recorded by the ingestion worker) -->
-    <section class="gps-gaps-card dades-bus-only" id="gps-gaps-section" aria-labelledby="gps-gaps-title">
+    <!-- After the delays: the GPS / signal loss map uses the report's period (24 h / 48 h / 7 dies) -->
+    <!-- Where buses lose GPS or per-stop arrival signal -->
+    <section class="gps-gaps-card" id="gps-gaps-section" aria-labelledby="gps-gaps-title">
       <div class="gps-gaps-head">
         <div style="display:flex; align-items:center; gap:0.6rem;">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent-warning);" aria-hidden="true"><line x1="2" y1="2" x2="22" y2="22"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><path d="M2 8.82a15 15 0 0 1 4.17-2.65"/><path d="M10.66 5c4.01-.36 8.14.9 11.34 3.76"/><path d="M16.85 11.25a10 10 0 0 1 2.22 1.68"/><path d="M5 13a10 10 0 0 1 5.24-2.76"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
           <div>
             <h3 id="gps-gaps-title" class="gps-gaps-title" data-i18n="dades.gpsTitle">On perden el GPS els autobusos</h3>
-            <p class="gps-gaps-subtitle" data-i18n="dades.gpsSubtitle">Llocs on un bus deixa d'enviar la seva posició durant 90 s o més i el mapa en directe l'ha d'estimar.</p>
-            <p class="gps-gaps-subtitle dades-all-only" data-i18n="dades.gpsTrainsNote">Només autobusos: els trens de Rodalies i FGC publiquen la posició des dels sistemes de l'operador i no en solen perdre. Si un tren desapareix del canal i hi torna, queda registrat, però aquí encara no es mostra.</p>
+            <p class="gps-gaps-subtitle" id="gps-gaps-subtitle" data-i18n="dades.gpsSubtitle">Llocs on un bus deixa d'enviar la seva posició durant 90 s o més i el mapa en directe l'ha d'estimar.</p>
+            <p class="gps-gaps-subtitle dades-all-only" data-i18n="dades.gpsTrainsNote">Disponible per a Mataró Bus, Moventis (GPS i pèrdues de previsió per parada), AMB Bus, Sagalés, Rodalies i FGC.</p>
           </div>
         </div>
         <div class="gps-gaps-filters">
+          <div class="observatori-mode-toggle-group" id="gps-gaps-agency" role="group" aria-label="Operador" data-i18n-aria-label="dades.gpsAgencyAria" hidden></div>
+          <div class="observatori-mode-toggle-group" id="gps-gaps-mode" role="group" aria-label="Mode de detecció" data-i18n-aria-label="dades.gpsModeAria" hidden>
+            <button type="button" class="observatori-pill-btn active" data-gps-mode="gps" data-i18n="dades.gpsModeGps">GPS directe</button>
+            <button type="button" class="observatori-pill-btn" data-gps-mode="stop" data-i18n="dades.gpsModeStop">Per parada (previsions)</button>
+          </div>
           <div class="observatori-mode-toggle-group" id="gps-gaps-lines" role="group" aria-label="Línia" data-i18n-aria-label="dades.gpsLinesAria">
             <button type="button" class="observatori-pill-btn active" data-gps-line="all" data-i18n="dades.gpsAllLines">Totes</button>
             <button type="button" class="observatori-pill-btn" data-gps-line="L1">L1</button>
@@ -376,12 +381,12 @@
   </footer>
 
   <!-- Scripts -->
-  <script src="/js/utils.js?v=9.4.128"></script>
-  <script src="/js/i18n.js?v=9.4.128"></script>
-  <script src="/js/storage.js?v=9.4.128"></script>
-  <script src="/js/pwa.js?v=9.4.128"></script>
+  <script src="/js/utils.js?v=9.4.129"></script>
+  <script src="/js/i18n.js?v=9.4.129"></script>
+  <script src="/js/storage.js?v=9.4.129"></script>
+  <script src="/js/pwa.js?v=9.4.129"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="/js/observatori.js?v=9.4.128"></script>
-  <script src="/js/operators.js?v=9.4.128"></script>
+  <script src="/js/observatori.js?v=9.4.129"></script>
+  <script src="/js/operators.js?v=9.4.129"></script>
 </body>
 </html>

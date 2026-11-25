@@ -161,6 +161,8 @@ class ObservatoriApp {
       document.querySelector(`#journalism-timeframe-tabs [data-hours="${this.currentHours || 24}"]`)?.click();
       return;
     }
+    // Sync the GPS/signal-loss section with the active network scope.
+    this.syncGpsGapScope();
     // Any scope change re-renders the report: under "Tot" it lists the trains beside Mataró.
     if (this.currentReport && this.currentTab === 'journalism') {
       this.renderJournalismReport(this.currentReport);
@@ -288,16 +290,46 @@ class ObservatoriApp {
     if (this._gpsGapReq) this.loadGpsGaps();
   }
 
+  gpsGapScopeAgency() {
+    try {
+      const x = new URLSearchParams(window.location.search).get('xarxa') || '';
+      if (x && x !== 'all') return x;
+    } catch { /* ignore */ }
+    return null;
+  }
+
+  syncGpsGapScope() {
+    const locked = this.gpsGapScopeAgency();
+    const target = locked || this.gpsGapAgency || 'mataro';
+    const agencyChanged = this.gpsGapAgency !== target;
+    this.gpsGapAgency = target;
+    if (agencyChanged) {
+      this.gpsGapLine = 'all';
+      this.gpsGapVehicle = '';
+      this.gpsGapHide = '';
+      if (this.gpsGapAgency !== 'moventis') this.gpsGapMode = 'gps';
+    }
+    if (this._gpsGapReq && (agencyChanged || !this._gpsGapData)) {
+      this.loadGpsGaps();
+    } else if (this._gpsGapData) {
+      this.syncGpsGapControls(this._gpsGapData);
+    }
+  }
+
   initGpsGaps() {
     const section = document.getElementById('gps-gaps-section');
     if (!section) return;
     this.gpsGapDays = Math.min(30, Math.max(1, Math.round((Number(this.currentHours) || 24) / 24)));
+    this.gpsGapAgency = this.gpsGapScopeAgency() || 'mataro';
+    this.gpsGapMode = 'gps';
     this.gpsGapLine = 'all';
     this.gpsGapVehicle = '';
     this.gpsGapHide = '';
     this.gpsGapMin = 1;
     this.gpsGapMarkers = [];
     section.addEventListener('click', (e) => {
+      const agencyBtn = e.target.closest('[data-gps-agency]');
+      const modeBtn = e.target.closest('[data-gps-mode]');
       const lineBtn = e.target.closest('[data-gps-line]');
       const item = e.target.closest('[data-gps-cell]');
       const busBtn = e.target.closest('[data-gps-bus]');
@@ -306,6 +338,23 @@ class ObservatoriApp {
         this.clearGpsGapSelection();
       } else if (e.target.closest('[data-gps-retry]')) {
         this.loadGpsGaps();
+      } else if (agencyBtn) {
+        const nextAgency = agencyBtn.dataset.gpsAgency || 'mataro';
+        if (nextAgency !== this.gpsGapAgency) {
+          this.gpsGapAgency = nextAgency;
+          this.gpsGapLine = 'all';
+          this.gpsGapVehicle = '';
+          this.gpsGapHide = '';
+          if (nextAgency !== 'moventis') this.gpsGapMode = 'gps';
+          this.loadGpsGaps();
+        }
+      } else if (modeBtn) {
+        const nextMode = modeBtn.dataset.gpsMode === 'stop' ? 'stop' : 'gps';
+        if (nextMode !== this.gpsGapMode) {
+          this.gpsGapMode = nextMode;
+          this.gpsGapVehicle = '';
+          this.loadGpsGaps();
+        }
       } else if (hideBtn) {
         // The map without the buses the ranking flags, to see the places alone.
         this.gpsGapHide = hideBtn.dataset.gpsHide || '';
@@ -357,8 +406,11 @@ class ObservatoriApp {
     const reqId = (this._gpsGapReq = (this._gpsGapReq || 0) + 1);
     clearTimeout(this._gpsGapRetry);
     const summary = document.getElementById('gps-gaps-summary');
-    const bus = this.gpsGapVehicle ? `&vehicle=${encodeURIComponent(this.gpsGapVehicle)}` : (this.gpsGapHide ? `&hide=${this.gpsGapHide}` : '');
-    const url = `/api/analytics/gps-gaps?days=${this.gpsGapDays}&line=${encodeURIComponent(this.gpsGapLine)}${bus}`;
+    const agency = this.gpsGapAgency || 'mataro';
+    const agencyQ = agency && agency !== 'mataro' ? `&agency=${encodeURIComponent(agency)}` : '';
+    const modeQ = agency === 'moventis' && this.gpsGapMode === 'stop' ? '&mode=stop' : '';
+    const bus = this.gpsGapVehicle ? `&vehicle=${encodeURIComponent(this.gpsGapVehicle)}` : (this.gpsGapHide && agency === 'mataro' ? `&hide=${this.gpsGapHide}` : '');
+    const url = `/api/analytics/gps-gaps?days=${this.gpsGapDays}&line=${encodeURIComponent(this.gpsGapLine)}${agencyQ}${modeQ}${bus}`;
     // A choice seen in the last minute (the server caches as long) is redrawn
     // without asking again: going back and forth between buses costs nothing.
     if (!this.gpsGapResponses) this.gpsGapResponses = new Map();
@@ -435,10 +487,64 @@ class ObservatoriApp {
   }
 
   lineChip(code) {
+    const ag = this.gpsGapAgency || 'mataro';
+    if (ag !== 'mataro') {
+      return `<span class="line-chip" data-line="${this.esc(`${ag}:${code}`)}">${this.esc(code)}</span>`;
+    }
     const n = /^L([1-8])$/.exec(String(code || '').toUpperCase());
     return n
       ? `<span class="line-chip line-chip-${n[1]}">L${n[1]}</span>`
       : `<span class="line-chip">${this.esc(code)}</span>`;
+  }
+
+  syncGpsGapControls(data) {
+    const agency = (data && data.agency) || this.gpsGapAgency || 'mataro';
+    const mode = (data && data.signalMode) || this.gpsGapMode || 'gps';
+    const agencies = Array.isArray(data?.availableAgencies) ? data.availableAgencies : [];
+    const locked = this.gpsGapScopeAgency();
+
+    const agWrap = document.getElementById('gps-gaps-agency');
+    if (agWrap) {
+      if (!locked && agencies.length > 1) {
+        agWrap.hidden = false;
+        agWrap.innerHTML = agencies.map(a => `<button type="button" class="observatori-pill-btn${a.id === agency ? ' active' : ''}" data-gps-agency="${this.esc(a.id)}">${this.esc(a.name)}</button>`).join('');
+      } else {
+        agWrap.hidden = true;
+      }
+    }
+
+    const activeAgencyMeta = agencies.find(a => a.id === agency);
+    const supportsStop = Boolean(activeAgencyMeta?.supportsStopMode || agency === 'moventis');
+    const modeWrap = document.getElementById('gps-gaps-mode');
+    if (modeWrap) {
+      modeWrap.hidden = !supportsStop;
+      modeWrap.querySelectorAll('[data-gps-mode]').forEach(b => {
+        b.classList.toggle('active', b.dataset.gpsMode === (supportsStop ? mode : 'gps'));
+      });
+    }
+
+    const subtitle = document.getElementById('gps-gaps-subtitle');
+    if (subtitle) {
+      subtitle.textContent = this.t(supportsStop && mode === 'stop' ? 'dades.gpsStopSubtitle' : 'dades.gpsSubtitle');
+    }
+
+    const hideWrap = document.getElementById('gps-gaps-hide');
+    if (hideWrap) {
+      hideWrap.hidden = agency !== 'mataro';
+    }
+
+    const linesWrap = document.getElementById('gps-gaps-lines');
+    if (linesWrap) {
+      const isMataro = agency === 'mataro';
+      linesWrap.classList.toggle('is-dynamic-lines', !isMataro);
+      const rawLines = isMataro
+        ? ['L1', 'L2', 'L3', 'L4', 'L5', 'L6', 'L7', 'L8']
+        : (Array.isArray(data?.lines) ? data.lines.slice(0, 18) : []);
+      const curLine = String(this.gpsGapLine || 'all');
+      const pills = [`<button type="button" class="observatori-pill-btn${curLine === 'all' ? ' active' : ''}" data-gps-line="all">${this.esc(this.t('dades.gpsAllLines'))}</button>`]
+        .concat(rawLines.map(c => `<button type="button" class="observatori-pill-btn${curLine.toUpperCase() === String(c).toUpperCase() ? ' active' : ''}" data-gps-line="${this.esc(c)}">${this.esc(c)}</button>`));
+      linesWrap.innerHTML = pills.join('');
+    }
   }
 
   /**
@@ -484,13 +590,20 @@ class ObservatoriApp {
     detail.innerHTML = this.gpsGapDetailHtml(c);
     detail.hidden = false;
     if (this.gpsGapMap) this.gpsGapMap.invalidateSize({ pan: false });
-    this.showGpsGapPaths(c, detail);
-    this.showGpsGapPasses(c, detail);
+    if ((this.gpsGapAgency || 'mataro') === 'mataro') {
+      this.showGpsGapPaths(c, detail);
+      this.showGpsGapPasses(c, detail);
+    }
   }
 
   gpsGapDetailHtml(c) {
+    const isMataro = (this.gpsGapAgency || 'mataro') === 'mataro';
+    const isStopMode = this._gpsGapData?.signalMode === 'stop';
     const back = Math.round(L.latLng(c.lat, c.lon).distanceTo(L.latLng(c.regainedLat, c.regainedLon)));
     const last = new Date(c.lastTs).toLocaleString(this.locale(), { timeZone: 'Europe/Madrid', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    const unitWord = isStopMode
+      ? this.t(c.vehicles === 1 ? 'dades.gpsStopTripOne' : 'dades.gpsStopTripMany')
+      : this.t(c.vehicles === 1 ? 'dades.gpsBusOne' : 'dades.gpsBusMany');
     return `<div class="gps-gaps-popup">
       <div class="gps-gaps-popup-head">
         <strong>${c.stopName ? this.esc(this.t('dades.gpsNearStop', { stop: c.stopName })) : this.esc(this.t('dades.gpsNoNearStop'))}</strong>
@@ -498,15 +611,15 @@ class ObservatoriApp {
       </div>
       <button type="button" class="btn-icon gps-gaps-detail-close" data-gps-close aria-label="${this.esc(this.t('dades.gpsCloseDetail'))}">&times;</button>
       <dl class="gps-gaps-popup-stats">
-        <dt>${this.esc(this.t('dades.gpsDtLosses'))}</dt><dd>${c.count} · ${c.vehicles} ${this.esc(this.t(c.vehicles === 1 ? 'dades.gpsBusOne' : 'dades.gpsBusMany'))}</dd>
+        <dt>${this.esc(this.t('dades.gpsDtLosses'))}</dt><dd>${c.count} · ${c.vehicles} ${this.esc(unitWord)}</dd>
         <dt>${this.esc(this.t('dades.gpsDtNoSignal'))}</dt><dd>${this.esc(this.fmtGapDuration(c.medianGapSec))}${c.count > 1 ? this.esc(this.t('dades.gpsMedianSuffix')) : ''}</dd>
         ${c.count > 1 ? `<dt>${this.esc(this.t('dades.gpsDtLongest'))}</dt><dd>${this.esc(this.fmtGapDuration(c.maxGapSec))}</dd>` : ''}
-        <dt>${this.esc(this.t('dades.gpsDtRegains'))}</dt><dd>${this.esc(this.t('dades.gpsRegainsM', { m: back }))}</dd>
+        ${!isStopMode ? `<dt>${this.esc(this.t('dades.gpsDtRegains'))}</dt><dd>${this.esc(this.t('dades.gpsRegainsM', { m: back }))}</dd>` : ''}
         <dt>${this.esc(this.t('dades.gpsDtLast'))}</dt><dd>${this.esc(last)}</dd>
       </dl>
       <div class="gps-gaps-popup-lines">${c.lines.map(code => this.lineChip(code)).join('')}</div>
-      <div class="gps-gaps-popup-route" data-gps-route><p>${this.esc(this.t('dades.gpsSearchingRoute'))}</p></div>
-      <div class="gps-gaps-popup-route gps-gaps-passes" data-gps-passes><p>${this.esc(this.t('dades.gpsSearchingPasses'))}</p></div>
+      ${isMataro ? `<div class="gps-gaps-popup-route" data-gps-route><p>${this.esc(this.t('dades.gpsSearchingRoute'))}</p></div>
+      <div class="gps-gaps-popup-route gps-gaps-passes" data-gps-passes><p>${this.esc(this.t('dades.gpsSearchingPasses'))}</p></div>` : ''}
     </div>`;
   }
 
@@ -757,6 +870,7 @@ class ObservatoriApp {
     // The slider only refilters: the bus ranking does not depend on it.
     if (forceBuses || data !== this._gpsGapData) this.renderGpsGapBuses(data);
     this._gpsGapData = data;
+    this.syncGpsGapControls(data);
     this.syncGpsGapMin(data && Array.isArray(data.cells) ? data.cells : []);
 
     if (!data) {
@@ -768,6 +882,7 @@ class ObservatoriApp {
     }
 
     this._gpsGapShown = true;
+    const isStopMode = data.signalMode === 'stop';
     const t = data.totals || {};
     const allCells = Array.isArray(data.cells) ? data.cells : [];
     const min = this.gpsGapMin || 1;
@@ -785,9 +900,9 @@ class ObservatoriApp {
       : '';
     if (!t.mapped) {
       const onLineRaw = data.lineCode ? this.t('dades.gpsOnLine', { line: data.lineCode }) : '';
-      summary.innerHTML = busChip + this.esc(this.t('dades.gpsEmptySummary', { onLine: onLineRaw, period, left: leftTxt }));
+      summary.innerHTML = busChip + this.esc(this.t(isStopMode ? 'dades.gpsStopEmpty' : 'dades.gpsEmptySummary', { onLine: onLineRaw, period, left: leftTxt }));
       list.innerHTML = '';
-      empty.textContent = this.t('dades.gpsEmptyMap');
+      empty.textContent = this.t(isStopMode ? 'dades.gpsStopEmptyMap' : 'dades.gpsEmptyMap');
       empty.hidden = false;
       return;
     }
@@ -804,7 +919,7 @@ class ObservatoriApp {
     }));
     summary.innerHTML = busChip + (data.vehicleId
       ? this.t('dades.gpsSummaryBus', { mapped: t.mapped, onLine, period: this.esc(period), median: this.esc(this.fmtGapDuration(t.medianGapSec)) })
-      : this.t('dades.gpsSummaryAll', { mapped: t.mapped, onLine, period: this.esc(period), vehicles: t.vehicles, median: this.esc(this.fmtGapDuration(t.medianGapSec)) }))
+      : this.t(isStopMode ? 'dades.gpsStopSummaryAll' : 'dades.gpsSummaryAll', { mapped: t.mapped, onLine, period: this.esc(period), vehicles: t.vehicles, median: this.esc(this.fmtGapDuration(t.medianGapSec)) }))
       + (data.vehicleId ? busWhere : recurrent
         ? this.t('dades.gpsRecurrentShare', { share: t.recurrentShare, n: recurrent, word: this.esc(this.t(recurrent === 1 ? 'dades.gpsRecurrentOne' : 'dades.gpsRecurrentMany')) })
         : this.esc(this.t('dades.gpsNoRecurrent')))
@@ -830,7 +945,7 @@ class ObservatoriApp {
           <span class="gps-gaps-rank${c.recurrent ? ' recurrent' : ''}">${i + 1}</span>
           <span class="gps-gaps-item-main">
             <strong>${c.stopName ? this.esc(this.t('dades.gpsNearStop', { stop: c.stopName })) : this.esc(this.t('dades.gpsListNoNearStop'))}</strong>
-            <span>${c.lines.map(code => this.lineChip(code)).join(' ')} ${c.vehicles} ${this.esc(this.t(c.vehicles === 1 ? 'dades.gpsBusOne' : 'dades.gpsBusMany'))} · ${this.esc(this.t('dades.gpsListMedian', { val: this.fmtGapDuration(c.medianGapSec) }))}</span>
+            <span>${c.lines.map(code => this.lineChip(code)).join(' ')} ${c.vehicles} ${this.esc(this.t(isStopMode ? (c.vehicles === 1 ? 'dades.gpsStopTripOne' : 'dades.gpsStopTripMany') : (c.vehicles === 1 ? 'dades.gpsBusOne' : 'dades.gpsBusMany')))} · ${this.esc(this.t('dades.gpsListMedian', { val: this.fmtGapDuration(c.medianGapSec) }))}</span>
           </span>
           <span class="gps-gaps-item-count">${c.count}<small>${this.esc(this.t(c.count === 1 ? 'dades.gpsLossOne' : 'dades.gpsLossMany'))}</small></span>
         </button>
@@ -838,14 +953,16 @@ class ObservatoriApp {
 
     if (map) {
       // Straight from where the signal went to where it came back: the bus
-      // drove the street in between with no GPS.
-      // With the slider up, only the streets of the points still shown.
+      // drove the street in between with no GPS (skipped in per-stop mode).
       const shown = new Set(cells.map(c => allCells.indexOf(c)));
-      for (const g of (data.gaps || [])) {
-        if (min > 1 && !shown.has(g.cell)) continue;
-        L.polyline([[g.lostLat, g.lostLon], [g.regainedLat, g.regainedLon]], {
-          color: '#fbbf24', weight: 2.5, opacity: 0.7, dashArray: '4 6', interactive: false
-        }).addTo(this.gpsGapLayer);
+      if (!isStopMode) {
+        for (const g of (data.gaps || [])) {
+          if (min > 1 && !shown.has(g.cell)) continue;
+          if (g.lostLat === g.regainedLat && g.lostLon === g.regainedLon) continue;
+          L.polyline([[g.lostLat, g.lostLon], [g.regainedLat, g.regainedLon]], {
+            color: '#fbbf24', weight: 2.5, opacity: 0.7, dashArray: '4 6', interactive: false
+          }).addTo(this.gpsGapLayer);
+        }
       }
       // Smallest first, so the busiest points are drawn on top.
       for (let i = cells.length - 1; i >= 0; i--) {

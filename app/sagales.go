@@ -511,6 +511,19 @@ func (p *sagalesPoller) pollOne(ctx context.Context, routeID, dirID int, wantSta
 	}
 
 	p.buses[fmt.Sprintf("%d:%d", routeID, dirID)] = buses
+	if bg := busGapsLive.Load(); bg != nil {
+		dirStr := strconv.Itoa(dirID)
+		for _, b := range buses {
+			if b.VehicleID == "" || (b.Lat == 0 && b.Lon == 0) {
+				continue
+			}
+			obsMs := float64(b.ObservedMs)
+			if obsMs <= 0 {
+				obsMs = float64(now.UnixMilli())
+			}
+			bg.observeGPS(sagalesAgencyID, b.VehicleID, b.LineCode, dirStr, b.StopName, b.Lat, b.Lon, obsMs)
+		}
+	}
 
 	// Rebuild predictions for this (routeID, dirID) across stops.
 	byStop := map[string][]sagalesStopPred{}

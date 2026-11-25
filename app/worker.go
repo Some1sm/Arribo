@@ -170,6 +170,7 @@ type Worker struct {
 	stopMov  func()         // stops the Moventis poller (a no-op unless ARRIBO_MOVENTIS=1)
 	stopSag  func()         // stops the Sagalés poller (a no-op unless ARRIBO_SAGALES=1)
 	stopAmbV func()         // stops the AMB vehicle-GPS poller (a no-op unless ARRIBO_AMB_VEHICLES=1)
+	stopBusG func()         // flushes and stops the multi-operator bus gap store
 	railTT   railTimetables // read-only rail timetables for station departures (worker lock)
 	inbox    *msgQueue[workerMsg]
 	out      func(serverMsg)
@@ -226,6 +227,7 @@ func (k *Worker) boot() {
 	})
 	k.registry.isInitialized = true
 	k.daemon.start()
+	k.stopBusG = startBusGapStore()
 	k.stopRt = startGtfsRtPollers()
 	k.stopMov = startMoventisPoller()
 	k.stopSag = startSagalesPoller()
@@ -316,6 +318,13 @@ func (k *Worker) handleMasterMessage(m workerMsg) {
 			go func() {
 				defer stopWG.Done()
 				k.stopRt()
+			}()
+		}
+		if k.stopBusG != nil {
+			stopWG.Add(1)
+			go func() {
+				defer stopWG.Done()
+				k.stopBusG()
 			}()
 		}
 		stopWG.Wait()

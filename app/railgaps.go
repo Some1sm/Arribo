@@ -57,7 +57,11 @@ func (p *rtPoller) noteGaps(snap *rtSnapshot) {
 		))
 		if gap != nil {
 			gap.Set("agencyId", p.src.AgencyID)
-			gap.Set("mode", "rail")
+			mode := p.src.Mode
+			if mode == "" {
+				mode = "rail"
+			}
+			gap.Set("mode", mode)
 			out = append(out, gap)
 		}
 	}

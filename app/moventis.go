@@ -1378,6 +1378,9 @@ func (p *movPoller) record(s *movStatic, stopID int, etas []movStopETA, at time.
 	if p.sched != nil {
 		p.sched.record(stopID, etas, at)
 	}
+	if bg := busGapsLive.Load(); bg != nil {
+		bg.observeMovStopArrivals(s, stopID, etas, at)
+	}
 	followed := map[int]bool{}
 	for _, id := range p.lineIDs {
 		followed[id] = true

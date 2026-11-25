@@ -12286,6 +12286,8 @@ body[data-dades-scope="est"] #operators-section,
 body[data-dades-scope="est"] .dades-bus-scope-only { display: none !important; }
 .dades-mov-section { margin-bottom: 1.5rem; }
 .dades-mov-dist-body { display: flex; flex-direction: column; gap: var(--space-4); padding-top: var(--space-2); }
+#gps-gaps-lines.is-dynamic-lines { display: flex; flex-wrap: wrap; }
+.line-chip[data-line] { background: var(--line-color, var(--brand-primary)); color: var(--line-ink, var(--text-primary)); }
 .dades-mov-name { margin-left: var(--space-2); color: var(--text-secondary); font-weight: 500; }
 .dades-mov-muted { color: var(--text-muted); }
 .dades-mov-open { white-space: nowrap; }

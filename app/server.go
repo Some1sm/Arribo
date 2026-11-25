@@ -2274,17 +2274,23 @@ func (s *Server) hInspect(q *xreq, res *xres) error {
 }
 
 var reGapLine = regexp.MustCompile(`^L?[1-8]$`)
+var reGapCatalogLine = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._/-]{0,15}$`)
 var reGapVehicle = regexp.MustCompile(`^\d{3,6}$`)
+var reGapCatalogVehicle = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$`)
 
 func (s *Server) hGpsGaps(q *xreq, res *xres) error {
 	days := clampHours(qv(q, "days"), 7, 30)
-	// ?agency=<train operator> reads that operator's position losses
-	// (railgaps.go); without it, Mataró's buses as before.
+	// ?agency=<operator> reads that operator's GPS/signal losses (Mataró Bus,
+	// Moventis, AMB Bus, Sagalés, Rodalies, FGC); without it, Mataró's buses.
 	agency := ""
 	if a := jsTrim(jsString(or(qv(q, "agency"), ""))); a != "" && a != mataroAgency.ID {
-		for _, op := range reportOperators {
-			if op.ID == a {
-				agency = a
+		if isBusGapStoreAgency(a) {
+			agency = a
+		} else {
+			for _, op := range reportOperators {
+				if op.ID == a {
+					agency = a
+				}
 			}
 		}
 		if agency == "" {
@@ -2293,22 +2299,39 @@ func (s *Server) hGpsGaps(q *xreq, res *xres) error {
 			return nil
 		}
 	}
+	signalMode := "gps"
+	if strings.EqualFold(jsTrim(jsString(or(qv(q, "mode"), "gps"))), "stop") && agency == movAgencyID {
+		signalMode = "stop"
+	}
 	rawLine := jsUpper(jsTrim(jsString(or(qv(q, "line"), "all"))))
 	lineCode := ""
 	if agency == "" && reGapLine.MatchString(rawLine) {
 		lineCode = "L" + strings.TrimPrefix(rawLine, "L")
-	} else if agency != "" && rawLine != "ALL" && reRailLineCode.MatchString(rawLine) {
+	} else if agency != "" && rawLine != "ALL" && reGapCatalogLine.MatchString(rawLine) {
 		lineCode = rawLine
 	}
 	rawVehicle := jsTrim(jsString(or(qv(q, "vehicle"), "")))
 	vehicleID := ""
-	if reGapVehicle.MatchString(rawVehicle) {
+	if agency == "" && reGapVehicle.MatchString(rawVehicle) {
+		vehicleID = rawVehicle
+	} else if agency != "" && reGapCatalogVehicle.MatchString(rawVehicle) {
 		vehicleID = rawVehicle
 	}
 	hideRaw := jsString(or(qv(q, "hide"), ""))
 	hide := ""
 	if hideRaw == "suspect" || hideRaw == "watch" {
 		hide = hideRaw
+	}
+	now := float64(nowMs())
+	// Server-side real-time bus feeds (Moventis GPS + per-stop, AMB GPS, Sagalés GPS).
+	if isBusGapStoreAgency(agency) {
+		data := busGapsLive.Load().hotspots(agency, signalMode, lineCode, vehicleID, days, now)
+		if len(data.Arr("lines")) == 0 {
+			data.Set("lines", gapLinesForAgency(agency))
+		}
+		data.Set("availableAgencies", gapAgenciesMeta())
+		res.json(spreadAny(O("success", true), data))
+		return nil
 	}
 	keyLine, keyVeh, keyHide := lineCode, vehicleID, hide
 	if keyLine == "" {
@@ -2324,8 +2347,13 @@ func (s *Server) hGpsGaps(q *xreq, res *xres) error {
 	if agency != "" {
 		cacheKey = agency + ":" + cacheKey
 	}
-	now := float64(nowMs())
 	if data, ok := cacheGetFresh(s.gpsGapCache, cacheKey, now); ok {
+		if o, ok2 := data.(*Obj); ok2 {
+			o.Set("agency", or(strOrNil(agency), mataroAgency.ID))
+			o.Set("signalMode", "gps")
+			o.Set("lines", gapLinesForAgency(agency))
+			o.Set("availableAgencies", gapAgenciesMeta())
+		}
 		res.h.Set("X-Cache", "HIT")
 		res.json(spreadAny(O("success", true), data))
 		return nil
@@ -2338,6 +2366,12 @@ func (s *Server) hGpsGaps(q *xreq, res *xres) error {
 	if err != nil {
 		s.sendInternalError(q, res, err, O("success", false, "cells", []any{}, "gaps", []any{}, "totals", O()))
 		return nil
+	}
+	if o, ok := data.(*Obj); ok {
+		o.Set("agency", or(strOrNil(agency), mataroAgency.ID))
+		o.Set("signalMode", "gps")
+		o.Set("lines", gapLinesForAgency(agency))
+		o.Set("availableAgencies", gapAgenciesMeta())
 	}
 	s.gpsGapCache.Set(cacheKey, &cachedData{data: data, timestamp: now})
 	if s.gpsGapCache.Len() > 20 {

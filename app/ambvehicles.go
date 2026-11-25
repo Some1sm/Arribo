@@ -190,6 +190,21 @@ func (p *ambVehPoller) poll(ctx context.Context) {
 	byLine := p.mergeAndSnapshot(fresh, now)
 	p.snap.Store(&ambVehSnapshot{At: now, ByLine: byLine})
 	p.saveTracked(now, false)
+	if bg := busGapsLive.Load(); bg != nil {
+		obsMs := float64(now.UnixMilli())
+		for _, v := range fresh {
+			if v.VehID == "" {
+				continue
+			}
+			ag, code := classifyAmbVehicleAgency(v.Line)
+			stopName := nearestStopNameForBus(ag, code, v.Lat, v.Lon)
+			dirStr := ""
+			if v.Dir > 0 {
+				dirStr = strconv.Itoa(v.Dir)
+			}
+			bg.observeGPS(ag, v.VehID, code, dirStr, stopName, v.Lat, v.Lon, obsMs)
+		}
+	}
 	p.mu.Lock()
 	recovered := p.lastErr != ""
 	p.lastOK = now
