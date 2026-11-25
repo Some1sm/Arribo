@@ -1755,6 +1755,13 @@ class TransitMap {
       };
       const popupHtml = this.buildBusPopupHtml(bus, popupCtx);
 
+      const pinBaseColor = isGhost
+        ? '#0f172a'
+        : (isEst
+            ? '#f59e0b'
+            : (bus.isTerminalLayover
+                ? '#1d4ed8'
+                : (busColor || '#10b981')));
       const pinBg = isGhost
         ? 'rgba(15, 23, 42, 0.88)'
         : (isEst
@@ -1762,6 +1769,9 @@ class TransitMap {
             : (bus.isTerminalLayover 
                 ? 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)'
                 : (busColor || 'linear-gradient(135deg, #10b981 0%, #059669 100%)')));
+      const pinInk = isGhost
+        ? '#fbbf24'
+        : (window.TransitUtils?.contrastInk ? window.TransitUtils.contrastInk(pinBaseColor) : '#ffffff');
 
       const markerKey = this.busMarkerKey(bus);
 
@@ -1819,6 +1829,7 @@ class TransitMap {
           const pinEl = obj.pinEl || (obj.pinEl = el.querySelector('.live-bus-pin'));
           if (pinEl) {
             pinEl.style.background = pinBg;
+            pinEl.style.color = pinInk;
           }
           const dotEl = obj.dotEl || (obj.dotEl = el.querySelector('.bus-status-dot'));
           if (dotEl) {
@@ -1835,7 +1846,7 @@ class TransitMap {
         const busHtml = bus.isTerminalLayover ? `
           <div class="live-bus-marker-wrap ${isSelected ? 'selected' : ''} ${isGhost ? 'ghost-bus' : ''}">
             <div class="bus-selection-ring" style="${isSelected ? '' : 'display:none;'}"></div>
-            <div class="live-bus-pin" style="background: ${isGhost ? 'rgba(15, 23, 42, 0.88)' : 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)'};">
+            <div class="live-bus-pin" style="background: ${isGhost ? 'rgba(15, 23, 42, 0.88)' : 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)'}; color: ${pinInk};">
               <span class="bus-icon-inner">${isGhost ? '⚡' : '🅿️'}</span>
               ${isGhost ? `<span class="bus-status-dot ghost"></span>` : ''}
             </div>
@@ -1846,7 +1857,7 @@ class TransitMap {
             <div class="bus-heading-cone" style="transform: rotate(${bearingAngle}deg);">
               <div class="bus-heading-arrow"></div>
             </div>
-            <div class="live-bus-pin" style="background: ${pinBg};">
+            <div class="live-bus-pin" style="background: ${pinBg}; color: ${pinInk};">
               <span class="bus-icon-inner" style="transform: scaleX(${isHeadingWest ? -1 : 1});">${isGhost ? '⚡' : (bus.positionSource === 'gtfsrt' ? TRAIN_ICON_INNER_SVG : CANONICAL_BUS_ICON_INNER_SVG)}</span>
               <span class="bus-status-dot ${isGhost ? 'ghost' : (isEst ? 'estimated' : 'live')}"></span>
             </div>

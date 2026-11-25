@@ -566,10 +566,13 @@ class TransitApp {
     );
     if (direction !== null) {
       this.activeDirection = String(direction);
+      this._autoPickActiveDirLine = null;
     } else if (lineObj?.directions?.length > 0) {
       this.activeDirection = String(lineObj.directions[0].dirId !== undefined ? lineObj.directions[0].dirId : '0');
+      this._autoPickActiveDirLine = String(lineId);
     } else {
       this.activeDirection = '0';
+      this._autoPickActiveDirLine = String(lineId);
     }
 
     const hash = `#l${this.activeLineId}`;
@@ -624,8 +627,11 @@ class TransitApp {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  switchDirection(dirId) {
+  switchDirection(dirId, opts = {}) {
     if (!dirId || dirId === this.activeDirection) return;
+    if (!opts.auto) {
+      this._autoPickActiveDirLine = null;
+    }
     this.activeDirection = String(dirId);
     this.selectedVehicleId = null;
     this.mapController?.clearVehicleTrail();
@@ -1743,6 +1749,14 @@ class TransitApp {
 
         // 2.1 Process pending shared link focus (bus, stop, or search query)
         this.processPendingSharedFocus(lData);
+
+        // 2.2 When opening a line without an explicit direction, if the default
+        // direction currently has no active transport, check if another single
+        // direction is the only one with active transport and switch to it.
+        if (this._autoPickActiveDirLine === String(lId) && !this.pendingDirection) {
+          this._autoPickActiveDirLine = null;
+          this.maybeAutoPickActiveDirection(lId, dir, lData, lineMeta);
+        }
       }
 
       // 3. Asynchronously handle Target Stop ETA without delaying map transition
@@ -2047,10 +2061,11 @@ class TransitApp {
         : t('banner.notices');
     }
     if (!banner || !titleEl || !descEl) return;
-    let list = document.getElementById('rail-alerts-list');
+    let drawer = document.getElementById('rail-alerts-drawer');
     if (alerts.length === 0) {
       banner.style.display = 'none';
-      list?.remove();
+      banner.classList.remove('is-expanded');
+      drawer?.remove();
       return;
     }
     const lang = window.ArriboI18n?.lang || 'ca';
@@ -2061,30 +2076,91 @@ class TransitApp {
     const titleOf = (a) => a.header || firstSentence(a.description) || t('banner.defaultDesc');
     const langTag = (a) => (a.lang && a.lang !== lang ? ` [${String(a.lang).toUpperCase()}]` : '');
     const stopsOf = (a) => (Array.isArray(a.stops) && a.stops.length ? t('railAlert.stations', { names: a.stops.map(s => s.name).join(', ') }) : '');
+    const extraDescOf = (a) => {
+      const desc = String(a.description || '').trim();
+      const hdr = String(a.header || '').trim();
+      if (!desc) return '';
+      if (hdr && hdr.toLowerCase().includes(desc.toLowerCase())) return '';
+      if (!hdr && titleOf(a).toLowerCase() === desc.toLowerCase()) return '';
+      return desc;
+    };
     // The link comes from the operator's feed: web links only.
     const safeUrl = (u) => /^https?:\/\//i.test(String(u || ''));
     const first = alerts[0];
     titleEl.textContent = t('banner.alert', { title: titleOf(first) }) + langTag(first);
-    const extraDesc = first.header && first.description && !first.header.toLowerCase().includes(first.description.toLowerCase()) ? first.description : '';
-    descEl.textContent = [extraDesc, stopsOf(first)].filter(Boolean).join(' · ');
+    descEl.textContent = [extraDescOf(first), stopsOf(first)].filter(Boolean).join(' · ');
+
+    const contentEl = banner.querySelector('.disruption-banner-content');
+    const wasOpen = Boolean(drawer && drawer.classList.contains('is-open'));
+    if (!drawer && contentEl) {
+      drawer = document.createElement('div');
+      drawer.id = 'rail-alerts-drawer';
+      drawer.className = 'rail-alerts-drawer';
+      drawer.innerHTML = '<div class="rail-alerts-drawer-inner"><ul id="rail-alerts-list" class="rail-alerts-list"></ul></div>';
+      contentEl.appendChild(drawer);
+    }
+    const list = drawer?.querySelector('#rail-alerts-list');
+    if (list) {
+      list.innerHTML = alerts.map(a => {
+        const extra = extraDescOf(a);
+        const stops = stopsOf(a);
+        return `<li><strong>${this.esc(titleOf(a))}${this.esc(langTag(a))}</strong>${extra ? `<p>${this.esc(extra)}</p>` : ''}${stops ? `<p class="rail-alerts-stops">${this.esc(stops)}</p>` : ''}${safeUrl(a.url) ? `<a class="rail-alerts-link" href="${this.esc(a.url)}" target="_blank" rel="noopener noreferrer">${this.esc(t('railAlert.more'))}<span aria-hidden="true">↗</span></a>` : ''}</li>`;
+      }).join('');
+    }
+    if (drawer) {
+      drawer.classList.toggle('is-open', wasOpen);
+      drawer.setAttribute('aria-hidden', wasOpen ? 'false' : 'true');
+    }
+    banner.classList.toggle('is-expanded', wasOpen);
+
     const btn = document.getElementById('btn-view-disruption-details');
     if (btn) {
       btn.hidden = false;
-      btn.textContent = alerts.length > 1 ? t('railAlert.showAll', { n: alerts.length }) : t('banner.details');
+      const btnLabel = alerts.length > 1 ? t('railAlert.showAll', { n: alerts.length }) : t('banner.details');
+      btn.innerHTML = `<span>${this.esc(btnLabel)}</span><svg class="disruption-banner-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>`;
+      btn.setAttribute('aria-expanded', wasOpen ? 'true' : 'false');
+      btn.setAttribute('aria-controls', 'rail-alerts-drawer');
       btn.onclick = (e) => {
         e.preventDefault();
-        list = document.getElementById('rail-alerts-list');
-        if (list) { list.remove(); return; }
-        list = document.createElement('ul');
-        list.id = 'rail-alerts-list';
-        list.className = 'rail-alerts-list';
-        list.innerHTML = alerts.map(a => `<li><strong>${this.esc(titleOf(a))}${this.esc(langTag(a))}</strong>${a.description && a.header ? `<p>${this.esc(a.description)}</p>` : (a.description && titleOf(a) !== a.description ? `<p>${this.esc(a.description)}</p>` : '')}${stopsOf(a) ? `<p class="rail-alerts-stops">${this.esc(stopsOf(a))}</p>` : ''}${safeUrl(a.url) ? `<a href="${this.esc(a.url)}" target="_blank" rel="noopener noreferrer">${this.esc(t('railAlert.more'))}</a>` : ''}</li>`).join('');
-        banner.querySelector('.disruption-banner-content')?.appendChild(list);
+        const curDrawer = document.getElementById('rail-alerts-drawer');
+        if (!curDrawer) return;
+        const nextOpen = !curDrawer.classList.contains('is-open');
+        curDrawer.classList.toggle('is-open', nextOpen);
+        curDrawer.setAttribute('aria-hidden', nextOpen ? 'false' : 'true');
+        banner.classList.toggle('is-expanded', nextOpen);
+        btn.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
       };
     }
-    // A redraw (new data, language) closes an open list rather than leaving stale text.
-    list?.remove();
     banner.style.display = 'flex';
+  }
+
+  async maybeAutoPickActiveDirection(lId, currentDir, lData, lineMeta) {
+    const countActive = (buses) => (Array.isArray(buses) ? buses.filter(b => b && !b.stale).length : 0);
+    if (countActive(lData?.activeBuses) > 0) return;
+    const dirs = (lineMeta?.directions || lData?.directions || [])
+      .map(d => (d && d.dirId !== undefined ? String(d.dirId) : null))
+      .filter((d, i, arr) => d !== null && d !== 'both' && arr.indexOf(d) === i);
+    const others = dirs.filter(d => d !== String(currentDir));
+    if (others.length === 0) return;
+
+    const results = await Promise.all(others.map(async (otherDir) => {
+      try {
+        const res = await fetch(`/api/line/${lId}?direction=${otherDir}`).then(r => r.json());
+        if (res && res.success && res.data) {
+          this.setLineCache(`${lId}_${otherDir}`, res.data);
+          return { dir: otherDir, count: countActive(res.data.activeBuses) };
+        }
+      } catch {
+        // ignore probe error
+      }
+      return { dir: otherDir, count: 0 };
+    }));
+
+    if (this.activeLineId !== String(lId) || this.activeDirection !== String(currentDir)) return;
+    const activeOthers = results.filter(r => r.count > 0);
+    if (activeOthers.length === 1) {
+      this.switchDirection(activeOthers[0].dir, { auto: true });
+    }
   }
 
   renderUpstreamOutageBanner(isOutage) {
@@ -5719,21 +5795,27 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
       let startHeight = 0;
 
       const onStart = (e) => {
+        if (e.type === 'mousedown') e.preventDefault();
         isDragging = true;
         startY = (e.touches && e.touches.length > 0) ? e.touches[0].clientY : e.clientY;
-        startHeight = mapContainer.offsetHeight;
+        startHeight = mapContainer.getBoundingClientRect().height || mapContainer.offsetHeight;
         resizeBar.classList.add('dragging');
+        mapContainer.classList.add('is-resizing');
         document.body.style.cursor = 'ns-resize';
+        document.body.style.userSelect = 'none';
       };
 
       const onMove = (e) => {
         if (!isDragging) return;
+        if (e.cancelable) e.preventDefault();
         const clientY = (e.touches && e.touches.length > 0) ? e.touches[0].clientY : e.clientY;
         if (typeof clientY !== 'number') return;
         
         const delta = clientY - startY;
-        const newHeight = Math.max(260, Math.min(800, startHeight + delta));
+        const newHeight = Math.max(260, Math.min(900, Math.round(startHeight + delta)));
         mapContainer.style.height = `${newHeight}px`;
+        mapContainer.style.minHeight = `${Math.min(260, newHeight)}px`;
+        mapContainer.style.maxHeight = 'none';
         this.mapController?.invalidateSize();
       };
 
@@ -5741,7 +5823,9 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
         if (isDragging) {
           isDragging = false;
           resizeBar.classList.remove('dragging');
+          mapContainer.classList.remove('is-resizing');
           document.body.style.cursor = '';
+          document.body.style.userSelect = '';
           this.mapController?.invalidateSize();
         }
       };
@@ -5750,7 +5834,7 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
       resizeBar.addEventListener('touchstart', onStart, { passive: true });
 
       window.addEventListener('mousemove', onMove);
-      window.addEventListener('touchmove', onMove, { passive: true });
+      window.addEventListener('touchmove', onMove, { passive: false });
 
       window.addEventListener('mouseup', onEnd);
       window.addEventListener('touchend', onEnd);

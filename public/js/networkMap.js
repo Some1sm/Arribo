@@ -313,6 +313,7 @@ class NetworkMap extends TransitMap {
       // colour: it is old, not live.
       const stale = Boolean(t.stale);
       const pinBg = stale ? ring : lineColor;
+      const pinInk = stale ? '' : (window.TransitUtils?.contrastInk ? window.TransitUtils.contrastInk(lineColor) : '#ffffff');
       const popupHtml = buildTrainPopupHtml(t, operators.get(t.agencyId), this.trainLineRefs.get(`${t.agencyId}:${t.lineCode}`));
       const existing = this.trainMarkers.get(t.id);
       if (existing) {
@@ -322,7 +323,10 @@ class NetworkMap extends TransitMap {
           if (el) {
             el.querySelector('.live-bus-marker-wrap')?.classList.toggle('stale-train', stale);
             const pin = el.querySelector('.live-bus-pin');
-            if (pin) pin.style.background = pinBg;
+            if (pin) {
+              pin.style.background = pinBg;
+              pin.style.color = pinInk;
+            }
             const dot = el.querySelector('.bus-status-dot');
             if (dot) dot.className = `bus-status-dot ${stale ? 'stale' : 'live'}`;
           }
@@ -335,7 +339,7 @@ class NetworkMap extends TransitMap {
         }
         continue;
       }
-      const html = vehiclePinHtml({ cls: `train-marker${stale ? ' stale-train' : ''}`, bg: pinBg, icon: TRAIN_ICON_INNER_SVG, dot: stale ? 'stale' : 'live' });
+      const html = vehiclePinHtml({ cls: `train-marker${stale ? ' stale-train' : ''}`, bg: pinBg, ink: pinInk, icon: TRAIN_ICON_INNER_SVG, dot: stale ? 'stale' : 'live' });
       const marker = L.marker([lat, lon], {
         icon: L.divIcon({ html, className: 'c10-live-bus-icon', iconSize: [44, 44], iconAnchor: [22, 22] }),
         zIndexOffset: stale ? 900 : 1000,
@@ -798,6 +802,11 @@ class NetworkMap extends TransitMap {
         showLineLink: !bus.isSpecialService
       });
 
+      const pinBaseColor = isGhost
+        ? '#0f172a'
+        : (isEst
+            ? '#f59e0b'
+            : (bus.isTerminalLayover ? '#1d4ed8' : (geom.color || '#10b981')));
       const pinBg = isGhost
         ? 'rgba(15, 23, 42, 0.88)'
         : (isEst
@@ -805,6 +814,9 @@ class NetworkMap extends TransitMap {
             : (bus.isTerminalLayover
                 ? 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)'
                 : `linear-gradient(135deg, ${geom.color} 0%, ${shade(geom.color, -18)} 100%)`));
+      const pinInk = isGhost
+        ? '#fbbf24'
+        : (window.TransitUtils?.contrastInk ? window.TransitUtils.contrastInk(pinBaseColor) : '#ffffff');
 
       const existing = this.busMarkersMap.get(key);
       if (existing) {
@@ -824,7 +836,10 @@ class NetworkMap extends TransitMap {
           const wrapEl = existing.wrapEl || (existing.wrapEl = el.querySelector('.live-bus-marker-wrap'));
           if (wrapEl) wrapEl.classList.toggle('ghost-bus', isGhost);
           const pinEl = existing.pinEl || (existing.pinEl = el.querySelector('.live-bus-pin'));
-          if (pinEl) pinEl.style.background = pinBg;
+          if (pinEl) {
+            pinEl.style.background = pinBg;
+            pinEl.style.color = pinInk;
+          }
           const dotEl = existing.dotEl || (existing.dotEl = el.querySelector('.bus-status-dot'));
           if (dotEl) dotEl.className = `bus-status-dot ${isGhost ? 'ghost' : (isEst ? 'estimated' : 'live')}`;
         }
@@ -839,7 +854,7 @@ class NetworkMap extends TransitMap {
           <div class="bus-heading-cone" style="transform: rotate(${bearingAngle}deg);">
             <div class="bus-heading-arrow"></div>
           </div>
-          <div class="live-bus-pin" style="background: ${pinBg};">
+          <div class="live-bus-pin" style="background: ${pinBg}; color: ${pinInk};">
             <span class="bus-icon-inner" style="transform: scaleX(${isHeadingWest ? -1 : 1});">${isGhost ? '⚡' : CANONICAL_BUS_ICON_INNER_SVG}</span>
             <span class="bus-status-dot ${isGhost ? 'ghost' : (isEst ? 'estimated' : 'live')}"></span>
           </div>
@@ -1076,10 +1091,11 @@ function buildTrainPopupHtml(t, op, lineRef) {
 window.buildTrainPopupHtml = buildTrainPopupHtml;
 
 /** A vehicle pin (train or bus): the markup Mataró's bus pins use. */
-function vehiclePinHtml({ cls, bg, icon, dot }) {
+function vehiclePinHtml({ cls, bg, ink, icon, dot }) {
+  const colorStyle = ink ? ` color: ${ink};` : '';
   return `
         <div class="live-bus-marker-wrap ${cls}">
-          <div class="live-bus-pin" style="background: ${bg};">
+          <div class="live-bus-pin" style="background: ${bg};${colorStyle}">
             <span class="bus-icon-inner">${icon}</span>
             <span class="bus-status-dot ${dot}"></span>
           </div>
