@@ -296,20 +296,20 @@ func (s *Server) railDepartures(q *xreq, res *xres, info operatorInfo, op *rtCat
 		res.json(O("success", false, "error", "Unknown station for this line"))
 		return
 	}
-	if info.ID == movAgencyID {
-		// On-demand Moventis stop predictions + scheduled times (30 s TTL cache),
-		// falling back to the background poller's snapshot and Gencat timetable.
-		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-		out := movStopDepartures(ctx, stop, code, time.UnixMilli(nowMs()))
-		cancel()
-		res.json(O("success", true, "data", out))
-		return
-	}
 	direction := ""
 	if v := qv(q, "direction"); !isUndef(v) {
 		direction = jsTrim(jsString(v))
 	}
 	now := time.UnixMilli(nowMs())
+	if info.ID == movAgencyID {
+		// On-demand Moventis stop predictions + scheduled times (30 s TTL cache),
+		// falling back to the background poller's snapshot and Gencat timetable.
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		out := movStopDepartures(ctx, stop, code, direction, now)
+		cancel()
+		res.json(O("success", true, "data", out))
+		return
+	}
 	if info.ID == sagalesAgencyID {
 		res.json(O("success", true, "data", sagalesStopDepartures(stop, code, direction, now)))
 		return

@@ -214,29 +214,40 @@ func movTimeClaimed(dir string, t time.Time, claimed []movClaimed) bool {
 }
 
 // movEstimateDelay compares a live Moventis predicted arrival (expected)
-// against the official Generalitat GTFS schedule (gencatData), the current
-// live response's scheduled times (extraSched), or the rolling 24h schedule
-// cache (p.sched) to compute scheduledTime, delayMins, status, and badge text.
+// against the direction-matched live scheduled times (extraSched), the
+// rolling 24h schedule cache filtered by direction (p.sched), or the bundled
+// Generalitat GTFS schedule (gencatData) to compute scheduledTime, delayMins,
+// status, and badge text.
 // Returns the matched scheduled time so the caller can suppress duplicate
 // theoretical rows when a live bus is running late or early.
-func movEstimateDelay(p *movPoller, lineID, stopID int, expected, now time.Time, extraSched []string) (matched time.Time, hasMatch bool, schedTime, aimedIso, delayMins any, delayStatus, badgeText, delaySource string) {
+func movEstimateDelay(p *movPoller, lineID, stopID int, dirStr string, routes []movRoute, expected, now time.Time, extraSched []string) (matched time.Time, hasMatch bool, schedTime, aimedIso, delayMins any, delayStatus, badgeText, delaySource string) {
 	delayStatus = "unknown"
 	badgeText = "Previsió de Moventis"
 	delaySource = "operator_prediction"
 
-	if gc := gencatData(); gc != nil {
-		matched, hasMatch = gc.nearestDeparture(lineID, stopID, expected, movDelayMaxEarly, movDelayMaxLate)
-	}
-	if !hasMatch && len(extraSched) > 0 {
+	if len(extraSched) > 0 {
 		matched, hasMatch = matchMovSched(extraSched, expected, movDelayMaxEarly, movDelayMaxLate)
 	}
 	if !hasMatch && p != nil && p.sched != nil {
 		if byDest := p.sched.lookup(lineID, stopID, now); len(byDest) > 0 {
-			var all []string
-			for _, list := range byDest {
-				all = append(all, list...)
+			var dirTimes, allTimes []string
+			for dest, list := range byDest {
+				allTimes = append(allTimes, list...)
+				if d, _ := movMatchRoute(routes, dest); d == dirStr {
+					dirTimes = append(dirTimes, list...)
+				}
 			}
-			matched, hasMatch = matchMovSched(all, expected, movDelayMaxEarly, movDelayMaxLate)
+			if len(dirTimes) > 0 {
+				matched, hasMatch = matchMovSched(dirTimes, expected, movDelayMaxEarly, movDelayMaxLate)
+			}
+			if !hasMatch && len(allTimes) > 0 {
+				matched, hasMatch = matchMovSched(allTimes, expected, movDelayMaxEarly, movDelayMaxLate)
+			}
+		}
+	}
+	if !hasMatch {
+		if gc := gencatData(); gc != nil {
+			matched, hasMatch = gc.nearestDeparture(lineID, stopID, expected, movDelayMaxEarly, movDelayMaxLate)
 		}
 	}
 	if !hasMatch {
@@ -249,6 +260,59 @@ func movEstimateDelay(p *movPoller, lineID, stopID int, expected, now time.Time,
 	delayStatus, badgeText = railDelayLabel(dMin, false)
 	delaySource = "timetable"
 	return
+}
+
+// movFilterDepsByDir filters Moventis stop departures by the requested
+// direction ("0", "1", ... or ""/"both"). At a shared terminal stop (e.g.
+// Metro La Pau 19946 or Hospital de Mataró 7340, which is the final drop-off
+// stop of one direction and the origin boarding stop of the opposite
+// direction), ""/"both" suppresses the drop-off-only terminating direction so
+// "Sortides" lists only boardable departures instead of mixing in arrivals.
+func movFilterDepsByDir(deps []any, direction string, routes []movRoute, stopNum int) []any {
+	if len(deps) == 0 {
+		return deps
+	}
+	if direction != "" && direction != "both" {
+		out := make([]any, 0, len(deps))
+		for _, raw := range deps {
+			if o, ok := raw.(*Obj); ok && jsString(o.Get("direction")) == direction {
+				out = append(out, raw)
+			}
+		}
+		return out
+	}
+	dropOnlyDirs := map[string]bool{}
+	hasBoardingDir := false
+	for _, rt := range routes {
+		if len(rt.Stops) < 2 {
+			continue
+		}
+		dStr := numToString(float64(movDirectionOf(routes, rt.Trayecto)))
+		lastIdx := len(rt.Stops) - 1
+		isLast := rt.Stops[lastIdx].ID == stopNum
+		isBoardable := false
+		for i := 0; i < lastIdx; i++ {
+			if rt.Stops[i].ID == stopNum {
+				isBoardable = true
+				break
+			}
+		}
+		if isBoardable {
+			hasBoardingDir = true
+		} else if isLast {
+			dropOnlyDirs[dStr] = true
+		}
+	}
+	if !hasBoardingDir || len(dropOnlyDirs) == 0 {
+		return deps
+	}
+	out := make([]any, 0, len(deps))
+	for _, raw := range deps {
+		if o, ok := raw.(*Obj); ok && !dropOnlyDirs[jsString(o.Get("direction"))] {
+			out = append(out, raw)
+		}
+	}
+	return out
 }
 
 func movTheoDep(destTitle any, dirStr string, at, now time.Time) *Obj {
@@ -309,7 +373,7 @@ func movBuildLiveAndSchedDeps(p *movPoller, lineID, stopNum int, routes []movRou
 			left = math.Max(left, 0)
 			at := now.Add(time.Duration(left) * time.Second)
 			claimed = append(claimed, movClaimed{dir: dirStr, at: at})
-			matched, hasMatch, sTime, aIso, dMins, dStatus, dBadge, dSource := movEstimateDelay(p, lineID, stopNum, at, now, dirSched)
+			matched, hasMatch, sTime, aIso, dMins, dStatus, dBadge, dSource := movEstimateDelay(p, lineID, stopNum, dirStr, routes, at, now, dirSched)
 			if hasMatch {
 				claimed = append(claimed, movClaimed{dir: dirStr, at: matched})
 			}
@@ -357,8 +421,9 @@ func movBuildLiveAndSchedDeps(p *movPoller, lineID, stopNum int, routes []movRou
 
 // movStopDepartures is the line view's departures at a stop of a Moventis
 // line: live on-demand predictions + scheduled departures (30 s TTL cache),
-// falling back to the background poller's last snapshot.
-func movStopDepartures(ctx context.Context, stop rtLineStop, code string, now time.Time) *Obj {
+// filtered to direction ("0", "1", ... or ""/"both"), falling back to the
+// background poller's last snapshot.
+func movStopDepartures(ctx context.Context, stop rtLineStop, code, direction string, now time.Time) *Obj {
 	deps := []any{}
 	note := "not_sampled"
 	p := movLive.Load()
@@ -389,6 +454,7 @@ func movStopDepartures(ctx context.Context, stop rtLineStop, code string, now ti
 				continue
 			}
 
+			var lineDeps []any
 			var claimed []movClaimed
 			// 1. Try live on-demand fetch (30 s cache) for real-time + scheduled departures.
 			if etas, fetchedAt, ok := movFetchStopLive(ctx, p, snap.Static, id, stopNum, now); ok {
@@ -397,7 +463,7 @@ func movStopDepartures(ctx context.Context, stop rtLineStop, code string, now ti
 				liveDeps, liveClaimed := movBuildLiveAndSchedDeps(p, id, stopNum, routes, etas, age, now)
 				if len(liveDeps) > 0 {
 					note = ""
-					deps = append(deps, liveDeps...)
+					lineDeps = append(lineDeps, liveDeps...)
 				}
 				claimed = append(claimed, liveClaimed...)
 			} else {
@@ -428,11 +494,11 @@ func movStopDepartures(ctx context.Context, stop rtLineStop, code string, now ti
 							left = math.Max(left, 0)
 							at := now.Add(time.Duration(left) * time.Second)
 							claimed = append(claimed, movClaimed{dir: dirStr, at: at})
-							matched, hasMatch, sTime, aIso, dMins, dStatus, dBadge, dSource := movEstimateDelay(p, id, st.ID, at, now, nil)
+							matched, hasMatch, sTime, aIso, dMins, dStatus, dBadge, dSource := movEstimateDelay(p, id, st.ID, dirStr, routes, at, now, nil)
 							if hasMatch {
 								claimed = append(claimed, movClaimed{dir: dirStr, at: matched})
 							}
-							deps = append(deps, O(
+							lineDeps = append(lineDeps, O(
 								"tripId", nil,
 								"vehicleId", nil,
 								"destination", strOrNil(movCleanDest(rt.Dest, &rt)),
@@ -473,24 +539,30 @@ func movStopDepartures(ctx context.Context, stop rtLineStop, code string, now ti
 							}
 							claimed = append(claimed, movClaimed{dir: dirStr, at: at})
 							note = ""
-							deps = append(deps, movTheoDep(destTitle, dirStr, at, now))
+							lineDeps = append(lineDeps, movTheoDep(destTitle, dirStr, at, now))
 						}
 					}
 				}
 			}
 
+			lineDeps = movFilterDepsByDir(lineDeps, direction, routes, stopNum)
+
 			// 4. Last-resort fallback: bundled Generalitat timetable so stops
 			// never show empty "0 sortides" if moventis.es is throttled/down.
-			if len(deps) == 0 {
+			if len(lineDeps) == 0 {
 				if gc := gencatData(); gc != nil {
 					times := gc.upcomingDepartures(id, stopNum, now, 120*time.Minute)
 					destFallback := ""
 					dirFallback := "0"
 					for _, rt := range routes {
+						dStr := numToString(float64(movDirectionOf(routes, rt.Trayecto)))
+						if direction != "" && direction != "both" && dStr != direction {
+							continue
+						}
 						for _, st := range rt.Stops {
 							if st.ID == stopNum {
 								destFallback = movTitle(rt.Dest)
-								dirFallback = numToString(float64(movDirectionOf(routes, rt.Trayecto)))
+								dirFallback = dStr
 								break
 							}
 						}
@@ -498,12 +570,15 @@ func movStopDepartures(ctx context.Context, stop rtLineStop, code string, now ti
 							break
 						}
 					}
-					for _, at := range times {
-						note = ""
-						deps = append(deps, movTheoDep(strOrNil(destFallback), dirFallback, at, now))
+					if destFallback != "" {
+						for _, at := range times {
+							note = ""
+							lineDeps = append(lineDeps, movTheoDep(strOrNil(destFallback), dirFallback, at, now))
+						}
 					}
 				}
 			}
+			deps = append(deps, lineDeps...)
 		}
 	}
 	sort.SliceStable(deps, func(i, j int) bool {

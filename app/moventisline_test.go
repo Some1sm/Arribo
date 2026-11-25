@@ -45,3 +45,43 @@ func TestMovLateLiveSuppressesClaimedScheduledSlot(t *testing.T) {
 		t.Fatalf("unexpected claim of 16:55 slot in opposite dir 0")
 	}
 }
+
+func TestMovDirectionFilterAndSharedTerminus(t *testing.T) {
+	// Metro La Pau (19946) is the last drop-off stop of dir 0 (BCN) and first
+	// boarding stop of dir 1 (Mataró), matching the official C-10 timetable
+	// (45-min headway per direction).
+	routes := []movRoute{
+		{LineID: 53, Trayecto: 1, Dest: "BCN", Stops: []movStop{{ID: 7340, Name: "Hospital"}, {ID: 19946, Name: "Metro La Pau"}}},
+		{LineID: 53, Trayecto: 2, Dest: "MATARÓ", Stops: []movStop{{ID: 19946, Name: "Metro La Pau"}, {ID: 7340, Name: "Hospital"}}},
+	}
+	now := time.Date(2026, 11, 25, 16, 37, 0, 0, madrid)
+	etas := []movStopETA{
+		{LineID: 53, Dest: "(C10) MATARÓ - BCN (PER LA NII)", Sched: []string{"16:35", "17:20", "18:05"}},
+		{LineID: 53, Dest: "(C10) BCN - MATARÓ (PER LA NII)", Sched: []string{"16:45", "17:30", "18:15"}},
+		{LineID: 53, Dest: "Mataró", EtaSec: []float64{15 * 60}}, // 16:52 (+7 min for 16:45)
+	}
+	allDeps, _ := movBuildLiveAndSchedDeps(nil, 53, 19946, routes, etas, 0, now)
+
+	// Explicit direction=1 (Cap a Mataró): only the 3 Mataró-bound departures (45 min apart).
+	dir1 := movFilterDepsByDir(allDeps, "1", routes, 19946)
+	if len(dir1) != 3 {
+		t.Fatalf("direction=1: want 3 Mataró departures, got %d: %s", len(dir1), toJSON(dir1))
+	}
+	for _, raw := range dir1 {
+		if jsString(raw.(*Obj).Get("direction")) != "1" {
+			t.Fatalf("direction=1 leaked non-dir1 row: %s", toJSON(raw))
+		}
+	}
+
+	// direction=both at shared terminus 19946: drops terminating dir 0 arrivals, keeps boardable dir 1 departures.
+	both := movFilterDepsByDir(allDeps, "both", routes, 19946)
+	if len(both) != 3 {
+		t.Fatalf("direction=both at shared terminus: want 3 boardable departures, got %d: %s", len(both), toJSON(both))
+	}
+
+	// Explicit direction=0 (Cap a Barcelona): shows the 3 Barcelona-bound arrivals.
+	dir0 := movFilterDepsByDir(allDeps, "0", routes, 19946)
+	if len(dir0) != 3 {
+		t.Fatalf("direction=0: want 3 Barcelona arrivals, got %d: %s", len(dir0), toJSON(dir0))
+	}
+}
