@@ -280,10 +280,10 @@ class NetworkMap extends TransitMap {
     this.renderRailRoutes();
   }
 
-  /** Whether the filter lets any train through: everything, a train operator, or a train line. */
+  /** Whether the filter lets any rail/metro/tram/catalog line through: everything, a mode, a train operator, or a train line. */
   railFilterOpen() {
     const f = this.mapFilter || { kind: 'all' };
-    return f.kind === 'all' || f.kind === 'rail' || (f.kind === 'op' && f.agencyId !== 'mataro');
+    return f.kind === 'all' || f.kind === 'mode' || f.kind === 'rail' || (f.kind === 'op' && f.agencyId !== 'mataro');
   }
 
   /** Trains are drawn when shown and the filter is not on Mataró's buses alone. */
@@ -424,7 +424,8 @@ class NetworkMap extends TransitMap {
     let stale = 0;
     let total = 0;
     for (const t of this.trainFeed.trains.slice(0, MAX_TRAIN_MARKERS)) {
-      if (!t || !t.id || !Number.isFinite(Number(t.lat)) || !this.isRailLineVisible(t.agencyId, t.lineCode)) continue;
+      const tMode = t?.mode || (t?.agencyId === 'tmb' ? 'metro' : 'rail');
+      if (!t || !t.id || !Number.isFinite(Number(t.lat)) || !this.isRailLineVisible(t.agencyId, t.lineCode, tMode)) continue;
       total++;
       if (t.stale) stale++;
     }
@@ -631,7 +632,7 @@ class NetworkMap extends TransitMap {
     this.applyLineVisibility();
     this.renderLegend();
     this.renderTrains();
-    this.renderMoventisBuses();
+    this.renderMoventis();
     this.renderRailRoutes();
   }
 
