@@ -101,22 +101,25 @@ class NetworkMap extends TransitMap {
     // Rodalies / FGC line paths (/api/network/rail-routes), added first so
     // Mataró's bus routes, stops and every vehicle draw on top of them.
     this.operatorNames = this.operatorNames || new Map();
+    // Dedicated non-interactive Canvas for the ~780 static route polylines so
+    // mouse moves never hit-test polylines and vehicle updates never redraw routes.
+    this.routeCanvas = L.canvas({ padding: 0.5, tolerance: 0 });
+    // Dedicated interactive Canvas for all regional/metropolitan buses, trains,
+    // metro and trams (1,000+ pins rendered in ~1 ms/frame with zero DOM nodes).
+    this.vehicleCanvas = createVehicleCanvas({ padding: 0.5, tolerance: 6 });
     // The legend lists the lines in view: redo it after every pan or zoom.
     this.map.on('moveend', () => this.renderLegend());
     this.railRouteLayer = L.featureGroup().addTo(this.map);
-    this.railRoutes = [];              // [{ agencyId, code, polyline }]
+    this.railRoutes = [];              // [{ agencyId, code, mode, polyline, bounds }]
     this.routeLayer = L.featureGroup().addTo(this.map);
     this.stopLayer = L.layerGroup().addTo(this.map);
     this.busLayer = L.layerGroup().addTo(this.map);
-    // Rodalies / FGC trains from /api/trains: their own layer of canvas
-    // circle markers (no DOM per train), drawn at the positions the
-    // operators reported, never snapped or animated.
+    // Rodalies / FGC / TMB Metro / TRAM vehicles from /api/trains on vehicleCanvas.
     this.trainLayer = L.layerGroup().addTo(this.map);
-    this.trainMarkers = new Map();     // train id -> { marker, popupHtml }
-    // Moventis buses from /api/moventis: positions estimated from the
-    // operator's arrival predictions (app/moventis.go), their own layer.
+    this.trainMarkers = new Map();     // train id -> { marker, data, op, lineRef, stale, pinBg }
+    // Moventis / AMB / Sagalés / Generalitat buses from /api/moventis on vehicleCanvas.
     this.movLayer = L.layerGroup().addTo(this.map);
-    this.movMarkers = new Map();       // bus id -> { marker, popupHtml }
+    this.movMarkers = new Map();       // bus id -> { marker, data, isLiveGps, pinBg }
     this.movFeed = null;
     this.trainColors = new Map();      // "<agencyId>:<line code>" -> line colour (from the catalog)
     this.trainLineRefs = new Map();    // "<agencyId>:<line code>" -> lineRef, for lines the line view can open
@@ -149,6 +152,12 @@ class NetworkMap extends TransitMap {
       el.classList.toggle('net-z-region', z <= 10);
       el.classList.toggle('net-z-far', z >= 11 && z <= 12);
       el.classList.toggle('net-z-mid', z === 13);
+      const r = vehicleRadiusForZoom(z);
+      if (r !== this._vehRadius) {
+        this._vehRadius = r;
+        for (const obj of this.trainMarkers.values()) obj.marker.setRadius(r);
+        for (const obj of this.movMarkers.values()) obj.marker.setRadius(r);
+      }
     };
     this.map.on('zoomend', applyZoomClass);
     applyZoomClass();
@@ -234,9 +243,17 @@ class NetworkMap extends TransitMap {
       if (path.length < 2 || !l.agencyId || !l.code) continue;
       const color = typeof l.color === 'string' && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(l.color) ? l.color : neutral;
       // A path joined from the stations (no shape in the timetable) is dashed.
-      const polyline = L.polyline(path, { color, weight: 3, opacity: 0.7, dashArray: l.fromStops ? '6 6' : null, interactive: false });
+      const polyline = L.polyline(path, {
+        renderer: this.routeCanvas,
+        color,
+        weight: 2.5,
+        opacity: 0.7,
+        smoothFactor: 1.8,
+        dashArray: l.fromStops ? '6 6' : null,
+        interactive: false
+      });
       const mode = typeof l.mode === 'string' && l.mode ? l.mode : (l.agencyId === 'renfe_rodalies' || l.agencyId === 'fgc' ? 'rail' : 'bus');
-      this.railRoutes.push({ agencyId: l.agencyId, code: l.code, mode, polyline });
+      this.railRoutes.push({ agencyId: l.agencyId, code: l.code, mode, polyline, bounds: polyline.getBounds() });
     }
     this.renderRailRoutes();
   }
@@ -298,6 +315,9 @@ class NetworkMap extends TransitMap {
     const token = (name) => css.getPropertyValue(name).trim();
     const neutral = token('--text-muted');
     const ring = token('--bg-surface');
+    const liveDot = token('--accent-live');
+    const estDot = token('--accent-warning');
+    const radius = this._vehRadius || vehicleRadiusForZoom(this.map.getZoom());
     const operators = new Map((this.trainFeed?.operators || []).map(o => [o.id, o]));
     const seen = new Set();
 
@@ -310,47 +330,67 @@ class NetworkMap extends TransitMap {
       if (!this.isRailLineVisible(t.agencyId, t.lineCode, tMode)) continue;
       seen.add(t.id);
       const lineColor = this.trainColors.get(`${t.agencyId}:${t.lineCode}`) || neutral;
-      // The same pin as a bus, with a train/metro/tram icon. A position the operator
-      // has stopped updating is drawn hollow and dashed, in the neutral
-      // colour: it is old, not live.
       const stale = Boolean(t.stale);
       const pinBg = stale ? ring : lineColor;
-      const pinInk = stale ? '' : (window.TransitUtils?.contrastInk ? window.TransitUtils.contrastInk(lineColor) : '#ffffff');
-      const modeIcon = window.vehicleIconForMode ? window.vehicleIconForMode(tMode) : TRAIN_ICON_INNER_SVG;
-      const popupHtml = buildTrainPopupHtml(t, operators.get(t.agencyId), this.trainLineRefs.get(`${t.agencyId}:${t.lineCode}`));
+      const pinInk = stale ? neutral : (window.TransitUtils?.contrastInk ? window.TransitUtils.contrastInk(lineColor) : ring);
+      const dotColor = stale ? neutral : (t.isEstimated ? estDot : liveDot);
+      const op = operators.get(t.agencyId);
+      const lineRef = this.trainLineRefs.get(`${t.agencyId}:${t.lineCode}`);
       const existing = this.trainMarkers.get(t.id);
       if (existing) {
+        existing.data = t;
+        existing.op = op;
+        existing.lineRef = lineRef;
         existing.marker.setLatLng([lat, lon]);
-        if (existing.stale !== stale || existing.pinBg !== pinBg) {
-          const el = existing.marker.getElement();
-          if (el) {
-            el.querySelector('.live-bus-marker-wrap')?.classList.toggle('stale-train', stale);
-            const pin = el.querySelector('.live-bus-pin');
-            if (pin) {
-              pin.style.background = pinBg;
-              pin.style.color = pinInk;
-            }
-            const dot = el.querySelector('.bus-status-dot');
-            if (dot) dot.className = `bus-status-dot ${stale ? 'stale' : 'live'}`;
-          }
+        if (existing.stale !== stale || existing.pinBg !== pinBg || existing.dotColor !== dotColor) {
+          existing.marker.setStyle({
+            color: stale ? neutral : ring,
+            fillColor: pinBg,
+            fillOpacity: stale ? 0.55 : 0.96,
+            dashArray: stale ? '3 3' : null,
+            _ink: pinInk,
+            _dotColor: dotColor,
+            _ringColor: ring,
+            _stale: stale,
+            _label: t.lineCode || ''
+          });
           existing.stale = stale;
           existing.pinBg = pinBg;
+          existing.dotColor = dotColor;
         }
-        if (existing.popupHtml !== popupHtml) {
-          existing.marker.setPopupContent(popupHtml);
-          existing.popupHtml = popupHtml;
+        if (existing.marker.isPopupOpen()) {
+          existing.marker.setPopupContent(buildTrainPopupHtml(t, op, lineRef));
         }
         continue;
       }
-      const html = vehiclePinHtml({ cls: `train-marker${stale ? ' stale-train' : ''}`, bg: pinBg, ink: pinInk, icon: modeIcon, dot: stale ? 'stale' : (t.isEstimated ? 'estimated' : 'live') });
-      const marker = L.marker([lat, lon], {
-        icon: L.divIcon({ html, className: 'c10-live-bus-icon', iconSize: [44, 44], iconAnchor: [22, 22] }),
-        zIndexOffset: stale ? 900 : 1000,
-        keyboard: false
+      const entry = { marker: null, data: t, op, lineRef, stale, pinBg, dotColor };
+      const marker = L.circleMarker([lat, lon], {
+        renderer: this.vehicleCanvas,
+        radius,
+        color: stale ? neutral : ring,
+        weight: 2,
+        opacity: 0.95,
+        fillColor: pinBg,
+        fillOpacity: stale ? 0.55 : 0.96,
+        dashArray: stale ? '3 3' : null,
+        _shape: 'rail',
+        _ink: pinInk,
+        _dotColor: dotColor,
+        _ringColor: ring,
+        _stale: stale,
+        _label: t.lineCode || ''
       });
-      marker.bindPopup(popupHtml, { className: 'arribo-bus-popup', minWidth: 290, maxWidth: 350, autoPan: true, autoPanPadding: [20, 20], closeButton: true });
+      marker.bindPopup(() => buildTrainPopupHtml(entry.data, entry.op, entry.lineRef), {
+        className: 'arribo-bus-popup',
+        minWidth: 290,
+        maxWidth: 350,
+        autoPan: true,
+        autoPanPadding: [20, 20],
+        closeButton: true
+      });
       marker.addTo(this.trainLayer);
-      this.trainMarkers.set(t.id, { marker, popupHtml, stale, pinBg });
+      entry.marker = marker;
+      this.trainMarkers.set(t.id, entry);
     }
     for (const [id, obj] of Array.from(this.trainMarkers.entries())) {
       if (seen.has(id)) continue;
@@ -368,13 +408,18 @@ class NetworkMap extends TransitMap {
     this.renderMoventis();
   }
 
-  /** Moventis buses: a bus pin in the line's colour with the "estimated"
-   *  dot, as Mataró's estimated buses: the position comes from the
-   *  operator's arrival predictions, not from a GPS. */
+  /** Regional and metropolitan buses (Moventis, AMB, Sagalés, Generalitat) drawn
+   *  on vehicleCanvas for smooth 60 FPS panning/zooming with lazy popups. */
   renderMoventis() {
     if (!this.map || !this.movLayer) return;
     const buses = this.movFeed ? this.movFeed.vehicles.slice(0, MAX_MOV_MARKERS) : [];
-    const neutral = getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim();
+    const css = getComputedStyle(document.documentElement);
+    const token = (name) => css.getPropertyValue(name).trim();
+    const neutral = token('--text-muted');
+    const ring = token('--bg-surface');
+    const liveDot = token('--accent-live');
+    const estDot = token('--accent-warning');
+    const radius = this._vehRadius || vehicleRadiusForZoom(this.map.getZoom());
     const hex = v => (typeof v === 'string' && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(v) ? v : null);
     const seen = new Set();
     for (const b of buses) {
@@ -384,32 +429,55 @@ class NetworkMap extends TransitMap {
       if (!this.isRailLineVisible(b.agencyId, b.lineCode, b.mode || 'bus')) continue;
       seen.add(b.id);
       const isLiveGps = Boolean(b.isRealTime && !b.isEstimated);
-      const popupHtml = buildMoventisPopupHtml(b, this.movFeed);
       const pinBg = hex(b.color) || neutral;
-      const pinInk = window.TransitUtils?.contrastInk ? window.TransitUtils.contrastInk(pinBg) : '#ffffff';
+      const pinInk = window.TransitUtils?.contrastInk ? window.TransitUtils.contrastInk(pinBg) : ring;
+      const dotColor = isLiveGps ? liveDot : estDot;
       const existing = this.movMarkers.get(b.id);
       if (existing) {
+        existing.data = b;
         existing.marker.setLatLng([lat, lon]);
-        if (existing.isLiveGps !== isLiveGps) {
-          const html = vehiclePinHtml({ cls: 'moventis-marker', bg: pinBg, ink: pinInk, icon: CANONICAL_BUS_ICON_INNER_SVG, dot: isLiveGps ? 'live' : 'estimated' });
-          existing.marker.setIcon(L.divIcon({ html, className: 'c10-live-bus-icon', iconSize: [44, 44], iconAnchor: [22, 22] }));
+        if (existing.isLiveGps !== isLiveGps || existing.pinBg !== pinBg) {
+          existing.marker.setStyle({
+            fillColor: pinBg,
+            _ink: pinInk,
+            _dotColor: dotColor,
+            _ringColor: ring,
+            _label: b.lineCode || ''
+          });
           existing.isLiveGps = isLiveGps;
+          existing.pinBg = pinBg;
         }
-        if (existing.popupHtml !== popupHtml) {
-          existing.marker.setPopupContent(popupHtml);
-          existing.popupHtml = popupHtml;
+        if (existing.marker.isPopupOpen()) {
+          existing.marker.setPopupContent(buildMoventisPopupHtml(b, this.movFeed));
         }
         continue;
       }
-      const html = vehiclePinHtml({ cls: 'moventis-marker', bg: pinBg, ink: pinInk, icon: CANONICAL_BUS_ICON_INNER_SVG, dot: isLiveGps ? 'live' : 'estimated' });
-      const marker = L.marker([lat, lon], {
-        icon: L.divIcon({ html, className: 'c10-live-bus-icon', iconSize: [44, 44], iconAnchor: [22, 22] }),
-        zIndexOffset: isLiveGps ? 980 : 950,
-        keyboard: false
+      const entry = { marker: null, data: b, isLiveGps, pinBg };
+      const marker = L.circleMarker([lat, lon], {
+        renderer: this.vehicleCanvas,
+        radius,
+        color: ring,
+        weight: 2,
+        opacity: 0.95,
+        fillColor: pinBg,
+        fillOpacity: 0.96,
+        _shape: 'bus',
+        _ink: pinInk,
+        _dotColor: dotColor,
+        _ringColor: ring,
+        _label: b.lineCode || ''
       });
-      marker.bindPopup(popupHtml, { className: 'arribo-bus-popup', minWidth: 290, maxWidth: 350, autoPan: true, autoPanPadding: [20, 20], closeButton: true });
+      marker.bindPopup(() => buildMoventisPopupHtml(entry.data, this.movFeed), {
+        className: 'arribo-bus-popup',
+        minWidth: 290,
+        maxWidth: 350,
+        autoPan: true,
+        autoPanPadding: [20, 20],
+        closeButton: true
+      });
       marker.addTo(this.movLayer);
-      this.movMarkers.set(b.id, { marker, popupHtml, isLiveGps });
+      entry.marker = marker;
+      this.movMarkers.set(b.id, entry);
     }
     for (const [id, obj] of Array.from(this.movMarkers.entries())) {
       if (seen.has(id)) continue;
@@ -469,8 +537,15 @@ class NetworkMap extends TransitMap {
       layers.routes.eachLayer((pl) => { if (!shown && inView(pl)) shown = true; });
       if (shown) push('mataro', line.code, line.color);
     }
+    const zoom = this.map && typeof this.map.getZoom === 'function' ? this.map.getZoom() : 12;
     for (const r of this.railRoutes || []) {
-      if (!this.railRouteLayer?.hasLayer(r.polyline) || !inView(r.polyline)) continue;
+      if (!this.railRouteLayer?.hasLayer(r.polyline)) continue;
+      if (view) {
+        if (r.bounds && r.bounds.isValid() && !view.intersects(r.bounds)) continue;
+        // Exact segment clipping only when zoomed in and still listing individual lines;
+        // once past NETWORK_LEGEND_MAX we group by operator, so bbox intersection is instant.
+        if (zoom >= 12 && entries.length <= NETWORK_LEGEND_MAX && !pathCrossesBounds(r.polyline, view)) continue;
+      }
       push(r.agencyId, r.code, r.polyline.options.color);
     }
     host.textContent = '';
@@ -966,10 +1041,91 @@ class NetworkMap extends TransitMap {
 
 // -------------------------------------------------------------- helpers
 
-/** Bound on train markers, far above the ~200 trains both feeds report. */
+/** Bound on train markers, far above the ~350 trains/metro/trams feeds report. */
 const MAX_TRAIN_MARKERS = 1500;
-/** Bound on regional/metropolitan bus markers to keep Catalonia-wide views fast. */
-const MAX_MOV_MARKERS = 600;
+/** Bound on Canvas regional/metropolitan bus markers (Canvas draws 2,000 in ~2 ms). */
+const MAX_MOV_MARKERS = 2000;
+
+function vehicleRadiusForZoom(z) {
+  if (z <= 10) return 5;
+  if (z <= 12) return 6.5;
+  if (z === 13) return 9;
+  return 11;
+}
+
+/**
+ * Custom Leaflet Canvas renderer for network-map vehicle pins: draws circular
+ * bus pins and rounded-square rail/metro/tram pins with crisp rings, status
+ * dots (z >= 11), and centred line codes (z >= 13) in a single Canvas pass.
+ */
+function createVehicleCanvas(options) {
+  const VehicleCanvas = L.Canvas.extend({
+    _updateCircle(layer) {
+      if (!this._drawing || layer._empty()) return;
+      const p = layer._point;
+      const ctx = this._ctx;
+      const r = Math.max(Math.round(layer._radius), 1);
+      const opts = layer.options;
+      ctx.save();
+      ctx.beginPath();
+      if (opts._shape === 'rail' && r >= 5) {
+        const s = r * 1.9;
+        const x = p.x - s / 2;
+        const y = p.y - s / 2;
+        const cr = Math.max(2, Math.round(r * 0.45));
+        ctx.moveTo(x + cr, y);
+        ctx.arcTo(x + s, y, x + s, y + s, cr);
+        ctx.arcTo(x + s, y + s, x, y + s, cr);
+        ctx.arcTo(x, y + s, x, y, cr);
+        ctx.arcTo(x, y, x + s, y, cr);
+        ctx.closePath();
+      } else {
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2, false);
+      }
+      if (opts.fill) {
+        ctx.globalAlpha = opts.fillOpacity;
+        ctx.fillStyle = opts.fillColor || opts.color;
+        ctx.fill();
+      }
+      if (opts.stroke && opts.weight !== 0) {
+        if (ctx.setLineDash && opts.dashArray) {
+          ctx.setLineDash(Array.isArray(opts.dashArray) ? opts.dashArray : String(opts.dashArray).split(/\s+|,/).map(Number));
+        }
+        ctx.globalAlpha = opts.opacity;
+        ctx.lineWidth = opts.weight;
+        ctx.strokeStyle = opts.color;
+        ctx.stroke();
+        if (ctx.setLineDash && opts.dashArray) ctx.setLineDash([]);
+      }
+      // Line code inside the pin when zoomed in enough to read cleanly.
+      if (r >= 9 && opts._label) {
+        const txt = String(opts._label).slice(0, 4);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = opts._ink || opts.color;
+        ctx.font = `700 ${txt.length >= 4 ? 7 : 8.5}px system-ui, -apple-system, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(txt, p.x, p.y + 0.5);
+      }
+      // Status indicator dot at bottom-right rim (live GPS vs estimated vs stale).
+      if (r >= 6 && opts._dotColor) {
+        const dr = r >= 9 ? 3.2 : 2.3;
+        const dx = p.x + r * 0.68;
+        const dy = p.y + r * 0.68;
+        ctx.globalAlpha = 1;
+        ctx.beginPath();
+        ctx.arc(dx, dy, dr, 0, Math.PI * 2, false);
+        ctx.fillStyle = opts._dotColor;
+        ctx.fill();
+        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = opts._ringColor || opts.color;
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  });
+  return new VehicleCanvas(options);
+}
 
 function netT(key, vars, fallback) {
   return window.ArriboI18n ? window.ArriboI18n.t(key, vars) : fallback;
@@ -1107,20 +1263,6 @@ function buildTrainPopupHtml(t, op, lineRef) {
       </div>`;
 }
 window.buildTrainPopupHtml = buildTrainPopupHtml;
-
-/** A vehicle pin (train or bus): the markup Mataró's bus pins use. */
-function vehiclePinHtml({ cls, bg, ink, icon, dot }) {
-  const isStale = String(cls || '').includes('stale-train');
-  const resolvedInk = ink || (isStale ? '' : (window.TransitUtils?.contrastInk ? window.TransitUtils.contrastInk(bg) : '#ffffff'));
-  const colorStyle = resolvedInk ? ` color: ${resolvedInk};` : '';
-  return `
-        <div class="live-bus-marker-wrap ${cls}">
-          <div class="live-bus-pin" style="background: ${bg};${colorStyle}">
-            <span class="bus-icon-inner">${icon}</span>
-            <span class="bus-status-dot ${dot}"></span>
-          </div>
-        </div>`;
-}
 
 /** A Moventis bus's popup, in the bus popup's card: line, operator, next
  *  stop and when it gets there, and that the position is estimated. */
