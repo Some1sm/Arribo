@@ -243,11 +243,11 @@ func (t *movDelayTracker) observe(lineID int, lineCode string, stopID int, etas 
 func round1(x float64) float64 { return math.Round(x*10) / 10 }
 
 const (
-	movDelayEarlySec      = -60 // < -1 min counts as early (same as Mataró/rail)
-	movDelaySevereSec     = 300 // > 5 min counts as severely late (bus standard)
-	movBottleneckAvgMins  = 3.0 // a stop is a bottleneck from this avg delay...
-	movBottleneckSevere   = 20  // ...or this share (%) of severely late visits
-	movMaxReportStops     = 100
+	movDelayEarlySec     = -60 // < -1 min counts as early (same as Mataró/rail)
+	movDelaySevereSec    = 300 // > 5 min counts as severely late (bus standard)
+	movBottleneckAvgMins = 3.0 // a stop is a bottleneck from this avg delay...
+	movBottleneckSevere  = 20  // ...or this share (%) of severely late visits
+	movMaxReportStops    = 100
 )
 
 // report builds the additive `delays` JSON object for /api/moventis?hours=H.
