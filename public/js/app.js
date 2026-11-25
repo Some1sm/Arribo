@@ -274,6 +274,10 @@ class TransitApp {
           this.renderLandingLines();
         } else {
           this.showActiveLineView();
+    this.syncSchedulePlacement();
+    if (!this.isMapWidthExpanded() || this.stopsViewMode === 'schedule') {
+      this.loadLineSchedule();
+    }
           await this.refreshAllData(true);
         }
       } else {
@@ -585,6 +589,10 @@ class TransitApp {
     }
 
     this.showActiveLineView();
+    this.syncSchedulePlacement();
+    if (!this.isMapWidthExpanded() || this.stopsViewMode === 'schedule') {
+      this.loadLineSchedule();
+    }
 
     // Instant optimistic render if line header info exists
     if (lineObj) {
@@ -3749,9 +3757,34 @@ class TransitApp {
     }
   }
 
+  isMapWidthExpanded() {
+    const explorerGrid = document.querySelector('.explorer-grid');
+    return Boolean(explorerGrid && explorerGrid.classList.contains('expanded-width'));
+  }
+
+  getActiveScheduleContainer() {
+    return this.isMapWidthExpanded()
+      ? document.getElementById('stops-schedule-scroll')
+      : document.getElementById('line-schedule-under-map');
+  }
+
+  syncSchedulePlacement() {
+    const expanded = this.isMapWidthExpanded();
+    const underCard = document.getElementById('line-schedule-card');
+    const schedTabBtn = document.getElementById('btn-stops-mode-schedule');
+    if (underCard) underCard.hidden = expanded;
+    if (schedTabBtn) schedTabBtn.hidden = !expanded;
+    if (!expanded && this.stopsViewMode === 'schedule') {
+      this.setStopsViewMode('schematic');
+    }
+    if (this._scheduleData) {
+      this.renderLineSchedule();
+    }
+  }
+
   async loadLineSchedule(stopId = null) {
     const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
-    const box = document.getElementById('stops-schedule-scroll');
+    const box = this.getActiveScheduleContainer();
     if (!box || !this.activeLineId) return;
     const reqStop = stopId !== null ? String(stopId) : (this._scheduleStopId || '');
     const reqLine = this.activeLineId;
@@ -3766,8 +3799,10 @@ class TransitApp {
       const resp = await fetch(`/api/line/${encodeURIComponent(reqLine)}/schedule${qs}`);
       const json = await resp.json();
       if (this.activeLineId !== reqLine) return;
+      const targetBox = this.getActiveScheduleContainer();
+      if (!targetBox) return;
       if (!json?.success || !json.data || !Array.isArray(json.data.directions) || json.data.directions.length === 0) {
-        box.innerHTML = `<div class="sched-empty">${this.esc(t('schedule.unavailable'))}</div>`;
+        targetBox.innerHTML = `<div class="sched-empty">${this.esc(t('schedule.unavailable'))}</div>`;
         return;
       }
       json.data._reqLine = reqLine;
@@ -3781,15 +3816,16 @@ class TransitApp {
       }
       this.renderLineSchedule();
     } catch {
-      if (this.activeLineId === reqLine) {
-        box.innerHTML = `<div class="sched-empty">${this.esc(t('schedule.unavailable'))}</div>`;
+      const targetBox = this.getActiveScheduleContainer();
+      if (this.activeLineId === reqLine && targetBox) {
+        targetBox.innerHTML = `<div class="sched-empty">${this.esc(t('schedule.unavailable'))}</div>`;
       }
     }
   }
 
   renderLineSchedule() {
     const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
-    const box = document.getElementById('stops-schedule-scroll');
+    const box = this.getActiveScheduleContainer();
     const data = this._scheduleData;
     if (!box || !data || !Array.isArray(data.directions) || data.directions.length === 0) return;
 
@@ -3798,23 +3834,21 @@ class TransitApp {
     const dayInfo = (dirObj.days && dirObj.days[dayKey]) || { times: [], count: 0 };
 
     const dayOrder = [
-      { key: 'weekday', label: t('schedule.weekday') },
+      { key: 'weekday', label: t('schedule.weekdayShort') },
       { key: 'saturday', label: t('schedule.saturday') },
-      { key: 'sunday', label: t('schedule.sunday') }
+      { key: 'sunday', label: t('schedule.sundayShort') }
     ];
 
     const dayTabsHtml = dayOrder.map(d => {
       const cnt = dirObj.days?.[d.key]?.count || 0;
       const active = d.key === dayKey ? ' active' : '';
-      return `<button type="button" class="sched-tab-btn${active}" data-sched-day="${d.key}">${this.esc(d.label)} <span class="sched-tab-count">(${cnt})</span></button>`;
+      return `<button type="button" class="sched-seg-btn${active}" data-sched-day="${d.key}"><span>${this.esc(d.label)}</span><span class="sched-seg-count">${cnt}</span></button>`;
     }).join('');
 
-    const dirTabsHtml = data.directions.length > 1
-      ? `<div class="sched-dir-tabs">${data.directions.map(d => {
-          const active = String(d.direction) === String(dirObj.direction) ? ' active' : '';
-          return `<button type="button" class="sched-tab-btn${active}" data-sched-dir="${this.esc(String(d.direction))}">→ ${this.esc(d.name || d.direction)}</button>`;
-        }).join('')}</div>`
-      : '';
+    const dirOptionsHtml = data.directions.map(d => {
+      const sel = String(d.direction) === String(dirObj.direction) ? ' selected' : '';
+      return `<option value="${this.esc(String(d.direction))}"${sel}>→ ${this.esc(d.name || d.direction)}</option>`;
+    }).join('');
 
     const selStopId = dirObj.selectedStop?.id ? String(dirObj.selectedStop.id) : '';
     const stopOptionsHtml = (dirObj.stops || []).map((st, idx) => {
@@ -3822,9 +3856,17 @@ class TransitApp {
       return `<option value="${this.esc(String(st.id))}"${sel}>#${idx + 1} ${this.esc(st.name)}</option>`;
     }).join('');
 
-    const headwayText = dayInfo.avgHeadwayMin
-      ? t('schedule.everyMin', { m: Math.round(dayInfo.avgHeadwayMin) })
-      : '—';
+    let headwayText = '—';
+    if (dayInfo.avgHeadwayMin) {
+      const mins = Math.round(dayInfo.avgHeadwayMin);
+      if (mins >= 60) {
+        const h = Math.floor(mins / 60);
+        const rem = mins % 60;
+        headwayText = rem > 0 ? t('schedule.everyHM', { h, m: rem }) : t('schedule.everyH', { h });
+      } else {
+        headwayText = t('schedule.everyMin', { m: mins });
+      }
+    }
 
     const kpisHtml = `
       <div class="sched-kpis">
@@ -3864,7 +3906,8 @@ class TransitApp {
         }
         hourMap.get(hh).items.push({ hhmm, isNext: idx === nextIdx });
       });
-      gridHtml = `<div class="sched-grid">${byHour.map(row => `
+      const multiCol = !this.isMapWidthExpanded() && byHour.length >= 6 ? ' sched-grid-wide' : '';
+      gridHtml = `<div class="sched-grid${multiCol}">${byHour.map(row => `
         <div class="sched-hour-row">
           <span class="sched-hour-label">${this.esc(row.hh)}h</span>
           <div class="sched-mins">${row.items.map(it =>
@@ -3873,13 +3916,22 @@ class TransitApp {
         </div>`).join('')}</div>`;
     }
 
+    const dirControlHtml = data.directions.length > 1
+      ? `<div class="sched-field">
+          <label class="sched-field-label" for="sched-dir-select">${this.esc(t('schedule.dirLabel'))}</label>
+          <select id="sched-dir-select" class="sched-select">${dirOptionsHtml}</select>
+        </div>`
+      : '';
+
     box.innerHTML = `
       <div class="sched-toolbar">
-        <div class="sched-day-tabs">${dayTabsHtml}</div>
-        ${dirTabsHtml}
-        <div class="sched-stop-row">
-          <label for="sched-stop-select">${this.esc(t('schedule.stopLabel'))}</label>
-          <select id="sched-stop-select" class="sched-stop-select">${stopOptionsHtml}</select>
+        <div class="sched-day-segment" role="tablist">${dayTabsHtml}</div>
+        <div class="sched-controls-row${data.directions.length > 1 ? ' has-dir' : ''}">
+          ${dirControlHtml}
+          <div class="sched-field">
+            <label class="sched-field-label" for="sched-stop-select">${this.esc(t('schedule.stopLabel'))}</label>
+            <select id="sched-stop-select" class="sched-select">${stopOptionsHtml}</select>
+          </div>
         </div>
       </div>
       ${kpisHtml}
@@ -3892,13 +3944,14 @@ class TransitApp {
         this.renderLineSchedule();
       });
     });
-    box.querySelectorAll('[data-sched-dir]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        this._scheduleDir = btn.dataset.schedDir;
+    const dirSel = box.querySelector('#sched-dir-select');
+    if (dirSel) {
+      dirSel.addEventListener('change', () => {
+        this._scheduleDir = dirSel.value;
         this._scheduleStopId = '';
         this.renderLineSchedule();
       });
-    });
+    }
     const sel = box.querySelector('#sched-stop-select');
     if (sel) {
       sel.addEventListener('change', () => {
@@ -5942,9 +5995,15 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
 
     document.getElementById('btn-line-schedule')?.addEventListener('click', (e) => {
       e.preventDefault();
-      this.setStopsViewMode('schedule');
-      const card = document.querySelector('.stops-browser-card');
-      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (this.isMapWidthExpanded()) {
+        this.setStopsViewMode('schedule');
+        const card = document.querySelector('.stops-browser-card');
+        if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else {
+        this.loadLineSchedule();
+        const card = document.getElementById('line-schedule-card');
+        if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
     });
     document.getElementById('btn-back-to-landing')?.addEventListener('click', (e) => {
       e.preventDefault();
@@ -5974,6 +6033,10 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
       this.parseUrlHash();
       if (this.activeLineId) {
         this.showActiveLineView();
+    this.syncSchedulePlacement();
+    if (!this.isMapWidthExpanded() || this.stopsViewMode === 'schedule') {
+      this.loadLineSchedule();
+    }
         this.refreshAllData(true);
       } else {
         this.showLandingView();
@@ -6073,6 +6136,7 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
       const performToggle = () => {
         explorerGrid?.classList.toggle('expanded-width', isExpanded);
         expandWidthBtn.classList.toggle('active', isExpanded);
+        this.syncSchedulePlacement();
         applyExpandLabels();
         if (mapContainer) {
           mapContainer.style.height = isExpanded ? '560px' : '';

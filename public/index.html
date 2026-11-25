@@ -27,7 +27,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
   
   <!-- App Styles -->
-  <link rel="stylesheet" href="/css/style.css?v=9.4.143">
+  <link rel="stylesheet" href="/css/style.css?v=9.4.144">
 </head>
 <body>
 
@@ -569,6 +569,17 @@
             </div>
           </div>
 
+          <!-- Dedicated Full-Line Schedule Card (under map in normal mode; moves into Paradas tab when map is expanded) -->
+          <section class="line-schedule-card" id="line-schedule-card" data-i18n-aria-label="line.modeScheduleTitle" aria-label="Horari complet de la línia">
+            <div class="line-schedule-card-head">
+              <h3 class="card-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                <span data-i18n="line.scheduleTitle">Horari complet</span>
+              </h3>
+            </div>
+            <div class="line-schedule-under-map" id="line-schedule-under-map"></div>
+          </section>
+
           <!-- Route Progression & Telemetry Cockpit -->
           <section class="corridor-section" data-i18n-aria-label="line.trackAria" aria-label="Seguiment de la línia">
             <div class="section-header corridor-stepper-header">
@@ -928,16 +939,16 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   
   <!-- App Scripts -->
-  <script src="/js/utils.js?v=9.4.143"></script>
-  <script src="/js/i18n.js?v=9.4.143"></script>
-  <script src="/js/storage.js?v=9.4.143"></script>
-  <script src="/js/requests.js?v=9.4.143"></script>
-  <script src="/js/stopFeatures.js?v=9.4.143"></script>
-  <script src="/js/journeys.js?v=9.4.143"></script>
-  <script src="/js/journeyControls.js?v=9.4.143"></script>
-  <script src="/js/pwa.js?v=9.4.143"></script>
-  <script src="/js/map.js?v=9.4.143"></script>
-  <script src="/js/networkMap.js?v=9.4.143"></script>
-  <script src="/js/app.js?v=9.4.143"></script>
+  <script src="/js/utils.js?v=9.4.144"></script>
+  <script src="/js/i18n.js?v=9.4.144"></script>
+  <script src="/js/storage.js?v=9.4.144"></script>
+  <script src="/js/requests.js?v=9.4.144"></script>
+  <script src="/js/stopFeatures.js?v=9.4.144"></script>
+  <script src="/js/journeys.js?v=9.4.144"></script>
+  <script src="/js/journeyControls.js?v=9.4.144"></script>
+  <script src="/js/pwa.js?v=9.4.144"></script>
+  <script src="/js/map.js?v=9.4.144"></script>
+  <script src="/js/networkMap.js?v=9.4.144"></script>
+  <script src="/js/app.js?v=9.4.144"></script>
 </body>
 </html>
