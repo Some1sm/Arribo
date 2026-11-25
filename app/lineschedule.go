@@ -261,6 +261,52 @@ func (s *Server) buildMataroLineSchedule(lineID, reqStopID string, now time.Time
 	)
 }
 
+// findGencatBusScheduleMatch locates the matching route & profile in gencat_bus
+// for live web-polled operators (Moventis Casas, Sagalés) that do not have
+// their own static GTFS SQLite file. Matches by normalized code ("C-10" == "C10")
+// and spatial proximity (<= 20 km).
+func findGencatBusScheduleMatch(code string, srcProf *rtLineProfile) (string, *rtLineProfile, bool) {
+	v, ok := rtCatalog.Load(gencatBusAgencyID)
+	if !ok {
+		return "", nil, false
+	}
+	gbOp := v.(*rtCatalogOp)
+	wantNorm := ambNormLine(code)
+	if wantNorm == "" {
+		return "", nil, false
+	}
+	srcLat, srcLon, hasSrc := profileMidpoint(srcProf)
+	bestCode := ""
+	var bestProf *rtLineProfile
+	bestDist := 1e9
+	for _, r := range gbOp.Lines {
+		if ambNormLine(r.Code) != wantNorm {
+			continue
+		}
+		p := gbOp.Profiles[r.Code]
+		if p == nil || len(p.Directions) == 0 {
+			continue
+		}
+		if !hasSrc {
+			return r.Code, p, true
+		}
+		lat, lon, hasPt := profileMidpoint(p)
+		if !hasPt {
+			if bestProf == nil {
+				bestCode, bestProf = r.Code, p
+			}
+			continue
+		}
+		d := haversineKm(srcLat, srcLon, lat, lon)
+		if d <= 20.0 && d < bestDist {
+			bestDist = d
+			bestCode = r.Code
+			bestProf = p
+		}
+	}
+	return bestCode, bestProf, bestProf != nil
+}
+
 func buildRailLineSchedule(ctx context.Context, info operatorInfo, op *rtCatalogOp, code, reqStopID string, now time.Time) *Obj {
 	prof := op.Profiles[code]
 	if prof == nil || len(prof.Directions) == 0 {
@@ -278,8 +324,16 @@ func buildRailLineSchedule(ctx context.Context, info operatorInfo, op *rtCatalog
 	}
 
 	ttAgency := info.ID
-	if ttAgency == movAgencyID {
-		ttAgency = gencatBusAgencyID
+	queryCode := route.Code
+	schedProf := prof
+	if ttAgency == movAgencyID || ttAgency == sagalesAgencyID {
+		if gbCode, gbProf, found := findGencatBusScheduleMatch(route.Code, prof); found {
+			ttAgency = gencatBusAgencyID
+			queryCode = gbCode
+			schedProf = gbProf
+		} else {
+			return nil
+		}
 	}
 	tt, err := sharedRailTT.get(ttAgency)
 	if err != nil || tt == nil {
@@ -291,16 +345,18 @@ func buildRailLineSchedule(ctx context.Context, info operatorInfo, op *rtCatalog
 	sun := nextWeekdayDate(now, time.Sunday)
 
 	calExpired := false
-	dirs := make([]any, 0, len(prof.Directions))
-	for _, d := range prof.Directions {
+	dirs := make([]any, 0, len(schedProf.Directions))
+	for _, d := range schedProf.Directions {
 		if len(d.Stops) == 0 {
 			continue
 		}
 		targetStop := d.Stops[0]
+		explicitStop := false
 		if reqStopID != "" {
 			for _, st := range d.Stops {
 				if st.ID == reqStopID {
 					targetStop = st
+					explicitStop = true
 					break
 				}
 			}
@@ -310,12 +366,19 @@ func buildRailLineSchedule(ctx context.Context, info operatorInfo, op *rtCatalog
 			stopsList = append(stopsList, O("id", st.ID, "name", st.Name))
 		}
 		dirParam := d.DirectionID
-		if ttAgency != info.ID {
-			dirParam = -1
+		wkSecs, exp1, _ := tt.dayScheduleSecs(ctx, queryCode, targetStop.ID, dirParam, wed)
+		// If no stop was explicitly picked and the longest-trip first stop is a
+		// rare branch extension (0 or very few weekday trips), try the midpoint stop.
+		if !explicitStop && len(wkSecs) < 3 && len(d.Stops) >= 4 {
+			midStop := d.Stops[len(d.Stops)/2]
+			if midSecs, midExp, merr := tt.dayScheduleSecs(ctx, queryCode, midStop.ID, dirParam, wed); merr == nil && len(midSecs) > len(wkSecs) {
+				targetStop = midStop
+				wkSecs = midSecs
+				exp1 = midExp
+			}
 		}
-		wkSecs, exp1, _ := tt.dayScheduleSecs(ctx, route.Code, targetStop.ID, dirParam, wed)
-		satSecs, exp2, _ := tt.dayScheduleSecs(ctx, route.Code, targetStop.ID, dirParam, sat)
-		sunSecs, exp3, _ := tt.dayScheduleSecs(ctx, route.Code, targetStop.ID, dirParam, sun)
+		satSecs, exp2, _ := tt.dayScheduleSecs(ctx, queryCode, targetStop.ID, dirParam, sat)
+		sunSecs, exp3, _ := tt.dayScheduleSecs(ctx, queryCode, targetStop.ID, dirParam, sun)
 		if exp1 || exp2 || exp3 {
 			calExpired = true
 		}
