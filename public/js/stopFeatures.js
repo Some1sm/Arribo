@@ -134,7 +134,7 @@
     const syncRadiusUI = (r) => {
       this._zonePickerState.radius = r;
       if (slider) slider.value = String(r);
-      if (valEl) valEl.textContent = this.formatZoneRadius(r);
+      if (valEl) valEl.textContent = global.TransitStopFeatures.formatZoneRadius(r);
       pillsWrap?.querySelectorAll('.zone-radius-pill').forEach(btn => {
         btn.classList.toggle('active', Number(btn.getAttribute('data-radius')) === r);
       });
@@ -153,7 +153,7 @@
         const zoom = this._zonePickerState.radius >= 3000 ? 12 : (this._zonePickerState.radius >= 1500 ? 13 : 14);
         this._zoneMap.setView([lat, lon], Math.max(this._zoneMap.getZoom(), zoom), { animate: true });
       }
-      this.scheduleZonePreview();
+      global.TransitStopFeatures.scheduleZonePreview.call(this);
     };
 
     // Bind controls once
@@ -162,7 +162,7 @@
       slider?.addEventListener('input', () => {
         const r = Number(slider.value) || 800;
         syncRadiusUI(r);
-        this.scheduleZonePreview();
+        global.TransitStopFeatures.scheduleZonePreview.call(this);
       });
       pillsWrap?.addEventListener('click', (e) => {
         const pill = e.target.closest('.zone-radius-pill');
@@ -172,7 +172,7 @@
         if (this._zoneMap && this._zoneCircle) {
           this._zoneMap.fitBounds(this._zoneCircle.getBounds(), { padding: [24, 24], maxZoom: 15 });
         }
-        this.scheduleZonePreview();
+        global.TransitStopFeatures.scheduleZonePreview.call(this);
       });
       cityWrap?.addEventListener('click', (e) => {
         const chip = e.target.closest('.zone-city-chip');
@@ -256,19 +256,20 @@
           this._zoneMap?.fitBounds(this._zoneCircle.getBounds(), { padding: [24, 24], maxZoom: 15 });
         }
       }, 60);
-      this.scheduleZonePreview();
+      global.TransitStopFeatures.scheduleZonePreview.call(this);
     });
   },
 
   scheduleZonePreview() {
     clearTimeout(this._zonePreviewTimer);
-    this._zonePreviewTimer = setTimeout(() => this.refreshZonePreview(), 180);
+    this._zonePreviewTimer = setTimeout(() => global.TransitStopFeatures.refreshZonePreview.call(this), 180);
   },
 
   async refreshZonePreview() {
     const st = this._zonePickerState;
     const pill = document.getElementById('zone-preview-pill');
     if (!st || !pill) return;
+    const fmtRadius = global.TransitStopFeatures.formatZoneRadius;
     const t = (k, v, fb) => (global.ArriboI18n ? global.ArriboI18n.t(k, v) : fb);
     pill.textContent = t('zones.previewLoading', null, 'Cercant parades a l\'àrea...');
     this._zonePreviewReq ||= new window.TransitRequest();
@@ -295,17 +296,17 @@
         }
       }
       if (stops.length === 0) {
-        pill.textContent = t('zones.previewEmpty', { r: this.formatZoneRadius(st.radius) }, `Cap parada dins de ${this.formatZoneRadius(st.radius)}`);
+        pill.textContent = t('zones.previewEmpty', { r: fmtRadius(st.radius) }, `Cap parada dins de ${fmtRadius(st.radius)}`);
       } else {
         pill.textContent = t(
           'zones.previewFound',
-          { stops: stops.length, lines: lineSet.size, r: this.formatZoneRadius(st.radius) },
-          `${stops.length} parades · ${lineSet.size} línies dins de ${this.formatZoneRadius(st.radius)}`
+          { stops: stops.length, lines: lineSet.size, r: fmtRadius(st.radius) },
+          `${stops.length} parades · ${lineSet.size} línies dins de ${fmtRadius(st.radius)}`
         );
       }
     } catch (err) {
       if (err?.name === 'AbortError') return;
-      pill.textContent = t('zones.previewEmpty', { r: this.formatZoneRadius(st.radius) }, `Cap parada dins de ${this.formatZoneRadius(st.radius)}`);
+      pill.textContent = t('zones.previewEmpty', { r: fmtRadius(st.radius) }, `Cap parada dins de ${fmtRadius(st.radius)}`);
     }
   },
 
@@ -315,9 +316,10 @@
   },
   async loadNearbyStops(lat, lon, label, radius = 800) {
     const t = (k, v, fb) => (global.ArriboI18n ? global.ArriboI18n.t(k, v) : fb);
+    const fmtRadius = global.TransitStopFeatures.formatZoneRadius;
     const rad = Math.max(100, Math.min(10000, Math.round(Number(radius) || 800)));
     const baseLabel = label || t('stopFeat.nearbyDefault', null, 'A prop');
-    const resolvedLabel = `${baseLabel} · ${this.formatZoneRadius(rad)}`;
+    const resolvedLabel = `${baseLabel} · ${fmtRadius(rad)}`;
     const section = document.getElementById('landing-nearby-section');
     const titleEl = document.getElementById('nearby-zone-title');
     const grid = document.getElementById('landing-nearby-grid');
@@ -344,7 +346,7 @@
         grid.innerHTML = `
           <div style="grid-column: 1 / -1; padding: 2rem; text-align: center; color: var(--text-muted); background:var(--bg-surface-elevated); border-radius:var(--radius-sm);">
             <div style="font-size:1.6rem; margin-bottom:0.4rem;">🚏</div>
-            <div style="font-weight:700; color:var(--text-primary); margin-bottom:0.25rem;">${this.esc(t('stopFeat.noneNearbyTitle', { r: this.formatZoneRadius(rad) }, `Cap parada dins de ${this.formatZoneRadius(rad)}`))}</div>
+            <div style="font-weight:700; color:var(--text-primary); margin-bottom:0.25rem;">${this.esc(t('stopFeat.noneNearbyTitle', { r: fmtRadius(rad) }, `Cap parada dins de ${fmtRadius(rad)}`))}</div>
             <div style="font-size:0.82rem;">${this.esc(t('stopFeat.noneNearbyHint', null, 'Amplia el radi o tria un altre punt al mapa per consultar les parades.'))}</div>
           </div>
         `;
