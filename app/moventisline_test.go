@@ -85,3 +85,42 @@ func TestMovDirectionFilterAndSharedTerminus(t *testing.T) {
 		t.Fatalf("direction=0: want 3 Barcelona arrivals, got %d: %s", len(dir0), toJSON(dir0))
 	}
 }
+
+func TestMovLateBusPastScheduledTimeInfersPriorSlot(t *testing.T) {
+	// Stop 14351 (Montgat Nord) at 16:46: live bus predicted at 16:48 (2 min away),
+	// while moventis.es has already dropped 16:28 from Sched and only returns 17:13 and 17:58.
+	routes := []movRoute{
+		{LineID: 53, Trayecto: 1, Dest: "BCN"},
+		{LineID: 53, Trayecto: 2, Dest: "MATARÓ"},
+	}
+	now := time.Date(2026, 11, 25, 16, 46, 0, 0, madrid)
+	etas := []movStopETA{
+		{LineID: 53, Dest: "Mataró", EtaSec: []float64{2 * 60}},
+		{LineID: 53, Dest: "(C10) BCN - MATARÓ (PER LA NII)", Sched: []string{"17:13", "17:58"}},
+	}
+	deps, _ := movBuildLiveAndSchedDeps(nil, 53, 999999, routes, etas, 0, now)
+	if len(deps) != 3 {
+		t.Fatalf("expected 3 departures (16:48 live + 17:13 + 17:58), got %d: %s", len(deps), toJSON(deps))
+	}
+	live := deps[0].(*Obj)
+	if jsString(live.Get("scheduledTime")) != "16:28" || live.Num("delayMins") != 20 || jsString(live.Get("delayStatus")) != "delayed" {
+		t.Fatalf("expected inferred 16:28 (+20 min, delayed), got: %s", toJSON(live))
+	}
+	if jsString(deps[1].(*Obj).Get("departureTime")) != "17:13" || jsString(deps[2].(*Obj).Get("departureTime")) != "17:58" {
+		t.Fatalf("expected 17:13 and 17:58 theoretical slots, got: %s", toJSON(deps[1:]))
+	}
+
+	// Non-late bus (17:12 for 17:13 slot) matches 17:13 directly (-1 min) and does NOT infer 16:28.
+	etasOnTime := []movStopETA{
+		{LineID: 53, Dest: "Mataró", EtaSec: []float64{26 * 60}},
+		{LineID: 53, Dest: "(C10) BCN - MATARÓ (PER LA NII)", Sched: []string{"17:13", "17:58"}},
+	}
+	onTimeDeps, _ := movBuildLiveAndSchedDeps(nil, 53, 999999, routes, etasOnTime, 0, now)
+	if len(onTimeDeps) != 2 {
+		t.Fatalf("expected 2 departures (17:12 live claiming 17:13, plus 17:58), got %d: %s", len(onTimeDeps), toJSON(onTimeDeps))
+	}
+	onTimeLive := onTimeDeps[0].(*Obj)
+	if jsString(onTimeLive.Get("scheduledTime")) != "17:13" || onTimeLive.Num("delayMins") != -1 {
+		t.Fatalf("expected direct 17:13 (-1 min) match, got: %s", toJSON(onTimeLive))
+	}
+}

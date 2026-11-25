@@ -213,6 +213,64 @@ func movTimeClaimed(dir string, t time.Time, claimed []movClaimed) bool {
 	return false
 }
 
+// movInferPriorSched infers the immediately preceding scheduled departure
+// when moventis.es has already dropped a late bus's past slot from sched.
+func movInferPriorSched(sched []string, expected, now time.Time) (time.Time, bool) {
+	locNow := now.In(madrid)
+	var times []time.Time
+	for _, s := range sched {
+		m := reMovHora.FindStringSubmatch(s)
+		if m == nil {
+			continue
+		}
+		hh, _ := strconv.Atoi(m[1])
+		mm, _ := strconv.Atoi(m[2])
+		if hh > 23 || mm > 59 {
+			continue
+		}
+		cand := time.Date(locNow.Year(), locNow.Month(), locNow.Day(), hh, mm, 0, 0, madrid)
+		diff := cand.Sub(now)
+		if diff < -12*time.Hour {
+			cand = cand.Add(24 * time.Hour)
+			diff = cand.Sub(now)
+		}
+		if diff < -2*time.Minute || diff > 6*time.Hour {
+			continue
+		}
+		times = append(times, cand)
+	}
+	if len(times) < 2 {
+		return time.Time{}, false
+	}
+	sort.Slice(times, func(i, j int) bool { return times[i].Before(times[j]) })
+	uniq := times[:0]
+	for _, t := range times {
+		if len(uniq) == 0 || !t.Equal(uniq[len(uniq)-1]) {
+			uniq = append(uniq, t)
+		}
+	}
+	if len(uniq) < 2 {
+		return time.Time{}, false
+	}
+	t0, t1 := uniq[0], uniq[1]
+	h := t1.Sub(t0)
+	if h < 10*time.Minute || h > 90*time.Minute {
+		return time.Time{}, false
+	}
+	if !expected.Before(t0.Add(-movDelayMaxEarly)) {
+		return time.Time{}, false
+	}
+	prev := t0.Add(-h)
+	if prev.After(now) {
+		return time.Time{}, false
+	}
+	delay := expected.Sub(prev)
+	if delay < time.Minute || delay > movDelayMaxLate {
+		return time.Time{}, false
+	}
+	return prev, true
+}
+
 // movEstimateDelay compares a live Moventis predicted arrival (expected)
 // against the direction-matched live scheduled times (extraSched), the
 // rolling 24h schedule cache filtered by direction (p.sched), or the bundled
@@ -249,6 +307,9 @@ func movEstimateDelay(p *movPoller, lineID, stopID int, dirStr string, routes []
 		if gc := gencatData(); gc != nil {
 			matched, hasMatch = gc.nearestDeparture(lineID, stopID, expected, movDelayMaxEarly, movDelayMaxLate)
 		}
+	}
+	if !hasMatch && len(extraSched) >= 2 {
+		matched, hasMatch = movInferPriorSched(extraSched, expected, now)
 	}
 	if !hasMatch {
 		return
