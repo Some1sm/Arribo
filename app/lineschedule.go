@@ -459,29 +459,45 @@ func buildMoventisGencatSchedule(info operatorInfo, code, reqStopID string, now 
 		}
 		// Pass 3: Fallback for calendar_dates-only services (days=[0,0,0,0,0,0,0]
 		// with active dates listed in svc.Added, e.g. C-10 weekday svc 184910).
+		// Check up to 3 distinct candidate dates matching wantWD (skipping holiday
+		// Wednesdays like Jan 6 that have far fewer trips than a normal weekday)
+		// and keep the one with the most trips.
 		wantWD := time.Weekday((monIdx + 1) % 7)
-		repDate := ""
+		var candDates []string
+		seenDate := map[string]bool{}
 		for _, tr := range d.Trips {
 			svc, ok := g.Services[tr.Service.String()]
 			if !ok {
 				continue
 			}
 			for _, ad := range svc.Added {
-				if len(ad) != 8 {
+				if len(ad) != 8 || ad == date || seenDate[ad] {
 					continue
 				}
 				parsed, err := time.ParseInLocation("20060102", ad, madrid)
 				if err != nil || parsed.Weekday() != wantWD {
 					continue
 				}
-				if ad >= date && (repDate == "" || ad < repDate) {
-					repDate = ad
-				} else if repDate == "" {
-					repDate = ad
-				}
+				seenDate[ad] = true
+				candDates = append(candDates, ad)
 			}
 		}
-		if repDate != "" && repDate != date {
+		sort.Strings(candDates)
+		// Prefer future dates >= date first, then test up to 4 candidates to skip holidays.
+		var ordered []string
+		for _, ad := range candDates {
+			if ad >= date {
+				ordered = append(ordered, ad)
+			}
+		}
+		if len(ordered) == 0 {
+			ordered = candDates
+		}
+		if len(ordered) > 4 {
+			ordered = ordered[:4]
+		}
+		for _, repDate := range ordered {
+			var candSecs []int
 			for _, tr := range d.Trips {
 				if tr.Pattern < 0 || tr.Pattern >= len(d.Patterns) {
 					continue
@@ -501,8 +517,11 @@ func buildMoventisGencatSchedule(info operatorInfo, code, reqStopID string, now 
 					continue
 				}
 				if s := gcClock(tr.Times[pos]); s >= 0 {
-					secs = append(secs, s)
+					candSecs = append(candSecs, s)
 				}
+			}
+			if len(candSecs) > len(secs) {
+				secs = candSecs
 			}
 		}
 		return secs
