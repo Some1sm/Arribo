@@ -2474,7 +2474,11 @@ class TransitApp {
     if (dirSubEl) dirSubEl.textContent = lData?.directions?.[0]?.name || t('stop.loadSchedules');
     if (lineTagEl && lData) {
       lineTagEl.textContent = lData.code || lData.id || 'C-10';
-      if (lData.color) lineTagEl.style.color = lData.color;
+      lineTagEl.classList.add('target-line-pill');
+      if (lData.color) {
+        lineTagEl.style.background = lData.color;
+        lineTagEl.style.color = window.TransitUtils?.contrastInk?.(lData.color, lData.textColor) || '#111315';
+      }
     }
     if (destEl) destEl.textContent = destName || lData?.directions?.[0]?.name || t('stop.loadSync');
     if (opEl && lData) opEl.textContent = lData.agency || t('stop.operatorFallback');
@@ -2565,10 +2569,14 @@ class TransitApp {
 
     if (lineTagEl && lData) {
       lineTagEl.textContent = lData.code || lData.id || 'C-10';
-      if (lData.color) lineTagEl.style.color = lData.color;
+      lineTagEl.classList.add('target-line-pill');
+      if (lData.color) {
+        lineTagEl.style.background = lData.color;
+        lineTagEl.style.color = window.TransitUtils?.contrastInk?.(lData.color, lData.textColor) || '#111315';
+      }
     }
 
-    if (destEl) destEl.textContent = next?.destination || data.directionName || t('common.destination');
+    if (destEl) destEl.textContent = next?.destination || data.directionName || lData?.directions?.[0]?.name || '—';
     if (opEl && lData) opEl.textContent = lData.agency || t('stop.operatorFallback');
 
     // Synchronize target-stop-select dropdown to match the target stop code/id

@@ -203,113 +203,126 @@
   /* Theme Identity */
   --theme-name: 'dark';
 
-  /* Primary Accent & Brand (Mataró Transit Telemetry: Emerald) */
-  --c10-primary: #10b981;
-  --c10-primary-dark: #059669;
-  --c10-primary-light: #34d399;
-  --c10-primary-glow: rgba(16, 185, 129, 0.25);
-  --brand-primary: #10b981;
+  /* Primary Accent & Brand (Material 3 Dark Transit Emerald) */
+  --c10-primary: #34d399;
+  --c10-primary-dark: #10b981;
+  --c10-primary-light: #6ee7b7;
+  --c10-primary-glow: rgba(52, 211, 153, 0.18);
+  --brand-primary: #34d399;
 
-  /* Backgrounds & Surfaces */
-  --bg-main: #09090b;
-  --bg-surface: #12131a;
-  --bg-surface-elevated: #1e1f26;
-  /* OPAQUE, unlike the two overlays below: sticky cells paint over scrolled-under
-     rows, so a translucent tint would let that content bleed through. */
-  --bg-surface-hover: #1e293b;
-  --bg-hover: rgba(255, 255, 255, 0.03);
-  --bg-hover-strong: rgba(255, 255, 255, 0.06);
-  --bg-surface-glass: rgba(18, 20, 29, 0.78);
-  --bg-input: rgba(13, 14, 21, 0.85);
-  --bg-card-gradient: linear-gradient(135deg, rgba(18, 20, 29, 0.85) 0%, rgba(13, 14, 21, 0.75) 100%);
-  --bg-target-gradient: linear-gradient(135deg, #12131a 0%, rgba(16, 185, 129, 0.08) 100%);
+  /* Backgrounds & Surfaces (Material 3 Neutral Graphite Tonal Scale) */
+  --bg-main: #111315;
+  --bg-surface: #1b1d20;
+  --bg-surface-elevated: #25282c;
+  /* OPAQUE, unlike overlays: sticky cells paint over scrolled-under rows. */
+  --bg-surface-hover: #2f3338;
+  --bg-hover: rgba(255, 255, 255, 0.04);
+  --bg-hover-strong: rgba(255, 255, 255, 0.08);
+  --bg-surface-glass: #1b1d20;
+  --bg-input: #25282c;
+  --bg-card-gradient: #1b1d20;
+  --bg-target-gradient: #1b1d20;
 
-  /* Typography */
-  --text-primary: #f4f4f5;
-  --text-secondary: #a1a1aa;
-  --text-muted: #8b8b95;
-  --text-inverse: #09090b;
+  /* Typography (Material 3 Dark Ink Scale — >= 4.5:1 on every surface) */
+  --text-primary: #e8eaed;
+  --text-secondary: #bdc1c6;
+  --text-muted: #9aa0a6;
+  --text-inverse: #111315;
 
   /* Transit Accents */
-  --accent-live: #10b981;
-  --accent-live-glow: rgba(16, 185, 129, 0.35);
-  --accent-scheduled: #38bdf8;
-  --accent-warning: #f59e0b;
-  --accent-danger: #f43f5e;
-  --accent-amb: #f97316;
-  --accent-maresme: #06b6d4;
-  --accent-regulating: #c084fc;
-  --accent-regulating-bg: rgba(168, 85, 247, 0.18);
-  --accent-regulating-border: rgba(168, 85, 247, 0.35);
+  --accent-live: #34d399;
+  --accent-live-glow: rgba(52, 211, 153, 0.25);
+  --accent-scheduled: #60a5fa;
+  --accent-warning: #fbbf24;
+  --accent-danger: #fb7185;
+  --accent-amb: #fb923c;
+  --accent-maresme: #38bdf8;
+  --accent-regulating: #d8b4fe;
+  --accent-regulating-bg: rgba(192, 132, 252, 0.16);
+  --accent-regulating-border: rgba(192, 132, 252, 0.32);
 
-  /* Micro-Borders & Dividers */
-  --border-subtle: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.16);
-  --border-focus: rgba(16, 185, 129, 0.6);
+  /* Map Chrome, Alerts & Material Tonal Chips */
+  --map-ctrl-bg: #1b1d20;
+  --map-ctrl-fg: #e8eaed;
+  --map-ctrl-border: rgba(255, 255, 255, 0.14);
+  --map-ctrl-hover: #2f3338;
+  --alert-surface: #2b2213;
+  --alert-border: rgba(251, 191, 36, 0.38);
+  --alert-fg: #fcd34d;
+  --alert-btn-bg: rgba(251, 191, 36, 0.16);
+  --alert-btn-fg: #fef3c7;
+  --chip-tonal-bg: #25282c;
+  --chip-tonal-fg: #e8eaed;
+  --chip-tonal-border: rgba(255, 255, 255, 0.12);
 
-  /* Shadows */
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45);
-  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.6);
-  --shadow-glow: 0 0 25px var(--c10-primary-glow);
+  /* Micro-Borders & Dividers (MD3 Outline-Variant / Outline) */
+  --border-subtle: rgba(255, 255, 255, 0.09);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --border-focus: #34d399;
+
+  /* Material 3 Elevation Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.22);
+  --shadow-md: 0 2px 6px rgba(0, 0, 0, 0.42), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 6px 20px rgba(0, 0, 0, 0.55);
+  --shadow-glow: 0 2px 10px rgba(0, 0, 0, 0.35);
 
   /* Scrollbar */
-  --scrollbar-thumb: rgba(255, 255, 255, 0.16);
-  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.28);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.18);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.32);
 
   /* Standardized Button Design Tokens (Dark Theme) */
   --btn-font-family: var(--font-sans);
-  --btn-font-weight: 700;
-  --btn-radius-sm: 6px;
-  --btn-radius-md: 8px;
-  --btn-radius-lg: 12px;
+  --btn-font-weight: 600;
+  --btn-radius-sm: 8px;
+  --btn-radius-md: 12px;
+  --btn-radius-lg: 16px;
   --btn-radius-pill: 9999px;
-  --btn-transition: all 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  --btn-transition: all 150ms cubic-bezier(0.2, 0, 0, 1);
 
   --btn-primary-bg: var(--action);
   --btn-primary-bg-hover: var(--action-hover);
   --btn-primary-color: var(--on-action);
-  --btn-primary-border: var(--brand-strong);
+  --btn-primary-border: var(--action);
   --btn-primary-border-hover: var(--action-hover);
-  --btn-primary-shadow: 0 2px 8px var(--c10-primary-glow);
-  --btn-primary-shadow-hover: 0 4px 14px var(--c10-primary-glow);
+  --btn-primary-shadow: none;
+  --btn-primary-shadow-hover: var(--shadow-sm);
 
   --btn-secondary-bg: var(--bg-surface-elevated);
-  --btn-secondary-bg-hover: rgba(255, 255, 255, 0.08);
-  --btn-secondary-color: var(--text-secondary);
+  --btn-secondary-bg-hover: var(--bg-surface-hover);
+  --btn-secondary-color: var(--text-primary);
   --btn-secondary-color-hover: var(--text-primary);
   --btn-secondary-border: var(--border-subtle);
   --btn-secondary-border-hover: var(--border-strong);
-  --btn-secondary-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
-  --btn-secondary-shadow-hover: 0 3px 10px rgba(0, 0, 0, 0.35);
+  --btn-secondary-shadow: none;
+  --btn-secondary-shadow-hover: var(--shadow-sm);
 
   --btn-ghost-bg: transparent;
-  --btn-ghost-bg-hover: rgba(255, 255, 255, 0.06);
+  --btn-ghost-bg-hover: var(--bg-hover-strong);
   --btn-ghost-color: var(--text-secondary);
   --btn-ghost-color-hover: var(--text-primary);
   --btn-ghost-border: transparent;
   --btn-ghost-border-hover: var(--border-subtle);
 
   /* Arribo! Design System v1: the names new code uses (see UI_GUIDE.md) */
-  --brand: #10b981;
-  --brand-strong: #059669;
-  --brand-soft: #34d399;
-  --brand-tint: rgba(16, 185, 129, 0.12);
-  --action: #10b981;
-  --action-hover: #34d399;
-  --on-action: #022c1e;
-  --focus-ring: #34d399;
-  --bg-glass: rgba(18, 20, 29, 0.78);
+  --brand: #34d399;
+  --brand-strong: #10b981;
+  --brand-soft: #6ee7b7;
+  --brand-tint: rgba(52, 211, 153, 0.14);
+  --action: #34d399;
+  --action-hover: #6ee7b7;
+  --on-action: #042f20;
+  --focus-ring: #6ee7b7;
+  --bg-glass: #1b1d20;
   --status-live: var(--brand);
-  --status-estimated: #f59e0b;
-  --status-scheduled: #38bdf8;
-  --status-regulating: #c084fc;
-  --danger: #f43f5e;
+  --status-estimated: #fbbf24;
+  --status-scheduled: #60a5fa;
+  --status-regulating: #d8b4fe;
+  --danger: #fb7185;
   --status-live-tint: var(--brand-tint);
-  --status-estimated-tint: rgba(245, 158, 11, 0.14);
-  --status-scheduled-tint: rgba(56, 189, 248, 0.14);
-  --status-regulating-tint: rgba(168, 85, 247, 0.18);
-  --danger-tint: rgba(244, 63, 94, 0.14);
+  --status-estimated-tint: rgba(251, 191, 36, 0.15);
+  --status-scheduled-tint: rgba(96, 165, 250, 0.15);
+  --status-regulating-tint: rgba(216, 180, 254, 0.16);
+  --danger-tint: rgba(251, 113, 133, 0.15);
 
   /* Bus illustration (Volvo 7900 Hybrid in the service livery) */
   --bus-body: #eef2f6;
@@ -331,115 +344,126 @@
   /* Theme Identity */
   --theme-name: 'light';
 
-  /* Primary Accent & Brand */
-  --c10-primary: #047857;
-  --c10-primary-dark: #065f46;
-  --c10-primary-light: #059669;
-  --c10-primary-glow: rgba(5, 150, 105, 0.2);
-  --brand-primary: #047857;
+  /* Primary Accent & Brand (Material 3 / Google Maps Transit Green) */
+  --c10-primary: #00795c;
+  --c10-primary-dark: #005c45;
+  --c10-primary-light: #008968;
+  --c10-primary-glow: rgba(0, 121, 92, 0.16);
+  --brand-primary: #00795c;
 
-  /* Backgrounds & Surfaces */
-  --bg-main: #f4f4f5;
+  /* Backgrounds & Surfaces (Material 3 Clean Tonal Light) */
+  --bg-main: #f3f4f6;
   --bg-surface: #ffffff;
-  --bg-surface-elevated: #f8fafc;
-  /* Opaque for the same reason as the dark twin. The blue-tinted grey mirrors the
-     dark theme's #1e293b so the hover reads the same weight in both themes. */
-  --bg-surface-hover: #e9edf3;
-  /* The dark theme's white overlays are invisible on a light surface — these are
-     the same two weights, tinted with ink instead. */
-  --bg-hover: rgba(9, 9, 11, 0.04);
-  --bg-hover-strong: rgba(9, 9, 11, 0.07);
-  --bg-surface-glass: rgba(255, 255, 255, 0.9);
+  --bg-surface-elevated: #eef0f3;
+  /* Opaque for sticky cells over scrolled rows. */
+  --bg-surface-hover: #e3e7ec;
+  --bg-hover: rgba(31, 31, 31, 0.04);
+  --bg-hover-strong: rgba(31, 31, 31, 0.08);
+  --bg-surface-glass: #ffffff;
   --bg-input: #ffffff;
-  --bg-card-gradient: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
-  --bg-target-gradient: linear-gradient(135deg, #ffffff 0%, rgba(16, 185, 129, 0.06) 100%);
+  --bg-card-gradient: #ffffff;
+  --bg-target-gradient: #ffffff;
 
-  /* Typography */
-  --text-primary: #09090b;
-  --text-secondary: #52525b;
-  --text-muted: #63636b;
+  /* Typography (Google / Material 3 High-Contrast Ink Scale) */
+  --text-primary: #1f1f1f;
+  --text-secondary: #444746;
+  --text-muted: #5f6368;
   --text-inverse: #ffffff;
 
   /* Transit Accents */
-  --accent-live: #047857;
-  --accent-live-glow: rgba(5, 150, 105, 0.25);
-  --accent-scheduled: #0369a1;
+  --accent-live: #00795c;
+  --accent-live-glow: rgba(0, 121, 92, 0.2);
+  --accent-scheduled: #1a73e8;
   --accent-warning: #b45309;
-  --accent-danger: #e11d48;
-  --accent-amb: #ea580c;
-  --accent-maresme: #0891b2;
+  --accent-danger: #d93025;
+  --accent-amb: #d95300;
+  --accent-maresme: #0277bd;
   --accent-regulating: #7e22ce;
-  --accent-regulating-bg: rgba(147, 51, 234, 0.12);
-  --accent-regulating-border: rgba(147, 51, 234, 0.3);
+  --accent-regulating-bg: rgba(126, 34, 206, 0.1);
+  --accent-regulating-border: rgba(126, 34, 206, 0.28);
 
-  /* Borders & Dividers */
-  --border-subtle: rgba(9, 9, 11, 0.08);
-  --border-strong: rgba(9, 9, 11, 0.16);
-  --border-focus: rgba(5, 150, 105, 0.6);
+  /* Map Chrome, Alerts & Material Tonal Chips */
+  --map-ctrl-bg: #ffffff;
+  --map-ctrl-fg: #1f1f1f;
+  --map-ctrl-border: rgba(31, 31, 31, 0.14);
+  --map-ctrl-hover: #eef0f3;
+  --alert-surface: #fef7e0;
+  --alert-border: #f5c351;
+  --alert-fg: #7c4a03;
+  --alert-btn-bg: #f5c351;
+  --alert-btn-fg: #1f1f1f;
+  --chip-tonal-bg: #eef0f3;
+  --chip-tonal-fg: #1f1f1f;
+  --chip-tonal-border: rgba(31, 31, 31, 0.12);
 
-  /* Shadows */
-  --shadow-sm: 0 1px 3px rgba(9, 9, 11, 0.06);
-  --shadow-md: 0 4px 16px rgba(9, 9, 11, 0.08);
-  --shadow-lg: 0 12px 32px rgba(9, 9, 11, 0.12);
-  --shadow-glow: 0 0 25px var(--c10-primary-glow);
+  /* Borders & Dividers (MD3 Outline-Variant / Outline) */
+  --border-subtle: rgba(31, 31, 31, 0.1);
+  --border-strong: rgba(31, 31, 31, 0.2);
+  --border-focus: #00795c;
+
+  /* Material 3 Elevation Shadows */
+  --shadow-sm: 0 1px 2px rgba(60, 64, 67, 0.12), 0 1px 3px rgba(60, 64, 67, 0.08);
+  --shadow-md: 0 2px 6px rgba(60, 64, 67, 0.14), 0 1px 2px rgba(60, 64, 67, 0.1);
+  --shadow-lg: 0 6px 20px rgba(60, 64, 67, 0.18);
+  --shadow-glow: 0 2px 8px rgba(60, 64, 67, 0.12);
 
   /* Scrollbar */
-  --scrollbar-thumb: rgba(9, 9, 11, 0.18);
-  --scrollbar-thumb-hover: rgba(9, 9, 11, 0.35);
+  --scrollbar-thumb: rgba(31, 31, 31, 0.2);
+  --scrollbar-thumb-hover: rgba(31, 31, 31, 0.36);
 
   /* Standardized Button Design Tokens (Light Theme) */
   --btn-font-family: var(--font-sans);
-  --btn-font-weight: 700;
-  --btn-radius-sm: 6px;
-  --btn-radius-md: 8px;
-  --btn-radius-lg: 12px;
+  --btn-font-weight: 600;
+  --btn-radius-sm: 8px;
+  --btn-radius-md: 12px;
+  --btn-radius-lg: 16px;
   --btn-radius-pill: 9999px;
-  --btn-transition: all 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  --btn-transition: all 150ms cubic-bezier(0.2, 0, 0, 1);
 
   --btn-primary-bg: var(--action);
   --btn-primary-bg-hover: var(--action-hover);
   --btn-primary-color: var(--on-action);
-  --btn-primary-border: var(--brand-strong);
+  --btn-primary-border: var(--action);
   --btn-primary-border-hover: var(--action-hover);
-  --btn-primary-shadow: 0 2px 8px var(--c10-primary-glow);
-  --btn-primary-shadow-hover: 0 4px 14px var(--c10-primary-glow);
+  --btn-primary-shadow: none;
+  --btn-primary-shadow-hover: var(--shadow-sm);
 
   --btn-secondary-bg: var(--bg-surface-elevated);
-  --btn-secondary-bg-hover: rgba(0, 0, 0, 0.05);
-  --btn-secondary-color: var(--text-secondary);
+  --btn-secondary-bg-hover: var(--bg-surface-hover);
+  --btn-secondary-color: var(--text-primary);
   --btn-secondary-color-hover: var(--text-primary);
   --btn-secondary-border: var(--border-subtle);
   --btn-secondary-border-hover: var(--border-strong);
-  --btn-secondary-shadow: 0 1px 3px rgba(9, 9, 11, 0.06);
-  --btn-secondary-shadow-hover: 0 3px 10px rgba(9, 9, 11, 0.1);
+  --btn-secondary-shadow: none;
+  --btn-secondary-shadow-hover: var(--shadow-sm);
 
   --btn-ghost-bg: transparent;
-  --btn-ghost-bg-hover: rgba(0, 0, 0, 0.05);
+  --btn-ghost-bg-hover: var(--bg-hover-strong);
   --btn-ghost-color: var(--text-secondary);
   --btn-ghost-color-hover: var(--text-primary);
   --btn-ghost-border: transparent;
   --btn-ghost-border-hover: var(--border-subtle);
 
   /* Arribo! Design System v1 */
-  --brand: #047857;
-  --brand-strong: #065f46;
-  --brand-soft: #059669;
-  --brand-tint: rgba(5, 150, 105, 0.1);
-  --action: #047857;
-  --action-hover: #065f46;
+  --brand: #00795c;
+  --brand-strong: #005c45;
+  --brand-soft: #008968;
+  --brand-tint: rgba(0, 121, 92, 0.1);
+  --action: #00795c;
+  --action-hover: #005c45;
   --on-action: #ffffff;
-  --focus-ring: #047857;
-  --bg-glass: rgba(255, 255, 255, 0.9);
+  --focus-ring: #00795c;
+  --bg-glass: #ffffff;
   --status-live: var(--brand);
   --status-estimated: #b45309;
-  --status-scheduled: #0369a1;
+  --status-scheduled: #1a73e8;
   --status-regulating: #7e22ce;
-  --danger: #e11d48;
+  --danger: #d93025;
   --status-live-tint: var(--brand-tint);
   --status-estimated-tint: rgba(180, 83, 9, 0.1);
-  --status-scheduled-tint: rgba(3, 105, 161, 0.08);
+  --status-scheduled-tint: rgba(26, 115, 232, 0.1);
   --status-regulating-tint: rgba(126, 34, 206, 0.1);
-  --danger-tint: rgba(225, 29, 72, 0.08);
+  --danger-tint: rgba(217, 48, 37, 0.1);
 
   --bus-body: #ffffff;
   --bus-roof: #dfe5ec;
@@ -589,11 +613,10 @@ body {
   position: sticky;
   top: 0;
   z-index: 1000;
-  background: var(--bg-surface-glass);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: var(--bg-surface);
   border-bottom: 1px solid var(--border-subtle);
-  padding: 0.85rem 1.5rem;
+  padding: 0.65rem 1.5rem;
+  box-shadow: var(--shadow-sm);
   transition: background var(--transition-normal), border-color var(--transition-normal);
 }
 
@@ -636,7 +659,7 @@ body {
   background: var(--bg-surface-elevated);
   border: 1px solid var(--border-subtle);
   color: var(--text-primary);
-  padding: 0.48rem 3.2rem 0.48rem 2.25rem;
+  padding: 0.48rem 4rem 0.48rem 2.25rem;
   border-radius: var(--radius-full);
   font-size: 0.82rem;
   font-family: inherit;
@@ -1146,12 +1169,12 @@ body {
   box-shadow: 0 2px 10px var(--c10-primary-glow);
 }
 
-/* Direction Bar */
+/* Direction Bar (Material 3 Segmented Button Container) */
 .direction-bar {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-xl);
+  padding: 0.45rem 0.75rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1161,10 +1184,10 @@ body {
 
 .direction-toggle-group {
   display: flex;
-  gap: 0.35rem;
-  background: var(--bg-main);
-  padding: 0.35rem;
-  border-radius: var(--radius-xs);
+  gap: 0.25rem;
+  background: var(--bg-surface-elevated);
+  padding: 0.25rem;
+  border-radius: var(--radius-full);
   flex: 1 1 auto;
   min-width: 320px;
 }
@@ -1172,15 +1195,15 @@ body {
 .btn-direction {
   flex: 1 1 0;
   min-width: 0;
-  min-height: 40px;
+  min-height: 38px;
   background: transparent;
   border: none;
   color: var(--text-secondary);
-  padding: 0.6rem 1rem;
-  border-radius: var(--radius-xs);
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-full);
   font-family: var(--font-sans);
-  font-size: 0.85rem;
-  font-weight: 700;
+  font-size: 0.84rem;
+  font-weight: 600;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1193,7 +1216,7 @@ body {
 .btn-direction.active {
   background: var(--action);
   color: var(--on-action);
-  box-shadow: 0 4px 12px var(--c10-primary-glow);
+  box-shadow: var(--shadow-sm);
 }
 
 .btn-direction.loading {
@@ -1264,13 +1287,13 @@ body {
 }
 
 .target-card {
-  background: var(--bg-target-gradient);
-  border: 1px solid rgba(0, 148, 133, 0.35);
-  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
   padding: 1.25rem 1.4rem;
   position: relative;
   overflow: hidden;
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -1417,12 +1440,12 @@ body {
 }
 
 .eta-big-time {
-  font-size: 3.25rem;
-  font-weight: 800;
+  font-size: 3rem;
+  font-weight: 700;
   color: var(--text-primary);
-  font-family: var(--font-mono);
-  letter-spacing: -1.5px;
-  line-height: 1;
+  font-family: var(--font-sans);
+  letter-spacing: -0.04em;
+  line-height: 1.05;
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
@@ -1436,10 +1459,11 @@ body {
 }
 
 .eta-exact-time {
-  font-size: 0.95rem;
+  font-size: 0.92rem;
   color: var(--text-secondary);
-  font-weight: 600;
-  font-family: var(--font-mono);
+  font-weight: 500;
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
   word-break: break-word;
   overflow-wrap: break-word;
 }
@@ -4838,15 +4862,15 @@ body {
   align-items: center;
   gap: 0.85rem;
   padding: 0.75rem 1.15rem;
-  background: linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(220, 38, 38, 0.1) 100%);
-  border: 1px solid rgba(245, 158, 11, 0.35);
-  border-radius: var(--radius-sm);
+  background: var(--alert-surface);
+  border: 1px solid var(--alert-border);
+  border-radius: var(--radius-lg);
   margin-bottom: 0.85rem;
   animation: fadeIn 0.3s ease;
 }
 
 .disruption-banner-icon {
-  font-size: 1.3rem;
+  font-size: 1.2rem;
   flex-shrink: 0;
 }
 
@@ -4858,15 +4882,15 @@ body {
 }
 
 .disruption-banner-content strong {
-  color: #fbbf24;
-  font-size: 0.84rem;
+  color: var(--alert-fg);
+  font-size: 0.85rem;
   font-weight: 700;
 }
 
 .disruption-banner-content span {
   color: var(--text-secondary);
-  font-size: 0.76rem;
-  line-height: 1.3;
+  font-size: 0.78rem;
+  line-height: 1.35;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -4874,20 +4898,20 @@ body {
 }
 
 .disruption-banner-btn {
-  padding: 0.35rem 0.75rem;
-  background: rgba(245, 158, 11, 0.2);
-  border: 1px solid rgba(245, 158, 11, 0.4);
-  border-radius: var(--radius-xs);
-  color: #fff;
-  font-size: 0.74rem;
-  font-weight: 600;
+  padding: 0.4rem 0.85rem;
+  background: var(--alert-btn-bg);
+  border: 1px solid var(--alert-border);
+  border-radius: var(--radius-full);
+  color: var(--alert-btn-fg);
+  font-size: 0.75rem;
+  font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
   transition: all var(--transition-fast);
 }
 
 .disruption-banner-btn:hover {
-  background: rgba(245, 158, 11, 0.35);
+  filter: brightness(0.95);
 }
 
 .disruption-item-card {
@@ -4966,16 +4990,16 @@ body {
 }
 
 /* ===================================================================
-   ARRIBO! — LANDING VIEW & UNIVERSAL LINE SELECTION HUB
+   ARRIBO! — MATERIAL 3 COMPACT COMMAND STRIP & MAP-FIRST HUB
    =================================================================== */
 
 .landing-hero-card {
-  background: var(--bg-card-gradient);
+  background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  padding: 2.25rem 2rem;
-  margin-bottom: 1.5rem;
-  box-shadow: var(--shadow-md);
+  border-radius: var(--radius-xl);
+  padding: 1.15rem 1.4rem 1rem;
+  margin-bottom: 1.1rem;
+  box-shadow: var(--shadow-sm);
   text-align: center;
   position: relative;
   overflow: visible;
@@ -4991,15 +5015,15 @@ body {
   height: 80%;
   background: radial-gradient(closest-side, var(--c10-primary-glow) 0%, transparent 100%);
   pointer-events: none;
-  opacity: 0.6;
+  opacity: 0;
 }
 
-/* The bus illustration (index.html hero): drives in once on load. */
+/* Compact Volvo 7900 side-view mark so the live Catalonia map fits above the fold. */
 .landing-hero-bus {
   display: block;
-  width: min(300px, 78%);
+  width: min(108px, 34%);
   height: auto;
-  margin: 0 auto var(--space-5);
+  margin: 0 auto 0.5rem;
   position: relative;
 }
 
@@ -5017,69 +5041,69 @@ body {
 .landing-hero-badge {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  font-size: 0.78rem;
+  gap: 0.35rem;
+  font-size: 0.7rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  padding: 0.35rem 0.9rem;
-  border-radius: 999px;
-  background: rgba(16, 185, 129, 0.15);
-  color: #10b981;
-  border: 1px solid rgba(16, 185, 129, 0.3);
-  margin-bottom: 1rem;
+  padding: 0.22rem 0.7rem;
+  border-radius: var(--radius-full);
+  background: var(--brand-tint);
+  color: var(--brand);
+  border: 1px solid var(--border-subtle);
+  margin-bottom: 0.45rem;
 }
 
 .landing-hero-title {
-  font-size: 2.1rem;
-  font-weight: 800;
-  letter-spacing: -0.03em;
+  font-size: 1.45rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   color: var(--text-primary);
-  margin-bottom: 0.6rem;
-  line-height: 1.2;
+  margin-bottom: 0.25rem;
+  line-height: 1.25;
 }
 
 .landing-hero-subtitle {
-  font-size: 0.98rem;
+  font-size: 0.86rem;
   color: var(--text-secondary);
-  max-width: 620px;
-  margin: 0 auto 1.6rem auto;
-  line-height: 1.55;
+  max-width: 600px;
+  margin: 0 auto 0.9rem auto;
+  line-height: 1.45;
 }
 
 .landing-hero-search-wrapper {
   position: relative;
   max-width: 640px;
-  margin: 0 auto 1.5rem auto;
+  margin: 0 auto 0.85rem auto;
   display: flex;
   align-items: center;
 }
 
 .landing-search-icon-svg {
   position: absolute;
-  left: 1.1rem;
-  color: var(--c10-primary);
+  left: 1.15rem;
+  color: var(--text-muted);
   pointer-events: none;
 }
 
 .landing-hero-search-input {
   width: 100%;
   background: var(--bg-input);
-  border: 2px solid var(--border-strong);
+  border: 1px solid var(--border-strong);
   color: var(--text-primary);
   font-family: inherit;
-  font-size: 1rem;
+  font-size: 0.95rem;
   font-weight: 500;
-  padding: 0.85rem 3rem 0.85rem 3.1rem;
-  border-radius: var(--radius-sm);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-  transition: all 0.2s ease;
+  padding: 0.72rem 2.8rem 0.72rem 3rem;
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease;
 }
 
 .landing-hero-search-input:focus {
   outline: none;
-  border-color: var(--c10-primary);
-  box-shadow: 0 0 0 4px var(--c10-primary-glow);
+  border-color: var(--border-focus);
+  box-shadow: var(--shadow-md);
 }
 
 .landing-search-clear-btn {
@@ -5105,14 +5129,15 @@ body {
   width: 100%;
   max-width: 100%;
   text-align: left;
+  border-radius: var(--radius-lg);
 }
 
 .landing-filter-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 0.4rem;
   justify-content: center;
-  margin-top: 1rem;
+  margin-top: 0.65rem;
 }
 
 .landing-filter-tab {
@@ -5223,39 +5248,39 @@ body {
 }
 
 .landing-line-card {
-  background: var(--bg-card-gradient);
+  background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  padding: 1rem 1.1rem;
+  border-radius: var(--radius-lg);
+  padding: 0.85rem 1rem;
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 0.9rem;
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: background var(--dur-fast) ease, border-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease;
   text-decoration: none;
   position: relative;
   overflow: hidden;
 }
 
 .landing-line-card:hover {
-  transform: translateY(-2px);
-  border-color: var(--border-focus);
-  box-shadow: var(--shadow-md);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-sm);
   background: var(--bg-surface-elevated);
 }
 
 .landing-line-badge {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 1rem;
-  font-weight: 800;
-  color: #ffffff;
-  padding: 0.55rem 0.85rem;
-  border-radius: var(--radius-xs);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--line-ink, var(--on-action));
+  background: var(--line-color, var(--action));
+  padding: 0.45rem 0.75rem;
+  border-radius: var(--radius-md);
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 58px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+  min-width: 54px;
   flex-shrink: 0;
 }
 
@@ -5519,51 +5544,42 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  padding: 0.55rem 1.1rem;
-  border-radius: 999px;
+  padding: 0.45rem 1rem;
+  border-radius: var(--radius-full);
   font-family: inherit;
-  font-size: 0.85rem;
-  font-weight: 700;
+  font-size: 0.82rem;
+  font-weight: 600;
   cursor: pointer;
-  transition: all var(--transition-fast);
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-surface-elevated);
-  color: var(--text-primary);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  transition: background var(--dur-fast) ease, border-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease;
+  border: 1px solid var(--chip-tonal-border);
+  background: var(--chip-tonal-bg);
+  color: var(--chip-tonal-fg);
+  box-shadow: none;
 }
 
 .btn-hero-action:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  background: var(--bg-surface-hover);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-sm);
 }
 
-.btn-hero-geo {
-  background: linear-gradient(135deg, rgba(14, 165, 233, 0.2) 0%, rgba(14, 165, 233, 0.08) 100%);
-  border-color: rgba(14, 165, 233, 0.45);
-  color: #38bdf8;
-}
-
-.btn-hero-geo:hover {
-  background: rgba(14, 165, 233, 0.3);
-  border-color: #38bdf8;
-  color: #ffffff;
-}
-
+.btn-hero-geo,
 .btn-hero-zones {
-  background: linear-gradient(135deg, rgba(168, 85, 247, 0.2) 0%, rgba(168, 85, 247, 0.08) 100%);
-  border-color: rgba(168, 85, 247, 0.45);
-  color: #c084fc;
+  background: var(--chip-tonal-bg);
+  border-color: var(--chip-tonal-border);
+  color: var(--chip-tonal-fg);
 }
 
+.btn-hero-geo:hover,
 .btn-hero-zones:hover {
-  background: rgba(168, 85, 247, 0.3);
-  border-color: #c084fc;
-  color: #ffffff;
+  background: var(--bg-surface-hover);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
 }
 
-/* Network-Wide Live Map (landing screen: all 8 lines, all buses) */
+/* Network-Wide Live Map (landing screen: Material 3 map-first viewport) */
 .landing-network-map-section {
-  margin-bottom: 2rem;
+  margin-bottom: 1.75rem;
   animation: fadeIn 0.3s ease-out;
 }
 
@@ -5577,51 +5593,102 @@ body {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  height: min(62vh, 560px);
-  min-height: 380px;
-  border-radius: var(--radius-sm);
+  height: min(64vh, 620px);
+  min-height: 400px;
+  border-radius: var(--radius-xl);
   overflow: hidden;
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
-  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--shadow-sm);
   box-sizing: border-box;
 }
 
-/* Legend overlay. Non-interactive so it never eats a click meant for a bus pin
-   or a map drag, matching the map's own passive control affordances. */
+/* Solid Material 3 legend card — crisp legibility in both light and dark modes. */
 .network-map-legend {
   position: absolute;
-  left: 0.6rem;
-  bottom: 0.6rem;
-  right: 0.6rem;
+  left: 0.65rem;
+  bottom: 0.65rem;
+  right: 0.65rem;
   z-index: 500;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.3rem 0.45rem;
-  padding: 0.4rem 0.55rem;
-  border-radius: var(--radius-sm);
-  background: rgba(15, 23, 42, 0.72);
-  backdrop-filter: blur(6px);
+  gap: 0.3rem 0.55rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: var(--radius-lg);
+  background: var(--map-ctrl-bg);
+  border: 1px solid var(--map-ctrl-border);
+  box-shadow: var(--shadow-sm);
   pointer-events: none;
-  max-width: calc(100% - 1.2rem);
+  max-width: calc(100% - 1.3rem);
 }
 
 .network-map-legend-item {
   display: inline-flex;
   align-items: center;
-  gap: 0.28rem;
-  font-size: 0.68rem;
-  font-weight: 700;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 600;
   line-height: 1.4;
-  color: var(--text-primary);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  color: var(--map-ctrl-fg);
 }
 
 .network-map-legend-dot {
   width: 9px;
   height: 9px;
   border-radius: var(--radius-full);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border-strong);
+}
+
+/* Material 3 themed Leaflet zoom controls, attribution, & map train toggle */
+.leaflet-control-zoom {
+  border: 1px solid var(--map-ctrl-border) !important;
+  border-radius: var(--radius-lg) !important;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm) !important;
+}
+.leaflet-control-zoom a {
+  background: var(--map-ctrl-bg) !important;
+  color: var(--map-ctrl-fg) !important;
+  border-bottom-color: var(--map-ctrl-border) !important;
+  width: 34px !important;
+  height: 34px !important;
+  line-height: 34px !important;
+  font-weight: 600;
+}
+.leaflet-control-zoom a:hover {
+  background: var(--map-ctrl-hover) !important;
+}
+.leaflet-control-attribution {
+  background: var(--map-ctrl-bg) !important;
+  color: var(--text-muted) !important;
+  border-top-left-radius: var(--radius-sm);
+  border-top: 1px solid var(--map-ctrl-border);
+  border-left: 1px solid var(--map-ctrl-border);
+  padding: 2px 6px !important;
+}
+.leaflet-control-attribution a {
+  color: var(--text-secondary) !important;
+}
+#network-map-trains-toggle {
+  border: 1px solid var(--border-strong);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border-radius: var(--radius-full);
+  padding: 0.25rem 0.75rem;
+  font-weight: 600;
+}
+#network-map-trains-toggle:hover {
+  background: var(--bg-surface-hover);
+}
+.target-line-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.3;
+  vertical-align: middle;
 }
 
 /* Favorite Stops Hub Grid */
