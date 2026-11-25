@@ -16,6 +16,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -1654,8 +1655,8 @@ func (s *Server) hMataroStopDepartures(q *xreq, res *xres) error {
 func (s *Server) hNearby(q *xreq, res *xres) error {
 	lat := qv(q, "lat")
 	lon := qv(q, "lon")
-	radius := math.Max(50, math.Min(5000, parseIntOr(qv(q, "radius"), 800)))
-	limit := math.Max(1, math.Min(parseIntOr(qv(q, "limit"), 5), 12))
+	radius := math.Max(100, math.Min(10000, parseIntOr(qv(q, "radius"), 800)))
+	limit := math.Max(1, math.Min(parseIntOr(qv(q, "limit"), 12), 50))
 	includeDepartures := !strictEq(qv(q, "departures"), "false")
 	if !truthy(lat) || !truthy(lon) {
 		res.status = 400
@@ -1663,18 +1664,40 @@ func (s *Server) hNearby(q *xreq, res *xres) error {
 		return nil
 	}
 	err := tryJS(func() {
-		var stops []any
+		userLat := parseFloatJS(lat)
+		userLon := parseFloatJS(lon)
+		var mataroStops []any
 		if includeDepartures {
-			stops = s.w.tracker.getNearbyStopsWithDepartures(lat, lon, radius, limit)
+			mataroStops = s.w.tracker.getNearbyStopsWithDepartures(lat, lon, radius, limit)
 		} else {
-			stops = s.w.tracker.getNearbyStops(lat, lon, radius, limit)
+			mataroStops = s.w.tracker.getNearbyStops(lat, lon, radius, limit)
 		}
-		if stops == nil {
-			stops = []any{}
+		merged := make([]*Obj, 0, len(mataroStops)+int(limit))
+		for _, raw := range mataroStops {
+			if o, _ := raw.(*Obj); o != nil {
+				if !truthy(o.Get("agency")) {
+					o.Set("agency", "Mataró Bus")
+					o.Set("agencyId", "mataro")
+					o.Set("mode", "bus")
+				}
+				merged = append(merged, o)
+			}
+		}
+		catStops := nearbyCatalogStops(userLat, userLon, radius, int(limit))
+		merged = append(merged, catStops...)
+		sort.SliceStable(merged, func(i, j int) bool {
+			return merged[i].Num("distanceMeters") < merged[j].Num("distanceMeters")
+		})
+		if len(merged) > int(limit) {
+			merged = merged[:int(limit)]
+		}
+		stops := make([]any, len(merged))
+		for i, o := range merged {
+			stops[i] = o
 		}
 		res.json(O(
 			"success", true,
-			"coords", O("lat", parseFloatJS(lat), "lon", parseFloatJS(lon)),
+			"coords", O("lat", userLat, "lon", userLon),
 			"radiusMeters", radius,
 			"count", float64(len(stops)),
 			"stops", stops,

@@ -120,3 +120,42 @@ func TestFoldStationName(t *testing.T) {
 		}
 	}
 }
+
+func TestNearbyCatalogStops(t *testing.T) {
+	rtCatalog.Store("moventis", &rtCatalogOp{
+		AgencyID: "moventis", Mode: "bus",
+		Lines: []rtRoute{{Code: "C-10", Name: "Mataró - Barcelona", Color: "#9AFF1F"}},
+		Profiles: map[string]*rtLineProfile{
+			"C-10": {Code: "C-10", Directions: []rtLineDirection{
+				{DirectionID: 0, Stops: []rtLineStop{
+					{ID: "7193", Name: "Francesc Layret", Lat: 41.4501, Lon: 2.2474},
+					{ID: "7204", Name: "Ocata", Lat: 41.4820, Lon: 2.3170},
+				}},
+			}},
+		},
+	})
+	rtCatalog.Store("renfe_rodalies", &rtCatalogOp{
+		AgencyID: "renfe_rodalies", Mode: "rail",
+		Lines: []rtRoute{{Code: "R1", Name: "Molins de Rei - Maçanet", Color: "#7DBCEC"}},
+		Profiles: map[string]*rtLineProfile{
+			"R1": {Code: "R1", Directions: []rtLineDirection{
+				{DirectionID: 0, Stops: []rtLineStop{
+					{ID: "79600", Name: "Badalona", Lat: 41.4485, Lon: 2.2490},
+				}},
+			}},
+		},
+	})
+	t.Cleanup(func() {
+		rtCatalog.Delete("moventis")
+		rtCatalog.Delete("renfe_rodalies")
+	})
+
+	// Within 500 m of Badalona center: finds both Badalona (R1) and Francesc Layret (C-10), excludes Ocata (~6.8 km).
+	got := nearbyCatalogStops(41.4495, 2.2480, 500, 10)
+	if len(got) != 2 {
+		t.Fatalf("want 2 stops within 500m of Badalona, got %d: %s", len(got), toJSON(got))
+	}
+	if got[0].Num("distanceMeters") > got[1].Num("distanceMeters") {
+		t.Errorf("results not sorted by distance: %v > %v", got[0].Num("distanceMeters"), got[1].Num("distanceMeters"))
+	}
+}

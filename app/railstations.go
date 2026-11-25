@@ -7,6 +7,7 @@ package main
 // opens): no database access and no World lock, like /api/lines.
 
 import (
+	"math"
 	"sort"
 	"strings"
 	"unicode"
@@ -33,6 +34,133 @@ func searchRailStations(q string, limit int) []any {
 // in rtCatalog (Rodalies, FGC, TMB, TRAM, AMB, Moventis, Sagalés, Girona).
 func searchCatalogStops(q string, limit int) []any {
 	return searchOperatorStops(lineOperators(), q, limit)
+}
+
+// nearbyCatalogStops returns stops across all openable Catalonia operators in
+// rtCatalog within radiusM metres of (lat, lon), nearest first.
+func nearbyCatalogStops(lat, lon, radiusM float64, limit int) []*Obj {
+	if math.IsNaN(lat) || math.IsNaN(lon) || radiusM <= 0 || limit <= 0 {
+		return nil
+	}
+	// Quick degree bounding box pre-filter before haversine distance.
+	dLat := (radiusM / 110574.0) * 1.05
+	cosLat := math.Cos(lat * math.Pi / 180)
+	if cosLat < 0.1 {
+		cosLat = 0.1
+	}
+	dLon := (radiusM / (111320.0 * cosLat)) * 1.05
+
+	type nearbyHit struct {
+		agency operatorInfo
+		stopID string
+		name   string
+		lat    float64
+		lon    float64
+		dist   float64
+		lines  []rtRoute
+		seenL  map[string]bool
+	}
+	var hits []*nearbyHit
+	for _, info := range lineOperators() {
+		v, ok := rtCatalog.Load(info.ID)
+		if !ok {
+			continue
+		}
+		op := v.(*rtCatalogOp)
+		byKey := map[string]*nearbyHit{}
+		for _, r := range op.Lines {
+			prof := op.Profiles[r.Code]
+			if prof == nil {
+				continue
+			}
+			for _, d := range prof.Directions {
+				for _, st := range d.Stops {
+					if st.Lat == 0 && st.Lon == 0 {
+						continue
+					}
+					if math.Abs(st.Lat-lat) > dLat || math.Abs(st.Lon-lon) > dLon {
+						continue
+					}
+					dist := distM(lat, lon, st.Lat, st.Lon)
+					if dist > radiusM {
+						continue
+					}
+					key := foldStationName(st.Name)
+					if key == "" {
+						key = st.ID
+					}
+					h := byKey[key]
+					if h == nil {
+						h = &nearbyHit{
+							agency: info,
+							stopID: st.ID,
+							name:   st.Name,
+							lat:    st.Lat,
+							lon:    st.Lon,
+							dist:   dist,
+							seenL:  map[string]bool{},
+						}
+						byKey[key] = h
+						hits = append(hits, h)
+					} else if dist < h.dist {
+						h.dist = dist
+						h.lat = st.Lat
+						h.lon = st.Lon
+						h.stopID = st.ID
+					}
+					if !h.seenL[r.Code] {
+						h.seenL[r.Code] = true
+						h.lines = append(h.lines, r)
+					}
+				}
+			}
+		}
+	}
+	sort.SliceStable(hits, func(i, j int) bool {
+		if hits[i].dist != hits[j].dist {
+			return hits[i].dist < hits[j].dist
+		}
+		return len(hits[i].lines) > len(hits[j].lines)
+	})
+	if len(hits) > limit {
+		hits = hits[:limit]
+	}
+	out := make([]*Obj, 0, len(hits))
+	for _, h := range hits {
+		first := h.lines[0]
+		mode := routeModeFor(h.agency, first.Code)
+		lines := make([]any, 0, len(h.lines))
+		for _, l := range h.lines {
+			lines = append(lines, O(
+				"id", h.agency.ID+":"+l.Code,
+				"code", l.Code,
+				"name", l.Name,
+				"color", strOrNil(l.Color),
+				"textColor", strOrNil(l.TextColor),
+				"mode", routeModeFor(h.agency, l.Code),
+			))
+		}
+		short := h.agency.ShortName
+		if short == "" {
+			short = h.agency.Name
+		}
+		out = append(out, O(
+			"id", h.stopID,
+			"code", h.stopID,
+			"name", h.name,
+			"lat", h.lat,
+			"lon", h.lon,
+			"lineId", h.agency.ID+":"+first.Code,
+			"agency", short,
+			"agencyId", h.agency.ID,
+			"mode", mode,
+			"lines", lines,
+			"departures", []any{},
+			"distanceMeters", jsRound(h.dist),
+			"walkingMinutes", math.Max(1, jsRound(h.dist/80)),
+		))
+	}
+	return out
 }
 
 func modeSearchRank(mode string) int {

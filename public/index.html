@@ -27,7 +27,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
   
   <!-- App Styles -->
-  <link rel="stylesheet" href="/css/style.css?v=9.4.116">
+  <link rel="stylesheet" href="/css/style.css?v=9.4.117">
 </head>
 <body>
 
@@ -774,17 +774,55 @@
 
 
 
-  <!-- Mataró Zones & Neighborhoods Picker Modal -->
+  <!-- Interactive Catalonia Area & Radius Picker Modal -->
   <div class="modal-backdrop" id="zone-picker-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="zone-picker-modal-title">
-    <div class="modal-card" style="max-width: 680px; max-height: 85vh;">
+    <div class="modal-card zone-picker-modal">
       <button type="button" class="modal-close-btn" id="zone-picker-close-btn" data-i18n-aria-label="common.close" aria-label="Tancar">&times;</button>
-      <div class="line-picker-header" style="margin-bottom:0.75rem;">
-        <div class="target-badge" style="background:rgba(14, 165, 233, 0.15); color:#38bdf8; border:1px solid rgba(14, 165, 233, 0.35);" data-i18n="zones.badge">🏙️ Barris i Zones de Mataró</div>
-        <h3 class="line-picker-title" id="zone-picker-modal-title" data-i18n="zones.title">Tria la teva zona o barri</h3>
-        <p class="line-picker-subtitle" data-i18n="zones.subtitle">Consulta a l'instant les parades més properes i els propers autobusos</p>
+      <div class="line-picker-header zone-picker-header">
+        <div class="target-badge zone-picker-badge" data-i18n="zones.badge">📍 Àrea a Catalunya</div>
+        <h3 class="line-picker-title" id="zone-picker-modal-title" data-i18n="zones.title">Tria una zona al mapa</h3>
+        <p class="line-picker-subtitle" data-i18n="zones.subtitle">Fes clic en qualsevol punt del mapa i ajusta el radi per veure tot el transport disponible</p>
       </div>
-      <div class="zone-picker-grid" id="zone-picker-grid">
-        <!-- Populated dynamically with Mataró Hubs/Zones -->
+
+      <div class="zone-city-chips" id="zone-city-chips">
+        <button type="button" class="zone-city-chip" data-lat="41.3870" data-lon="2.1700" data-name="Barcelona">Barcelona</button>
+        <button type="button" class="zone-city-chip" data-lat="41.5396" data-lon="2.4445" data-name="Mataró">Mataró</button>
+        <button type="button" class="zone-city-chip" data-lat="41.4501" data-lon="2.2474" data-name="Badalona">Badalona</button>
+        <button type="button" class="zone-city-chip" data-lat="41.9794" data-lon="2.8214" data-name="Girona">Girona</button>
+        <button type="button" class="zone-city-chip" data-lat="41.1189" data-lon="1.2445" data-name="Tarragona">Tarragona</button>
+        <button type="button" class="zone-city-chip" data-lat="41.5463" data-lon="2.1086" data-name="Sabadell">Sabadell</button>
+        <button type="button" class="zone-city-chip" data-lat="41.5632" data-lon="2.0089" data-name="Terrassa">Terrassa</button>
+        <button type="button" class="zone-city-chip zone-city-chip-gps" id="btn-zone-picker-gps">
+          <span aria-hidden="true">📍</span>
+          <span data-i18n="zones.gpsBtn">GPS</span>
+        </button>
+      </div>
+
+      <div class="zone-map-wrap">
+        <div id="zone-picker-map" class="zone-picker-map"></div>
+      </div>
+
+      <div class="zone-radius-bar">
+        <div class="zone-radius-top">
+          <label for="zone-radius-slider" class="zone-radius-label">
+            <span data-i18n="zones.radiusLabel">Radi de cerca</span>:
+            <strong id="zone-radius-value">800 m</strong>
+          </label>
+          <div class="zone-radius-pills" id="zone-radius-pills">
+            <button type="button" class="zone-radius-pill" data-radius="300">300 m</button>
+            <button type="button" class="zone-radius-pill" data-radius="500">500 m</button>
+            <button type="button" class="zone-radius-pill active" data-radius="800">800 m</button>
+            <button type="button" class="zone-radius-pill" data-radius="1500">1,5 km</button>
+            <button type="button" class="zone-radius-pill" data-radius="3000">3 km</button>
+            <button type="button" class="zone-radius-pill" data-radius="5000">5 km</button>
+          </div>
+        </div>
+        <input type="range" id="zone-radius-slider" class="zone-radius-slider" min="200" max="5000" step="100" value="800" aria-label="Radi en metres">
+      </div>
+
+      <div class="zone-picker-footer">
+        <span class="zone-preview-pill" id="zone-preview-pill">Clica al mapa per seleccionar una zona</span>
+        <button type="button" class="btn-zone-apply" id="btn-zone-picker-apply" data-i18n="zones.applyBtn">Mostrar transport d'aquesta zona</button>
       </div>
     </div>
   </div>
@@ -873,16 +911,16 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   
   <!-- App Scripts -->
-  <script src="/js/utils.js?v=9.4.116"></script>
-  <script src="/js/i18n.js?v=9.4.116"></script>
-  <script src="/js/storage.js?v=9.4.116"></script>
-  <script src="/js/requests.js?v=9.4.116"></script>
-  <script src="/js/stopFeatures.js?v=9.4.116"></script>
-  <script src="/js/journeys.js?v=9.4.116"></script>
-  <script src="/js/journeyControls.js?v=9.4.116"></script>
-  <script src="/js/pwa.js?v=9.4.116"></script>
-  <script src="/js/map.js?v=9.4.116"></script>
-  <script src="/js/networkMap.js?v=9.4.116"></script>
-  <script src="/js/app.js?v=9.4.116"></script>
+  <script src="/js/utils.js?v=9.4.117"></script>
+  <script src="/js/i18n.js?v=9.4.117"></script>
+  <script src="/js/storage.js?v=9.4.117"></script>
+  <script src="/js/requests.js?v=9.4.117"></script>
+  <script src="/js/stopFeatures.js?v=9.4.117"></script>
+  <script src="/js/journeys.js?v=9.4.117"></script>
+  <script src="/js/journeyControls.js?v=9.4.117"></script>
+  <script src="/js/pwa.js?v=9.4.117"></script>
+  <script src="/js/map.js?v=9.4.117"></script>
+  <script src="/js/networkMap.js?v=9.4.117"></script>
+  <script src="/js/app.js?v=9.4.117"></script>
 </body>
 </html>

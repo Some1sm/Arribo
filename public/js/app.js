@@ -963,11 +963,30 @@ class TransitApp {
 
     // Nearby Grid Event Delegation
     nearbyGrid?.addEventListener('click', (e) => {
+      const lineBtn = e.target.closest('[data-nearby-line-id]');
+      if (lineBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const lineId = lineBtn.getAttribute('data-nearby-line-id');
+        if (lineId) {
+          this.switchLine(lineId);
+        }
+        return;
+      }
       const card = e.target.closest('.landing-nearby-card');
       if (card) {
         e.preventDefault();
+        const lineId = card.getAttribute('data-line-id');
         const stopId = card.getAttribute('data-stop-id');
         const stopName = card.getAttribute('data-stop-name');
+        if (lineId && lineId.includes(':')) {
+          this.switchLine(lineId);
+          if (stopId) {
+            this.setTargetStop(stopId);
+            this.inspectStop(stopId, stopName);
+          }
+          return;
+        }
         if (stopId) {
           this.inspectStop(stopId, stopName);
         }
