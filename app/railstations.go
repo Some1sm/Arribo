@@ -192,6 +192,7 @@ func searchCatalogLines(q string, limit int) []any {
 		idx  int
 	}
 	var hits []lineHit
+	dedicatedBus := map[string][][2]float64{}
 	idx := 0
 	for _, info := range lineOperators() {
 		v, ok := rtCatalog.Load(info.ID)
@@ -203,8 +204,16 @@ func searchCatalogLines(q string, limit int) []any {
 		fShort := foldStationName(info.ShortName)
 		for _, r := range op.Lines {
 			idx++
-			if op.Profiles[r.Code] == nil {
+			prof := op.Profiles[r.Code]
+			if prof == nil {
 				continue
+			}
+			mode := routeModeFor(info, r.Code)
+			if info.ID == gencatBusAgencyID && isGencatBusDuplicate(r.Code, prof, dedicatedBus) {
+				continue
+			}
+			if mode == "bus" && info.ID != gencatBusAgencyID {
+				recordDedicatedBus(dedicatedBus, info.ID, r.Code, prof)
 			}
 			fCode := foldStationName(r.Code)
 			fCodeCompact := strings.ReplaceAll(fCode, " ", "")
@@ -226,7 +235,7 @@ func searchCatalogLines(q string, limit int) []any {
 			hits = append(hits, lineHit{
 				info: info,
 				r:    r,
-				mode: routeModeFor(info, r.Code),
+				mode: mode,
 				rank: rank,
 				idx:  idx,
 			})
