@@ -162,6 +162,7 @@ class NetworkMap extends TransitMap {
     };
     this.map.on('zoomend', () => {
       applyZoomClass();
+      this.applyLineVisibility();
       this.renderRailRoutes();
     });
     this._routeMoveTimer = null;
@@ -647,60 +648,36 @@ class NetworkMap extends TransitMap {
     // LayerGroup has no getBounds at all, so the outer group would silently
     // report empty bounds and the map would never frame the network.
     const routes = L.featureGroup().addTo(this.routeLayer);
-    const stopsGroup = L.layerGroup().addTo(this.stopLayer);
-
-    // Arrows are far denser than a single route needs; 2 km keeps eight routes
-    // legible instead of burying the map in arrow nodes. createDirectionalArrows
-    // adds them straight to the map, so this records them for the filter to
-    // add/remove alongside the rest of their line.
+    const stopsGroup = L.layerGroup();
     const arrows = [];
-    for (const coords of [primary, secondary]) {
-      if (!coords || coords.length < 2) continue;
-      arrows.push(...this.createDirectionalArrows(coords, color, 2000));
-    }
-    this.directionalArrowMarkers.push(...arrows);
 
-    // Same styling as TransitMap.renderStops: solid outbound leg, dashed
-    // return leg. The return leg keeps the LINE's own colour here (not the
-    // single-line map's #38bdf8 fallback) so one colour always means one line.
+    // Unified styling matching every other Catalonia bus & rail line on the
+    // homepage network map (thin routeCanvas polylines; no oversized stop dots
+    // or arrow clutter on the overview map).
     if (primary && primary.length > 1) {
       L.polyline(primary, {
-        color, weight: 4.5, opacity: 0.9, lineCap: 'round', lineJoin: 'round'
+        renderer: this.routeCanvas,
+        color,
+        weight: 2.5,
+        opacity: 0.7,
+        smoothFactor: 1.8,
+        interactive: false
       }).addTo(routes);
     }
     if (secondary && secondary.length > 1) {
       L.polyline(secondary, {
-        color, weight: 4, opacity: 0.85, dashArray: '8, 8', lineCap: 'round', lineJoin: 'round'
+        renderer: this.routeCanvas,
+        color,
+        weight: 2.2,
+        opacity: 0.55,
+        dashArray: '6 6',
+        smoothFactor: 1.8,
+        interactive: false
       }).addTo(routes);
     }
 
-    // Stops as small dots in the line colour, snapped onto their own polyline.
-    const addStops = (list, coords) => {
-      if (!Array.isArray(list)) return;
-      for (const stop of list) {
-        const lat = Number(stop?.lat ?? stop?.latitude);
-        const lon = Number(stop?.lon ?? stop?.longitude);
-        if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-        let pos = [lat, lon];
-        if (coords && coords.length > 1) {
-          const snapped = snapStopToPolyline(lat, lon, coords, 120);
-          if (snapped) pos = snapped;
-        }
-        L.circleMarker(pos, {
-          radius: 3.5,
-          color,
-          weight: 1.5,
-          opacity: 0.9,
-          fillColor: color,
-          fillOpacity: 0.55,
-          interactive: false
-        }).addTo(stopsGroup);
-      }
-    };
-    addStops(stops, primary);
-    addStops(secondaryStops, secondary);
-
     this.lineLayers.set(code, { routes, stops: stopsGroup, arrows });
+    this.applyLineVisibility();
     this.renderLegend();
   }
 
@@ -752,25 +729,16 @@ class NetworkMap extends TransitMap {
   /** Shows or hides every layer and bus marker that the filter excludes. */
   applyLineVisibility() {
     if (!this.map) return;
+    const f = this.mapFilter || { kind: 'all' };
+    const specificFilter = f.kind === 'op' || f.kind === 'bus';
+    const zoom = this.map.getZoom();
 
     for (const [code, layers] of this.lineLayers.entries()) {
-      const visible = this.isLineVisible(code);
+      const visible = this.isLineVisible(code) && (specificFilter || zoom >= 11);
       if (visible) {
         this.routeLayer.addLayer(layers.routes);
-        this.stopLayer.addLayer(layers.stops);
-        for (const arrow of layers.arrows) {
-          if (!this.map.hasLayer(arrow)) this.map.addLayer(arrow);
-        }
       } else {
-        // addLayer/removeLayer on the PARENT, not group.remove(): Leaflet's
-        // group.remove() detaches from the map but leaves the group listed in
-        // its parent, so routeLayer.getBounds() would still include the hidden
-        // line and the map would frame buses the visitor cannot see.
         this.routeLayer.removeLayer(layers.routes);
-        this.stopLayer.removeLayer(layers.stops);
-        for (const arrow of layers.arrows) {
-          if (this.map.hasLayer(arrow)) this.map.removeLayer(arrow);
-        }
       }
     }
 
