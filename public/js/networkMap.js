@@ -157,6 +157,7 @@ class NetworkMap extends TransitMap {
         this._vehRadius = r;
         for (const obj of this.trainMarkers.values()) obj.marker.setRadius(r);
         for (const obj of this.movMarkers.values()) obj.marker.setRadius(r);
+        for (const obj of this.busMarkersMap.values()) obj.marker.setRadius(r);
       }
     };
     this.map.on('zoomend', applyZoomClass);
@@ -833,13 +834,21 @@ class NetworkMap extends TransitMap {
     }
   }
 
-  /** Rebuilds the marker set for a single line, leaving the other 7 untouched. */
+  /** Rebuilds the Canvas marker set for a single Mataró line, matching the
+   *  unified vehicleCanvas pin style used by every other operator on the map. */
   redrawLineBuses(code) {
     const geom = this.lineGeometries.get(code);
     if (!geom) return;
     const buses = this.busesByLine.get(code) || [];
     const now = Date.now();
     const liveKeys = new Set();
+    const css = getComputedStyle(document.documentElement);
+    const token = (name) => css.getPropertyValue(name).trim();
+    const ring = token('--bg-surface');
+    const liveDot = token('--accent-live');
+    const estDot = token('--accent-warning');
+    const neutral = token('--text-muted');
+    const radius = this._vehRadius || vehicleRadiusForZoom(this.map.getZoom());
 
     for (const bus of buses) {
       const key = networkBusMarkerKey(bus);
@@ -877,7 +886,12 @@ class NetworkMap extends TransitMap {
       const bearingAngle = Math.round(reportedBearing !== null ? reportedBearing : (roadBearing !== null ? roadBearing : 0));
       const isHeadingWest = bearingAngle > 180 && bearingAngle < 360;
 
-      const popupHtml = this.buildBusPopupHtml(bus, {
+      const pinBg = isGhost ? ring : (geom.color || neutral);
+      const pinInk = isGhost
+        ? estDot
+        : (window.TransitUtils?.contrastInk ? window.TransitUtils.contrastInk(pinBg) : ring);
+      const dotColor = (isGhost || isEst) ? estDot : liveDot;
+      const popupOpts = {
         isGhost,
         isEst,
         isSecDir: isReturn && geom.secondary && geom.secondary.length > 1,
@@ -886,95 +900,50 @@ class NetworkMap extends TransitMap {
         bearingAngle,
         lineCode: code,
         showLineLink: !bus.isSpecialService
-      });
-
-      const pinBaseColor = isGhost
-        ? '#0f172a'
-        : (isEst
-            ? '#f59e0b'
-            : (bus.isTerminalLayover ? '#1d4ed8' : (geom.color || '#10b981')));
-      const pinBg = isGhost
-        ? 'rgba(15, 23, 42, 0.88)'
-        : (isEst
-            ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
-            : (bus.isTerminalLayover
-                ? 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)'
-                : `linear-gradient(135deg, ${geom.color} 0%, ${shade(geom.color, -18)} 100%)`));
-      const pinInk = isGhost
-        ? '#fbbf24'
-        : (window.TransitUtils?.contrastInk ? window.TransitUtils.contrastInk(pinBaseColor) : '#ffffff');
+      };
 
       const existing = this.busMarkersMap.get(key);
       if (existing) {
         existing.busData = bus;
+        existing.popupOpts = popupOpts;
         existing.targetLat = snapped.lat;
         existing.targetLon = snapped.lon;
         existing.targetBearing = bearingAngle;
         existing.reportedBearing = reportedBearing;
         existing.targetPolyline = followRoute ? targetPolyline : null;
         existing.lastUpdated = now;
-        existing.marker.setPopupContent(popupHtml);
         if (bus.isTerminalLayover) {
           existing.marker.setLatLng([snapped.lat, snapped.lon]);
         }
-        const el = existing.marker.getElement();
-        if (el) {
-          const wrapEl = existing.wrapEl || (existing.wrapEl = el.querySelector('.live-bus-marker-wrap'));
-          if (wrapEl) wrapEl.classList.toggle('ghost-bus', isGhost);
-          const pinEl = existing.pinEl || (existing.pinEl = el.querySelector('.live-bus-pin'));
-          if (pinEl) {
-            pinEl.style.background = pinBg;
-            pinEl.style.color = pinInk;
-          }
-          const dotEl = existing.dotEl || (existing.dotEl = el.querySelector('.bus-status-dot'));
-          if (dotEl) dotEl.className = `bus-status-dot ${isGhost ? 'ghost' : (isEst ? 'estimated' : 'live')}`;
+        if (existing.isGhost !== isGhost || existing.isEst !== isEst || existing.pinBg !== pinBg) {
+          existing.marker.setStyle({
+            color: isGhost ? estDot : ring,
+            fillColor: pinBg,
+            fillOpacity: isGhost ? 0.85 : 0.96,
+            dashArray: isGhost ? '3 3' : null,
+            _ink: pinInk,
+            _dotColor: dotColor,
+            _ringColor: ring,
+            _stale: isGhost,
+            _label: code
+          });
+          existing.isGhost = isGhost;
+          existing.isEst = isEst;
+          existing.pinBg = pinBg;
+        }
+        if (existing.marker.isPopupOpen()) {
+          existing.marker.setPopupContent(this.buildBusPopupHtml(bus, popupOpts));
         }
         continue;
       }
 
-      // Identical markup to TransitMap.updateBusMarkers, so both maps share
-      // every existing .live-bus-* CSS rule with no new styles.
-      const busHtml = `
-        <div class="live-bus-marker-wrap ${isGhost ? 'ghost-bus' : ''}">
-          <div class="bus-selection-ring" style="display:none;"></div>
-          <div class="bus-heading-cone" style="transform: rotate(${bearingAngle}deg);">
-            <div class="bus-heading-arrow"></div>
-          </div>
-          <div class="live-bus-pin" style="background: ${pinBg}; color: ${pinInk};">
-            <span class="bus-icon-inner" style="transform: scaleX(${isHeadingWest ? -1 : 1});">${isGhost ? '⚡' : CANONICAL_BUS_ICON_INNER_SVG}</span>
-            <span class="bus-status-dot ${isGhost ? 'ghost' : (isEst ? 'estimated' : 'live')}"></span>
-          </div>
-        </div>
-      `;
-
-      const marker = L.marker([snapped.lat, snapped.lon], {
-        icon: L.divIcon({
-          html: busHtml,
-          className: 'c10-live-bus-icon',
-          iconSize: [44, 44],
-          iconAnchor: [22, 22]
-        }),
-        zIndexOffset: isGhost ? 1500 : 2000
-      });
-      // A filtered-out line keeps its buses in busMarkersMap — they are still
-      // animating and must be there when the filter comes back — but they are
-      // not attached to the map, so they are neither visible nor clickable.
-      if (this.isLineVisible(code)) marker.addTo(this.busLayer);
-
-      marker.bindPopup(popupHtml, {
-        className: 'arribo-bus-popup',
-        minWidth: 290,
-        maxWidth: 350,
-        maxHeight: 520,
-        autoPan: true,
-        autoPanPadding: [20, 20],
-        closeButton: true
-      });
-
-      const busRoot = marker.getElement();
-      this.busMarkersMap.set(key, {
-        marker,
+      const entry = {
+        marker: null,
         busData: bus,
+        popupOpts,
+        isGhost,
+        isEst,
+        pinBg,
         targetLat: snapped.lat,
         targetLon: snapped.lon,
         targetBearing: bearingAngle,
@@ -984,13 +953,47 @@ class NetworkMap extends TransitMap {
         lastUpdated: now,
         subpath: null,
         targetPolyline: followRoute ? targetPolyline : null,
-        wrapEl: busRoot ? busRoot.querySelector('.live-bus-marker-wrap') : null,
-        ringEl: busRoot ? busRoot.querySelector('.bus-selection-ring') : null,
-        pinEl: busRoot ? busRoot.querySelector('.live-bus-pin') : null,
-        dotEl: busRoot ? busRoot.querySelector('.bus-status-dot') : null,
-        coneEl: busRoot ? busRoot.querySelector('.bus-heading-cone') : null,
-        iconEl: busRoot ? busRoot.querySelector('.bus-icon-inner') : null
+        wrapEl: null,
+        ringEl: null,
+        pinEl: null,
+        dotEl: null,
+        coneEl: null,
+        iconEl: null
+      };
+
+      const marker = L.circleMarker([snapped.lat, snapped.lon], {
+        renderer: this.vehicleCanvas,
+        radius,
+        color: isGhost ? estDot : ring,
+        weight: 2,
+        opacity: 0.95,
+        fillColor: pinBg,
+        fillOpacity: isGhost ? 0.85 : 0.96,
+        dashArray: isGhost ? '3 3' : null,
+        _shape: 'bus',
+        _ink: pinInk,
+        _dotColor: dotColor,
+        _ringColor: ring,
+        _stale: isGhost,
+        _label: code
       });
+      // A filtered-out line keeps its buses in busMarkersMap — they are still
+      // animating and must be there when the filter comes back — but they are
+      // not attached to the map, so they are neither visible nor clickable.
+      if (this.isLineVisible(code)) marker.addTo(this.busLayer);
+
+      marker.bindPopup(() => this.buildBusPopupHtml(entry.busData, entry.popupOpts), {
+        className: 'arribo-bus-popup',
+        minWidth: 290,
+        maxWidth: 350,
+        maxHeight: 520,
+        autoPan: true,
+        autoPanPadding: [20, 20],
+        closeButton: true
+      });
+
+      entry.marker = marker;
+      this.busMarkersMap.set(key, entry);
     }
 
     // Drop markers for buses this line no longer reports.
@@ -1384,22 +1387,6 @@ function normalizeCoords(coords) {
     if (Number.isFinite(lat) && Number.isFinite(lon)) out.push([lat, lon]);
   }
   return out;
-}
-
-/**
- * Darkens/lightens a #rrggbb colour so a bus pin can carry a two-stop gradient
- * in its line's own colour. Returns the input unchanged if it is not hex, so a
- * CSS variable or rgb() from the catalog can never produce a broken gradient.
- */
-function shade(hex, percent) {
-  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim());
-  if (!m) return hex;
-  const num = parseInt(m[1], 16);
-  const clamp = (v) => Math.max(0, Math.min(255, v));
-  const r = clamp(Math.round(((num >> 16) & 0xff) * (1 + percent / 100)));
-  const g = clamp(Math.round(((num >> 8) & 0xff) * (1 + percent / 100)));
-  const b = clamp(Math.round((num & 0xff) * (1 + percent / 100)));
-  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
 }
 
 if (typeof window !== 'undefined') {
