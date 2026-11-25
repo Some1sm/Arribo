@@ -27,7 +27,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
   
   <!-- App Styles -->
-  <link rel="stylesheet" href="/css/style.css?v=9.4.120">
+  <link rel="stylesheet" href="/css/style.css?v=9.4.121">
 </head>
 <body>
 
@@ -197,10 +197,6 @@
           <button type="button" class="btn-hero-action btn-hero-geo" id="btn-hero-geo" data-i18n-title="hero.nearbyTitle" title="Troba les parades més properes amb GPS o per barri">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
             <span data-i18n="hero.nearby">Parades a prop</span>
-          </button>
-          <button type="button" class="btn-hero-action btn-hero-zones" id="btn-hero-zones" data-i18n-title="hero.zonesTitle" title="Tria un barri o zona clau de Mataró">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-            <span data-i18n="hero.zones">Tria zona / barri</span>
           </button>
         </div>
 
@@ -784,6 +780,15 @@
         <p class="line-picker-subtitle" data-i18n="zones.subtitle">Fes clic en qualsevol punt del mapa i ajusta el radi per veure tot el transport disponible</p>
       </div>
 
+      <div class="zone-address-search">
+        <div class="zone-address-input-wrap">
+          <svg class="zone-address-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" id="zone-address-input" class="zone-address-input" autocomplete="off" data-i18n-placeholder="zones.addressPlaceholder" placeholder="Cerca una adreça, carrer o lloc (ex: Balmes 120, Barcelona)..." data-i18n-aria-label="zones.addressAria" aria-label="Cerca una adreça">
+          <button type="button" id="btn-zone-address-clear" class="zone-address-clear" style="display:none;" data-i18n-aria-label="line.clearSearch" aria-label="Netejar cerca">✕</button>
+        </div>
+        <div class="zone-address-dropdown" id="zone-address-dropdown" role="listbox"></div>
+      </div>
+
       <div class="zone-city-chips" id="zone-city-chips">
         <button type="button" class="zone-city-chip" data-lat="41.3870" data-lon="2.1700" data-name="Barcelona">Barcelona</button>
         <button type="button" class="zone-city-chip" data-lat="41.5396" data-lon="2.4445" data-name="Mataró">Mataró</button>
@@ -911,16 +916,16 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   
   <!-- App Scripts -->
-  <script src="/js/utils.js?v=9.4.120"></script>
-  <script src="/js/i18n.js?v=9.4.120"></script>
-  <script src="/js/storage.js?v=9.4.120"></script>
-  <script src="/js/requests.js?v=9.4.120"></script>
-  <script src="/js/stopFeatures.js?v=9.4.120"></script>
-  <script src="/js/journeys.js?v=9.4.120"></script>
-  <script src="/js/journeyControls.js?v=9.4.120"></script>
-  <script src="/js/pwa.js?v=9.4.120"></script>
-  <script src="/js/map.js?v=9.4.120"></script>
-  <script src="/js/networkMap.js?v=9.4.120"></script>
-  <script src="/js/app.js?v=9.4.120"></script>
+  <script src="/js/utils.js?v=9.4.121"></script>
+  <script src="/js/i18n.js?v=9.4.121"></script>
+  <script src="/js/storage.js?v=9.4.121"></script>
+  <script src="/js/requests.js?v=9.4.121"></script>
+  <script src="/js/stopFeatures.js?v=9.4.121"></script>
+  <script src="/js/journeys.js?v=9.4.121"></script>
+  <script src="/js/journeyControls.js?v=9.4.121"></script>
+  <script src="/js/pwa.js?v=9.4.121"></script>
+  <script src="/js/map.js?v=9.4.121"></script>
+  <script src="/js/networkMap.js?v=9.4.121"></script>
+  <script src="/js/app.js?v=9.4.121"></script>
 </body>
 </html>

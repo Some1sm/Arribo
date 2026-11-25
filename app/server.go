@@ -1090,6 +1090,7 @@ func (s *Server) buildRoutes() {
 	s.get(p("/api/data-health"), s.hDataHealth)
 	s.get(p("/api/lines"), s.hLines)
 	s.get(p("/api/search/stops"), s.hSearchStops)
+	s.get(p("/api/geocode"), s.hGeocode)
 	s.get(p("/api/network/vehicles"), s.hNetworkVehicles)
 	s.get(p("/api/network/rail-routes"), s.hRailRoutes)
 	s.get(p("/api/rail/alerts"), s.hRailAlerts)

@@ -56,50 +56,7 @@
   },
 
   handleNearbyStopsRequest() {
-    const t = (k, v, fb) => (global.ArriboI18n ? global.ArriboI18n.t(k, v) : fb);
-    const geoBtn = document.getElementById('btn-hero-geo');
-    if (geoBtn?.disabled) return;
-    const originalHtml = geoBtn ? geoBtn.innerHTML : '';
-
-    if (geoBtn) {
-      geoBtn.disabled = true;
-      geoBtn.innerHTML = `<span class="loading-spinner-inline" style="width:12px;height:12px;"></span> <span>${this.esc(t('stopFeat.locating', null, 'Localitzant...'))}</span>`;
-    }
-
-    const restoreBtn = () => {
-      if (geoBtn) {
-        geoBtn.disabled = false;
-        geoBtn.innerHTML = originalHtml;
-      }
-    };
-
-    const fallbackToZonePicker = () => {
-      restoreBtn();
-      this.openZonePicker();
-    };
-
-    if (typeof navigator !== 'undefined' && 'geolocation' in navigator && window.isSecureContext !== false) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          restoreBtn();
-          const { latitude, longitude } = pos.coords;
-          // Inside the area the operators serve (from the line catalog); Mataró's box until one is known.
-          const area = window.TransitUtils?.serviceArea?.();
-          if (area ? area.contains(latitude, longitude) : (latitude >= 41.45 && latitude <= 41.60 && longitude >= 2.35 && longitude <= 2.52)) {
-            this.loadNearbyStops(latitude, longitude, t('stopFeat.yourGps', null, 'La teva posició GPS 📍'));
-          } else {
-            this.openZonePicker();
-          }
-        },
-        (err) => {
-          console.log('[Geo] Geolocation skipped/denied:', err?.message || err);
-          fallbackToZonePicker();
-        },
-        { timeout: 5000, maximumAge: 60000, enableHighAccuracy: false }
-      );
-    } else {
-      fallbackToZonePicker();
-    }
+    this.openZonePicker();
   },
 
   formatZoneRadius(meters) {
@@ -130,6 +87,16 @@
     const cityWrap = document.getElementById('zone-city-chips');
     const applyBtn = document.getElementById('btn-zone-picker-apply');
     const gpsBtn = document.getElementById('btn-zone-picker-gps');
+    const addrInput = document.getElementById('zone-address-input');
+    const addrClear = document.getElementById('btn-zone-address-clear');
+    const addrDropdown = document.getElementById('zone-address-dropdown');
+
+    const closeAddrDropdown = () => {
+      if (addrDropdown) {
+        addrDropdown.innerHTML = '';
+        addrDropdown.classList.remove('open');
+      }
+    };
 
     const syncRadiusUI = (r) => {
       this._zonePickerState.radius = r;
@@ -201,8 +168,103 @@
         if (!st) return;
         const t = (k, v, fb) => (global.ArriboI18n ? global.ArriboI18n.t(k, v) : fb);
         const base = st.label || t('zones.customArea', null, 'Zona seleccionada');
+        closeAddrDropdown();
         this.closeZonePicker();
         this.loadNearbyStops(st.lat, st.lon, base, st.radius);
+      });
+
+      const selectGeocodeHit = (hit) => {
+        if (!hit || !Number.isFinite(hit.lat) || !Number.isFinite(hit.lon)) return;
+        cityWrap?.querySelectorAll('.zone-city-chip').forEach(c => c.classList.remove('active'));
+        if (addrInput) addrInput.value = hit.name;
+        if (addrClear) addrClear.style.display = hit.name ? 'inline-flex' : 'none';
+        closeAddrDropdown();
+        setCenter(hit.lat, hit.lon, hit.name, true);
+      };
+
+      const runAddressSearch = async (query, autoPickFirst = false) => {
+        const t = (k, v, fb) => (global.ArriboI18n ? global.ArriboI18n.t(k, v) : fb);
+        const q = String(query || '').trim();
+        if (q.length < 2) {
+          closeAddrDropdown();
+          return;
+        }
+        if (addrDropdown && !autoPickFirst) {
+          addrDropdown.innerHTML = `<div class="zone-address-empty">${this.esc(t('zones.addressSearching', null, 'Cercant adreces...'))}</div>`;
+          addrDropdown.classList.add('open');
+        }
+        this._zoneGeoReq ||= new window.TransitRequest();
+        try {
+          const res = await this._zoneGeoReq.json(`/api/geocode?q=${encodeURIComponent(q)}`);
+          const hits = Array.isArray(res?.results) ? res.results : [];
+          this._zoneLastHits = hits;
+          if (autoPickFirst && hits.length > 0) {
+            selectGeocodeHit(hits[0]);
+            return;
+          }
+          if (!addrDropdown) return;
+          if (hits.length === 0) {
+            addrDropdown.innerHTML = `<div class="zone-address-empty">${this.esc(t('zones.addressEmpty', null, 'No s\'han trobat adreces a Catalunya'))}</div>`;
+          } else {
+            addrDropdown.innerHTML = hits.map((h, idx) => `
+              <button type="button" class="zone-address-item" role="option" data-geo-idx="${idx}">
+                <span class="zone-address-item-icon" aria-hidden="true">${h.type === 'stop' ? '🚏' : '📍'}</span>
+                <span class="zone-address-item-text">
+                  <span class="zone-address-item-main">${this.esc(h.name)}</span>
+                  ${h.subtitle ? `<span class="zone-address-item-sub">${this.esc(h.subtitle)}</span>` : ''}
+                </span>
+              </button>
+            `).join('');
+          }
+          addrDropdown.classList.add('open');
+        } catch (err) {
+          if (err?.name === 'AbortError') return;
+          closeAddrDropdown();
+        }
+      };
+
+      addrInput?.addEventListener('input', () => {
+        const v = addrInput.value.trim();
+        if (addrClear) addrClear.style.display = v ? 'inline-flex' : 'none';
+        clearTimeout(this._zoneAddrTimer);
+        if (v.length < 2) {
+          closeAddrDropdown();
+          return;
+        }
+        this._zoneAddrTimer = setTimeout(() => runAddressSearch(v, false), 320);
+      });
+
+      addrInput?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          clearTimeout(this._zoneAddrTimer);
+          const v = addrInput.value.trim();
+          if (this._zoneLastHits && this._zoneLastHits.length > 0 && addrDropdown?.classList.contains('open')) {
+            selectGeocodeHit(this._zoneLastHits[0]);
+          } else if (v.length >= 2) {
+            runAddressSearch(v, true);
+          }
+        } else if (e.key === 'Escape') {
+          closeAddrDropdown();
+        }
+      });
+
+      addrClear?.addEventListener('click', () => {
+        if (addrInput) {
+          addrInput.value = '';
+          addrInput.focus();
+        }
+        addrClear.style.display = 'none';
+        this._zoneLastHits = [];
+        closeAddrDropdown();
+      });
+
+      addrDropdown?.addEventListener('click', (e) => {
+        const btn = e.target.closest('.zone-address-item');
+        if (!btn) return;
+        const idx = Number(btn.getAttribute('data-geo-idx'));
+        const hit = this._zoneLastHits?.[idx];
+        if (hit) selectGeocodeHit(hit);
       });
     }
 
