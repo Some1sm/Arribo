@@ -124,3 +124,60 @@ func TestMovLateBusPastScheduledTimeInfersPriorSlot(t *testing.T) {
 		t.Fatalf("expected direct 17:13 (-1 min) match, got: %s", toJSON(onTimeLive))
 	}
 }
+
+func TestMovPropagateUpstreamDelay(t *testing.T) {
+	routes := []movRoute{
+		{LineID: 53, Trayecto: 2, Dest: "MATARÓ", Stops: []movStop{
+			{ID: 7192, Name: "Francesc Macià/Maria Cristina", Km: 10.5},
+			{ID: 7193, Name: "Francesc Layret/Sant Miquel", Km: 11.2},
+			{ID: 7196, Name: "Ctra Mataró-Ptge Cussó", Km: 13.0},
+		}},
+	}
+	now := time.Date(2026, 11, 25, 18, 52, 0, 0, madrid)
+	dir := t.TempDir()
+	sched := newMovSchedStore(dir)
+	// Stop 7192 has official schedule 19:14 and 19:59.
+	sched.record(7192, []movStopETA{
+		{LineID: 53, Dest: "(C10) BCN - MATARÓ (PER LA NII)", Sched: []string{"19:14", "19:59"}},
+	}, now)
+	p := &movPoller{sched: sched}
+
+	// Live bus at Stop 7192 is 40 min away (19:32 -> +18 min late).
+	preds := map[[3]int]movPrediction{
+		{53, 2, 7192}: {LineID: 53, Trayecto: 2, StopID: 7192, EtaSec: []float64{40 * 60}, At: now},
+	}
+
+	// Stop 7193 (next stop, beyond Moventis's ~40m real-time horizon) only has theoretical 19:16 and 20:01.
+	t1916 := time.Date(2026, 11, 25, 19, 16, 0, 0, madrid)
+	t2001 := time.Date(2026, 11, 25, 20, 1, 0, 0, madrid)
+	deps := []any{
+		movTheoDep("Mataró", "0", t1916, now),
+		movTheoDep("Mataró", "0", t2001, now),
+	}
+	movPropagateUpstreamDelay(p, preds, 53, 7193, routes, deps, now)
+
+	first := deps[0].(*Obj)
+	if !truthy(first.Get("isEstimated")) || truthy(first.Get("isRealTime")) || truthy(first.Get("isTheoretical")) {
+		t.Fatalf("expected first dep to be estimated (not live, not theoretical): %s", toJSON(first))
+	}
+	if jsString(first.Get("departureTime")) != "19:34" || jsString(first.Get("scheduledTime")) != "19:16" {
+		t.Fatalf("expected 19:34 (sched 19:16), got dep=%v sched=%v", first.Get("departureTime"), first.Get("scheduledTime"))
+	}
+	if first.Num("delayMins") != 18 || jsString(first.Get("delaySource")) != "upstream_propagated" {
+		t.Fatalf("expected delayMins=18 upstream_propagated, got %s", toJSON(first))
+	}
+	// Second departure (20:01) belongs to the next trip and must remain theoretical.
+	second := deps[1].(*Obj)
+	if !truthy(second.Get("isTheoretical")) || jsString(second.Get("departureTime")) != "20:01" {
+		t.Fatalf("expected second dep 20:01 to stay theoretical, got %s", toJSON(second))
+	}
+
+	// Stop 7196 further downstream (19:21) also receives +18 min -> 19:39.
+	t1921 := time.Date(2026, 11, 25, 19, 21, 0, 0, madrid)
+	deps7196 := []any{movTheoDep("Mataró", "0", t1921, now)}
+	movPropagateUpstreamDelay(p, preds, 53, 7196, routes, deps7196, now)
+	d7196 := deps7196[0].(*Obj)
+	if !truthy(d7196.Get("isEstimated")) || jsString(d7196.Get("departureTime")) != "19:39" || d7196.Num("delayMins") != 18 {
+		t.Fatalf("stop 7196 expected 19:39 (+18 min estimated), got %s", toJSON(d7196))
+	}
+}

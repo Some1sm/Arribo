@@ -2900,7 +2900,7 @@ class TransitApp {
       const isTomorrow = dep.isToday === false && !dep.isRealTime && !dep.isEstimated;
       const isFirstMorning = isTomorrow && (dep.isFirstOfDay === true || idx === 0) && !dep.isRealTime && !dep.isEstimated;
       const isFirstToday = dep.isToday === true && dep.isFirstOfDay === true && !dep.isRealTime && !dep.isEstimated;
-      const isDiff = schedTime && schedTime !== clockTime && !dep.isEstimated;
+      const isDiff = schedTime && schedTime !== clockTime && (!dep.isEstimated || dep.delaySource === 'upstream_propagated');
       const rawDelayMins = dep.delayMins !== undefined && dep.delayMins !== null ? Number(dep.delayMins) : 0;
       const delayText = rawDelayMins >= 2
         ? t('dep.late', { n: rawDelayMins })
@@ -2960,7 +2960,7 @@ class TransitApp {
         ? ''
         : ((isFirstMorning || isFirstToday)
             ? `🌅 ${t('stop.firstService')}`
-            : (isTomorrow ? t('dep.scheduled') : (dep.isEstimated ? `⚡ ${t('dep.enRoute')}` : (dep.isRealTime ? `🟢 ${t('dep.realtime')}` : t('dep.scheduled')))));
+            : (isTomorrow ? t('dep.scheduled') : (dep.isEstimated ? `⚡ ${t(dep.delaySource === 'upstream_propagated' ? 'dep.estUpstreamTag' : 'dep.enRoute')}` : (dep.isRealTime ? `🟢 ${t('dep.realtime')}` : t('dep.scheduled')))));
 
       let regBadgeText = '';
       let regBadgeTitle = '';
@@ -2997,7 +2997,7 @@ class TransitApp {
       } else if (isTomorrow) {
         pillLabel = t('dep.scheduled');
       } else if (dep.isEstimated) {
-        pillLabel = rawDelayMins >= 2 ? delayText : `⚡ ${t('dep.enRoute')}`;
+        pillLabel = (rawDelayMins >= 2 || rawDelayMins <= -1) ? delayText : `⚡ ${t(dep.delaySource === 'upstream_propagated' ? 'dep.estUpstreamTag' : 'dep.enRoute')}`;
       } else if (dep.delayDiscarded) {
         // The operator published an impossible delay: say so, never "on time".
         pillLabel = t('trainPopup.delayDiscarded');
@@ -3060,8 +3060,13 @@ class TransitApp {
           subtextTitle = t(this.rtSourceKey('dep.realtimeTitle'));
         }
       } else if (dep.isEstimated) {
-        subtextHtml = `<span>⚡ ${this.esc(t('dep.estSub'))}</span>`;
-        subtextTitle = t('dep.estTitle');
+        if (dep.delaySource === 'upstream_propagated' && schedTime) {
+          subtextHtml = `<span>⚡ ${this.esc(t('dep.estUpstreamSub', { time: schedTime, delay: delayText }))}</span>`;
+          subtextTitle = t('dep.estUpstreamTitle', { time: schedTime, delay: delayText });
+        } else {
+          subtextHtml = `<span>⚡ ${this.esc(t('dep.estSub'))}</span>`;
+          subtextTitle = t('dep.estTitle');
+        }
       } else {
         subtextHtml = `<span>📅 ${this.esc(t('dep.schedSub'))}</span>`;
         subtextTitle = t('dep.schedTitle');
@@ -4696,7 +4701,7 @@ class TransitApp {
       const isFirstMorning = isTomorrow && (d.isFirstOfDay === true || idx === 0) && !d.isRealTime && !d.isEstimated;
       const isFirstToday = d.isToday === true && d.isFirstOfDay === true && !d.isRealTime && !d.isEstimated;
 
-      const isDiff = schedTime && schedTime !== estTime && !d.isEstimated;
+      const isDiff = schedTime && schedTime !== estTime && (!d.isEstimated || d.delaySource === 'upstream_propagated');
       const rawDelayMins = d.delayMins !== undefined && d.delayMins !== null ? Number(d.delayMins) : 0;
       const delayText = rawDelayMins >= 2
         ? t('dep.late', { n: rawDelayMins })
@@ -4756,7 +4761,7 @@ class TransitApp {
         ? ''
         : ((isFirstMorning || isFirstToday)
             ? `🌅 ${t('stop.firstService')}`
-            : (isTomorrow ? t('dep.scheduled') : (d.isEstimated ? `⚡ ${t('dep.enRoute')}` : (d.isRealTime ? `🟢 ${t('dep.realtime')}` : t('dep.scheduled')))));
+            : (isTomorrow ? t('dep.scheduled') : (d.isEstimated ? `⚡ ${t(d.delaySource === 'upstream_propagated' ? 'dep.estUpstreamTag' : 'dep.enRoute')}` : (d.isRealTime ? `🟢 ${t('dep.realtime')}` : t('dep.scheduled')))));
 
       let regBadgeText = '';
       let regBadgeTitle = '';
@@ -4793,7 +4798,7 @@ class TransitApp {
       } else if (isTomorrow) {
         pillLabel = t('dep.scheduled');
       } else if (d.isEstimated) {
-        pillLabel = rawDelayMins >= 2 ? delayText : `⚡ ${t('dep.enRoute')}`;
+        pillLabel = (rawDelayMins >= 2 || rawDelayMins <= -1) ? delayText : `⚡ ${t(d.delaySource === 'upstream_propagated' ? 'dep.estUpstreamTag' : 'dep.enRoute')}`;
       } else if (d.delayDiscarded) {
         // The operator published an impossible delay: say so, never "on time".
         pillLabel = t('trainPopup.delayDiscarded');
@@ -4856,8 +4861,13 @@ class TransitApp {
           subtextTitle = t(this.rtSourceKey('dep.realtimeTitle'));
         }
       } else if (d.isEstimated) {
-        subtextHtml = `<span>⚡ ${this.esc(t('dep.estSub'))}</span>`;
-        subtextTitle = t('dep.estTitle');
+        if (d.delaySource === 'upstream_propagated' && schedTime) {
+          subtextHtml = `<span>⚡ ${this.esc(t('dep.estUpstreamSub', { time: schedTime, delay: delayText }))}</span>`;
+          subtextTitle = t('dep.estUpstreamTitle', { time: schedTime, delay: delayText });
+        } else {
+          subtextHtml = `<span>⚡ ${this.esc(t('dep.estSub'))}</span>`;
+          subtextTitle = t('dep.estTitle');
+        }
       } else {
         subtextHtml = `<span>📅 ${this.esc(t('dep.schedSub'))}</span>`;
         subtextTitle = t('dep.schedTitle');

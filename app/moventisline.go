@@ -639,6 +639,9 @@ func movStopDepartures(ctx context.Context, stop rtLineStop, code, direction str
 					}
 				}
 			}
+			// 5. Propagate known upstream live delays to downstream theoretical
+			// departures that sit beyond Moventis's ~40-minute real-time horizon.
+			movPropagateUpstreamDelay(p, movSnapshotPreds(p, snap), id, stopNum, routes, lineDeps, now)
 			deps = append(deps, lineDeps...)
 		}
 	}
@@ -654,6 +657,160 @@ func movStopDepartures(ctx context.Context, stop rtLineStop, code, direction str
 		"note", strOrNil(note),
 		"attribution", movAttributionText(),
 	)
+}
+
+const movUpstreamMaxAge = 15 * time.Minute
+
+// movSnapshotPreds returns a copy of the freshest prediction map available:
+// p.preds (which includes recent interactive stop clicks recorded by
+// movFetchStopLive as well as background poller samples), falling back to
+// snap.Preds when p is nil.
+func movSnapshotPreds(p *movPoller, snap *movSnapshot) map[[3]int]movPrediction {
+	if p != nil {
+		p.mu.Lock()
+		out := make(map[[3]int]movPrediction, len(p.preds))
+		for k, v := range p.preds {
+			out[k] = v
+		}
+		p.mu.Unlock()
+		return out
+	}
+	if snap != nil {
+		return snap.Preds
+	}
+	return nil
+}
+
+// movPropagateUpstreamDelay estimates arrival times for downstream theoretical
+// departures beyond Moventis's ~40-minute real-time horizon by carrying forward
+// the delay of a live tracked bus observed at an upstream stop on the same
+// route. Upgraded rows are clearly marked isEstimated:true, isRealTime:false,
+// delaySource:"upstream_propagated".
+func movPropagateUpstreamDelay(p *movPoller, preds map[[3]int]movPrediction, lineID, stopNum int, routes []movRoute, deps []any, now time.Time) {
+	if len(preds) == 0 || len(deps) == 0 {
+		return
+	}
+	speedKmh := movSpeedKmh[lineID]
+	if speedKmh <= 0 {
+		speedKmh = movDefaultSpeedKmh
+	}
+	type theoCand struct {
+		obj      *Obj
+		at       time.Time
+		upgraded bool
+	}
+	for _, rt := range routes {
+		targetIdx := -1
+		for i, st := range rt.Stops {
+			if st.ID == stopNum {
+				targetIdx = i
+				break
+			}
+		}
+		if targetIdx <= 0 {
+			continue
+		}
+		dirStr := numToString(float64(movDirectionOf(routes, rt.Trayecto)))
+		var cands []*theoCand
+		for _, raw := range deps {
+			o, ok := raw.(*Obj)
+			if !ok || !truthy(o.Get("isTheoretical")) || truthy(o.Get("isRealTime")) || jsString(o.Get("direction")) != dirStr {
+				continue
+			}
+			var at time.Time
+			if iso := jsString(o.Get("expectedIso")); iso != "" {
+				if parsed, err := time.Parse(time.RFC3339Nano, iso); err == nil {
+					at = parsed
+				}
+			}
+			if at.IsZero() {
+				var okSched bool
+				at, okSched = movSchedTime(jsString(o.Get("scheduledTime")), now)
+				if !okSched {
+					continue
+				}
+			}
+			cands = append(cands, &theoCand{obj: o, at: at})
+		}
+		if len(cands) == 0 {
+			continue
+		}
+		// Walk upstream stops closest-first so downstream stops inherit the
+		// most recent accumulated delay along the route.
+		for upIdx := targetIdx - 1; upIdx >= 0; upIdx-- {
+			upStop := rt.Stops[upIdx]
+			pr, ok := preds[[3]int{lineID, rt.Trayecto, upStop.ID}]
+			if !ok || len(pr.EtaSec) == 0 {
+				continue
+			}
+			age := now.Sub(pr.At).Seconds()
+			if age < -30 || age > movUpstreamMaxAge.Seconds() {
+				continue
+			}
+			distKm := rt.Stops[targetIdx].Km - upStop.Km
+			if distKm < 0 {
+				distKm = 0
+			}
+			estTravelMin := distKm / speedKmh * 60
+			minSchedMin := math.Max(0, estTravelMin*0.35-5)
+			maxSchedMin := math.Max(12, estTravelMin*2.2+12)
+
+			for _, sec := range pr.EtaSec {
+				upLeft := sec - age
+				if upLeft < -movPassedTolSec {
+					continue
+				}
+				upAt := now.Add(time.Duration(math.Max(0, upLeft)) * time.Second)
+				upSched, hasMatch, _, _, dMinsAny, _, _, _ := movEstimateDelay(p, lineID, upStop.ID, dirStr, routes, upAt, now, nil)
+				if !hasMatch {
+					continue
+				}
+				dMin, ok := dMinsAny.(float64)
+				if !ok || math.Abs(dMin) < 2 {
+					continue
+				}
+				upDelay := upAt.Sub(upSched)
+				var best *theoCand
+				bestErr := math.MaxFloat64
+				for _, c := range cands {
+					if c.upgraded {
+						continue
+					}
+					schedDiffMin := c.at.Sub(upSched).Minutes()
+					if schedDiffMin < minSchedMin || schedDiffMin > maxSchedMin {
+						continue
+					}
+					errMin := math.Abs(schedDiffMin - estTravelMin)
+					if errMin < bestErr {
+						bestErr = errMin
+						best = c
+					}
+				}
+				if best == nil {
+					continue
+				}
+				estAt := best.at.Add(upDelay)
+				left := math.Max(0, estAt.Sub(now).Seconds())
+				propDelayMin := math.Round(estAt.Sub(best.at).Minutes())
+				dStatus, dBadge := railDelayLabel(propDelayMin, false)
+				best.obj.Set("departureTime", estAt.In(madrid).Format("15:04"))
+				best.obj.Set("scheduledTime", best.at.In(madrid).Format("15:04"))
+				best.obj.Set("aimedIso", isoString(best.at.UnixMilli()))
+				best.obj.Set("expectedIso", isoString(estAt.UnixMilli()))
+				best.obj.Set("minutesAway", math.Floor(left/60))
+				best.obj.Set("delayMins", propDelayMin)
+				best.obj.Set("delayMinutes", propDelayMin)
+				best.obj.Set("delayStatus", dStatus)
+				best.obj.Set("delayBadgeText", dBadge)
+				best.obj.Set("delaySource", "upstream_propagated")
+				best.obj.Set("isRealTime", false)
+				best.obj.Set("isEstimated", true)
+				best.obj.Set("isTheoretical", false)
+				best.obj.Set("predictionAgeSec", math.Round(math.Max(0, age)))
+				best.upgraded = true
+			}
+		}
+	}
 }
 
 // movSampled reports whether the poller asks this stop.
