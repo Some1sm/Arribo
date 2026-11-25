@@ -300,11 +300,13 @@
 
   function lineDetailHtml(d) {
     if (!d.visits) return `<p class="op-empty">${esc(t('ops.lineEmpty', { line: d.line }))}</p>`;
+    const opMeta = lastOps.find(o => o.id === d.agencyId);
+    const hasHist = !opMeta || opMeta.hasHistory !== false;
     const rows = d.stations.map(s => `<tr${s.onProfile === false ? ' class="op-off-profile"' : ''}><th scope="row">${esc(s.station)}</th><td class="${delayClass(s.avgDelay)}">${esc(fmtMin(s.avgDelay))}</td><td>${esc(fmtPct(s.onTimePct))}</td><td>${esc(fmtMin(s.maxDelay))}</td><td>${s.visits}</td></tr>`).join('');
     const order = d.stationOrder === 'line' ? t('ops.orderLine') : t('ops.orderDelay');
     return `<div class="op-line-detail-head"><h5><span class="line-badge" data-line="${esc(`${d.agencyId}:${d.line}`)}">${esc(d.line)}</span> ${esc(t('ops.visitsCount', { n: d.visits }))}</h5><button type="button" class="btn btn-ghost btn-sm" data-op-line-close>${esc(t('ops.close'))}</button></div>
       ${hourStrip(d.byHour || [], d.onTimeMaxMins || 5)}
-      <div class="op-trend-block" id="op-trend-line-${esc(d.agencyId)}" data-line="${esc(d.line)}">${trendHtml(trendData.get(trendKey(d.agencyId, d.line))?.data || null)}</div>
+      ${hasHist ? `<div class="op-trend-block" id="op-trend-line-${esc(d.agencyId)}" data-line="${esc(d.line)}">${trendHtml(trendData.get(trendKey(d.agencyId, d.line))?.data || null)}</div>` : ''}
       <div class="op-table-wrap"><table class="op-table"><caption>${esc(t('ops.byStationCaption', { order }))}</caption><thead><tr><th scope="col">${esc(t('ops.colStation'))}</th><th scope="col">${esc(t('ops.colAvgDelay'))}</th><th scope="col">${esc(t('ops.colPunctuality'))}</th><th scope="col">${esc(t('ops.colMax'))}</th><th scope="col">${esc(t('ops.colVisits'))}</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
 
@@ -395,7 +397,8 @@
     const f = op.feed;
     if (!f) return `<p class="op-feed"><span class="chip chip-estimated">${esc(t('ops.feedPaused'))}</span></p>`;
     const bits = [];
-    if (f.vehiclesNow !== undefined) bits.push(t('ops.feedLiveTrains', { n: f.vehiclesNow }));
+    const liveKey = op.mode === 'bus' ? 'ops.feedLiveBuses' : (op.mode === 'tram' ? 'ops.feedLiveTrams' : 'ops.feedLiveTrains');
+    if (f.vehiclesNow !== undefined) bits.push(t(liveKey, { n: f.vehiclesNow }));
     if (f.fetchAgeSec !== undefined) bits.push(t('ops.feedAgeSec', { n: f.fetchAgeSec }));
     const err = f.vehiclesError || f.tripUpdatesError;
     const chip = err
@@ -407,8 +410,8 @@
 
   function linesTable(op) {
     if (!op.lines || !op.lines.length) return '';
-    // Cancellations per line, when the server reports them (railcancel.go).
-    const hasCancel = op.lines.some(l => typeof l.cancelled === 'number');
+    // Cancellations per line, when the operator reports them (rail).
+    const hasCancel = op.mode === 'rail' && op.lines.some(l => typeof l.cancelled === 'number');
     const rows = op.lines.map(l => `<tr><th scope="row"><button type="button" class="op-line-btn" data-op-agency="${esc(op.id)}" data-op-line="${esc(l.line)}" aria-expanded="${openLine && openLine.agency === op.id && openLine.line === l.line}" title="${esc(t('ops.lineDetailTitle', { line: l.line }))}"><span class="line-badge" data-line="${esc(`${op.id}:${l.line}`)}">${esc(l.line)}</span></button></th><td class="${delayClass(l.avgDelay)}">${esc(fmtMin(l.avgDelay))}</td><td>${esc(fmtPct(l.onTimePct))}</td><td>${esc(fmtMin(l.maxDelay))}</td><td>${l.visits}</td>${hasCancel ? `<td class="${l.cancelled > 0 ? 'op-severe' : ''}">${Number(l.cancelled) || 0}</td>` : ''}</tr>`).join('');
     return `<div class="op-table-wrap"><table class="op-table"><caption>${esc(t('ops.linesCaption'))}</caption><thead><tr><th scope="col">${esc(t('ops.colLine'))}</th><th scope="col">${esc(t('ops.colAvgDelay'))}</th><th scope="col">${esc(t('ops.colPunctuality'))}</th><th scope="col">${esc(t('ops.colMax'))}</th><th scope="col">${esc(t('ops.colVisits'))}</th>${hasCancel ? `<th scope="col" title="${esc(t('ops.kpiCancelledTitle'))}">${esc(t('ops.colCancelled'))}</th>` : ''}</tr></thead><tbody>${rows}</tbody></table></div>`;
   }
@@ -416,12 +419,18 @@
   function stationsList(op) {
     if (!op.worstStations || !op.worstStations.length) return '';
     const items = op.worstStations.map(s => `<li><span class="op-station">${esc(s.station)}</span><span class="${delayClass(s.avgDelay)}">${esc(fmtMin(s.avgDelay))}</span><span class="op-muted">${esc(t('ops.visitsCount', { n: s.visits }))}</span></li>`).join('');
-    return `<div class="op-stations"><h4>${esc(t('ops.worstStationsTitle'))}</h4><ol>${items}</ol></div>`;
+    const titleKey = op.mode === 'rail' ? 'ops.worstStationsTitle' : 'ops.worstStopsTitle';
+    return `<div class="op-stations"><h4>${esc(t(titleKey))}</h4><ol>${items}</ol></div>`;
   }
 
   function card(op) {
     const isTimetable = op.tier === 'timetable';
     const empty = !op.visits;
+    const isBus = op.mode === 'bus';
+    const isTram = op.mode === 'tram';
+    const visitsKey = isBus || isTram ? 'ops.kpiStopVisits' : 'ops.kpiVisits';
+    const vehiclesKey = isBus ? 'ops.kpiBuses' : (isTram ? 'ops.kpiTrams' : 'ops.kpiTrains');
+    const showCancelled = op.mode === 'rail' && typeof op.cancelled === 'number';
     const badge = tierBadge(op.tier, op.source);
     const method = methodLine(op.method);
     const fallbackChip = badge || isTimetable
@@ -443,12 +452,12 @@
         <div class="kpi"><span class="kpi-label">${esc(t('ops.kpiPunctuality', { max: op.onTimeMaxMins }))}</span><span class="kpi-value">${esc(fmtPct(op.onTimePct))}</span></div>
         <div class="kpi"><span class="kpi-label">${esc(t('ops.kpiAvgDelay'))}</span><span class="kpi-value${delayVerdict(op.avgDelay)}">${esc(fmtMin(op.avgDelay))}</span></div>
         <div class="kpi"><span class="kpi-label">${esc(t('ops.kpiMaxDelay'))}</span><span class="kpi-value">${esc(fmtMin(op.maxDelay))}</span></div>
-        <div class="kpi"><span class="kpi-label">${esc(t('ops.kpiVisits'))}</span><span class="kpi-value">${op.visits}</span></div>
-        <div class="kpi"><span class="kpi-label">${esc(t('ops.kpiTrains'))}</span><span class="kpi-value">${op.trips}</span></div>
-        ${typeof op.cancelled === 'number' ? `<div class="kpi" title="${esc(t('ops.kpiCancelledTitle'))}"><span class="kpi-label">${esc(t('ops.kpiCancelled'))}</span><span class="kpi-value${op.cancelled > 0 ? ' is-bad' : ''}">${op.cancelled}</span></div>` : ''}
+        <div class="kpi"><span class="kpi-label">${esc(t(visitsKey))}</span><span class="kpi-value">${op.visits}</span></div>
+        <div class="kpi"><span class="kpi-label">${esc(t(vehiclesKey))}</span><span class="kpi-value">${op.trips}</span></div>
+        ${showCancelled ? `<div class="kpi" title="${esc(t('ops.kpiCancelledTitle'))}"><span class="kpi-label">${esc(t('ops.kpiCancelled'))}</span><span class="kpi-value${op.cancelled > 0 ? ' is-bad' : ''}">${op.cancelled}</span></div>` : ''}
       </div>
       ${bucketBar(op)}
-      <div class="op-trend-block" id="op-trend-${esc(op.id)}">${trendHtml(trendData.get(trendKey(op.id, ''))?.data || null)}</div>
+      ${op.hasHistory === false ? '' : `<div class="op-trend-block" id="op-trend-${esc(op.id)}">${trendHtml(trendData.get(trendKey(op.id, ''))?.data || null)}</div>`}
       ${linesTable(op)}
       <div class="op-line-detail" id="op-line-detail-${esc(op.id)}" aria-live="polite"></div>
       ${stationsList(op)}`)}

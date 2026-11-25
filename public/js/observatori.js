@@ -267,14 +267,20 @@ class ObservatoriApp {
    * 7 dies), not to the Termòmetre, Top Incidents or monthly tabs. It sits
    * below the delays and above the operator comparison, which hides with it.
    */
+  isGpsGapSupportedAgency(agency) {
+    return ['mataro', 'moventis', 'amb', 'sagales', 'renfe_rodalies', 'fgc'].includes(agency || 'mataro');
+  }
+
   showGpsGaps(show) {
     const operators = document.getElementById('journalism-operators-container');
     if (operators) operators.style.display = show ? '' : 'none';
     const section = document.getElementById('gps-gaps-section');
     if (!section) return;
-    section.style.display = show ? '' : 'none';
+    const locked = typeof this.gpsGapScopeAgency === 'function' ? this.gpsGapScopeAgency() : null;
+    const visible = Boolean(show) && (!locked || typeof this.isGpsGapSupportedAgency !== 'function' || this.isGpsGapSupportedAgency(locked));
+    section.style.display = visible ? '' : 'none';
     // Leaflet measured the map while it was hidden: size it again.
-    if (show && this.gpsGapMap) this.gpsGapMap.invalidateSize({ pan: false });
+    if (visible && this.gpsGapMap) this.gpsGapMap.invalidateSize({ pan: false });
   }
 
   /**
@@ -300,14 +306,32 @@ class ObservatoriApp {
 
   syncGpsGapScope() {
     const locked = this.gpsGapScopeAgency();
-    const target = locked || this.gpsGapAgency || 'mataro';
+    const section = document.getElementById('gps-gaps-section');
+    if (locked && !this.isGpsGapSupportedAgency(locked)) {
+      this.gpsGapAgency = locked;
+      this.gpsGapLine = 'all';
+      this.gpsGapVehicle = '';
+      this.gpsGapHide = '';
+      this._gpsGapReq = (this._gpsGapReq || 0) + 1; // cancel any in-flight fetch for the previous agency
+      this.clearGpsGapSelection();
+      this.renderGpsGaps({ agency: locked, gaps: [], cells: [], fleet: [], summary: {} });
+      if (section) section.style.display = 'none';
+      return;
+    }
+    const target = locked || (this.isGpsGapSupportedAgency(this.gpsGapAgency) ? this.gpsGapAgency : 'mataro') || 'mataro';
     const agencyChanged = this.gpsGapAgency !== target;
     this.gpsGapAgency = target;
+    if (section && this.currentTab === 'journalism') {
+      section.style.display = '';
+      if (this.gpsGapMap) this.gpsGapMap.invalidateSize({ pan: false });
+    }
     if (agencyChanged) {
       this.gpsGapLine = 'all';
       this.gpsGapVehicle = '';
       this.gpsGapHide = '';
       if (this.gpsGapAgency !== 'moventis') this.gpsGapMode = 'gps';
+      this.clearGpsGapSelection();
+      this.renderGpsGaps({ agency: target, gaps: [], cells: [], fleet: [], summary: {} });
     }
     if (this._gpsGapReq && (agencyChanged || !this._gpsGapData)) {
       this.loadGpsGaps();
@@ -425,9 +449,11 @@ class ObservatoriApp {
     if (reqId !== this._gpsGapReq) return;
     let data = null;
     let retryAfter = 0;
+    let unsupported = false;
     try {
       const r = await fetch(url);
       if (r.status === 429) retryAfter = Math.min(60, Math.max(1, Number(r.headers.get('Retry-After')) || 10));
+      if (r.status === 400 || r.status === 404) unsupported = true;
       const res = await r.json();
       data = res && res.success ? res : null;
     } catch {
@@ -438,6 +464,10 @@ class ObservatoriApp {
       this.gpsGapResponses.set(url, { data, at: Date.now() });
       if (this.gpsGapResponses.size > 24) this.gpsGapResponses.delete(this.gpsGapResponses.keys().next().value);
       this.renderGpsGaps(data);
+      return;
+    }
+    if (unsupported) {
+      this.renderGpsGaps({ agency, gaps: [], cells: [], fleet: [], summary: {} });
       return;
     }
     // A refused or failed request keeps what is on screen (the map, the list
