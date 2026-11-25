@@ -12960,3 +12960,52 @@ body.network-map-fullscreen-open { overflow: hidden; }
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+.network-map-bus-routes-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.network-map-help-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: help;
+  padding: 0;
+  line-height: 1;
+}
+.network-map-help-btn:hover,
+.network-map-help-btn:focus-visible {
+  border-color: var(--c10-primary);
+  color: var(--c10-primary);
+}
+.network-map-help-btn[data-tooltip]:hover::after,
+.network-map-help-btn[data-tooltip]:focus-visible::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  z-index: 900;
+  width: 15.5rem;
+  padding: 0.48rem 0.65rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 0.74rem;
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: left;
+  white-space: normal;
+  pointer-events: none;
+  box-shadow: var(--shadow-md);
+}

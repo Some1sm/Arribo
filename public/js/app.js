@@ -6558,6 +6558,27 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
         this.updateNetworkMapBadge();
       });
     }
+    const busBtn = document.getElementById('network-map-bus-routes-toggle');
+    const helpBtn = document.getElementById('network-map-bus-routes-help');
+    if (busBtn) {
+      const shown = Boolean(map.allBusRoutesShown);
+      busBtn.setAttribute('aria-pressed', String(shown));
+      busBtn.classList.toggle('active', shown);
+      busBtn.textContent = shown ? t('netMap.hideBusRoutes') : t('netMap.showBusRoutes');
+      if (!busBtn.dataset.bound) {
+        busBtn.dataset.bound = '1';
+        busBtn.addEventListener('click', () => {
+          this.networkMap.setAllBusRoutesShown(!this.networkMap.allBusRoutesShown);
+          this.renderNetworkTrainToggle();
+        });
+      }
+    }
+    if (helpBtn) {
+      const tip = t('netMap.busRoutesHelp');
+      helpBtn.setAttribute('title', tip);
+      helpBtn.setAttribute('aria-label', tip);
+      helpBtn.setAttribute('data-tooltip', tip);
+    }
   }
 
   startNetworkMapTimer() {

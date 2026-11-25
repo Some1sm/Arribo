@@ -111,6 +111,7 @@ class NetworkMap extends TransitMap {
     this.map.on('moveend', () => this.renderLegend());
     this.railRouteLayer = L.featureGroup().addTo(this.map);
     this.railRoutes = [];              // [{ agencyId, code, mode, polyline, bounds }]
+    this.allBusRoutesShown = false;    // when true, show all bus polylines even at zoom < 11
     this.routeLayer = L.featureGroup().addTo(this.map);
     this.stopLayer = L.layerGroup().addTo(this.map);
     this.busLayer = L.layerGroup().addTo(this.map);
@@ -272,25 +273,33 @@ class NetworkMap extends TransitMap {
     this.renderRailRoutes();
   }
 
+  setAllBusRoutesShown(show) {
+    this.allBusRoutesShown = Boolean(show);
+    this.applyLineVisibility();
+    this.renderRailRoutes();
+  }
+
   /** Puts each non-Mataró line's path on the map when the filter allows it;
    *  the "Hide trains" toggle hides only rail lines (Rodalies/FGC), leaving
    *  Moventis, AMB, Sagalés, Girona, TMB and TRAM routes visible.
    *  When viewing the full Catalonia map without a specific operator/line filter,
    *  bus route polylines are zoom-gated (>= 11) and viewport-clipped so pan/zoom
-   *  stays 60 fps while all live vehicle pins remain visible at every zoom. */
+   *  stays 60 fps while all live vehicle pins remain visible at every zoom,
+   *  unless the user enables "Show bus routes" (`allBusRoutesShown`). */
   renderRailRoutes() {
     if (!this.railRouteLayer) return;
     // Paths are static: they show without a live train feed too.
     const filterOpen = this.railFilterOpen();
     const f = this.mapFilter || { kind: 'all' };
     const specificFilter = f.kind === 'op' || f.kind === 'rail';
+    const showAllBus = specificFilter || this.allBusRoutesShown;
     const zoom = this.map ? this.map.getZoom() : 12;
     const viewBounds = this.map ? this.map.getBounds().pad(0.35) : null;
     for (const r of this.railRoutes || []) {
       const isTrain = r.mode === 'rail';
       const isBus = r.mode === 'bus';
       let want = filterOpen && (!isTrain || this.trainsShown) && this.isRailLineVisible(r.agencyId, r.code, r.mode);
-      if (want && isBus && !specificFilter) {
+      if (want && isBus && !showAllBus) {
         if (zoom < 11) {
           want = false;
         } else if (viewBounds && r.bounds && !viewBounds.intersects(r.bounds)) {
@@ -730,7 +739,7 @@ class NetworkMap extends TransitMap {
   applyLineVisibility() {
     if (!this.map) return;
     const f = this.mapFilter || { kind: 'all' };
-    const specificFilter = f.kind === 'op' || f.kind === 'bus';
+    const specificFilter = f.kind === 'op' || f.kind === 'bus' || this.allBusRoutesShown;
     const zoom = this.map.getZoom();
 
     for (const [code, layers] of this.lineLayers.entries()) {
