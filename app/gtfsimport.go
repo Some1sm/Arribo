@@ -221,8 +221,10 @@ CREATE INDEX idx_trips_route ON trips(route_id);
 CREATE INDEX idx_trips_trip ON trips(trip_id);
 CREATE INDEX idx_trips_service ON trips(service_id);
 CREATE INDEX idx_calendar_dates_service ON calendar_dates(service_id, date);
+CREATE INDEX idx_calendar_dates_date ON calendar_dates(date, exception_type, service_id);
 CREATE INDEX idx_shapes_shape_seq ON shapes(shape_id, seq);
 CREATE INDEX idx_stops_stop ON stops(stop_id);
+CREATE INDEX idx_stops_parent ON stops(parent_station);
 CREATE INDEX idx_routes_route ON routes(route_id);
 `
 )
@@ -706,6 +708,7 @@ func importGTFSContext(ctx context.Context, agencyID, zipPath, outPath string, b
 		gtfsImportFormat, strconv.Itoa(inferred), strconv.FormatInt(nFilled, 10)); err != nil {
 		return fmt.Errorf("meta: %w", err)
 	}
+	_, _ = db.ExecContext(ctx, "ANALYZE")
 	if err := db.Close(); err != nil {
 		return fmt.Errorf("close db: %w", err)
 	}

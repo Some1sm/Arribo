@@ -55,13 +55,37 @@ type renfeLDTrain struct {
 }
 
 type renfeMapSnapshot struct {
-	Commuter map[string]renfeFlotaTrain // keyed by codTren (5-digit train number)
-	LD       map[string]renfeLDTrain    // keyed by codComercial (5-digit train number)
-	At       time.Time
+	Commuter   map[string]renfeFlotaTrain // keyed by codTren (5-digit train number)
+	LD         map[string]renfeLDTrain    // keyed by codComercial (5-digit train number)
+	At         time.Time                  // latest successful fetch (legacy/compat)
+	CommuterAt time.Time
+	LDAt       time.Time
 }
 
 func (m *renfeMapSnapshot) fresh(now time.Time) bool {
 	return m != nil && !m.At.IsZero() && now.Sub(m.At) <= renfeMapMaxAge
+}
+
+func (m *renfeMapSnapshot) commuterFresh(now time.Time) bool {
+	if m == nil {
+		return false
+	}
+	t := m.CommuterAt
+	if t.IsZero() {
+		t = m.At
+	}
+	return !t.IsZero() && now.Sub(t) <= renfeMapMaxAge
+}
+
+func (m *renfeMapSnapshot) ldFresh(now time.Time) bool {
+	if m == nil {
+		return false
+	}
+	t := m.LDAt
+	if t.IsZero() {
+		t = m.At
+	}
+	return !t.IsZero() && now.Sub(t) <= renfeMapMaxAge
 }
 
 // parseRenfeFlota parses Renfe's commuter visor flota.json, keeping only
@@ -188,14 +212,17 @@ func (p *rtPoller) pollRenfeMap(ctx context.Context) {
 			log.Printf("[GTFS-RT] %s: flota.json fetch failed: %v", p.src.AgencyID, err)
 			if prev != nil {
 				next.Commuter = prev.Commuter
+				next.CommuterAt = prev.CommuterAt
 			}
 		} else if m, err := parseRenfeFlota(b); err != nil {
 			log.Printf("[GTFS-RT] %s: flota.json parse failed: %v", p.src.AgencyID, err)
 			if prev != nil {
 				next.Commuter = prev.Commuter
+				next.CommuterAt = prev.CommuterAt
 			}
 		} else {
 			next.Commuter = m
+			next.CommuterAt = now
 			updated = true
 		}
 	}
@@ -205,14 +232,17 @@ func (p *rtPoller) pollRenfeMap(ctx context.Context) {
 			log.Printf("[GTFS-RT] %s: flotaLD.json fetch failed: %v", p.src.AgencyID, err)
 			if prev != nil {
 				next.LD = prev.LD
+				next.LDAt = prev.LDAt
 			}
 		} else if m, err := parseRenfeFlotaLD(b); err != nil {
 			log.Printf("[GTFS-RT] %s: flotaLD.json parse failed: %v", p.src.AgencyID, err)
 			if prev != nil {
 				next.LD = prev.LD
+				next.LDAt = prev.LDAt
 			}
 		} else {
 			next.LD = m
+			next.LDAt = now
 			updated = true
 		}
 	}
@@ -225,27 +255,31 @@ func (p *rtPoller) pollRenfeMap(ctx context.Context) {
 // renfeMapPlatformFor returns the platform announced in Renfe's unofficial
 // visor feeds for a train at/approaching stopID ("" when absent or stale).
 func renfeMapPlatformFor(m *renfeMapSnapshot, tripID, label, stopID, status string, now time.Time) string {
-	if !m.fresh(now) {
+	if m == nil {
 		return ""
 	}
 	num := renfeTrainNumber(tripID, label)
 	if num == "" {
 		return ""
 	}
-	if c, ok := m.Commuter[num]; ok {
-		if status == "STOPPED_AT" && c.Via != "" && (stopID == "" || c.CodEstAct == "" || c.CodEstAct == stopID) {
-			return c.Via
-		}
-		if c.NextVia != "" && (stopID == "" || c.CodEstSig == "" || c.CodEstSig == stopID) {
-			return c.NextVia
-		}
-		if stopID != "" && c.CodEstAct == stopID && c.Via != "" {
-			return c.Via
+	if m.commuterFresh(now) {
+		if c, ok := m.Commuter[num]; ok {
+			if status == "STOPPED_AT" && c.Via != "" && (stopID == "" || c.CodEstAct == "" || c.CodEstAct == stopID) {
+				return c.Via
+			}
+			if c.NextVia != "" && (stopID == "" || c.CodEstSig == "" || c.CodEstSig == stopID) {
+				return c.NextVia
+			}
+			if stopID != "" && c.CodEstAct == stopID && c.Via != "" {
+				return c.Via
+			}
 		}
 	}
-	if ld, ok := m.LD[num]; ok && ld.Platform != "" {
-		if stopID == "" || ld.CodEstSig == "" || ld.CodEstSig == stopID {
-			return ld.Platform
+	if m.ldFresh(now) {
+		if ld, ok := m.LD[num]; ok && ld.Platform != "" {
+			if stopID == "" || ld.CodEstSig == "" || ld.CodEstSig == stopID {
+				return ld.Platform
+			}
 		}
 	}
 	return ""
@@ -254,7 +288,7 @@ func renfeMapPlatformFor(m *renfeMapSnapshot, tripID, label, stopID, status stri
 // renfeMapUnitJSON builds the additive "unit" object for a Rodalies regional
 // train found in flotaLD.json, enriched with static facts from renfe_fleet.json.
 func renfeMapUnitJSON(m *renfeMapSnapshot, tripID, label string, now time.Time) *Obj {
-	if !m.fresh(now) {
+	if !m.ldFresh(now) {
 		return nil
 	}
 	num := renfeTrainNumber(tripID, label)
@@ -269,11 +303,15 @@ func renfeMapUnitJSON(m *renfeMapSnapshot, tripID, label string, now time.Time) 
 	for i, u := range ld.Units {
 		units[i] = u
 	}
+	obsAt := m.LDAt
+	if obsAt.IsZero() {
+		obsAt = m.At
+	}
 	o := O(
 		"series", strOrNil(ld.Series),
 		"units", units,
 		"coupledCount", float64(len(ld.Units)),
-		"observedAt", float64(m.At.UnixMilli()),
+		"observedAt", float64(obsAt.UnixMilli()),
 		"source", renfeMapSourceTag,
 		"unofficial", true,
 	)
@@ -294,18 +332,22 @@ func renfeMapUnitJSON(m *renfeMapSnapshot, tripID, label string, now time.Time) 
 // renfeMapAccessible returns the wheelchair accessibility flag from Renfe's
 // visor feeds when explicitly reported (nil when unknown or stale).
 func renfeMapAccessible(m *renfeMapSnapshot, tripID, label string, now time.Time) *bool {
-	if !m.fresh(now) {
+	if m == nil {
 		return nil
 	}
 	num := renfeTrainNumber(tripID, label)
 	if num == "" {
 		return nil
 	}
-	if c, ok := m.Commuter[num]; ok && c.Accessible != nil {
-		return c.Accessible
+	if m.commuterFresh(now) {
+		if c, ok := m.Commuter[num]; ok && c.Accessible != nil {
+			return c.Accessible
+		}
 	}
-	if ld, ok := m.LD[num]; ok && ld.Accessible != nil {
-		return ld.Accessible
+	if m.ldFresh(now) {
+		if ld, ok := m.LD[num]; ok && ld.Accessible != nil {
+			return ld.Accessible
+		}
 	}
 	return nil
 }

@@ -59,12 +59,23 @@ type tramTokenCache struct {
 	clientSecret string
 	client       *http.Client
 
-	mu      sync.Mutex
-	header  string
-	expires time.Time
+	mu        sync.Mutex
+	refreshMu sync.Mutex
+	header    string
+	expires   time.Time
 }
 
 func (c *tramTokenCache) token(ctx context.Context) (string, error) {
+	c.mu.Lock()
+	if c.header != "" && time.Now().Before(c.expires) {
+		h := c.header
+		c.mu.Unlock()
+		return h, nil
+	}
+	c.mu.Unlock()
+
+	c.refreshMu.Lock()
+	defer c.refreshMu.Unlock()
 	c.mu.Lock()
 	if c.header != "" && time.Now().Before(c.expires) {
 		h := c.header
@@ -109,8 +120,10 @@ func (c *tramTokenCache) token(ctx context.Context) (string, error) {
 		return "", errors.New("tram token response invalid")
 	}
 	ttl := time.Duration(tok.ExpiresIn) * time.Second
-	if ttl <= 120*time.Second {
+	if tok.ExpiresIn <= 0 {
 		ttl = 10 * time.Minute
+	} else if ttl <= 120*time.Second {
+		ttl = ttl / 2
 	} else {
 		ttl -= 60 * time.Second
 	}

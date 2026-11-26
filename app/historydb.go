@@ -439,7 +439,7 @@ const historySchema = `
           PRAGMA journal_mode = WAL;
           PRAGMA busy_timeout = 5000;
           PRAGMA synchronous = NORMAL;
-          PRAGMA cache_size = -1024;
+          PRAGMA cache_size = -16384;
           PRAGMA mmap_size = 0;
           PRAGMA wal_autocheckpoint = 200;
           PRAGMA journal_size_limit = 67108864;
@@ -850,6 +850,7 @@ func (h *HistoryDB) migrate() error {
             PRIMARY KEY (agency_id, line_code, stop_name, service_date)
           );
           CREATE INDEX IF NOT EXISTS idx_rail_daily_agency_date ON rail_daily_station_stats(agency_id, service_date);
+          CREATE INDEX IF NOT EXISTS idx_rail_daily_agency_line_date ON rail_daily_station_stats(agency_id, line_code, service_date);
           CREATE TABLE IF NOT EXISTS rail_rollup_progress (
             singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
             last_id INTEGER NOT NULL

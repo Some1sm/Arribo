@@ -18,6 +18,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -128,6 +129,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	q.query = parseQuery(rawQuery)
 
+	if handled, err := s.serveStatic(q, res); handled {
+		if err != nil {
+			s.w.mu.Lock()
+			s.errorHandler(q, res, err)
+			s.w.mu.Unlock()
+		}
+		_ = res.flush()
+		return
+	}
+
 	func() {
 		s.w.mu.Lock()
 		defer s.w.mu.Unlock()
@@ -162,12 +173,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // dispatch walks the in-world middleware and route stack.
 func (s *Server) dispatch(q *xreq, res *xres, isAPI bool) {
-	if handled, err := s.serveStatic(q, res); handled {
-		if err != nil {
-			s.errorHandler(q, res, err)
-		}
-		return
-	}
 	if isAPI {
 		q.requestID = randomUUID()
 		res.h.Set("X-Request-ID", q.requestID)
@@ -179,6 +184,7 @@ func (s *Server) dispatch(q *xreq, res *xres, isAPI bool) {
 }
 
 func (s *Server) serveStatic(q *xreq, res *xres) (bool, error) {
+	versioned := q.query.Get("v") != ""
 	r := res.sendPipe(q.pathname, sendOptions{
 		root:     s.publicDir,
 		maxAgeMs: 5 * 60 * 1000,
@@ -187,6 +193,8 @@ func (s *Server) serveStatic(q *xreq, res *xres) (bool, error) {
 				res.h.Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
 				res.h.Set("Pragma", "no-cache")
 				res.h.Set("Expires", "0")
+			} else if versioned && (strings.HasSuffix(p, ".js") || strings.HasSuffix(p, ".css")) {
+				res.h.Set("Cache-Control", "public, max-age=31536000, immutable")
 			}
 		},
 		directory: directoryRedirect,
@@ -1357,34 +1365,47 @@ func (s *Server) hLines(q *xreq, res *xres) error {
 
 	linesCache.mu.RLock()
 	if linesCache.raw != nil && linesCache.key == key && now.Sub(linesCache.at) <= linesCacheTTL {
-		raw, gz := linesCache.raw, linesCache.gz
+		raw, gz, eRaw, eGz := linesCache.raw, linesCache.gz, linesCache.etagRaw, linesCache.etagGz
 		linesCache.mu.RUnlock()
-		sendPrecompressedJSON(q, res, raw, gz, 60)
+		sendPrecompressedJSONWithETag(q, res, raw, gz, eRaw, eGz, 60)
 		return nil
 	}
 	linesCache.mu.RUnlock()
 
-	out := make([]any, 0, len(lines))
-	for _, x := range lines {
-		if l, ok := x.(*Obj); ok {
-			out = append(out, catalogLine(l))
+	var raw, gz []byte
+	var eRaw, eGz string
+	build := func() {
+		out := make([]any, 0, len(lines))
+		for _, x := range lines {
+			if l, ok := x.(*Obj); ok {
+				out = append(out, catalogLine(l))
+			}
 		}
+		ops := catalogOperators(lines)
+		if railLines, railOps := railCatalog(); len(railOps) > 0 {
+			out = append(out, railLines...)
+			ops = append(ops, railOps...)
+		}
+		raw = toJSON(O("success", true, "count", float64(len(out)), "lines", out, "operators", ops))
+		gz = gzipBytes(raw)
+		eRaw = weakETagBytes(raw)
+		eGz = weakETagBytes(gz)
 	}
-	ops := catalogOperators(lines)
-	if railLines, railOps := railCatalog(); len(railOps) > 0 {
-		out = append(out, railLines...)
-		ops = append(ops, railOps...)
+	if s != nil && s.w != nil {
+		s.w.await(build)
+	} else {
+		build()
 	}
-	raw := toJSON(O("success", true, "count", float64(len(out)), "lines", out, "operators", ops))
-	gz := gzipBytes(raw)
 	linesCache.mu.Lock()
 	linesCache.key = key
 	linesCache.at = now
 	linesCache.raw = raw
 	linesCache.gz = gz
+	linesCache.etagRaw = eRaw
+	linesCache.etagGz = eGz
 	linesCache.mu.Unlock()
 
-	sendPrecompressedJSON(q, res, raw, gz, 60)
+	sendPrecompressedJSONWithETag(q, res, raw, gz, eRaw, eGz, 60)
 	return nil
 }
 
@@ -1447,7 +1468,23 @@ func (s *Server) hSearchStops(q *xreq, res *xres) error {
 // line in one response: each line's activeBuses exactly as
 // /api/line/:id?direction=both builds them (getLineDetails, mapStandardize),
 // without the geometry, stops and departures, which the map loads once.
+var (
+	netVehiclesCacheMu   sync.Mutex
+	netVehiclesCacheAt   time.Time
+	netVehiclesCacheBody *Obj
+)
+
 func (s *Server) hNetworkVehicles(q *xreq, res *xres) error {
+	now := time.Now()
+	netVehiclesCacheMu.Lock()
+	if netVehiclesCacheBody != nil && now.Sub(netVehiclesCacheAt) < 5*time.Second {
+		cached := netVehiclesCacheBody
+		netVehiclesCacheMu.Unlock()
+		res.json(cached)
+		return nil
+	}
+	netVehiclesCacheMu.Unlock()
+
 	err := tryJS(func() {
 		lines := []any{}
 		for _, x := range s.registry.getAllLines() {
@@ -1468,7 +1505,12 @@ func (s *Server) hNetworkVehicles(q *xreq, res *xres) error {
 			}
 			lines = append(lines, O("id", id, "code", or(l.Get("code"), id), "activeBuses", buses))
 		}
-		res.json(O("success", true, "timestamp", float64(nowMs()), "lines", lines))
+		body := O("success", true, "timestamp", float64(nowMs()), "lines", lines)
+		netVehiclesCacheMu.Lock()
+		netVehiclesCacheAt = now
+		netVehiclesCacheBody = body
+		netVehiclesCacheMu.Unlock()
+		res.json(body)
 	})
 	if err != nil {
 		s.handleRouteError(q, res, err)
@@ -2348,12 +2390,24 @@ func (s *Server) hGpsGaps(q *xreq, res *xres) error {
 	now := float64(nowMs())
 	// Server-side real-time bus feeds (Moventis GPS + per-stop, AMB GPS, Sagalés GPS).
 	if isBusGapStoreAgency(agency) {
+		cacheKey := fmt.Sprintf("busgap:%s:%s:%s:%s:%v", agency, signalMode, lineCode, vehicleID, days)
+		if cached, ok := cacheGetFresh(s.gpsGapCache, cacheKey, now); ok {
+			res.h.Set("X-Cache", "HIT")
+			res.json(cached)
+			return nil
+		}
 		data := busGapsLive.Load().hotspots(agency, signalMode, lineCode, vehicleID, days, now)
 		if len(data.Arr("lines")) == 0 {
 			data.Set("lines", gapLinesForAgency(agency))
 		}
 		data.Set("availableAgencies", gapAgenciesMeta())
-		res.json(spreadAny(O("success", true), data))
+		body := spreadAny(O("success", true), data)
+		s.gpsGapCache.Set(cacheKey, &cachedData{data: body, timestamp: now})
+		if s.gpsGapCache.Len() > 24 {
+			s.gpsGapCache.Delete(s.gpsGapCache.Keys()[0])
+		}
+		res.h.Set("X-Cache", "MISS")
+		res.json(body)
 		return nil
 	}
 	keyLine, keyVeh, keyHide := lineCode, vehicleID, hide

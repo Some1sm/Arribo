@@ -256,6 +256,19 @@ func gironaLiveDepartures(ctx context.Context, stop rtLineStop, lineCode, direct
 	if !hasLive {
 		return nil
 	}
+	// Load GTFS scheduled departures once so live arrivals show delay vs. timetable.
+	var gtfsDeps []railDeparture
+	if tt, err := sharedRailTT.get(gironaAgencyID); err == nil && tt != nil {
+		dirInt := -1
+		if direction == "0" {
+			dirInt = 0
+		} else if direction == "1" {
+			dirInt = 1
+		}
+		if list, derr := tt.departures(ctx, lineCode, stop.ID, dirInt, now); derr == nil {
+			gtfsDeps = list
+		}
+	}
 	deps := []any{}
 	for _, a := range all {
 		exp := now.Add(time.Duration(a.MinutesAway) * time.Minute)
@@ -263,10 +276,35 @@ func gironaLiveDepartures(ctx context.Context, stop rtLineStop, lineCode, direct
 		if a.ClockHHMM != "" {
 			hhmm = a.ClockHHMM
 		}
+		var schedTime any = hhmm
+		var aimedIso any = isoString(exp.UnixMilli())
+		var delayMins any
 		status, badge := "scheduled", "Horari"
 		var src any = nil
 		if a.RealTime {
 			status, badge, src = "live", "Temps real", "girona_appbus_unofficial"
+			bestIdx := -1
+			bestDiff := int64(25 * 60)
+			for i, d := range gtfsDeps {
+				diff := exp.Unix() - d.DepartUnix
+				absDiff := diff
+				if absDiff < 0 {
+					absDiff = -absDiff
+				}
+				if diff >= -5*60 && diff <= 25*60 && absDiff < bestDiff {
+					bestDiff = absDiff
+					bestIdx = i
+				}
+			}
+			if bestIdx >= 0 {
+				schedAt := time.Unix(gtfsDeps[bestIdx].DepartUnix, 0)
+				dMin := math.Round(exp.Sub(schedAt).Minutes())
+				schedTime = schedAt.In(madrid).Format("15:04")
+				aimedIso = isoString(schedAt.UnixMilli())
+				delayMins = dMin
+				status, badge = busDelayLabel(dMin)
+				src = "timetable"
+			}
 		}
 		deps = append(deps, O(
 			"tripId", nil,
@@ -274,12 +312,12 @@ func gironaLiveDepartures(ctx context.Context, stop rtLineStop, lineCode, direct
 			"destination", nil,
 			"direction", a.Direction,
 			"departureTime", hhmm,
-			"scheduledTime", hhmm,
-			"aimedIso", isoString(exp.UnixMilli()),
+			"scheduledTime", schedTime,
+			"aimedIso", aimedIso,
 			"expectedIso", isoString(exp.UnixMilli()),
 			"minutesAway", float64(a.MinutesAway),
-			"delayMins", nil,
-			"delayMinutes", nil,
+			"delayMins", delayMins,
+			"delayMinutes", delayMins,
 			"delayStatus", status,
 			"delayBadgeText", badge,
 			"delaySource", src,

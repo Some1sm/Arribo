@@ -17,6 +17,7 @@ import (
 	"math"
 	"net/url"
 	"sort"
+	"sync"
 	"time"
 )
 
@@ -285,12 +286,12 @@ func (s *Server) hMoventis(q *xreq, res *xres) error {
 	}
 	hours := clampHours(qv(q, "hours"), 24, 168)
 	var delaysObj any
-	if p != nil && p.delays != nil {
+	if p != nil && p.delays != nil && jsString(qv(q, "includeDelays")) != "false" {
 		var st *movStatic
 		if snap != nil {
 			st = snap.Static
 		}
-		delaysObj = p.delays.reportWithStatic(hours, now, st)
+		delaysObj = cachedMovDelayReport(p.delays, hours, now, st)
 	}
 	res.json(O("success", true, "enabled", true, "agencyId", movAgencyID, "mode", "bus",
 		"attribution", movAttributionText(),
@@ -304,4 +305,28 @@ func movStaticAt(s *movStatic) any {
 		return nil
 	}
 	return float64(s.FetchedAt.UnixMilli())
+}
+
+type movDelayReportCacheEnt struct {
+	at   time.Time
+	data any
+}
+
+var (
+	movDelayReportCacheMu sync.Mutex
+	movDelayReportCache   = map[float64]movDelayReportCacheEnt{}
+)
+
+func cachedMovDelayReport(t *movDelayTracker, hours float64, now time.Time, st *movStatic) any {
+	movDelayReportCacheMu.Lock()
+	if ent, ok := movDelayReportCache[hours]; ok && now.Sub(ent.at) < 60*time.Second {
+		movDelayReportCacheMu.Unlock()
+		return ent.data
+	}
+	movDelayReportCacheMu.Unlock()
+	data := t.reportWithStatic(hours, now, st)
+	movDelayReportCacheMu.Lock()
+	movDelayReportCache[hours] = movDelayReportCacheEnt{at: now, data: data}
+	movDelayReportCacheMu.Unlock()
+	return data
 }

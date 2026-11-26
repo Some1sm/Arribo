@@ -59,7 +59,9 @@ func (r *railTimetables) get(agencyID string) (*rtTimetable, error) {
 		return nil, fmt.Errorf("timetable for %s not opened", agencyID)
 	}
 	if old := r.open[agencyID]; old != nil {
-		_ = old.db.Close()
+		// Grace period so concurrent readers mid-query on old.db never hit
+		// "sql: database is closed" when daily GTFS refresh replaces the file.
+		time.AfterFunc(30*time.Second, func() { _ = old.db.Close() })
 	}
 	r.open[agencyID], r.mod[agencyID] = tt, fi.ModTime()
 	return tt, nil
@@ -91,26 +93,28 @@ var gtfsWeekdayColumn = [...]string{"sunday", "monday", "tuesday", "wednesday", 
 // after midnight are found on the previous service day (GTFS times above
 // 24:00). Service days follow calendar and calendar_dates.
 func (t *rtTimetable) departures(ctx context.Context, code, stopID string, dir int, now time.Time) ([]railDeparture, error) {
-	var out []railDeparture
-	today := now.In(madrid)
-	for _, back := range []int{1, 0} {
-		day := time.Date(today.Year(), today.Month(), today.Day()-back, 12, 0, 0, 0, madrid)
-		date := day.Format("20060102")
-		ref, err := gtfsServiceDayRef(date)
-		if err != nil {
-			return nil, err
-		}
-		// Look back as far as a plausible delay: a late train whose scheduled
-		// time has passed has not left yet. The response keeps a departure
-		// only while its expected time (scheduled + live delay) is ahead.
-		from := now.Unix() - ref.Unix() - railDepLookbackSec
-		to := now.Unix() - ref.Unix() + railDepWindowSec
+	runPass := func(ignoreDateBounds bool) ([]railDeparture, error) {
+		var out []railDeparture
+		today := now.In(madrid)
+		for _, back := range []int{1, 0} {
+			day := time.Date(today.Year(), today.Month(), today.Day()-back, 12, 0, 0, 0, madrid)
+			date := day.Format("20060102")
+			ref, err := gtfsServiceDayRef(date)
+			if err != nil {
+				return nil, err
+			}
+			from := now.Unix() - ref.Unix() - railDepLookbackSec
+			to := now.Unix() - ref.Unix() + railDepWindowSec
 
-		col := gtfsWeekdayColumn[day.Weekday()]
-		q := `WITH active(service_id) AS (
-		    SELECT service_id FROM calendar WHERE start_date <= ?1 AND end_date >= ?1 AND ` + col + ` = 1
+			col := gtfsWeekdayColumn[day.Weekday()]
+			activeCTE := `SELECT service_id FROM calendar WHERE start_date <= ?1 AND end_date >= ?1 AND ` + col + ` = 1
 		    UNION SELECT service_id FROM calendar_dates WHERE date = ?1 AND exception_type = 1
-		    EXCEPT SELECT service_id FROM calendar_dates WHERE date = ?1 AND exception_type = 2
+		    EXCEPT SELECT service_id FROM calendar_dates WHERE date = ?1 AND exception_type = 2`
+			if ignoreDateBounds {
+				activeCTE = `SELECT service_id FROM calendar WHERE ` + col + ` = 1`
+			}
+			q := `WITH active(service_id) AS (
+		    ` + activeCTE + `
 		  ), here(stop_id) AS (
 		    SELECT stop_id FROM stops WHERE stop_id = ?2
 		    UNION SELECT s.stop_id FROM stops s JOIN stops p ON p.stop_id = ?2
@@ -128,27 +132,41 @@ func (t *rtTimetable) departures(ctx context.Context, code, stopID string, dir i
 		     AND (?6 < 0 OR tr.direction_id = ?6)
 		     AND st.stop_sequence < (SELECT MAX(stop_sequence) FROM stop_times s2 WHERE s2.trip_id = st.trip_id)
 		   ORDER BY sec LIMIT 200`
-		rows, err := t.db.QueryContext(ctx, q, date, stopID, code, from, to, dir)
-		if err != nil {
-			return nil, err
-		}
-		for rows.Next() {
-			var d railDeparture
-			var sec sql.NullInt64
-			if err := rows.Scan(&d.TripID, &d.Headsign, &d.DirectionID, &sec, &d.StopID, &d.Platform); err != nil {
-				rows.Close()
+			rows, err := t.db.QueryContext(ctx, q, date, stopID, code, from, to, dir)
+			if err != nil {
 				return nil, err
 			}
-			if !sec.Valid {
-				continue
+			for rows.Next() {
+				var d railDeparture
+				var sec sql.NullInt64
+				if err := rows.Scan(&d.TripID, &d.Headsign, &d.DirectionID, &sec, &d.StopID, &d.Platform); err != nil {
+					rows.Close()
+					return nil, err
+				}
+				if !sec.Valid {
+					continue
+				}
+				d.DepartUnix = ref.Unix() + sec.Int64
+				out = append(out, d)
 			}
-			d.DepartUnix = ref.Unix() + sec.Int64
-			out = append(out, d)
+			err = rows.Err()
+			rows.Close()
+			if err != nil {
+				return nil, err
+			}
 		}
-		err = rows.Err()
-		rows.Close()
-		if err != nil {
-			return nil, err
+		return out, nil
+	}
+
+	out, err := runPass(false)
+	if err != nil {
+		return nil, err
+	}
+	// Pass 2: if a GTFS feed's calendar range expired (e.g. TMESA Terrassa NAP 1175),
+	// fall back to the weekday bitmask so stop departure boards still populate.
+	if len(out) == 0 {
+		if fb, ferr := runPass(true); ferr == nil && len(fb) > 0 {
+			out = fb
 		}
 	}
 	// Merge the two service days in time order (each is already sorted).

@@ -34,11 +34,12 @@ func openRtTimetable(p string) (*rtTimetable, error) {
 	if _, err := os.Stat(p); err != nil {
 		return nil, nil
 	}
-	db, err := sql.Open("sqlite", "file:"+p+"?mode=ro")
+	db, err := sql.Open("sqlite", "file:"+p+"?mode=ro&immutable=1&_pragma=cache_size(-8000)")
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(1)
+	db.SetMaxOpenConns(4)
+	db.SetMaxIdleConns(2)
 	return &rtTimetable{db: db, cache: map[string]int64{}}, nil
 }
 
@@ -317,9 +318,10 @@ const rtMaxShapePoints = 600
 // line, not its timetable.
 func (t *rtTimetable) lineProfiles(ctx context.Context) ([]rtLineProfile, error) {
 	rows, err := t.db.QueryContext(ctx, `SELECT COALESCE(NULLIF(r.short_name, ''), r.route_id), COALESCE(tr.direction_id, 0),
-	    tr.trip_id, COALESCE(tr.headsign, ''), COALESCE(tr.shape_id, ''),
-	    (SELECT COUNT(*) FROM stop_times st WHERE st.trip_id = tr.trip_id)
-	  FROM trips tr JOIN routes r ON r.route_id = tr.route_id
+	    tr.trip_id, COALESCE(tr.headsign, ''), COALESCE(tr.shape_id, ''), sc.n
+	  FROM trips tr
+	  JOIN routes r ON r.route_id = tr.route_id
+	  JOIN (SELECT trip_id, COUNT(*) AS n FROM stop_times GROUP BY trip_id) sc ON sc.trip_id = tr.trip_id
 	  ORDER BY tr.rowid`)
 	if err != nil {
 		return nil, err

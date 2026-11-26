@@ -151,16 +151,13 @@ class NetworkMap extends TransitMap {
     // work, no inline styles).
     const applyZoomClass = () => {
       const z = this.map.getZoom();
-      const el = this.map.getContainer();
-      el.classList.toggle('net-z-region', z <= 10);
-      el.classList.toggle('net-z-far', z >= 11 && z <= 12);
-      el.classList.toggle('net-z-mid', z === 13);
       const r = vehicleRadiusForZoom(z);
       if (r !== this._vehRadius) {
         this._vehRadius = r;
-        for (const obj of this.trainMarkers.values()) obj.marker.setRadius(r);
-        for (const obj of this.movMarkers.values()) obj.marker.setRadius(r);
-        for (const obj of this.busMarkersMap.values()) obj.marker.setRadius(r);
+        for (const obj of this.trainMarkers.values()) obj.marker.options.radius = r;
+        for (const obj of this.movMarkers.values()) obj.marker.options.radius = r;
+        for (const obj of this.busMarkersMap.values()) obj.marker.options.radius = r;
+        this.vehicleCanvas?._redraw?.();
       }
     };
     this.map.on('zoomend', () => {
@@ -1174,6 +1171,14 @@ class NetworkMap extends TransitMap {
   }
 
   destroy() {
+    if (this._routeMoveTimer) {
+      clearTimeout(this._routeMoveTimer);
+      this._routeMoveTimer = null;
+    }
+    if (this._legendFrame) {
+      cancelAnimationFrame(this._legendFrame);
+      this._legendFrame = null;
+    }
     if (this.resizeObserver) {
       try { this.resizeObserver.disconnect(); } catch {}
       this.resizeObserver = null;
@@ -1188,6 +1193,7 @@ class NetworkMap extends TransitMap {
     this.lineGeometries.clear();
     this.lineLayers.clear();
     this.busesByLine.clear();
+    this.railRoutes?.clear?.();
   }
 }
 

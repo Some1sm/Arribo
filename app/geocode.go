@@ -56,7 +56,11 @@ func (s *Server) hGeocode(q *xreq, res *xres) error {
 	if len(raw) > 160 {
 		raw = raw[:160]
 	}
-	hits := s.geocodeCatalonia(q.r.Context(), raw, 6)
+	var awaitFn func(func())
+	if s.w != nil {
+		awaitFn = s.w.await
+	}
+	hits := s.geocodeCataloniaWithAwait(q.r.Context(), raw, 6, awaitFn)
 	out := make([]any, 0, len(hits))
 	for _, h := range hits {
 		out = append(out, O(
@@ -72,6 +76,10 @@ func (s *Server) hGeocode(q *xreq, res *xres) error {
 }
 
 func (s *Server) geocodeCatalonia(ctx context.Context, query string, limit int) []geocodeHit {
+	return s.geocodeCataloniaWithAwait(ctx, query, limit, nil)
+}
+
+func (s *Server) geocodeCataloniaWithAwait(ctx context.Context, query string, limit int, awaitFn func(func())) []geocodeHit {
 	key := foldStationName(query)
 	if key == "" {
 		return nil
@@ -89,7 +97,13 @@ func (s *Server) geocodeCatalonia(ctx context.Context, query string, limit int) 
 
 	var hits []geocodeHit
 	// 1. Try Catalonia-bounded Nominatim for real street addresses & places.
-	nomHits, err := fetchNominatimCatalonia(ctx, query, limit)
+	var nomHits []geocodeHit
+	var err error
+	if awaitFn != nil {
+		awaitFn(func() { nomHits, err = fetchNominatimCatalonia(ctx, query, limit) })
+	} else {
+		nomHits, err = fetchNominatimCatalonia(ctx, query, limit)
+	}
 	if err == nil && len(nomHits) > 0 {
 		hits = append(hits, nomHits...)
 	}

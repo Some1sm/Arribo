@@ -9,6 +9,7 @@ import (
 	"math"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -126,10 +127,11 @@ func (d *IngestionDaemon) after(stop chan struct{}, delay time.Duration, fn func
 	}()
 }
 
-// every is setInterval: each tick is its own task, so a slow async run does
-// not hold back the next one.
+// every runs fn on a fixed cadence, skipping ticks while a prior run is still
+// in flight so slow upstream calls cannot pile up overlapping goroutines.
 func (d *IngestionDaemon) every(stop chan struct{}, period time.Duration, fn func()) {
 	go func() {
+		var running atomic.Bool
 		tk := time.NewTicker(period)
 		defer tk.Stop()
 		for {
@@ -137,7 +139,13 @@ func (d *IngestionDaemon) every(stop chan struct{}, period time.Duration, fn fun
 			case <-stop:
 				return
 			case <-tk.C:
-				go d.task(stop, fn)
+				if !running.CompareAndSwap(false, true) {
+					continue
+				}
+				go func() {
+					defer running.Store(false)
+					d.task(stop, fn)
+				}()
 			}
 		}
 	}()

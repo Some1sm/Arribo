@@ -89,8 +89,9 @@
   }
 
   function methodLine(method) {
-    if (!KNOWN_METHODS.has(method)) return '';
-    return `<p class="op-method" data-method="${esc(method)}">${esc(t(`tier.method.${method}`))}</p>`;
+    const key = method === 'operator_gps' ? 'gps' : method;
+    if (!KNOWN_METHODS.has(key)) return '';
+    return `<p class="op-method" data-method="${esc(method)}">${esc(t(`tier.method.${key}`))}</p>`;
   }
 
   function renderTierGroup(tier, ops, headingKey, noteKey) {

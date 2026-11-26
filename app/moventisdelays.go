@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -620,5 +621,45 @@ func (t *movDelayTracker) reportWithStatic(hours float64, now time.Time, static 
 		"byHour", byHour,
 		"byStop", stopRows,
 		"daily", dailyRows,
+	)
+}
+
+// lineStats24h returns the 24h reliability header summary for one Moventis line
+// (matching /api/line/:id/stats schema).
+func (t *movDelayTracker) lineStats24h(lineCode string, now time.Time) *Obj {
+	if t == nil || lineCode == "" {
+		return nil
+	}
+	cutoff := now.Add(-24 * time.Hour).Unix()
+	t.mu.Lock()
+	var n, late, onTime, early float64
+	var sum float64
+	for _, o := range t.byKey {
+		if o.ObservedAt < cutoff || !strings.EqualFold(o.LineCode, lineCode) {
+			continue
+		}
+		dMin := float64(o.DelaySec) / 60.0
+		n++
+		sum += dMin
+		switch {
+		case dMin > 3.0:
+			late++
+		case dMin < -1.0:
+			early++
+		default:
+			onTime++
+		}
+	}
+	t.mu.Unlock()
+	if n == 0 {
+		return nil
+	}
+	return O(
+		"totalVisits", n,
+		"totalSamples", n,
+		"avgDelayMins", math.Round(sum/n*10)/10,
+		"latePct", math.Round(late/n*1000)/10,
+		"onTimePct", math.Round(onTime/n*1000)/10,
+		"earlyPct", math.Round(early/n*1000)/10,
 	)
 }

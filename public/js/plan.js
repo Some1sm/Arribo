@@ -727,12 +727,17 @@ class PlannerPageApp {
         try {
           const lat = pos.coords.latitude;
           const lon = pos.coords.longitude;
-          const res = await fetch(`/api/search/stops?lat=${lat}&lon=${lon}`);
+          const originInput = document.getElementById('page-planner-origin');
+          if (originInput) {
+            originInput.dataset.lat = String(lat);
+            originInput.dataset.lon = String(lon);
+          }
+          const res = await fetch(`/api/stops/nearby?lat=${lat}&lon=${lon}&departures=false&limit=1`);
           if (res.ok) {
             const data = await res.json();
-            if (Array.isArray(data.stops) && data.stops.length > 0) {
-              const nearest = data.stops[0];
-              const originInput = document.getElementById('page-planner-origin');
+            const stops = data.data?.stops || data.stops || [];
+            if (Array.isArray(stops) && stops.length > 0) {
+              const nearest = stops[0];
               if (originInput) {
                 originInput.value = nearest.name;
                 originInput.dataset.stopId = nearest.id;

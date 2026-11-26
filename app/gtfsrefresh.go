@@ -95,6 +95,10 @@ func downloadFileHeaders(ctx context.Context, url, path string, headers map[stri
 
 // refreshTimetable downloads and imports one operator's static GTFS.
 func refreshTimetable(ctx context.Context, src rtSource) error {
+	return refreshTimetableWithZip(ctx, src, "")
+}
+
+func refreshTimetableWithZip(ctx context.Context, src rtSource, sharedZip string) error {
 	if err := os.MkdirAll(gtfsDir(), 0o755); err != nil {
 		return err
 	}
@@ -107,19 +111,24 @@ func refreshTimetable(ctx context.Context, src rtSource) error {
 		bbox = b
 	}
 	db := gtfsTimetablePath(src.AgencyID)
-	zipPath := db + ".zip"
-	defer os.Remove(zipPath)
-	if err := downloadFileHeaders(ctx, src.staticURL, zipPath, src.staticHeaders); err != nil {
-		return fmt.Errorf("download: %w", err)
+	zipPath := sharedZip
+	if zipPath == "" {
+		zipPath = db + ".zip"
+		defer os.Remove(zipPath)
+		if err := downloadFileHeaders(ctx, src.staticURL, zipPath, src.staticHeaders); err != nil {
+			return fmt.Errorf("download: %w", err)
+		}
 	}
 	return importGTFSContext(ctx, src.AgencyID, zipPath, db, bbox, src.staticBBox, src.staticRouteFilter)
 }
 
 // runTimetableRefresher imports stale timetables now and keeps checking
-// until ctx ends. A failed import keeps the previous file and is retried at
-// the next check.
+// until ctx ends. Sources sharing the same staticURL (e.g. NAP 2059 for
+// tus_sabadell, rubibus, and atm_urban) download the zip once per pass.
 func runTimetableRefresher(ctx context.Context, srcs []rtSource) {
 	check := func() {
+		var due []rtSource
+		urlCounts := map[string]int{}
 		for _, src := range srcs {
 			if src.staticURL == "" || ctx.Err() != nil {
 				continue
@@ -128,8 +137,39 @@ func runTimetableRefresher(ctx context.Context, srcs []rtSource) {
 			if !gtfsStale(p, gtfsStaleAfter) && gtfsImportCurrent(p, src.staticBBox, src.staticRouteFilter) {
 				continue
 			}
+			due = append(due, src)
+			urlCounts[src.staticURL]++
+		}
+		sharedZips := map[string]string{}
+		defer func() {
+			for _, zp := range sharedZips {
+				_ = os.Remove(zp)
+			}
+		}()
+		for _, src := range due {
+			if ctx.Err() != nil {
+				return
+			}
 			start := time.Now()
-			if err := refreshTimetable(ctx, src); err != nil {
+			zipPath := ""
+			if urlCounts[src.staticURL] > 1 {
+				if existing, ok := sharedZips[src.staticURL]; ok {
+					zipPath = existing
+				} else {
+					if err := os.MkdirAll(gtfsDir(), 0o755); err != nil {
+						log.Printf("[GTFS] %s: timetable refresh failed: %v", src.AgencyID, err)
+						continue
+					}
+					zp := gtfsTimetablePath(src.AgencyID) + ".shared.zip"
+					if err := downloadFileHeaders(ctx, src.staticURL, zp, src.staticHeaders); err != nil {
+						log.Printf("[GTFS] %s: timetable refresh failed: download: %v", src.AgencyID, err)
+						continue
+					}
+					sharedZips[src.staticURL] = zp
+					zipPath = zp
+				}
+			}
+			if err := refreshTimetableWithZip(ctx, src, zipPath); err != nil {
 				log.Printf("[GTFS] %s: timetable refresh failed: %v", src.AgencyID, err)
 				continue
 			}

@@ -326,6 +326,30 @@ func railDelayLabel(mins any, discarded bool) (status, label string) {
 	}
 }
 
+// busDelayLabel classifies a live bus delay using the 3-minute bus on-time
+// threshold (matching /dades bus scoring) instead of the 5-minute rail rule.
+func busDelayLabel(m float64) (status, badge string) {
+	switch {
+	case m > 3:
+		return "delayed", "+" + numToString(m) + " min"
+	case m < -1:
+		return "early", "−" + numToString(-m) + " min"
+	case m == 0:
+		return "on_time", "A l'hora"
+	case m > 0:
+		return "on_time", "+" + numToString(m) + " min"
+	default:
+		return "on_time", "−" + numToString(-m) + " min"
+	}
+}
+
+func busDelayLabelAny(delayMins any) (status, badge string) {
+	if delayMins == nil {
+		return "unknown", "Sense dada de retard"
+	}
+	return busDelayLabel(jsNumber(delayMins))
+}
+
 // railDepartures serves /api/line/<agency>:<code>/stop/:stopId/departures:
 // the timetable's next departures from the worker, with live delays added
 // here from the pollers' snapshot.
@@ -345,22 +369,32 @@ func (s *Server) railDepartures(q *xreq, res *xres, info operatorInfo, op *rtCat
 	if info.ID == movAgencyID {
 		// On-demand Moventis stop predictions + scheduled times (30 s TTL cache),
 		// falling back to the background poller's snapshot and Gencat timetable.
-		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-		out := movStopDepartures(ctx, stop, code, direction, now)
-		cancel()
+		var out *Obj
+		s.w.await(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+			out = movStopDepartures(ctx, stop, code, direction, now)
+			cancel()
+		})
 		res.json(O("success", true, "data", out))
 		return
 	}
 	if info.ID == sagalesAgencyID {
-		res.json(O("success", true, "data", sagalesStopDepartures(stop, code, direction, now)))
+		var out *Obj
+		s.w.await(func() {
+			out = sagalesStopDepartures(stop, code, direction, now)
+		})
+		res.json(O("success", true, "data", out))
 		return
 	}
 	if info.ID == tmbAgencyID {
 		// TMB live iTransit predictions (Metro L1-L5/L11 from 30 s cache;
 		// Bus on-demand with 20 s TTL cache). L9/L10/FM and misses fall back to GTFS.
-		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
-		live := tmbLiveDepartures(ctx, stop, code, direction, now)
-		cancel()
+		var live *Obj
+		s.w.await(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+			live = tmbLiveDepartures(ctx, stop, code, direction, now)
+			cancel()
+		})
 		if live != nil {
 			res.json(O("success", true, "data", live))
 			return
@@ -368,9 +402,12 @@ func (s *Server) railDepartures(q *xreq, res *xres, info operatorInfo, op *rtCat
 	}
 	if info.ID == gironaAgencyID {
 		// TMG Girona unofficial live appbus predictions (20 s TTL cache); falls back to GTFS.
-		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
-		live := gironaLiveDepartures(ctx, stop, code, direction, now)
-		cancel()
+		var live *Obj
+		s.w.await(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+			live = gironaLiveDepartures(ctx, stop, code, direction, now)
+			cancel()
+		})
 		if live != nil {
 			res.json(O("success", true, "data", live))
 			return
@@ -378,9 +415,12 @@ func (s *Server) railDepartures(q *xreq, res *xres, info operatorInfo, op *rtCat
 	}
 	if info.ID == movLleidaAgencyID {
 		// Autobusos de Lleida unofficial live Moventis predictions (60 s TTL cache); falls back to GTFS.
-		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
-		live := lleidaLiveDepartures(ctx, stop, code, direction, now)
-		cancel()
+		var live *Obj
+		s.w.await(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+			live = lleidaLiveDepartures(ctx, stop, code, direction, now)
+			cancel()
+		})
 		if live != nil {
 			res.json(O("success", true, "data", live))
 			return
@@ -388,9 +428,12 @@ func (s *Server) railDepartures(q *xreq, res *xres, info operatorInfo, op *rtCat
 	}
 	if info.ID == reusAgencyID {
 		// Reus Transport unofficial live rtp.amersam.net predictions (25 s TTL cache); falls back to GTFS.
-		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
-		live := reusLiveDepartures(ctx, stop, code, direction, now)
-		cancel()
+		var live *Obj
+		s.w.await(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+			live = reusLiveDepartures(ctx, stop, code, direction, now)
+			cancel()
+		})
 		if live != nil {
 			res.json(O("success", true, "data", live))
 			return
@@ -433,7 +476,10 @@ func (s *Server) hRailLine(q *xreq, res *xres, kind string) bool {
 			direction = jsTrim(jsString(v))
 		}
 		now := time.Now()
-		data := railLineDetails(info, op, code, direction, liveLineFeeds(), now)
+		var data *Obj
+		s.w.await(func() {
+			data = railLineDetails(info, op, code, direction, liveLineFeeds(), now)
+		})
 		// The operator's active service alerts for this line: those naming
 		// it, and those naming only stations it stops at.
 		lineStops := map[string]bool{}
@@ -449,9 +495,19 @@ func (s *Server) hRailLine(q *xreq, res *xres, kind string) bool {
 	case "stats":
 		// The line header's 24 h summary, from the station visits the
 		// operator's trip updates produced (the Dades train report's data),
-		// with rail's on-time bound. null when nothing was recorded.
+		// or from liveDelaysLive / movDelayTracker for bus & tram operators.
 		var stats any
-		if data, err := s.historyQuery("getRailLineStats", O("agencyId", info.ID, "line", code, "hours", 24.0), 8000); err == nil {
+		if _, ok := isLiveDelayOperator(info.ID); ok {
+			if st := liveDelaysLive.lineStats24h(info.ID, code, time.Now()); st != nil {
+				stats = st
+			}
+		} else if info.ID == movAgencyID {
+			if p := movLive.Load(); p != nil && p.delays != nil {
+				if st := p.delays.lineStats24h(code, time.Now()); st != nil {
+					stats = st
+				}
+			}
+		} else if data, err := s.historyQuery("getRailLineStats", O("agencyId", info.ID, "line", code, "hours", 24.0), 8000); err == nil {
 			stats = data
 		}
 		res.json(O("success", true, "lineId", info.ID+":"+code, "code", code, "hoursMonitored", 24.0, "stats", stats))

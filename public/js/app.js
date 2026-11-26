@@ -251,7 +251,6 @@ class TransitApp {
       // 3. Setup DOM Listeners, Landing Page & Controls
       this.setupEventListeners();
       this.setupLandingControls();
-      this.setupMapResizeControls();
       this.setupAudio();
       // Observes the all-lines map section; builds the map only once it is
       // actually scrolled into view.
@@ -2000,15 +1999,21 @@ class TransitApp {
     if (!lId) return;
 
     if (!stats) {
-      try {
-        const res = await fetch(`/api/line/${encodeURIComponent(lId)}/stats`).then(r => r.json());
-        // Discard stale response if the user switched lines while fetching
-        if (String(this.activeLineId || '').toLowerCase() !== String(lId).toLowerCase()) return;
-        if (res.success && res.stats) {
-          stats = res.stats;
+      this._lineStatsCache = this._lineStatsCache || new Map();
+      const cacheKey = String(lId).toLowerCase();
+      const cached = this._lineStatsCache.get(cacheKey);
+      if (cached && (Date.now() - cached.at) < 5 * 60 * 1000) {
+        stats = cached.stats;
+      } else {
+        try {
+          const res = await fetch(`/api/line/${encodeURIComponent(lId)}/stats`).then(r => r.json());
+          // Discard stale response if the user switched lines while fetching
+          if (String(this.activeLineId || '').toLowerCase() !== cacheKey) return;
+          stats = (res.success && res.stats) ? res.stats : null;
+          this._lineStatsCache.set(cacheKey, { at: Date.now(), stats });
+        } catch {
+          // Silently continue
         }
-      } catch {
-        // Silently continue
       }
     }
 
@@ -3661,6 +3666,24 @@ class TransitApp {
     const select = document.getElementById(selectId);
     if (!select) return;
 
+    // Avoid rebuilding <select> options on 20-30s polling ticks when the stop
+    // list hasn't changed, which otherwise snaps shut an open native dropdown.
+    const lang = window.ArriboI18n?.getLang?.() || 'ca';
+    let fp = `${lang}|${this.activeLineId}|${this.activeDirection}|`;
+    if (lineDataOrStops && typeof lineDataOrStops === 'object' && !Array.isArray(lineDataOrStops)) {
+      const sArr = lineDataOrStops.stops || [];
+      fp += `${sArr.length}:${sArr[0]?.id || sArr[0]?.code || ''}:${sArr[sArr.length - 1]?.id || sArr[sArr.length - 1]?.code || ''}:${(lineDataOrStops.allDirections || []).length}`;
+    } else if (Array.isArray(lineDataOrStops)) {
+      fp += `${lineDataOrStops.length}:${lineDataOrStops[0]?.id || lineDataOrStops[0]?.code || ''}`;
+    }
+    if (select._lastPopulateFp === fp) {
+      if (selectedId !== undefined && selectedId !== null && select.value !== String(selectedId)) {
+        select.value = String(selectedId);
+      }
+      return;
+    }
+    select._lastPopulateFp = fp;
+
     if (lineDataOrStops && typeof lineDataOrStops === 'object' && !Array.isArray(lineDataOrStops)) {
       const lineData = lineDataOrStops;
       const isBoth = this.activeDirection === 'both' || lineData.direction === 'both';
@@ -4532,6 +4555,8 @@ class TransitApp {
 
       html += `</div>`;
       container.innerHTML = html;
+      const searchVal = document.getElementById('stop-search-input')?.value?.trim();
+      if (searchVal) this.filterSchematicStops(searchVal);
       return;
     }
 
@@ -4712,6 +4737,8 @@ class TransitApp {
         `;
       }).join('');
     }
+    const listSearchVal = document.getElementById('stop-search-input')?.value?.trim();
+    if (listSearchVal) this.filterListStops?.(listSearchVal);
   }
 
   setTargetStop(stopId) {
@@ -5931,12 +5958,12 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
     // Modal Close Button & Backdrop
     document.getElementById('modal-close-btn')?.addEventListener('click', (e) => {
       e.preventDefault();
-      document.getElementById('stop-modal-backdrop')?.classList.remove('active');
+      this.closeStopModal();
     });
 
     document.getElementById('stop-modal-backdrop')?.addEventListener('click', (e) => {
       if (e.target.id === 'stop-modal-backdrop') {
-        e.target.classList.remove('active');
+        this.closeStopModal();
       }
     });
 
@@ -6047,6 +6074,7 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
     };
 
     window.addEventListener('hashchange', handleRouteNav);
+    window.addEventListener('popstate', handleRouteNav);
 
     this.setupGlobalSearch();
     this.setupLinePicker();
@@ -6060,6 +6088,10 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
   // ==========================================
   // DISRUPTIONS & SERVICE ALERTS MODAL
   // ==========================================
+
+  closeStopModal() {
+    document.getElementById('stop-modal-backdrop')?.classList.remove('active');
+  }
 
   setupDisruptionsModal() {
     const openBtn = document.getElementById('btn-open-incidents');
@@ -6329,7 +6361,7 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
   ensureNetworkMap() {
     if (this.networkMap) {
       this.startNetworkMapTimer();
-      this.networkMap.startAnimationLoop?.();
+      this.startAnimationLoop();
       return this.networkMap;
     }
     const container = document.getElementById('network-map-container');
@@ -6356,7 +6388,7 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
     });
     this.refreshNetworkMap(true);
     this.startNetworkMapTimer();
-    this.networkMap.startAnimationLoop?.();
+    this.startAnimationLoop();
     return this.networkMap;
   }
 
@@ -6451,13 +6483,13 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
    */
   networkBusesUrl() {
     const map = this.networkMap?.map;
-    if (!map) return '/api/moventis';
+    if (!map) return '/api/moventis?includeDelays=false';
     try {
       const b = map.getBounds().pad(0.3);
       const f = v => Number(v).toFixed(4);
-      return `/api/moventis?bbox=${f(b.getSouth())},${f(b.getWest())},${f(b.getNorth())},${f(b.getEast())}`;
+      return `/api/moventis?includeDelays=false&bbox=${f(b.getSouth())},${f(b.getWest())},${f(b.getNorth())},${f(b.getEast())}`;
     } catch {
-      return '/api/moventis';
+      return '/api/moventis?includeDelays=false';
     }
   }
 
@@ -6833,8 +6865,8 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
   startAutoRefresh() {
     if (this.pollTimer) clearInterval(this.pollTimer);
     this.pollTimer = setInterval(() => {
-      // Inactive Tab Sleep: Pause polling while tab is hidden to prevent continuous JSON parsing & memory churning
-      if (!this.isTabVisible) {
+      // Inactive Tab Sleep or Landing View: pause single-line polling when hidden or on '/'
+      if (!this.isTabVisible || !this.activeLineId) {
         return;
       }
       // While the SSE fleet stream is delivering snapshots, stretch the REST

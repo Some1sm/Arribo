@@ -314,49 +314,70 @@ class TransitMap {
     return Math.round((brng + 360) % 360);
   }
 
-  // Snap any coordinate strictly to the closest point on the road polyline
-  snapToPolyline(lat, lon, polyline = this.activePolylineCoords) {
+  // Snap any coordinate strictly to the closest point on the road polyline.
+  // When hintIndex >= 0 on long polylines, checks a local window first for O(1)
+  // 60 FPS animation snapping before falling back to a full scan.
+  snapToPolyline(lat, lon, polyline = this.activePolylineCoords, hintIndex = -1) {
     if (!polyline || polyline.length === 0) return { lat, lon, index: 0, bearing: 0 };
     if (polyline.length === 1) return { lat: polyline[0][0], lon: polyline[0][1], index: 0, bearing: 0 };
 
-    let minDistance = Infinity;
-    let bestPoint = { lat: polyline[0][0], lon: polyline[0][1], index: 0, bearing: 0 };
+    const cosLat = Math.cos(lat * Math.PI / 180) || 0.75;
+    const scanRange = (start, end) => {
+      let minSq = Infinity;
+      let bestIdx = start;
+      let bestLat = polyline[start][0];
+      let bestLon = polyline[start][1];
+      let bestT = 0;
 
-    for (let i = 0; i < polyline.length - 1; i++) {
-      const p1 = polyline[i];
-      const p2 = polyline[i + 1];
+      for (let i = start; i <= end; i++) {
+        const p1 = polyline[i];
+        const p2 = polyline[i + 1];
+        const x1 = p1[1], y1 = p1[0];
+        const x2 = p2[1], y2 = p2[0];
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const lenSq = dx * dx + dy * dy;
 
-      const x1 = p1[1], y1 = p1[0];
-      const x2 = p2[1], y2 = p2[0];
-      const px = lon, py = lat;
-
-      const dx = x2 - x1;
-      const dy = y2 - y1;
-      const lenSq = dx * dx + dy * dy;
-
-      let t = 0;
-      if (lenSq > 0) {
-        t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lenSq));
+        let t = 0;
+        if (lenSq > 0) {
+          t = Math.max(0, Math.min(1, ((lon - x1) * dx + (lat - y1) * dy) / lenSq));
+        }
+        const projX = x1 + t * dx;
+        const projY = y1 + t * dy;
+        const dLat = lat - projY;
+        const dLon = (lon - projX) * cosLat;
+        const sq = dLat * dLat + dLon * dLon;
+        if (sq < minSq) {
+          minSq = sq;
+          bestIdx = i;
+          bestLat = projY;
+          bestLon = projX;
+          bestT = t;
+        }
       }
+      const distM = Math.sqrt(minSq) * 111320;
+      const bp1 = polyline[bestIdx];
+      const bp2 = polyline[bestIdx + 1];
+      return {
+        lat: bestLat,
+        lon: bestLon,
+        index: bestIdx,
+        t: bestT,
+        bearing: this.calculateBearing(bp1[0], bp1[1], bp2[0], bp2[1]),
+        distanceMeters: distM
+      };
+    };
 
-      const projX = x1 + t * dx;
-      const projY = y1 + t * dy;
-      const dist = this.calculateDistanceMeters(lat, lon, projY, projX);
-
-      if (dist < minDistance) {
-        minDistance = dist;
-        bestPoint = {
-          lat: projY,
-          lon: projX,
-          index: i,
-          t,
-          bearing: this.calculateBearing(p1[0], p1[1], p2[0], p2[1]),
-          distanceMeters: dist
-        };
+    const maxSeg = polyline.length - 2;
+    if (hintIndex >= 0 && polyline.length > 60) {
+      const lo = Math.max(0, hintIndex - 15);
+      const hi = Math.min(maxSeg, hintIndex + 30);
+      const local = scanRange(lo, hi);
+      if (local.distanceMeters < 60) {
+        return local;
       }
     }
-
-    return bestPoint;
+    return scanRange(0, maxSeg);
   }
 
   // Extract the exact sequence of road vertices between point A and point B along the polyline
@@ -1727,22 +1748,12 @@ class TransitMap {
       const followRoute = !bus.offRoute && bus.positionSource !== 'gtfsrt' && targetPolyline && targetPolyline.length > 1;
       let snapped = { lat: bus.lat, lon: bus.lon, bearing: bus.bearing || 0 };
       if (followRoute) {
-        snapped = this.snapToPolyline(bus.lat, bus.lon, targetPolyline);
-      }
-
-      // 2. Extract road subpath between fromCoords and toCoords
-      let subpath = null;
-      if (followRoute && bus.fromCoords && bus.toCoords) {
-        subpath = this.extractSubpath(targetPolyline, bus.fromCoords.lat, bus.fromCoords.lon, bus.toCoords.lat, bus.toCoords.lon);
+        const prevSeg = this.busMarkersMap.get(markerKey)?._segIdx ?? -1;
+        snapped = this.snapToPolyline(bus.lat, bus.lon, targetPolyline, prevSeg);
       }
 
       const isGhost = Boolean(bus.isGhostVehicle || (bus.vehicleId && String(bus.vehicleId).startsWith('EST_')) || bus.isTheoretical);
       const isEst = Boolean(bus.isEstimated);
-      // Heading: prefer the vehicle's own reported bearing; fall back to the
-      // client-side snapped road bearing only when the vehicle reports none.
-      // Explicit null/NaN checks (not `||`) so a legitimate due-north 0° is kept
-      // rather than silently discarded. The payload carries a single `bearing`
-      // (the tracker's own choice); the road bearing is the renderer's snap.
       const reportedBearing = (bus.bearing !== undefined && bus.bearing !== null && Number.isFinite(Number(bus.bearing))) ? Number(bus.bearing) : null;
       const roadBearing = (snapped.bearing !== undefined && snapped.bearing !== null && Number.isFinite(Number(snapped.bearing))) ? Number(snapped.bearing) : null;
       const bearingAngle = Math.round(reportedBearing !== null ? reportedBearing : (roadBearing !== null ? roadBearing : 0));
@@ -1756,7 +1767,6 @@ class TransitMap {
         lineCode: this.currentLineId,
         showLineLink: false
       };
-      const popupHtml = this.buildBusPopupHtml(bus, popupCtx);
 
       const pinBaseColor = isGhost
         ? '#0f172a'
@@ -1807,12 +1817,14 @@ class TransitMap {
         obj.popupCtx = popupCtx;
         obj.targetLat = snapped.lat;
         obj.targetLon = snapped.lon;
+        obj._segIdx = snapped.index ?? -1;
         obj.targetBearing = bearingAngle;
         obj.reportedBearing = reportedBearing;
-        obj.subpath = subpath;
         obj.targetPolyline = followRoute ? targetPolyline : null;
         obj.lastUpdated = now;
-        obj.marker.setPopupContent(popupHtml);
+        if (obj.marker.isPopupOpen?.()) {
+          obj.marker.setPopupContent(this.buildBusPopupHtml(bus, popupCtx));
+        }
 
         if (bus.isTerminalLayover) {
           obj.marker.setLatLng([snapped.lat, snapped.lon]);
@@ -1838,10 +1850,14 @@ class TransitMap {
           if (dotEl) {
             dotEl.className = `bus-status-dot ${isGhost ? 'ghost' : (isEst ? 'estimated' : 'live')}`;
           }
-          const iconInner = el.querySelector('.bus-icon-inner');
+          const iconInner = obj.iconEl || (obj.iconEl = el.querySelector('.bus-icon-inner'));
           if (iconInner) {
             const vMode = bus.mode || (bus.positionSource === 'gtfsrt' ? 'rail' : (bus.positionSource === 'metro_predictions' ? 'metro' : 'bus'));
-            iconInner.innerHTML = isGhost ? '⚡' : (bus.isTerminalLayover ? '🅿️' : vehicleIconForMode(vMode));
+            const iconKey = isGhost ? 'ghost' : (bus.isTerminalLayover ? 'layover' : vMode);
+            if (obj._lastIconKey !== iconKey) {
+              obj._lastIconKey = iconKey;
+              iconInner.innerHTML = isGhost ? '⚡' : (bus.isTerminalLayover ? '🅿️' : vehicleIconForMode(vMode));
+            }
           }
           obj.marker.setZIndexOffset(isSelected ? 5000 : (isGhost ? 1500 : 2000));
         }
@@ -1880,7 +1896,30 @@ class TransitMap {
           zIndexOffset: isSelected ? 5000 : (isGhost ? 1500 : 2000)
         }).addTo(this.map);
 
-        marker.bindPopup(popupHtml, {
+        const busRoot = marker.getElement();
+        const vModeInit = bus.mode || (bus.positionSource === 'gtfsrt' ? 'rail' : (bus.positionSource === 'metro_predictions' ? 'metro' : 'bus'));
+        const entry = {
+          marker,
+          busData: bus,
+          popupCtx,
+          targetLat: snapped.lat,
+          targetLon: snapped.lon,
+          _segIdx: snapped.index ?? -1,
+          targetBearing: bearingAngle,
+          reportedBearing: reportedBearing,
+          currentBearing: bearingAngle,
+          isFacingWest: isHeadingWest,
+          lastUpdated: now,
+          targetPolyline: followRoute ? targetPolyline : null,
+          _lastIconKey: isGhost ? 'ghost' : (bus.isTerminalLayover ? 'layover' : vModeInit),
+          wrapEl: busRoot ? busRoot.querySelector('.live-bus-marker-wrap') : null,
+          ringEl: busRoot ? busRoot.querySelector('.bus-selection-ring') : null,
+          pinEl: busRoot ? busRoot.querySelector('.live-bus-pin') : null,
+          dotEl: busRoot ? busRoot.querySelector('.bus-status-dot') : null,
+          coneEl: busRoot ? busRoot.querySelector('.bus-heading-cone') : null,
+          iconEl: busRoot ? busRoot.querySelector('.bus-icon-inner') : null
+        };
+        marker.bindPopup(() => this.buildBusPopupHtml(entry.busData, entry.popupCtx), {
           className: 'arribo-bus-popup',
           minWidth: 290,
           maxWidth: 350,
@@ -1889,41 +1928,23 @@ class TransitMap {
           autoPanPadding: [20, 20],
           closeButton: true
         });
-
         if (onBusClick) {
-          marker.on('click', () => onBusClick(bus));
+          marker.on('click', () => onBusClick(entry.busData));
         }
-
-        // Cache per-marker DOM refs once so the 60fps animation loop and
-        // per-update refreshes never call getElement/querySelector per frame.
-        const busRoot = marker.getElement();
-        this.busMarkersMap.set(markerKey, {
-          marker,
-          busData: bus,
-          popupCtx,
-          targetLat: snapped.lat,
-          targetLon: snapped.lon,
-          targetBearing: bearingAngle,
-          reportedBearing: reportedBearing,
-          currentBearing: bearingAngle,
-          isFacingWest: isHeadingWest,
-          lastUpdated: now,
-          subpath,
-          targetPolyline: followRoute ? targetPolyline : null,
-          wrapEl: busRoot ? busRoot.querySelector('.live-bus-marker-wrap') : null,
-          ringEl: busRoot ? busRoot.querySelector('.bus-selection-ring') : null,
-          pinEl: busRoot ? busRoot.querySelector('.live-bus-pin') : null,
-          dotEl: busRoot ? busRoot.querySelector('.bus-status-dot') : null,
-          coneEl: busRoot ? busRoot.querySelector('.bus-heading-cone') : null,
-          iconEl: busRoot ? busRoot.querySelector('.bus-icon-inner') : null
-        });
+        this.busMarkersMap.set(markerKey, entry);
       }
     });
   }
 
-  // Smooth continuous client-side gliding with zero rollbacks and anti-flicker hysteresis
+  // Smooth continuous client-side gliding with dt-scaled LERP, local segment hint, and anti-flicker hysteresis
   stepBusAnimation(nowSec) {
     if (!this.busMarkersMap || this.busMarkersMap.size === 0) return;
+    const ts = Number.isFinite(nowSec) ? nowSec : (performance.now() / 1000);
+    const dt = this._lastAnimSec ? Math.min(0.06, Math.max(0.004, ts - this._lastAnimSec)) : 0.0167;
+    this._lastAnimSec = ts;
+    const posAlpha = 1 - Math.exp(-5.0 * dt);
+    const rotAlpha = 1 - Math.exp(-7.5 * dt);
+
     for (const [, obj] of this.busMarkersMap.entries()) {
       const bus = obj.busData;
       if (!bus || !obj.marker) continue;
@@ -1943,30 +1964,22 @@ class TransitMap {
       const targetLon = obj.targetLon !== undefined ? obj.targetLon : bus.lon;
       const targetBearing = obj.targetBearing !== undefined ? obj.targetBearing : (bus.bearing || 0);
 
-      // 2. Smooth exponential position LERP (smooth forward motion towards validated road coordinate)
+      // 2. Smooth dt-scaled exponential position LERP
       const dLat = targetLat - currentPos.lat;
       const dLon = targetLon - currentPos.lng;
       const distDeg = Math.sqrt(dLat * dLat + dLon * dLon);
 
       if (distDeg > 0.005) {
-        // Large distance (teleport or initial spawn): snap directly
         obj.marker.setLatLng([targetLat, targetLon]);
       } else if (distDeg > 0.000002) {
-        // Smooth forward glide (8% step per frame = ~0.8s smooth transition without rollback)
-        const smoothLat = currentPos.lat + dLat * 0.08;
-        const smoothLon = currentPos.lng + dLon * 0.08;
-        
-        // Road-Following Curved Polyline Snapping:
-        // When navigating street curves, snap intermediate positions directly to the street polyline
-        // so the bus glides around corners instead of cutting across city blocks.
+        const smoothLat = currentPos.lat + dLat * posAlpha;
+        const smoothLon = currentPos.lng + dLon * posAlpha;
+
         if (obj.targetPolyline && obj.targetPolyline.length > 2 && distDeg < 0.003) {
-          const snappedStep = this.snapToPolyline(smoothLat, smoothLon, obj.targetPolyline);
+          const snappedStep = this.snapToPolyline(smoothLat, smoothLon, obj.targetPolyline, obj._segIdx ?? -1);
           if (snappedStep && snappedStep.distanceMeters < 40) {
+            obj._segIdx = snappedStep.index;
             obj.marker.setLatLng([snappedStep.lat, snappedStep.lon]);
-            // Road-following may only steer the heading when the vehicle reports
-            // none of its own; otherwise the cone/icon flip follows the vehicle's
-            // reported bearing (two buses on one bidirectional segment must not
-            // share a heading).
             if (obj.reportedBearing === null || obj.reportedBearing === undefined) {
               if (snappedStep.bearing !== undefined && Number.isFinite(snappedStep.bearing)) {
                 obj.targetBearing = snappedStep.bearing;
@@ -1980,12 +1993,12 @@ class TransitMap {
         }
       }
 
-      // 3. Smooth shortest-angle rotation interpolation for direction cone
-      if (targetBearing !== null) {
+      // 3. Smooth shortest-angle rotation interpolation for DOM direction cone (skip Canvas circleMarkers)
+      if (targetBearing !== null && typeof obj.marker.getElement === 'function') {
         let currentBearing = obj.currentBearing !== undefined ? obj.currentBearing : targetBearing;
         const delta = (targetBearing - currentBearing + 540) % 360 - 180;
         if (Math.abs(delta) >= 0.5 || obj._lastRenderedAngle === undefined) {
-          currentBearing = (currentBearing + delta * 0.12 + 360) % 360;
+          currentBearing = (currentBearing + delta * rotAlpha + 360) % 360;
           obj.currentBearing = currentBearing;
           const roundedAngle = Math.round(currentBearing);
           const el = obj.marker.getElement();

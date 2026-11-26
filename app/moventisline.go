@@ -324,7 +324,7 @@ func movEstimateDelay(p *movPoller, lineID, stopID int, dirStr string, routes []
 	schedTime = matched.In(madrid).Format("15:04")
 	aimedIso = isoString(matched.UnixMilli())
 	delayMins = dMin
-	delayStatus, badgeText = railDelayLabel(dMin, false)
+	delayStatus, badgeText = busDelayLabel(dMin)
 	delaySource = "timetable"
 	return
 }
@@ -798,7 +798,7 @@ func movPropagateUpstreamDelay(p *movPoller, preds map[[3]int]movPrediction, lin
 				estAt := best.at.Add(upDelay)
 				left := math.Max(0, estAt.Sub(now).Seconds())
 				propDelayMin := math.Round(estAt.Sub(best.at).Minutes())
-				dStatus, dBadge := railDelayLabel(propDelayMin, false)
+				dStatus, dBadge := busDelayLabel(propDelayMin)
 				best.obj.Set("departureTime", estAt.In(madrid).Format("15:04"))
 				best.obj.Set("scheduledTime", best.at.In(madrid).Format("15:04"))
 				best.obj.Set("aimedIso", isoString(best.at.UnixMilli()))

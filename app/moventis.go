@@ -300,7 +300,13 @@ var errMovThrottled = errors.New("throttled by the site (placeholder answer)")
 // get fetches one API path, spacing requests and honouring the backoff.
 func (p *movPoller) get(ctx context.Context, path string) ([]byte, error) {
 	p.mu.Lock()
-	wait := time.Until(p.until)
+	now := time.Now()
+	nextAt := now
+	if p.until.After(nextAt) {
+		nextAt = p.until
+	}
+	wait := nextAt.Sub(now)
+	p.until = nextAt.Add(movMinGap)
 	p.mu.Unlock()
 	if wait > 0 {
 		select {
@@ -318,7 +324,9 @@ func (p *movPoller) get(ctx context.Context, path string) ([]byte, error) {
 	resp, err := movHTTP.Do(req)
 	p.mu.Lock()
 	p.stats.Requests++
-	p.until = time.Now().Add(movMinGap)
+	if end := time.Now().Add(movMinGap); end.After(p.until) {
+		p.until = end
+	}
 	p.mu.Unlock()
 	if err != nil {
 		return nil, err

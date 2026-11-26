@@ -401,17 +401,41 @@ func (c *idleConn) Write(b []byte) (int, error) {
 	return c.Conn.Write(b)
 }
 
+type nodeClientKey struct {
+	host    string
+	dataDir string
+	idle    time.Duration
+}
+
+var (
+	nodeClientMu    sync.Mutex
+	nodeClientCache = map[nodeClientKey]*http.Client{}
+)
+
 // nodeRequestClient behaves like https.request/https.get with a `timeout`
 // option: no redirects are followed, no Accept-Encoding is sent, and the
-// timeout is an idle-socket timeout rather than a total deadline.
+// timeout is an idle-socket timeout rather than a total deadline. Clients are
+// pooled per (host, dataDir, idle) with keep-alives enabled to avoid repeated
+// TCP+TLS handshakes on every SIRI poll.
 func nodeRequestClient(host, dataDir string, idle time.Duration) *http.Client {
+	key := nodeClientKey{host: strings.ToLower(host), dataDir: dataDir, idle: idle}
+	nodeClientMu.Lock()
+	if c, ok := nodeClientCache[key]; ok {
+		nodeClientMu.Unlock()
+		return c
+	}
+	nodeClientMu.Unlock()
+
 	var roots *x509.CertPool
-	if chainRepairHosts[strings.ToLower(host)] {
+	if chainRepairHosts[key.host] {
 		clientFor(host, dataDir)
 		roots = repairPool
 	}
-	dialer := &net.Dialer{Timeout: idle}
+	dialer := &net.Dialer{Timeout: idle, KeepAlive: 30 * time.Second}
 	tr := newTransport(roots)
+	tr.DisableKeepAlives = false
+	tr.MaxIdleConnsPerHost = 8
+	tr.IdleConnTimeout = 60 * time.Second
 	tr.DisableCompression = true
 	tr.TLSHandshakeTimeout = 0
 	tr.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -421,12 +445,19 @@ func nodeRequestClient(host, dataDir string, idle time.Duration) *http.Client {
 		}
 		return &idleConn{Conn: c, idle: idle}, nil
 	}
-	return &http.Client{
+	cli := &http.Client{
 		Transport: tr,
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
 	}
+	nodeClientMu.Lock()
+	if len(nodeClientCache) > 32 {
+		nodeClientCache = map[nodeClientKey]*http.Client{}
+	}
+	nodeClientCache[key] = cli
+	nodeClientMu.Unlock()
+	return cli
 }
 
 // describeChainFailure turns a request failure into the log line Node writes.

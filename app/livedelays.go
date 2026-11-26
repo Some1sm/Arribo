@@ -12,7 +12,10 @@ package main
 // and the Comparison by Operator table without touching SQLite.
 
 import (
+	"encoding/json"
 	"math"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -20,18 +23,21 @@ import (
 )
 
 const (
-	liveDelayMaxPerAgency = 30000
-	liveDelayMaxAge       = 7 * 24 * time.Hour
-	liveDelayDedupGapMs   = 3 * 60 * 1000 // score each trip/bus at most once per 3 min
-	liveDelayOnTimeMax    = 3.0           // urban/metropolitan bus & tram standard (<= 3 min)
+	liveDelayMaxPerAgency  = 60000
+	liveDelayMaxAge        = 7 * 24 * time.Hour
+	liveDelayDedupGapMs    = 3 * 60 * 1000 // score each trip/bus at most once per 3 min
+	liveDelayOnTimeMax     = 3.0           // urban/metropolitan bus & tram standard (<= 3 min)
+	liveDelaySevereMins    = 5.0           // urban bus/tram severe delay threshold (> 5 min)
+	liveDelayBottleneckAvg = 3.0           // urban bus/tram stop bottleneck avg threshold
+	liveDelaySaveEvery     = 5 * time.Minute
 )
 
 type liveDelaySample struct {
-	TsMs      int64
-	Line      string
-	Stop      string
-	TripKey   string
-	DelayMins float64
+	TsMs      int64   `json:"t"`
+	Line      string  `json:"l"`
+	Stop      string  `json:"s,omitempty"`
+	TripKey   string  `json:"k,omitempty"`
+	DelayMins float64 `json:"d"`
 }
 
 type liveDelayBucket struct {
@@ -42,11 +48,106 @@ type liveDelayBucket struct {
 
 type liveDelaysStore struct {
 	mu       sync.Mutex
+	path     string
+	dirty    bool
+	lastSave time.Time
 	byAgency map[string]*liveDelayBucket
 }
 
 var liveDelaysLive = &liveDelaysStore{
 	byAgency: map[string]*liveDelayBucket{},
+}
+
+func liveDelaysFilePath() string {
+	dir := os.Getenv("DATA_DIR")
+	if dir == "" {
+		dir = filepath.Join(appRoot, "data")
+	}
+	return filepath.Join(dir, "live_delays.json")
+}
+
+// startLiveDelayStore loads persisted non-SQLite operator delay samples so
+// deploys/restarts don't wipe /dades for AMB, TRAM, Sagalés, Girona, Lleida, Reus.
+func startLiveDelayStore() func() {
+	liveDelaysLive.initPath(liveDelaysFilePath())
+	return func() {
+		liveDelaysLive.save(true)
+	}
+}
+
+func (s *liveDelaysStore) initPath(p string) {
+	if s == nil || p == "" {
+		return
+	}
+	s.mu.Lock()
+	s.path = p
+	s.mu.Unlock()
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return
+	}
+	var loaded map[string][]liveDelaySample
+	if json.Unmarshal(b, &loaded) != nil {
+		return
+	}
+	cutoff := time.Now().Add(-liveDelayMaxAge).UnixMilli()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for agency, list := range loaded {
+		bkt := s.byAgency[agency]
+		if bkt == nil {
+			bkt = &liveDelayBucket{lastSeen: map[string]int64{}}
+			s.byAgency[agency] = bkt
+		}
+		for _, sm := range list {
+			if sm.TsMs >= cutoff && sm.Line != "" {
+				bkt.samples = append(bkt.samples, sm)
+			}
+		}
+		if len(bkt.samples) > liveDelayMaxPerAgency {
+			bkt.samples = append([]liveDelaySample(nil), bkt.samples[len(bkt.samples)-liveDelayMaxPerAgency:]...)
+		}
+	}
+}
+
+func (s *liveDelaysStore) save(force bool) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	if s.path == "" || !s.dirty || (!force && time.Since(s.lastSave) < liveDelaySaveEvery) {
+		s.mu.Unlock()
+		return
+	}
+	p := s.path
+	cutoff := time.Now().Add(-liveDelayMaxAge).UnixMilli()
+	snap := make(map[string][]liveDelaySample, len(s.byAgency))
+	for agency, bkt := range s.byAgency {
+		var kept []liveDelaySample
+		for _, sm := range bkt.samples {
+			if sm.TsMs >= cutoff {
+				kept = append(kept, sm)
+			}
+		}
+		if len(kept) > 0 {
+			snap[agency] = kept
+		}
+	}
+	s.dirty = false
+	s.lastSave = time.Now()
+	s.mu.Unlock()
+
+	raw, err := json.Marshal(snap)
+	if err != nil {
+		return
+	}
+	if os.MkdirAll(filepath.Dir(p), 0o755) != nil {
+		return
+	}
+	tmp := p + ".tmp"
+	if os.WriteFile(tmp, raw, 0o644) == nil {
+		_ = os.Rename(tmp, p)
+	}
 }
 
 func liveDelayOperators() []operatorInfo {
@@ -85,7 +186,6 @@ func (s *liveDelaysStore) record(agencyID, lineCode, stopName, tripKey string, d
 	}
 	nowMs := now.UnixMilli()
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	b := s.byAgency[agencyID]
 	if b == nil {
 		b = &liveDelayBucket{lastSeen: map[string]int64{}}
@@ -93,12 +193,14 @@ func (s *liveDelaysStore) record(agencyID, lineCode, stopName, tripKey string, d
 	}
 	if int(delaySec) < railMinDelaySec || int(delaySec) > railMaxDelaySec {
 		b.dropped++
+		s.mu.Unlock()
 		return
 	}
 	if tripKey == "" {
 		tripKey = lineCode + "\x00" + stopName
 	}
 	if prev, ok := b.lastSeen[tripKey]; ok && nowMs-prev < liveDelayDedupGapMs {
+		s.mu.Unlock()
 		return
 	}
 	b.lastSeen[tripKey] = nowMs
@@ -110,6 +212,7 @@ func (s *liveDelaysStore) record(agencyID, lineCode, stopName, tripKey string, d
 		TripKey:   tripKey,
 		DelayMins: delayMins,
 	})
+	s.dirty = true
 	// Prune expired or overflow samples occasionally.
 	if len(b.samples) > liveDelayMaxPerAgency+500 {
 		cutoff := nowMs - liveDelayMaxAge.Milliseconds()
@@ -131,6 +234,11 @@ func (s *liveDelaysStore) record(agencyID, lineCode, stopName, tripKey string, d
 				delete(b.lastSeen, k)
 			}
 		}
+	}
+	needSave := s.path != "" && time.Since(s.lastSave) >= liveDelaySaveEvery
+	s.mu.Unlock()
+	if needSave {
+		s.save(false)
 	}
 }
 
@@ -524,7 +632,7 @@ func (s *liveDelaysStore) networkReports(hours float64, feeds map[string]*Obj, n
 			isEarly := sm.DelayMins < -1
 			isOnTime := sm.DelayMins >= -1 && sm.DelayMins <= on
 			isLate := sm.DelayMins > on
-			isSevere := sm.DelayMins > railSevereLateMins
+			isSevere := sm.DelayMins > liveDelaySevereMins
 			if isEarly {
 				early++
 			}
@@ -651,7 +759,7 @@ func (s *liveDelaysStore) networkReports(hours float64, feeds map[string]*Obj, n
 				"agency", op.ShortName, "agencyId", op.ID,
 				"arrivalCount", n, "visitCount", n, "sampleCount", n,
 				"avgDelay", avg, "maxDelay", round1(it.a.max), "severeLatePct", sev,
-				"isBottleneck", avg >= railBottleneckAvgMins || jsNumber(sev) >= railBottleneckSevere,
+				"isBottleneck", avg >= liveDelayBottleneckAvg || jsNumber(sev) >= railBottleneckSevere,
 			))
 		}
 
@@ -679,8 +787,8 @@ func (s *liveDelaysStore) networkReports(hours float64, feeds map[string]*Obj, n
 		out = append(out, O(
 			"agencyId", op.ID, "agency", op.Name, "shortName", op.ShortName, "mode", op.Mode,
 			"tier", op.Tier, "method", op.Method,
-			"onTimeMaxMins", on, "severeLateMins", float64(railSevereLateMins),
-			"bottleneckRule", O("avgDelayMins", float64(railBottleneckAvgMins), "severeLatePct", float64(railBottleneckSevere)),
+			"onTimeMaxMins", on, "severeLateMins", float64(liveDelaySevereMins),
+			"bottleneckRule", O("avgDelayMins", float64(liveDelayBottleneckAvg), "severeLatePct", float64(railBottleneckSevere)),
 			"agencyStats", stats,
 			"rankingMostDelayed", lines,
 			"allStopDelays", stops,
@@ -693,4 +801,48 @@ func (s *liveDelaysStore) networkReports(hours float64, feeds map[string]*Obj, n
 		))
 	}
 	return out
+}
+
+// lineStats24h returns the 24h reliability header summary for a single line
+// tracked in liveDelaysStore (matching /api/line/:id/stats schema).
+func (s *liveDelaysStore) lineStats24h(agencyID, lineCode string, now time.Time) *Obj {
+	if s == nil || agencyID == "" || lineCode == "" {
+		return nil
+	}
+	cutoff := now.Add(-24 * time.Hour).UnixMilli()
+	s.mu.Lock()
+	b := s.byAgency[agencyID]
+	if b == nil {
+		s.mu.Unlock()
+		return nil
+	}
+	var n, late, onTime, early float64
+	var sum float64
+	for _, sm := range b.samples {
+		if sm.TsMs < cutoff || !strings.EqualFold(sm.Line, lineCode) {
+			continue
+		}
+		n++
+		sum += sm.DelayMins
+		switch {
+		case sm.DelayMins > liveDelayOnTimeMax:
+			late++
+		case sm.DelayMins < -1:
+			early++
+		default:
+			onTime++
+		}
+	}
+	s.mu.Unlock()
+	if n == 0 {
+		return nil
+	}
+	return O(
+		"totalVisits", n,
+		"totalSamples", n,
+		"avgDelayMins", round1(sum/n),
+		"latePct", math.Round(late/n*1000)/10,
+		"onTimePct", math.Round(onTime/n*1000)/10,
+		"earlyPct", math.Round(early/n*1000)/10,
+	)
 }

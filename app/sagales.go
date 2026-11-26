@@ -39,7 +39,7 @@ const (
 	sagalesAttribution  = "Sagalés (font no oficial)"
 	sagalesMinGap       = 1500 * time.Millisecond
 	sagalesStaticMaxAge = 20 * time.Hour
-	sagalesStaleSec     = 360 // 6 min GPS freshness across full Catalonia cycle
+	sagalesStaleSec     = 540 // 9 min GPS freshness across full Catalonia cycle (~6 min)
 )
 
 // sagalesDefaultLines: comprehensive Catalonia Sagalés networks with live GPS
@@ -743,7 +743,7 @@ func sagalesLineBuses(code, direction string, now time.Time) (buses []any, stale
 				delaySec = float64(*b.DelaySec)
 				delayMins = math.Round(float64(*b.DelaySec) / 60)
 			}
-			status, badge := railDelayLabel(delayMins, false)
+			status, badge := busDelayLabelAny(delayMins)
 			buses = append(buses, O(
 				"id", sagalesAgencyID+":"+b.VehicleID,
 				"agencyId", sagalesAgencyID,
@@ -892,7 +892,7 @@ func sagalesStopDepartures(stop rtLineStop, code, direction string, now time.Tim
 			if pr.DelaySec != nil {
 				delayMins = math.Round(float64(*pr.DelaySec) / 60)
 			}
-			status, badge := railDelayLabel(delayMins, false)
+			status, badge := busDelayLabelAny(delayMins)
 			if !pr.RealTime {
 				status, badge = "scheduled", "Horari"
 			}

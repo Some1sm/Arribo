@@ -11,6 +11,8 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
 	"math"
 	"strings"
@@ -29,11 +31,21 @@ const (
 )
 
 type precompressedCache struct {
-	mu  sync.RWMutex
-	key string
-	at  time.Time
-	raw []byte
-	gz  []byte
+	mu      sync.RWMutex
+	key     string
+	at      time.Time
+	raw     []byte
+	gz      []byte
+	etagRaw string
+	etagGz  string
+}
+
+func weakETagBytes(b []byte) string {
+	if len(b) == 0 {
+		return ""
+	}
+	sum := sha1.Sum(b)
+	return fmt.Sprintf(`W/"%x-%s"`, len(b), hex.EncodeToString(sum[:8]))
 }
 
 func gzipBytes(raw []byte) []byte {
@@ -55,13 +67,23 @@ func gzipBytes(raw []byte) []byte {
 }
 
 func sendPrecompressedJSON(q *xreq, res *xres, raw, gz []byte, maxAgeSec int) {
+	sendPrecompressedJSONWithETag(q, res, raw, gz, "", "", maxAgeSec)
+}
+
+func sendPrecompressedJSONWithETag(q *xreq, res *xres, raw, gz []byte, etagRaw, etagGz string, maxAgeSec int) {
 	res.h.Set("Cache-Control", fmt.Sprintf("public, max-age=%d", maxAgeSec))
 	res.setContentType("application/json; charset=utf-8")
 	res.vary("Accept-Encoding")
 	if len(gz) > 0 && strings.Contains(strings.ToLower(q.header("Accept-Encoding")), "gzip") {
+		if etagGz != "" {
+			res.h.Set("ETag", etagGz)
+		}
 		res.h.Set("Content-Encoding", "gzip")
 		res.send(gz)
 		return
+	}
+	if etagRaw != "" {
+		res.h.Set("ETag", etagRaw)
 	}
 	res.send(raw)
 }
@@ -145,23 +167,36 @@ func (s *Server) hRailRoutes(q *xreq, res *xres) error {
 
 	railRoutesCache.mu.RLock()
 	if railRoutesCache.raw != nil && railRoutesCache.key == key && now.Sub(railRoutesCache.at) <= railRouteCacheTTL {
-		raw, gz := railRoutesCache.raw, railRoutesCache.gz
+		raw, gz, eRaw, eGz := railRoutesCache.raw, railRoutesCache.gz, railRoutesCache.etagRaw, railRoutesCache.etagGz
 		railRoutesCache.mu.RUnlock()
-		sendPrecompressedJSON(q, res, raw, gz, 120)
+		sendPrecompressedJSONWithETag(q, res, raw, gz, eRaw, eGz, 120)
 		return nil
 	}
 	railRoutesCache.mu.RUnlock()
 
-	raw := buildRailRoutesJSON(ops, loaded)
-	gz := gzipBytes(raw)
+	var raw, gz []byte
+	var eRaw, eGz string
+	build := func() {
+		raw = buildRailRoutesJSON(ops, loaded)
+		gz = gzipBytes(raw)
+		eRaw = weakETagBytes(raw)
+		eGz = weakETagBytes(gz)
+	}
+	if s != nil && s.w != nil {
+		s.w.await(build)
+	} else {
+		build()
+	}
 	railRoutesCache.mu.Lock()
 	railRoutesCache.key = key
 	railRoutesCache.at = now
 	railRoutesCache.raw = raw
 	railRoutesCache.gz = gz
+	railRoutesCache.etagRaw = eRaw
+	railRoutesCache.etagGz = eGz
 	railRoutesCache.mu.Unlock()
 
-	sendPrecompressedJSON(q, res, raw, gz, 120)
+	sendPrecompressedJSONWithETag(q, res, raw, gz, eRaw, eGz, 120)
 	return nil
 }
 

@@ -32,6 +32,9 @@ var lineScheduleCache = struct {
 }{entries: map[string]lineScheduleCacheEntry{}}
 
 func todayScheduleDayType(now time.Time) string {
+	if isHoliday(now.UnixMilli()) {
+		return "sunday"
+	}
 	switch now.In(madrid).Weekday() {
 	case time.Saturday:
 		return "saturday"
@@ -717,9 +720,16 @@ func (s *Server) hLineSchedule(q *xreq, res *xres) error {
 
 	var data *Obj
 	if info, op, code, ok := railLineRef(lineID); ok {
-		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
-		data = buildRailLineSchedule(ctx, info, op, code, stopID, now)
-		cancel()
+		run := func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+			data = buildRailLineSchedule(ctx, info, op, code, stopID, now)
+			cancel()
+		}
+		if s != nil && s.w != nil {
+			s.w.await(run)
+		} else {
+			run()
+		}
 	} else {
 		data = s.buildMataroLineSchedule(lineID, stopID, now)
 	}

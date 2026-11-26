@@ -161,8 +161,14 @@ func (h *HistoryDB) getGpsGapHotspots(o gapOpts) *Obj {
 		buses, _ := anyList(ranked.Get("buses"))
 
 		vehicle := ""
-		if s := jsString(or(o.vehicleID, "")); reFleet3to6.MatchString(s) {
-			vehicle = s
+		if s := jsString(or(o.vehicleID, "")); s != "" {
+			if agency == mataroAgency.ID {
+				if reFleet3to6.MatchString(s) {
+					vehicle = s
+				}
+			} else if reGapCatalogVehicle.MatchString(s) {
+				vehicle = s
+			}
 		}
 		var hideVerdicts []string
 		switch o.hide {

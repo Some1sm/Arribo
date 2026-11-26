@@ -193,22 +193,70 @@ func reusLiveDepartures(ctx context.Context, stop rtLineStop, lineCode, directio
 	}
 	exp := now.Add(time.Duration(mins) * time.Minute)
 	hhmm := exp.In(madrid).Format("15:04")
+	var schedTime any = hhmm
+	var aimedIso any = isoString(exp.UnixMilli())
+	var delayMins any
+	delayStatus := "live"
+	delayBadge := "Temps real"
+	delaySource := "reus_amersam_unofficial"
+
+	// Overlay live next bus onto GTFS timetable so subsequent scheduled departures
+	// stay visible and the live bus shows its delay vs. official schedule.
+	var gtfsDeps []railDeparture
+	if tt, err := sharedRailTT.get(reusAgencyID); err == nil && tt != nil {
+		dirInt := -1
+		if direction == "0" {
+			dirInt = 0
+		} else if direction == "1" {
+			dirInt = 1
+		}
+		if list, derr := tt.departures(ctx, lineCode, stop.ID, dirInt, now); derr == nil {
+			gtfsDeps = list
+		}
+	}
+	matchedIdx := -1
+	bestDiff := int64(25 * 60)
+	for i, d := range gtfsDeps {
+		diff := exp.Unix() - d.DepartUnix
+		absDiff := diff
+		if absDiff < 0 {
+			absDiff = -absDiff
+		}
+		if diff >= -5*60 && diff <= 25*60 && absDiff < bestDiff {
+			bestDiff = absDiff
+			matchedIdx = i
+		}
+	}
+	if matchedIdx >= 0 {
+		schedAt := time.Unix(gtfsDeps[matchedIdx].DepartUnix, 0)
+		dMin := math.Round(exp.Sub(schedAt).Minutes())
+		schedTime = schedAt.In(madrid).Format("15:04")
+		aimedIso = isoString(schedAt.UnixMilli())
+		delayMins = dMin
+		delayStatus, delayBadge = busDelayLabel(dMin)
+		delaySource = "timetable"
+	}
+
+	var dest any
+	if matchedIdx >= 0 && gtfsDeps[matchedIdx].Headsign != "" {
+		dest = gtfsDeps[matchedIdx].Headsign
+	}
 	deps := []any{
 		O(
 			"tripId", nil,
 			"vehicleId", nil,
-			"destination", nil,
+			"destination", dest,
 			"direction", strOrNil(direction),
 			"departureTime", hhmm,
-			"scheduledTime", hhmm,
-			"aimedIso", isoString(exp.UnixMilli()),
+			"scheduledTime", schedTime,
+			"aimedIso", aimedIso,
 			"expectedIso", isoString(exp.UnixMilli()),
 			"minutesAway", float64(mins),
-			"delayMins", nil,
-			"delayMinutes", nil,
-			"delayStatus", "live",
-			"delayBadgeText", "Temps real",
-			"delaySource", "reus_amersam_unofficial",
+			"delayMins", delayMins,
+			"delayMinutes", delayMins,
+			"delayStatus", delayStatus,
+			"delayBadgeText", delayBadge,
+			"delaySource", delaySource,
 			"delayDiscarded", false,
 			"isRealTime", true,
 			"isEstimated", false,
@@ -220,6 +268,51 @@ func reusLiveDepartures(ctx context.Context, stop rtLineStop, lineCode, directio
 			"platformChanged", false,
 			"scheduledPlatform", nil,
 		),
+	}
+	// Append subsequent scheduled GTFS departures beyond the live next bus.
+	for i, d := range gtfsDeps {
+		if i == matchedIdx {
+			continue
+		}
+		at := time.Unix(d.DepartUnix, 0)
+		if at.Before(now.Add(-time.Minute)) || math.Abs(at.Sub(exp).Minutes()) < 3 {
+			continue
+		}
+		if len(deps) >= railDepShown {
+			break
+		}
+		dStr := direction
+		if d.DirectionID >= 0 {
+			dStr = strconv.Itoa(d.DirectionID)
+		}
+		left := math.Max(0, at.Sub(now).Seconds())
+		sHH := at.In(madrid).Format("15:04")
+		deps = append(deps, O(
+			"tripId", strOrNil(d.TripID),
+			"vehicleId", nil,
+			"destination", strOrNil(d.Headsign),
+			"direction", strOrNil(dStr),
+			"departureTime", sHH,
+			"scheduledTime", sHH,
+			"aimedIso", isoString(at.UnixMilli()),
+			"expectedIso", isoString(at.UnixMilli()),
+			"minutesAway", math.Floor(left/60),
+			"delayMins", nil,
+			"delayMinutes", nil,
+			"delayStatus", "unknown",
+			"delayBadgeText", "Horari teòric",
+			"delaySource", "timetable",
+			"delayDiscarded", false,
+			"isRealTime", false,
+			"isEstimated", false,
+			"isTheoretical", true,
+			"isCancelled", false,
+			"unofficial", false,
+			"platform", nil,
+			"platformSource", nil,
+			"platformChanged", false,
+			"scheduledPlatform", nil,
+		))
 	}
 	return O(
 		"stop", O("id", stop.ID, "name", stop.Name, "lat", stop.Lat, "lon", stop.Lon, "agencyId", reusAgencyID),

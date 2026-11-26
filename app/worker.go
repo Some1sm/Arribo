@@ -114,6 +114,13 @@ func (q *msgQueue[T]) pop() (T, bool) {
 	v := q.items[0]
 	q.items[0] = zero
 	q.items = q.items[1:]
+	if len(q.items) == 0 {
+		if cap(q.items) > 1024 {
+			q.items = nil
+		} else {
+			q.items = q.items[:0]
+		}
+	}
 	return v, true
 }
 
@@ -174,6 +181,7 @@ type Worker struct {
 	stopLleida func()          // stops the Moventis Lleida hub poller (a no-op unless ARRIBO_MOVENTIS_ALL=1)
 	stopReus   func()          // stops the Reus Transport bus estimator (a no-op unless ARRIBO_REUS=1)
 	stopBusG   func()          // flushes and stops the multi-operator bus gap store
+	stopLiveD  func()          // flushes persisted non-SQLite live delay samples
 	railTT     *railTimetables // shared read-only rail timetables pool (app/raildepartures.go)
 	inbox      *msgQueue[workerMsg]
 	out        func(serverMsg)
@@ -232,6 +240,7 @@ func (k *Worker) boot() {
 	k.registry.isInitialized = true
 	k.daemon.start()
 	k.stopBusG = startBusGapStore()
+	k.stopLiveD = startLiveDelayStore()
 	k.stopRt = startGtfsRtPollers()
 	k.stopMov = startMoventisPoller()
 	k.stopSag = startSagalesPoller()
@@ -339,6 +348,13 @@ func (k *Worker) handleMasterMessage(m workerMsg) {
 			go func() {
 				defer stopWG.Done()
 				k.stopReus()
+			}()
+		}
+		if k.stopLiveD != nil {
+			stopWG.Add(1)
+			go func() {
+				defer stopWG.Done()
+				k.stopLiveD()
 			}()
 		}
 		if k.stopRt != nil {

@@ -738,6 +738,31 @@ type ambCatalogEntry struct {
 	routeIdx map[string]rtRoute
 }
 
+var (
+	ambRouteIdxMu    sync.RWMutex
+	ambRouteIdxCache = map[*rtCatalogOp]map[string]rtRoute{}
+)
+
+func cachedAmbRouteIndex(op *rtCatalogOp) map[string]rtRoute {
+	if op == nil {
+		return nil
+	}
+	ambRouteIdxMu.RLock()
+	idx := ambRouteIdxCache[op]
+	ambRouteIdxMu.RUnlock()
+	if idx != nil {
+		return idx
+	}
+	idx = ambCatalogRouteIndex(op)
+	ambRouteIdxMu.Lock()
+	if len(ambRouteIdxCache) > 32 {
+		ambRouteIdxCache = map[*rtCatalogOp]map[string]rtRoute{}
+	}
+	ambRouteIdxCache[op] = idx
+	ambRouteIdxMu.Unlock()
+	return idx
+}
+
 // ambBusCatalogEntries returns all loaded bus catalogs that AMB's live GPS
 // feed can match against, in priority order.
 func ambBusCatalogEntries() []ambCatalogEntry {
@@ -757,7 +782,7 @@ func ambBusCatalogEntries() []ambCatalogEntry {
 		out = append(out, ambCatalogEntry{
 			info:     info,
 			op:       op,
-			routeIdx: ambCatalogRouteIndex(op),
+			routeIdx: cachedAmbRouteIndex(op),
 		})
 	}
 	return out
@@ -889,6 +914,25 @@ func ambCatalogVehicleJSON(v ambVeh, snapAt, now time.Time, info operatorInfo, o
 		attr = ambAttribution
 	}
 	ageSec := jsRound(age.Seconds())
+	var delayMins any
+	var delayStatus any = "unknown"
+	var delayBadge any
+	var stopName any
+	if agencyID == ambAgencyID && v.VehID != "" {
+		if live, ok := ambLiveTripForVehicle(v.VehID); ok {
+			if live.hasDelay {
+				delayMins = live.delayMins
+				st, bd := busDelayLabel(live.delayMins)
+				delayStatus = st
+				delayBadge = bd
+			}
+			if live.stopID != "" {
+				if sn := ambStopNameFromProfile(op, code, live.stopID); sn != "" {
+					stopName = sn
+				}
+			}
+		}
+	}
 	return O(
 		"id", "AMB_BUS_"+agencyID+"_"+code+"_"+vehID,
 		"agencyId", agencyID,
@@ -909,7 +953,8 @@ func ambCatalogVehicleJSON(v ambVeh, snapAt, now time.Time, info operatorInfo, o
 		"lat", jsRound(v.Lat*1e6)/1e6, "lon", jsRound(v.Lon*1e6)/1e6,
 		"latitude", jsRound(v.Lat*1e6)/1e6, "longitude", jsRound(v.Lon*1e6)/1e6,
 		"bearing", jsRound(bearingVal),
-		"stopName", nil,
+		"stopName", stopName,
+		"toStop", stopName,
 		"currentStatus", "IN_TRANSIT_TO",
 		"isEstimated", false,
 		"isRealTime", true,
@@ -918,10 +963,88 @@ func ambCatalogVehicleJSON(v ambVeh, snapAt, now time.Time, info operatorInfo, o
 		"positionSource", "operator_gps",
 		"predictionAgeSec", ageSec,
 		"ageSec", ageSec,
-		"delayMins", nil,
+		"delayMins", delayMins,
+		"delayMinutes", delayMins,
+		"delayStatus", delayStatus,
+		"delayBadgeText", delayBadge,
 		"stale", false,
 		"attribution", attr,
 	)
+}
+
+type ambVehTripLive struct {
+	delayMins float64
+	hasDelay  bool
+	stopID    string
+}
+
+var (
+	ambVehLiveJoinMu   sync.RWMutex
+	ambVehLiveJoinSnap *rtSnapshot
+	ambVehLiveJoinMap  map[string]ambVehTripLive
+)
+
+func ambLiveTripForVehicle(vehID string) (ambVehTripLive, bool) {
+	if vehID == "" {
+		return ambVehTripLive{}, false
+	}
+	var snap *rtSnapshot
+	for _, f := range liveLineFeeds() {
+		if f.info.ID == ambAgencyID {
+			snap = f.snap
+			break
+		}
+	}
+	if snap == nil || len(snap.TripVehicles) == 0 {
+		return ambVehTripLive{}, false
+	}
+	ambVehLiveJoinMu.RLock()
+	if ambVehLiveJoinSnap == snap && ambVehLiveJoinMap != nil {
+		res, ok := ambVehLiveJoinMap[vehID]
+		ambVehLiveJoinMu.RUnlock()
+		return res, ok
+	}
+	ambVehLiveJoinMu.RUnlock()
+
+	m := make(map[string]ambVehTripLive, len(snap.TripVehicles))
+	for tripID, vLabel := range snap.TripVehicles {
+		if vLabel == "" {
+			continue
+		}
+		var info ambVehTripLive
+		if dSec, ok := snap.TripDelays[tripID]; ok && int(dSec) >= railMinDelaySec && int(dSec) <= railMaxDelaySec {
+			info.delayMins = math.Round(float64(dSec) / 60.0)
+			info.hasDelay = true
+		}
+		if stops := snap.TripStops[tripID]; len(stops) > 0 {
+			info.stopID = stops[0]
+		}
+		if info.hasDelay || info.stopID != "" {
+			m[vLabel] = info
+		}
+	}
+	ambVehLiveJoinMu.Lock()
+	ambVehLiveJoinSnap = snap
+	ambVehLiveJoinMap = m
+	ambVehLiveJoinMu.Unlock()
+	res, ok := m[vehID]
+	return res, ok
+}
+
+func ambStopNameFromProfile(op *rtCatalogOp, code, stopID string) string {
+	if op == nil || op.Profiles == nil || stopID == "" {
+		return ""
+	}
+	if prof := op.Profiles[code]; prof != nil {
+		for _, d := range prof.Directions {
+			for _, st := range d.Stops {
+				if st.ID == stopID {
+					return st.Name
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // ambCatalogVehicles returns all live GPS buses from AMB's feed (excluding
@@ -1020,7 +1143,7 @@ func ambLineBuses(agencyID, code, direction string, now time.Time) (buses []any,
 	inCatalog := false
 	if v, ok := rtCatalog.Load(agencyID); ok {
 		op = v.(*rtCatalogOp)
-		if r, found := ambCatalogRouteIndex(op)[ambNormLine(code)]; found {
+		if r, found := cachedAmbRouteIndex(op)[ambNormLine(code)]; found {
 			route = r
 			inCatalog = true
 		}

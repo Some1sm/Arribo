@@ -138,6 +138,14 @@ func startMovAlertsPoller(ctx context.Context, wg *sync.WaitGroup) {
 		defer wg.Done()
 		var lastErr string
 		poll := func() {
+			if p := movLive.Load(); p != nil {
+				p.mu.Lock()
+				throttled := time.Now().Before(p.throttledUntil)
+				p.mu.Unlock()
+				if throttled {
+					return
+				}
+			}
 			reqCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 			defer cancel()
 			req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, movBase+movAlertsPath, nil)

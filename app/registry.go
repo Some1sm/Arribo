@@ -166,6 +166,7 @@ func (r *TrackerRegistry) searchStopsAndLines(query any, limit int) []any {
 		lineMap[jsLower(jsString(l.Get("id")))] = l
 		lineMap[jsLower(jsString(l.Get("code")))] = l
 	}
+	fq := foldStationName(q)
 	for _, k := range r.t.allStopsMap.Keys() {
 		sv, _ := r.t.allStopsMap.Get(k)
 		s, _ := sv.(*Obj)
@@ -173,8 +174,9 @@ func (r *TrackerRegistry) searchStopsAndLines(query any, limit int) []any {
 			continue
 		}
 		sName := jsLower(jsString(or(s.Get("name"), "")))
+		sFold := foldStationName(sName)
 		sCode := jsLower(jsString(or(s.Get("code"), or(s.Get("id"), ""))))
-		matchesStop := strings.Contains(sName, q) || strings.Contains(sCode, q)
+		matchesStop := strings.Contains(sName, q) || (fq != "" && strings.Contains(sFold, fq)) || strings.Contains(sCode, q)
 		linesForStop, isArr := s.Get("lineas").([]any)
 		if !isArr || len(linesForStop) == 0 {
 			linesForStop = []any{O("id", "1", "name", "Circular", "color", "#ff00ff")}

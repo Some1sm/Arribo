@@ -61,8 +61,11 @@ func newMovSchedStore(dir string) *movSchedStore {
 }
 
 // movDayType classifies a Madrid-local timestamp so weekday, Saturday, and
-// Sunday schedules never bleed into each other.
+// Sunday/holiday schedules never bleed into each other.
 func movDayType(now time.Time) string {
+	if isHoliday(now.UnixMilli()) {
+		return "sun"
+	}
 	switch now.In(madrid).Weekday() {
 	case time.Saturday:
 		return "sat"

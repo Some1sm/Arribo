@@ -421,6 +421,12 @@ func (p *rtPoller) pollTrips(ctx context.Context) {
 				tripDelay = d
 			}
 			if tripDelay != nil && p.src.noHistory && (p.src.AgencyID == ambAgencyID || isTramAgency(p.src.AgencyID)) {
+				// For AMB, only record active/soon trips (<= 30 min ahead) so
+				// unstarted future trips with delay=0 don't dilute on-time % or
+				// exhaust the rolling sample budget.
+				if p.src.AgencyID == ambAgencyID && !tripUpdateSoon(e.TripUpdate, fm.Header.Timestamp) {
+					continue
+				}
 				lineCode := ""
 				stopName := ""
 				if p.tt != nil {

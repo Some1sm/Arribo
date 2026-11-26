@@ -29,10 +29,11 @@ import (
 )
 
 const (
-	busGapRetention = 30 * 24 * time.Hour
-	busGapMaxRecs   = 6000
-	busGapSaveEvery = 3 * time.Minute
-	busGapMaxCells  = 80
+	busGapRetention    = 30 * 24 * time.Hour
+	busGapMaxRecs      = 6000
+	busGapMaxPerAgency = 2500
+	busGapSaveEvery    = 3 * time.Minute
+	busGapMaxCells     = 80
 
 	// Per-stop arrival-loss thresholds (Moventis GetTiemposParada).
 	stopLossMinEtaSec   = 180  // ignore buses already <= 3 min away (could arrive naturally)
@@ -175,8 +176,19 @@ func (s *busGapStore) detectorFor(agencyID string) *GpsGapDetector {
 	}
 	switch agencyID {
 	case sagalesAgencyID:
-		// Sagalés cycles 13 lines × 2 directions × 3 s ≈ 78 s between polls.
-		det = newGpsGapDetectorFor(180*1000, 20*60*1000)
+		// Sagalés cycles len(sagalesDefaultLines) × 2 directions × ~2 s/req.
+		// Set minGap comfortably above one full cycle so normal polls never
+		// trigger false-positive GPS dropouts.
+		cycleMs := int64(len(sagalesDefaultLines)) * 2 * 2000
+		minGapMs := cycleMs * 15 / 10
+		if minGapMs < 180*1000 {
+			minGapMs = 180 * 1000
+		}
+		maxGapMs := minGapMs * 3
+		if maxGapMs < 20*60*1000 {
+			maxGapMs = 20 * 60 * 1000
+		}
+		det = newGpsGapDetectorFor(float64(minGapMs), float64(maxGapMs))
 	default:
 		// Moventis/AMB via AMB GPS (polled every 20 s): same 90 s..15 min bounds as Mataró Bus.
 		det = newGpsGapDetector()
@@ -381,16 +393,28 @@ func (s *busGapStore) appendLocked(rec busGapRecord) {
 	s.dirty = true
 	if len(s.recs) > busGapMaxRecs {
 		cutoff := float64(time.Now().Add(-busGapRetention).UnixMilli())
-		kept := s.recs[:0]
-		for _, r := range s.recs {
-			if r.LostTs >= cutoff {
-				kept = append(kept, r)
+		counts := map[string]int{}
+		kept := make([]busGapRecord, 0, busGapMaxRecs)
+		// Walk newest-first so per-agency cap keeps the most recent records per
+		// operator and one noisy feed cannot evict other operators.
+		for i := len(s.recs) - 1; i >= 0; i-- {
+			r := s.recs[i]
+			if r.LostTs < cutoff {
+				continue
+			}
+			if counts[r.AgencyID] >= busGapMaxPerAgency {
+				continue
+			}
+			counts[r.AgencyID]++
+			kept = append(kept, r)
+			if len(kept) >= busGapMaxRecs {
+				break
 			}
 		}
-		if len(kept) > busGapMaxRecs {
-			kept = kept[len(kept)-busGapMaxRecs:]
+		for i, j := 0, len(kept)-1; i < j; i, j = i+1, j-1 {
+			kept[i], kept[j] = kept[j], kept[i]
 		}
-		s.recs = append([]busGapRecord(nil), kept...)
+		s.recs = kept
 	}
 }
 
