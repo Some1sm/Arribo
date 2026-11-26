@@ -26,13 +26,13 @@ import (
 )
 
 const (
-	railPlanLeaveWindow  = 3 * 3600 // seconds after the departure instant
-	railPlanArriveWindow = 5 * 3600 // seconds after the departure instant
+	railPlanLeaveWindow  = 4 * 3600 // seconds after the departure instant
+	railPlanArriveWindow = 8 * 3600 // seconds after the departure instant
 	railChangeSec        = 180      // minimum change between trains
 	railChangeWalkMaxM   = 400      // a change may walk to another station this far
 	railWalkDetour       = 1.25     // straight-line distance to walking distance
 	railPlanMaxResults   = 5        // itineraries returned
-	railEndpointNearM    = 1500.0   // stations considered around a point
+	railEndpointNearM    = 2500.0   // stations considered around a point
 	railEndpointPerOp    = 3        // nearest stations per operator around a point
 	railPlanQueryTimeout = 6 * time.Second
 )
@@ -402,7 +402,11 @@ func railEndsFor(name string, lat, lon float64, hasPoint bool, maxWalk float64) 
 	for _, info := range railPlanOperators() {
 		allowed[info.ID] = true
 	}
-	byOp := map[string][]railEnd{}
+	type nearEnd struct {
+		end       railEnd
+		lineCount int
+	}
+	byOp := map[string][]nearEnd{}
 	seenStop := map[string]bool{}
 	for cLat := minCLat; cLat <= maxCLat; cLat++ {
 		for cLon := minCLon; cLon <= maxCLon; cLon++ {
@@ -419,11 +423,14 @@ func railEndsFor(name string, lat, lon float64, hasPoint bool, maxWalk float64) 
 				if m > limit {
 					continue
 				}
-				byOp[st.agency.ID] = append(byOp[st.agency.ID], railEnd{
-					Agency: st.agency.ID, StopID: st.stopID, Name: st.name,
-					Lat: st.lat, Lon: st.lon,
-					PointLat: lat, PointLon: lon, PointName: name,
-					WalkM: math.Round(m),
+				byOp[st.agency.ID] = append(byOp[st.agency.ID], nearEnd{
+					end: railEnd{
+						Agency: st.agency.ID, StopID: st.stopID, Name: st.name,
+						Lat: st.lat, Lon: st.lon,
+						PointLat: lat, PointLon: lon, PointName: name,
+						WalkM: math.Round(m),
+					},
+					lineCount: len(st.lines),
 				})
 			}
 		}
@@ -432,15 +439,18 @@ func railEndsFor(name string, lat, lon float64, hasPoint bool, maxWalk float64) 
 		agency  string
 		minWalk float64
 		rank    int
-		list    []railEnd
+		list    []nearEnd
 	}
 	var picks []opPick
 	for ag, near := range byOp {
 		sort.Slice(near, func(i, j int) bool {
-			if near[i].WalkM != near[j].WalkM {
-				return near[i].WalkM < near[j].WalkM
+			if near[i].end.WalkM != near[j].end.WalkM {
+				return near[i].end.WalkM < near[j].end.WalkM
 			}
-			return near[i].StopID < near[j].StopID
+			if near[i].lineCount != near[j].lineCount {
+				return near[i].lineCount > near[j].lineCount
+			}
+			return near[i].end.StopID < near[j].end.StopID
 		})
 		r := 3
 		switch ag {
@@ -451,7 +461,7 @@ func railEndsFor(name string, lat, lon float64, hasPoint bool, maxWalk float64) 
 		case tramTbxAgencyID, tramTbsAgencyID:
 			r = 2
 		}
-		picks = append(picks, opPick{agency: ag, minWalk: near[0].WalkM, rank: r, list: near})
+		picks = append(picks, opPick{agency: ag, minWalk: near[0].end.WalkM, rank: r, list: near})
 	}
 	sort.Slice(picks, func(i, j int) bool {
 		if picks[i].rank != picks[j].rank {
@@ -467,11 +477,20 @@ func railEndsFor(name string, lat, lon float64, hasPoint bool, maxWalk float64) 
 		if pk.rank >= 3 {
 			perOp = 2 // keep bus endpoints lean so SQLite queries stay fast
 		}
-		for i, e := range pk.list {
-			if i >= perOp {
-				break
+		bestHubIdx := -1
+		for i, ne := range pk.list {
+			if i < perOp {
+				ends[ne.end.Agency+"\x00"+ne.end.StopID] = ne.end
+			} else if ne.lineCount > 1 && (bestHubIdx < 0 || ne.lineCount > pk.list[bestHubIdx].lineCount) {
+				bestHubIdx = i
 			}
-			ends[e.Agency+"\x00"+e.StopID] = e
+		}
+		// Always include the busiest hub stop within walking range (e.g. a town's
+		// central bus station with 10+ regional lines) even if smaller local stops
+		// are slightly closer to the clicked point.
+		if bestHubIdx >= 0 {
+			hub := pk.list[bestHubIdx].end
+			ends[hub.Agency+"\x00"+hub.StopID] = hub
 		}
 	}
 	return ends
@@ -509,7 +528,7 @@ func (k *Worker) railPlanOp(args *Obj) (any, error) {
 	}
 	origins, dests := end("from"), end("to")
 	if len(origins) == 0 || len(dests) == 0 {
-		return O("itineraries", []any{}), nil
+		return O("itineraries", []any{}, "originFound", len(origins) > 0, "destFound", len(dests) > 0), nil
 	}
 	// Two points close together (both ends found by coordinates, not by a
 	// station name) are a trip across one town: the bus planner's.
@@ -594,7 +613,7 @@ func (k *Worker) railPlanOp(args *Obj) (any, error) {
 	for _, it := range itins {
 		list = append(list, railItinJSON(it, depart, speed))
 	}
-	return O("itineraries", list), nil
+	return O("itineraries", list, "originFound", true, "destFound", true), nil
 }
 
 // expandRailEnds keys each end by every platform of its station, since the
@@ -785,7 +804,7 @@ func railItinJSON(it railItin, depart int64, speed float64) *Obj {
 // endpoints (a name, or an *Obj with lat/lon/name after geocoding). Nothing
 // when the endpoints are points less than railPlanMinTripM apart: a trip
 // across one town is the bus planner's.
-func (s *Server) railPlanFor(typedFrom, typedTo, origin, destination any, explicitFrom, explicitTo bool, departMs float64, speed, maxWalk, preference any) []any {
+func (s *Server) railPlanFor(typedFrom, typedTo, origin, destination any, explicitFrom, explicitTo bool, departMs float64, speed, maxWalk, preference any) ([]any, bool) {
 	end := func(typed, v any, explicit bool) *Obj {
 		e := O("typed", jsString(or(typed, "")), "explicitPoint", explicit)
 		if o, ok := v.(*Obj); ok {
@@ -806,14 +825,14 @@ func (s *Server) railPlanFor(typedFrom, typedTo, origin, destination any, explic
 		"preference", jsString(or(preference, "fastest")))
 	data, err := s.historyQuery("planRail", args, 10000)
 	if err != nil {
-		return nil
+		return nil, false
 	}
 	o, _ := data.(*Obj)
 	if o == nil {
-		return nil
+		return nil, false
 	}
 	list, _ := o.Get("itineraries").([]any)
-	return list
+	return list, truthy(o.Get("originFound")) && truthy(o.Get("destFound"))
 }
 
 const railPlanMinTripM = 3000.0

@@ -1903,9 +1903,32 @@ func (s *Server) hPlan(q *xreq, res *xres) error {
 	_, explicitTo := destination.(*Obj)
 	origin = s.geocodeEndpoint(origin)
 	destination = s.geocodeEndpoint(destination)
-	// Train journeys (Rodalies, FGC), merged with the bus planner's below.
+	// If either end is a Mataró urban bus stop name without coordinates, attach its
+	// coordinates for the Catalonia-wide multimodal planner so trips from a Mataró
+	// stop (e.g. "Caminet") to anywhere in Catalonia find nearby Rodalies/interurban hubs.
+	railOrigin, railDest := origin, destination
+	if s.router != nil {
+		attachMataroCoords := func(v any) any {
+			if _, ok := v.(*Obj); ok {
+				return v
+			}
+			if !s.router.isBuilt {
+				s.router.buildGraph()
+			}
+			if cands, cerr := s.router.resolveStopCandidates(v); cerr == nil && len(cands) > 0 && cands[0].obj != nil {
+				lat, lon := stopLat(cands[0].obj), stopLon(cands[0].obj)
+				if isFinite(lat) && isFinite(lon) && (lat != 0 || lon != 0) {
+					return O("lat", lat, "lon", lon, "name", or(cands[0].obj.Get("name"), v))
+				}
+			}
+			return v
+		}
+		railOrigin = attachMataroCoords(railOrigin)
+		railDest = attachMataroCoords(railDest)
+	}
+	// Train & Catalonia interurban journeys, merged with the Mataró bus planner's below.
 	departMs, _ := requestedInstant(or(qv(q, "departureDate"), qv(q, "date")), or(qv(q, "departureTime"), qv(q, "time")), float64(nowMs()))
-	railItins := s.railPlanFor(from, to, origin, destination, explicitFrom, explicitTo, departMs, qv(q, "walkingSpeed"), qv(q, "maxWalkingDistance"), preference)
+	railItins, railEndsFound := s.railPlanFor(from, to, railOrigin, railDest, explicitFrom, explicitTo, departMs, qv(q, "walkingSpeed"), qv(q, "maxWalkingDistance"), preference)
 
 	err := tryJS(func() {
 		label := func(v any, nameKey string, raw any) any {
@@ -1928,6 +1951,11 @@ func (s *Server) hPlan(q *xreq, res *xres) error {
 			panic(perr)
 		}
 		mergeRailItineraries(plan, railItins, jsString(or(qv(q, "preference"), "fastest")))
+		if !truthy(plan.Get("success")) && railEndsFound {
+			plan.Set("success", true)
+			plan.Delete("error")
+			plan.Set("itineraries", []any{})
+		}
 		res.json(plan)
 	})
 	if err != nil {

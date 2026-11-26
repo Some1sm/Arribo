@@ -913,6 +913,10 @@ class PlannerPageApp {
     }
 
     this.lastResultView = null;
+    if (this.mapController && typeof this.mapController.clearItinerary === 'function') {
+      this.mapController.clearItinerary();
+    }
+    this.setSecondaryOptionsVisibility(false);
     resultsContainer.innerHTML = `
       <div style="text-align:center; padding:3rem 1rem;">
         <div style="width:28px; height:28px; border:2px solid var(--border-subtle); border-top-color:var(--brand-primary); border-radius:50%; animation:spin 0.8s linear infinite; margin:0 auto;"></div>
@@ -956,9 +960,13 @@ class PlannerPageApp {
         this.currentItineraries = [];
         const searchBox = document.getElementById('plan-search-box');
         if (searchBox) searchBox.classList.remove('has-results');
-        this.setSecondaryOptionsVisibility(true);
+        this.setSecondaryOptionsVisibility(false);
         this.lastResultView = { kind: 'not_found', serverMessage: data.error || data.message || null };
         this.renderResultErrorView(this.lastResultView);
+        resultsContainer.scrollTop = 0;
+        if (this.mapController && typeof this.mapController.clearItinerary === 'function') {
+          this.mapController.clearItinerary();
+        }
         return;
       }
 
@@ -967,9 +975,10 @@ class PlannerPageApp {
       if (this.currentItineraries.length === 0) {
         const searchBox = document.getElementById('plan-search-box');
         if (searchBox) searchBox.classList.remove('has-results');
-        this.setSecondaryOptionsVisibility(true);
+        this.setSecondaryOptionsVisibility(false);
         this.lastResultView = { kind: 'no_routes', serverMessage: data.message || null };
         this.renderResultErrorView(this.lastResultView);
+        resultsContainer.scrollTop = 0;
         if (this.mapController && typeof this.mapController.clearItinerary === 'function') {
           this.mapController.clearItinerary();
         }
@@ -1036,7 +1045,10 @@ class PlannerPageApp {
       this.currentItineraries = [];
       const searchBox = document.getElementById('plan-search-box');
       if (searchBox) searchBox.classList.remove('has-results');
-      this.setSecondaryOptionsVisibility(true);
+      this.setSecondaryOptionsVisibility(false);
+      if (this.mapController && typeof this.mapController.clearItinerary === 'function') {
+        this.mapController.clearItinerary();
+      }
 
       let errKind = 'connect';
       if (!navigator.onLine) {
