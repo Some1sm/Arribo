@@ -1332,23 +1332,50 @@ function buildTrainPopupHtml(t, op, lineRef) {
     delayText = netT('trainPopup.noDelay', null, 'Sense dada de retard');
   }
   const source = t.delaySource === 'timetable' ? netT('trainPopup.srcTimetable', null, "Amb l'horari oficial")
-    : (Number.isFinite(t.delayMins) ? netT('trainPopup.srcFeed', null, "Publicat per l'operador") : '--');
+    : (Number.isFinite(t.delayMins) ? netT('trainPopup.srcFeed', null, "Publicat per l'operador") : '');
   const name = op?.name || t.agencyId;
-  const short = op?.shortName || name;
-  const tile = (icon, label, value, cls = '') => `
-          <div class="map-popup-metric-tile">
+  const tile = (icon, label, value, cls = '', titleAttr = '') => `
+          <div class="map-popup-metric-tile"${titleAttr ? ` title="${esc(titleAttr)}"` : ''}>
             <div class="map-popup-metric-header">${icon}<span>${esc(label)}</span></div>
             <div class="map-popup-metric-val ${cls}"><span>${esc(value)}</span></div>
           </div>`;
   const icClock = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
   const icPin = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>';
-  const icOp = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="16" rx="2"/><path d="M4 11h16M12 3v8M8 19l-2 3M16 19l2 3"/></svg>';
-  const icSrc = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v12H5.17L4 17.17V4z"/></svg>';
   const tMode = t.mode || (t.agencyId === 'tmb' ? 'metro' : 'rail');
   const modeLabel = tMode === 'metro'
     ? netT('trainPopup.metro', null, 'Metro')
     : (tMode === 'tram' ? netT('trainPopup.tram', null, 'Tramvia') : netT('trainPopup.train', null, 'Tren'));
   const headerIcon = window.vehicleIconForMode ? window.vehicleIconForMode(tMode) : TRAIN_ICON_INNER_SVG;
+
+  const metaChips = [];
+  if (t.unit && (t.unit.series || Number.isFinite(t.unit.occupancyPercent))) {
+    const unitText = [
+      t.unit.series
+        ? (Number(t.unit.coupledCount) > 1
+          ? netT('trainPopup.unitCoupled', { n: t.unit.coupledCount, series: t.unit.series }, `${t.unit.coupledCount} × sèrie ${t.unit.series}`)
+          : netT('trainPopup.unitSeries', { series: t.unit.series }, `Unitat de la sèrie ${t.unit.series}`))
+        : '',
+      t.unit.manufacturer ? t.unit.manufacturer : '',
+      Number.isFinite(t.unit.occupancyPercent) ? netT('trainPopup.unitOccupancy', { pct: t.unit.occupancyPercent }, `Ocupació segons FGC: ${t.unit.occupancyPercent}%`) : '',
+    ].filter(Boolean).join(' · ');
+    const unitTitle = t.unit.unofficial ? `${unitText} (${netT('trainPopup.unofficialTag', null, 'font no oficial')})` : unitText;
+    if (unitText) {
+      metaChips.push(`<span class="train-popup-meta-chip" title="${esc(unitTitle)}">${esc(unitText)}</span>`);
+    }
+  } else if (Array.isArray(t.usualSeries) && t.usualSeries.length) {
+    const usualFull = netT('trainPopup.usualSeries', { list: t.usualSeries.join(', ') }, `Sèries habituals en aquesta línia: ${t.usualSeries.join(', ')}. No se sap quina unitat fa aquest tren.`);
+    metaChips.push(`<span class="train-popup-meta-chip" title="${esc(usualFull)}">🚆 ${esc(t.usualSeries.join(', '))}</span>`);
+  }
+  if (typeof t.wheelchairAccessible === 'boolean') {
+    const wcFull = [
+      netT(t.wheelchairAccessible ? 'trainPopup.wheelchairYes' : 'trainPopup.wheelchairNo', null, t.wheelchairAccessible ? 'Tren accessible per a cadira de rodes' : 'Tren no accessible per a cadira de rodes'),
+      t.wheelchairSource === 'renfe_visor_unofficial' ? netT('trainPopup.unofficialTag', null, 'font no oficial') : '',
+    ].filter(Boolean).join(' · ');
+    const wcShort = t.wheelchairAccessible ? '♿ PMR' : '♿ No PMR';
+    metaChips.push(`<span class="train-popup-meta-chip" title="${esc(wcFull)}">${esc(wcShort)}</span>`);
+  }
+  const footerParts = [op?.attribution, source].filter(Boolean);
+
   return `
       <div class="map-popup-card train-popup-card"${lineKey ? ` data-line="${esc(lineKey)}"` : ''}>
         <div class="map-popup-header">
@@ -1373,38 +1400,22 @@ function buildTrainPopupHtml(t, op, lineRef) {
         <div class="map-popup-route-ribbon single">
           <div class="map-popup-route-stop from">
             <span class="map-popup-stop-dot dest"></span>
-            <span class="map-popup-stop-name">${esc(t.currentStatus === 'STOPPED_AT' ? netT('trainPopup.atStop', null, 'A') : netT('trainPopup.towards', null, 'Cap a'))} ${esc(t.stopName)}${t.platform ? ` · ${esc(netT('dep.platform', { n: t.platform }, `Via ${t.platform}`))}${t.platformSource === 'renfe_visor_unofficial' ? ` (${esc(netT('trainPopup.unofficialTag', null, 'font no oficial'))})` : ''}` : ''}</span>
+            <span class="map-popup-stop-name">${esc(t.currentStatus === 'STOPPED_AT' ? netT('trainPopup.atStop', null, 'A') : netT('trainPopup.towards', null, 'Cap a'))} ${esc(t.stopName)}${t.platform ? ` · ${esc(netT('dep.platform', { n: t.platform }, `Via ${t.platform}`))}` : ''}</span>
           </div>
         </div>` : ''}
 
         <div class="map-popup-metrics-grid">
-          ${tile(icClock, netT('trainPopup.tileStatus', null, 'Estat'), delayText, delayCls)}
+          ${tile(icClock, netT('trainPopup.tileStatus', null, 'Estat'), delayText, delayCls, delayNote)}
           ${tile(icPin, netT('trainPopup.tilePosition', null, 'Posició'), known ? age : '--')}
-          ${tile(icOp, netT('trainPopup.tileOperator', null, 'Operador'), short)}
-          ${tile(icSrc, netT('trainPopup.tileSource', null, 'Font del retard'), source)}
         </div>
 
-        ${delayNote ? `<div class="train-popup-note">${esc(delayNote)}</div>` : ''}
+        ${t.delayDiscarded && delayNote ? `<div class="train-popup-note">${esc(delayNote)}</div>` : ''}
 
-        ${t.unit && (t.unit.series || Number.isFinite(t.unit.occupancyPercent)) ? `<div class="train-popup-note">${esc([
-          t.unit.series
-            ? (Number(t.unit.coupledCount) > 1
-              ? netT('trainPopup.unitCoupled', { n: t.unit.coupledCount, series: t.unit.series }, `${t.unit.coupledCount} × sèrie ${t.unit.series}`)
-              : netT('trainPopup.unitSeries', { series: t.unit.series }, `Unitat de la sèrie ${t.unit.series}`))
-            : '',
-          t.unit.manufacturer ? t.unit.manufacturer : '',
-          Number.isFinite(t.unit.occupancyPercent) ? netT('trainPopup.unitOccupancy', { pct: t.unit.occupancyPercent }, `Ocupació segons FGC: ${t.unit.occupancyPercent}%`) : '',
-          t.unit.unofficial ? netT('trainPopup.unofficialTag', null, 'font no oficial') : '',
-        ].filter(Boolean).join(' · '))}</div>` : ''}
-        ${typeof t.wheelchairAccessible === 'boolean' ? `<div class="train-popup-note">${esc([
-          netT(t.wheelchairAccessible ? 'trainPopup.wheelchairYes' : 'trainPopup.wheelchairNo', null, t.wheelchairAccessible ? 'Tren accessible per a cadira de rodes' : 'Tren no accessible per a cadira de rodes'),
-          t.wheelchairSource === 'renfe_visor_unofficial' ? netT('trainPopup.unofficialTag', null, 'font no oficial') : '',
-        ].filter(Boolean).join(' · '))}</div>` : ''}
-        ${(!t.unit?.series && Array.isArray(t.usualSeries) && t.usualSeries.length) ? `<div class="train-popup-note">${esc(netT('trainPopup.usualSeries', { list: t.usualSeries.join(', ') }, `Sèries habituals en aquesta línia: ${t.usualSeries.join(', ')}. No se sap quina unitat fa aquest tren.`))}</div>` : ''}
+        ${metaChips.length ? `<div class="train-popup-meta-row">${metaChips.join('')}</div>` : ''}
 
-        ${op?.attribution ? `
+        ${footerParts.length ? `
         <div class="map-popup-coords-footer">
-          <span class="source-tag">${esc(op.attribution)}</span>
+          <span class="source-tag">${esc(footerParts.join(' · '))}</span>
         </div>` : ''}
 
         ${lineRef ? `

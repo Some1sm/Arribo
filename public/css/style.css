@@ -5399,6 +5399,25 @@ body {
 .train-popup-card .map-popup-bus-icon.is-train { color: var(--line-color, var(--c10-primary)); border-color: var(--line-color, var(--border-subtle)); }
 .train-popup-card .map-popup-stop-dot.dest { background: var(--line-color, var(--c10-primary)); }
 .train-popup-card .train-popup-note { color: var(--text-muted); font-size: 0.75rem; margin: var(--space-2) 0; }
+.train-popup-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: var(--space-2);
+}
+.train-popup-meta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  padding: 2px 9px;
+  line-height: 1.3;
+}
 
 .landing-lines-grid {
   display: grid;

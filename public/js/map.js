@@ -497,7 +497,6 @@ class TransitMap {
 
         const stopIdentifier = String(stop.mouteStopId || stop.id || stop.code || '');
         const isTarget = stopIdentifier === String(targetStopId);
-        const isMaresme = stop.zone === 'Zona Maresme' || (stop.lon && stop.lon >= 2.289);
         const isCancelled = Boolean(stop.isCancelled);
 
         const markerHtml = isCancelled ? `
@@ -520,7 +519,7 @@ class TransitMap {
           <div class="stop-marker-dot" style="
             width: ${isTarget ? '22px' : '14px'};
             height: ${isTarget ? '22px' : '14px'};
-            background-color: ${isTarget ? lineColor : isMaresme ? '#06b6d4' : '#f97316'};
+            background-color: ${isTarget ? lineColor : '#06b6d4'};
             border: 2px solid #ffffff;
             border-radius: 50%;
             box-shadow: 0 0 10px ${isTarget ? lineColor : 'rgba(0,0,0,0.5)'};
@@ -571,7 +570,7 @@ class TransitMap {
           }
         });
 
-        marker._stopMeta = { id: stopIdentifier, lineColor, maresme: isMaresme, isCancelled };
+        marker._stopMeta = { id: stopIdentifier, lineColor, isCancelled };
         const dotRoot = marker.getElement();
         marker._dotEl = dotRoot ? dotRoot.querySelector('.stop-marker-dot') : null;
         this.stopMarkers.push(marker);
@@ -1103,7 +1102,7 @@ class TransitMap {
       dot.classList.toggle('target', isTarget);
       dot.style.width = isTarget ? '22px' : '14px';
       dot.style.height = isTarget ? '22px' : '14px';
-      dot.style.backgroundColor = isTarget ? meta.lineColor : (meta.maresme ? '#06b6d4' : '#f97316');
+      dot.style.backgroundColor = isTarget ? meta.lineColor : '#06b6d4';
       dot.style.boxShadow = isTarget ? `0 0 10px ${meta.lineColor}` : '0 0 10px rgba(0,0,0,0.5)';
       dot.style.animation = isTarget ? 'pulse-dot 1.5s infinite' : '';
     });
