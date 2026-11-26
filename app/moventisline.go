@@ -283,20 +283,21 @@ func movEstimateDelay(p *movPoller, lineID, stopID int, dirStr string, routes []
 	badgeText = "Previsió de Moventis"
 	delaySource = "operator_prediction"
 
+	var cachedDirTimes []string
 	if len(extraSched) > 0 {
 		matched, hasMatch = matchMovSched(extraSched, expected, movDelayMaxEarly, movDelayMaxLate)
 	}
 	if !hasMatch && p != nil && p.sched != nil {
 		if byDest := p.sched.lookup(lineID, stopID, now); len(byDest) > 0 {
-			var dirTimes, allTimes []string
+			var allTimes []string
 			for dest, list := range byDest {
 				allTimes = append(allTimes, list...)
 				if d, _ := movMatchRoute(routes, dest); d == dirStr {
-					dirTimes = append(dirTimes, list...)
+					cachedDirTimes = append(cachedDirTimes, list...)
 				}
 			}
-			if len(dirTimes) > 0 {
-				matched, hasMatch = matchMovSched(dirTimes, expected, movDelayMaxEarly, movDelayMaxLate)
+			if len(cachedDirTimes) > 0 {
+				matched, hasMatch = matchMovSched(cachedDirTimes, expected, movDelayMaxEarly, movDelayMaxLate)
 			}
 			if !hasMatch && len(allTimes) > 0 {
 				matched, hasMatch = matchMovSched(allTimes, expected, movDelayMaxEarly, movDelayMaxLate)
@@ -304,12 +305,17 @@ func movEstimateDelay(p *movPoller, lineID, stopID int, dirStr string, routes []
 		}
 	}
 	if !hasMatch {
+		combined := make([]string, 0, len(extraSched)+len(cachedDirTimes))
+		combined = append(combined, extraSched...)
+		combined = append(combined, cachedDirTimes...)
+		if len(combined) >= 2 {
+			matched, hasMatch = movInferPriorSched(combined, expected, now)
+		}
+	}
+	if !hasMatch {
 		if gc := gencatData(); gc != nil {
 			matched, hasMatch = gc.nearestDeparture(lineID, stopID, expected, movDelayMaxEarly, movDelayMaxLate)
 		}
-	}
-	if !hasMatch && len(extraSched) >= 2 {
-		matched, hasMatch = movInferPriorSched(extraSched, expected, now)
 	}
 	if !hasMatch {
 		return

@@ -195,3 +195,34 @@ func TestGencatDayWithoutTripsIsUnknown(t *testing.T) {
 		t.Errorf("a day with no trip of the line must read as unknown")
 	}
 }
+
+// On a weekday inside the Generalitat GTFS calendar gap (C-10 weekday service
+// 184910 only lists added dates starting Jan 2027), effectiveDate must fall
+// back to a representative matching weekday so stop delay matching works on
+// stops 7205, 7206 (Camping Hispano), and 7001.
+func TestGencatCalendarGapWeekdayFallback(t *testing.T) {
+	g := loadTestGencat(t)
+	thu := func(h, m int) time.Time {
+		return time.UnixMilli(localTimeToUtcDate(2026, 10, 26, h, m, 0))
+	}
+	cases := []struct {
+		stopID int
+		h, m   int
+		wantHH string
+	}{
+		{7205, 8, 38, "08:25"},
+		{7206, 8, 40, "08:27"},
+		{7206, 9, 15, "09:12"},
+		{7001, 8, 42, "08:29"},
+	}
+	for _, tc := range cases {
+		matched, ok := g.nearestDeparture(53, tc.stopID, thu(tc.h, tc.m), movDelayMaxEarly, movDelayMaxLate)
+		if !ok {
+			t.Errorf("C-10 stop %d at %02d:%02d: expected fallback match, got ok=false", tc.stopID, tc.h, tc.m)
+			continue
+		}
+		if got := matched.In(madrid).Format("15:04"); got != tc.wantHH {
+			t.Errorf("C-10 stop %d at %02d:%02d: matched %s, want %s", tc.stopID, tc.h, tc.m, got, tc.wantHH)
+		}
+	}
+}

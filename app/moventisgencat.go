@@ -20,6 +20,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -111,6 +112,7 @@ type gcData struct {
 	mu      sync.Mutex
 	times   map[[2]int][]gcStopTime // (moventis line, moventis stop) -> departures; nil entry: unknown
 	lineSvc map[int]map[string]bool // moventis line -> the services its trips use
+	effDate map[[2]string]string    // (lineID, YYYYMMDD) -> representative YYYYMMDD ("" = none)
 }
 
 var (
@@ -276,11 +278,128 @@ func (g *gcData) lineRuns(lineID int, date string) bool {
 	return false
 }
 
+// effectiveDate returns the YYYYMMDD date to evaluate lineID's timetable on
+// for calendar day d. Normally this is d itself; when the bundled Generalitat
+// GTFS has a calendar gap on d (e.g. C-10 weekday service 184910 only listing
+// added dates from January 2027), it falls back to the best representative
+// date with the same weekday (picking the candidate with the most trips to
+// skip holidays like Jan 6). Returns ("", false) when the line has no service
+// on that weekday on any date in the feed.
+func (g *gcData) effectiveDate(lineID int, d time.Time) (string, bool) {
+	date := d.Format("20060102")
+	if g.lineRuns(lineID, date) {
+		return date, true
+	}
+	key := [2]string{strconv.Itoa(lineID), date}
+	g.mu.Lock()
+	if cached, ok := g.effDate[key]; ok {
+		g.mu.Unlock()
+		return cached, cached != ""
+	}
+	g.mu.Unlock()
+
+	best := g.findRepresentativeDate(lineID, d)
+	g.mu.Lock()
+	if g.effDate == nil {
+		g.effDate = map[[2]string]string{}
+	}
+	g.effDate[key] = best
+	g.mu.Unlock()
+	return best, best != ""
+}
+
+func (g *gcData) findRepresentativeDate(lineID int, d time.Time) string {
+	line := g.byMovLine[lineID]
+	if line == nil {
+		return ""
+	}
+	wantWD := d.Weekday()
+	wantStr := d.Format("20060102")
+	monIdx := (int(wantWD) + 6) % 7
+
+	seen := map[string]bool{}
+	var candDates []string
+	for svcID := range g.lineSvc[lineID] {
+		svc, ok := g.Services[svcID]
+		if !ok {
+			continue
+		}
+		for _, ad := range svc.Added {
+			if len(ad) != 8 || ad == wantStr || seen[ad] {
+				continue
+			}
+			parsed, err := time.ParseInLocation("20060102", ad, madrid)
+			if err != nil || parsed.Weekday() != wantWD {
+				continue
+			}
+			seen[ad] = true
+			candDates = append(candDates, ad)
+		}
+		if svc.Days[monIdx] == 1 && len(svc.Start) == 8 && len(svc.End) == 8 {
+			anchorStr := svc.End
+			step := -1
+			if wantStr < svc.Start {
+				anchorStr = svc.Start
+				step = 1
+			}
+			if anchor, err := time.ParseInLocation("20060102", anchorStr, madrid); err == nil {
+				for i := 0; i < 7; i++ {
+					cand := anchor.AddDate(0, 0, i*step)
+					cs := cand.Format("20060102")
+					if cs < svc.Start || cs > svc.End {
+						break
+					}
+					if cand.Weekday() == wantWD && cs != wantStr && !seen[cs] && g.runs(svcID, cs) {
+						seen[cs] = true
+						candDates = append(candDates, cs)
+						break
+					}
+				}
+			}
+		}
+	}
+	if len(candDates) == 0 {
+		return ""
+	}
+	sort.Strings(candDates)
+	var ordered []string
+	for _, ad := range candDates {
+		if ad >= wantStr {
+			ordered = append(ordered, ad)
+		}
+	}
+	if len(ordered) == 0 {
+		for i := len(candDates) - 1; i >= 0 && len(ordered) < 4; i-- {
+			ordered = append(ordered, candDates[i])
+		}
+	} else if len(ordered) > 4 {
+		ordered = ordered[:4]
+	}
+
+	bestDate := ""
+	bestTrips := 0
+	for _, repDate := range ordered {
+		n := 0
+		for _, dir := range line.Directions {
+			for _, tr := range dir.Trips {
+				if g.runs(tr.Service.String(), repDate) {
+					n++
+				}
+			}
+		}
+		if n > bestTrips {
+			bestTrips = n
+			bestDate = repDate
+		}
+	}
+	return bestDate
+}
+
 // nextDeparture is the first published departure of the line at the stop at
 // or after now (searching the service days from yesterday to tomorrow, for
 // trips past midnight); zero time when none in that span. ok is false when
 // the timetable does not know the line at that stop, or has no trip of the
-// line at all today (see lineRuns).
+// line at all for today's weekday (see effectiveDate).
 func (g *gcData) nextDeparture(lineID, stopID int, now time.Time) (time.Time, bool) {
 	sts, ok := g.stopTimes(lineID, stopID)
 	if !ok {
@@ -288,12 +407,15 @@ func (g *gcData) nextDeparture(lineID, stopID int, now time.Time) (time.Time, bo
 	}
 	var best time.Time
 	day := now.In(madrid)
-	if !g.lineRuns(lineID, day.Format("20060102")) {
-		return time.Time{}, false // no trip of the line at all today: a gap in the feed
+	if _, ok := g.effectiveDate(lineID, day); !ok {
+		return time.Time{}, false // no trip of the line for this weekday in the feed
 	}
 	for off := -1; off <= 1; off++ {
 		d := day.AddDate(0, 0, off)
-		date := d.Format("20060102")
+		date, ok := g.effectiveDate(lineID, d)
+		if !ok {
+			continue
+		}
 		y, m, dd := d.Date()
 		for _, st := range sts {
 			if !st.runsOn(g, date) {
@@ -319,7 +441,7 @@ func (g *gcData) upcomingDepartures(lineID, stopID int, now time.Time, horizon t
 		return nil
 	}
 	day := now.In(madrid)
-	if !g.lineRuns(lineID, day.Format("20060102")) {
+	if _, ok := g.effectiveDate(lineID, day); !ok {
 		return nil
 	}
 	lo := now.Add(-2 * time.Minute)
@@ -327,7 +449,10 @@ func (g *gcData) upcomingDepartures(lineID, stopID int, now time.Time, horizon t
 	var out []time.Time
 	for off := -1; off <= 1; off++ {
 		d := day.AddDate(0, 0, off)
-		date := d.Format("20060102")
+		date, ok := g.effectiveDate(lineID, d)
+		if !ok {
+			continue
+		}
 		y, m, dd := d.Date()
 		base := localTimeToUtcDate(y, int(m)-1, dd, 0, 0, 0)
 		for _, st := range sts {
@@ -352,21 +477,24 @@ func (g *gcData) upcomingDepartures(lineID, stopID int, now time.Time, horizon t
 // nearestDeparture finds the published departure of lineID at stopID closest to
 // expected within [expected - maxLate, expected + maxEarly] (i.e. delay in
 // [-maxEarly, +maxLate]). Returns ok=false when the timetable has no entry for
-// this line today or nothing lies in that window.
+// this line's weekday or nothing lies in that window.
 func (g *gcData) nearestDeparture(lineID, stopID int, expected time.Time, maxEarly, maxLate time.Duration) (time.Time, bool) {
 	sts, ok := g.stopTimes(lineID, stopID)
 	if !ok {
 		return time.Time{}, false
 	}
 	day := expected.In(madrid)
-	if !g.lineRuns(lineID, day.Format("20060102")) {
+	if _, ok := g.effectiveDate(lineID, day); !ok {
 		return time.Time{}, false
 	}
 	var best time.Time
 	var bestAbs time.Duration
 	for off := -1; off <= 1; off++ {
 		d := day.AddDate(0, 0, off)
-		date := d.Format("20060102")
+		date, ok := g.effectiveDate(lineID, d)
+		if !ok {
+			continue
+		}
 		y, m, dd := d.Date()
 		baseMs := localTimeToUtcDate(y, int(m)-1, dd, 0, 0, 0)
 		for _, st := range sts {

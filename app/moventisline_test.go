@@ -181,3 +181,36 @@ func TestMovPropagateUpstreamDelay(t *testing.T) {
 		t.Fatalf("stop 7196 expected 19:39 (+18 min estimated), got %s", toJSON(d7196))
 	}
 }
+
+func TestMovArrivingNowInfersDelayFromCachedSchedule(t *testing.T) {
+	// Reproduces C-10 stop 7205 at 08:38: two live buses (08:38 "Ahora" and 09:14),
+	// live Sched only lists 09:51 (1 entry), while rolling cache p.sched also knows 09:06.
+	// Combining extraSched + p.sched infers 08:21 (+17 min) for the 08:38 bus.
+	routes := []movRoute{
+		{LineID: 53, Trayecto: 1, Dest: "BCN"},
+		{LineID: 53, Trayecto: 2, Dest: "MATARÓ"},
+	}
+	now := time.Date(2026, 11, 26, 8, 38, 0, 0, madrid)
+	sched := newMovSchedStore(t.TempDir())
+	sched.record(999998, []movStopETA{
+		{LineID: 53, Dest: "(C10) BCN - MATARÓ (PER LA NII)", Sched: []string{"09:06", "09:51"}},
+	}, now.Add(-15*time.Minute))
+	p := &movPoller{sched: sched}
+
+	etas := []movStopETA{
+		{LineID: 53, Dest: "Mataró", EtaSec: []float64{0, 36 * 60}},
+		{LineID: 53, Dest: "(C10) BCN - MATARÓ (PER LA NII)", Sched: []string{"09:51"}},
+	}
+	deps, _ := movBuildLiveAndSchedDeps(p, 53, 999998, routes, etas, 0, now)
+	if len(deps) != 3 {
+		t.Fatalf("expected 3 departures (08:38 live, 09:14 live, 09:51 sched), got %d: %s", len(deps), toJSON(deps))
+	}
+	first := deps[0].(*Obj)
+	if first.Num("minutesAway") != 0 || jsString(first.Get("scheduledTime")) != "08:21" || first.Num("delayMins") != 17 || jsString(first.Get("delayStatus")) != "delayed" {
+		t.Fatalf("arriving-now bus expected sched 08:21 (+17 min delayed), got: %s", toJSON(first))
+	}
+	second := deps[1].(*Obj)
+	if jsString(second.Get("scheduledTime")) != "09:06" || second.Num("delayMins") != 8 || jsString(second.Get("delayStatus")) != "delayed" {
+		t.Fatalf("second bus expected sched 09:06 (+8 min delayed), got: %s", toJSON(second))
+	}
+}
