@@ -4478,12 +4478,13 @@ class TransitApp {
       });
 
       const totalStops = allDirs.reduce((acc, d) => acc + (d.stops?.length || 0), 0);
+      const lineInk = window.TransitUtils?.contrastInk?.(lineColor, lineData?.textColor) || this.getContrastColor?.(lineColor) || '#ffffff';
 
       let html = `
         <div class="schematic-container" style="--schematic-line-color:${this.esc(lineColor)};">
           <div class="schematic-header-summary">
-            <div style="display:flex; align-items:center; gap:8px;">
-              <span class="schematic-line-tag" style="background:${this.esc(lineColor)};">
+            <div style="display:flex; align-items:center; gap:8px; min-width:0;">
+              <span class="schematic-line-tag" style="background:${this.esc(lineColor)}; color:${this.esc(lineInk)};">
                 ${this.esc(lineData?.code || lineKey || t('timeline.lineFallback'))}
               </span>
               <span class="schematic-dir-title">${this.esc(t('timeline.bothSummary', { dirs: allDirs.length, stops: totalStops }))}</span>
@@ -4543,12 +4544,13 @@ class TransitApp {
 
     const dirName = lineData?.directionName || t('timeline.routeFallback');
     const dirId = String(lineData?.direction !== undefined ? lineData.direction : (this.activeDirection || '1'));
+    const lineInk = window.TransitUtils?.contrastInk?.(lineColor, lineData?.textColor) || this.getContrastColor?.(lineColor) || '#ffffff';
 
     let html = `
       <div class="schematic-container" style="--schematic-line-color:${this.esc(lineColor)};">
         <div class="schematic-header-summary">
-          <div style="display:flex; align-items:center; gap:8px;">
-            <span class="schematic-line-tag" style="background:${this.esc(lineColor)};">
+          <div style="display:flex; align-items:center; gap:8px; min-width:0;">
+            <span class="schematic-line-tag" style="background:${this.esc(lineColor)}; color:${this.esc(lineInk)};">
               ${this.esc(lineData?.code || lineKey || t('timeline.lineFallback'))}
             </span>
             <span class="schematic-dir-title">${this.esc(dirName)}</span>
