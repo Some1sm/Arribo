@@ -405,7 +405,9 @@
     const chip = err
       ? `<span class="chip chip-danger">${esc(bits.concat(t('ops.feedError', { err })).join(' · '))}</span>`
       : `<span class="chip chip-live">${esc(bits.join(' · ') || t('ops.feedLive'))}</span>`;
-    const dropped = f.implausibleDropped ? ` <span class="op-muted">${esc(t('ops.feedDropped', { n: f.implausibleDropped }))}</span>` : '';
+    const dropped = f.implausibleDropped
+      ? ` <span class="op-dropped-chip" title="${esc(t('ops.feedDropped', { n: f.implausibleDropped }))}">${esc(t('ops.feedDroppedShort', { n: f.implausibleDropped }))}</span>`
+      : '';
     return `<p class="op-feed">${chip}${dropped}</p>`;
   }
 
@@ -463,7 +465,10 @@
       <div class="op-line-detail" id="op-line-detail-${esc(op.id)}" aria-live="polite"></div>
       ${stationsList(op)}`)}
       ${op.source ? `<details class="op-source"><summary>${esc(t('ops.sourceQuestion'))}</summary><p>${esc(op.source)}</p></details>` : ''}
-      ${isTimetable ? '' : feedLine(op)}
+      <div class="op-card-footer">
+        ${isTimetable ? '' : feedLine(op)}
+        ${isTimetable ? '' : `<button type="button" class="btn btn-ghost btn-sm op-card-inspect" data-jump-scope="${esc(op.id)}">${esc(t('ops.inspectOperator'))}</button>`}
+      </div>
     </article>`;
   }
 
@@ -474,14 +479,17 @@
   // each figure comes from; without it the static Mataró wording stays.
   function wordHeader(ops) {
     const withData = new Set(ops.filter(o => o.visits > 0 || o.feed || o.tier === 'timetable').map(o => o.id));
+    if (movEnabled) withData.add('moventis');
     if (!withData.size) return;
     const named = (catalogOps || []).filter(o => o.trackable !== false || withData.has(o.id));
     if (!named.length) return;
     const short = o => o.shortName || o.name;
+    const names = named.map(short);
+    if (movEnabled && !named.some(o => o.id === 'moventis')) names.push('Moventis');
     const buses = named.filter(o => o.trackable !== false).map(short);
     const trains = named.filter(o => o.trackable === false).map(short);
     const eyebrow = document.getElementById('dades-eyebrow');
-    if (eyebrow) eyebrow.textContent = t('ops.headerEyebrow', { ops: named.map(short).join(' · ') });
+    if (eyebrow) eyebrow.textContent = t('ops.headerEyebrow', { ops: names.join(' · ') });
     const intro = document.getElementById('dades-intro');
     if (intro && trains.length) {
       intro.textContent = t('ops.headerIntro', { buses: list(buses), trains: list(trains) });
@@ -544,6 +552,11 @@
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
     load();
+  });
+
+  document.addEventListener('arribo:set-scope', ev => {
+    const next = ev.detail?.scope;
+    if (next) setScope(next);
   });
 
   // One period for the whole page: the report toolbar's (24 h, 48 h, 7 days).

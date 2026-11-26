@@ -7,7 +7,8 @@
 class ObservatoriApp {
   constructor() {
     this.currentHours = 24;
-    this.currentTab = 'journalism'; // 'journalism' | 'termometre' | 'incidents'
+    this.currentTab = 'journalism'; // 'journalism' | 'termometre' | 'incidents' | 'monthly'
+    this.currentView = 'overview'; // 'overview' | 'rankings' | 'signal' | 'termometre' | 'incidents' | 'monthly'
     this.filterText = '';
     this.lineCode = ''; // exact line filter for Mataró's reports (?linia=), set by the line pills
     this.sorts = {
@@ -15,6 +16,10 @@ class ObservatoriApp {
       worstStops: { key: 'avgDelay', asc: false },
       agencies: { key: 'totalSamples', asc: false }
     };
+    this.linesLimit = 15;
+    this.rankingTierFilter = 'measured'; // 'measured' | 'all' (in All scope)
+    this.minVisitsOnly = true;
+    this.hourlyOp = 'mataro';
     this.worstStopsLimit = 10;
     this.groupByLine = false;
     this.stopFilterMode = 'bottlenecks'; // 'bottlenecks' | 'all'
@@ -104,6 +109,14 @@ class ObservatoriApp {
     const tab = params.get('tab');
     if (tab === 'termometre' || tab === 'incidents' || tab === 'monthly') {
       this.currentTab = tab;
+      this.currentView = tab;
+    } else {
+      const view = params.get('view');
+      if (view === 'overview' || view === 'rankings' || view === 'signal') {
+        this.currentView = view;
+      } else {
+        this.currentView = 'overview';
+      }
     }
     const month = params.get('month');
     if (month && /^\d{4}-\d{2}$/.test(month)) {
@@ -129,19 +142,51 @@ class ObservatoriApp {
       this.stopFilterMode = stopsMode;
     }
 
-    // Set initial active tab button UI
-    document.querySelectorAll('#journalism-timeframe-tabs button').forEach(btn => {
-      const dataTab = btn.getAttribute('data-tab');
-      const dataHours = parseInt(btn.getAttribute('data-hours') || '0', 10);
-      const isActive =
-        (this.currentTab === 'termometre' && dataTab === 'termometre') ||
-        (this.currentTab === 'incidents' && dataTab === 'incidents') ||
-        (this.currentTab === 'monthly' && dataTab === 'monthly') ||
-        (this.currentTab === 'journalism' && !dataTab && dataHours === this.currentHours);
+    this.syncToolbarUi();
+  }
+
+  syncToolbarUi() {
+    document.body.dataset.dadesView = this.currentView || 'overview';
+    document.querySelectorAll('#dades-view-tabs button').forEach(btn => {
+      const v = btn.getAttribute('data-view') || btn.getAttribute('data-tab');
+      const isActive = v === this.currentView;
       btn.classList.toggle('active', isActive);
       btn.classList.toggle('is-active', isActive);
       btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
     });
+    document.querySelectorAll('#journalism-timeframe-tabs button').forEach(btn => {
+      const dataHours = parseInt(btn.getAttribute('data-hours') || '0', 10);
+      const isActive = dataHours === this.currentHours;
+      btn.classList.toggle('active', isActive);
+      btn.classList.toggle('is-active', isActive);
+      btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+  }
+
+  setView(view) {
+    this.currentView = view;
+    if (view === 'termometre' || view === 'incidents' || view === 'monthly') {
+      this.currentTab = view;
+      this.syncToolbarUi();
+      this.updateUrl();
+      if (view === 'termometre') this.loadTermometre(24);
+      else if (view === 'incidents') this.openDelayIncidentsTab('all');
+      else if (view === 'monthly') this.loadMonthlyReport(this._currentMonthlyMonth);
+      return;
+    }
+    const wasNonReport = this.currentTab !== 'journalism';
+    this.currentTab = 'journalism';
+    this.syncToolbarUi();
+    this.updateUrl();
+    if (wasNonReport) {
+      this.loadJournalismReport(this.currentHours);
+    }
+    if (view === 'signal') {
+      if (!this._gpsGapReq) this.loadGpsGaps();
+      requestAnimationFrame(() => {
+        try { this.gpsGapMap?.invalidateSize?.(); } catch { /* ignore */ }
+      });
+    }
   }
 
   isLineFilterActive() {
@@ -156,9 +201,9 @@ class ObservatoriApp {
       this.renderLineFilter();
       this.updateUrl();
     }
-    // A train operator has only the report: leave the bus-only tabs for it.
-    if ((document.body.dataset.dadesScope === 'rail' || document.body.dataset.dadesScope === 'est') && this.currentTab !== 'journalism') {
-      document.querySelector(`#journalism-timeframe-tabs [data-hours="${this.currentHours || 24}"]`)?.click();
+    // Non-Mataró scopes don't have Mataró-only reports (Termòmetre, Incidents, Monthly).
+    if (document.body.dataset.dadesScope !== 'bus' && document.body.dataset.dadesScope && this.currentTab !== 'journalism') {
+      this.setView('overview');
       return;
     }
     // Sync the GPS/signal-loss section with the active network scope.
@@ -190,6 +235,9 @@ class ObservatoriApp {
         params.set('month', this._currentMonthlyMonth);
       }
     } else {
+      if (this.currentView && this.currentView !== 'overview') {
+        params.set('view', this.currentView);
+      }
       if (this.currentHours !== 24) {
         params.set('h', String(this.currentHours));
       }
@@ -444,19 +492,22 @@ class ObservatoriApp {
       return;
     }
     if (summary) summary.textContent = this.t('dades.gpsLoading');
+    this._gpsGapAbort?.abort();
     // Quick clicks send one request, for the last choice.
     await new Promise(resolve => setTimeout(resolve, 200));
     if (reqId !== this._gpsGapReq) return;
+    this._gpsGapAbort = new AbortController();
     let data = null;
     let retryAfter = 0;
     let unsupported = false;
     try {
-      const r = await fetch(url);
+      const r = await fetch(url, { signal: this._gpsGapAbort.signal });
       if (r.status === 429) retryAfter = Math.min(60, Math.max(1, Number(r.headers.get('Retry-After')) || 10));
       if (r.status === 400 || r.status === 404) unsupported = true;
       const res = await r.json();
       data = res && res.success ? res : null;
-    } catch {
+    } catch (err) {
+      if (err?.name === 'AbortError' || reqId !== this._gpsGapReq) return;
       data = null;
     }
     if (reqId !== this._gpsGapReq) return; // a newer filter choice superseded this one
@@ -1315,36 +1366,28 @@ class ObservatoriApp {
       this.fetchDataHealth();
     });
 
-    // Timeframe tabs (24h, 48h, 7 dies, Termòmetre, Incidents)
+    // View tabs (Overview, Lines & Stops, GPS & Health, Termòmetre, Incidents, Monthly)
+    document.querySelectorAll('#dades-view-tabs button').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const v = btn.getAttribute('data-view') || btn.getAttribute('data-tab') || 'overview';
+        this.setView(v);
+      });
+    });
+
+    // Timeframe pills (24h, 48h, 7 dies)
     document.querySelectorAll('#journalism-timeframe-tabs button').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.preventDefault();
-        document.querySelectorAll('#journalism-timeframe-tabs button').forEach(b => {
-          const on = b === btn;
-          b.classList.toggle('active', on);
-          b.classList.toggle('is-active', on);
-          b.setAttribute('aria-selected', on ? 'true' : 'false');
-        });
-
-        const dataTab = btn.getAttribute('data-tab');
-        if (dataTab === 'termometre') {
-          this.currentTab = 'termometre';
-          this.updateUrl();
-          this.loadTermometre(24);
-        } else if (dataTab === 'incidents') {
-          this.currentTab = 'incidents';
-          this.updateUrl();
-          this.openDelayIncidentsTab('all');
-        } else if (dataTab === 'monthly') {
-          this.currentTab = 'monthly';
-          this.updateUrl();
-          this.loadMonthlyReport(this._currentMonthlyMonth);
-        } else {
+        const hours = parseInt(btn.getAttribute('data-hours') || '24', 10);
+        this.currentHours = hours;
+        if (this.currentTab !== 'journalism') {
           this.currentTab = 'journalism';
-          this.currentHours = parseInt(btn.getAttribute('data-hours') || '24', 10);
-          this.updateUrl();
-          this.loadJournalismReport(this.currentHours);
+          this.currentView = 'overview';
         }
+        this.syncToolbarUi();
+        this.updateUrl();
+        this.loadJournalismReport(this.currentHours);
       });
     });
 
@@ -1373,6 +1416,55 @@ class ObservatoriApp {
     // Event delegation for table sorting and pagination
     const mainContainer = document.querySelector('.observatori-page-container');
     mainContainer?.addEventListener('click', (e) => {
+      // Jump to an operator's scope from Comparison table, Health Strip, or Scorecard
+      const jumpScopeEl = e.target.closest('[data-jump-scope]');
+      if (jumpScopeEl) {
+        e.preventDefault();
+        const targetScope = jumpScopeEl.getAttribute('data-jump-scope');
+        if (targetScope) {
+          if (this.currentView === 'signal') this.setView('overview');
+          document.dispatchEvent(new CustomEvent('arribo:set-scope', { detail: { scope: targetScope } }));
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        return;
+      }
+
+      // Lines table pagination
+      const linesLimitBtn = e.target.closest('[data-lines-limit]');
+      if (linesLimitBtn) {
+        e.preventDefault();
+        this.linesLimit = parseInt(linesLimitBtn.getAttribute('data-lines-limit') || '15', 10);
+        if (this.currentReport && this.currentTab === 'journalism') {
+          this.renderJournalismReport(this.currentReport);
+        }
+        return;
+      }
+
+      // Tier filter in Rankings (measured only vs all incl. predicted)
+      const tierBtn = e.target.closest('[data-ranking-tier]');
+      if (tierBtn) {
+        e.preventDefault();
+        const nextTier = tierBtn.getAttribute('data-ranking-tier');
+        if (nextTier === 'measured' || nextTier === 'all') {
+          this.rankingTierFilter = nextTier;
+          if (this.currentReport && this.currentTab === 'journalism') {
+            this.renderJournalismReport(this.currentReport);
+          }
+        }
+        return;
+      }
+
+      // Min-visits noise filter toggle in Rankings
+      const minVisBtn = e.target.closest('[data-toggle-min-visits]');
+      if (minVisBtn) {
+        e.preventDefault();
+        this.minVisitsOnly = minVisBtn.getAttribute('data-toggle-min-visits') === '1';
+        if (this.currentReport && this.currentTab === 'journalism') {
+          this.renderJournalismReport(this.currentReport);
+        }
+        return;
+      }
+
       // Sorting
       const sortTh = e.target.closest('[data-sort-table][data-sort-key]');
       if (sortTh) {
@@ -1545,12 +1637,17 @@ class ObservatoriApp {
       }
     });
 
-    // Checkbox toggle: group stops by line
+    // Checkbox toggle: group stops by line & hourly operator selector
     mainContainer?.addEventListener('change', (e) => {
       const target = e.target;
       if (target && target.id === 'observatori-group-by-line') {
         this.groupByLine = !!target.checked;
         this.updateUrl();
+        if (this.currentReport && this.currentTab === 'journalism') {
+          this.renderJournalismReport(this.currentReport);
+        }
+      } else if (target && target.id === 'dades-hourly-op-select') {
+        this.hourlyOp = target.value || 'mataro';
         if (this.currentReport && this.currentTab === 'journalism') {
           this.renderJournalismReport(this.currentReport);
         }
@@ -1666,15 +1763,22 @@ class ObservatoriApp {
       }
     }
 
+    const reqSeq = (this._reportSeq = (this._reportSeq || 0) + 1);
+    this._reportAbort?.abort();
+    this._reportAbort = new AbortController();
+    const { signal } = this._reportAbort;
+
     try {
-      const [res, net] = await Promise.allSettled([
-        fetch(`/api/analytics/journalism?hours=${hours}`).then(r => r.json()),
+      const [res, net, mov] = await Promise.allSettled([
+        fetch(`/api/analytics/journalism?hours=${hours}`, { signal }).then(r => r.json()),
         // The trains' figures in the same shapes (networkreport.go); optional.
-        fetch(`/api/analytics/network?hours=${hours}`).then(r => (r.ok ? r.json() : null))
+        fetch(`/api/analytics/network?hours=${hours}`, { signal }).then(r => (r.ok ? r.json() : null)),
+        // Moventis (scraped predictions, estimated buses + timetable-matched delays): its Dades scope.
+        fetch(`/api/moventis?hours=${encodeURIComponent(hours)}`, { signal }).then(r => (r.ok ? r.json() : null))
       ]);
+      if (reqSeq !== this._reportSeq) return;
       this.networkReport = net.status === 'fulfilled' && net.value?.success ? net.value : null;
-      // Moventis (scraped predictions, estimated buses + timetable-matched delays): its Dades scope.
-      this.moventisData = await fetch(`/api/moventis?hours=${encodeURIComponent(hours)}`).then(r => (r.ok ? r.json() : null)).catch(() => null);
+      this.moventisData = mov.status === 'fulfilled' ? mov.value : null;
 
       const journalismData = res.status === 'fulfilled' && res.value?.success ? (res.value.report || res.value) : null;
 
@@ -1688,6 +1792,7 @@ class ObservatoriApp {
         this._setStatusMessage(contentContainer, this.t('dades.noReportData'));
       }
     } catch (err) {
+      if (err?.name === 'AbortError' || reqSeq !== this._reportSeq) return;
       this._journalismStatus = { type: 'error', err: err.message };
       this.clearOperatorComparison();
       this._setStatusMessage(contentContainer, this.t('dades.reportLoadError', { err: err.message }), true);
@@ -1750,7 +1855,12 @@ class ObservatoriApp {
     const scheduled = Array.isArray(op.scheduledHours) ? op.scheduledHours.map(Number) : null;
     const shown = scheduled
       ? [...new Set([...scheduled, ...byHour.keys()])]
-      : (() => { const hs = [...byHour.keys()]; const a = Math.min(...hs); const b = Math.max(...hs); return Array.from({ length: b - a + 1 }, (_, i) => a + i); })();
+      : (() => {
+        const hs = [...byHour.keys()];
+        const a = Math.min(6, ...hs);
+        const b = Math.max(21, ...hs);
+        return Array.from({ length: b - a + 1 }, (_, i) => a + i);
+      })();
     const serviceOrder = hr => (hr + 20) % 24; // 04 h first
     shown.sort((a, b) => serviceOrder(a) - serviceOrder(b));
     const cols = [];
@@ -2233,19 +2343,31 @@ class ObservatoriApp {
     // report plus the trains' figures in the same shapes, each row naming
     // its operator (each keeps its own on-time rule).
     const netOps = this.networkOpsInScope();
+    const isAllScope = document.body.dataset.dadesScope === 'all' && netOps.length > 0;
     const byDelay = (a, b) => (Number(b.avgDelay) || 0) - (Number(a.avgDelay) || 0);
-    const railStops = netOps.flatMap(o => o.allStopDelays || []);
-    const busAllStops = (report.allStopDelays && report.allStopDelays.length > 0)
+    const tierByAgency = new Map([['mataro', 'measured']]);
+    netOps.forEach(o => tierByAgency.set(o.agencyId, o.tier || 'measured'));
+    const railStops = netOps.flatMap(o => (o.allStopDelays || []).map(st => ({ ...st, tier: o.tier || 'measured' })));
+    const busAllStops = ((report.allStopDelays && report.allStopDelays.length > 0)
       ? report.allStopDelays
-      : (report.rankingWorstStops || []);
+      : (report.rankingWorstStops || [])).map(st => ({ ...st, agencyId: st.agencyId || 'mataro', tier: 'measured' }));
     const allStopsSource = netOps.length ? [...busAllStops, ...railStops].sort(byDelay) : busAllStops;
-    const busBottlenecks = (report.rankingWorstStops && report.rankingWorstStops.length > 0)
+    const busBottlenecks = ((report.rankingWorstStops && report.rankingWorstStops.length > 0)
       ? report.rankingWorstStops
-      : busAllStops.filter(st => st.isBottleneck);
+      : busAllStops.filter(st => st.isBottleneck)).map(st => ({ ...st, agencyId: st.agencyId || 'mataro', tier: 'measured' }));
     const bottlenecksSource = netOps.length ? [...busBottlenecks, ...railStops.filter(st => st.isBottleneck)].sort(byDelay) : busBottlenecks;
 
+    const minVisitThreshold = this.currentHours >= 168 ? 25 : 10;
+    const passAllScopeFilters = (item, visitField) => {
+      if (!isAllScope) return true;
+      const tier = item.tier || tierByAgency.get(item.agencyId || 'mataro') || 'measured';
+      if (this.rankingTierFilter === 'measured' && tier !== 'measured') return false;
+      if (this.minVisitsOnly && (Number(item[visitField]) || 0) < minVisitThreshold) return false;
+      return true;
+    };
+
     // Calculate full matching stops vs bottleneck matching stops for contextual notice
-    let matchingAllStops = allStopsSource.filter(st => (st.arrivalCount || 0) > 0);
+    let matchingAllStops = allStopsSource.filter(st => (st.arrivalCount || 0) > 0 && passAllScopeFilters(st, 'arrivalCount'));
     if (filterText) {
       matchingAllStops = matchingAllStops.filter(st =>
         (st.stopName && (st.stopName.toLowerCase().includes(filterText) || norm(st.stopName).includes(cleanFilter))) ||
@@ -2260,15 +2382,67 @@ class ObservatoriApp {
 
     const activeStopsSource = isAllStopsMode ? allStopsSource : bottlenecksSource;
 
-    let mostDelayed = [...(report.rankingMostDelayed || []), ...netOps.flatMap(o => (o.rankingMostDelayed || []).map(l => ({ ...l, name: l.name || o.agency })))]
-      .filter(l => (l.sampleCount || 0) > 0 || (l.avgDelay || 0) > 0);
+    let mostDelayed = [
+      ...(report.rankingMostDelayed || []).map(l => ({ ...l, agencyId: l.agencyId || 'mataro', tier: 'measured' })),
+      ...netOps.flatMap(o => (o.rankingMostDelayed || []).map(l => ({ ...l, name: l.name || o.agency, agencyId: l.agencyId || o.agencyId, tier: o.tier || 'measured' })))
+    ].filter(l => ((l.sampleCount || 0) > 0 || (l.avgDelay || 0) > 0) && passAllScopeFilters(l, 'sampleCount'));
     if (netOps.length) mostDelayed.sort(byDelay);
     let worstStops = [...activeStopsSource]
-      .filter(st => (st.arrivalCount || 0) > 0)
+      .filter(st => (st.arrivalCount || 0) > 0 && passAllScopeFilters(st, 'arrivalCount'))
       .map((st, idx) => ({ ...st, overallRank: idx + 1 }));
-    let agencies = [...(report.agencyStats || []).map(a => ({ onTimeMaxMins: 3, tier: 'measured', ...a })),
-      ...netOps.map(o => ({ ...o.agencyStats, onTimeMaxMins: o.onTimeMaxMins, tier: o.tier }))]
+    let agencies = [...(report.agencyStats || []).map(a => ({ onTimeMaxMins: 3, tier: 'measured', agencyId: 'mataro', ...a })),
+      ...netOps.map(o => ({ ...o.agencyStats, agencyId: o.agencyId, onTimeMaxMins: o.onTimeMaxMins, tier: o.tier }))]
       .filter(a => (a.totalSamples || 0) > 0);
+
+    // Aggregate Catalonia-wide KPIs when viewing All scope so top cards match the active scope
+    const kpiSummary = (() => {
+      if (!isAllScope) return null;
+      let totalVisits = 0;
+      let measuredVisits = 0;
+      let measuredOnTimeWeighted = 0;
+      let measuredDelayWeighted = 0;
+      let measuredOpsCount = 0;
+      let totalCancelled = 0;
+      for (const a of agencies) {
+        const v = Number(a.totalVisits || a.totalSamples) || 0;
+        totalVisits += v;
+        if (typeof a.cancelled === 'number') totalCancelled += a.cancelled;
+        if ((a.tier || 'measured') === 'measured' && v > 0) {
+          measuredOpsCount++;
+          measuredVisits += v;
+          if (a.onTimePct !== null && a.onTimePct !== undefined) measuredOnTimeWeighted += Number(a.onTimePct) * v;
+          if (a.avgDelay !== null && a.avgDelay !== undefined) measuredDelayWeighted += Number(a.avgDelay) * v;
+        }
+      }
+      return {
+        totalVisits,
+        activeOps: agencies.length,
+        measuredOpsCount,
+        measuredPunctPct: measuredVisits > 0 ? Math.round((measuredOnTimeWeighted / measuredVisits) * 10) / 10 : null,
+        measuredAvgDelay: measuredVisits > 0 ? Math.round((measuredDelayWeighted / measuredVisits) * 10) / 10 : null,
+        totalCancelled
+      };
+    })();
+
+    // Compact 1-row Catalonia live feed health strip for All-scope Overview
+    const healthStripHtml = (() => {
+      if (!isAllScope) return '';
+      const pills = agencies.map(a => {
+        const id = a.agencyId || 'mataro';
+        const pct = a.onTimePct !== null && a.onTimePct !== undefined ? Number(a.onTimePct) : null;
+        const dotCls = pct === null ? '' : (pct >= 80 ? '' : (pct >= 60 ? ' is-warn' : ' is-bad'));
+        const shortLabel = id === 'mataro' ? 'Mataró Bus' : (netOps.find(o => o.agencyId === id)?.shortName || a.agency);
+        const meta = pct !== null ? `${pct.toLocaleString(loc)}%` : `${(a.totalVisits || a.totalSamples || 0).toLocaleString(loc)}`;
+        return `<button type="button" class="dades-health-pill" data-jump-scope="${this.esc(id)}" title="${this.esc(this.t('dades.opJumpTitle', { op: a.agency }))}"><span class="dades-health-dot${dotCls}" aria-hidden="true"></span><span>${this.esc(shortLabel)}</span><span class="dades-health-pill-meta">${this.esc(meta)}</span></button>`;
+      }).join('');
+      return `<section class="dades-health-strip" aria-label="${this.esc(this.t('dades.healthStripTitle'))}">
+        <div class="dades-health-strip-head">
+          <span class="dades-health-strip-title">${this.esc(this.t('dades.healthStripTitle'))}</span>
+          <span class="dades-health-strip-hint">${this.esc(this.t('dades.healthStripHint'))}</span>
+        </div>
+        <div class="dades-health-pills">${pills}</div>
+      </section>`;
+    })();
 
     // Filter by search text
     if (filterText) {
@@ -2324,6 +2498,7 @@ class ObservatoriApp {
       : '';
 
     let html = `
+      <div class="dades-blk-overview">
       ${report.isMoventis ? `<p class="dades-rail-scope-note">${this.esc(this.t('dades.movScopeNote'))}</p>` : (report.isRail ? `<p class="dades-rail-scope-note">${this.esc(this.t('dades.railScopeNote', { op: report.railOp.shortName || report.railOp.agency }))}</p>` : '')}
       <!-- Pre-generated Cache Banner -->
       ${report.meta?.generatedAt ? `
@@ -2342,31 +2517,40 @@ class ObservatoriApp {
       <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:0.85rem; margin-bottom:1.5rem;">
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:1rem;">
           <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">${this.esc(this.t('dades.kpiVisits'))}</div>
-          <div style="font-size:1.75rem; font-weight:700; color:var(--brand-primary); margin-top:0.25rem;">${(s.totalRecordedArrivals || 0).toLocaleString(loc)}</div>
-          <div style="font-size:0.72rem; color:var(--text-muted);">${this.esc(this.t('dades.kpiMonitoredLines', { n: s.monitoredLinesCount || 0 }))}${s.hoursAnalyzed ? this.esc(this.t('dades.kpiLastHours', { h: s.hoursAnalyzed })) : ''}${s.totalSamples ? this.esc(this.t('dades.kpiIndivSamples', { n: s.totalSamples.toLocaleString(loc) })) : ''}</div>
+          <div style="font-size:1.75rem; font-weight:700; color:var(--brand-primary); margin-top:0.25rem;">${(kpiSummary ? kpiSummary.totalVisits : (s.totalRecordedArrivals || 0)).toLocaleString(loc)}</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">${kpiSummary ? this.esc(this.t('dades.allKpiOps', { n: kpiSummary.activeOps, h: this.currentHours })) : `${this.esc(this.t('dades.kpiMonitoredLines', { n: s.monitoredLinesCount || 0 }))}${s.hoursAnalyzed ? this.esc(this.t('dades.kpiLastHours', { h: s.hoursAnalyzed })) : ''}${s.totalSamples ? this.esc(this.t('dades.kpiIndivSamples', { n: s.totalSamples.toLocaleString(loc) })) : ''}`}</div>
         </div>
 
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:1rem;">
           <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">${this.esc(this.t('dades.kpiPunctuality'))}</div>
-          <div style="font-size:1.75rem; font-weight:700; color:${s.networkPunctualityPct === null || s.networkPunctualityPct === undefined ? 'var(--text-muted)' : (s.networkPunctualityPct >= 85 ? 'var(--accent-live)' : 'var(--accent-warning)')}; margin-top:0.25rem;">${s.networkPunctualityPct === null || s.networkPunctualityPct === undefined ? '—' : `${Number(s.networkPunctualityPct).toLocaleString(loc)}%`}</div>
-          <div style="font-size:0.72rem; color:var(--text-muted);">${s.networkPunctualityPct === null || s.networkPunctualityPct === undefined ? this.esc(this.t('dades.kpiNoVisits')) : this.esc(this.t('dades.kpiPunctBreakdown', { onTime: Number(s.networkPunctualityPct).toLocaleString(loc), early: Number(s.earlyPct || 0).toLocaleString(loc), late: Number(s.latePct || 0).toLocaleString(loc) }))}</div>
+          ${(() => {
+            const pVal = kpiSummary ? kpiSummary.measuredPunctPct : s.networkPunctualityPct;
+            return `<div style="font-size:1.75rem; font-weight:700; color:${pVal === null || pVal === undefined ? 'var(--text-muted)' : (pVal >= 85 ? 'var(--accent-live)' : 'var(--accent-warning)')}; margin-top:0.25rem;">${pVal === null || pVal === undefined ? '—' : `${Number(pVal).toLocaleString(loc)}%`}</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">${kpiSummary ? this.esc(this.t('dades.allKpiMeasuredSub', { n: kpiSummary.measuredOpsCount })) : (s.networkPunctualityPct === null || s.networkPunctualityPct === undefined ? this.esc(this.t('dades.kpiNoVisits')) : this.esc(this.t('dades.kpiPunctBreakdown', { onTime: Number(s.networkPunctualityPct).toLocaleString(loc), early: Number(s.earlyPct || 0).toLocaleString(loc), late: Number(s.latePct || 0).toLocaleString(loc) })))}</div>`;
+          })()}
         </div>
 
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:1rem;">
           <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">${this.esc(this.t('dades.kpiAvgDelay'))}</div>
-          <div style="font-size:1.75rem; font-weight:700; color:var(--accent-scheduled); margin-top:0.25rem;">${s.networkAvgDelay === null || s.networkAvgDelay === undefined ? '—' : `${Number(s.networkAvgDelay) > 0 ? '+' : ''}${s.networkAvgDelay} min`}</div>
-          <div style="font-size:0.72rem; color:var(--text-muted);">${this.esc(this.t('dades.kpiAvgDelaySub'))}</div>
+          ${(() => {
+            const dVal = kpiSummary ? kpiSummary.measuredAvgDelay : s.networkAvgDelay;
+            return `<div style="font-size:1.75rem; font-weight:700; color:var(--accent-scheduled); margin-top:0.25rem;">${dVal === null || dVal === undefined ? '—' : `${Number(dVal) > 0 ? '+' : ''}${dVal} min`}</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">${kpiSummary ? this.esc(this.t('dades.allKpiMeasuredSub', { n: kpiSummary.measuredOpsCount })) : this.esc(this.t('dades.kpiAvgDelaySub'))}</div>`;
+          })()}
         </div>
 
         <div style="background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:12px; padding:1rem;">
-          <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">${this.esc(this.t('dades.kpiMaxDelay'))}</div>
-          <div style="font-size:1.75rem; font-weight:700; color:var(--accent-danger); margin-top:0.25rem;">${s.networkMaxDelay === null || s.networkMaxDelay === undefined ? '—' : `${Number(s.networkMaxDelay) > 0 ? '+' : ''}${s.networkMaxDelay} min`}</div>
-          <div style="font-size:0.72rem; color:var(--text-muted);">${s.networkMaxDelay === null || s.networkMaxDelay === undefined ? this.esc(this.t('dades.kpiMaxDelayEmpty')) : this.esc(this.t('dades.kpiMaxDelaySub'))}</div>
+          <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase;">${this.esc(this.t(kpiSummary ? 'dades.allKpiCancelled' : 'dades.kpiMaxDelay'))}</div>
+          <div style="font-size:1.75rem; font-weight:700; color:var(--accent-danger); margin-top:0.25rem;">${kpiSummary ? kpiSummary.totalCancelled.toLocaleString(loc) : (s.networkMaxDelay === null || s.networkMaxDelay === undefined ? '—' : `${Number(s.networkMaxDelay) > 0 ? '+' : ''}${s.networkMaxDelay} min`)}</div>
+          <div style="font-size:0.72rem; color:var(--text-muted);">${kpiSummary ? this.esc(this.t('dades.allKpiCancelledSub')) : (s.networkMaxDelay === null || s.networkMaxDelay === undefined ? this.esc(this.t('dades.kpiMaxDelayEmpty')) : this.esc(this.t('dades.kpiMaxDelaySub')))}</div>
         </div>
       </div>
 
+      ${healthStripHtml}
+
       <!-- Sampling honesty: extrapolated rows are part of the KPIs above -->
       ${(() => {
+        if (isAllScope) return '';
         const sb = s.samplingBreakdown;
         if (!sb || !sb.totalSamples || !(sb.nonRealtimeSamples > 0)) return '';
         return `
@@ -2382,6 +2566,7 @@ class ObservatoriApp {
 
       <!-- Operator delay vs. Arribo's own passing time, on the operator's trip -->
       ${(() => {
+        if (isAllScope) return '';
         const comp = s.delayMeasurementComparison;
         // A report cached by an older build lacks the operator_trip fields; skip the panel until it is regenerated.
         if (!comp || !comp.hasData || !comp.comparedVisits || comp.method !== 'operator_trip') return '';
@@ -2456,7 +2641,16 @@ class ObservatoriApp {
       ${(() => {
         const hourly = report.hourlyDelays || [];
         const peakHours = report.peakHours || [];
-        if (!report.railOp && hourly.length === 0 && peakHours.length === 0) return '';
+        const hourlyNetOp = isAllScope && this.hourlyOp !== 'mataro'
+          ? netOps.find(o => o.agencyId === this.hourlyOp && (o.hourlyDelays || []).some(h => h.visitCount > 0))
+          : null;
+        if (!report.railOp && !hourlyNetOp && hourly.length === 0 && peakHours.length === 0) return '';
+
+        const hourlySelectHtml = isAllScope ? (() => {
+          const opts = [['mataro', 'Mataró Bus'], ...netOps.filter(o => (o.hourlyDelays || []).some(h => h.visitCount > 0)).map(o => [o.agencyId, o.shortName || o.agency])];
+          const cur = hourlyNetOp ? hourlyNetOp.agencyId : 'mataro';
+          return `<select id="dades-hourly-op-select" class="dades-hourly-select" aria-label="${this.esc(this.t('dades.hourlySelectAria'))}">${opts.map(([id, label]) => `<option value="${this.esc(id)}"${id === cur ? ' selected' : ''}>${this.esc(label)}</option>`).join('')}</select>`;
+        })() : '';
 
         const serviceHours = hourly.filter(h => {
           const n = parseInt(h.hour, 10);
@@ -2466,10 +2660,16 @@ class ObservatoriApp {
 
         return `
         <div class="hourly-delays-section" style="margin-bottom:1.5rem;">
-          ${report.railOp ? this.renderRailHourly(report.railOp, true) : `<div class="hourly-chart-header">
-            <h4 class="hourly-chart-title">
-              <span>${this.esc(this.t('dades.hourlyTitle'))}</span>
-            </h4>
+          ${(report.railOp || hourlyNetOp) ? `
+            ${hourlySelectHtml ? `<div class="dades-hourly-controls">${hourlySelectHtml}</div>` : ''}
+            ${this.renderRailHourly(report.railOp || hourlyNetOp, true)}
+          ` : `<div class="hourly-chart-header">
+            <div class="dades-hourly-controls">
+              <h4 class="hourly-chart-title">
+                <span>${this.esc(this.t('dades.hourlyTitle'))}</span>
+              </h4>
+              ${hourlySelectHtml}
+            </div>
             <div class="hourly-chart-legend">
               <div class="hourly-legend-item">
                 <span class="hourly-legend-dot" style="background:#10b981;"></span>
@@ -2514,7 +2714,7 @@ class ObservatoriApp {
 
           `}
           <!-- Peak Hours Ranking & Critical Bottlenecks -->
-          ${peakHours.length > 0 ? `
+          ${!isAllScope && peakHours.length > 0 ? `
             <div style="font-size:0.85rem; font-weight:700; color:var(--text-secondary); margin-top:0.75rem;">
               ${this.esc(this.t('dades.peakHoursHeading'))}
             </div>
@@ -2567,18 +2767,49 @@ class ObservatoriApp {
         `;
       })()}
 
-      ${netOps.map(o => this.renderRailHourly(o)).join('')}
+      </div>
+      <div class="dades-blk-rankings">
+      ${isAllScope ? `
+      <div class="dades-rankings-bar">
+        <div class="dades-rankings-bar-group">
+          <div class="observatori-mode-toggle-group">
+            <button type="button" class="observatori-pill-btn ${this.rankingTierFilter === 'measured' ? 'active' : ''}" data-ranking-tier="measured">${this.esc(this.t('dades.tierFilterMeasured'))}</button>
+            <button type="button" class="observatori-pill-btn ${this.rankingTierFilter === 'all' ? 'active' : ''}" data-ranking-tier="all">${this.esc(this.t('dades.tierFilterAll'))}</button>
+          </div>
+        </div>
+        <div class="dades-rankings-bar-group">
+          <div class="observatori-mode-toggle-group">
+            <button type="button" class="observatori-pill-btn ${this.minVisitsOnly ? 'active' : ''}" data-toggle-min-visits="1">${this.esc(this.t('dades.minVisitsOn', { n: minVisitThreshold }))}</button>
+            <button type="button" class="observatori-pill-btn ${!this.minVisitsOnly ? 'active' : ''}" data-toggle-min-visits="0">${this.esc(this.t('dades.minVisitsOff'))}</button>
+          </div>
+        </div>
+      </div>
+      ` : ''}
 
       <!-- Ranking: Lines with Most Delays -->
+      ${(() => {
+        const linesLimit = this.linesLimit || 15;
+        const totalLines = mostDelayed.length;
+        const displayedLines = mostDelayed.slice(0, linesLimit);
+        const hasMoreLines = totalLines > linesLimit;
+        return `
       <div class="observatori-table-container" style="margin-bottom:1.5rem;">
         <div class="observatori-table-header-row">
           <h4 class="observatori-table-title">
             <span>${this.esc(this.t('dades.linesTitle'))}</span>
-            <span class="observatori-table-subtitle">${this.esc(this.t('dades.linesSubtitle', { n: mostDelayed.length }))}</span>
+            <span class="observatori-table-subtitle">${this.esc(this.t('dades.showingOf', { shown: displayedLines.length, total: totalLines }))}</span>
           </h4>
-          <span class="observatori-table-subtitle">${this.esc(this.t('dades.clickToSort'))}</span>
+          <div class="observatori-filter-toolbar">
+            ${totalLines > 15 ? `
+            <div class="observatori-filter-group">
+              <button type="button" class="observatori-pill-btn ${linesLimit === 15 ? 'active' : ''}" data-lines-limit="15">Top 15</button>
+              <button type="button" class="observatori-pill-btn ${linesLimit === 30 ? 'active' : ''}" data-lines-limit="30">Top 30</button>
+              <button type="button" class="observatori-pill-btn ${linesLimit >= 9999 ? 'active' : ''}" data-lines-limit="9999">${this.esc(this.t('dades.allCount', { n: totalLines }))}</button>
+            </div>` : ''}
+            <span class="observatori-table-subtitle">${this.esc(this.t('dades.clickToSort'))}</span>
+          </div>
         </div>
-        ${mostDelayed.length === 0 ? `<div style="color:var(--text-muted); font-size:0.85rem; padding:0.8rem; background:var(--bg-elevated); border-radius:8px;">${this.esc(this.t('dades.linesEmpty'))}</div>` : `
+        ${totalLines === 0 ? `<div style="color:var(--text-muted); font-size:0.85rem; padding:0.8rem; background:var(--bg-elevated); border-radius:8px;">${this.esc(this.t('dades.linesEmpty'))}</div>` : `
           <div class="observatori-table-scroll-hint" aria-hidden="true">
             <span class="scroll-hint-icon">↔</span>
             <span>${this.esc(this.t('dades.scrollHint'))}</span>
@@ -2597,7 +2828,7 @@ class ObservatoriApp {
                 </tr>
               </thead>
               <tbody>
-                ${mostDelayed.map((l, i) => {
+                ${displayedLines.map((l, i) => {
                   const avgStr = Number(l.avgDelay) > 0 ? `+${l.avgDelay} min` : (Number(l.avgDelay) < 0 ? `${l.avgDelay} min` : '0.0 min');
                   const maxStr = Number(l.maxDelay) > 0 ? `+${l.maxDelay} min` : `${l.maxDelay || 0} min`;
                   const onTime = Number(l.onTimePercentage || 0);
@@ -2638,8 +2869,14 @@ class ObservatoriApp {
               </tbody>
             </table>
           </div>
+          ${hasMoreLines ? `
+          <div class="dades-table-more-bar">
+            <button type="button" class="btn-primary observatori-action-btn" data-lines-limit="${linesLimit + 25}">${this.esc(this.t('dades.showMore25', { shown: displayedLines.length, total: totalLines }))}</button>
+            <button type="button" class="btn-secondary observatori-action-btn" data-lines-limit="9999">${this.esc(this.t('dades.allCount', { n: totalLines }))}</button>
+          </div>` : ''}
         `}
-      </div>
+      </div>`;
+      })()}
 
       <!-- Ranking: Bottleneck Stops & Stop Heatmap -->
       ${(() => {
@@ -2844,6 +3081,7 @@ class ObservatoriApp {
         </div>
         `;
       })()}
+      </div>
 
       <!-- Ranking: Operators Performance -->
       <div class="observatori-table-container" style="margin-bottom:1.5rem;">
@@ -2876,9 +3114,10 @@ class ObservatoriApp {
                 const onTime = a.onTimePct !== undefined && a.onTimePct !== null ? Number(a.onTimePct) : null;
                 const tier = a.tier || 'measured';
                 const tierChipCls = tier === 'predicted' ? 'chip-estimated' : (tier === 'timetable' ? 'chip-scheduled' : 'chip-live');
+                const scopeTarget = a.agencyId || 'mataro';
                 return `
-                <tr>
-                  <td class="sticky-col" style="font-weight:700; color:var(--text-primary);">${this.esc(a.agency)} <span class="chip chip-plain ${tierChipCls} op-inline-chip" data-tier="${this.esc(tier)}">${this.esc(this.t(`tier.${tier}`))}</span>${netOps.length ? `<span class="dades-op-rule">${this.esc(this.t('dades.opRule', { n: a.onTimeMaxMins }))}</span>` : ''}</td>
+                <tr class="dades-op-row-clickable" data-jump-scope="${this.esc(scopeTarget)}" title="${this.esc(this.t('dades.opJumpTitle', { op: a.agency }))}">
+                  <td class="sticky-col" style="font-weight:700; color:var(--text-primary);">${this.esc(a.agency)} <span class="chip chip-plain ${tierChipCls} op-inline-chip" data-tier="${this.esc(tier)}">${this.esc(this.t(`tier.${tier}`))}</span>${netOps.length ? `<span class="dades-op-rule">${this.esc(this.t('dades.opRule', { n: a.onTimeMaxMins }))}</span>` : ''}<span class="dades-op-jump-arrow" aria-hidden="true">→</span></td>
                   <td class="observatori-col-desktop" style="color:var(--text-muted); text-align:center;">${a.linesCount || 0}</td>
                   <td class="observatori-col-desktop" style="color:var(--text-muted);">${(a.totalVisits || a.totalSamples || 0).toLocaleString(loc)}</td>
                   <td style="font-weight:700; color:${Number(a.avgDelay) > 0 ? 'var(--accent-danger)' : 'var(--accent-live)'}; white-space:nowrap;">${aAvg}</td>
@@ -2936,7 +3175,9 @@ class ObservatoriApp {
 
   renderStopHeatmap(stops) {
     if (!stops.length) return '';
-    if (!stops.every(stop => Array.isArray(stop.hourly))) return `<p>${this.esc(this.t('dades.heatPending'))}</p>`;
+    const withHourly = stops.filter(stop => Array.isArray(stop.hourly));
+    if (!withHourly.length) return '';
+    stops = withHourly;
 
     this._heatmapStops = stops;
     const hasData = h => stops.some(s => (s.hourly?.[h]?.sampleCount || 0) > 0);

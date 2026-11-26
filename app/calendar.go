@@ -166,7 +166,7 @@ func getHolidayCoverage(ms int64) *Obj {
 		warning = "Festius oficials " + strconv.Itoa(c.Year) + " no configurats"
 	} else if !cur.localKnown {
 		warning = "Festius locals de Mataró " + strconv.Itoa(c.Year) + " no configurats"
-	} else if c.Month >= 11 && !holidayYearStatus(c.Year+1).known {
+	} else if c.Month >= 12 && !holidayYearStatus(c.Year+1).known {
 		warning = "Festius " + strconv.Itoa(c.Year+1) + " pendents de configurar"
 	}
 	return O("year", c.Year, "regionalKnown", cur.regionalKnown, "localKnown", cur.localKnown, "known", cur.known, "warning", warning)

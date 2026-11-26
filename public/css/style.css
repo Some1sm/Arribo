@@ -8327,6 +8327,7 @@ body {
 .hourly-bar-col {
   flex: 1 1 0;
   min-width: 28px;
+  max-width: 48px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -10562,6 +10563,8 @@ body.observatori-page-body {
   padding: 1.5rem 1.25rem 3.5rem 1.25rem;
   box-sizing: border-box;
   flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 .observatori-page-hero {
@@ -12576,8 +12579,225 @@ body[data-dades-scope="bus"] #operators-section { display: none !important; }
 .op-source summary { cursor: pointer; font-size: 0.75rem; color: var(--brand); }
 .op-source summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: var(--radius-xs); }
 .op-source p { margin: var(--space-2) 0 0; font-size: 0.75rem; color: var(--text-secondary); }
-.op-feed { margin: 0; font-size: 0.72rem; color: var(--text-muted); }
+.op-feed { margin: 0; font-size: 0.72rem; color: var(--text-muted); display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.op-dropped-chip { font-size: 0.7rem; color: var(--text-muted); background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-full); padding: 0.1rem 0.5rem; white-space: nowrap; }
+.op-card-footer { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; margin-top: auto; padding-top: var(--space-2); border-top: 1px solid var(--border-subtle); }
+.op-card-inspect { display: none; white-space: nowrap; }
 .op-empty { margin: 0; font-size: 0.8rem; color: var(--text-muted); }
+
+/* /dades Rework: Sticky control bar, View tabs, All-scope Overview ordering & Scorecard compaction */
+.observatori-page-hero { order: 1; }
+#dades-scope-wrap { order: 2; }
+#mataro-bus-tier-header { order: 3; }
+.observatori-toolbar {
+  order: 4;
+  position: sticky;
+  top: 56px;
+  z-index: 40;
+  background: var(--bg-main);
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.observatori-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+#journalism-search-bar-wrap { order: 5; }
+#journalism-line-filter { order: 6; }
+#observatori-methodology-details { order: 7; }
+#data-health-container { order: 8; }
+#journalism-termometre-container,
+#journalism-incidents-container,
+#journalism-monthly-container { order: 9; }
+#journalism-content-container { order: 10; }
+#journalism-operators-container { order: 11; }
+#operators-section { order: 12; }
+#gps-gaps-section { order: 13; }
+
+/* In All Catalonia scope: hide Mataró-only banner & Mataró-only telemetry card in Overview,
+   and keep Operator Scorecards compact (equal-height, zero blank grid voids) */
+body[data-dades-scope="all"] #mataro-bus-tier-header { display: none; }
+body[data-dades-scope="all"][data-dades-view="overview"] #data-health-container { display: none; }
+body[data-dades-scope="all"] #operators-section .op-grid { align-items: start; }
+body[data-dades-scope="all"] #operators-section .op-table-wrap,
+body[data-dades-scope="all"] #operators-section .op-stations,
+body[data-dades-scope="all"] #operators-section .op-line-detail { display: none; }
+body[data-dades-scope="all"] #operators-section .op-card-inspect { display: inline-flex; }
+body[data-dades-scope="rail"] #operators-section .op-grid { grid-template-columns: 1fr; }
+
+/* View-tab visibility rules */
+body[data-dades-view="overview"] .dades-blk-rankings,
+body[data-dades-view="overview"] #journalism-search-bar-wrap,
+body[data-dades-view="overview"] #journalism-line-filter,
+body[data-dades-view="overview"] #gps-gaps-section,
+body[data-dades-view="overview"] #observatori-methodology-details { display: none !important; }
+
+body[data-dades-view="rankings"] .dades-blk-overview,
+body[data-dades-view="rankings"] #data-health-container,
+body[data-dades-view="rankings"] #operators-section,
+body[data-dades-view="rankings"] #gps-gaps-section,
+body[data-dades-view="rankings"] #journalism-operators-container,
+body[data-dades-view="rankings"] #observatori-methodology-details { display: none !important; }
+
+body[data-dades-view="signal"] #journalism-content-container,
+body[data-dades-view="signal"] #operators-section,
+body[data-dades-view="signal"] #journalism-operators-container,
+body[data-dades-view="signal"] #journalism-search-bar-wrap,
+body[data-dades-view="signal"] #journalism-line-filter { display: none !important; }
+
+body[data-dades-view="termometre"] #data-health-container,
+body[data-dades-view="termometre"] #operators-section,
+body[data-dades-view="termometre"] #gps-gaps-section,
+body[data-dades-view="termometre"] #journalism-operators-container,
+body[data-dades-view="termometre"] #journalism-search-bar-wrap,
+body[data-dades-view="termometre"] #journalism-line-filter,
+body[data-dades-view="termometre"] #observatori-methodology-details,
+body[data-dades-view="incidents"] #data-health-container,
+body[data-dades-view="incidents"] #operators-section,
+body[data-dades-view="incidents"] #gps-gaps-section,
+body[data-dades-view="incidents"] #journalism-operators-container,
+body[data-dades-view="incidents"] #journalism-search-bar-wrap,
+body[data-dades-view="incidents"] #journalism-line-filter,
+body[data-dades-view="incidents"] #observatori-methodology-details,
+body[data-dades-view="monthly"] #data-health-container,
+body[data-dades-view="monthly"] #operators-section,
+body[data-dades-view="monthly"] #gps-gaps-section,
+body[data-dades-view="monthly"] #journalism-operators-container,
+body[data-dades-view="monthly"] #journalism-search-bar-wrap,
+body[data-dades-view="monthly"] #journalism-line-filter,
+body[data-dades-view="monthly"] #observatori-methodology-details { display: none !important; }
+
+/* Compact 1-row Catalonia Live Feed Health Strip */
+.dades-health-strip {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+.dades-health-strip-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.dades-health-strip-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+.dades-health-strip-hint {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+.dades-health-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.dades-health-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.28rem 0.65rem;
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+.dades-health-pill:hover {
+  border-color: var(--brand);
+  background: var(--brand-tint);
+}
+.dades-health-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--accent-live);
+  flex-shrink: 0;
+}
+.dades-health-dot.is-warn { background: var(--accent-warning); }
+.dades-health-dot.is-bad { background: var(--accent-danger); }
+.dades-health-pill-meta {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Unified Hourly Chart operator picker */
+.dades-hourly-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.dades-hourly-select {
+  padding: 0.3rem 0.65rem;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-surface-elevated);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Rankings filter bar & pagination footer */
+.dades-rankings-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+  padding: 0.65rem 0.85rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+.dades-rankings-bar-group {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+.dades-table-more-bar {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem;
+  background: var(--bg-elevated);
+  border-top: 1px solid var(--border-subtle);
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+}
+
+/* Clickable Comparison by Operator rows */
+.dades-op-row-clickable {
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.dades-op-row-clickable:hover td {
+  background: var(--bg-surface-hover);
+}
+.dades-op-jump-arrow {
+  color: var(--brand);
+  font-weight: 700;
+  margin-left: 0.35rem;
+}
 
 /* =====================================================================
    DESIGN SYSTEM v1 — COMPONENT LAYER

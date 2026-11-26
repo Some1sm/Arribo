@@ -99,8 +99,10 @@ func (s *liveDelaysStore) initPath(p string) {
 			bkt = &liveDelayBucket{lastSeen: map[string]int64{}}
 			s.byAgency[agency] = bkt
 		}
+		maxMins := float64(liveDelayMaxSecFor(agency)) / 60.0
+		minMins := float64(railMinDelaySec) / 60.0
 		for _, sm := range list {
-			if sm.TsMs >= cutoff && sm.Line != "" {
+			if sm.TsMs >= cutoff && sm.Line != "" && sm.DelayMins >= minMins && sm.DelayMins <= maxMins {
 				bkt.samples = append(bkt.samples, sm)
 			}
 		}
@@ -177,9 +179,19 @@ func isLiveDelayOperator(agencyID string) (operatorInfo, bool) {
 	return operatorInfo{}, false
 }
 
+// liveDelayMaxSecFor caps implausible delays per operator class. Urban/metro
+// bus & tram feeds (AMB, TRAM, Girona, Lleida, Reus) occasionally emit stuck
+// trips or 1-hour clock/service-day offsets (+60..+75 min); capping urban
+// predicted feeds at 45 min prevents feed glitches from hijacking rankings.
+func liveDelayMaxSecFor(agencyID string) int {
+	if agencyID == sagalesAgencyID {
+		return 90 * 60
+	}
+	return 45 * 60
+}
+
 // record adds one live delay observation for agencyID, deduplicating by
-// tripKey within liveDelayDedupGapMs and discarding implausible values
-// (< -10 min or > 180 min).
+// tripKey within liveDelayDedupGapMs and discarding implausible values.
 func (s *liveDelaysStore) record(agencyID, lineCode, stopName, tripKey string, delaySec int32, now time.Time) {
 	if s == nil || agencyID == "" || lineCode == "" {
 		return
@@ -191,7 +203,7 @@ func (s *liveDelaysStore) record(agencyID, lineCode, stopName, tripKey string, d
 		b = &liveDelayBucket{lastSeen: map[string]int64{}}
 		s.byAgency[agencyID] = b
 	}
-	if int(delaySec) < railMinDelaySec || int(delaySec) > railMaxDelaySec {
+	if int(delaySec) < railMinDelaySec || int(delaySec) > liveDelayMaxSecFor(agencyID) {
 		b.dropped++
 		s.mu.Unlock()
 		return

@@ -16,7 +16,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-  <link rel="stylesheet" href="/css/style.css?v=9.4.156">
+  <link rel="stylesheet" href="/css/style.css?v=9.4.157">
 </head>
 <body class="observatori-page-body observatori-page">
 
@@ -107,45 +107,47 @@
       <p class="op-method" data-method="gps" data-i18n="tier.method.gps">Posicions GPS dels busos comparades amb l'horari oficial</p>
     </header>
 
-    <!-- Timeframe Selector & CSV Download Toolbar -->
+    <!-- View Switcher, Timeframe Selector & CSV Download Toolbar -->
     <div class="observatori-toolbar">
-      <div class="pill-group line-picker-filter-tabs" id="journalism-timeframe-tabs" role="tablist" aria-label="Selecció de període d'anàlisi" data-i18n-aria-label="dades.tabsAria">
-        <button type="button" class="pill line-filter-tab active is-active" data-hours="24" role="tab" aria-selected="true" title="Dades de les darreres 24 hores" data-i18n-title="dades.tab24hTitle">
+      <div class="pill-group dades-view-tabs" id="dades-view-tabs" role="tablist" aria-label="Vista de l'observatori" data-i18n-aria-label="dades.viewTabsAria">
+        <button type="button" class="pill line-filter-tab active is-active" data-view="overview" role="tab" aria-selected="true" title="Resum general i comparativa d'operadors" data-i18n-title="dades.viewOverviewTitle">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="10"></circle>
-            <polyline points="12 6 12 12 16 14"></polyline>
+            <rect x="3" y="3" width="7" height="7"></rect>
+            <rect x="14" y="3" width="7" height="7"></rect>
+            <rect x="14" y="14" width="7" height="7"></rect>
+            <rect x="3" y="14" width="7" height="7"></rect>
           </svg>
-          <span class="tab-text-full" data-i18n="dades.tab24h">24 hores</span>
-          <span class="tab-text-compact" data-i18n="dades.tab24hCompact">24h</span>
+          <span class="tab-text-full" data-i18n="dades.viewOverview">Resum</span>
+          <span class="tab-text-compact" data-i18n="dades.viewOverview">Resum</span>
         </button>
-        <button type="button" class="pill line-filter-tab" data-hours="48" role="tab" aria-selected="false" title="Dades de les darreres 48 hores" data-i18n-title="dades.tab48hTitle">
+        <button type="button" class="pill line-filter-tab" data-view="rankings" role="tab" aria-selected="false" title="Rànquing de línies i parades més afectades" data-i18n-title="dades.viewRankingsTitle">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M8 2v4"></path>
-            <path d="M16 2v4"></path>
-            <rect x="3" y="4" width="18" height="18" rx="2"></rect>
-            <path d="M3 10h18"></path>
+            <line x1="8" y1="6" x2="21" y2="6"></line>
+            <line x1="8" y1="12" x2="21" y2="12"></line>
+            <line x1="8" y1="18" x2="21" y2="18"></line>
+            <line x1="3" y1="6" x2="3.01" y2="6"></line>
+            <line x1="3" y1="12" x2="3.01" y2="12"></line>
+            <line x1="3" y1="18" x2="3.01" y2="18"></line>
           </svg>
-          <span class="tab-text-full" data-i18n="dades.tab48h">48 hores</span>
-          <span class="tab-text-compact" data-i18n="dades.tab48hCompact">48h</span>
+          <span class="tab-text-full" data-i18n="dades.viewRankings">Línies i Parades</span>
+          <span class="tab-text-compact" data-i18n="dades.viewRankingsCompact">Línies</span>
         </button>
-        <button type="button" class="pill line-filter-tab" data-hours="168" role="tab" aria-selected="false" title="Dades dels darrers 7 dies" data-i18n-title="dades.tab7dTitle">
+        <button type="button" class="pill line-filter-tab" data-view="signal" role="tab" aria-selected="false" title="Estat dels canals i mapa de pèrdues de GPS" data-i18n-title="dades.viewSignalTitle">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <line x1="18" y1="20" x2="18" y2="10"></line>
-            <line x1="12" y1="20" x2="12" y2="4"></line>
-            <line x1="6" y1="20" x2="6" y2="14"></line>
+            <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
           </svg>
-          <span class="tab-text-full" data-i18n="dades.tab7d">7 dies</span>
-          <span class="tab-text-compact" data-i18n="dades.tab7dCompact">7d</span>
+          <span class="tab-text-full" data-i18n="dades.viewSignal">GPS i Salut</span>
+          <span class="tab-text-compact" data-i18n="dades.viewSignalCompact">GPS</span>
         </button>
-        <span class="tab-divider dades-bus-tool" aria-hidden="true"></span>
-        <button type="button" class="pill line-filter-tab termometre-tab dades-bus-tool" id="btn-observatori-termometre" data-tab="termometre" role="tab" aria-selected="false" title="Fitxa resumida i infografia del Termòmetre" data-i18n-title="dades.tabTermometreTitle">
+        <span class="tab-divider dades-bus-scope-only" aria-hidden="true"></span>
+        <button type="button" class="pill line-filter-tab termometre-tab dades-bus-tool dades-bus-scope-only" id="btn-observatori-termometre" data-tab="termometre" role="tab" aria-selected="false" title="Fitxa resumida i infografia del Termòmetre" data-i18n-title="dades.tabTermometreTitle">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"></path>
           </svg>
           <span class="tab-text-full" data-i18n="dades.tabTermometre">El Termòmetre</span>
           <span class="tab-text-compact" data-i18n="dades.tabTermometreCompact">Termòmetre</span>
         </button>
-        <button type="button" class="pill line-filter-tab incidents-tab dades-bus-tool" id="btn-observatori-incidents" data-tab="incidents" role="tab" aria-selected="false" title="Investigador d'incidents de trànsit (0–24m) i auditoria de telemetria" data-i18n-title="dades.tabIncidentsTitle">
+        <button type="button" class="pill line-filter-tab incidents-tab dades-bus-tool dades-bus-scope-only" id="btn-observatori-incidents" data-tab="incidents" role="tab" aria-selected="false" title="Investigador d'incidents de trànsit (0–24m) i auditoria de telemetria" data-i18n-title="dades.tabIncidentsTitle">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path>
             <line x1="12" y1="9" x2="12" y2="13"></line>
@@ -155,7 +157,7 @@
           <span class="tab-text-compact" data-i18n="dades.tabIncidentsCompact">Incidents</span>
           <span class="tab-badge-alert">&ge;5m</span>
         </button>
-        <button type="button" class="pill line-filter-tab monthly-tab dades-bus-tool" id="btn-observatori-monthly" data-tab="monthly" role="tab" aria-selected="false" title="Informe mensual oficial de puntualitat per a l'Ajuntament de Mataró" data-i18n-title="dades.tabMonthlyTitle">
+        <button type="button" class="pill line-filter-tab monthly-tab dades-bus-tool dades-bus-scope-only" id="btn-observatori-monthly" data-tab="monthly" role="tab" aria-selected="false" title="Informe mensual oficial de puntualitat per a l'Ajuntament de Mataró" data-i18n-title="dades.tabMonthlyTitle">
           <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
             <polyline points="14 2 14 8 20 8"></polyline>
@@ -168,23 +170,40 @@
         </button>
       </div>
 
-      <div class="observatori-csv-actions dades-bus-tool">
-        <a href="/api/analytics/export/visits.csv" class="btn btn-secondary btn-csv-export" download title="Descarregar fitxer CSV de passos per parada consolidats" data-i18n-title="dades.csvVisitsTitle">
-          <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="7 10 12 15 17 10"></polyline>
-            <line x1="12" y1="15" x2="12" y2="3"></line>
-          </svg>
-          <span data-i18n="dades.csvVisits">CSV Passos</span>
-        </a>
-        <a href="/api/analytics/export/csv" class="btn btn-secondary btn-csv-export" download title="Descarregar fitxer CSV complet de mostres per a anàlisi detallada" data-i18n-title="dades.csvSamplesTitle">
-          <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="7 10 12 15 17 10"></polyline>
-            <line x1="12" y1="15" x2="12" y2="3"></line>
-          </svg>
-          <span data-i18n="dades.csvSamples">CSV Mostres</span>
-        </a>
+      <div class="observatori-toolbar-right">
+        <div class="pill-group line-picker-filter-tabs" id="journalism-timeframe-tabs" role="group" aria-label="Selecció de període d'anàlisi" data-i18n-aria-label="dades.tabsAria">
+          <button type="button" class="pill line-filter-tab active is-active" data-hours="24" aria-pressed="true" title="Dades de les darreres 24 hores" data-i18n-title="dades.tab24hTitle">
+            <span class="tab-text-full" data-i18n="dades.tab24h">24 hores</span>
+            <span class="tab-text-compact" data-i18n="dades.tab24hCompact">24h</span>
+          </button>
+          <button type="button" class="pill line-filter-tab" data-hours="48" aria-pressed="false" title="Dades de les darreres 48 hores" data-i18n-title="dades.tab48hTitle">
+            <span class="tab-text-full" data-i18n="dades.tab48h">48 hores</span>
+            <span class="tab-text-compact" data-i18n="dades.tab48hCompact">48h</span>
+          </button>
+          <button type="button" class="pill line-filter-tab" data-hours="168" aria-pressed="false" title="Dades dels darrers 7 dies" data-i18n-title="dades.tab7dTitle">
+            <span class="tab-text-full" data-i18n="dades.tab7d">7 dies</span>
+            <span class="tab-text-compact" data-i18n="dades.tab7dCompact">7d</span>
+          </button>
+        </div>
+
+        <div class="observatori-csv-actions dades-bus-tool dades-bus-scope-only">
+          <a href="/api/analytics/export/visits.csv" class="btn btn-secondary btn-csv-export" download title="Descarregar fitxer CSV de passos per parada consolidats" data-i18n-title="dades.csvVisitsTitle">
+            <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span data-i18n="dades.csvVisits">CSV Passos</span>
+          </a>
+          <a href="/api/analytics/export/csv" class="btn btn-secondary btn-csv-export" download title="Descarregar fitxer CSV complet de mostres per a anàlisi detallada" data-i18n-title="dades.csvSamplesTitle">
+            <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span data-i18n="dades.csvSamples">CSV Mostres</span>
+          </a>
+        </div>
       </div>
     </div>
 
@@ -274,13 +293,12 @@
       </div>
     </div>
 
-    <!-- Trains (Rodalies, FGC): per-operator punctuality from their real-time feeds.
-         Hidden until train data is collected (public/js/operators.js). -->
+    <!-- Real-time operators: per-operator punctuality scorecards & drill-down (public/js/operators.js). -->
     <section class="card" id="operators-section" aria-labelledby="operators-title" hidden>
       <div class="card-header">
         <div>
-          <h3 id="operators-title" class="card-title" data-i18n="ops.sectionTitle">Trens: Rodalies i FGC</h3>
-          <p class="card-subtitle" data-i18n="ops.sectionSubtitle">Puntualitat de cada operador a partir dels seus canals en temps real. Un tren és puntual si arriba amb 5 minuts de retard o menys.</p>
+          <h3 id="operators-title" class="card-title" data-i18n="ops.sectionTitle">Operadors en temps real</h3>
+          <p class="card-subtitle" data-i18n="ops.sectionSubtitle">Puntualitat de cada operador a partir dels seus canals en temps real (≤ 5 min en tren, ≤ 3 min en bus i tramvia).</p>
         </div>
         <div class="op-section-tools">
           <div class="pill-group op-own-period" role="group" aria-label="Període" data-i18n-aria-label="ops.periodAria" hidden>
@@ -381,12 +399,12 @@
   </footer>
 
   <!-- Scripts -->
-  <script src="/js/utils.js?v=9.4.156"></script>
-  <script src="/js/i18n.js?v=9.4.156"></script>
-  <script src="/js/storage.js?v=9.4.156"></script>
-  <script src="/js/pwa.js?v=9.4.156"></script>
+  <script src="/js/utils.js?v=9.4.157"></script>
+  <script src="/js/i18n.js?v=9.4.157"></script>
+  <script src="/js/storage.js?v=9.4.157"></script>
+  <script src="/js/pwa.js?v=9.4.157"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="/js/observatori.js?v=9.4.156"></script>
-  <script src="/js/operators.js?v=9.4.156"></script>
+  <script src="/js/observatori.js?v=9.4.157"></script>
+  <script src="/js/operators.js?v=9.4.157"></script>
 </body>
 </html>
