@@ -4915,6 +4915,7 @@ class TransitApp {
     }
 
     modal.classList.add('active');
+    this.loadModalHubConnections(currStop, stopId);
 
     if (setTargetBtn) {
       setTargetBtn.onclick = () => {
@@ -6091,6 +6092,68 @@ const linePrefix = d.lineId ? t('dep.linePrefix', { id: d.lineId }) : '';
 
   closeStopModal() {
     document.getElementById('stop-modal-backdrop')?.classList.remove('active');
+  }
+
+  async loadModalHubConnections(currStop, stopId) {
+    const box = document.getElementById('modal-hub-connections');
+    if (!box) return;
+    box.hidden = true;
+    box.innerHTML = '';
+    const lat = Number(currStop?.lat ?? currStop?.latitude);
+    const lon = Number(currStop?.lon ?? currStop?.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || (lat === 0 && lon === 0)) return;
+    const reqSeq = (this._hubConnSeq = (this._hubConnSeq || 0) + 1);
+    const exclude = this.activeLineId ? `&excludeLineId=${encodeURIComponent(this.activeLineId)}` : '';
+    try {
+      const res = await fetch(`/api/hub/connections?lat=${lat.toFixed(6)}&lon=${lon.toFixed(6)}&radius=180${exclude}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (this._hubConnSeq !== reqSeq) return;
+      const conns = Array.isArray(data?.connections) ? data.connections : [];
+      if (conns.length === 0) return;
+
+      const t = (k, v) => (window.ArriboI18n ? window.ArriboI18n.t(k, v) : k);
+      const heading = document.createElement('div');
+      heading.className = 'modal-hub-heading';
+      heading.textContent = `⇄ ${t('modal.hubConnections')} (${conns.length})`;
+      const pills = document.createElement('div');
+      pills.className = 'modal-hub-pills';
+
+      for (const c of conns.slice(0, 12)) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'modal-hub-pill';
+        const distTxt = Number.isFinite(Number(c.distanceMeters)) ? ` · ${Math.round(Number(c.distanceMeters))} m` : '';
+        btn.title = `${c.agency || ''} — ${c.stopName || ''}${distTxt}`;
+
+        const badge = document.createElement('span');
+        badge.className = 'modal-hub-pill-code';
+        badge.textContent = c.code || c.lineId;
+        const bg = c.color || '#0ea5e9';
+        badge.style.background = bg;
+        badge.style.color = window.TransitUtils?.contrastInk?.(bg, c.textColor) || '#ffffff';
+
+        const meta = document.createElement('span');
+        meta.className = 'modal-hub-pill-meta';
+        meta.textContent = c.agency || '';
+
+        btn.appendChild(badge);
+        btn.appendChild(meta);
+        btn.addEventListener('click', () => {
+          this.closeStopModal();
+          if (c.lineId) {
+            this.switchLine(c.lineId, c.stopId || null);
+          }
+        });
+        pills.appendChild(btn);
+      }
+
+      box.appendChild(heading);
+      box.appendChild(pills);
+      box.hidden = false;
+    } catch {
+      // Non-critical enhancement; ignore network errors.
+    }
   }
 
   setupDisruptionsModal() {

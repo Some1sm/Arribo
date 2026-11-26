@@ -3306,6 +3306,65 @@ body {
   pointer-events: auto;
 }
 
+.modal-hub-connections {
+  margin-top: 0.75rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.modal-hub-connections[hidden] {
+  display: none;
+}
+
+.modal-hub-heading {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.45rem;
+}
+
+.modal-hub-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.modal-hub-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.12s ease, border-color 0.15s ease;
+}
+
+.modal-hub-pill:hover {
+  transform: translateY(-1px);
+  border-color: var(--border-strong);
+}
+
+.modal-hub-pill-code {
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.modal-hub-pill-meta {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
 .line-picker-modal,
 .stop-modal,
 .modal-card {

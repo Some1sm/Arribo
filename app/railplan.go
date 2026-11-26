@@ -215,30 +215,42 @@ func (t *rtTimetable) railLegsQuery(ctx context.Context, agency string, stops []
 		return nil, err
 	}
 	marks := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
-	var out []railLeg
-	start := time.Unix(from, 0).In(madrid)
-	endT := time.Unix(to, 0).In(madrid)
-	days := []int{1, 0}
-	if endT.Year() != start.Year() || endT.Month() != start.Month() || endT.Day() != start.Day() {
-		days = append(days, -1)
-	}
-	for _, back := range days {
-		day := time.Date(start.Year(), start.Month(), start.Day()-back, 12, 0, 0, 0, madrid)
-		date := day.Format("20060102")
-		ref, err := gtfsServiceDayRef(date)
-		if err != nil {
-			return nil, err
+	runPass := func(ignoreDateBounds bool) ([]railLeg, error) {
+		var out []railLeg
+		start := time.Unix(from, 0).In(madrid)
+		endT := time.Unix(to, 0).In(madrid)
+		days := []int{1, 0}
+		if endT.Year() != start.Year() || endT.Month() != start.Month() || endT.Day() != start.Day() {
+			days = append(days, -1)
 		}
-		lo, hi := from-ref.Unix(), to-ref.Unix()
-		col := gtfsWeekdayColumn[day.Weekday()]
-		anchor, other, timeCol, cmp := "a", "b", "COALESCE(a.departure_sec, a.arrival_sec)", "b.stop_sequence > a.stop_sequence"
-		if !leaving {
-			anchor, other, timeCol, cmp = "b", "a", "COALESCE(b.arrival_sec, b.departure_sec)", "a.stop_sequence < b.stop_sequence"
-		}
-		q := `WITH active(service_id) AS (
-		    SELECT service_id FROM calendar WHERE start_date <= ? AND end_date >= ? AND ` + col + ` = 1
+		for _, back := range days {
+			day := time.Date(start.Year(), start.Month(), start.Day()-back, 12, 0, 0, 0, madrid)
+			date := day.Format("20060102")
+			ref, err := gtfsServiceDayRef(date)
+			if err != nil {
+				return nil, err
+			}
+			lo, hi := from-ref.Unix(), to-ref.Unix()
+			col := gtfsWeekdayColumn[day.Weekday()]
+			anchor, other, timeCol, cmp := "a", "b", "COALESCE(a.departure_sec, a.arrival_sec)", "b.stop_sequence > a.stop_sequence"
+			if !leaving {
+				anchor, other, timeCol, cmp = "b", "a", "COALESCE(b.arrival_sec, b.departure_sec)", "a.stop_sequence < b.stop_sequence"
+			}
+			activeCTE := `SELECT service_id FROM calendar WHERE start_date <= ? AND end_date >= ? AND ` + col + ` = 1
 		    UNION SELECT service_id FROM calendar_dates WHERE date = ? AND exception_type = 1
-		    EXCEPT SELECT service_id FROM calendar_dates WHERE date = ? AND exception_type = 2
+		    EXCEPT SELECT service_id FROM calendar_dates WHERE date = ? AND exception_type = 2`
+			var args []any
+			if ignoreDateBounds {
+				activeCTE = `SELECT service_id FROM calendar WHERE ` + col + ` = 1`
+			} else {
+				args = append(args, date, date, date, date)
+			}
+			for _, id := range ids {
+				args = append(args, id)
+			}
+			args = append(args, lo, hi)
+			q := `WITH active(service_id) AS (
+		    ` + activeCTE + `
 		  )
 		  SELECT ` + anchor + `.trip_id, COALESCE(NULLIF(r.short_name, ''), r.route_id), COALESCE(tr.headsign, ''), COALESCE(tr.direction_id, -1),
 		      a.stop_id, COALESCE(sa.name, a.stop_id), COALESCE(NULLIF(sa.parent_station, ''), a.stop_id), COALESCE(sa.lat, 0), COALESCE(sa.lon, 0),
@@ -257,36 +269,42 @@ func (t *rtTimetable) railLegsQuery(ctx context.Context, agency string, stops []
 		     AND ` + timeCol + ` BETWEEN ? AND ?
 		   ORDER BY ` + timeCol + ` ASC
 		   LIMIT 20000`
-		args := []any{date, date, date, date}
-		for _, id := range ids {
-			args = append(args, id)
-		}
-		args = append(args, lo, hi)
-		rows, err := t.db.QueryContext(ctx, q, args...)
-		if err != nil {
-			return nil, err
-		}
-		for rows.Next() {
-			var l railLeg
-			var bsec, asec sql.NullInt64
-			if err := rows.Scan(&l.Trip, &l.Line, &l.Headsign, &l.Dir,
-				&l.BoardStop, &l.BoardName, &l.BoardKey, &l.BoardLat, &l.BoardLon, &bsec,
-				&l.AlightStop, &l.AlightName, &l.AlightKey, &l.AlightLat, &l.AlightLon, &asec, &l.Stops); err != nil {
-				rows.Close()
+			rows, err := t.db.QueryContext(ctx, q, args...)
+			if err != nil {
 				return nil, err
 			}
-			if !bsec.Valid || !asec.Valid {
-				continue
+			for rows.Next() {
+				var l railLeg
+				var bsec, asec sql.NullInt64
+				if err := rows.Scan(&l.Trip, &l.Line, &l.Headsign, &l.Dir,
+					&l.BoardStop, &l.BoardName, &l.BoardKey, &l.BoardLat, &l.BoardLon, &bsec,
+					&l.AlightStop, &l.AlightName, &l.AlightKey, &l.AlightLat, &l.AlightLon, &asec, &l.Stops); err != nil {
+					rows.Close()
+					return nil, err
+				}
+				if !bsec.Valid || !asec.Valid {
+					continue
+				}
+				l.Agency = agency
+				l.BoardKey, l.AlightKey = agency+":"+l.BoardKey, agency+":"+l.AlightKey
+				l.Board, l.Alight = ref.Unix()+bsec.Int64, ref.Unix()+asec.Int64
+				out = append(out, l)
 			}
-			l.Agency = agency
-			l.BoardKey, l.AlightKey = agency+":"+l.BoardKey, agency+":"+l.AlightKey
-			l.Board, l.Alight = ref.Unix()+bsec.Int64, ref.Unix()+asec.Int64
-			out = append(out, l)
+			err = rows.Err()
+			rows.Close()
+			if err != nil {
+				return nil, err
+			}
 		}
-		err = rows.Err()
-		rows.Close()
-		if err != nil {
-			return nil, err
+		return out, nil
+	}
+	out, err := runPass(false)
+	if err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		if fb, ferr := runPass(true); ferr == nil && len(fb) > 0 {
+			out = fb
 		}
 	}
 	return out, nil
@@ -317,60 +335,140 @@ func (t *rtTimetable) stationPlatforms(ctx context.Context, stops []string) ([]s
 	return out, nil
 }
 
-// railEndsFor resolves one end of the journey to stations: a named station
-// (from the station search) when there is no point, else the nearest
-// stations of each operator within railEndpointNearM of the point.
+// railPlanOperators returns all GTFS-SQLite-backed Catalonia operators that
+// can participate in multimodal journey planning (Rodalies, FGC, TMB Metro/Bus,
+// TRAM, AMB, Girona, Lleida, Reus, Tarragona, Sabadell, Terrassa, Rubíbus,
+// ATM urban networks, Moventis NAP, and Generalitat interurban buses).
+func railPlanOperators() []operatorInfo {
+	all := lineOperators()
+	out := make([]operatorInfo, 0, len(all))
+	for _, info := range all {
+		if info.ID == movAgencyID || info.ID == sagalesAgencyID {
+			continue // no local GTFS SQLite timetable for these two
+		}
+		out = append(out, info)
+	}
+	return out
+}
+
+// railEndsFor resolves one end of the journey to stations/stops: confident
+// named matches across operators when there is no point (so hubs like
+// "Plaça Catalunya" match Rodalies + FGC + TMB Metro together), else the
+// nearest stops per operator within railEndpointNearM via the O(1) spatial grid.
 func railEndsFor(name string, lat, lon float64, hasPoint bool, maxWalk float64) map[string]railEnd {
 	ends := map[string]railEnd{}
 	if !hasPoint {
-		hits := searchRailStations(name, 1)
+		hits := searchOperatorStops(railPlanOperators(), name, 8)
 		if len(hits) == 0 {
 			return ends
 		}
-		h := hits[0].(*Obj)
-		// Only a confident match: the station's name, not a fragment of it.
-		if fn, fq := foldStationName(h.Str("stopName")), foldStationName(name); fn != fq && !strings.HasPrefix(fn, fq) && !strings.HasSuffix(fn, fq) {
-			return ends
+		fq := foldStationName(name)
+		seenAg := map[string]bool{}
+		for _, raw := range hits {
+			h, _ := raw.(*Obj)
+			if h == nil {
+				continue
+			}
+			fn := foldStationName(h.Str("stopName"))
+			if fn != fq && !strings.HasPrefix(fn, fq) && !strings.HasSuffix(fn, fq) {
+				continue
+			}
+			ag, id := h.Str("agencyId"), h.Str("stopId")
+			if seenAg[ag] {
+				continue
+			}
+			seenAg[ag] = true
+			ends[ag+"\x00"+id] = railEnd{Agency: ag, StopID: id, Name: h.Str("stopName"), Lat: h.Num("lat"), Lon: h.Num("lon")}
+			if len(seenAg) >= 5 {
+				break
+			}
 		}
-		ag, id := h.Str("agencyId"), h.Str("stopId")
-		ends[ag+"\x00"+id] = railEnd{Agency: ag, StopID: id, Name: h.Str("stopName"), Lat: h.Num("lat"), Lon: h.Num("lon")}
 		return ends
 	}
 	limit := math.Min(railEndpointNearM, maxWalk)
-	for _, info := range reportOperators {
-		v, ok := rtCatalog.Load(info.ID)
-		if !ok {
-			continue
-		}
-		op := v.(*rtCatalogOp)
-		seen := map[string]bool{}
-		var near []railEnd
-		for _, prof := range op.Profiles {
-			for _, d := range prof.Directions {
-				for _, st := range d.Stops {
-					if seen[st.ID] {
-						continue
-					}
-					seen[st.ID] = true
-					if m := distM(lat, lon, st.Lat, st.Lon); m <= limit {
-						near = append(near, railEnd{
-							Agency: info.ID, StopID: st.ID, Name: st.Name,
-							Lat: st.Lat, Lon: st.Lon,
-							PointLat: lat, PointLon: lon, PointName: name,
-							WalkM: math.Round(m),
-						})
-					}
+	snap := getCatalogSearchSnapshot()
+	dLat := (limit / 110574.0) * 1.05
+	cosLat := math.Cos(lat * math.Pi / 180)
+	if cosLat < 0.1 {
+		cosLat = 0.1
+	}
+	dLon := (limit / (111320.0 * cosLat)) * 1.05
+	minCLat := int(math.Floor((lat - dLat) * 100))
+	maxCLat := int(math.Floor((lat + dLat) * 100))
+	minCLon := int(math.Floor((lon - dLon) * 100))
+	maxCLon := int(math.Floor((lon + dLon) * 100))
+
+	allowed := map[string]bool{}
+	for _, info := range railPlanOperators() {
+		allowed[info.ID] = true
+	}
+	byOp := map[string][]railEnd{}
+	seenStop := map[string]bool{}
+	for cLat := minCLat; cLat <= maxCLat; cLat++ {
+		for cLon := minCLon; cLon <= maxCLon; cLon++ {
+			for _, st := range snap.spatialMap[[2]int{cLat, cLon}] {
+				if !allowed[st.agency.ID] {
+					continue
 				}
+				k := st.agency.ID + "\x00" + st.stopID
+				if seenStop[k] {
+					continue
+				}
+				seenStop[k] = true
+				m := distM(lat, lon, st.lat, st.lon)
+				if m > limit {
+					continue
+				}
+				byOp[st.agency.ID] = append(byOp[st.agency.ID], railEnd{
+					Agency: st.agency.ID, StopID: st.stopID, Name: st.name,
+					Lat: st.lat, Lon: st.lon,
+					PointLat: lat, PointLon: lon, PointName: name,
+					WalkM: math.Round(m),
+				})
 			}
 		}
+	}
+	type opPick struct {
+		agency  string
+		minWalk float64
+		rank    int
+		list    []railEnd
+	}
+	var picks []opPick
+	for ag, near := range byOp {
 		sort.Slice(near, func(i, j int) bool {
 			if near[i].WalkM != near[j].WalkM {
 				return near[i].WalkM < near[j].WalkM
 			}
 			return near[i].StopID < near[j].StopID
 		})
-		for i, e := range near {
-			if i == railEndpointPerOp {
+		r := 3
+		switch ag {
+		case "renfe_rodalies", "fgc":
+			r = 0
+		case tmbAgencyID:
+			r = 1
+		case tramTbxAgencyID, tramTbsAgencyID:
+			r = 2
+		}
+		picks = append(picks, opPick{agency: ag, minWalk: near[0].WalkM, rank: r, list: near})
+	}
+	sort.Slice(picks, func(i, j int) bool {
+		if picks[i].rank != picks[j].rank {
+			return picks[i].rank < picks[j].rank
+		}
+		return picks[i].minWalk < picks[j].minWalk
+	})
+	if len(picks) > 6 {
+		picks = picks[:6]
+	}
+	for _, pk := range picks {
+		perOp := railEndpointPerOp
+		if pk.rank >= 3 {
+			perOp = 2 // keep bus endpoints lean so SQLite queries stay fast
+		}
+		for i, e := range pk.list {
+			if i >= perOp {
 				break
 			}
 			ends[e.Agency+"\x00"+e.StopID] = e
@@ -425,7 +523,15 @@ func (k *Worker) railPlanOp(args *Obj) (any, error) {
 	}
 	if byPoint(origins) && byPoint(dests) {
 		f, t := args.ObjAt("from"), args.ObjAt("to")
-		if distM(jsNumber(f.Get("lat")), jsNumber(f.Get("lon")), jsNumber(t.Get("lat")), jsNumber(t.Get("lon"))) < railPlanMinTripM {
+		fLat, fLon := jsNumber(f.Get("lat")), jsNumber(f.Get("lon"))
+		tLat, tLon := jsNumber(t.Get("lat")), jsNumber(t.Get("lon"))
+		tripM := distM(fLat, fLon, tLat, tLon)
+		inMataro := distM(fLat, fLon, 41.54, 2.445) < 4000 && distM(tLat, tLon, 41.54, 2.445) < 4000
+		minM := 350.0
+		if inMataro {
+			minM = railPlanMinTripM // let Mataró's urban bus graph handle short intra-Mataró trips
+		}
+		if tripM < minM {
 			return O("itineraries", []any{}), nil
 		}
 	}
@@ -602,15 +708,23 @@ func railItinJSON(it railItin, depart int64, speed float64) *Obj {
 		if l.Dir >= 0 {
 			dir = numToString(float64(l.Dir))
 		}
+		legMode := "rail"
+		for _, info := range lineOperators() {
+			if info.ID == l.Agency {
+				legMode = routeModeFor(info, l.Line)
+				break
+			}
+		}
+		interStops, poly, geomEst := railLegGeometryAndStops(l.Agency, l.Line, l.BoardStop, l.AlightStop, l.BoardLat, l.BoardLon, l.AlightLat, l.AlightLon, stopObj, pt)
 		legs = append(legs, O(
-			"mode", "rail", "agencyId", l.Agency,
+			"mode", legMode, "agencyId", l.Agency,
 			"lineId", ref, "lineCode", l.Line, "lineColor", color, "color", color,
 			"direction", dir, "destination", strOrNil(l.Headsign), "tripId", l.Trip,
 			"fromStop", stopObj(l.BoardStop, l.BoardName, l.BoardLat, l.BoardLon),
 			"toStop", stopObj(l.AlightStop, l.AlightName, l.AlightLat, l.AlightLon),
-			"intermediateStops", []any{},
-			"polyline", []any{pt(l.BoardLat, l.BoardLon), pt(l.AlightLat, l.AlightLon)},
-			"geometryEstimated", true,
+			"intermediateStops", interStops,
+			"polyline", poly,
+			"geometryEstimated", geomEst,
 			"stopsCount", float64(l.Stops), "stopCount", float64(l.Stops),
 			"durationMinutes", mins(l.alightAt()-l.boardAt()), "durationMins", mins(l.alightAt()-l.boardAt()),
 			"travelTimeMins", mins(l.alightAt()-l.boardAt()),
@@ -703,6 +817,88 @@ func (s *Server) railPlanFor(typedFrom, typedTo, origin, destination any, explic
 }
 
 const railPlanMinTripM = 3000.0
+
+// railLegGeometryAndStops extracts the real GTFS track/road polyline slice and
+// intermediate stops between board and alight from rtCatalog, falling back to
+// a straight line only when the catalog profile has no matching shape.
+func railLegGeometryAndStops(
+	agency, lineCode, boardStop, alightStop string,
+	boardLat, boardLon, alightLat, alightLon float64,
+	stopObj func(id, name string, lat, lon float64) *Obj,
+	pt func(lat, lon float64) []any,
+) (interStops []any, poly []any, geomEst bool) {
+	interStops = []any{}
+	fallback := []any{pt(boardLat, boardLon), pt(alightLat, alightLon)}
+	v, ok := rtCatalog.Load(agency)
+	if !ok {
+		return interStops, fallback, true
+	}
+	op := v.(*rtCatalogOp)
+	if op == nil || op.Profiles == nil {
+		return interStops, fallback, true
+	}
+	prof := op.Profiles[lineCode]
+	if prof == nil {
+		return interStops, fallback, true
+	}
+	findStopIdx := func(stops []rtLineStop, id string, lat, lon float64) int {
+		for i, s := range stops {
+			if s.ID == id {
+				return i
+			}
+		}
+		best, bestD := -1, 180.0
+		for i, s := range stops {
+			if d := distM(lat, lon, s.Lat, s.Lon); d < bestD {
+				bestD = d
+				best = i
+			}
+		}
+		return best
+	}
+	for i := range prof.Directions {
+		d := &prof.Directions[i]
+		bi := findStopIdx(d.Stops, boardStop, boardLat, boardLon)
+		ai := findStopIdx(d.Stops, alightStop, alightLat, alightLon)
+		if bi < 0 || ai < 0 || bi >= ai {
+			continue
+		}
+		for k := bi + 1; k < ai; k++ {
+			st := d.Stops[k]
+			interStops = append(interStops, stopObj(st.ID, st.Name, st.Lat, st.Lon))
+		}
+		if len(d.Geometry) >= 2 {
+			nearestPt := func(lat, lon float64) int {
+				best, bestD := 0, math.MaxFloat64
+				for j, g := range d.Geometry {
+					if dist := distM(lat, lon, g[0], g[1]); dist < bestD {
+						bestD = dist
+						best = j
+					}
+				}
+				return best
+			}
+			gi := nearestPt(boardLat, boardLon)
+			gj := nearestPt(alightLat, alightLon)
+			if gi <= gj {
+				poly = make([]any, 0, gj-gi+3)
+				poly = append(poly, pt(boardLat, boardLon))
+				for k := gi; k <= gj; k++ {
+					poly = append(poly, pt(d.Geometry[k][0], d.Geometry[k][1]))
+				}
+				poly = append(poly, pt(alightLat, alightLon))
+				return interStops, poly, d.GeometryFromStops
+			}
+		}
+		// Fallback to stop-to-stop polyline if shape wasn't monotonic.
+		poly = make([]any, 0, ai-bi+1)
+		for k := bi; k <= ai; k++ {
+			poly = append(poly, pt(d.Stops[k].Lat, d.Stops[k].Lon))
+		}
+		return interStops, poly, true
+	}
+	return interStops, fallback, true
+}
 
 // mergeRailItineraries adds the train journeys to the bus planner's answer,
 // ordered as the preference says (fastest: arrival; least_walking: walking

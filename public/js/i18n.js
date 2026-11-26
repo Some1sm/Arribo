@@ -1465,6 +1465,7 @@
       'util.season.srcWindow': 'calendari de temporada',
       'util.season.srcWindowDetail': 'calendari de temporada ({detail})',
       // Main page JS messages, share toasts, disruptions, search, network map & alarms (app.js & networkMap.js)
+      'modal.hubConnections': 'Connexions en aquest intercanviador',
       'app.dirN': 'Sentit {id}',
       'app.disruptionsLoading': 'Carregant avisos de servei en temps real...',
       'app.disruptionsError': 'Error en carregar incidències: {err}',
@@ -3357,6 +3358,7 @@
       'modal.stopBadge': 'Detalles de parada',
       'modal.favAria': 'Añadir a paradas favoritas',
       'modal.arrivalsHeading': 'Llegadas (Tiempo real + Horario teórico)',
+      'modal.hubConnections': 'Conexiones en este intercambiador',
       'modal.setTarget': '📌 Fijar principal',
       'modal.setTargetTitle': 'Fijar como parada principal para el seguimiento de esta línea',
       'modal.alarmTitle': 'Avísame con sonido y vibración cuando el bus se acerque a esta parada',
@@ -5270,6 +5272,7 @@
       'modal.stopBadge': 'Stop details',
       'modal.favAria': 'Add to favourite stops',
       'modal.arrivalsHeading': 'Arrivals (Real time + Official timetable)',
+      'modal.hubConnections': 'Connections at this hub',
       'modal.setTarget': '📌 Pin as main',
       'modal.setTargetTitle': 'Pin as main stop for tracking this line',
       'modal.alarmTitle': 'Alert me with sound and vibration when the bus approaches this stop',

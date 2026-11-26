@@ -1114,6 +1114,7 @@ func (s *Server) buildRoutes() {
 	s.get(p("/api/mataro/target-eta"), s.hMataroTargetEta)
 	s.get(p("/api/mataro/stop/:stopId/departures"), s.hMataroStopDepartures)
 	s.get(p("/api/mataro/stops/nearby", "/api/mataro/nearby", "/api/stops/nearby"), s.hNearby)
+	s.get(p("/api/hub/connections"), s.hHubConnections)
 	s.get(p("/api/mataro/plan", "/api/plan"), s.hPlan)
 	s.get(p("/api/mataro/line/:lineId/traffic"), s.hTraffic)
 	s.get(p("/api/disruptions"), s.hDisruptions)
@@ -1437,19 +1438,33 @@ func (s *Server) hSearchStops(q *xreq, res *xres) error {
 	results = append(results, mataroStops...)
 	results = append(results, catStops...)
 	stops := []any{}
+	seenStopKey := map[string]bool{}
 	for _, x := range results {
 		r, _ := x.(*Obj)
 		if r == nil || !strictEq(r.Get("type"), "stop") {
 			continue
 		}
+		sid := jsString(or(r.Get("stopId"), r.Get("code")))
+		ag := jsString(or(r.Get("agencyId"), "mataro"))
+		dedupKey := ag + "\x00" + sid
+		if sid != "" && seenStopKey[dedupKey] {
+			continue
+		}
+		if sid != "" {
+			seenStopKey[dedupKey] = true
+		}
 		stops = append(stops, O(
-			"id", or(r.Get("stopId"), r.Get("code")),
+			"id", sid,
 			"name", r.Get("stopName"),
 			"code", or(r.Get("code"), r.Get("stopId")),
 			"zone", or(r.Get("zone"), "Mataró Urbà"),
 			"directionText", or(r.Get("directionText"), ""),
 			"destinations", or(r.Get("destinations"), []any{}),
 			"lineCode", r.Get("lineCode"),
+			"lineId", r.Get("lineId"),
+			"agencyId", ag,
+			"mode", or(r.Get("mode"), "bus"),
+			"lines", or(r.Get("lines"), []any{}),
 			"lat", r.Get("lat"),
 			"lon", r.Get("lon"),
 		))
@@ -1458,6 +1473,32 @@ func (s *Server) hSearchStops(q *xreq, res *xres) error {
 	if utf16Count(jsTrim(qs)) >= 3 {
 		if found, err := s.searchStreets(jsTrim(qs), 4); err == nil {
 			streets = objsAny(found)
+		}
+		// Supplement with Catalonia-wide geocoding when Mataró local streets
+		// return few/no hits so /plan autocomplete works across all of Catalonia.
+		if len(streets) < 2 {
+			var awaitFn func(func())
+			if s.w != nil {
+				awaitFn = s.w.await
+			}
+			ctx, cancel := context.WithTimeout(q.r.Context(), 3*time.Second)
+			catHits := s.geocodeCataloniaWithAwait(ctx, jsTrim(qs), 4, awaitFn)
+			cancel()
+			for _, h := range catHits {
+				if h.Type == "stop" {
+					continue
+				}
+				streets = append(streets, O(
+					"name", h.Name,
+					"subtitle", h.Subtitle,
+					"cityName", h.Subtitle,
+					"lat", h.Lat,
+					"lon", h.Lon,
+				))
+				if len(streets) >= 4 {
+					break
+				}
+			}
 		}
 	}
 	res.json(O("success", true, "query", qs, "results", results, "stops", stops, "streets", streets))
@@ -1801,6 +1842,17 @@ func (s *Server) geocodeEndpoint(v any) any {
 	found, err := s.searchStreets(str, 1)
 	if err == nil && len(found) > 0 {
 		return O("lat", found[0].Get("lat"), "lon", found[0].Get("lon"), "name", or(found[0].Get("name"), str))
+	}
+	// Catalonia-wide fallback: resolve addresses & POIs outside Mataró.
+	var awaitFn func(func())
+	if s.w != nil {
+		awaitFn = s.w.await
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	catHits := s.geocodeCataloniaWithAwait(ctx, str, 1, awaitFn)
+	cancel()
+	if len(catHits) > 0 && (catHits[0].Lat != 0 || catHits[0].Lon != 0) {
+		return O("lat", catHits[0].Lat, "lon", catHits[0].Lon, "name", catHits[0].Name)
 	}
 	return v
 }
