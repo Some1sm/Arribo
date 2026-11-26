@@ -7222,13 +7222,30 @@ body {
   font-family: var(--font-sans, 'Plus Jakarta Sans', sans-serif);
   pointer-events: auto;
   white-space: nowrap;
+  transform: translate3d(var(--badge-dx, 0px), var(--badge-dy, 0px), 0);
+  transition: transform 0.16s ease;
   animation: pulse-node 2.5s infinite;
 }
 
+.itinerary-node-badge.is-compact {
+  padding: 3px 8px 3px 5px;
+  gap: 6px;
+  min-width: 0 !important;
+}
+
+.itinerary-node-badge.is-compact .node-name {
+  max-width: 115px;
+  font-size: 0.76rem;
+}
+
+.itinerary-node-badge.is-compact .node-action {
+  font-size: 0.64rem;
+}
+
 @keyframes pulse-node {
-  0% { transform: scale(1); }
-  50% { transform: scale(1.03); }
-  100% { transform: scale(1); }
+  0% { transform: translate3d(var(--badge-dx, 0px), var(--badge-dy, 0px), 0) scale(1); }
+  50% { transform: translate3d(var(--badge-dx, 0px), var(--badge-dy, 0px), 0) scale(1.03); }
+  100% { transform: translate3d(var(--badge-dx, 0px), var(--badge-dy, 0px), 0) scale(1); }
 }
 
 .itinerary-node-badge .node-icon {

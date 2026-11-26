@@ -962,6 +962,7 @@ class TransitMap {
     }
 
     // 5. Render Major Turn Points: Boarding, Transfer(s), Destination
+    this._itineraryBadgeMarkers = [];
     const legs = itinerary.legs;
     const firstLeg = legs[0];
     const lastLeg = legs[legs.length - 1];
@@ -1007,6 +1008,7 @@ class TransitMap {
         });
         const m = L.marker([oLat, oLon], { icon: originIcon, zIndexOffset: 2000 });
         this.itineraryLayerGroup.addLayer(m);
+        this._itineraryBadgeMarkers.push({ marker: m, anchorX: 20, anchorY: 21 });
       }
     }
 
@@ -1050,6 +1052,7 @@ class TransitMap {
           });
           const m = L.marker([tLat, tLon], { icon: transferIcon, zIndexOffset: 2000 });
           this.itineraryLayerGroup.addLayer(m);
+          this._itineraryBadgeMarkers.push({ marker: m, anchorX: 20, anchorY: 21 });
         }
       }
     }
@@ -1076,7 +1079,13 @@ class TransitMap {
         });
         const m = L.marker([dLat, dLon], { icon: destIcon, zIndexOffset: 2000 });
         this.itineraryLayerGroup.addLayer(m);
+        this._itineraryBadgeMarkers.push({ marker: m, anchorX: 20, anchorY: 18 });
       }
+    }
+
+    if (!this._itineraryZoomBound && this.map) {
+      this._itineraryZoomBound = true;
+      this.map.on('zoomend', () => this.layoutItineraryBadges());
     }
 
     // 6. Fit bounds
@@ -1086,11 +1095,81 @@ class TransitMap {
         this.map.fitBounds(bounds, { padding: [60, 60], maxZoom: 16 });
       }
     }
+
+    requestAnimationFrame(() => this.layoutItineraryBadges());
+  }
+
+  layoutItineraryBadges() {
+    if (!this.map || !Array.isArray(this._itineraryBadgeMarkers) || this._itineraryBadgeMarkers.length === 0) return;
+    const compact = this.map.getZoom() <= 10;
+    const pad = 8;
+    const placed = [];
+
+    const overlapArea = (a, b) => {
+      const ox = Math.max(0, Math.min(a.r, b.r) - Math.max(a.l, b.l));
+      const oy = Math.max(0, Math.min(a.b, b.b) - Math.max(a.t, b.t));
+      return ox * oy;
+    };
+
+    for (const item of this._itineraryBadgeMarkers) {
+      const root = item.marker?.getElement?.();
+      const el = root ? root.querySelector('.itinerary-node-badge') : null;
+      if (!el) continue;
+
+      el.classList.toggle('is-compact', compact);
+      const p = this.map.latLngToContainerPoint(item.marker.getLatLng());
+      const w = el.offsetWidth || 190;
+      const h = el.offsetHeight || 42;
+      const stepY = h + 10;
+      const leftX = -(w - item.anchorX * 2);
+
+      const candidates = [
+        [0, 0],
+        [0, -stepY],
+        [0, stepY],
+        [leftX, 0],
+        [leftX, -stepY],
+        [leftX, stepY],
+        [0, -stepY * 2],
+        [0, stepY * 2],
+        [leftX, -stepY * 2],
+        [leftX, stepY * 2],
+      ];
+
+      let best = candidates[0];
+      let bestScore = Infinity;
+      let bestBox = null;
+
+      for (const cand of candidates) {
+        const l = p.x - item.anchorX + cand[0] - pad;
+        const t = p.y - item.anchorY + cand[1] - pad;
+        const box = { l, t, r: l + w + pad * 2, b: t + h + pad * 2 };
+        let area = 0;
+        for (const other of placed) {
+          area += overlapArea(box, other);
+        }
+        if (area === 0) {
+          best = cand;
+          bestBox = box;
+          break;
+        }
+        if (area < bestScore) {
+          bestScore = area;
+          best = cand;
+          bestBox = box;
+        }
+      }
+
+      el.style.setProperty('--badge-dx', `${Math.round(best[0])}px`);
+      el.style.setProperty('--badge-dy', `${Math.round(best[1])}px`);
+      if (bestBox) placed.push(bestBox);
+    }
   }
 
   clearItinerary() {
     this.isItineraryMode = false;
     this._lastItinerary = null;
+    this._itineraryBadgeMarkers = [];
     if (this.itineraryLayerGroup) {
       this.itineraryLayerGroup.clearLayers();
     }
