@@ -16,7 +16,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-  <link rel="stylesheet" href="/css/style.css?v=9.4.151">
+  <link rel="stylesheet" href="/css/style.css?v=9.4.152">
 </head>
 <body class="planner-page-body">
   <!-- Top Navigation Bar -->
@@ -128,6 +128,9 @@
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
                   <span>GPS</span>
                 </button>
+                <button type="button" class="btn-planner-map-pick" id="btn-page-planner-pick-origin" title="Triar origen al mapa" data-i18n-title="plan.pickOriginTitle" aria-label="Triar origen al mapa" data-i18n-aria-label="plan.pickOriginTitle" aria-pressed="false">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/></svg>
+                </button>
               </div>
               <div id="page-planner-origin-dropdown" class="planner-dropdown" style="display:none;"></div>
             </div>
@@ -147,6 +150,9 @@
               </label>
               <div class="planner-input-wrapper">
                 <input type="text" id="page-planner-dest" class="planner-input" placeholder="Parada, estació o adreça (ex: Pl. Catalunya)" data-i18n-placeholder="plan.destPlaceholder" autocomplete="off">
+                <button type="button" class="btn-planner-map-pick" id="btn-page-planner-pick-dest" title="Triar destinació al mapa" data-i18n-title="plan.pickDestTitle" aria-label="Triar destinació al mapa" data-i18n-aria-label="plan.pickDestTitle" aria-pressed="false">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/></svg>
+                </button>
               </div>
               <div id="page-planner-dest-dropdown" class="planner-dropdown" style="display:none;"></div>
             </div>
@@ -292,6 +298,11 @@
     <!-- Right Area: Interactive Leaflet Map -->
     <section class="plan-map-view" aria-label="Visualització del mapa del trajecte" data-i18n-aria-label="plan.mapAria">
       <div id="plan-map"></div>
+      <div class="plan-map-pick-banner" id="plan-map-pick-banner" role="status" aria-live="polite" hidden>
+        <span class="plan-map-pick-dot" id="plan-map-pick-dot"></span>
+        <span id="plan-map-pick-text" data-i18n="plan.pickOriginBanner">Fes clic al mapa per marcar l'origen</span>
+        <button type="button" class="plan-map-pick-cancel" id="btn-plan-map-pick-cancel" data-i18n="plan.pickCancel">Cancel·lar</button>
+      </div>
       <button type="button" class="btn-floating-routes" id="btn-floating-routes" title="Veure llistat de rutes" data-i18n-title="plan.floatingRoutesTitle">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
         <span data-i18n="plan.floatingRoutes">Veure rutes</span>
@@ -335,15 +346,15 @@
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="/js/utils.js?v=9.4.151"></script>
-  <script src="/js/i18n.js?v=9.4.151"></script>
-  <script src="/js/storage.js?v=9.4.151"></script>
-  <script src="/js/requests.js?v=9.4.151"></script>
-  <script src="/js/stopFeatures.js?v=9.4.151"></script>
-  <script src="/js/journeys.js?v=9.4.151"></script>
-  <script src="/js/journeyControls.js?v=9.4.151"></script>
-  <script src="/js/pwa.js?v=9.4.151"></script>
-  <script src="/js/map.js?v=9.4.151"></script>
-  <script src="/js/plan.js?v=9.4.151"></script>
+  <script src="/js/utils.js?v=9.4.152"></script>
+  <script src="/js/i18n.js?v=9.4.152"></script>
+  <script src="/js/storage.js?v=9.4.152"></script>
+  <script src="/js/requests.js?v=9.4.152"></script>
+  <script src="/js/stopFeatures.js?v=9.4.152"></script>
+  <script src="/js/journeys.js?v=9.4.152"></script>
+  <script src="/js/journeyControls.js?v=9.4.152"></script>
+  <script src="/js/pwa.js?v=9.4.152"></script>
+  <script src="/js/map.js?v=9.4.152"></script>
+  <script src="/js/plan.js?v=9.4.152"></script>
 </body>
 </html>

@@ -6666,7 +6666,7 @@ body {
 
 .planner-input-wrapper:focus-within {
   border-color: var(--c10-primary);
-  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.2);
+  box-shadow: 0 0 0 3px var(--brand-tint);
 }
 
 .planner-input {
@@ -6682,10 +6682,117 @@ body {
   box-sizing: border-box;
 }
 
+.planner-input:focus,
 .planner-input:focus-visible {
-  outline: 2px solid var(--border-focus);
-  outline-offset: -2px;
+  outline: none;
+  box-shadow: none;
+}
+
+.btn-planner-map-pick {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  padding: 0.34rem 0.45rem;
   border-radius: var(--radius-xs);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+  user-select: none;
+}
+
+.btn-planner-map-pick:hover {
+  border-color: var(--c10-primary);
+  color: var(--c10-primary);
+  background: var(--brand-tint);
+}
+
+.btn-planner-map-pick.is-picking {
+  background: var(--c10-primary);
+  border-color: var(--c10-primary);
+  color: var(--on-action);
+}
+
+#plan-map.is-map-picking,
+#plan-map.is-map-picking .leaflet-grab {
+  cursor: crosshair;
+}
+
+.plan-map-pick-banner {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 650;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.48rem 0.65rem 0.48rem 0.9rem;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1.5px solid var(--c10-primary);
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-lg);
+  font-size: 0.84rem;
+  font-weight: 600;
+  max-width: calc(100% - 2rem);
+}
+
+.plan-map-pick-banner[hidden] {
+  display: none;
+}
+
+.plan-map-pick-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--c10-primary);
+}
+
+.plan-map-pick-dot.is-dest {
+  background: var(--danger);
+}
+
+.plan-map-pick-cancel {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  border-radius: var(--radius-full);
+  padding: 0.22rem 0.65rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.plan-map-pick-cancel:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.plan-pick-pin {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 0.78rem;
+  color: var(--on-action);
+  border: 2px solid var(--bg-main);
+  box-shadow: var(--shadow-md);
+}
+
+.plan-pick-pin-origin {
+  background: var(--c10-primary);
+}
+
+.plan-pick-pin-dest {
+  background: var(--danger);
 }
 
 .btn-planner-geo,

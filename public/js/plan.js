@@ -18,6 +18,8 @@ class PlannerPageApp {
     this.lastDestStop = null;
     this.lastResultView = null;
     this.currentSheetState = 'split';
+    this.mapPickMode = null;
+    this.mapPickMarkers = { origin: null, dest: null };
     this.init();
   }
 
@@ -134,6 +136,13 @@ class PlannerPageApp {
 
     this.journeyControls?.render();
 
+    if (this.mapPickMode) {
+      const pickText = document.getElementById('plan-map-pick-text');
+      if (pickText) {
+        pickText.textContent = this.t(this.mapPickMode === 'dest' ? 'plan.pickDestBanner' : 'plan.pickOriginBanner');
+      }
+    }
+
     const routesCountLabel = document.getElementById('label-sheet-routes');
     if (routesCountLabel && this.currentItineraries.length > 0) {
       routesCountLabel.textContent = this.t('plan.routesCount', { n: this.currentItineraries.length });
@@ -187,6 +196,9 @@ class PlannerPageApp {
   initMap() {
     try {
       this.mapController = new TransitMap('plan-map');
+      if (this.mapController && this.mapController.map) {
+        this.mapController.map.on('click', (e) => this.handleMapPickClick(e));
+      }
     } catch (err) {
       console.error('Error initializing map:', err);
     }
@@ -236,6 +248,28 @@ class PlannerPageApp {
     if (gpsBtn) {
       gpsBtn.addEventListener('click', () => this.handleGpsLocation());
     }
+
+    const pickOriginBtn = document.getElementById('btn-page-planner-pick-origin');
+    const pickDestBtn = document.getElementById('btn-page-planner-pick-dest');
+    const pickCancelBtn = document.getElementById('btn-plan-map-pick-cancel');
+    if (pickOriginBtn) {
+      pickOriginBtn.addEventListener('click', () => {
+        this.setMapPickMode(this.mapPickMode === 'origin' ? null : 'origin');
+      });
+    }
+    if (pickDestBtn) {
+      pickDestBtn.addEventListener('click', () => {
+        this.setMapPickMode(this.mapPickMode === 'dest' ? null : 'dest');
+      });
+    }
+    if (pickCancelBtn) {
+      pickCancelBtn.addEventListener('click', () => this.setMapPickMode(null));
+    }
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && this.mapPickMode) {
+        this.setMapPickMode(null);
+      }
+    });
 
     // Presets delegation
     const presetsContainer = document.querySelector('.plan-presets');
@@ -702,6 +736,111 @@ class PlannerPageApp {
     });
   }
 
+  setMapPickMode(target) {
+    this.mapPickMode = target || null;
+    const originBtn = document.getElementById('btn-page-planner-pick-origin');
+    const destBtn = document.getElementById('btn-page-planner-pick-dest');
+    const mapEl = document.getElementById('plan-map');
+    const banner = document.getElementById('plan-map-pick-banner');
+    const dot = document.getElementById('plan-map-pick-dot');
+    const text = document.getElementById('plan-map-pick-text');
+
+    if (originBtn) {
+      originBtn.classList.toggle('is-picking', this.mapPickMode === 'origin');
+      originBtn.setAttribute('aria-pressed', this.mapPickMode === 'origin' ? 'true' : 'false');
+    }
+    if (destBtn) {
+      destBtn.classList.toggle('is-picking', this.mapPickMode === 'dest');
+      destBtn.setAttribute('aria-pressed', this.mapPickMode === 'dest' ? 'true' : 'false');
+    }
+    if (mapEl) {
+      mapEl.classList.toggle('is-map-picking', Boolean(this.mapPickMode));
+    }
+    if (banner) {
+      banner.hidden = !this.mapPickMode;
+    }
+    if (dot) {
+      dot.classList.toggle('is-dest', this.mapPickMode === 'dest');
+    }
+    if (text && this.mapPickMode) {
+      text.textContent = this.t(this.mapPickMode === 'dest' ? 'plan.pickDestBanner' : 'plan.pickOriginBanner');
+    }
+    if (this.mapPickMode && window.innerWidth <= 768) {
+      this.setSheetState('peek');
+    }
+  }
+
+  placePickMarker(target, lat, lon) {
+    const map = this.mapController?.map;
+    if (!map || typeof L === 'undefined') return;
+    if (this.mapPickMarkers[target]) {
+      try { map.removeLayer(this.mapPickMarkers[target]); } catch {}
+    }
+    const label = target === 'dest' ? 'B' : 'A';
+    const icon = L.divIcon({
+      className: '',
+      html: `<div class="plan-pick-pin plan-pick-pin-${target}">${label}</div>`,
+      iconSize: [26, 26],
+      iconAnchor: [13, 13],
+    });
+    this.mapPickMarkers[target] = L.marker([lat, lon], { icon, zIndexOffset: 600 }).addTo(map);
+  }
+
+  async handleMapPickClick(e) {
+    if (!this.mapPickMode || !e?.latlng) return;
+    const target = this.mapPickMode;
+    const lat = Number(e.latlng.lat.toFixed(6));
+    const lon = Number(e.latlng.lng.toFixed(6));
+    const input = document.getElementById(target === 'dest' ? 'page-planner-dest' : 'page-planner-origin');
+    if (!input) {
+      this.setMapPickMode(null);
+      return;
+    }
+
+    this.placePickMarker(target, lat, lon);
+    input.dataset.lat = String(lat);
+    input.dataset.lon = String(lon);
+    delete input.dataset.stopId;
+    delete input.dataset.direction;
+    input.value = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+
+    this.setMapPickMode(null);
+    if (window.innerWidth <= 768) {
+      this.setSheetState('split');
+    }
+
+    try {
+      const res = await fetch(`/api/stops/nearby?lat=${lat}&lon=${lon}&radius=150&departures=false&limit=1`);
+      if (res.ok && input.dataset.lat === String(lat) && input.dataset.lon === String(lon)) {
+        const data = await res.json();
+        const stops = data.data?.stops || data.stops || [];
+        if (Array.isArray(stops) && stops.length > 0 && stops[0].name) {
+          input.value = stops[0].name;
+          if (stops[0].id && (Number(stops[0].distanceMeters) || 0) <= 60) {
+            input.dataset.stopId = stops[0].id;
+          }
+        }
+      }
+    } catch {}
+
+    const originInput = document.getElementById('page-planner-origin');
+    const destInput = document.getElementById('page-planner-dest');
+    if (originInput?.value.trim() && destInput?.value.trim()) {
+      this.runSearch();
+    }
+  }
+
+  clearPickMarkers() {
+    const map = this.mapController?.map;
+    if (!map) return;
+    for (const key of ['origin', 'dest']) {
+      if (this.mapPickMarkers[key]) {
+        try { map.removeLayer(this.mapPickMarkers[key]); } catch {}
+        this.mapPickMarkers[key] = null;
+      }
+    }
+  }
+
   handleGpsLocation() {
     if (!navigator.geolocation) {
       alert(this.t('plan.geoUnavailable'));
@@ -838,6 +977,7 @@ class PlannerPageApp {
       }
 
       // Hide secondary options (Horari, Paràmetres a peu, Els teus trajectes, Presets) so results take full prominence
+      this.clearPickMarkers();
       this.setSecondaryOptionsVisibility(false);
       const searchBox = document.getElementById('plan-search-box');
       if (searchBox) searchBox.classList.add('has-results');
