@@ -157,7 +157,7 @@ class NetworkMap extends TransitMap {
         for (const obj of this.trainMarkers.values()) obj.marker.options.radius = r;
         for (const obj of this.movMarkers.values()) obj.marker.options.radius = r;
         for (const obj of this.busMarkersMap.values()) obj.marker.options.radius = r;
-        this.vehicleCanvas?._redraw?.();
+        if (this.vehicleCanvas?._ctx) this.vehicleCanvas._redraw();
       }
     };
     this.map.on('zoomend', () => {

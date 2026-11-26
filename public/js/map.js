@@ -1745,6 +1745,7 @@ class TransitMap {
       // where its GPS puts it, and its glide does not follow the route either.
       // A train (GTFS-RT) is drawn where its operator reported it, never
       // snapped: a line drawn from stations alone is only an approximation.
+      const markerKey = this.busMarkerKey(bus);
       const followRoute = !bus.offRoute && bus.positionSource !== 'gtfsrt' && targetPolyline && targetPolyline.length > 1;
       let snapped = { lat: bus.lat, lon: bus.lon, bearing: bus.bearing || 0 };
       if (followRoute) {
@@ -1785,8 +1786,6 @@ class TransitMap {
       const pinInk = isGhost
         ? '#fbbf24'
         : (window.TransitUtils?.contrastInk ? window.TransitUtils.contrastInk(pinBaseColor) : '#ffffff');
-
-      const markerKey = this.busMarkerKey(bus);
 
       // Invariant: Enforce physical vehicle uniqueness across markers
       if (bus.vehicleId && !String(bus.vehicleId).startsWith('EST_')) {
