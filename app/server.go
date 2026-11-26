@@ -1365,7 +1365,7 @@ func (s *Server) hLines(q *xreq, res *xres) error {
 	now := time.Now()
 
 	linesCache.mu.RLock()
-	if linesCache.raw != nil && linesCache.key == key && now.Sub(linesCache.at) <= linesCacheTTL {
+	if (linesCache.gz != nil || linesCache.raw != nil) && linesCache.key == key && now.Sub(linesCache.at) <= linesCacheTTL {
 		raw, gz, eRaw, eGz := linesCache.raw, linesCache.gz, linesCache.etagRaw, linesCache.etagGz
 		linesCache.mu.RUnlock()
 		sendPrecompressedJSONWithETag(q, res, raw, gz, eRaw, eGz, 60)
@@ -1397,10 +1397,14 @@ func (s *Server) hLines(q *xreq, res *xres) error {
 	} else {
 		build()
 	}
+	storedRaw := raw
+	if len(gz) > 0 {
+		storedRaw = nil
+	}
 	linesCache.mu.Lock()
 	linesCache.key = key
 	linesCache.at = now
-	linesCache.raw = raw
+	linesCache.raw = storedRaw
 	linesCache.gz = gz
 	linesCache.etagRaw = eRaw
 	linesCache.etagGz = eGz

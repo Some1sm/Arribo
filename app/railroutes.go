@@ -66,6 +66,19 @@ func gzipBytes(raw []byte) []byte {
 	return buf.Bytes()
 }
 
+func gunzipBytes(gz []byte) []byte {
+	gr, err := gzip.NewReader(bytes.NewReader(gz))
+	if err != nil {
+		return nil
+	}
+	defer gr.Close()
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(gr); err != nil {
+		return nil
+	}
+	return buf.Bytes()
+}
+
 func sendPrecompressedJSON(q *xreq, res *xres, raw, gz []byte, maxAgeSec int) {
 	sendPrecompressedJSONWithETag(q, res, raw, gz, "", "", maxAgeSec)
 }
@@ -81,6 +94,9 @@ func sendPrecompressedJSONWithETag(q *xreq, res *xres, raw, gz []byte, etagRaw, 
 		res.h.Set("Content-Encoding", "gzip")
 		res.send(gz)
 		return
+	}
+	if len(raw) == 0 && len(gz) > 0 {
+		raw = gunzipBytes(gz)
 	}
 	if etagRaw != "" {
 		res.h.Set("ETag", etagRaw)
@@ -166,7 +182,7 @@ func (s *Server) hRailRoutes(q *xreq, res *xres) error {
 	now := time.Now()
 
 	railRoutesCache.mu.RLock()
-	if railRoutesCache.raw != nil && railRoutesCache.key == key && now.Sub(railRoutesCache.at) <= railRouteCacheTTL {
+	if (railRoutesCache.gz != nil || railRoutesCache.raw != nil) && railRoutesCache.key == key && now.Sub(railRoutesCache.at) <= railRouteCacheTTL {
 		raw, gz, eRaw, eGz := railRoutesCache.raw, railRoutesCache.gz, railRoutesCache.etagRaw, railRoutesCache.etagGz
 		railRoutesCache.mu.RUnlock()
 		sendPrecompressedJSONWithETag(q, res, raw, gz, eRaw, eGz, 120)
@@ -187,10 +203,14 @@ func (s *Server) hRailRoutes(q *xreq, res *xres) error {
 	} else {
 		build()
 	}
+	storedRaw := raw
+	if len(gz) > 0 {
+		storedRaw = nil // keep only gzipped bytes in RAM; rare non-gzip clients decompress on the fly
+	}
 	railRoutesCache.mu.Lock()
 	railRoutesCache.key = key
 	railRoutesCache.at = now
-	railRoutesCache.raw = raw
+	railRoutesCache.raw = storedRaw
 	railRoutesCache.gz = gz
 	railRoutesCache.etagRaw = eRaw
 	railRoutesCache.etagGz = eGz

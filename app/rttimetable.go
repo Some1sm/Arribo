@@ -34,12 +34,13 @@ func openRtTimetable(p string) (*rtTimetable, error) {
 	if _, err := os.Stat(p); err != nil {
 		return nil, nil
 	}
-	db, err := sql.Open("sqlite", "file:"+p+"?mode=ro&immutable=1&_pragma=cache_size(-8000)")
+	db, err := sql.Open("sqlite", "file:"+p+"?mode=ro&immutable=1&_pragma=cache_size(-2000)")
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(4)
-	db.SetMaxIdleConns(2)
+	db.SetMaxOpenConns(2)
+	db.SetMaxIdleConns(1)
+	db.SetConnMaxIdleTime(2 * time.Minute)
 	return &rtTimetable{db: db, cache: map[string]int64{}}, nil
 }
 
@@ -63,7 +64,7 @@ func (t *rtTimetable) scheduledSec(ctx context.Context, tripID, stopID string) (
 		v = sec.Int64
 	}
 	t.mu.Lock()
-	if len(t.cache) > 50000 { // bounded: a day's trips are far fewer
+	if len(t.cache) > 10000 { // bounded: a day's trips are far fewer
 		t.cache = map[string]int64{}
 	}
 	t.cache[key] = v
@@ -89,7 +90,7 @@ func (t *rtTimetable) originSec(ctx context.Context, tripID string) (int64, bool
 		v = sec.Int64
 	}
 	t.mu.Lock()
-	if len(t.cache) > 50000 {
+	if len(t.cache) > 10000 {
 		t.cache = map[string]int64{}
 	}
 	t.cache[key] = v
@@ -157,7 +158,7 @@ func (t *rtTimetable) hasTrip(ctx context.Context, tripID string) bool {
 		v = 1
 	}
 	t.mu.Lock()
-	if len(t.cache) > 50000 {
+	if len(t.cache) > 10000 {
 		t.cache = map[string]int64{}
 	}
 	t.cache[key] = v
@@ -384,6 +385,9 @@ func (t *rtTimetable) lineProfiles(ctx context.Context) ([]rtLineProfile, error)
 			if p.shapeID != "" {
 				if d.Geometry, err = t.shapePoints(ctx, p.shapeID); err != nil {
 					return nil, err
+				}
+				if len(d.Geometry) > 40 {
+					d.Geometry = simplifyPath(d.Geometry, 0.0001)
 				}
 			}
 			if len(d.Geometry) < 2 {
